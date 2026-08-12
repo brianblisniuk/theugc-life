@@ -79,6 +79,10 @@ client can never assign itself a privileged role.
 | `npm run typecheck`  | `tsc --noEmit` (strict)                    |
 | `npm run test`       | Vitest (unit + RLS suites)                 |
 | `npm run db:migrate` | Apply SQL migrations to `DATABASE_URL`     |
+| `npm run import:inspect`  | Inspect a source file's structure (no DB) |
+| `npm run import:stage`    | Parse/normalize/validate into staging tables |
+| `npm run import:dry-run`  | Stage + resolve + write review reports    |
+| `npm run import:report`   | Regenerate reports for a staged batch     |
 
 ## Testing
 
@@ -128,7 +132,40 @@ tests/
   smoke/                  Non-DB unit tests
 ```
 
+## Seed data import (Sprint 1A)
+
+A secure, auditable seed-import pipeline turns hotel/contact research into
+reviewable staging data — it never writes canonical hotels/contacts and never
+seeds creator intelligence (see [`docs/IMPORT_SPEC.md`](docs/IMPORT_SPEC.md),
+[`docs/HOTEL_DATA_CONTRACT.md`](docs/HOTEL_DATA_CONTRACT.md)).
+
+- **Standard importer** (durable): CSV/XLSX in the canonical contract
+  (`properties` / `contacts` / optional `evidence`). This is the format all
+  future research should use.
+- **Legacy adapters** (one-time, isolated under `scripts/import/legacy/`):
+  translate the current messy spreadsheets/Markdown into the same canonical
+  staging. Their quirks never reach canonical schema.
+- **Pipeline**: raw → staging → validation → conservative, explainable entity
+  resolution → dry-run JSON/Markdown reports. No canonical promotion in 1A.
+
+```bash
+# Look at a file's structure (no DB)
+npm run import:inspect -- --file data/imports/raw/research.xlsx
+
+# Stage + dry-run a canonical workbook (writes gitignored reports)
+DATABASE_URL="postgres://…" npm run import:dry-run -- --file data/imports/raw/research.xlsx
+
+# Dry-run a legacy file through its isolated adapter
+DATABASE_URL="postgres://…" npm run import:dry-run -- \
+  --file data/imports/raw/dubai.xlsx --adapter dubai-broad
+```
+
+Real source files and reports live under `data/imports/{raw,reports}/` and are
+**gitignored**. Automated tests use synthetic fixtures only.
+
 ## Status
 
-Sprint 0 only. Do not proceed to Sprint 1 without review. See
-[`docs/SPRINT_0_PROMPT.md`](docs/SPRINT_0_PROMPT.md) for the Definition of Done.
+Sprint 0/0.1 (foundation + hardening) and **Sprint 1A** (import foundation) are
+in place. Sprint 1A stops before canonical bulk promotion — do not promote seed
+data or build discovery/CRM/payment surfaces without review. See
+[`docs/SPRINT_1_PROMPT.md`](docs/SPRINT_1_PROMPT.md) for the Definition of Done.
