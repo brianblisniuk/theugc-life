@@ -210,3 +210,71 @@ Within the D004 range (USD 29–39 / 90 days), the default launch hypothesis is
 fixed at **USD 39 / 90 days**. This lives in the typed config source
 (`src/lib/config.ts`), is not hardcoded in UI logic, and remains subject to
 cohort validation. Checkout is not implemented.
+
+## D025 — Canonical research contract drives imports
+Status: Accepted
+
+Future hotel/contact research conforms to `HOTEL_DATA_CONTRACT.md`.
+Legacy spreadsheets do not define product schema.
+
+Reason:
+The durable system should be optimized for clean scalable data collection, not historical spreadsheet accidents.
+
+## D026 — Raw -> staging -> review -> canonical
+Status: Accepted
+
+External seed data never writes blindly into canonical hotel/contact tables.
+All imports preserve raw lineage, validation and entity-resolution evidence before promotion.
+
+Reason:
+Auditability, deduplication, idempotency and safe correction.
+
+## D027 — Seed research is editorial, not creator intelligence
+Status: Accepted
+
+Research that a property has worked with creators/influencers is `editorial_evidence` only.
+It never creates outreach events or live creator metrics.
+
+Reason:
+Protects credibility and keeps observed creator outcomes epistemically separate from research claims.
+
+## D028 — Conservative entity resolution
+Status: Accepted
+
+Only deterministic approved matches auto-resolve. Fuzzy similarity creates review candidates.
+The same email, brand, chain domain, agency or city never identifies a hotel by itself.
+
+Reason:
+False merges can corrupt multiple contacts and creator histories; temporary duplicates are safer.
+
+## D029 — Organizations are first-class but minimal
+Status: Accepted
+
+Hotel groups, operators, management companies and PR agencies may be represented as organizations rather than fake hotel rows. Brands remain a separate concept.
+
+Reason:
+Corporate/agency relationships are normal hospitality structure and can cover many properties.
+
+## D030 — Legacy import logic is isolated
+Status: Accepted
+
+Current messy files are handled by one-time adapters under an isolated legacy import namespace. Their quirks must not leak into canonical tables or durable importer behavior.
+
+Reason:
+Once migrated, the product must no longer depend on historical file structure.
+
+## D031 — Real raw datasets stay out of Git
+Status: Accepted
+
+Real hotel/contact source files and generated reports containing real contact data are stored locally/admin-side and gitignored. Tests use synthetic fixtures only.
+
+Reason:
+Data minimization, repository hygiene and protection of proprietary contact research.
+
+## D032 — Sprint 1A stops before bulk promotion
+Status: Accepted
+
+Sprint 1A ends with staging/dry-run reports and human review. It does not automatically bulk-promote real legacy data into canonical production tables.
+
+Reason:
+The first import establishes the long-term data foundation and warrants a deliberate review gate.
