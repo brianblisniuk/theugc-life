@@ -290,7 +290,9 @@ Represents one creator↔hotel relationship cycle.
 
 Statuses: saved, planned, pitched, replied, follow_up, negotiating, won, closed.
 
-Multiple historical cycles per `(creator_id, hotel_id)` are allowed. Prevent multiple simultaneously active cycles through application rule or partial unique index once exact active definition is finalized.
+Multiple historical cycles per `(creator_id, hotel_id)` are allowed. Multiple simultaneously active cycles are prevented by a partial unique index. The active definition is finalized (see DECISIONS D023): a cycle is active in every status except `closed` (so `won` is still active), and only `closed` frees the pair for a new cycle:
+
+`pipeline_items_single_active_cycle_uidx (creator_id, hotel_id) WHERE status <> 'closed'`.
 
 ### outreach_events
 Strategic append-oriented domain ledger.

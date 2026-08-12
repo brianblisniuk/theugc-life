@@ -181,3 +181,32 @@ If a required decision is absent from PRD/docs, implementation stops and reports
 4. recommendation
 
 No silent product invention.
+
+## D023 — Pipeline relationship-cycle closure rule
+Status: Accepted
+
+A `pipeline_items` row represents one creator↔hotel relationship cycle. A cycle
+is "active" (open) in every status except `closed`. In particular, `won` remains
+an active/non-closed cycle — a won collaboration is still an open relationship
+until the creator explicitly closes it.
+
+Only `closed` frees the `(creator_id, hotel_id)` pair for a NEW cycle. This is
+enforced by the partial unique index
+`pipeline_items_single_active_cycle_uidx (creator_id, hotel_id) WHERE status <> 'closed'`,
+which permits at most one non-closed cycle per creator+hotel while still allowing
+multiple historical (closed) cycles.
+
+Reason:
+Preserves the two-layer model (a won deal and its collaboration lifecycle stay
+attached to the live cycle) and prevents duplicate concurrent cycles, while
+supporting repeat partnerships as sequential cycles. This finalizes the
+"exact active definition" left open in DATABASE.md §8. No schema change was
+required — the index already implements this rule.
+
+## D024 — Destination Pass default pricing hypothesis
+Status: Accepted hypothesis
+
+Within the D004 range (USD 29–39 / 90 days), the default launch hypothesis is
+fixed at **USD 39 / 90 days**. This lives in the typed config source
+(`src/lib/config.ts`), is not hardcoded in UI logic, and remains subject to
+cohort validation. Checkout is not implemented.

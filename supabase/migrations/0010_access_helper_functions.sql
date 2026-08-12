@@ -2,9 +2,23 @@
 -- Centralized authorization helpers (PERMISSIONS.md §3). Entitlement logic lives
 -- HERE, once, and is reused by RLS policies — never duplicated in React.
 --
--- All are SECURITY DEFINER with a fixed search_path so they can evaluate
--- entitlements/hierarchy the calling user may not directly read, without
--- recursing into the policies being evaluated.
+-- SECURITY / EXPOSURE MODEL (Sprint 0.1 hardening):
+--   * PRIVATE core functions take an arbitrary user id and therefore could leak
+--     another user's entitlement/role state if callable over the PostgREST RPC
+--     surface. They are `_`-prefixed, have EXECUTE revoked from PUBLIC (so anon
+--     and authenticated cannot call them), and are used ONLY from inside the
+--     SECURITY DEFINER wrappers below (which run as the function owner and thus
+--     retain the privilege to call them).
+--   * PUBLIC wrappers take NO user id and evaluate authorization strictly for
+--     auth.uid(). They are safe to expose to anon/authenticated because a client
+--     can only ever ask about itself.
+--
+-- All functions are SECURITY DEFINER with a fixed search_path so they can read
+-- entitlements/hierarchy without recursing into the policies being evaluated.
+
+-- ===========================================================================
+-- Self-scoped identity helpers (safe: reveal only the caller's own row).
+-- ===========================================================================
 
 -- Current authenticated user's application role, or null.
 create or replace function public.current_user_role()
@@ -28,8 +42,12 @@ as $$
   select id from public.creator_profiles where user_id = auth.uid();
 $$;
 
--- Is the given user an admin or editor? (role-based; PERMISSIONS.md §11)
-create or replace function public.is_admin_or_editor(uid uuid default auth.uid())
+-- ===========================================================================
+-- PRIVATE arbitrary-user core functions. NOT client-callable (see grants at
+-- bottom). Invoked only from the SECURITY DEFINER wrappers below.
+-- ===========================================================================
+
+create or replace function public._is_admin_or_editor(uid uuid)
 returns boolean
 language sql
 stable
@@ -42,10 +60,7 @@ as $$
   );
 $$;
 
--- Active worldwide premium entitlement (Pro, or internal 'admin' comp access).
--- Access is judged by time-bounded active entitlements, not subscription UI
--- state (DATABASE.md §7, PRD §15.4).
-create or replace function public.has_active_pro(uid uuid default auth.uid())
+create or replace function public._has_active_pro(uid uuid)
 returns boolean
 language sql
 stable
@@ -63,10 +78,10 @@ as $$
   );
 $$;
 
--- Is `child_id` a proper (strict) descendant of `ancestor_id` in the
--- destination hierarchy? Used so a Bali pass covers Ubud/Seminyak (PRD §15.4).
--- Depth-limited to guard against accidental cycles in the data.
-create or replace function public.destination_is_descendant(child_id uuid, ancestor_id uuid)
+-- Is `child_id` a proper (strict) descendant of `ancestor_id`? Not user-scoped
+-- (no personal data), but kept internal for a minimal RPC surface. Depth-limited
+-- to guard against accidental cycles in the data.
+create or replace function public._destination_is_descendant(child_id uuid, ancestor_id uuid)
 returns boolean
 language sql
 stable
@@ -89,8 +104,7 @@ as $$
   );
 $$;
 
--- Active destination entitlement covering `dest_id` directly or via hierarchy.
-create or replace function public.has_active_destination_access(uid uuid, dest_id uuid)
+create or replace function public._has_active_destination_access(uid uuid, dest_id uuid)
 returns boolean
 language sql
 stable
@@ -108,15 +122,12 @@ as $$
       and e.destination_id is not null
       and (
         e.destination_id = dest_id
-        or public.destination_is_descendant(dest_id, e.destination_id)
+        or public._destination_is_descendant(dest_id, e.destination_id)
       )
   );
 $$;
 
--- Master premium-contact/intelligence gate for a hotel (PERMISSIONS.md §7, §9).
--- admin/editor (operational) OR active Pro (worldwide) OR active destination
--- entitlement covering the hotel's destination.
-create or replace function public.has_premium_hotel_access(uid uuid, hotel_id uuid)
+create or replace function public._has_premium_hotel_access(uid uuid, hotel_id uuid)
 returns boolean
 language sql
 stable
@@ -125,22 +136,88 @@ set search_path = public, pg_temp
 as $$
   select case
     when uid is null then false
-    when public.is_admin_or_editor(uid) then true
-    when public.has_active_pro(uid) then true
-    else public.has_active_destination_access(
+    when public._is_admin_or_editor(uid) then true
+    when public._has_active_pro(uid) then true
+    else public._has_active_destination_access(
       uid,
       (select destination_id from public.hotels where id = hotel_id)
     )
   end;
 $$;
 
--- Access checks are safe to expose to both roles; they only return booleans/ids.
+-- ===========================================================================
+-- PUBLIC self-scoped wrappers. Evaluate ONLY for auth.uid(); safe to expose.
+-- These are what RLS policies and clients call.
+-- ===========================================================================
+
+create or replace function public.is_admin_or_editor()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public._is_admin_or_editor(auth.uid());
+$$;
+
+create or replace function public.has_active_pro()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public._has_active_pro(auth.uid());
+$$;
+
+create or replace function public.has_active_destination_access(dest_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public._has_active_destination_access(auth.uid(), dest_id);
+$$;
+
+create or replace function public.has_premium_hotel_access(hotel_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public._has_premium_hotel_access(auth.uid(), hotel_id);
+$$;
+
+-- ===========================================================================
+-- Grants. Default EXECUTE is granted to PUBLIC on create, so we REVOKE it from
+-- PUBLIC on the private core functions, then grant the private set to
+-- service_role only (trusted server / admin tooling). The self-scoped wrappers
+-- are exposed to anon/authenticated.
+-- ===========================================================================
+
+revoke all on function
+  public._is_admin_or_editor(uuid),
+  public._has_active_pro(uuid),
+  public._destination_is_descendant(uuid, uuid),
+  public._has_active_destination_access(uuid, uuid),
+  public._has_premium_hotel_access(uuid, uuid)
+from public;
+
+grant execute on function
+  public._is_admin_or_editor(uuid),
+  public._has_active_pro(uuid),
+  public._destination_is_descendant(uuid, uuid),
+  public._has_active_destination_access(uuid, uuid),
+  public._has_premium_hotel_access(uuid, uuid)
+to service_role;
+
 grant execute on function
   public.current_user_role(),
   public.current_creator_id(),
-  public.is_admin_or_editor(uuid),
-  public.has_active_pro(uuid),
-  public.destination_is_descendant(uuid, uuid),
-  public.has_active_destination_access(uuid, uuid),
-  public.has_premium_hotel_access(uuid, uuid)
+  public.is_admin_or_editor(),
+  public.has_active_pro(),
+  public.has_active_destination_access(uuid),
+  public.has_premium_hotel_access(uuid)
 to anon, authenticated;

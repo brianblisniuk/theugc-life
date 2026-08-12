@@ -75,10 +75,12 @@ grant select, insert, update on public.verification_events, public.admin_flags
 grant select on public.hotel_intelligence, public.destination_intelligence
   to authenticated;
 
--- Growth: claims + profile-view logging accept anonymous inserts (lead capture /
--- anonymous view counting). Reads are gated by RLS.
-grant insert on public.hotel_claims, public.public_creator_profile_views
-  to anon, authenticated;
+-- Growth: hotel_claims (lead capture) and public_creator_profile_views
+-- (anonymous view counting) are written ONLY through validated server endpoints
+-- with anti-abuse controls (via service_role), which are not implemented yet.
+-- Sprint 0.1: no direct client INSERT grant for either table — not to anon and
+-- not to authenticated — so no client can write to them directly. Reads remain
+-- gated by RLS below.
 grant select, update on public.hotel_claims to authenticated;
 grant select on public.public_creator_profile_views to authenticated;
 grant select on public.milestones, public.share_cards, public.referrals
@@ -136,8 +138,9 @@ create policy hotels_write on public.hotels
   for all using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
 
 -- hotel_contacts: premium-gated read; admin/editor write. Never anon.
+-- Uses the self-scoped wrapper (evaluates only for auth.uid()).
 create policy hotel_contacts_select on public.hotel_contacts
-  for select using (public.has_premium_hotel_access(auth.uid(), hotel_id));
+  for select using (public.has_premium_hotel_access(hotel_id));
 create policy hotel_contacts_write on public.hotel_contacts
   for all using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
 
@@ -207,27 +210,27 @@ create policy admin_flags_write on public.admin_flags
 
 -- hotel_intelligence: premium/admin read only. Public reads the safe view.
 create policy hotel_intelligence_select on public.hotel_intelligence
-  for select using (public.has_premium_hotel_access(auth.uid(), hotel_id));
+  for select using (public.has_premium_hotel_access(hotel_id));
 
 -- destination_intelligence: any active premium entitlement, or admin/editor.
 create policy destination_intelligence_select on public.destination_intelligence
   for select using (
     public.is_admin_or_editor()
-    or public.has_active_pro(auth.uid())
-    or public.has_active_destination_access(auth.uid(), destination_id)
+    or public.has_active_pro()
+    or public.has_active_destination_access(destination_id)
   );
 
--- hotel_claims: anyone may submit a lead; admin/editor review.
-create policy hotel_claims_insert on public.hotel_claims
-  for insert with check (true);
+-- hotel_claims: admin/editor review. Lead submission is server-mediated
+-- (service_role) once the validated endpoint exists — no direct client INSERT
+-- policy/grant, so anon and authenticated direct inserts are rejected.
 create policy hotel_claims_select on public.hotel_claims
   for select using (public.is_admin_or_editor());
 create policy hotel_claims_update on public.hotel_claims
   for update using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
 
--- public_creator_profile_views: anonymous inserts allowed; owner/admin read.
-create policy pcp_views_insert on public.public_creator_profile_views
-  for insert with check (true);
+-- public_creator_profile_views: owner/admin read. View logging is server-
+-- mediated (service_role) via a future validated endpoint — no direct client
+-- INSERT policy/grant, so anon and authenticated direct inserts are rejected.
 create policy pcp_views_select on public.public_creator_profile_views
   for select using (
     creator_id = public.current_creator_id() or public.is_admin_or_editor()

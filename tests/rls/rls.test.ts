@@ -310,3 +310,129 @@ d("privilege escalation guard (DATABASE.md §3, PRD §33.4)", () => {
     expect(res.error).not.toBeNull();
   });
 });
+
+d("authorization helper exposure (Sprint 0.1 hardening)", () => {
+  // User A (free) must not be able to learn User B's (pro) entitlement/role
+  // state through any helper reachable over the client RPC surface.
+
+  it("A cannot call the private arbitrary-user pro helper for B", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "select public._has_active_pro($1) as v",
+      [USERS.pro],
+    );
+    // EXECUTE revoked from PUBLIC → permission denied for function.
+    expect(res.error).not.toBeNull();
+  });
+
+  it("no arbitrary-user pro helper signature is exposed to clients", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "select public.has_active_pro($1) as v",
+      [USERS.pro],
+    );
+    // Only the no-arg self-scoped wrapper exists → function does not exist.
+    expect(res.error).not.toBeNull();
+  });
+
+  it("A cannot probe B's destination entitlement via the private helper", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "select public._has_active_destination_access($1, $2) as v",
+      [USERS.destBali, DEST.bali],
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("A cannot probe another user's role via the private helper", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "select public._is_admin_or_editor($1) as v",
+      [USERS.admin],
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("A cannot probe B's premium hotel access via the private helper", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "select public._has_premium_hotel_access($1, $2) as v",
+      [USERS.pro, HOTEL.ibiza],
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("self-scoped helpers only ever reflect the caller (cannot substitute B)", async () => {
+    // Free caller: false. Pro caller: true. The client cannot pass a user id,
+    // so it can only ever observe its own authorization state.
+    const asFree = await queryAs<{ v: boolean }>(
+      { role: "authenticated", sub: USERS.free },
+      "select public.has_active_pro() as v",
+    );
+    expect(asFree.error).toBeNull();
+    expect(asFree.rows[0]?.v).toBe(false);
+
+    const asPro = await queryAs<{ v: boolean }>(
+      { role: "authenticated", sub: USERS.pro },
+      "select public.has_active_pro() as v",
+    );
+    expect(asPro.error).toBeNull();
+    expect(asPro.rows[0]?.v).toBe(true);
+  });
+
+  it("self-scoped destination helper reflects only the caller's entitlement", async () => {
+    const asDest = await queryAs<{ v: boolean }>(
+      { role: "authenticated", sub: USERS.destBali },
+      "select public.has_active_destination_access($1) as v",
+      [DEST.bali],
+    );
+    expect(asDest.error).toBeNull();
+    expect(asDest.rows[0]?.v).toBe(true);
+
+    const asFree = await queryAs<{ v: boolean }>(
+      { role: "authenticated", sub: USERS.free },
+      "select public.has_active_destination_access($1) as v",
+      [DEST.bali],
+    );
+    expect(asFree.error).toBeNull();
+    expect(asFree.rows[0]?.v).toBe(false);
+  });
+});
+
+d("server-mediated growth writes (Sprint 0.1 hardening)", () => {
+  it("anonymous cannot directly insert a hotel_claim", async () => {
+    const res = await queryAs(
+      { role: "anon" },
+      "insert into public.hotel_claims (hotel_id, claimant_email) values ($1, $2)",
+      [HOTEL.bali, "claimer@example.com"],
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("authenticated cannot directly insert a hotel_claim", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "insert into public.hotel_claims (hotel_id, claimant_email) values ($1, $2)",
+      [HOTEL.bali, "claimer@example.com"],
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("anonymous cannot directly insert a public_creator_profile_view", async () => {
+    const res = await queryAs(
+      { role: "anon" },
+      "insert into public.public_creator_profile_views (creator_id) values ($1)",
+      [creators.pro],
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("authenticated cannot directly insert a public_creator_profile_view", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      "insert into public.public_creator_profile_views (creator_id) values ($1)",
+      [creators.pro],
+    );
+    expect(res.error).not.toBeNull();
+  });
+});
