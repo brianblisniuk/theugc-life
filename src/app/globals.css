@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/*
+ * Semantic design tokens (DESIGN_SYSTEM.md §9). Branding can change centrally by
+ * editing these variables. Colors are defined on :root and overridden for dark
+ * mode; @theme maps them to Tailwind utilities (bg-background, text-muted, etc.).
+ * These are placeholder values, not a final brand palette (DESIGN_SYSTEM.md §9).
+ */
+:root {
+  --background: #ffffff;
+  --surface: #f7f7f8;
+  --text: #14161a;
+  --muted: #5b6270;
+  --border: #e5e7eb;
+  --accent: #2f6df6;
+  --accent-contrast: #ffffff;
+  --success: #16a34a;
+  --warning: #b45309;
+  --danger: #dc2626;
+  --radius: 0.625rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0d0f12;
+    --surface: #16191e;
+    --text: #f2f4f7;
+    --muted: #9aa2b1;
+    --border: #262b33;
+    --accent: #5b8bff;
+    --accent-contrast: #0d0f12;
+    --success: #22c55e;
+    --warning: #d97706;
+    --danger: #ef4444;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --radius-app: var(--radius);
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus for keyboard users (DESIGN_SYSTEM.md §7). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
