@@ -7,13 +7,16 @@
  * by the DB-gated import suites.
  */
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
   assertPersistentApplyTarget,
+  categorizePreflightError,
   classifyDatabaseUrl,
+  formatPreflightFailure,
   PersistentTargetError,
   runPreflight,
+  verifyMigrationLedger,
 } from "@/lib/import/preflight";
 
 import { hasTestDb, setupDatabase } from "../db/harness";
@@ -128,6 +131,74 @@ describe("assertPersistentApplyTarget — real --apply guard", () => {
   });
 });
 
+describe("PF3 — container/local bridge aliases are non-remote", () => {
+  const bridges = ["host.docker.internal", "gateway.docker.internal", "host.containers.internal"];
+
+  for (const host of bridges) {
+    it(`classifies ${host} as container-bridge (non-remote)`, () => {
+      const c = classifyDatabaseUrl(`postgresql://postgres:pw@${host}:5432/postgres`);
+      expect(c.hostClass).toBe("container-bridge");
+      expect(c.isRemote).toBe(false);
+    });
+
+    it(`the --apply guard rejects ${host}`, () => {
+      const env = { DATABASE_URL: `postgresql://postgres:pw@${host}:5432/postgres` };
+      expect(() => assertPersistentApplyTarget(env)).toThrow(PersistentTargetError);
+    });
+  }
+
+  it("a normal public managed-database hostname remains remote", () => {
+    const c = classifyDatabaseUrl(
+      "postgresql://postgres:pw@db.invented-ref.supabase.co:5432/postgres?sslmode=require",
+    );
+    expect(c.isRemote).toBe(true);
+    expect(c.hostClass).toBe("remote");
+  });
+});
+
+describe("PF1 — categorical, connection-detail-free error reporting", () => {
+  it("never exposes host/port/user/password from a driver connection error", () => {
+    const err = Object.assign(
+      new Error("connect ECONNREFUSED db.example.com:5432 (user=admin password=hunter2)"),
+      { code: "ECONNREFUSED" },
+    );
+    const out = formatPreflightFailure(err);
+    expect(out).toBe("PERSISTENT_DATABASE_CONNECTION_FAILED");
+    for (const leak of ["db.example.com", "5432", "admin", "hunter2"]) {
+      expect(out).not.toContain(leak);
+    }
+  });
+
+  it("categorizes a Postgres auth SQLSTATE as an auth failure", () => {
+    const err = Object.assign(new Error('password authentication failed for user "svc"'), {
+      code: "28P01",
+    });
+    expect(categorizePreflightError(err)).toBe("PERSISTENT_DATABASE_AUTH_FAILED");
+    expect(formatPreflightFailure(err)).not.toContain("svc");
+  });
+
+  it("categorizes DNS/TLS failures as connection failures", () => {
+    expect(
+      categorizePreflightError(
+        Object.assign(new Error("getaddrinfo ENOTFOUND h"), { code: "ENOTFOUND" }),
+      ),
+    ).toBe("PERSISTENT_DATABASE_CONNECTION_FAILED");
+    expect(
+      categorizePreflightError(
+        Object.assign(new Error("self signed cert"), { code: "SELF_SIGNED_CERT_IN_CHAIN" }),
+      ),
+    ).toBe("PERSISTENT_DATABASE_CONNECTION_FAILED");
+  });
+
+  it("does not echo an arbitrary error message verbatim", () => {
+    const err = new Error("weird internal detail host=10.1.2.3 secret=leak");
+    const out = formatPreflightFailure(err);
+    expect(out).toBe("PERSISTENT_DATABASE_PREFLIGHT_FAILED");
+    expect(out).not.toContain("10.1.2.3");
+    expect(out).not.toContain("leak");
+  });
+});
+
 const d = describe.skipIf(!hasTestDb);
 
 d("runPreflight — read-only inspection (synthetic DB)", () => {
@@ -168,5 +239,86 @@ d("runPreflight — read-only inspection (synthetic DB)", () => {
     expect(after.schemaReady).toBe(true);
     expect(after.destinations.uaeOk).toBe(true);
     expect(after.destinations.dubaiOk).toBe(true);
+  });
+});
+
+d("PF2 — versioned migration-ledger verification", () => {
+  let client: Client;
+  const EXPECTED = ["0001", "0002", "0017"]; // synthetic expected repo head set
+
+  beforeAll(async () => {
+    if (!hasTestDb) return;
+    await setupDatabase();
+    client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await client.connect();
+  });
+  afterAll(async () => {
+    if (client) await client.end();
+  });
+  afterEach(async () => {
+    if (client) await client.query("drop schema if exists supabase_migrations cascade");
+  });
+
+  async function seedLedger(versions: string[]): Promise<void> {
+    await client.query("create schema if not exists supabase_migrations");
+    await client.query(
+      "create table if not exists supabase_migrations.schema_migrations (version text primary key, name text)",
+    );
+    for (const v of versions) {
+      await client.query(
+        "insert into supabase_migrations.schema_migrations (version, name) values ($1, $2) on conflict do nothing",
+        [v, `migration_${v}`],
+      );
+    }
+  }
+
+  it("verified when the ledger records exactly the expected versions", async () => {
+    await seedLedger(EXPECTED);
+    const m = await verifyMigrationLedger(client, EXPECTED);
+    expect(m.status).toBe("verified");
+    expect(m.verified).toBe(true);
+    expect(m.missing).toEqual([]);
+    expect(m.ahead).toEqual([]);
+  });
+
+  it("blocked (ledger-absent) when required objects exist but there is no ledger", async () => {
+    const m = await verifyMigrationLedger(client, EXPECTED);
+    expect(m.ledgerPresent).toBe(false);
+    expect(m.status).toBe("ledger-absent");
+    expect(m.verified).toBe(false);
+  });
+
+  it("blocked when the ledger is missing the head migration (0017)", async () => {
+    await seedLedger(["0001", "0002"]);
+    const m = await verifyMigrationLedger(client, EXPECTED);
+    expect(m.status).toBe("missing-required");
+    expect(m.missing).toContain("0017");
+    expect(m.verified).toBe(false);
+  });
+
+  it("reports an ahead/unknown ledger explicitly (never silently ready)", async () => {
+    await seedLedger([...EXPECTED, "0018"]);
+    const m = await verifyMigrationLedger(client, EXPECTED);
+    expect(m.status).toBe("ahead-unknown");
+    expect(m.ahead).toContain("0018");
+    expect(m.verified).toBe(false);
+  });
+
+  it("blocked (ledger-shape-unknown) when the ledger has no version column", async () => {
+    await client.query("create schema if not exists supabase_migrations");
+    await client.query(
+      "create table supabase_migrations.schema_migrations (id serial primary key, note text)",
+    );
+    const m = await verifyMigrationLedger(client, EXPECTED);
+    expect(m.status).toBe("ledger-shape-unknown");
+    expect(m.verified).toBe(false);
+  });
+
+  it("runPreflight surfaces the migration state and only READY when verified", async () => {
+    await seedLedger(EXPECTED);
+    const r = await runPreflight(client, EXPECTED);
+    expect(r.migration.verified).toBe(true);
+    // Structural objects are present on the migrated schema too.
+    expect(r.schemaReady).toBe(true);
   });
 });

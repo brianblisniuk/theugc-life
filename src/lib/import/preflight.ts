@@ -15,10 +15,29 @@
  *
  * Nothing here logs secrets or raw contact data.
  */
+import { readdir } from "node:fs/promises";
+
 import type { Client } from "pg";
 
 export type HostClass =
-  "loopback" | "localhost" | "local-supabase" | "private-network" | "remote" | "unknown";
+  | "loopback"
+  | "localhost"
+  | "local-supabase"
+  | "container-bridge"
+  | "private-network"
+  | "remote"
+  | "unknown";
+
+/**
+ * Container/VM bridge aliases that resolve to the developer host from inside a
+ * container. A real --apply must never reach a developer-host Postgres through
+ * one of these (review fix PF3). Lexical/deterministic — no DNS resolution.
+ */
+const CONTAINER_BRIDGE_HOSTS = new Set([
+  "host.docker.internal",
+  "gateway.docker.internal",
+  "host.containers.internal",
+]);
 
 export interface TargetClassification {
   /** Whether a non-empty connection string was provided. */
@@ -46,6 +65,8 @@ function classifyHost(host: string, port: string | null): HostClass {
   if (h === "localhost" || h.endsWith(".localhost")) {
     return port === LOCAL_SUPABASE_PORT ? "local-supabase" : "localhost";
   }
+  // Container/VM bridge aliases to the developer host (PF3).
+  if (CONTAINER_BRIDGE_HOSTS.has(h)) return "container-bridge";
   // Local Supabase docker service names.
   if (h.startsWith("supabase_db_") || h === "db" || h === "kong") return "local-supabase";
   // Private / non-routable ranges and mDNS — treated as local, not persistent.
@@ -142,6 +163,82 @@ export function assertPersistentApplyTarget(env: Record<string, string | undefin
   return { url, classification };
 }
 
+/**
+ * The repository's migration version identifiers — the numeric prefix of each
+ * `supabase/migrations/NNNN_*.sql` file (e.g. "0001" … "0017"). These are what
+ * the Supabase CLI records in `supabase_migrations.schema_migrations` when the
+ * canonical `supabase db push` deploys them. Read-only fs access.
+ */
+export async function readRepoMigrationVersions(migrationsDir: string): Promise<string[]> {
+  const files = await readdir(migrationsDir);
+  const versions = files
+    .filter((f) => /^\d+_.*\.sql$/.test(f))
+    .map((f) => f.slice(0, f.indexOf("_")));
+  return [...new Set(versions)].sort();
+}
+
+// --- Safe error categorization (PF1) --------------------------------------
+
+export type PreflightFailureCode =
+  | "PERSISTENT_DATABASE_CONNECTION_FAILED"
+  | "PERSISTENT_DATABASE_AUTH_FAILED"
+  | "PERSISTENT_DATABASE_PREFLIGHT_FAILED";
+
+/** SQLSTATE codes that indicate an authentication/authorization failure. */
+const AUTH_SQLSTATES = new Set(["28P01", "28000"]);
+
+/** Node/pg/TLS error codes that indicate a connectivity failure. */
+const CONNECTION_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EADDRNOTAVAIL",
+  "EPIPE",
+  "EAI_AGAIN",
+  "EPROTO",
+]);
+
+/** OpenSSL/Node TLS certificate error codes (connectivity-class failures). */
+const TLS_ERROR_CODES = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
+/**
+ * Map an arbitrary error to a categorical, connection-detail-free code
+ * (review fix PF1). It reads ONLY the structured `code`/`errno` — never the
+ * message — so no hostname, IP, port, URL, username, password, token, or
+ * certificate detail can leak from a pg/DNS/TLS/socket/parser error.
+ */
+export function categorizePreflightError(err: unknown): PreflightFailureCode {
+  const code =
+    err && typeof err === "object" && "code" in err && typeof err.code === "string" ? err.code : "";
+  if (AUTH_SQLSTATES.has(code)) return "PERSISTENT_DATABASE_AUTH_FAILED";
+  if (CONNECTION_ERROR_CODES.has(code) || TLS_ERROR_CODES.has(code)) {
+    return "PERSISTENT_DATABASE_CONNECTION_FAILED";
+  }
+  // Any other TLS/cert code shape.
+  if (/^(CERT_|ERR_TLS|ERR_SSL)/.test(code)) return "PERSISTENT_DATABASE_CONNECTION_FAILED";
+  return "PERSISTENT_DATABASE_PREFLIGHT_FAILED";
+}
+
+/**
+ * CLI-safe one-line failure string. Returns ONLY the categorical code — it
+ * never echoes the underlying error message, so it cannot leak connection
+ * details. The original error may still be inspected via its `cause` internally.
+ */
+export function formatPreflightFailure(err: unknown): string {
+  return categorizePreflightError(err);
+}
+
 // --- Read-only remote inspection ------------------------------------------
 
 /** Objects whose presence proves the Sprint 0–1C schema is applied. */
@@ -186,15 +283,103 @@ export interface DestinationReadiness {
   detail: string;
 }
 
+export type MigrationStatus =
+  "verified" | "ledger-absent" | "ledger-shape-unknown" | "missing-required" | "ahead-unknown";
+
+export interface MigrationState {
+  status: MigrationStatus;
+  ledgerPresent: boolean;
+  /** Migration version identifiers found in the ledger (no connection detail). */
+  ledgerVersions: string[];
+  /** Expected repository versions absent from the ledger (e.g. "0017"). */
+  missing: string[];
+  /** Ledger versions not expected by this repository (drift / ahead). */
+  ahead: string[];
+  /** True only when the reviewed migration state through the head is proven. */
+  verified: boolean;
+}
+
 export interface PreflightResult {
   schemaReady: boolean;
   missing: string[];
   baselineCounts: Record<string, number>;
   destinations: DestinationReadiness;
+  migration: MigrationState;
 }
 
-/** Read-only preflight inspection. Performs NO writes and returns no PII. */
-export async function runPreflight(client: Client): Promise<PreflightResult> {
+/**
+ * Read the deployed Supabase migration ledger
+ * (`supabase_migrations.schema_migrations`) READ-ONLY and prove that the
+ * reviewed repository migration versions (through the head, e.g. 0017) are all
+ * recorded, in order, with no unexpected/ahead versions (review fix PF2).
+ *
+ * The ledger's presence and column shape are inspected safely — absence or an
+ * unrecognized shape yields an explicit non-verified status rather than an
+ * assumption. Only version identifiers are ever surfaced, never connection
+ * details.
+ */
+export async function verifyMigrationLedger(
+  client: Client,
+  expectedVersions: string[],
+): Promise<MigrationState> {
+  const expected = [...expectedVersions].sort();
+  const empty = (status: MigrationStatus): MigrationState => ({
+    status,
+    ledgerPresent: status !== "ledger-absent",
+    ledgerVersions: [],
+    missing: [...expected],
+    ahead: [],
+    verified: false,
+  });
+
+  const tableRes = await client.query<{ n: string }>(
+    `select count(*)::text n from information_schema.tables
+       where table_schema = 'supabase_migrations' and table_name = 'schema_migrations'`,
+  );
+  if (Number(tableRes.rows[0]!.n) === 0) return empty("ledger-absent");
+
+  // Inspect the column shape safely — the ledger must expose a `version` column.
+  const colRes = await client.query<{ column_name: string }>(
+    `select column_name from information_schema.columns
+       where table_schema='supabase_migrations' and table_name='schema_migrations'`,
+  );
+  const cols = new Set(colRes.rows.map((r) => r.column_name));
+  if (!cols.has("version")) return empty("ledger-shape-unknown");
+
+  const verRes = await client.query<{ version: string }>(
+    "select version::text as version from supabase_migrations.schema_migrations order by version",
+  );
+  const ledgerVersions = verRes.rows.map((r) => r.version);
+  const ledgerSet = new Set(ledgerVersions);
+  const expectedSet = new Set(expected);
+
+  const missing = expected.filter((v) => !ledgerSet.has(v));
+  const ahead = ledgerVersions.filter((v) => !expectedSet.has(v)).sort();
+
+  let status: MigrationStatus;
+  if (missing.length > 0) status = "missing-required";
+  else if (ahead.length > 0) status = "ahead-unknown";
+  else status = "verified";
+
+  return {
+    status,
+    ledgerPresent: true,
+    ledgerVersions,
+    missing,
+    ahead,
+    verified: status === "verified",
+  };
+}
+
+/**
+ * Read-only preflight inspection. Performs NO writes and returns no PII.
+ * `expectedMigrationVersions` are the repository's migration version identifiers
+ * (e.g. ["0001", …, "0017"]) that must be proven present in the deployed ledger.
+ */
+export async function runPreflight(
+  client: Client,
+  expectedMigrationVersions: string[] = [],
+): Promise<PreflightResult> {
   const missing: string[] = [];
 
   const tableRes = await client.query<{ table_name: string }>(
@@ -229,8 +414,9 @@ export async function runPreflight(client: Client): Promise<PreflightResult> {
   }
 
   const destinations = await inspectDestinations(client, present);
+  const migration = await verifyMigrationLedger(client, expectedMigrationVersions);
 
-  return { schemaReady, missing, baselineCounts, destinations };
+  return { schemaReady, missing, baselineCounts, destinations, migration };
 }
 
 async function inspectDestinations(

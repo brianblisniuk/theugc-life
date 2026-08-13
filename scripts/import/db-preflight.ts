@@ -1,22 +1,34 @@
 /**
  * import:db-preflight — read-only persistent-target preflight
- * (SPRINT_1C_PERSISTENT_PREFLIGHT.md). Classifies DATABASE_URL WITHOUT exposing
- * any secret, verifies Sprint 0–1C schema readiness, reports aggregate baseline
- * counts (no PII), and checks UAE/Dubai destination readiness.
+ * (SPRINT_1C_PERSISTENT_PREFLIGHT.md + review fixes). Classifies DATABASE_URL
+ * WITHOUT exposing any secret, proves the reviewed Sprint 0–1C migration state
+ * (Supabase migration ledger through 0017 + structural objects), reports
+ * aggregate baseline counts (no PII), and checks UAE/Dubai destination
+ * readiness.
  *
  * It reads ONLY `DATABASE_URL` — it never falls back to `TEST_DATABASE_URL`.
- * Performs NO writes.
+ * Performs NO writes. All failures are reported as categorical codes: no
+ * hostname, IP, port, URL, username, password, token, or driver message is ever
+ * printed (review fix PF1).
  *
  *   DATABASE_URL=... npm run import:db-preflight
  */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { Client } from "pg";
 
 import {
   assertPersistentApplyTarget,
   classifyDatabaseUrl,
+  formatPreflightFailure,
   PersistentTargetError,
+  readRepoMigrationVersions,
   runPreflight,
 } from "../../src/lib/import/preflight";
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = path.resolve(SCRIPT_DIR, "..", "..", "supabase", "migrations");
 
 async function main() {
   const raw = process.env.DATABASE_URL?.trim();
@@ -40,7 +52,8 @@ async function main() {
       `(${classification.redactedTarget})`,
   );
 
-  // Enforce the same guard the real apply uses (explicit + remote-only).
+  // Enforce the same guard the real apply uses (explicit + remote-only). Its
+  // message contains only redactedTarget (class/db/ssl) — never a secret.
   try {
     assertPersistentApplyTarget(process.env);
   } catch (err) {
@@ -53,12 +66,27 @@ async function main() {
     throw err;
   }
 
+  const expectedVersions = await readRepoMigrationVersions(MIGRATIONS_DIR);
+  const head = expectedVersions[expectedVersions.length - 1] ?? "(none)";
+
   const client = new Client({ connectionString: raw });
   await client.connect();
   try {
-    const result = await runPreflight(client);
+    const result = await runPreflight(client, expectedVersions);
 
-    console.info(`\n  schema readiness: ${result.schemaReady ? "ready" : "NOT-ready"}`);
+    // Migration ledger (versioned proof) — identifiers/counts only, no details.
+    const m = result.migration;
+    console.info(`\n  migration ledger: ${m.ledgerPresent ? "present" : "absent"}`);
+    console.info(
+      `    expected repo versions: ${expectedVersions.length} (head ${head})` +
+        `  ledger versions: ${m.ledgerVersions.length}`,
+    );
+    console.info(`    status: ${m.status}`);
+    if (m.missing.length > 0) console.info(`    missing required: ${m.missing.join(", ")}`);
+    if (m.ahead.length > 0) console.info(`    ahead/unknown: ${m.ahead.join(", ")}`);
+
+    // Structural objects (second line of defense).
+    console.info(`\n  structural schema: ${result.schemaReady ? "ready" : "NOT-ready"}`);
     if (!result.schemaReady) {
       console.info(`  missing objects: ${result.missing.join(", ")}`);
     }
@@ -75,25 +103,30 @@ async function main() {
     console.info(`    dubai ok: ${result.destinations.dubaiOk}`);
     console.info(`    detail: ${result.destinations.detail}`);
 
-    const ready = result.schemaReady && result.destinations.uaeOk && result.destinations.dubaiOk;
-    if (ready) {
-      console.info("\n  decision: READY_FOR_REMOTE_RESTAGE\n");
-    } else if (!result.schemaReady) {
-      console.info("\n  decision: BLOCKED_SCHEMA_NOT_READY\n");
-      process.exitCode = 2;
+    // Decision: structural + versioned migration proof + destinations all pass.
+    let decision: string;
+    if (!result.schemaReady) {
+      decision = "BLOCKED_SCHEMA_NOT_READY";
+    } else if (m.status === "ahead-unknown") {
+      decision = "BLOCKED_MIGRATION_STATE_AHEAD";
+    } else if (!m.verified) {
+      // ledger-absent / ledger-shape-unknown / missing-required (incl. 0017).
+      decision = "BLOCKED_MIGRATION_STATE_UNVERIFIED";
+    } else if (!result.destinations.uaeOk || !result.destinations.dubaiOk) {
+      decision = "BLOCKED_DESTINATIONS_NOT_READY";
     } else {
-      console.info("\n  decision: BLOCKED_DESTINATIONS_NOT_READY\n");
-      process.exitCode = 2;
+      decision = "READY_FOR_REMOTE_RESTAGE";
     }
+
+    console.info(`\n  decision: ${decision}\n`);
+    if (decision !== "READY_FOR_REMOTE_RESTAGE") process.exitCode = 2;
   } finally {
     await client.end();
   }
 }
 
 main().catch((err) => {
-  // Never surface secrets; print only the message.
-  console.error(
-    `\n[import:db-preflight] ERROR: ${err instanceof Error ? err.message : String(err)}\n`,
-  );
+  // PF1: never surface secrets or driver detail — emit only a categorical code.
+  console.error(`\n[import:db-preflight] decision: ${formatPreflightFailure(err)}\n`);
   process.exit(1);
 });
