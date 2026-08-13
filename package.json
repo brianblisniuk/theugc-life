@@ -34,6 +34,7 @@
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
     "next": "^15.5.23",
     "papaparse": "^5.5.4",
     "posthog-js": "^1.203.1",
