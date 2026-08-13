@@ -15,7 +15,7 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-major_version = 16
+major_version = 17
 
 [db.migrations]
 # Apply migrations in filename order (0001_, 0002_, ...).
