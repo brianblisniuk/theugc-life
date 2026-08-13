@@ -18,67 +18,124 @@ import Papa from "papaparse";
 
 import type { RowKind } from "./contract";
 
-const SPREADSHEETML_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+export const SPREADSHEETML_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
 /**
- * Load an .xlsx workbook, tolerating standards-valid OOXML that serializes the
- * spreadsheetml elements with a namespace PREFIX (e.g. `<x:workbook>`,
- * `<x:worksheet>`, `<x:row>`). ExcelJS 4.x's reader is not namespace-aware and
- * returns an empty/undefined workbook for such files, so we first try a normal
- * read and, only if that yields no worksheets, normalize the prefixed elements
- * back to the default namespace (which ExcelJS expects) and reload.
+ * Normalize a single OOXML part for the fallback reader.
  *
- * This is a general reader-robustness fix — it is not source-specific and it
- * NEVER alters cell data: cell text is XML-escaped, so the `<x:`/`</x:` tag
- * sequences only ever appear as element markup, and only the spreadsheetml
- * namespace prefix is rewritten (the `r:` relationship prefix is preserved).
+ * The spreadsheetml element prefix is stripped ONLY when this part actually
+ * binds `x` to the spreadsheetml namespace (review fix P2) — an `x:` prefix
+ * bound to any other namespace is left untouched. Independently, references to
+ * the Excel "table" definitions (which the fallback removes as parts) are
+ * detached from worksheet tableParts, relationships, and content types.
+ *
+ * Cell data is never altered: cell text is XML-escaped, so the `<x:`/`</x:` tag
+ * sequences only ever appear as element markup, and the `r:` relationship
+ * prefix is preserved. Returns the (possibly unchanged) XML.
  */
-async function loadXlsxWorkbook(filePath: string): Promise<ExcelJS.Workbook> {
-  const workbook = new ExcelJS.Workbook();
-  try {
-    await workbook.xlsx.readFile(filePath);
-    if (workbook.worksheets.length > 0) return workbook;
-  } catch {
-    // Fall through to namespace normalization below.
-  }
-
-  const zip = await JSZip.loadAsync(await readFile(filePath));
-
-  // Drop Excel "table" definitions entirely. They are presentation metadata over
-  // cell ranges we already read directly (header + values), and ExcelJS's table
-  // reader throws on some writers' output. Removing them changes no cell data.
-  for (const name of Object.keys(zip.files)) {
-    if (/^xl\/tables\//.test(name)) zip.remove(name);
-  }
-
-  let changed = false;
-  for (const name of Object.keys(zip.files)) {
-    if (!name.endsWith(".xml") && !name.endsWith(".rels")) continue;
-    const before = await zip.files[name]!.async("string");
-    const after = before
-      // Normalize the spreadsheetml namespace prefix to the default namespace.
+export function normalizeOoxmlPartForFallback(xml: string): string {
+  let out = xml;
+  // P2: only rewrite the element prefix in parts that BIND `x` to spreadsheetml.
+  if (xml.includes(`xmlns:x="${SPREADSHEETML_NS}"`)) {
+    out = out
       .split(`xmlns:x="${SPREADSHEETML_NS}"`)
       .join(`xmlns="${SPREADSHEETML_NS}"`)
       .split("<x:")
       .join("<")
       .split("</x:")
-      .join("</")
-      // Detach the now-removed table definitions from worksheets, relationships,
-      // and content types so ExcelJS does not try to resolve them.
-      .replace(/<tableParts[\s\S]*?<\/tableParts>/g, "")
-      .replace(/<tableParts\b[^>]*\/>/g, "")
-      .replace(/<Override\b[^>]*tables\/[^>]*\/>/g, "")
-      .replace(/<Relationship\b[^>]*tables\/[^>]*\/>/g, "");
+      .join("</");
+  }
+  // Detach removed table definitions (scoped to the OOXML table refs only).
+  out = out
+    .replace(/<tableParts[\s\S]*?<\/tableParts>/g, "")
+    .replace(/<tableParts\b[^>]*\/>/g, "")
+    .replace(/<Override\b[^>]*tables\/[^>]*\/>/g, "")
+    .replace(/<Relationship\b[^>]*tables\/[^>]*\/>/g, "");
+  return out;
+}
+
+/** Build a loud parse error that retains the underlying cause (review fix P1). */
+function xlsxParseFailure(filePath: string, cause: unknown): Error {
+  const detail =
+    cause instanceof Error ? cause.message : cause != null ? String(cause) : "no worksheets found";
+  return new Error(`Unable to read workbook ${path.basename(filePath)}: ${detail}`, {
+    cause: cause ?? undefined,
+  });
+}
+
+/**
+ * Load an .xlsx workbook, tolerating standards-valid OOXML that ExcelJS 4.x
+ * cannot read directly: spreadsheetml elements serialized with a namespace
+ * PREFIX (`<x:workbook>`, `<x:worksheet>`, `<x:row>`…) and/or Excel "table"
+ * definitions its reader throws on. We first try a normal read; only if that
+ * fails or yields no worksheets do we normalize prefixed parts + strip table
+ * definitions and reload.
+ *
+ * A malformed/corrupt workbook must fail loudly (review fix P1): the original
+ * ExcelJS error is preserved and rethrown when the fallback has nothing
+ * applicable to change or cannot itself produce a non-empty workbook. This
+ * function never returns an empty workbook as success.
+ */
+async function loadXlsxWorkbook(filePath: string): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  let originalError: unknown = null;
+  try {
+    await workbook.xlsx.readFile(filePath);
+    if (workbook.worksheets.length > 0) return workbook;
+    // Read succeeded but produced no worksheets — try the fallback below, and
+    // fail loudly if it cannot recover a non-empty workbook.
+  } catch (err) {
+    originalError = err;
+  }
+
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(await readFile(filePath));
+  } catch (zipErr) {
+    // Not even a readable package: surface the real failure, not zero sheets.
+    throw xlsxParseFailure(filePath, originalError ?? zipErr);
+  }
+
+  // Drop Excel "table" definitions entirely. They are presentation metadata over
+  // cell ranges we already read directly (header + values), and ExcelJS's table
+  // reader throws on some writers' output. Removing them changes no cell data.
+  let changed = false;
+  for (const name of Object.keys(zip.files)) {
+    if (/^xl\/tables\//.test(name)) {
+      zip.remove(name);
+      changed = true;
+    }
+  }
+
+  for (const name of Object.keys(zip.files)) {
+    if (!name.endsWith(".xml") && !name.endsWith(".rels")) continue;
+    const before = await zip.files[name]!.async("string");
+    const after = normalizeOoxmlPartForFallback(before);
     if (after !== before) {
       zip.file(name, after);
       changed = true;
     }
   }
-  if (!changed) return workbook;
 
-  const normalized = new ExcelJS.Workbook();
-  const buffer = await zip.generateAsync({ type: "nodebuffer" });
-  await normalized.xlsx.load(buffer as unknown as Parameters<typeof normalized.xlsx.load>[0]);
+  // P1: if the fallback has nothing applicable to change, it cannot help — the
+  // workbook is genuinely unreadable, so rethrow rather than return zero sheets.
+  if (!changed) {
+    throw xlsxParseFailure(filePath, originalError);
+  }
+
+  let normalized: ExcelJS.Workbook;
+  try {
+    normalized = new ExcelJS.Workbook();
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    await normalized.xlsx.load(buffer as unknown as Parameters<typeof normalized.xlsx.load>[0]);
+  } catch (loadErr) {
+    throw xlsxParseFailure(filePath, originalError ?? loadErr);
+  }
+
+  // P1: a normalized workbook that still has zero worksheets is a failure.
+  if (normalized.worksheets.length === 0) {
+    throw xlsxParseFailure(filePath, originalError);
+  }
   return normalized;
 }
 

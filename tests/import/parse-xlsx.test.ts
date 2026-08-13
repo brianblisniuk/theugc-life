@@ -11,12 +11,18 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 
-import { inspectSource, readCanonicalSource } from "@/lib/import/parse";
+import {
+  SPREADSHEETML_NS,
+  inspectSource,
+  normalizeOoxmlPartForFallback,
+  readCanonicalSource,
+} from "@/lib/import/parse";
 
-const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const NS = SPREADSHEETML_NS;
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const PKG = "http://schemas.openxmlformats.org/package/2006/relationships";
 
@@ -117,8 +123,38 @@ async function writePrefixedXlsx(): Promise<string> {
   return file;
 }
 
+/** A normal, ExcelJS-written workbook (default namespace, no table defs). */
+async function writeNormalXlsx(): Promise<string> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("properties");
+  ws.addRow(["source_property_id", "property_name"]);
+  ws.addRow(["zzn-1", "ZZ Normal Hotel"]);
+  const dir = await mkdtemp(path.join(os.tmpdir(), "theugc-normal-"));
+  const file = path.join(dir, "normal.xlsx");
+  await wb.xlsx.writeFile(file);
+  return file;
+}
+
+/** A valid ZIP shaped like an .xlsx but with no parseable workbook and nothing
+ *  the fallback normalization can act on (no spreadsheetml binding, no tables). */
+async function writeUnparseableXlsx(): Promise<string> {
+  const zip = new JSZip();
+  zip.file(
+    "[Content_Types].xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+      `<Default Extension="xml" ContentType="application/xml"/></Types>`,
+  );
+  // Present but not a workbook ExcelJS can parse; no `xmlns:x` spreadsheetml bind.
+  zip.file("xl/notaworkbook.xml", `<?xml version="1.0"?><garbage/>`);
+  const dir = await mkdtemp(path.join(os.tmpdir(), "theugc-bad-"));
+  const file = path.join(dir, "corrupt.xlsx");
+  await writeFile(file, await zip.generateAsync({ type: "nodebuffer" }));
+  return file;
+}
+
 describe("namespace-prefixed OOXML reader robustness", () => {
-  it("inspects a prefixed workbook with table definitions", async () => {
+  it("P3.1: inspects a prefixed workbook with table definitions", async () => {
     const file = await writePrefixedXlsx();
     const inspection = await inspectSource(file);
     const props = inspection.sheets.find((s) => s.name.toLowerCase() === "properties");
@@ -128,11 +164,51 @@ describe("namespace-prefixed OOXML reader robustness", () => {
     expect(props!.rowCount).toBe(1);
   });
 
-  it("reads canonical rows from a prefixed workbook without altering data", async () => {
+  it("P3.1: reads canonical rows from a prefixed workbook without altering data", async () => {
     const file = await writePrefixedXlsx();
     const sheets = await readCanonicalSource({ file });
     expect(sheets.properties).toHaveLength(1);
     expect(sheets.properties[0]!.data.source_property_id).toBe("zzc-1");
     expect(sheets.properties[0]!.data.property_name).toBe("ZZ Prefixed Hotel");
+  });
+
+  it("P3.2: a normal ExcelJS-readable workbook parses unchanged via the normal path", async () => {
+    // A default-namespace workbook is read by ExcelJS directly (worksheets > 0),
+    // so the fallback never runs; the data must round-trip intact.
+    const file = await writeNormalXlsx();
+    const sheets = await readCanonicalSource({ file });
+    expect(sheets.properties).toHaveLength(1);
+    expect(sheets.properties[0]!.data.source_property_id).toBe("zzn-1");
+    expect(sheets.properties[0]!.data.property_name).toBe("ZZ Normal Hotel");
+  });
+
+  it("P3.3: an unparseable package with no applicable normalization throws (never zero sheets)", async () => {
+    const file = await writeUnparseableXlsx();
+    await expect(readCanonicalSource({ file })).rejects.toThrow(/Unable to read workbook/i);
+    await expect(inspectSource(file)).rejects.toThrow(/Unable to read workbook/i);
+  });
+});
+
+describe("P3.4 — scoped namespace rewrite (normalizeOoxmlPartForFallback)", () => {
+  it("strips the x: prefix only when the part binds x to spreadsheetml", () => {
+    const part = `<x:worksheet xmlns:x="${NS}"><x:sheetData><x:row/></x:sheetData></x:worksheet>`;
+    const out = normalizeOoxmlPartForFallback(part);
+    expect(out).toContain(`<worksheet xmlns="${NS}">`);
+    expect(out).not.toContain("<x:");
+    expect(out).not.toContain(`xmlns:x="${NS}"`);
+  });
+
+  it("leaves an x: prefix bound to an UNRELATED namespace untouched", () => {
+    const other = `<x:root xmlns:x="http://example.com/other"><x:node>keep me</x:node></x:root>`;
+    expect(normalizeOoxmlPartForFallback(other)).toBe(other);
+  });
+
+  it("detaches table references but not unrelated markup", () => {
+    const ws =
+      `<x:worksheet xmlns:x="${NS}"><x:sheetData/>` +
+      `<x:tableParts count="1"><x:tablePart r:id="rId1"/></x:tableParts></x:worksheet>`;
+    const out = normalizeOoxmlPartForFallback(ws);
+    expect(out).not.toContain("tableParts");
+    expect(out).toContain("<sheetData/>");
   });
 });
