@@ -13,9 +13,74 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import Papa from "papaparse";
 
 import type { RowKind } from "./contract";
+
+const SPREADSHEETML_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
+/**
+ * Load an .xlsx workbook, tolerating standards-valid OOXML that serializes the
+ * spreadsheetml elements with a namespace PREFIX (e.g. `<x:workbook>`,
+ * `<x:worksheet>`, `<x:row>`). ExcelJS 4.x's reader is not namespace-aware and
+ * returns an empty/undefined workbook for such files, so we first try a normal
+ * read and, only if that yields no worksheets, normalize the prefixed elements
+ * back to the default namespace (which ExcelJS expects) and reload.
+ *
+ * This is a general reader-robustness fix — it is not source-specific and it
+ * NEVER alters cell data: cell text is XML-escaped, so the `<x:`/`</x:` tag
+ * sequences only ever appear as element markup, and only the spreadsheetml
+ * namespace prefix is rewritten (the `r:` relationship prefix is preserved).
+ */
+async function loadXlsxWorkbook(filePath: string): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.readFile(filePath);
+    if (workbook.worksheets.length > 0) return workbook;
+  } catch {
+    // Fall through to namespace normalization below.
+  }
+
+  const zip = await JSZip.loadAsync(await readFile(filePath));
+
+  // Drop Excel "table" definitions entirely. They are presentation metadata over
+  // cell ranges we already read directly (header + values), and ExcelJS's table
+  // reader throws on some writers' output. Removing them changes no cell data.
+  for (const name of Object.keys(zip.files)) {
+    if (/^xl\/tables\//.test(name)) zip.remove(name);
+  }
+
+  let changed = false;
+  for (const name of Object.keys(zip.files)) {
+    if (!name.endsWith(".xml") && !name.endsWith(".rels")) continue;
+    const before = await zip.files[name]!.async("string");
+    const after = before
+      // Normalize the spreadsheetml namespace prefix to the default namespace.
+      .split(`xmlns:x="${SPREADSHEETML_NS}"`)
+      .join(`xmlns="${SPREADSHEETML_NS}"`)
+      .split("<x:")
+      .join("<")
+      .split("</x:")
+      .join("</")
+      // Detach the now-removed table definitions from worksheets, relationships,
+      // and content types so ExcelJS does not try to resolve them.
+      .replace(/<tableParts[\s\S]*?<\/tableParts>/g, "")
+      .replace(/<tableParts\b[^>]*\/>/g, "")
+      .replace(/<Override\b[^>]*tables\/[^>]*\/>/g, "")
+      .replace(/<Relationship\b[^>]*tables\/[^>]*\/>/g, "");
+    if (after !== before) {
+      zip.file(name, after);
+      changed = true;
+    }
+  }
+  if (!changed) return workbook;
+
+  const normalized = new ExcelJS.Workbook();
+  const buffer = await zip.generateAsync({ type: "nodebuffer" });
+  await normalized.xlsx.load(buffer as unknown as Parameters<typeof normalized.xlsx.load>[0]);
+  return normalized;
+}
 
 export interface RawRow {
   sheetName: string;
@@ -119,8 +184,7 @@ export async function readCanonicalSource(opts: CanonicalSourceOptions): Promise
   const empty: RawSheets = { properties: [], contacts: [], evidence: [] };
 
   if (ext === ".xlsx") {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(opts.file);
+    const workbook = await loadXlsxWorkbook(opts.file);
     const props = await readXlsxSheet(workbook, "properties");
     const contacts = await readXlsxSheet(workbook, "contacts");
     const evidence = await readXlsxSheet(workbook, "evidence");
@@ -154,8 +218,7 @@ export async function inspectSource(filePath: string): Promise<SourceInspection>
   const sheets: SourceInspection["sheets"] = [];
 
   if (ext === ".xlsx") {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
+    const workbook = await loadXlsxWorkbook(filePath);
     for (const ws of workbook.worksheets) {
       const parsed = await readXlsxSheet(workbook, ws.name.trim().toLowerCase());
       const key = ws.name.trim().toLowerCase();
