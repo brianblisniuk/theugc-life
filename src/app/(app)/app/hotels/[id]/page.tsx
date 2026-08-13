@@ -23,6 +23,7 @@ import { IntelligencePanel } from "@/components/hotels/intelligence-panel";
 import { LockedContactSection } from "@/components/hotels/locked-contact";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
+import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import {
   getHotelById,
@@ -76,6 +77,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
   const statusNote = ACTIVE_STATUS_LABEL[hotel.activeStatus];
+  const contactState = contactSectionState({ access, contacts, failed: contactsFailed });
 
   return (
     <div className="space-y-8">
@@ -134,41 +136,48 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
 
       {/* 2. Creator intelligence */}
       <Section title="Creator intelligence">
-        <IntelligencePanel intelligence={intelligence} />
+        <IntelligencePanel result={intelligence} />
       </Section>
 
       {/* 3. Premium contact */}
       <Section title="Hotel contact">
-        {access.canViewContacts ? (
-          contacts.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              {contacts.map((contact) => (
-                <ContactCard key={contact.id} contact={contact} />
-              ))}
-            </div>
-          ) : contactsFailed ? (
-            // A failed fetch must never be reported as "this hotel has no
-            // contact" — that would be a false product fact for a paying user.
-            <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-              <h3 className="text-base font-semibold text-text">
-                Contact details couldn’t be loaded
-              </h3>
-              <p className="mt-2 max-w-prose text-sm text-muted">
-                This is a temporary problem on our side, not a missing contact. Reload the page to
-                try again.
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-              <h3 className="text-base font-semibold text-text">No contact on file yet</h3>
-              <p className="mt-2 max-w-prose text-sm text-muted">
-                We haven’t published a verified contact for this hotel yet. It will appear here once
-                our editorial team verifies one.
-              </p>
-            </div>
-          )
-        ) : (
+        {contactState === "contacts" ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {contacts.map((contact) => (
+              <ContactCard key={contact.id} contact={contact} />
+            ))}
+          </div>
+        ) : contactState === "locked" ? (
           <LockedContactSection />
+        ) : contactState === "access-error" ? (
+          // The entitlement CHECK failed. We did not learn that this creator
+          // lacks access, so we must not imply it — no upgrade CTA here (F1).
+          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+            <h3 className="text-base font-semibold text-text">
+              Contact access couldn&rsquo;t be checked
+            </h3>
+            <p className="mt-2 max-w-prose text-sm text-muted">
+              We couldn&rsquo;t verify your access right now. Reload the page to try again.
+            </p>
+          </div>
+        ) : contactState === "fetch-error" ? (
+          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+            <h3 className="text-base font-semibold text-text">
+              Contact details couldn&rsquo;t be loaded
+            </h3>
+            <p className="mt-2 max-w-prose text-sm text-muted">
+              This is a temporary problem on our side, not a missing contact. Reload the page to try
+              again.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+            <h3 className="text-base font-semibold text-text">No contact on file yet</h3>
+            <p className="mt-2 max-w-prose text-sm text-muted">
+              We haven&rsquo;t published a verified contact for this hotel yet. It will appear here
+              once our editorial team verifies one.
+            </p>
+          </div>
         )}
       </Section>
 

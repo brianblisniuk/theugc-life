@@ -18,6 +18,36 @@ export interface IntelligenceSignal {
   recencyBand: string | null;
 }
 
+/**
+ * Outcome of loading a hotel's public intelligence.
+ *
+ * Product integrity rule: a TECHNICAL ERROR IS NOT A DOMAIN FACT. A failed
+ * query must never be reported as "not enough creator data" — that is a claim
+ * about the world, not about our backend.
+ */
+export type IntelligenceResult =
+  | { status: "ok"; signal: IntelligenceSignal }
+  /** The hotel genuinely has no intelligence row. */
+  | { status: "none" }
+  /** The query/view failed; we learned nothing about the hotel. */
+  | { status: "error" };
+
+/** Which intelligence UI state to render. */
+export type IntelligencePanelState = "signal" | "insufficient" | "error";
+
+/** Map a load outcome (plus the confidence gates) to a UI state. */
+export function intelligencePanelState(result: IntelligenceResult): IntelligencePanelState {
+  if (result.status === "error") return "error";
+  if (result.status === "none") return "insufficient";
+  return shouldShowInsufficientData(result.signal) ? "insufficient" : "signal";
+}
+
+/** Copy for the temporarily-unavailable state — never an absence claim. */
+export const INTELLIGENCE_ERROR_COPY = {
+  title: "Creator intelligence is temporarily unavailable",
+  description: "Reload the page to try again.",
+} as const;
+
 /** Copy for the insufficient-data state (DESIGN_SYSTEM.md §5). */
 export const INSUFFICIENT_INTELLIGENCE_COPY = {
   title: "Not enough creator data yet",

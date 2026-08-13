@@ -19,14 +19,23 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 
+import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./access";
 import { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS } from "./columns";
 import { DISCOVER_MAX_PAGE_SIZE, type DiscoverQuery } from "./filters";
 import { isUuid } from "./ids";
+import type { IntelligenceResult } from "./intelligence";
 
 export { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS, PREMIUM_CONTACT_FIELDS } from "./columns";
 export { isUuid } from "./ids";
+export type { ContactAccessResult } from "./access";
 
 const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, destination:destinations(id, name, slug, country_code)`;
+
+/**
+ * The Supabase client surface these queries use. Aliasing it lets tests inject
+ * a stand-in without loosening the production type.
+ */
+export type HotelQueryClient = Awaited<ReturnType<typeof createClient>>;
 
 /** Upper bound on destinations resolved for a free-text search. */
 const DESTINATION_MATCH_LIMIT = 200;
@@ -92,11 +101,6 @@ export interface HotelContact {
   status: string | null;
 }
 
-export interface HotelContactAccess {
-  /** True only when the database says this user may read premium contacts. */
-  canViewContacts: boolean;
-}
-
 /**
  * Coarse public intelligence (view `hotel_public_intelligence`). `null` means
  * there is no intelligence row for the hotel — an insufficient-data state, not
@@ -157,8 +161,12 @@ function mapHotel(row: RawHotel): HotelSummary {
  * never selects contact columns. Free-text matches hotel name or the name/slug
  * of the hotel's canonical destination.
  */
-export async function searchHotels(query: DiscoverQuery): Promise<HotelSearchResult> {
-  const supabase = await createClient();
+export async function searchHotels(
+  query: DiscoverQuery,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: HotelQueryClient,
+): Promise<HotelSearchResult> {
+  const supabase = injectedClient ?? (await createClient());
   const pageSize = Math.min(query.pageSize, DISCOVER_MAX_PAGE_SIZE);
   const page = Math.max(1, query.page);
   const from = (page - 1) * pageSize;
@@ -171,12 +179,17 @@ export async function searchHotels(query: DiscoverQuery): Promise<HotelSearchRes
     // finds hotels whose *destination* matches, not only hotel names. The cap
     // is deliberately far above the destination catalog's size and ordered, so
     // the id set is deterministic across pages of the same search.
-    const { data: destRows } = await supabase
+    const { data: destRows, error: destError } = await supabase
       .from("destinations")
       .select("id")
       .or(`name.ilike.%${query.q}%,slug.ilike.%${query.q}%`)
       .order("id", { ascending: true })
       .limit(DESTINATION_MATCH_LIMIT);
+
+    // A failed destination lookup would silently degrade this into a
+    // hotel-name-only search and report "no hotels match" — a false domain
+    // result. Fail loudly instead so Discover renders its recoverable error.
+    if (destError) throw new Error("hotel_search_failed:destination_lookup");
 
     const destIds = (destRows ?? []).map((d) => String((d as { id: string }).id));
     const orParts = [`name.ilike.%${query.q}%`];
@@ -232,13 +245,16 @@ export async function getHotelById(id: string): Promise<HotelSummary | null> {
 /**
  * Ask the database whether the current user may read this hotel's premium
  * contacts. Uses the self-scoped wrapper, which evaluates only for auth.uid().
+ *
+ * Returns a three-state result: a failed check is `error`, never `denied`, so
+ * a transient outage cannot tell a paying creator they lack access (F1).
  */
-export async function getHotelContactAccess(hotelId: string): Promise<HotelContactAccess> {
-  if (!isUuid(hotelId)) return { canViewContacts: false };
+export async function getHotelContactAccess(hotelId: string): Promise<ContactAccessResult> {
+  // A malformed id is a genuine denial, not an infrastructure failure.
+  if (!isUuid(hotelId)) return { status: "denied" };
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("has_premium_hotel_access", { hotel_id: hotelId });
-  if (error) return { canViewContacts: false };
-  return { canViewContacts: data === true };
+  return mapContactAccess({ data, error });
 }
 
 /**
@@ -248,9 +264,10 @@ export async function getHotelContactAccess(hotelId: string): Promise<HotelConta
  */
 export async function getHotelContactsIfAuthorized(
   hotelId: string,
-): Promise<{ access: HotelContactAccess; contacts: HotelContact[]; failed: boolean }> {
+): Promise<{ access: ContactAccessResult; contacts: HotelContact[]; failed: boolean }> {
   const access = await getHotelContactAccess(hotelId);
-  if (!access.canViewContacts) return { access, contacts: [], failed: false };
+  // Denied AND error both skip the query — security stays fail-closed.
+  if (!mayQueryContacts(access)) return { access, contacts: [], failed: false };
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -302,8 +319,9 @@ export async function getHotelContactsIfAuthorized(
  * hotel has no intelligence row — the caller must render an insufficient-data
  * state rather than zeroed metrics.
  */
-export async function getHotelIntelligence(hotelId: string): Promise<HotelIntelligence | null> {
-  if (!isUuid(hotelId)) return null;
+export async function getHotelIntelligence(hotelId: string): Promise<IntelligenceResult> {
+  // A malformed id has no intelligence row; that is a genuine absence.
+  if (!isUuid(hotelId)) return { status: "none" };
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hotel_public_intelligence")
@@ -313,13 +331,16 @@ export async function getHotelIntelligence(hotelId: string): Promise<HotelIntell
     .eq("hotel_id", hotelId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  // A failed query is NOT "no creator data" (F2).
+  if (error) return { status: "error" };
+  if (!data) return { status: "none" };
   const row = data as Record<string, unknown>;
-  return {
+  const signal: HotelIntelligence = {
     activityLevel: (row.activity_level as string | null) ?? null,
     confidenceLevel: (row.confidence_level as string | null) ?? null,
     replyRate: toNumber(row.reply_rate),
     hasConfirmedCollaboration: (row.has_confirmed_collaboration as boolean | null) ?? null,
     recencyBand: (row.recency_band as string | null) ?? null,
   };
+  return { status: "ok", signal };
 }
