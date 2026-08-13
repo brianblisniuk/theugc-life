@@ -15,6 +15,15 @@ import type { RowKind } from "./contract";
 
 const SAFE_METHODS = new Set(["exact_name_plus_destination", "canonical_url_plus_name"]);
 
+// Deterministic scope -> organization type (mirrors resolve.ts). Reconstructed
+// from scope, never from free-text review_note (review F5).
+const ORG_SCOPE_TO_TYPE: Record<string, string> = {
+  group: "hotel_group",
+  operator: "operator",
+  agency: "pr_agency",
+  brand: "hotel_group",
+};
+
 export interface BatchMeta {
   sourceName: string;
   sourceFileName: string | null;
@@ -303,15 +312,23 @@ export async function getBatchReportInput(client: Client, batchId: string): Prom
     if (!srcRow) continue;
     const key = rowKey(srcRow.sheet_name, srcRow.source_row_number);
     if (c.candidate_entity_type === "organization") {
-      orgCandidates.push({
-        name: c.review_note ?? "organization",
-        inferredType: String(c.review_note ?? "").split(":")[0] ?? "other",
-        scope: String(c.match_method).replace("org_scope:", ""),
-        sourcePropertyKey: srcRow.source_property_key ?? "",
-        sheetName: srcRow.sheet_name,
-        sourceRowNumber: srcRow.source_row_number,
-        reason: c.review_note ?? "",
-      });
+      // Identity comes ONLY from the persisted contact row's explicit
+      // normalized organizationName — never from review_note, contact person,
+      // email, or property key (review F5). Type is derived from scope.
+      const scope = String(c.match_method).replace("org_scope:", "");
+      const normalized = (srcRow.normalized_data ?? {}) as { organizationName?: string | null };
+      const orgName = normalized.organizationName ?? null;
+      if (orgName) {
+        orgCandidates.push({
+          name: orgName,
+          inferredType: ORG_SCOPE_TO_TYPE[scope] ?? "other",
+          scope,
+          sourcePropertyKey: srcRow.source_property_key ?? "",
+          sheetName: srcRow.sheet_name,
+          sourceRowNumber: srcRow.source_row_number,
+          reason: c.review_note ?? "",
+        });
+      }
       continue;
     }
     const pr = propertyResolutions.get(key);

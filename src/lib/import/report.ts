@@ -241,6 +241,8 @@ export function buildReport(input: ReportInput): BuiltReport {
           sourcePropertyKey: c.sourcePropertyKey,
           contactName: c.contactName,
           department: c.department,
+          contactScope: c.contactScope,
+          organizationName: c.organizationName,
           hasEmail: c.email !== null,
           generic: c.isGenericMailbox,
           verificationStatus: c.verificationStatus,

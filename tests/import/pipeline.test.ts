@@ -11,7 +11,11 @@ import path from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { loadExistingData } from "@/lib/import/db";
+import { readCanonicalSource } from "@/lib/import/parse";
 import { dryRunFile } from "@/lib/import/pipeline";
+import { resolveEntities } from "@/lib/import/resolve";
+import { stageRawSheets } from "@/lib/import/stage";
 
 import { hasTestDb, setupDatabase } from "../db/harness";
 
@@ -191,5 +195,72 @@ d("import DB backstops (review F3 / F4)", () => {
       [batchId],
     );
     expect(code).toBe("23505");
+  });
+});
+
+d("organization identity round-trip (review F5)", () => {
+  const PERSON = "Jane Roe";
+  const EMAIL = "jane.roe@prfirm.com";
+  const PROP_KEY = "pf5";
+  const ORG_NAME = "Example PR Agency";
+
+  const F5_PROPERTIES = [
+    "source_property_id,property_name,country_code,destination_name,source_url",
+    `${PROP_KEY},Seaside Resort,ID,Bali,https://a.com`,
+  ].join("\n");
+  const F5_CONTACTS = [
+    "source_property_id,contact_name,email,contact_scope,organization_name",
+    `${PROP_KEY},${PERSON},${EMAIL},agency,${ORG_NAME}`,
+  ].join("\n");
+
+  let f5: { properties: string; contacts: string };
+
+  beforeAll(async () => {
+    if (!hasTestDb) return;
+    const d5 = await mkdtemp(path.join(os.tmpdir(), "theugc-f5-"));
+    f5 = { properties: path.join(d5, "properties.csv"), contacts: path.join(d5, "contacts.csv") };
+    await writeFile(f5.properties, F5_PROPERTIES, "utf8");
+    await writeFile(f5.contacts, F5_CONTACTS, "utf8");
+  });
+
+  it("preserves the exact explicit organizationName across persist → reload → report", async () => {
+    // In-memory resolution (immediately after staging).
+    const sheets = await readCanonicalSource({ file: f5.properties, contacts: f5.contacts });
+    const staged = stageRawSheets(sheets);
+    const inMemory = resolveEntities(staged.rows, await loadExistingData(client));
+    expect(inMemory.organizationCandidates).toHaveLength(1);
+    expect(inMemory.organizationCandidates[0]!.name).toBe(ORG_NAME);
+
+    // Persisted → reloaded via getBatchReportInput (inside dryRunFile).
+    const dry = await dryRunFile(client, {
+      file: f5.properties,
+      contacts: f5.contacts,
+      sourceName: "f5-roundtrip",
+    });
+    const reloaded = dry.report.json.organizationCandidates as {
+      name: string;
+      inferredType: string;
+      scope: string;
+      reason: string;
+    }[];
+
+    expect(reloaded).toHaveLength(1);
+    const org = reloaded[0]!;
+
+    // Exact explicit identity preserved.
+    expect(org.name).toBe(ORG_NAME);
+
+    // Identity is NOT any of the forbidden sources.
+    expect(org.name).not.toBe(PERSON);
+    expect(org.name).not.toBe(EMAIL);
+    expect(org.name).not.toBe(PROP_KEY);
+    expect(org.name).not.toBe(org.inferredType); // not "pr_agency"
+    expect(org.name).not.toBe(org.reason); // review_note is explanation only
+
+    // In-memory and persisted/reloaded identities agree.
+    expect(org.name).toBe(inMemory.organizationCandidates[0]!.name);
+
+    // review_note remains explanation, and does not contain the org name.
+    expect(org.reason).not.toContain(ORG_NAME);
   });
 });
