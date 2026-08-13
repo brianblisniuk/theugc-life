@@ -8,8 +8,10 @@ function Block({ className = "" }: { className?: string }) {
 
 export default function Loading() {
   return (
-    <div className="space-y-8" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Loading hotel…</span>
+    <div className="space-y-8" aria-busy="true">
+      <span role="status" aria-live="polite" className="sr-only">
+        Loading hotel…
+      </span>
 
       <div className="space-y-3">
         <Block className="h-4 w-32" />

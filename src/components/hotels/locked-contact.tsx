@@ -21,27 +21,25 @@ export function LockedField({ label }: { label: string }) {
   );
 }
 
-export function LockedContactSection({ destinationName }: { destinationName: string | null }) {
-  const passLabel = destinationName ? `${destinationName} Destination Pass` : "a Destination Pass";
-
+export function LockedContactSection() {
   return (
     <div className="space-y-4 rounded-[var(--radius-app)] border border-border bg-surface p-6">
       <div className="space-y-1">
         <h3 className="text-base font-semibold text-text">Verified hotel contact</h3>
         <p className="max-w-prose text-sm text-muted">
           Contact details for this hotel are researched and verified by our editorial team. Unlock
-          them with {passLabel} or Creator Pro.
+          them with a Destination Pass covering this area, or Creator Pro.
         </p>
       </div>
 
-      <div className="space-y-2">
-        <LockedField label="Name" />
+      <div className="space-y-2" aria-hidden="true">
+        <LockedField label="Contact" />
         <LockedField label="Email" />
-        <LockedField label="Phone" />
-        <p className="sr-only">
-          Contact details are locked. Upgrade to a Destination Pass or Creator Pro to view them.
-        </p>
+        <LockedField label="Phone, where available" />
       </div>
+      <p className="sr-only">
+        Contact details are locked. Upgrade to a Destination Pass or Creator Pro to view them.
+      </p>
 
       <Link
         href="/app/billing"

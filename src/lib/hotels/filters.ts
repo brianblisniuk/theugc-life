@@ -57,7 +57,9 @@ function first(value: string | string[] | undefined): string | null {
 export function sanitizeSearchTerm(raw: string | null | undefined): string | null {
   if (typeof raw !== "string") return null;
   const cleaned = raw
-    .replace(/[(),*%\\"']/g, " ")
+    // `%` and `_` are ILIKE wildcards; `(),*\\"'` carry meaning in a
+    // PostgREST or=(...) filter. Strip them so a term is matched literally.
+    .replace(/[(),*%_\\"']/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, MAX_SEARCH_LENGTH);
@@ -107,6 +109,11 @@ export function buildDiscoverHref(query: Partial<DiscoverQuery>): string {
   if (query.minStars) sp.set("stars", String(query.minStars));
   if (query.verification) sp.set("verified", query.verification);
   if (query.page && query.page > 1) sp.set("page", String(query.page));
+  // Preserve a non-default page size, otherwise paging would silently change
+  // the window and skip or repeat rows.
+  if (query.pageSize && query.pageSize !== DISCOVER_PAGE_SIZE) {
+    sp.set("pageSize", String(query.pageSize));
+  }
   const qs = sp.toString();
   return qs ? `/app/discover?${qs}` : "/app/discover";
 }

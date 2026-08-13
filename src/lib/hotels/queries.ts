@@ -28,6 +28,24 @@ export { isUuid } from "./ids";
 
 const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, destination:destinations(id, name, slug, country_code)`;
 
+/** Upper bound on destinations resolved for a free-text search. */
+const DESTINATION_MATCH_LIMIT = 200;
+
+/**
+ * Contact lifecycle states that must not be shown as a current contact:
+ * `replaced` (superseded by a newer row) and `invalid` (known bad).
+ */
+const RETIRED_CONTACT_STATUSES = new Set(["replaced", "invalid"]);
+
+/** Display priority — most trustworthy contact first. */
+const VERIFICATION_RANK: Record<string, number> = {
+  verified: 0,
+  probable: 1,
+  unverified: 2,
+  inferred: 3,
+  invalid: 4,
+};
+
 export interface HotelDestination {
   id: string;
   name: string;
@@ -150,12 +168,15 @@ export async function searchHotels(query: DiscoverQuery): Promise<HotelSearchRes
 
   if (query.q) {
     // Resolve destinations matching the term first, so a search for "Dubai"
-    // finds hotels whose *destination* matches, not only hotel names.
+    // finds hotels whose *destination* matches, not only hotel names. The cap
+    // is deliberately far above the destination catalog's size and ordered, so
+    // the id set is deterministic across pages of the same search.
     const { data: destRows } = await supabase
       .from("destinations")
       .select("id")
       .or(`name.ilike.%${query.q}%,slug.ilike.%${query.q}%`)
-      .limit(DISCOVER_MAX_PAGE_SIZE);
+      .order("id", { ascending: true })
+      .limit(DESTINATION_MATCH_LIMIT);
 
     const destIds = (destRows ?? []).map((d) => String((d as { id: string }).id));
     const orParts = [`name.ilike.%${query.q}%`];
@@ -167,7 +188,12 @@ export async function searchHotels(query: DiscoverQuery): Promise<HotelSearchRes
   if (query.minStars !== null) builder = builder.gte("star_rating", query.minStars);
   if (query.verification) builder = builder.eq("editorial_verification_status", query.verification);
 
-  const { data, error, count } = await builder.order("name", { ascending: true }).range(from, to);
+  // `id` is a stable tiebreaker: without it, hotels sharing a name could be
+  // duplicated or skipped across page boundaries.
+  const { data, error, count } = await builder
+    .order("name", { ascending: true })
+    .order("id", { ascending: true })
+    .range(from, to);
 
   if (error) throw new Error(`hotel_search_failed:${error.code ?? "unknown"}`);
 
@@ -182,7 +208,14 @@ export async function searchHotels(query: DiscoverQuery): Promise<HotelSearchRes
   };
 }
 
-/** Fetch one hotel by UUID. Returns null for a malformed or unknown id. */
+/**
+ * Fetch one hotel by UUID.
+ *
+ * Returns null ONLY when the id is malformed or the hotel genuinely does not
+ * exist (the caller renders not-found). A transport/query failure throws, so a
+ * transient outage surfaces as an error boundary rather than telling the user
+ * the hotel does not exist.
+ */
 export async function getHotelById(id: string): Promise<HotelSummary | null> {
   if (!isUuid(id)) return null;
   const supabase = await createClient();
@@ -191,7 +224,8 @@ export async function getHotelById(id: string): Promise<HotelSummary | null> {
     .select(HOTEL_SELECT)
     .eq("id", id)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) throw new Error(`hotel_fetch_failed:${error.code ?? "unknown"}`);
+  if (!data) return null;
   return mapHotel(data as unknown as RawHotel);
 }
 
@@ -214,40 +248,52 @@ export async function getHotelContactAccess(hotelId: string): Promise<HotelConta
  */
 export async function getHotelContactsIfAuthorized(
   hotelId: string,
-): Promise<{ access: HotelContactAccess; contacts: HotelContact[] }> {
+): Promise<{ access: HotelContactAccess; contacts: HotelContact[]; failed: boolean }> {
   const access = await getHotelContactAccess(hotelId);
-  if (!access.canViewContacts) return { access, contacts: [] };
+  if (!access.canViewContacts) return { access, contacts: [], failed: false };
 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hotel_contacts")
     .select(HOTEL_CONTACT_COLUMNS.join(", "))
-    .eq("hotel_id", hotelId)
-    .order("verification_status", { ascending: true });
+    .eq("hotel_id", hotelId);
 
-  if (error) return { access, contacts: [] };
+  // A failed fetch is NOT "this hotel has no contact" — the caller must be able
+  // to tell the difference so an entitled user is never told data is absent.
+  if (error) return { access, contacts: [], failed: true };
 
-  const contacts = (data ?? []).map((raw) => {
-    const row = raw as unknown as Record<string, unknown>;
-    const display =
-      (row.display_name as string | null) ??
-      [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
-    return {
-      id: String(row.id),
-      displayName: display ? String(display) : null,
-      jobTitle: (row.job_title as string | null) ?? null,
-      department: (row.department as string | null) ?? null,
-      email: (row.email as string | null) ?? null,
-      phone: (row.phone as string | null) ?? null,
-      linkedinUrl: (row.linkedin_url as string | null) ?? null,
-      organizationName: (row.organization_name as string | null) ?? null,
-      verificationStatus: (row.verification_status as string | null) ?? null,
-      verifiedAt: (row.verified_at as string | null) ?? null,
-      status: (row.status as string | null) ?? null,
-    } satisfies HotelContact;
-  });
+  const contacts = (data ?? [])
+    .map((raw) => {
+      const row = raw as unknown as Record<string, unknown>;
+      const display =
+        (row.display_name as string | null) ??
+        [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
+      return {
+        id: String(row.id),
+        displayName: display ? String(display) : null,
+        jobTitle: (row.job_title as string | null) ?? null,
+        department: (row.department as string | null) ?? null,
+        email: (row.email as string | null) ?? null,
+        phone: (row.phone as string | null) ?? null,
+        linkedinUrl: (row.linkedin_url as string | null) ?? null,
+        organizationName: (row.organization_name as string | null) ?? null,
+        verificationStatus: (row.verification_status as string | null) ?? null,
+        verifiedAt: (row.verified_at as string | null) ?? null,
+        status: (row.status as string | null) ?? null,
+      } satisfies HotelContact;
+    })
+    // Never present a superseded or known-bad contact as current.
+    .filter((c) => !RETIRED_CONTACT_STATUSES.has(c.status ?? ""))
+    .filter((c) => c.verificationStatus !== "invalid")
+    // Most trustworthy first. (Sorting in SQL would order the status text
+    // alphabetically, which puts `inferred` above `verified`.)
+    .sort(
+      (a, b) =>
+        (VERIFICATION_RANK[a.verificationStatus ?? ""] ?? 9) -
+        (VERIFICATION_RANK[b.verificationStatus ?? ""] ?? 9),
+    );
 
-  return { access, contacts };
+  return { access, contacts, failed: false };
 }
 
 /**

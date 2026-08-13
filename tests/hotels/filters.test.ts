@@ -80,6 +80,14 @@ describe("sanitizeSearchTerm", () => {
     expect((sanitizeSearchTerm("a".repeat(500)) ?? "").length).toBe(80);
   });
 
+  it("strips ILIKE wildcards so a term matches literally", () => {
+    // `_` matches any single char in ILIKE; leaving it in would silently widen
+    // the search (e.g. "W_Hotel" also matching "WxHotel").
+    expect(sanitizeSearchTerm("W_Hotel")).toBe("W Hotel");
+    expect(sanitizeSearchTerm("zz_dubai")).toBe("zz dubai");
+    expect(sanitizeSearchTerm("100%")).toBe("100");
+  });
+
   it("returns null for empty or non-string input", () => {
     expect(sanitizeSearchTerm("   ")).toBeNull();
     expect(sanitizeSearchTerm(null)).toBeNull();
@@ -97,6 +105,15 @@ describe("buildDiscoverHref", () => {
       "/app/discover?type=resort&stars=5",
     );
     expect(buildDiscoverHref({ page: 2 })).toBe("/app/discover?page=2");
+  });
+
+  it("preserves a non-default page size so paging cannot skip rows", () => {
+    // Dropping pageSize would make page 2 use the default window and either
+    // repeat or strand results.
+    expect(buildDiscoverHref({ page: 2, pageSize: 50 })).toBe("/app/discover?page=2&pageSize=50");
+    expect(buildDiscoverHref({ page: 2, pageSize: DISCOVER_PAGE_SIZE })).toBe(
+      "/app/discover?page=2",
+    );
   });
 
   it("round-trips through parseDiscoverQuery", () => {

@@ -27,13 +27,16 @@ import { searchHotels, type HotelSearchResult } from "@/lib/hotels/queries";
 export const metadata: Metadata = { title: "Discover" };
 
 function ResultsSummary({ result }: { result: HotelSearchResult }) {
-  const total = result.total;
   const shown = result.hotels.length;
+  const firstIndex = (result.page - 1) * result.pageSize + 1;
+  const lastIndex = firstIndex + shown - 1;
   return (
     <p className="text-sm text-muted" role="status" aria-live="polite">
-      {total === null
+      {result.total === null
         ? `Showing ${shown} hotel${shown === 1 ? "" : "s"}`
-        : `Showing ${shown} of ${total} hotel${total === 1 ? "" : "s"}`}
+        : `Showing ${firstIndex}\u2013${lastIndex} of ${result.total} hotel${
+            result.total === 1 ? "" : "s"
+          }`}
     </p>
   );
 }
@@ -63,8 +66,7 @@ export default async function DiscoverPage({
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold text-text">Discover</h1>
         <p className="max-w-prose text-sm text-muted">
-          Find editorially verified hotels worth pitching, then open a hotel to see contact and
-          collaboration details.
+          Search the hotels we track, then open one to see its editorial status and contact details.
         </p>
       </header>
 
@@ -84,6 +86,7 @@ export default async function DiscoverPage({
         </EmptyState>
       ) : result && result.hotels.length > 0 ? (
         <div className="space-y-4">
+          <h2 className="sr-only">Hotel results</h2>
           <ResultsSummary result={result} />
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {result.hotels.map((hotel) => (
@@ -119,6 +122,18 @@ export default async function DiscoverPage({
             </nav>
           )}
         </div>
+      ) : query.page > 1 ? (
+        <EmptyState
+          title="Nothing on this page"
+          description="You may have gone past the last page of results."
+        >
+          <Link
+            href={buildDiscoverHref({ ...query, page: 1 })}
+            className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
+          >
+            Back to first page
+          </Link>
+        </EmptyState>
       ) : filtersActive ? (
         <EmptyState
           title="No hotels match these filters."

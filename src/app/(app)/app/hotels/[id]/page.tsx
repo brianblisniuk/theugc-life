@@ -11,6 +11,7 @@
  *
  * Internal import/provenance fields are never surfaced here.
  */
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -29,7 +30,22 @@ import {
   getHotelIntelligence,
 } from "@/lib/hotels/queries";
 
-export const metadata: Metadata = { title: "Hotel" };
+/** Deduped per request so metadata and the page share one fetch. */
+const loadHotel = cache(getHotelById);
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  try {
+    const hotel = await loadHotel(id);
+    return { title: hotel?.name ?? "Hotel not found" };
+  } catch {
+    return { title: "Hotel" };
+  }
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -48,11 +64,11 @@ const ACTIVE_STATUS_LABEL: Record<string, string> = {
 export default async function HotelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const hotel = await getHotelById(id);
+  const hotel = await loadHotel(id);
   if (!hotel) notFound();
 
   // Access is resolved first; contacts are only fetched when authorized.
-  const [{ access, contacts }, intelligence] = await Promise.all([
+  const [{ access, contacts, failed: contactsFailed }, intelligence] = await Promise.all([
     getHotelContactsIfAuthorized(hotel.id),
     getHotelIntelligence(hotel.id),
   ]);
@@ -130,6 +146,18 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
                 <ContactCard key={contact.id} contact={contact} />
               ))}
             </div>
+          ) : contactsFailed ? (
+            // A failed fetch must never be reported as "this hotel has no
+            // contact" — that would be a false product fact for a paying user.
+            <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+              <h3 className="text-base font-semibold text-text">
+                Contact details couldn’t be loaded
+              </h3>
+              <p className="mt-2 max-w-prose text-sm text-muted">
+                This is a temporary problem on our side, not a missing contact. Reload the page to
+                try again.
+              </p>
+            </div>
           ) : (
             <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
               <h3 className="text-base font-semibold text-text">No contact on file yet</h3>
@@ -140,7 +168,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
             </div>
           )
         ) : (
-          <LockedContactSection destinationName={hotel.destination?.name ?? null} />
+          <LockedContactSection />
         )}
       </Section>
 

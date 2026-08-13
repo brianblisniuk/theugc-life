@@ -11,10 +11,10 @@ export function ActivityPanel() {
   return (
     <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6">
       <div className="space-y-1">
-        <h3 className="text-base font-semibold text-text">Not saved yet</h3>
+        <h3 className="text-base font-semibold text-text">Your private workspace</h3>
         <p className="max-w-prose text-sm text-muted">
-          Your private notes, outreach status, and follow-up reminders for this hotel will live
-          here. Only you can see them.
+          Your notes, outreach status, and follow-up reminders for this hotel will live here. Only
+          you can see them.
         </p>
       </div>
 

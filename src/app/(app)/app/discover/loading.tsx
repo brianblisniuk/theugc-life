@@ -15,8 +15,10 @@ function CardSkeleton() {
 
 export default function Loading() {
   return (
-    <div className="space-y-6" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Loading hotels…</span>
+    <div className="space-y-6" aria-busy="true">
+      <span role="status" aria-live="polite" className="sr-only">
+        Loading hotels…
+      </span>
       <div className="space-y-1">
         <div className="h-7 w-40 rounded-[var(--radius-app)] bg-border" />
         <div className="h-4 w-80 max-w-full rounded-[var(--radius-app)] bg-border" />

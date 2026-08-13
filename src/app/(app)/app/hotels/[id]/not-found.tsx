@@ -7,7 +7,7 @@ import Link from "next/link";
 
 export default function HotelNotFound() {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
       <h1 className="text-xl font-semibold text-text">Hotel not found</h1>
       <p className="max-w-sm text-sm text-muted">
         This hotel doesn’t exist or may have been removed from the catalog.

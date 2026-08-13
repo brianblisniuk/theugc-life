@@ -13,6 +13,12 @@ import { VerificationBadge } from "@/components/hotels/verification-badge";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import type { HotelSummary } from "@/lib/hotels/queries";
 
+/** Only non-operating states are surfaced; "active"/"unknown" need no chip. */
+const CLOSED_LABEL: Record<string, string> = {
+  temporarily_closed: "Temporarily closed",
+  closed: "Closed",
+};
+
 export function HotelCard({ hotel }: { hotel: HotelSummary }) {
   const href = `/app/hotels/${hotel.id}`;
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
@@ -36,6 +42,11 @@ export function HotelCard({ hotel }: { hotel: HotelSummary }) {
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <VerificationBadge status={hotel.verificationStatus} />
+          {CLOSED_LABEL[hotel.activeStatus] ? (
+            <span className="rounded-[var(--radius-app)] border border-warning/50 px-2 py-0.5 text-xs font-medium text-text">
+              {CLOSED_LABEL[hotel.activeStatus]}
+            </span>
+          ) : null}
           {hotel.websiteUrl ? <span className="text-xs text-muted">Website on file</span> : null}
         </div>
       </div>
