@@ -23,6 +23,7 @@ Required:
 - `source_url` — URL supporting that the property exists or the researched fact
 
 Strongly preferred:
+- `destination_slug` — the canonical destination slug (DESTINATION_CATALOG.md §3). SHOULD be supplied when the research targets an already-approved canonical destination; it is the preferred deterministic destination identity. Legacy adapters may leave it null. The importer never invents a slug from ambiguous free text.
 - `city`
 - `region`
 - `address`
@@ -182,7 +183,7 @@ Preferred interchange format: UTF-8 CSV or XLSX with one `properties` sheet and 
 
 ### `properties` sheet
 
-`source_property_id, property_name, brand_name, hotel_type, star_rating, country_code, region, city, destination_name, parent_destination_name, address, latitude, longitude, website_url, instagram_url, source_url, notes`
+`source_property_id, property_name, brand_name, hotel_type, star_rating, country_code, region, city, destination_name, destination_slug, parent_destination_name, address, latitude, longitude, website_url, instagram_url, source_url, notes`
 
 ### `contacts` sheet
 

@@ -127,13 +127,22 @@ d("standard importer dry-run", () => {
   });
 
   it("promotes NOTHING to canonical hotel/contact tables", async () => {
-    // Only the single seeded hotel exists; import created no new hotels/contacts.
-    const hotels = await client.query<{ n: string }>("select count(*)::text n from public.hotels");
-    const contacts = await client.query<{ n: string }>(
-      "select count(*)::text n from public.hotel_contacts",
+    // Dry-run/staging never creates canonical hotels/contacts for its staged
+    // properties. Scoped to this batch's data so it is robust to other suites
+    // that legitimately promote in the shared test database.
+    const newHotels = await client.query<{ n: string }>(
+      "select count(*)::text n from public.hotels where name in ('Unknown Place Hotel','No Contact Hotel')",
     );
-    expect(Number(hotels.rows[0]!.n)).toBe(1);
-    expect(Number(contacts.rows[0]!.n)).toBe(0);
+    const stagedContacts = await client.query<{ n: string }>(
+      "select count(*)::text n from public.hotel_contacts where email in ('jane.doe@pipe-alila.com','info@unknown.com')",
+    );
+    expect(Number(newHotels.rows[0]!.n)).toBe(0);
+    expect(Number(stagedContacts.rows[0]!.n)).toBe(0);
+    // The seeded hotel was not duplicated.
+    const seeded = await client.query<{ n: string }>(
+      "select count(*)::text n from public.hotels where slug = 'pipe-alila'",
+    );
+    expect(Number(seeded.rows[0]!.n)).toBe(1);
   });
 
   it("seeds NO creator intelligence (D027): events/metrics remain empty", async () => {

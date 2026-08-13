@@ -13,6 +13,7 @@
  */
 import { foldForMatch } from "./normalize";
 import type { ContactRecord, PropertyRecord } from "./contract";
+import { resolveDestination as resolveDestinationCatalog, type CatalogAlias } from "./destination";
 import type { StagedRow } from "./stage";
 
 export interface ExistingHotel {
@@ -37,6 +38,8 @@ export interface ExistingDestination {
 export interface ExistingData {
   hotels: ExistingHotel[];
   destinations: ExistingDestination[];
+  /** Active destination aliases (Sprint 1B). Optional for legacy callers. */
+  aliases?: CatalogAlias[];
 }
 
 export interface MatchCandidate {
@@ -135,24 +138,19 @@ function isRootUrl(url: string | null): boolean {
 
 function resolveDestination(
   property: PropertyRecord,
-  destinations: ExistingDestination[],
+  existing: ExistingData,
 ): { id: string | null; method: string | null } {
-  const target = property.destinationName ? foldForMatch(property.destinationName) : null;
-  if (!target) return { id: null, method: null };
-
-  const country = property.countryCode;
-  // Exact fold match on destination name, preferring a country match.
-  const exact = destinations.filter((d) => d.nameFold === target);
-  if (exact.length === 1) {
-    return { id: exact[0]!.id, method: "exact_destination_name" };
-  }
-  if (exact.length > 1 && country) {
-    const byCountry = exact.filter((d) => d.countryCode === country);
-    if (byCountry.length === 1) {
-      return { id: byCountry[0]!.id, method: "exact_destination_name_and_country" };
-    }
-  }
-  return { id: null, method: null };
+  // Single deterministic resolver (DESTINATION_CATALOG.md §5): slug → alias+
+  // country → name+country → unresolved. No fuzzy geography.
+  const res = resolveDestinationCatalog(
+    {
+      slug: property.destinationSlug,
+      name: property.destinationName,
+      countryCode: property.countryCode,
+    },
+    { destinations: existing.destinations, aliases: existing.aliases ?? [] },
+  );
+  return { id: res.destinationId, method: res.method };
 }
 
 /** Resolve one property against existing entities. */
@@ -162,7 +160,7 @@ function resolveProperty(
   existing: ExistingData,
   chainHosts: Set<string>,
 ): PropertyResolution {
-  const dest = resolveDestination(property, existing.destinations);
+  const dest = resolveDestination(property, existing);
   const candidates: MatchCandidate[] = [];
 
   for (const hotel of existing.hotels) {

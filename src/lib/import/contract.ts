@@ -113,6 +113,13 @@ export const propertyRecordSchema = z.object({
   region: z.string().nullable(),
   city: z.string().nullable(),
   destinationName: z.string().nullable(),
+  /**
+   * Preferred deterministic destination identity (DESTINATION_CATALOG.md §3).
+   * Supplied by clean research when the canonical destination already exists;
+   * legacy adapters leave it null. The importer never invents a slug from
+   * ambiguous free text.
+   */
+  destinationSlug: z.string().nullable(),
   parentDestinationName: z.string().nullable(),
   address: z.string().nullable(),
   latitude: z.number().nullable(),

@@ -1,0 +1,518 @@
+/**
+ * Canonical promotion + review tests (CANONICAL_PROMOTION_SPEC.md §17 + Sprint
+ * 1B prompt extras). Synthetic invented data only. DB-gated.
+ *
+ * import_rows are crafted directly (normalized_data JSON) to exercise the
+ * promotion/review logic precisely. Property reviews are written via
+ * import_property_reviews. Every test isolates its own batch + keys.
+ */
+import { Client } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { promoteBatch } from "@/lib/import/promote";
+
+import { hasTestDb, setupDatabase } from "../db/harness";
+
+const d = describe.skipIf(!hasTestDb);
+
+const DEST_ID = "b0000000-0000-0000-0000-0000000000d1";
+
+let client: Client;
+const rowCounters = new Map<string, number>();
+
+function nextRow(batchId: string): number {
+  const n = (rowCounters.get(batchId) ?? 0) + 1;
+  rowCounters.set(batchId, n);
+  return n;
+}
+
+async function mkBatch(name: string): Promise<string> {
+  const r = await client.query<{ id: string }>(
+    `insert into public.import_batches (source_name, source_kind, parser_name, parser_version, status)
+       values ($1,'canonical','canonical-standard','1.0.0','review_required') returning id`,
+    [name],
+  );
+  return r.rows[0]!.id;
+}
+
+function propRecord(o: Record<string, unknown> & { key: string; propertyName: string }) {
+  return {
+    sourcePropertyKey: o.key,
+    propertyName: o.propertyName,
+    brandName: o.brandName ?? null,
+    hotelType: o.hotelType ?? "hotel",
+    starRating: o.starRating ?? null,
+    countryCode: o.countryCode ?? "ID",
+    region: null,
+    city: null,
+    destinationName: o.destinationName ?? null,
+    destinationSlug: o.destinationSlug ?? null,
+    parentDestinationName: null,
+    address: o.address ?? null,
+    latitude: o.latitude ?? null,
+    longitude: o.longitude ?? null,
+    websiteUrl: o.websiteUrl ?? null,
+    websiteHost: o.websiteHost ?? null,
+    instagramUrl: o.instagramUrl ?? null,
+    sourceUrl: o.sourceUrl ?? "https://src.example",
+    nameMatchKey: "",
+    notes: null,
+  };
+}
+
+function contactRecord(o: Record<string, unknown> & { key: string }) {
+  return {
+    sourcePropertyKey: o.key,
+    contactName: o.contactName ?? null,
+    jobTitle: o.jobTitle ?? null,
+    department: o.department ?? null,
+    email: o.email ?? null,
+    isGenericMailbox: o.generic ?? false,
+    phone: o.phone ?? null,
+    linkedinUrl: o.linkedinUrl ?? null,
+    contactScope: o.contactScope ?? null,
+    organizationName: o.organizationName ?? null,
+    verificationStatus: o.verificationStatus ?? "unverified",
+    sourceUrl: o.sourceUrl ?? null,
+    verifiedAt: o.verifiedAt ?? null,
+    notes: null,
+  };
+}
+
+function evidenceRecord(o: Record<string, unknown> & { key: string }) {
+  return {
+    sourcePropertyKey: o.key,
+    claimType: o.claimType ?? "property_exists",
+    sourceType: o.sourceType ?? "research_compilation",
+    sourceUrl: o.sourceUrl ?? "https://e.example",
+    verificationStatus: o.verificationStatus ?? "probable",
+    observedAt: o.observedAt ?? null,
+    notes: null,
+  };
+}
+
+async function addRow(
+  batchId: string,
+  kind: "property" | "contact" | "evidence",
+  key: string,
+  normalized: object,
+  status = "valid",
+): Promise<string> {
+  const n = nextRow(batchId);
+  const r = await client.query<{ id: string }>(
+    `insert into public.import_rows
+       (import_batch_id, sheet_name, source_row_number, row_kind, source_property_key,
+        raw_data, raw_fingerprint, normalized_data, validation_status)
+     values ($1,$2,$3,$4,$5,'{}',$6,$7,$8) returning id`,
+    [batchId, `${kind}s`, n, kind, key, `fp-${batchId}-${n}`, JSON.stringify(normalized), status],
+  );
+  return r.rows[0]!.id;
+}
+
+async function review(
+  batchId: string,
+  key: string,
+  decision: string,
+  opts: { targetHotelId?: string; destinationId?: string } = {},
+) {
+  await client.query(
+    `insert into public.import_property_reviews
+       (import_batch_id, source_property_key, decision, target_hotel_id, destination_id, reviewer_label)
+     values ($1,$2,$3,$4,$5,'tester')`,
+    [batchId, key, decision, opts.targetHotelId ?? null, opts.destinationId ?? null],
+  );
+}
+
+async function childReview(importRowId: string, decision: string) {
+  await client.query(
+    `insert into public.import_row_reviews (import_row_id, decision, reviewer_label)
+       values ($1,$2,'tester')`,
+    [importRowId, decision],
+  );
+}
+
+async function count(sql: string, params: unknown[] = []): Promise<number> {
+  const r = await client.query<{ n: string }>(`select count(*)::text n from ${sql}`, params);
+  return Number(r.rows[0]!.n);
+}
+
+async function mkHotel(
+  name: string,
+  slug: string,
+  extra: Record<string, unknown> = {},
+): Promise<string> {
+  const cols = ["name", "slug", "destination_id", ...Object.keys(extra)];
+  const vals = [name, slug, DEST_ID, ...Object.values(extra)];
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+  const r = await client.query<{ id: string }>(
+    `insert into public.hotels (${cols.join(",")}) values (${placeholders}) returning id`,
+    vals,
+  );
+  return r.rows[0]!.id;
+}
+
+beforeAll(async () => {
+  if (!hasTestDb) return;
+  await setupDatabase();
+  client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+  await client.connect();
+  await client.query(
+    `insert into public.destinations (id, name, slug, type, country_code)
+       values ($1,'ZZP Dest','zzp-dest','city','ID')`,
+    [DEST_ID],
+  );
+});
+
+afterAll(async () => {
+  if (client) await client.end();
+});
+
+d("promotion — create & match", () => {
+  it("creates a new hotel after explicit approve_create review", async () => {
+    const b = await mkBatch("create1");
+    await addRow(b, "property", "c1", propRecord({ key: "c1", propertyName: "Sunset Villa" }));
+    await review(b, "c1", "approve_create", { destinationId: DEST_ID });
+
+    const res = await promoteBatch(client, b, { apply: true });
+    expect(res.totals.hotelsCreated).toBe(1);
+    expect(res.batchStatus).toBe("promoted");
+    const n = await count("public.hotels where name = 'Sunset Villa'");
+    expect(n).toBe(1);
+  });
+
+  it("matches an existing hotel after explicit approve_match review", async () => {
+    const hotelId = await mkHotel("Existing Hotel", "existing-hotel-1");
+    const b = await mkBatch("match1");
+    await addRow(b, "property", "m1", propRecord({ key: "m1", propertyName: "Existing Hotel" }));
+    await review(b, "m1", "approve_match", { targetHotelId: hotelId });
+
+    const before = await count("public.hotels");
+    const res = await promoteBatch(client, b, { apply: true });
+    expect(res.totals.hotelsMatched).toBe(1);
+    expect(res.totals.hotelsCreated).toBe(0);
+    expect(await count("public.hotels")).toBe(before);
+    const link = await count(
+      "public.import_row_links where entity_id = $1 and link_type = 'matched'",
+      [hotelId],
+    );
+    expect(link).toBe(1);
+  });
+
+  it("missing destination cannot be stored for approve_create (blocks create)", async () => {
+    const b = await mkBatch("nodest");
+    await addRow(b, "property", "nd1", propRecord({ key: "nd1", propertyName: "No Dest Hotel" }));
+    // DB check constraint forbids approve_create without a destination.
+    await expect(review(b, "nd1", "approve_create", {})).rejects.toBeTruthy();
+  });
+
+  it("no review blocks promotion (--apply fails safely)", async () => {
+    const b = await mkBatch("noreview");
+    await addRow(b, "property", "nr1", propRecord({ key: "nr1", propertyName: "Unreviewed" }));
+    await expect(promoteBatch(client, b, { apply: true })).rejects.toThrow(/incomplete/i);
+    expect(await count("public.hotels where name = 'Unreviewed'")).toBe(0);
+  });
+
+  it("rejected property produces no canonical mutation", async () => {
+    const b = await mkBatch("reject1");
+    await addRow(b, "property", "r1", propRecord({ key: "r1", propertyName: "Rejected Hotel" }));
+    await review(b, "r1", "reject");
+    const res = await promoteBatch(client, b, { apply: true });
+    expect(res.totals.hotelsCreated).toBe(0);
+    expect(await count("public.hotels where name = 'Rejected Hotel'")).toBe(0);
+  });
+
+  it("preview mode performs zero canonical mutations", async () => {
+    const b = await mkBatch("preview1");
+    await addRow(b, "property", "pv1", propRecord({ key: "pv1", propertyName: "Preview Hotel" }));
+    await review(b, "pv1", "approve_create", { destinationId: DEST_ID });
+    const res = await promoteBatch(client, b, { apply: false });
+    expect(res.apply).toBe(false);
+    expect(await count("public.hotels where name = 'Preview Hotel'")).toBe(0);
+    expect(res.bundles[0]!.action).toBe("create");
+  });
+});
+
+d("promotion — child inclusion policy", () => {
+  it("review/deferred child contact is not promoted by default", async () => {
+    const b = await mkBatch("defer1");
+    await addRow(b, "property", "d1", propRecord({ key: "d1", propertyName: "Defer Hotel" }));
+    // validation 'review' → default defer
+    await addRow(
+      b,
+      "contact",
+      "d1",
+      contactRecord({ key: "d1", email: "x@defer.com", verificationStatus: "unverified" }),
+      "review",
+    );
+    await review(b, "d1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const hotel = await client.query<{ id: string }>(
+      "select id from public.hotels where name='Defer Hotel'",
+    );
+    expect(await count("public.hotel_contacts where hotel_id=$1", [hotel.rows[0]!.id])).toBe(0);
+  });
+
+  it("inferred contact is deferred by default, includable by explicit review", async () => {
+    // Default: not promoted.
+    const b1 = await mkBatch("inf1");
+    await addRow(b1, "property", "i1", propRecord({ key: "i1", propertyName: "Inf Hotel A" }));
+    await addRow(
+      b1,
+      "contact",
+      "i1",
+      contactRecord({ key: "i1", email: "a@inf.com", verificationStatus: "inferred" }),
+    );
+    await review(b1, "i1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b1, { apply: true });
+    const hA = await client.query<{ id: string }>(
+      "select id from public.hotels where name='Inf Hotel A'",
+    );
+    expect(await count("public.hotel_contacts where hotel_id=$1", [hA.rows[0]!.id])).toBe(0);
+
+    // Explicit include override: promoted.
+    const b2 = await mkBatch("inf2");
+    await addRow(b2, "property", "i2", propRecord({ key: "i2", propertyName: "Inf Hotel B" }));
+    const rowId = await addRow(
+      b2,
+      "contact",
+      "i2",
+      contactRecord({ key: "i2", email: "b@inf.com", verificationStatus: "inferred" }),
+    );
+    await review(b2, "i2", "approve_create", { destinationId: DEST_ID });
+    await childReview(rowId, "include");
+    await promoteBatch(client, b2, { apply: true });
+    const hB = await client.query<{ id: string }>(
+      "select id from public.hotels where name='Inf Hotel B'",
+    );
+    expect(await count("public.hotel_contacts where hotel_id=$1", [hB.rows[0]!.id])).toBe(1);
+  });
+
+  it("invalid contact cannot be force-included", async () => {
+    const b = await mkBatch("invalid1");
+    await addRow(b, "property", "v1", propRecord({ key: "v1", propertyName: "Invalid Hotel" }));
+    const rowId = await addRow(
+      b,
+      "contact",
+      "v1",
+      contactRecord({ key: "v1", email: "z@invalid.com", verificationStatus: "invalid" }),
+    );
+    await review(b, "v1", "approve_create", { destinationId: DEST_ID });
+    await childReview(rowId, "include"); // attempt to force
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ id: string }>(
+      "select id from public.hotels where name='Invalid Hotel'",
+    );
+    expect(await count("public.hotel_contacts where hotel_id=$1", [h.rows[0]!.id])).toBe(0);
+  });
+});
+
+d("promotion — contacts, dedup, fields", () => {
+  it("same email on same hotel is reused (deduped)", async () => {
+    const b = await mkBatch("dedup1");
+    await addRow(b, "property", "dd1", propRecord({ key: "dd1", propertyName: "Dedup Hotel" }));
+    await addRow(
+      b,
+      "contact",
+      "dd1",
+      contactRecord({
+        key: "dd1",
+        email: "shared@h.com",
+        contactName: "First",
+        verificationStatus: "verified",
+      }),
+    );
+    await addRow(
+      b,
+      "contact",
+      "dd1",
+      contactRecord({
+        key: "dd1",
+        email: "SHARED@h.com",
+        jobTitle: "Manager",
+        verificationStatus: "verified",
+      }),
+    );
+    await review(b, "dd1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ id: string }>(
+      "select id from public.hotels where name='Dedup Hotel'",
+    );
+    expect(await count("public.hotel_contacts where hotel_id=$1", [h.rows[0]!.id])).toBe(1);
+  });
+
+  it("same email on two different hotels is allowed", async () => {
+    const b = await mkBatch("multi1");
+    await addRow(b, "property", "p1", propRecord({ key: "p1", propertyName: "Multi Hotel A" }));
+    await addRow(b, "property", "p2", propRecord({ key: "p2", propertyName: "Multi Hotel B" }));
+    await addRow(
+      b,
+      "contact",
+      "p1",
+      contactRecord({ key: "p1", email: "corp@chain.com", verificationStatus: "verified" }),
+    );
+    await addRow(
+      b,
+      "contact",
+      "p2",
+      contactRecord({ key: "p2", email: "corp@chain.com", verificationStatus: "verified" }),
+    );
+    await review(b, "p1", "approve_create", { destinationId: DEST_ID });
+    await review(b, "p2", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    expect(await count("public.hotel_contacts where lower(email)='corp@chain.com'")).toBe(2);
+  });
+
+  it("preserves full display_name without splitting; organization_name survives", async () => {
+    const b = await mkBatch("name1");
+    await addRow(b, "property", "n1", propRecord({ key: "n1", propertyName: "Name Hotel" }));
+    await addRow(
+      b,
+      "contact",
+      "n1",
+      contactRecord({
+        key: "n1",
+        contactName: "María José García-López",
+        email: "mj@agency.com",
+        contactScope: "agency",
+        organizationName: "Acme PR",
+        verificationStatus: "verified",
+      }),
+    );
+    await review(b, "n1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const c = await client.query<{
+      display_name: string;
+      first_name: string | null;
+      last_name: string | null;
+      organization_name: string | null;
+    }>(
+      "select display_name, first_name, last_name, organization_name from public.hotel_contacts where email='mj@agency.com'",
+    );
+    expect(c.rows[0]!.display_name).toBe("María José García-López");
+    expect(c.rows[0]!.first_name).toBeNull();
+    expect(c.rows[0]!.last_name).toBeNull();
+    expect(c.rows[0]!.organization_name).toBe("Acme PR");
+  });
+
+  it("approve_match fills a NULL hotel field but never overwrites a conflicting non-null one", async () => {
+    const fillHotel = await mkHotel("Fill Hotel", "fill-hotel-1"); // website null
+    const conflictHotel = await mkHotel("Conflict Hotel", "conflict-hotel-1", {
+      website_url: "https://canonical.example",
+    });
+
+    const b = await mkBatch("fields1");
+    await addRow(
+      b,
+      "property",
+      "f1",
+      propRecord({
+        key: "f1",
+        propertyName: "Fill Hotel",
+        websiteUrl: "https://staged-fill.example",
+      }),
+    );
+    await addRow(
+      b,
+      "property",
+      "f2",
+      propRecord({
+        key: "f2",
+        propertyName: "Conflict Hotel",
+        websiteUrl: "https://staged-conflict.example",
+      }),
+    );
+    await review(b, "f1", "approve_match", { targetHotelId: fillHotel });
+    await review(b, "f2", "approve_match", { targetHotelId: conflictHotel });
+    const res = await promoteBatch(client, b, { apply: true });
+
+    const filled = await client.query<{ website_url: string | null }>(
+      "select website_url from public.hotels where id=$1",
+      [fillHotel],
+    );
+    expect(filled.rows[0]!.website_url).toBe("https://staged-fill.example");
+
+    const conflicted = await client.query<{ website_url: string | null }>(
+      "select website_url from public.hotels where id=$1",
+      [conflictHotel],
+    );
+    expect(conflicted.rows[0]!.website_url).toBe("https://canonical.example");
+    const conflictBundle = res.bundles.find((x) => x.sourcePropertyKey === "f2");
+    expect(conflictBundle?.conflicts).toContain("website_url");
+  });
+});
+
+d("promotion — evidence, idempotency, no intelligence", () => {
+  it("creates editorial evidence with import batch/row lineage", async () => {
+    const b = await mkBatch("ev1");
+    await addRow(b, "property", "e1", propRecord({ key: "e1", propertyName: "Evidence Hotel" }));
+    const evRow = await addRow(
+      b,
+      "evidence",
+      "e1",
+      evidenceRecord({
+        key: "e1",
+        claimType: "creator_collaboration_evidence",
+        verificationStatus: "probable",
+      }),
+    );
+    await review(b, "e1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const ev = await client.query<{ import_batch_id: string; import_row_id: string }>(
+      "select import_batch_id, import_row_id from public.editorial_evidence where import_row_id=$1",
+      [evRow],
+    );
+    expect(ev.rows).toHaveLength(1);
+    expect(ev.rows[0]!.import_batch_id).toBe(b);
+    expect(ev.rows[0]!.import_row_id).toBe(evRow);
+  });
+
+  it("repeated promotion is idempotent (no duplicate hotels/contacts/evidence)", async () => {
+    const b = await mkBatch("idem1");
+    await addRow(b, "property", "id1", propRecord({ key: "id1", propertyName: "Idem Hotel" }));
+    await addRow(
+      b,
+      "contact",
+      "id1",
+      contactRecord({
+        key: "id1",
+        email: "idem@h.com",
+        verificationStatus: "verified",
+        sourceUrl: "https://s",
+      }),
+    );
+    await addRow(b, "evidence", "id1", evidenceRecord({ key: "id1" }));
+    await review(b, "id1", "approve_create", { destinationId: DEST_ID });
+
+    await promoteBatch(client, b, { apply: true });
+    const hotels1 = await count("public.hotels where name='Idem Hotel'");
+    const contacts1 = await count("public.hotel_contacts where email='idem@h.com'");
+    const ev1 = await count("public.editorial_evidence where import_batch_id=$1", [b]);
+
+    await promoteBatch(client, b, { apply: true }); // repeat
+    expect(await count("public.hotels where name='Idem Hotel'")).toBe(hotels1);
+    expect(await count("public.hotel_contacts where email='idem@h.com'")).toBe(contacts1);
+    expect(await count("public.editorial_evidence where import_batch_id=$1", [b])).toBe(ev1);
+  });
+
+  it("promotion creates ZERO outreach/creator/hotel/destination intelligence", async () => {
+    const b = await mkBatch("nointel1");
+    await addRow(b, "property", "ni1", propRecord({ key: "ni1", propertyName: "NoIntel Hotel" }));
+    await addRow(
+      b,
+      "contact",
+      "ni1",
+      contactRecord({ key: "ni1", email: "ni@h.com", verificationStatus: "verified" }),
+    );
+    await addRow(
+      b,
+      "evidence",
+      "ni1",
+      evidenceRecord({ key: "ni1", claimType: "creator_collaboration_evidence" }),
+    );
+    await review(b, "ni1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    for (const table of ["outreach_events", "hotel_intelligence", "destination_intelligence"]) {
+      expect(await count(`public.${table}`)).toBe(0);
+    }
+  });
+});
