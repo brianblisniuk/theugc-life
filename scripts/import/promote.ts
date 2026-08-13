@@ -6,7 +6,10 @@
  *
  * There is no promote-all bypass. `--apply` requires complete approved review.
  */
+import { Client } from "pg";
+
 import { promoteBatch } from "../../src/lib/import/promote";
+import { assertPersistentApplyTarget } from "../../src/lib/import/preflight";
 import { fail, getClient, parseArgs, requireString } from "./_shared";
 
 async function main() {
@@ -14,7 +17,20 @@ async function main() {
   const batchId = requireString(args, "batch");
   const apply = args.apply === true;
 
-  const client = await getClient();
+  // Real canonical --apply must target an explicit REMOTE persistent database.
+  // It requires DATABASE_URL and never falls back to TEST_DATABASE_URL or a
+  // local/loopback/local-Supabase target. PREVIEW keeps the ordinary client
+  // (local/test DBs are fine for a zero-mutation preview).
+  let client: Client;
+  if (apply) {
+    const { url, classification } = assertPersistentApplyTarget(process.env);
+    console.info(`\n[import:promote] --apply target: ${classification.redactedTarget}`);
+    client = new Client({ connectionString: url });
+    await client.connect();
+  } else {
+    client = await getClient();
+  }
+
   try {
     const result = await promoteBatch(client, batchId, { apply });
     console.info(

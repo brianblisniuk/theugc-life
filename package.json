@@ -23,6 +23,7 @@
     "import:stage": "tsx scripts/import/stage.ts",
     "import:dry-run": "tsx scripts/import/dry-run.ts",
     "import:report": "tsx scripts/import/report.ts",
+    "import:db-preflight": "tsx scripts/import/db-preflight.ts",
     "import:review-template": "tsx scripts/import/review-template.ts",
     "import:review-apply": "tsx scripts/import/review-apply.ts",
     "import:promote": "tsx scripts/import/promote.ts",
