@@ -46,10 +46,10 @@ function Row({ item }: { item: PipelineListItem }) {
       {item.hotel ? (
         <Link
           href={`/app/hotels/${item.hotel.id}`}
-          aria-label={`View hotel ${item.hotel.name}`}
+          aria-label={`Manage ${item.hotel.name}`}
           className="inline-flex rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-background"
         >
-          View hotel
+          Manage
         </Link>
       ) : null}
     </li>

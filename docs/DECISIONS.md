@@ -336,3 +336,33 @@ creator acting outside their entitlement falls back to Free behavior.
 Sprint 2B implements only the `savedHotels = 10` open-relationship limit,
 because it only creates `saved` items. The `activePipelineItems = 5` engaged
 limit is enforced when status transitions ship.
+
+## D043 — Close event classification: abandonment vs deal loss
+Status: Accepted
+
+Closing a relationship emits one of two canonical events, chosen by whether
+outreach had actually begun.
+
+**Closed from `saved` or `planned` → `creator_closed_pipeline`.**
+No pitch was ever sent. The creator researched or intended a target and then
+moved on. Metadata carries the supplied `reason`.
+
+**Closed from `pitched`, `follow_up` or `replied` → `deal_lost`.**
+Outreach happened and the cycle ended without a collaboration. Metadata carries
+the supplied `reason`.
+
+Allowed reasons are the same in both cases: `no_reply`, `rejected`,
+`not_a_fit`, `timing`, `other`.
+
+Reason:
+A creator abandoning a target before any outreach is not a lost deal. Treating
+it as one would inflate deal-loss counts with planning churn and quietly
+corrupt every future funnel metric derived from the ledger — reply rate,
+pitch-to-deal, and hotel responsiveness all depend on `deal_lost` meaning "an
+outreach cycle that actually happened and did not convert". Once a pitch has
+been sent, closing unsuccessfully genuinely is a lost outreach cycle.
+
+Scope: Sprint 2C defines close behavior for `saved`, `planned`, `pitched`,
+`follow_up` and `replied` only. Close semantics for `negotiating` and `won`
+(including the collaboration lifecycle they imply) are deliberately left to the
+sprint that introduces those transitions.

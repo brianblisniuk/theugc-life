@@ -148,11 +148,14 @@ d("creator ownership isolation (PERMISSIONS.md §5, §13.7–§13.9)", () => {
        values ($1, $2, $3, 'pitch_sent', now()) returning id`,
       [creators.pro, HOTEL.ibiza, bPipeline[0]!.id],
     );
-    // WITH CHECK violation → error.
+    // The INSERT grant is gone (0020); the WITH CHECK policy remains behind it.
     expect(res.error).not.toBeNull();
   });
 
-  it("creator A CAN insert an outreach event under their own identity", async () => {
+  it("creator A cannot insert an outreach event even under their OWN identity (0020)", async () => {
+    // Before 0020 this was allowed, and a creator could write arbitrary
+    // pitch/reply/deal events straight into the ledger that intelligence
+    // aggregates. Events now come only from trusted server RPCs.
     const aPipeline = await adminQuery<{ id: string }>(
       "select id from public.pipeline_items where creator_id = $1 limit 1",
       [creators.destBali],
@@ -164,8 +167,16 @@ d("creator ownership isolation (PERMISSIONS.md §5, §13.7–§13.9)", () => {
        values ($1, $2, $3, 'pitch_sent', now()) returning id`,
       [creators.destBali, HOTEL.bali, aPipeline[0]!.id],
     );
+    expect(res.error).not.toBeNull();
+    expect(res.error!.message).toMatch(/permission denied/i);
+  });
+
+  it("creator A CAN still read their own outreach events", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.destBali },
+      "select id from public.outreach_events",
+    );
     expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
   });
 
   it("anonymous cannot read outreach_events (§13.10)", async () => {

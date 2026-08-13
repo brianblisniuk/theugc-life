@@ -13,8 +13,9 @@
 import Link from "next/link";
 
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
+import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { OpenRelationshipResult } from "@/lib/pipeline/queries";
-import { activityPanelState } from "@/lib/pipeline/view";
+import { activityPanelState, shouldOfferWorkflow } from "@/lib/pipeline/view";
 
 function Panel({ children }: { children: React.ReactNode }) {
   return (
@@ -53,6 +54,14 @@ export function ActivityPanel({
             This hotel is in your pipeline. Your notes and outreach history stay private to you.
           </p>
         </div>
+
+        {shouldOfferWorkflow(state) && relationship.status === "open" ? (
+          <WorkflowActions
+            pipelineItemId={relationship.relationship.pipelineItemId}
+            hotelId={hotelId}
+            status={state.status}
+          />
+        ) : null}
 
         <Link
           href="/app/pipeline"

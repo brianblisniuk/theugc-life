@@ -20,7 +20,15 @@ import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/hotels/ids";
 import { FREE_LIMITS } from "@/lib/config";
 
-import { mapSaveResult, type PipelineStatus, type SaveResult } from "./types";
+import {
+  WORKFLOW_ACTIONS,
+  mapSaveResult,
+  mapTransitionResult,
+  type PipelineStatus,
+  type SaveResult,
+  type TransitionResult,
+  type WorkflowAction,
+} from "./types";
 
 export type PipelineQueryClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -148,4 +156,52 @@ export async function saveHotelToPipeline(userId: string, hotelId: string): Prom
   // Never surface a raw Postgres/PostgREST error to the browser.
   if (error) return { result: "error" };
   return mapSaveResult(data);
+}
+
+/** The user-supplied half of a transition request. Identity is NOT in here. */
+export interface TransitionInput {
+  pipelineItemId: string;
+  action: WorkflowAction;
+  eventAt?: string | null;
+  channel?: string | null;
+  sentiment?: string | null;
+  offerType?: string | null;
+  closeReason?: string | null;
+}
+
+/**
+ * Transactionally transition a relationship through the outreach workflow.
+ *
+ * `userId` MUST come from the server-side session — never from a form field.
+ * The Free engaged allowance is passed from typed server config, so the value
+ * has a single source of truth and the client cannot influence it.
+ *
+ * Every validation here is a convenience, not the boundary: the RPC re-derives
+ * identity, re-checks the transition, and re-resolves entitlements itself.
+ */
+export async function transitionPipelineItem(
+  userId: string,
+  input: TransitionInput,
+): Promise<TransitionResult> {
+  if (!isUuid(userId) || !isUuid(input.pipelineItemId)) return { result: "invalid_input" };
+  if (!(WORKFLOW_ACTIONS as readonly string[]).includes(input.action)) {
+    return { result: "invalid_input" };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("transition_pipeline_item", {
+    p_user_id: userId,
+    p_pipeline_item_id: input.pipelineItemId,
+    p_action: input.action,
+    p_event_at: input.eventAt ?? null,
+    p_channel: input.channel ?? null,
+    p_sentiment: input.sentiment ?? null,
+    p_offer_type: input.offerType ?? null,
+    p_close_reason: input.closeReason ?? null,
+    p_free_engaged_limit: FREE_LIMITS.activePipelineItems,
+  });
+
+  // Never surface a raw Postgres/PostgREST error to the browser.
+  if (error) return { result: "error" };
+  return mapTransitionResult(data);
 }
