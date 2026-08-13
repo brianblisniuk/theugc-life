@@ -436,3 +436,85 @@ d("server-mediated growth writes (Sprint 0.1 hardening)", () => {
     expect(res.error).not.toBeNull();
   });
 });
+
+d("import/provenance internals are admin-only (Sprint 1A; IMPORT_SPEC §12)", () => {
+  beforeAll(async () => {
+    if (!hasTestDb) return;
+    await adminQuery(
+      `insert into public.import_batches (id, source_name, source_kind, parser_name, parser_version)
+         values ('e1000000-0000-0000-0000-000000000001','seed','canonical','canonical-standard','1.0.0')
+       on conflict do nothing`,
+    );
+    await adminQuery(
+      `insert into public.import_rows
+         (id, import_batch_id, row_kind, raw_fingerprint, validation_status)
+         values ('e2000000-0000-0000-0000-000000000001','e1000000-0000-0000-0000-000000000001',
+                 'property','fp-1','valid')
+       on conflict do nothing`,
+    );
+    await adminQuery(
+      `insert into public.editorial_evidence (id, claim_type, source_type, verification_status)
+         values ('e3000000-0000-0000-0000-000000000001','property_exists','official_website','verified')
+       on conflict do nothing`,
+    );
+    await adminQuery(
+      `insert into public.organizations (id, name, normalized_name, org_type)
+         values ('e4000000-0000-0000-0000-000000000001','Acme Hotels','acme hotels','hotel_group')
+       on conflict do nothing`,
+    );
+  });
+
+  const internalTables = [
+    "import_batches",
+    "import_rows",
+    "import_match_candidates",
+    "import_row_links",
+    "editorial_evidence",
+    "organizations",
+    "hotel_organizations",
+    "organization_contacts",
+  ];
+
+  it("creator cannot read any import/provenance internal table", async () => {
+    for (const table of internalTables) {
+      const res = await queryAs(
+        { role: "authenticated", sub: USERS.free },
+        `select * from public.${table}`,
+      );
+      // Either RLS filters to zero rows or the grant is absent — never data.
+      expect(res.rows).toHaveLength(0);
+    }
+  });
+
+  it("anonymous cannot read import/provenance internal tables", async () => {
+    for (const table of internalTables) {
+      const res = await queryAs({ role: "anon" }, `select * from public.${table}`);
+      expect(denied(res)).toBe(true);
+    }
+  });
+
+  it("editor CAN read import internals + organizations", async () => {
+    const batches = await queryAs(
+      { role: "authenticated", sub: USERS.editor },
+      "select id from public.import_batches",
+    );
+    expect(batches.error).toBeNull();
+    expect(batches.rows.length).toBeGreaterThanOrEqual(1);
+
+    const orgs = await queryAs(
+      { role: "authenticated", sub: USERS.editor },
+      "select id from public.organizations",
+    );
+    expect(orgs.error).toBeNull();
+    expect(orgs.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("creator cannot insert into import internals", async () => {
+    const res = await queryAs(
+      { role: "authenticated", sub: USERS.free },
+      `insert into public.organizations (name, normalized_name, org_type)
+         values ('x','x','other')`,
+    );
+    expect(res.error).not.toBeNull();
+  });
+});
