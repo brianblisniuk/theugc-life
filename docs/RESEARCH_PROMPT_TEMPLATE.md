@@ -68,7 +68,7 @@ Rules:
 
 ### CONTACTS
 
-`source_property_id, contact_name, job_title, department, email, phone, linkedin_url, contact_scope, verification_status, source_url, verified_at, notes`
+`source_property_id, contact_name, job_title, department, email, phone, linkedin_url, contact_scope, organization_name, verification_status, source_url, verified_at, notes`
 
 Rules:
 - one row per contact/endpoint;
@@ -76,6 +76,11 @@ Rules:
 - generic mailboxes have blank `contact_name`;
 - `department` must be one of: marketing, pr, communications, social_media, partnerships, events, sales, reservations, general, other, unknown;
 - `contact_scope` must be one of: property, brand, group, operator, agency, unknown;
+- `organization_name` is the explicit name of the brand/group/operator/agency the
+  contact belongs to. Provide it whenever `contact_scope` is brand, group,
+  operator, or agency and the organization is known. Never put a person's name,
+  an email address, or a property key in `organization_name`; leave it blank if
+  the organization identity is genuinely unknown (it will be flagged for review);
 - if an email is masked or incomplete, do not put it in `email`; describe it in notes and mark invalid evidence separately;
 - `verified_at` only when a real verification date is known.
 
@@ -115,7 +120,7 @@ Do not invent reply rates, collaboration counts, response speed or any live crea
 
 Do not create hotel rows for PR agencies, management companies, hotel groups or operators.
 
-If a corporate/agency contact represents a property, attach it to that property's `source_property_id`, set the appropriate `contact_scope`, and explain the relationship in notes/evidence.
+If a corporate/agency contact represents a property, attach it to that property's `source_property_id`, set the appropriate `contact_scope`, provide the explicit `organization_name`, and explain the relationship in notes/evidence.
 
 If one contact represents multiple properties, repeat the contact row for the relevant property IDs while preserving the same source and scope. Do not pretend they are separate people.
 

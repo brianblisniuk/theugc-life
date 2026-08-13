@@ -145,6 +145,9 @@ Only:
 
 ### Fuzzy matching
 May generate a candidate only. Never auto-merge based solely on fuzzy similarity.
+When the canonical destination is unresolved, fuzzy candidates are limited to
+hotels sharing the same non-null country code; global fuzzy matching across
+unknown geography is not permitted.
 
 ### Forbidden hotel identity keys
 Never identify a hotel solely by:
@@ -164,6 +167,12 @@ One corporate contact may represent multiple properties.
 - Named contacts can have multiple scopes over time.
 - Verification status is preserved independently of syntax.
 - Inferred contacts must not be labeled verified.
+- Organization identity is EXPLICIT: a contact's `organization_name` field is the
+  only source of an organization name. Never infer an organization from a
+  contact person's name, email address, or the property key. When `contact_scope`
+  is `brand`/`group`/`operator`/`agency` but no `organization_name` is present,
+  keep the contact attached to its property and flag `organization_identity_missing`
+  for review — do not invent an organization or create an organization candidate.
 
 ## 9. Standard importer
 

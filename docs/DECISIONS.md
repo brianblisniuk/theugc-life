@@ -278,3 +278,23 @@ Sprint 1A ends with staging/dry-run reports and human review. It does not automa
 
 Reason:
 The first import establishes the long-term data foundation and warrants a deliberate review gate.
+
+## D033 — Sprint 1A review corrections (F1–F4)
+Status: Accepted (see SPRINT_1A_REVIEW_FIXES.md)
+
+- F1: Organization identity is explicit. The canonical contact contract carries
+  `organization_name`; organizations are recognized only from an explicit
+  organization name (or explicit relationship evidence), never inferred from a
+  person's name, email, or property key. Missing org identity on a broader-than-
+  property scope is flagged `organization_identity_missing`, not invented.
+- F2: Country-aware fuzzy matching is genuinely country-scoped. Canonical hotels
+  carry `country_code`; when a destination is unresolved, fuzzy candidates are
+  limited to hotels sharing the same non-null country code. No global fuzzy match.
+- F3: Import-batch idempotency has a database backstop — a partial unique index on
+  `(file_sha256, parser_name, parser_version)` for non-failed batches. Failed
+  batches may still be retried. Application-level detection remains for CLI UX.
+- F4: Physical source-row uniqueness is deterministic for non-sheet sources via a
+  unique index over `(import_batch_id, coalesce(sheet_name,'__root__'), source_row_number)`.
+
+Reason:
+Protect identity/data integrity and idempotency before the first real import.

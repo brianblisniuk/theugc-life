@@ -70,19 +70,19 @@ client can never assign itself a privileged role.
 
 ## Scripts
 
-| Script               | Purpose                                    |
-| -------------------- | ------------------------------------------ |
-| `npm run dev`        | Start the dev server                       |
-| `npm run build`      | Production build (Vercel-compatible)       |
-| `npm run start`      | Serve the production build                 |
-| `npm run lint`       | ESLint (Next core-web-vitals + TypeScript) |
-| `npm run typecheck`  | `tsc --noEmit` (strict)                    |
-| `npm run test`       | Vitest (unit + RLS suites)                 |
-| `npm run db:migrate` | Apply SQL migrations to `DATABASE_URL`     |
-| `npm run import:inspect`  | Inspect a source file's structure (no DB) |
-| `npm run import:stage`    | Parse/normalize/validate into staging tables |
-| `npm run import:dry-run`  | Stage + resolve + write review reports    |
-| `npm run import:report`   | Regenerate reports for a staged batch     |
+| Script                   | Purpose                                      |
+| ------------------------ | -------------------------------------------- |
+| `npm run dev`            | Start the dev server                         |
+| `npm run build`          | Production build (Vercel-compatible)         |
+| `npm run start`          | Serve the production build                   |
+| `npm run lint`           | ESLint (Next core-web-vitals + TypeScript)   |
+| `npm run typecheck`      | `tsc --noEmit` (strict)                      |
+| `npm run test`           | Vitest (unit + RLS suites)                   |
+| `npm run db:migrate`     | Apply SQL migrations to `DATABASE_URL`       |
+| `npm run import:inspect` | Inspect a source file's structure (no DB)    |
+| `npm run import:stage`   | Parse/normalize/validate into staging tables |
+| `npm run import:dry-run` | Stage + resolve + write review reports       |
+| `npm run import:report`  | Regenerate reports for a staged batch        |
 
 ## Testing
 

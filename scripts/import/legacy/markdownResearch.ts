@@ -138,6 +138,8 @@ export function makeMarkdownAdapter(config: MarkdownAdapterConfig): LegacyAdapte
             phone: null,
             linkedin_url: null,
             contact_scope: null,
+            // Only an explicit "Organization:" line becomes an org name (F1).
+            organization_name: fields.organization_name ?? null,
             verification_status: null,
             source_url: fields.source_url ?? null,
             notes: null,

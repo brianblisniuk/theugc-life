@@ -95,7 +95,21 @@ export async function stageFile(client: Client, opts: StageOptions): Promise<Sta
   const staged = stageRawSheets(rawSheets).rows;
   const c = counters(staged);
 
-  const batchId = await createBatch(client, meta);
+  let batchId: string;
+  try {
+    batchId = await createBatch(client, meta);
+  } catch (err) {
+    // DB idempotency backstop (review F3): a concurrent process already staged
+    // this file+parser as a non-failed batch. Treat as reused, not an error.
+    if ((err as { code?: string }).code === "23505") {
+      const raced = await findReusableBatch(client, meta);
+      if (raced && raced.status !== "failed") {
+        const existing = await getBatchReportInput(client, raced.id);
+        return { batchId: raced.id, reused: true, counters: counters(existing.rows) };
+      }
+    }
+    throw err;
+  }
   const rowIdMap = await insertStagedRows(client, batchId, staged);
   await updateBatchCounters(client, batchId, c, statusFor(c));
 

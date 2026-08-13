@@ -67,6 +67,7 @@ For each contact:
 - `phone` — nullable
 - `linkedin_url` — nullable
 - `contact_scope`
+- `organization_name` — nullable. Explicit organization identity. Required *when known* whenever `contact_scope` is `brand`, `group`, `operator`, or `agency`. A person is not an organization: this value is NEVER derived from `contact_name`, an email address, or a property key. If it is missing for a broader-than-property scope, the contact stays attached to the property and is flagged `organization_identity_missing` for review.
 - `verification_status`
 - `source_url`
 - `verified_at` — nullable if not actually verified
@@ -171,7 +172,7 @@ Live creator intelligence can only come from actual creator workflow/outcome dat
 
 Hotel groups, operators, management companies and PR agencies are not hotel properties.
 
-Research should identify them using `contact_scope` and relationship evidence rather than creating fake hotel rows.
+Research should identify them using `contact_scope` **plus an explicit `organization_name`** and relationship evidence, rather than creating fake hotel rows. An organization is only recognized from an explicit organization name (or explicit structured relationship evidence) — never inferred from a contact person's name, email address, or property key.
 
 The canonical database may model organizations separately when required by Sprint 1 implementation, but the property remains the discovery unit shown to creators.
 
@@ -185,7 +186,7 @@ Preferred interchange format: UTF-8 CSV or XLSX with one `properties` sheet and 
 
 ### `contacts` sheet
 
-`source_property_id, contact_name, job_title, department, email, phone, linkedin_url, contact_scope, verification_status, source_url, verified_at, notes`
+`source_property_id, contact_name, job_title, department, email, phone, linkedin_url, contact_scope, organization_name, verification_status, source_url, verified_at, notes`
 
 A third optional `evidence` sheet may be used:
 

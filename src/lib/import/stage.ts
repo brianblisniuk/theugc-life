@@ -247,6 +247,18 @@ export function mapContact(raw: RawRow): StagedRow {
     }
   }
 
+  // Explicit organization identity only (review F1). Never inferred from a
+  // person's name, email, or property key.
+  const organizationName = normalizeString(pick(raw.data, "organization_name"));
+  const orgLikeScope =
+    contactScope !== null && ["brand", "group", "operator", "agency"].includes(contactScope);
+  if (orgLikeScope && !organizationName) {
+    warnings.push(
+      "organization_identity_missing: broader-than-property scope without an explicit organization_name; kept attached to property for review",
+    );
+    status = worst(status, "review");
+  }
+
   const record: ContactRecord = {
     sourcePropertyKey,
     // A generic mailbox is an endpoint, not a fabricated named person.
@@ -258,6 +270,7 @@ export function mapContact(raw: RawRow): StagedRow {
     phone,
     linkedinUrl: normalizeUrl(pick(raw.data, "linkedin_url")).normalized,
     contactScope,
+    organizationName,
     verificationStatus: verification,
     sourceUrl: normalizeUrl(pick(raw.data, "source_url")).normalized,
     verifiedAt: normalizeString(pick(raw.data, "verified_at")),

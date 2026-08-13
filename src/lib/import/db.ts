@@ -42,8 +42,9 @@ export async function loadExistingData(client: Client): Promise<ExistingData> {
     id: string;
     name: string;
     destination_id: string | null;
+    country_code: string | null;
     website_url: string | null;
-  }>("select id, name, destination_id, website_url from public.hotels");
+  }>("select id, name, destination_id, country_code, website_url from public.hotels");
 
   const destinations = await client.query<{
     id: string;
@@ -59,6 +60,7 @@ export async function loadExistingData(client: Client): Promise<ExistingData> {
       name: h.name,
       nameMatchKey: nameMatchKey(h.name),
       destinationId: h.destination_id,
+      countryCode: h.country_code,
       websiteNormalized: url.normalized,
       websiteHost: url.host,
     };

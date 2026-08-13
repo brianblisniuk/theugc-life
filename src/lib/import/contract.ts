@@ -137,6 +137,12 @@ export const contactRecordSchema = z.object({
   phone: z.string().nullable(),
   linkedinUrl: z.string().nullable(),
   contactScope: z.enum(CONTACT_SCOPES).nullable(),
+  /**
+   * Explicit organization identity (HOTEL_DATA_CONTRACT §4/§8, review F1). A
+   * person is NOT an organization: this is the ONLY source of an organization
+   * name. It is never inferred from contact_name, email, or the property key.
+   */
+  organizationName: z.string().nullable(),
   verificationStatus: z.enum(VERIFICATION_STATUSES),
   sourceUrl: z.string().nullable(),
   verifiedAt: z.string().nullable(),

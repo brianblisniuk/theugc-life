@@ -28,13 +28,13 @@ afterAll(async () => {
 });
 
 const MESSY_CSV = [
-  "Hotel Name,Destination,Website,Email,Contact,Title,Scope,Verification",
-  'Grand Palace,Dubai,https://grandpalace.ae,"info@grandpalace.ae; sales@grandpalace.ae",Front Desk,Reception,property,verified',
+  "Hotel Name,Destination,Website,Email,Contact,Title,Scope,Verification,Organization",
+  'Grand Palace,Dubai,https://grandpalace.ae,"info@grandpalace.ae; sales@grandpalace.ae",Front Desk,Reception,property,verified,',
   // repeated header row (legacy artifact)
-  "Hotel Name,Destination,Website,Email,Contact,Title,Scope,Verification",
-  "Azure Group,Dubai,https://azuregroup.ae,pr@azuregroup.ae,Jane Roe,PR Manager,group,verified",
-  "Villa One / Villa Two,Dubai,,,,,,",
-  "Marina Suites,Dubai,https://marina.ae,jane.doe@marina.ae,Jane Doe,Marketing,property,probable",
+  "Hotel Name,Destination,Website,Email,Contact,Title,Scope,Verification,Organization",
+  "Azure Group,Dubai,https://azuregroup.ae,pr@azuregroup.ae,Jane Roe,PR Manager,group,verified,Azure Hotel Group",
+  "Villa One / Villa Two,Dubai,,,,,,,",
+  "Marina Suites,Dubai,https://marina.ae,jane.doe@marina.ae,Jane Doe,Marketing,property,probable,",
 ].join("\n");
 
 describe("messy workbook adapter (CSV)", () => {
@@ -86,9 +86,14 @@ describe("messy workbook adapter (CSV)", () => {
     expect(villa?.status).toBe("review");
     expect(villa?.warnings.some((w) => w.includes("multi-property"))).toBe(true);
 
-    // Group scope surfaces an organization candidate (not a fake hotel).
+    // Group scope + EXPLICIT organization name surfaces an organization
+    // candidate (not a fake hotel, and never inferred from the person/email).
     const resolution = resolveEntities(staged.rows, { hotels: [], destinations: [] });
-    expect(resolution.organizationCandidates.some((o) => o.scope === "group")).toBe(true);
+    expect(
+      resolution.organizationCandidates.some(
+        (o) => o.scope === "group" && o.name === "Azure Hotel Group",
+      ),
+    ).toBe(true);
   });
 });
 

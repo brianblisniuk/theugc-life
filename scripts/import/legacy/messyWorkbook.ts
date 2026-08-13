@@ -67,6 +67,18 @@ const SYNONYMS: Record<string, string[]> = {
   linkedin_url: ["linkedin", "linkedin url"],
   verification_status: ["verification", "verified", "status", "verification status", "confidence"],
   contact_scope: ["scope", "contact scope"],
+  organization_name: [
+    "organization",
+    "organisation",
+    "organization name",
+    "organisation name",
+    "company",
+    "company name",
+    "group name",
+    "operator name",
+    "agency name",
+    "management company",
+  ],
   notes: ["notes", "note", "comments", "remarks", "description"],
 };
 
@@ -215,6 +227,7 @@ export function makeWorkbookAdapter(config: WorkbookAdapterConfig): LegacyAdapte
             phone: rec.phone ?? null,
             linkedin_url: rec.linkedin_url ?? null,
             contact_scope: rec.contact_scope ?? null,
+            organization_name: rec.organization_name ?? null,
             verification_status: rec.verification_status ?? null,
             source_url: rec.source_url ?? null,
             notes: rec.notes ?? null,

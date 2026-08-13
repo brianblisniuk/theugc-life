@@ -20,6 +20,8 @@ export interface ExistingHotel {
   name: string;
   nameMatchKey: string;
   destinationId: string | null;
+  /** Canonical hotel country (review F2): required for country-scoped fuzzy. */
+  countryCode: string | null;
   websiteNormalized: string | null;
   websiteHost: string | null;
 }
@@ -214,10 +216,15 @@ function resolveProperty(
       continue;
     }
 
-    // Fuzzy: name similarity within the same destination (or same country when
-    // destination is unresolved). Candidate ONLY — never auto-merge.
-    const sameArea =
-      (dest.id && hotel.destinationId === dest.id) || (!dest.id && property.countryCode !== null);
+    // Fuzzy: name similarity within the same destination, or — when the
+    // destination is unresolved — ONLY within the same non-null country
+    // (review F2). Never fuzzy-match globally when country is unknown.
+    // Candidate ONLY — never auto-merge.
+    const sameArea = dest.id
+      ? hotel.destinationId === dest.id
+      : property.countryCode !== null &&
+        hotel.countryCode !== null &&
+        property.countryCode === hotel.countryCode;
     if (sameArea) {
       const sim = diceSimilarity(property.nameMatchKey, hotel.nameMatchKey);
       if (sim >= FUZZY_THRESHOLD && sim < 1) {
@@ -227,7 +234,7 @@ function resolveProperty(
           score: Number(sim.toFixed(3)),
           matchMethod: "fuzzy_name",
           explanation: `Fuzzy name similarity ${sim.toFixed(2)} ${
-            dest.id ? "in same destination" : "in same country"
+            dest.id ? "in same destination" : `in same country (${property.countryCode})`
           } — review required (never auto-merged).`,
           deterministicSafe: false,
         });
@@ -248,7 +255,13 @@ function resolveProperty(
   };
 }
 
-/** Derive organization candidates from broader-than-property contact scopes. */
+/**
+ * Derive organization candidates ONLY from an EXPLICIT organization name plus a
+ * broader-than-property scope (review F1). A person's name, email, or the
+ * property key is NEVER used as an organization identity. Rows with an org-like
+ * scope but no organization_name are left flagged (organization_identity_missing)
+ * in staging and produce no candidate here.
+ */
 function deriveOrganizationCandidates(contactRows: StagedRow[]): OrganizationCandidate[] {
   const out: OrganizationCandidate[] = [];
   const seen = new Set<string>();
@@ -261,18 +274,19 @@ function deriveOrganizationCandidates(contactRows: StagedRow[]): OrganizationCan
   for (const row of contactRows) {
     const c = row.normalized as unknown as ContactRecord;
     if (!c.contactScope || !(c.contactScope in scopeToType)) continue;
-    const name = c.contactName ?? c.email ?? c.sourcePropertyKey;
-    const key = `${c.contactScope}:${foldForMatch(name)}`;
+    // Explicit organization name is required — never inferred.
+    if (!c.organizationName) continue;
+    const key = `${c.contactScope}:${foldForMatch(c.organizationName)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
-      name,
+      name: c.organizationName,
       inferredType: scopeToType[c.contactScope]!,
       scope: c.contactScope,
       sourcePropertyKey: c.sourcePropertyKey,
       sheetName: row.sheetName,
       sourceRowNumber: row.sourceRowNumber,
-      reason: `Contact scope "${c.contactScope}" indicates an organization broader than one property.`,
+      reason: `Explicit organization_name with "${c.contactScope}" scope (broader than one property).`,
     });
   }
   return out;

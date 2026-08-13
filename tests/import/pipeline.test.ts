@@ -139,3 +139,57 @@ d("standard importer dry-run", () => {
     }
   });
 });
+
+async function errorCode(sql: string, params: unknown[] = []): Promise<string | null> {
+  try {
+    await client.query(sql, params);
+    return null;
+  } catch (e) {
+    return (e as { code?: string }).code ?? "error";
+  }
+}
+
+d("import DB backstops (review F3 / F4)", () => {
+  it("F3: a second non-failed batch with the same file+parser identity is rejected", async () => {
+    await client.query(
+      `insert into public.import_batches (source_name, source_kind, parser_name, parser_version, file_sha256, status)
+         values ('race','canonical','pX','1','SHA_F3_A','parsing')`,
+    );
+    const code = await errorCode(
+      `insert into public.import_batches (source_name, source_kind, parser_name, parser_version, file_sha256, status)
+         values ('race2','canonical','pX','1','SHA_F3_A','parsing')`,
+    );
+    expect(code).toBe("23505");
+  });
+
+  it("F3: a FAILED batch does not block a legitimate retry", async () => {
+    await client.query(
+      "update public.import_batches set status='failed' where file_sha256='SHA_F3_A'",
+    );
+    // Same identity can now be staged again because the prior one is failed.
+    const code = await errorCode(
+      `insert into public.import_batches (source_name, source_kind, parser_name, parser_version, file_sha256, status)
+         values ('retry','canonical','pX','1','SHA_F3_A','parsing')`,
+    );
+    expect(code).toBeNull();
+  });
+
+  it("F4: duplicate NULL-sheet rows in the same batch are rejected", async () => {
+    const b = await client.query<{ id: string }>(
+      `insert into public.import_batches (source_name, source_kind, parser_name, parser_version)
+         values ('nosheet','legacy','md','1') returning id`,
+    );
+    const batchId = b.rows[0]!.id;
+    await client.query(
+      `insert into public.import_rows (import_batch_id, sheet_name, source_row_number, row_kind, raw_fingerprint, validation_status)
+         values ($1, null, 1, 'property', 'fp-a', 'valid')`,
+      [batchId],
+    );
+    const code = await errorCode(
+      `insert into public.import_rows (import_batch_id, sheet_name, source_row_number, row_kind, raw_fingerprint, validation_status)
+         values ($1, null, 1, 'property', 'fp-b', 'valid')`,
+      [batchId],
+    );
+    expect(code).toBe("23505");
+  });
+});

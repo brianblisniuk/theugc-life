@@ -11,14 +11,27 @@ import type { RawRow } from "@/lib/import/parse";
 import { resolveEntities, type ExistingData } from "@/lib/import/resolve";
 import { stageRawSheets } from "@/lib/import/stage";
 
+const NO_EXISTING: ExistingData = { hotels: [], destinations: [] };
+
+function contactRow(n: number, data: Record<string, string | null>): RawRow {
+  return { sheetName: "contacts", sourceRowNumber: n, data };
+}
+
 function existing(): ExistingData {
-  const hotel = (id: string, name: string, destinationId: string, website: string | null) => {
+  const hotel = (
+    id: string,
+    name: string,
+    destinationId: string,
+    country: string | null,
+    website: string | null,
+  ) => {
     const url = normalizeUrl(website);
     return {
       id,
       name,
       nameMatchKey: nameMatchKey(name),
       destinationId,
+      countryCode: country,
       websiteNormalized: url.normalized,
       websiteHost: url.host,
     };
@@ -33,10 +46,12 @@ function existing(): ExistingData {
   return {
     destinations: [dest("dest-ubud", "Ubud", "ID"), dest("dest-bali", "Bali", "ID")],
     hotels: [
-      hotel("h-alila", "Alila Ubud", "dest-ubud", "https://alilahotels.com/ubud"),
-      hotel("h-bulgari", "Bulgari Resort Bali", "dest-bali", null),
-      hotel("h-marA", "Marriott Downtown", "dest-bali", "https://marriott.com"),
-      hotel("h-marB", "Marriott Beach", "dest-bali", "https://marriott.com"),
+      hotel("h-alila", "Alila Ubud", "dest-ubud", "ID", "https://alilahotels.com/ubud"),
+      hotel("h-bulgari", "Bulgari Resort Bali", "dest-bali", "ID", null),
+      hotel("h-marA", "Marriott Downtown", "dest-bali", "ID", "https://marriott.com"),
+      hotel("h-marB", "Marriott Beach", "dest-bali", "ID", "https://marriott.com"),
+      // A similarly named hotel in a DIFFERENT country (review F2).
+      hotel("h-palais-fr", "Palais Royale", "dest-paris", "FR", null),
     ],
   };
 }
@@ -134,6 +149,20 @@ describe("forbidden identity keys", () => {
     expect(res.properties[0]!.hotelCandidates).toHaveLength(0);
   });
 
+  it("does not fuzzy-match a similar name in a different country when destination is unresolved (F2)", () => {
+    const res = resolveProps([
+      propRow(1, {
+        source_property_id: "p1",
+        property_name: "Palais Royalee", // near-duplicate of the FR hotel
+        destination_name: "ZzUnknownDestination", // unresolved
+        country_code: "ID",
+        source_url: "https://example.com",
+      }),
+    ]);
+    // Country differs (ID vs FR) and destination is unresolved → no candidate.
+    expect(res.properties[0]!.hotelCandidates).toHaveLength(0);
+  });
+
   it("same corporate email across two properties keeps them separate", () => {
     const staged = stageRawSheets({
       properties: [
@@ -170,5 +199,94 @@ describe("forbidden identity keys", () => {
     expect(res.properties).toHaveLength(2);
     // Neither is matched to an existing hotel by the shared email.
     expect(res.properties.every((p) => p.hotelCandidates.length === 0)).toBe(true);
+  });
+});
+
+describe("explicit organization identity (review F1)", () => {
+  it("named agency employee WITH explicit agency name → organization candidate", () => {
+    const staged = stageRawSheets({
+      properties: [
+        propRow(1, {
+          source_property_id: "p1",
+          property_name: "Seaside Resort",
+          destination_name: "Bali",
+          country_code: "ID",
+          source_url: "https://a.com",
+        }),
+      ],
+      contacts: [
+        contactRow(2, {
+          source_property_id: "p1",
+          contact_name: "Jane Roe",
+          job_title: "Account Director",
+          email: "jane.roe@prfirm.com",
+          contact_scope: "agency",
+          organization_name: "Blue PR Agency",
+        }),
+      ],
+      evidence: [],
+    });
+    const res = resolveEntities(staged.rows, NO_EXISTING);
+    expect(res.organizationCandidates).toHaveLength(1);
+    const org = res.organizationCandidates[0]!;
+    expect(org.name).toBe("Blue PR Agency");
+    expect(org.scope).toBe("agency");
+    expect(org.inferredType).toBe("pr_agency");
+  });
+
+  it("named agency employee WITHOUT agency name → no org candidate; flagged for review", () => {
+    const staged = stageRawSheets({
+      properties: [
+        propRow(1, {
+          source_property_id: "p1",
+          property_name: "Seaside Resort",
+          destination_name: "Bali",
+          country_code: "ID",
+          source_url: "https://a.com",
+        }),
+      ],
+      contacts: [
+        contactRow(2, {
+          source_property_id: "p1",
+          contact_name: "Jane Roe",
+          job_title: "Account Director",
+          email: "jane.roe@prfirm.com",
+          contact_scope: "agency",
+        }),
+      ],
+      evidence: [],
+    });
+    const res = resolveEntities(staged.rows, NO_EXISTING);
+    // The person's name/email is NEVER used as an organization identity.
+    expect(res.organizationCandidates).toHaveLength(0);
+    // The contact is kept, attached to the property, and flagged.
+    const contact = staged.rows.find((r) => r.rowKind === "contact")!;
+    expect(contact.sourcePropertyKey).toBe("p1");
+    expect(contact.warnings.some((w) => w.includes("organization_identity_missing"))).toBe(true);
+    expect(contact.status).toBe("review");
+  });
+
+  it("generic corporate email without organization identity → no org candidate", () => {
+    const staged = stageRawSheets({
+      properties: [
+        propRow(1, {
+          source_property_id: "p1",
+          property_name: "Seaside Resort",
+          destination_name: "Bali",
+          country_code: "ID",
+          source_url: "https://a.com",
+        }),
+      ],
+      contacts: [
+        contactRow(2, {
+          source_property_id: "p1",
+          email: "info@corporate.com",
+          contact_scope: "property",
+        }),
+      ],
+      evidence: [],
+    });
+    const res = resolveEntities(staged.rows, NO_EXISTING);
+    expect(res.organizationCandidates).toHaveLength(0);
   });
 });
