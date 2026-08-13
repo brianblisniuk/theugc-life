@@ -11,8 +11,11 @@ import {
   isSaveSuccessful,
   pipelineStatusLabel,
   saveResultMessage,
+  transitionResultMessage,
   type PipelineStatus,
   type SaveResult,
+  type TransitionResult,
+  type WorkflowAction,
 } from "./types";
 
 /** Copy owned by the product, asserted by tests so it cannot drift silently. */
@@ -152,4 +155,87 @@ export function pipelineListState(input: {
   }
   if (input.status) return { kind: "empty_filtered", title: PIPELINE_COPY.filteredTitle };
   return { kind: "empty", title: PIPELINE_COPY.emptyTitle, body: PIPELINE_COPY.emptyBody };
+}
+
+/* ------------------------------------------------------------------ */
+/* Workflow actions (Sprint 2C)                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Which workflow actions the creator may take from a given status.
+ *
+ * This mirrors the transition map the database enforces, so the UI never
+ * offers a step the RPC would reject. `negotiating`/`won` are absent on
+ * purpose: their workflow is the next slice, and offering a control that
+ * cannot succeed is worse than offering none.
+ */
+const ACTIONS_BY_STATUS: Record<string, readonly WorkflowAction[]> = {
+  saved: ["plan", "mark_pitched", "close"],
+  planned: ["mark_pitched", "close"],
+  pitched: ["mark_followup_sent", "mark_replied", "close"],
+  follow_up: ["mark_replied", "close"],
+  replied: ["close"],
+  negotiating: [],
+  won: [],
+  closed: [],
+};
+
+export function availableActions(status: string | null | undefined): readonly WorkflowAction[] {
+  if (!status) return [];
+  return ACTIONS_BY_STATUS[status] ?? [];
+}
+
+/** Workflow controls exist only for a status we actually loaded. */
+export function shouldOfferWorkflow(state: ActivityPanelState): boolean {
+  return state.kind === "open_cycle" && availableActions(state.status).length > 0;
+}
+
+export const WORKFLOW_COPY = {
+  engagedLimitTitle: "You’ve reached the Free active-pipeline limit.",
+  engagedLimitNote: "Your saved hotels stay saved — only active outreach is limited.",
+} as const;
+
+/** Truthful engaged-limit explanation. The number comes from the server. */
+export function engagedLimitExplanation(limit: number): string {
+  return `You can actively work up to ${limit} hotel relationships on Free.`;
+}
+
+export type WorkflowControlState =
+  | { kind: "idle" }
+  | { kind: "applied"; message: string; status: PipelineStatus }
+  | { kind: "limit"; message: string; explanation: string; note: string; limit: number }
+  | { kind: "problem"; message: string };
+
+/**
+ * `already_applied` is a success: a double click or retry must not look like a
+ * failure. `engaged_limit_reached` is the ONLY workflow outcome allowed to
+ * offer an upgrade — a technical error or a rejected transition must never be
+ * dressed up as a commercial wall.
+ */
+export function workflowControlState(
+  result: TransitionResult | null | undefined,
+): WorkflowControlState {
+  if (!result) return { kind: "idle" };
+  if (result.result === "applied" || result.result === "already_applied") {
+    return {
+      kind: "applied",
+      message: transitionResultMessage(result),
+      status: result.status,
+    };
+  }
+  if (result.result === "engaged_limit_reached") {
+    return {
+      kind: "limit",
+      message: transitionResultMessage(result),
+      explanation: engagedLimitExplanation(result.limit),
+      note: WORKFLOW_COPY.engagedLimitNote,
+      limit: result.limit,
+    };
+  }
+  return { kind: "problem", message: transitionResultMessage(result) };
+}
+
+/** Only a real commercial limit may advertise upgrading. */
+export function shouldOfferWorkflowUpgrade(state: WorkflowControlState): boolean {
+  return state.kind === "limit";
 }

@@ -14,8 +14,20 @@ import { revalidatePath } from "next/cache";
 
 import { getSessionContext } from "@/lib/auth/guards";
 
-import { saveHotelToPipeline } from "./queries";
-import { isSaveSuccessful, type SaveResult } from "./types";
+import { parseWorkflowForm } from "./input";
+import { saveHotelToPipeline, transitionPipelineItem } from "./queries";
+import {
+  isSaveSuccessful,
+  isTransitionSuccessful,
+  type SaveResult,
+  type TransitionResult,
+} from "./types";
+
+/** Only string form fields are ever read; anything else is treated as absent. */
+function readField(formData: FormData, name: string): string | null {
+  const value = formData.get(name);
+  return typeof value === "string" ? value : null;
+}
 
 export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
   // Identity comes ONLY from the session cookie.
@@ -30,6 +42,40 @@ export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
   if (isSaveSuccessful(result)) {
     // Reflect the new Saved state immediately on both surfaces.
     revalidatePath(`/app/hotels/${hotelId}`);
+    revalidatePath("/app/pipeline");
+  }
+
+  return result;
+}
+
+/**
+ * Workflow transition server action (PRD §7.4, EVENTS.md §3/§4).
+ *
+ * The browser posts only what the creator actually filled in. Identity comes
+ * from the session cookie and the Free engaged allowance from typed server
+ * config — neither is read from the form, so neither can be forged.
+ */
+export async function transitionPipelineItemAction(formData: FormData): Promise<TransitionResult> {
+  const session = await getSessionContext();
+  if (!session) return { result: "error" };
+
+  const parsed = parseWorkflowForm({
+    pipelineItemId: readField(formData, "pipelineItemId"),
+    action: readField(formData, "action"),
+    date: readField(formData, "date"),
+    channel: readField(formData, "channel"),
+    sentiment: readField(formData, "sentiment"),
+    offerType: readField(formData, "offerType"),
+    closeReason: readField(formData, "closeReason"),
+  });
+  if (!parsed.ok) return { result: "invalid_input" };
+
+  const hotelId = readField(formData, "hotelId");
+  const result = await transitionPipelineItem(session.userId, parsed.value);
+
+  if (isTransitionSuccessful(result)) {
+    // Both surfaces must reflect the new status and the new activity order.
+    if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
     revalidatePath("/app/pipeline");
   }
 
