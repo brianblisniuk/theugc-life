@@ -11,7 +11,7 @@ import type { Client, PoolClient } from "pg";
 import type { ContactRecord, EvidenceRecord, PropertyRecord } from "./contract";
 import { computeBatchApprovalState } from "./review";
 import { finalContactInclusion, finalEvidenceInclusion, type ChildDecision } from "./childPolicy";
-import { loadBatchData, type BatchRow } from "./db";
+import { acquireBatchLock, loadBatchData, releaseBatchLock, type BatchRow } from "./db";
 import { sha256Hex } from "./fingerprint";
 import { foldForMatch } from "./normalize";
 
@@ -128,11 +128,15 @@ async function addLink(
   );
 }
 
-async function destinationSlugById(db: Db, destinationId: string): Promise<string | null> {
-  const r = await db.query<{ slug: string }>("select slug from public.destinations where id = $1", [
-    destinationId,
-  ]);
-  return r.rows[0]?.slug ?? null;
+async function destinationInfoById(
+  db: Db,
+  destinationId: string,
+): Promise<{ slug: string | null; countryCode: string | null }> {
+  const r = await db.query<{ slug: string; country_code: string | null }>(
+    "select slug, country_code from public.destinations where id = $1",
+    [destinationId],
+  );
+  return { slug: r.rows[0]?.slug ?? null, countryCode: r.rows[0]?.country_code ?? null };
 }
 
 /** Create canonical editorial_evidence for one import row (idempotent per row). */
@@ -214,8 +218,10 @@ async function findContactByEndpoint(
   return null;
 }
 
+// country_code is intentionally NOT here — it is handled specially in
+// approve_match (review fix F10) so a hotel country can never be filled with a
+// value that conflicts with its canonical destination.
 const HOTEL_FILL_FIELDS: { col: string; get: (p: PropertyRecord) => unknown }[] = [
-  { col: "country_code", get: (p) => p.countryCode },
   { col: "address", get: (p) => p.address },
   { col: "latitude", get: (p) => p.latitude },
   { col: "longitude", get: (p) => p.longitude },
@@ -381,8 +387,30 @@ async function promoteContactsAndEvidence(
   }
 }
 
-/** Promote a batch. Preview by default; `apply` performs canonical writes. */
+/**
+ * Promote a batch. Preview by default; `apply` performs canonical writes.
+ *
+ * F9: an apply-promotion serializes against concurrent review/promotion for the
+ * SAME batch on a session advisory lock. The lock is acquired BEFORE the review
+ * snapshot is read and held across every per-bundle transaction, so the whole
+ * run operates on one stable snapshot; it is released in `finally`. Preview does
+ * no writes and takes no lock. Per-bundle row locks are preserved.
+ */
 export async function promoteBatch(
+  client: Client,
+  batchId: string,
+  opts: { apply: boolean },
+): Promise<PromotionResult> {
+  if (!opts.apply) return promoteBatchInner(client, batchId, opts);
+  await acquireBatchLock(client, batchId);
+  try {
+    return await promoteBatchInner(client, batchId, opts);
+  } finally {
+    await releaseBatchLock(client, batchId);
+  }
+}
+
+async function promoteBatchInner(
   client: Client,
   batchId: string,
   opts: { apply: boolean },
@@ -531,8 +559,20 @@ export async function promoteBatch(
         plan.hotelAlreadyPromoted = true;
       } else if (decision === "approve_create") {
         if (!review.destination_id) throw new Error("approve_create missing destination");
-        const destSlug = await destinationSlugById(client, review.destination_id);
-        const slug = await generateSlug(client, property.propertyName, destSlug, key);
+        const destInfo = await destinationInfoById(client, review.destination_id);
+        const slug = await generateSlug(client, property.propertyName, destInfo.slug, key);
+        // F10: a new hotel's country must be consistent with its canonical
+        // destination. When both the staged country and the destination country
+        // are known and differ, fail with ZERO canonical mutation. When the
+        // staged country is null, inherit the destination country.
+        const destCountry = destInfo.countryCode;
+        const stagedCountry = property.countryCode;
+        if (stagedCountry !== null && destCountry !== null && stagedCountry !== destCountry) {
+          throw new Error(
+            `country conflict: staged country ${stagedCountry} conflicts with destination country ${destCountry}`,
+          );
+        }
+        const effectiveCountry = stagedCountry ?? destCountry;
         // F4: a new canonical hotel may be upgraded to `verified` ONLY by an
         // evidence row that (a) claims property_exists, (b) is itself verified,
         // AND (c) resolves to final child inclusion = include (default policy +
@@ -558,7 +598,7 @@ export async function promoteBatch(
             property.propertyName,
             slug,
             review.destination_id,
-            property.countryCode,
+            effectiveCountry,
             property.address,
             property.latitude,
             property.longitude,
@@ -577,8 +617,11 @@ export async function promoteBatch(
         // approve_match
         hotelId = review.target_hotel_id!;
         const canonical = await client.query(
-          `select country_code, address, latitude, longitude, website_url, instagram_url,
-                  hotel_type, star_rating from public.hotels where id = $1`,
+          `select h.country_code, h.address, h.latitude, h.longitude, h.website_url,
+                  h.instagram_url, h.hotel_type, h.star_rating, d.country_code as dest_country
+             from public.hotels h
+             left join public.destinations d on d.id = h.destination_id
+             where h.id = $1`,
           [hotelId],
         );
         if (canonical.rows.length === 0) throw new Error("target hotel disappeared");
@@ -600,6 +643,35 @@ export async function promoteBatch(
           ) {
             plan.conflicts.push(f.col);
           }
+        }
+
+        // F10: country_code is special — the hotel country must never conflict
+        // with its canonical destination. Only a NULL hotel country may be
+        // filled, preferring the destination country; a staged country that
+        // conflicts with the destination (or an already-set hotel country) is
+        // reported as a conflict and never written.
+        const stagedCountry = property.countryCode;
+        const currentCountry = (current.country_code as string | null) ?? null;
+        const destCountry = (current.dest_country as string | null) ?? null;
+        if (currentCountry === null) {
+          if (destCountry !== null) {
+            await client.query("update public.hotels set country_code = $2 where id = $1", [
+              hotelId,
+              destCountry,
+            ]);
+            fills.push("country_code");
+            if (stagedCountry !== null && stagedCountry !== destCountry) {
+              plan.conflicts.push("country_code");
+            }
+          } else if (stagedCountry !== null) {
+            await client.query("update public.hotels set country_code = $2 where id = $1", [
+              hotelId,
+              stagedCountry,
+            ]);
+            fills.push("country_code");
+          }
+        } else if (stagedCountry !== null && stagedCountry !== currentCountry) {
+          plan.conflicts.push("country_code");
         }
         plan.filledHotelFields = fills;
         await addLink(client, propertyRow.importRowId, "hotel", hotelId, "matched");

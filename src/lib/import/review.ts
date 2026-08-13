@@ -13,7 +13,7 @@ import type { Client } from "pg";
 import { z } from "zod";
 
 import type { ContactRecord, EvidenceRecord, PropertyRecord } from "./contract";
-import { loadBatchData, type BatchRow } from "./db";
+import { acquireBatchLock, loadBatchData, releaseBatchLock, type BatchRow } from "./db";
 import { loadDestinationCatalog, resolveDestination } from "./destination";
 import { defaultContactInclusion, defaultEvidenceInclusion, type Inclusion } from "./childPolicy";
 
@@ -231,6 +231,23 @@ export async function applyReview(
     throw new Error("--reviewer label is required");
   }
 
+  // F9: serialize review vs. apply-promotion for this batch on a session
+  // advisory lock BEFORE any batch/review read, so we validate and write
+  // against a stable snapshot. Released in `finally` (covers every throw path).
+  await acquireBatchLock(client, batchId);
+  try {
+    return await applyReviewLocked(client, batchId, manifest, reviewerLabel);
+  } finally {
+    await releaseBatchLock(client, batchId);
+  }
+}
+
+async function applyReviewLocked(
+  client: Client,
+  batchId: string,
+  manifest: z.infer<typeof manifestSchema>,
+  reviewerLabel: string,
+): Promise<ApplyReviewResult> {
   // F5: review state is immutable once the batch has been canonically promoted.
   // Canonical actions already reference the approved review; retroactively
   // editing it would make the audit trail dishonest and can conflict with
@@ -317,11 +334,34 @@ export async function applyReview(
     }
   }
 
+  // F7: the manifest is a FULL review snapshot. Its bundle-key set must equal
+  // the authoritative reviewable-key set exactly — extra/duplicate keys are
+  // already rejected above; here we reject a partial manifest that omits any
+  // reviewable bundle, so a stale prior approval can never silently survive.
+  for (const rk of reviewablePropertyKeys) {
+    if (!seenBundleKeys.has(rk)) {
+      throw new Error(
+        `manifest is not a full review snapshot: missing reviewable property bundle ${rk}`,
+      );
+    }
+  }
+
   let bundlesWritten = 0;
   let childOverridesWritten = 0;
 
   await client.query("begin");
   try {
+    // F8: persisted child overrides are a snapshot of the manifest. Clear this
+    // batch's existing overrides inside the transaction, then write only the
+    // current manifest's overrides — a removed override reverts the child to
+    // deterministic default inclusion. Scoped to THIS batch only.
+    await client.query(
+      `delete from public.import_row_reviews r
+         using public.import_rows ir
+         where r.import_row_id = ir.id and ir.import_batch_id = $1`,
+      [batchId],
+    );
+
     for (const b of manifest.bundles) {
       // Cross-field validation beyond the DB check constraint.
       if (b.decision === "approve_create") {

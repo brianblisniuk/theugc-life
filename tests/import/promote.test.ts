@@ -9,10 +9,17 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { acquireBatchLock, releaseBatchLock } from "@/lib/import/db";
 import { promoteBatch } from "@/lib/import/promote";
 import { applyReview } from "@/lib/import/review";
 
 import { hasTestDb, setupDatabase } from "../db/harness";
+
+function newClient(): Client {
+  return new Client({ connectionString: process.env.TEST_DATABASE_URL });
+}
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const d = describe.skipIf(!hasTestDb);
 
@@ -732,5 +739,195 @@ d("F6 — rolled-back bundles report zero canonical mutations", () => {
 
     // A batch with a failed bundle is never marked promoted.
     expect(res.batchStatus).not.toBe("promoted");
+  });
+});
+
+d("F10 — country/destination consistency", () => {
+  // DEST_ID (zzp-dest) is a known ID destination.
+  it("approve_create fails on a known cross-country conflict with zero mutation", async () => {
+    const b = await mkBatch("f10x");
+    await addRow(
+      b,
+      "property",
+      "f10x",
+      propRecord({ key: "f10x", propertyName: "F10 Conflict Hotel", countryCode: "AR" }),
+    );
+    await review(b, "f10x", "approve_create", { destinationId: DEST_ID });
+    const res = await promoteBatch(client, b, { apply: true });
+    expect(await count("public.hotels where name='F10 Conflict Hotel'")).toBe(0);
+    const bundle = res.bundles.find((x) => x.sourcePropertyKey === "f10x")!;
+    expect(bundle.error).toMatch(/country conflict/i);
+    expect(res.totals.hotelsCreated).toBe(0);
+    expect(res.batchStatus).not.toBe("promoted");
+  });
+
+  it("approve_create with a null staged country inherits the destination country", async () => {
+    const b = await mkBatch("f10n");
+    // Explicit null staged country (propRecord defaults to "ID").
+    const rec = {
+      ...propRecord({ key: "f10n", propertyName: "F10 Null Country Hotel" }),
+      countryCode: null,
+    };
+    await addRow(b, "property", "f10n", rec);
+    await review(b, "f10n", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ country_code: string | null }>(
+      "select country_code from public.hotels where name='F10 Null Country Hotel'",
+    );
+    expect(h.rows[0]!.country_code).toBe("ID");
+  });
+
+  it("approve_create with a compatible staged country succeeds", async () => {
+    const b = await mkBatch("f10ok");
+    await addRow(
+      b,
+      "property",
+      "f10ok",
+      propRecord({ key: "f10ok", propertyName: "F10 Compatible Hotel", countryCode: "ID" }),
+    );
+    await review(b, "f10ok", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ country_code: string | null }>(
+      "select country_code from public.hotels where name='F10 Compatible Hotel'",
+    );
+    expect(h.rows[0]!.country_code).toBe("ID");
+  });
+
+  it("approve_match never fills a country conflicting with the destination", async () => {
+    const hotelId = await mkHotel("F10 Match Hotel", "f10-match-1"); // ID destination, country null
+    const b = await mkBatch("f10m");
+    await addRow(
+      b,
+      "property",
+      "f10m",
+      propRecord({ key: "f10m", propertyName: "F10 Match Hotel", countryCode: "AR" }),
+    );
+    await review(b, "f10m", "approve_match", { targetHotelId: hotelId });
+    const res = await promoteBatch(client, b, { apply: true });
+    // Hotel takes the destination country (ID), never the conflicting staged AR.
+    const h = await client.query<{ country_code: string | null }>(
+      "select country_code from public.hotels where id=$1",
+      [hotelId],
+    );
+    expect(h.rows[0]!.country_code).toBe("ID");
+    const bundle = res.bundles.find((x) => x.sourcePropertyKey === "f10m")!;
+    expect(bundle.conflicts).toContain("country_code");
+  });
+
+  it("approve_match fills the destination country for a null-compatible staged country", async () => {
+    const hotelId = await mkHotel("F10 Match Fill Hotel", "f10-matchfill-1"); // country null
+    const b = await mkBatch("f10mf");
+    const rec = {
+      ...propRecord({ key: "f10mf", propertyName: "F10 Match Fill Hotel" }),
+      countryCode: null,
+    };
+    await addRow(b, "property", "f10mf", rec);
+    await review(b, "f10mf", "approve_match", { targetHotelId: hotelId });
+    const res = await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ country_code: string | null }>(
+      "select country_code from public.hotels where id=$1",
+      [hotelId],
+    );
+    expect(h.rows[0]!.country_code).toBe("ID");
+    const bundle = res.bundles.find((x) => x.sourcePropertyKey === "f10mf")!;
+    expect(bundle.conflicts).not.toContain("country_code");
+  });
+});
+
+d("F9 — review and apply-promotion serialize per batch", () => {
+  it("apply-promotion blocks while another session holds the batch lock; a different batch is unaffected", async () => {
+    const holder = newClient();
+    const worker = newClient();
+    await holder.connect();
+    await worker.connect();
+    try {
+      const b = await mkBatch("f9a");
+      await addRow(
+        b,
+        "property",
+        "f9a",
+        propRecord({ key: "f9a", propertyName: "F9 Serialize Hotel" }),
+      );
+      await review(b, "f9a", "approve_create", { destinationId: DEST_ID });
+
+      const c = await mkBatch("f9c");
+      await addRow(
+        c,
+        "property",
+        "f9c",
+        propRecord({ key: "f9c", propertyName: "F9 Other Hotel" }),
+      );
+      await review(c, "f9c", "approve_create", { destinationId: DEST_ID });
+
+      // A holder session takes batch B's advisory lock (exactly as the code does).
+      await acquireBatchLock(holder, b);
+
+      // Promotion of B on the worker session must block on that lock.
+      let settled = false;
+      const pB = promoteBatch(worker, b, { apply: true });
+      pB.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await delay(300);
+      expect(settled).toBe(false);
+      expect(await count("public.hotels where name='F9 Serialize Hotel'")).toBe(0);
+
+      // A DIFFERENT batch C is not blocked by B's lock (own connection).
+      const other = newClient();
+      await other.connect();
+      try {
+        const resC = await promoteBatch(other, c, { apply: true });
+        expect(resC.batchStatus).toBe("promoted");
+      } finally {
+        await other.end();
+      }
+
+      // Release B's lock; the blocked promotion now proceeds and completes.
+      await releaseBatchLock(holder, b);
+      const resB = await pB;
+      expect(resB.batchStatus).toBe("promoted");
+      expect(await count("public.hotels where name='F9 Serialize Hotel'")).toBe(1);
+    } finally {
+      await holder.end();
+      await worker.end();
+    }
+  });
+
+  it("applyReview blocks while another session holds the batch lock", async () => {
+    const holder = newClient();
+    const worker = newClient();
+    await holder.connect();
+    await worker.connect();
+    try {
+      const b = await mkBatch("f9r");
+      await addRow(
+        b,
+        "property",
+        "f9r",
+        propRecord({ key: "f9r", propertyName: "F9 Review Hotel" }),
+      );
+      await acquireBatchLock(holder, b);
+
+      let settled = false;
+      const manifest = {
+        batchId: b,
+        bundles: [{ sourcePropertyKey: "f9r", decision: "approve_create", destinationId: DEST_ID }],
+      };
+      const p = applyReview(worker, b, manifest, "Brian");
+      p.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await delay(300);
+      expect(settled).toBe(false);
+
+      await releaseBatchLock(holder, b);
+      const res = await p;
+      expect(res.batchStatus).toBe("approved");
+    } finally {
+      await holder.end();
+      await worker.end();
+    }
   });
 });

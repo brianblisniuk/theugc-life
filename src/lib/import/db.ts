@@ -45,6 +45,22 @@ function rowKey(sheet: string, rowNum: number): string {
   return `${sheet}#${rowNum}`;
 }
 
+// ---------------------------------------------------------------------------
+// Per-batch serialization (review fix F9). applyReview and apply-promotion for
+// the same batch must not interleave or operate on mixed review snapshots.
+// A PostgreSQL session-level advisory lock, keyed deterministically by batchId
+// (via hashtextextended → bigint), provides DB-backed mutual exclusion that
+// spans the multiple per-bundle transactions a promotion runs. Different
+// batches hash to different keys and never contend. Always release in a finally.
+// ---------------------------------------------------------------------------
+export async function acquireBatchLock(client: Client, batchId: string): Promise<void> {
+  await client.query("select pg_advisory_lock(hashtextextended($1, 0)) as locked", [batchId]);
+}
+
+export async function releaseBatchLock(client: Client, batchId: string): Promise<void> {
+  await client.query("select pg_advisory_unlock(hashtextextended($1, 0)) as unlocked", [batchId]);
+}
+
 /** Load existing canonical entities used for matching. */
 export async function loadExistingData(client: Client): Promise<ExistingData> {
   const hotels = await client.query<{

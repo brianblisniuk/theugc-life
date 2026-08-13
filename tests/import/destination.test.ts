@@ -73,6 +73,18 @@ describe("destination resolution order (DESTINATION_CATALOG §5)", () => {
     expect(r).toMatchObject({ destinationId: null, method: null, ambiguous: false });
   });
 
+  it("F10: an exact slug with a known conflicting staged country does not resolve cleanly", () => {
+    // d-bali is an ID destination; an AR staged country conflicts.
+    expect(
+      resolveDestination({ slug: "bali", name: "Bali", countryCode: "AR" }, CATALOG),
+    ).toMatchObject({ destinationId: null, method: null });
+    // Compatible or unknown staged country still resolves by slug.
+    expect(resolveDestination({ slug: "bali", countryCode: "ID" }, CATALOG).destinationId).toBe(
+      "d-bali",
+    );
+    expect(resolveDestination({ slug: "bali" }, CATALOG).destinationId).toBe("d-bali");
+  });
+
   it("F3: a NULL-country alias never resolves across a known destination-country conflict", () => {
     const catalog: DestinationCatalog = {
       destinations: [

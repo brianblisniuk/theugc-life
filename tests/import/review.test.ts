@@ -307,3 +307,119 @@ d("F1 — manifest identifiers are strictly batch- and bundle-scoped", () => {
     );
   });
 });
+
+async function overrideCount(importRowId: string): Promise<number> {
+  const r = await client.query<{ n: string }>(
+    "select count(*)::text n from public.import_row_reviews where import_row_id=$1",
+    [importRowId],
+  );
+  return Number(r.rows[0]!.n);
+}
+
+d("F7 — a review manifest is a full snapshot of the batch's reviewable bundles", () => {
+  it("a partial manifest is rejected and leaves prior approvals unchanged", async () => {
+    const b = await mkBatch("f7");
+    await addProperty(b, "f7a", "F7 A");
+    await addProperty(b, "f7b", "F7 B");
+    // Full manifest approves both bundles.
+    const full = {
+      batchId: b,
+      bundles: [
+        { sourcePropertyKey: "f7a", decision: "approve_create", destinationId: RDEST },
+        { sourcePropertyKey: "f7b", decision: "approve_create", destinationId: RDEST },
+      ],
+    };
+    const res1 = await applyReview(client, b, full, "Brian");
+    expect(res1.complete).toBe(true);
+
+    // A later manifest containing ONLY A must fail (B is missing).
+    const partial = {
+      batchId: b,
+      bundles: [{ sourcePropertyKey: "f7a", decision: "reject" }],
+    };
+    await expect(applyReview(client, b, partial, "Brian")).rejects.toThrow(
+      /full review snapshot|missing/i,
+    );
+
+    // Persisted decisions are unchanged: both bundles still approve_create.
+    const rows = await client.query<{ decision: string }>(
+      "select decision from public.import_property_reviews where import_batch_id=$1 order by source_property_key",
+      [b],
+    );
+    expect(rows.rows.map((r) => r.decision)).toEqual(["approve_create", "approve_create"]);
+  });
+});
+
+d("F8 — child overrides are a snapshot of the manifest", () => {
+  it("re-applying without an override deletes it (default policy resumes); other batches untouched", async () => {
+    // Batch under test: a property + an inferred contact (default = defer).
+    const b = await mkBatch("f8");
+    await addProperty(b, "f8k", "F8 Hotel");
+    const contactRow = await addContact(b, "f8k", {
+      email: "inf@h.com",
+      verificationStatus: "inferred",
+    });
+
+    // Independent batch whose override must survive re-applies elsewhere.
+    const other = await mkBatch("f8other");
+    await addProperty(other, "f8ok", "F8 Other");
+    const otherContact = await addContact(other, "f8ok", {
+      email: "o@h.com",
+      verificationStatus: "inferred",
+    });
+    await applyReview(
+      client,
+      other,
+      {
+        batchId: other,
+        bundles: [
+          {
+            sourcePropertyKey: "f8ok",
+            decision: "approve_create",
+            destinationId: RDEST,
+            childOverrides: [{ importRowId: otherContact, decision: "include" }],
+          },
+        ],
+      },
+      "Brian",
+    );
+
+    // First apply for b: explicitly include the inferred contact.
+    await applyReview(
+      client,
+      b,
+      {
+        batchId: b,
+        bundles: [
+          {
+            sourcePropertyKey: "f8k",
+            decision: "approve_create",
+            destinationId: RDEST,
+            childOverrides: [{ importRowId: contactRow, decision: "include" }],
+          },
+        ],
+      },
+      "Brian",
+    );
+    expect(await overrideCount(contactRow)).toBe(1);
+
+    // Re-apply the FULL manifest with the override removed → it is deleted.
+    await applyReview(
+      client,
+      b,
+      {
+        batchId: b,
+        bundles: [{ sourcePropertyKey: "f8k", decision: "approve_create", destinationId: RDEST }],
+      },
+      "Brian",
+    );
+    expect(await overrideCount(contactRow)).toBe(0);
+    // The other batch's override is untouched.
+    expect(await overrideCount(otherContact)).toBe(1);
+
+    // With the override gone, deterministic default policy defers the contact.
+    const manifest = await buildReviewTemplate(client, b);
+    const c = manifest.bundles[0]!.contacts.find((x) => x.importRowId === contactRow)!;
+    expect(c.defaultInclusion).toBe("defer");
+  });
+});

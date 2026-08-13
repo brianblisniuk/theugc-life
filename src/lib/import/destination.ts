@@ -63,10 +63,13 @@ export function resolveDestination(
   const nameFold = input.name ? foldForMatch(input.name) : null;
   const country = input.countryCode ?? null;
 
-  // 1. Exact active canonical slug (slugs are globally unique).
+  // 1. Exact active canonical slug (slugs are globally unique). A slug hit only
+  // resolves when the staged country is compatible with the destination's known
+  // country (review fix F10): an exact slug with a KNOWN conflicting staged
+  // country must not resolve cleanly.
   if (slug) {
     const bySlug = catalog.destinations.filter((d) => d.slug === slug);
-    if (bySlug.length === 1) {
+    if (bySlug.length === 1 && countryCompatible(bySlug[0]!.countryCode, country)) {
       return { destinationId: bySlug[0]!.id, method: "destination_slug", ambiguous: false };
     }
   }
