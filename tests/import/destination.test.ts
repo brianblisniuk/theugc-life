@@ -72,6 +72,25 @@ describe("destination resolution order (DESTINATION_CATALOG §5)", () => {
     const r = resolveDestination({ name: "Nowhere City" }, CATALOG);
     expect(r).toMatchObject({ destinationId: null, method: null, ambiguous: false });
   });
+
+  it("F3: a NULL-country alias never resolves across a known destination-country conflict", () => {
+    const catalog: DestinationCatalog = {
+      destinations: [
+        { id: "d-flori-br", slug: "florianopolis", nameFold: "florianopolis", countryCode: "BR" },
+      ],
+      // Alias country is NULL, but the destination it points to is known BR.
+      aliases: [{ destinationId: "d-flori-br", normalizedAlias: "floripa", countryCode: null }],
+    };
+    // AR source input conflicts with the BR destination → must NOT resolve.
+    expect(resolveDestination({ name: "Floripa", countryCode: "AR" }, catalog).destinationId).toBe(
+      null,
+    );
+    // Compatible (BR) or unknown source country still resolves via the alias.
+    expect(resolveDestination({ name: "Floripa", countryCode: "BR" }, catalog).destinationId).toBe(
+      "d-flori-br",
+    );
+    expect(resolveDestination({ name: "Floripa" }, catalog).destinationId).toBe("d-flori-br");
+  });
 });
 
 const d = describe.skipIf(!hasTestDb);
@@ -140,5 +159,17 @@ d("destination catalog management (CLI logic)", () => {
     await expect(
       addAlias(client, { destinationSlug: "zzt-bali", alias: "Bali Island", countryCode: "ID" }),
     ).rejects.toBeTruthy();
+  });
+
+  it("F3: rejects an explicit cross-country alias mapping via the CLI", async () => {
+    // zzt-bali is a known ID destination; an explicit BR alias country conflicts.
+    await expect(
+      addAlias(client, { destinationSlug: "zzt-bali", alias: "Wrong Country", countryCode: "BR" }),
+    ).rejects.toBeInstanceOf(DestinationValidationError);
+    // The conflicting alias must not have been written.
+    const n = await client.query<{ n: string }>(
+      "select count(*)::text n from public.destination_aliases where normalized_alias = 'wrong country'",
+    );
+    expect(Number(n.rows[0]!.n)).toBe(0);
   });
 });

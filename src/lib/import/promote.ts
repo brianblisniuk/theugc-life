@@ -413,8 +413,13 @@ export async function promoteBatch(
   const propertyRowByKey = new Map<string, BatchRow>();
   for (const row of data.rows) {
     if (!row.sourcePropertyKey || !row.normalized) continue;
-    if (row.rowKind === "property") propertyRowByKey.set(row.sourcePropertyKey, row);
-    else if (row.rowKind === "contact")
+    if (row.rowKind === "property") {
+      // Structurally rejected property rows are never promotable (review fix
+      // F2): they are not rendered as bundles and can never create/match a
+      // canonical hotel.
+      if (row.validationStatus === "rejected") continue;
+      propertyRowByKey.set(row.sourcePropertyKey, row);
+    } else if (row.rowKind === "contact")
       contactsByKey.set(row.sourcePropertyKey, [
         ...(contactsByKey.get(row.sourcePropertyKey) ?? []),
         row,
@@ -499,7 +504,13 @@ export async function promoteBatch(
       continue;
     }
 
-    // Apply: transaction per bundle.
+    // Apply: transaction per bundle. Mutation counters are committed-only
+    // (review fix F6): a hotel create/match, contact create/reuse, evidence
+    // create, or filled hotel field counts toward the plan/totals ONLY after a
+    // successful COMMIT. A rolled-back bundle reports zero canonical mutations.
+    let hotelCreated = false;
+    let hotelMatched = false;
+    let committed = false;
     try {
       await client.query("begin");
       // Lock the property review row to serialize concurrent promotion.
@@ -522,11 +533,20 @@ export async function promoteBatch(
         if (!review.destination_id) throw new Error("approve_create missing destination");
         const destSlug = await destinationSlugById(client, review.destination_id);
         const slug = await generateSlug(client, property.propertyName, destSlug, key);
-        const verified = evidence.some(
-          (er) =>
-            (er.normalized as unknown as EvidenceRecord).claimType === "property_exists" &&
-            (er.normalized as unknown as EvidenceRecord).verificationStatus === "verified",
-        );
+        // F4: a new canonical hotel may be upgraded to `verified` ONLY by an
+        // evidence row that (a) claims property_exists, (b) is itself verified,
+        // AND (c) resolves to final child inclusion = include (default policy +
+        // reviewer override). Deferred/excluded/rejected/invalid evidence must
+        // never upgrade hotel verification.
+        const verified = evidence.some((er) => {
+          const e = er.normalized as unknown as EvidenceRecord;
+          return (
+            e.claimType === "property_exists" &&
+            e.verificationStatus === "verified" &&
+            finalEvidenceInclusion(er.validationStatus, e, overridesByRow.get(er.importRowId)) ===
+              "include"
+          );
+        });
         const ins = await client.query<{ id: string }>(
           `insert into public.hotels
              (name, slug, destination_id, country_code, address, latitude, longitude,
@@ -552,7 +572,7 @@ export async function promoteBatch(
         hotelId = ins.rows[0]!.id;
         plan.hotelSlug = slug;
         await addLink(client, propertyRow.importRowId, "hotel", hotelId, "created");
-        totals.hotelsCreated++;
+        hotelCreated = true;
       } else {
         // approve_match
         hotelId = review.target_hotel_id!;
@@ -585,7 +605,7 @@ export async function promoteBatch(
         await addLink(client, propertyRow.importRowId, "hotel", hotelId, "matched");
         if (fills.length > 0)
           await addLink(client, propertyRow.importRowId, "hotel", hotelId, "updated");
-        totals.hotelsMatched++;
+        hotelMatched = true;
       }
 
       plan.hotelId = hotelId;
@@ -604,15 +624,31 @@ export async function promoteBatch(
         plan,
       );
 
-      totals.contactsCreated += plan.contactsCreated;
-      totals.contactsReused += plan.contactsReused;
-      totals.evidenceCreated += plan.evidenceCreated;
-
       await client.query("commit");
+      committed = true;
     } catch (err) {
       await client.query("rollback");
       plan.error = err instanceof Error ? err.message : String(err);
       allPromoted = false;
+    }
+
+    if (committed) {
+      if (hotelCreated) totals.hotelsCreated++;
+      if (hotelMatched) totals.hotelsMatched++;
+      totals.contactsCreated += plan.contactsCreated;
+      totals.contactsReused += plan.contactsReused;
+      totals.evidenceCreated += plan.evidenceCreated;
+    } else {
+      // Rolled back: no canonical row was created/matched/updated in this
+      // transaction, so every mutation counter must reflect committed DB state
+      // (review fix F6). Diagnostics (conflicts/notes/error) are retained.
+      plan.hotelId = null;
+      plan.hotelSlug = null;
+      plan.hotelAlreadyPromoted = false;
+      plan.contactsCreated = 0;
+      plan.contactsReused = 0;
+      plan.evidenceCreated = 0;
+      plan.filledHotelFields = [];
     }
     bundles.push(plan);
   }

@@ -10,6 +10,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { promoteBatch } from "@/lib/import/promote";
+import { applyReview } from "@/lib/import/review";
 
 import { hasTestDb, setupDatabase } from "../db/harness";
 
@@ -514,5 +515,222 @@ d("promotion — evidence, idempotency, no intelligence", () => {
     for (const table of ["outreach_events", "hotel_intelligence", "destination_intelligence"]) {
       expect(await count(`public.${table}`)).toBe(0);
     }
+  });
+});
+
+d("F2 — reviewable property bundles", () => {
+  it("a rejected structural property row is staging-only; a sibling valid bundle still promotes", async () => {
+    const b = await mkBatch("f2mix");
+    // One structurally rejected property row + one valid property row.
+    await addRow(
+      b,
+      "property",
+      "f2-rej",
+      propRecord({ key: "f2-rej", propertyName: "F2 Rejected Hotel" }),
+      "rejected",
+    );
+    await addRow(
+      b,
+      "property",
+      "f2-ok",
+      propRecord({ key: "f2-ok", propertyName: "F2 Valid Hotel" }),
+    );
+    // Only the valid bundle is reviewed; the rejected row is not reviewable.
+    await review(b, "f2-ok", "approve_create", { destinationId: DEST_ID });
+
+    const res = await promoteBatch(client, b, { apply: true });
+    // The valid bundle completes and the batch is promoted despite the reject.
+    expect(res.batchStatus).toBe("promoted");
+    expect(res.totals.hotelsCreated).toBe(1);
+    expect(await count("public.hotels where name='F2 Valid Hotel'")).toBe(1);
+    // The rejected row never becomes a canonical hotel; it stays staging-only.
+    expect(await count("public.hotels where name='F2 Rejected Hotel'")).toBe(0);
+    expect(
+      await count(
+        "public.import_rows where import_batch_id=$1 and source_property_key='f2-rej' and validation_status='rejected'",
+        [b],
+      ),
+    ).toBe(1);
+  });
+
+  it("a batch with zero reviewable property bundles cannot complete or promote", async () => {
+    const b = await mkBatch("f2none");
+    await addRow(
+      b,
+      "property",
+      "f2-only-rej",
+      propRecord({ key: "f2-only-rej", propertyName: "F2 Only Rejected" }),
+      "rejected",
+    );
+    // --apply must fail safely: review is incomplete (no reviewable bundles).
+    await expect(promoteBatch(client, b, { apply: true })).rejects.toThrow(/incomplete/i);
+    expect(await count("public.hotels where name='F2 Only Rejected'")).toBe(0);
+  });
+
+  it("the DB rejects a second property row sharing a source_property_key in a batch", async () => {
+    const b = await mkBatch("f2dup");
+    await addRow(b, "property", "f2-dup", propRecord({ key: "f2-dup", propertyName: "Dup A" }));
+    let code: string | null = null;
+    try {
+      await addRow(b, "property", "f2-dup", propRecord({ key: "f2-dup", propertyName: "Dup B" }));
+    } catch (e) {
+      code = (e as { code?: string }).code ?? "error";
+    }
+    expect(code).toBe("23505");
+  });
+});
+
+d("F4 — only included verified evidence upgrades hotel verification", () => {
+  it("included verified property_exists evidence upgrades the hotel to verified", async () => {
+    const b = await mkBatch("f4a");
+    await addRow(
+      b,
+      "property",
+      "f4a",
+      propRecord({ key: "f4a", propertyName: "F4 Verified Hotel" }),
+    );
+    await addRow(
+      b,
+      "evidence",
+      "f4a",
+      evidenceRecord({ key: "f4a", claimType: "property_exists", verificationStatus: "verified" }),
+    );
+    await review(b, "f4a", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ editorial_verification_status: string }>(
+      "select editorial_verification_status from public.hotels where name='F4 Verified Hotel'",
+    );
+    expect(h.rows[0]!.editorial_verification_status).toBe("verified");
+  });
+
+  it("explicitly excluded verified evidence does NOT upgrade the hotel", async () => {
+    const b = await mkBatch("f4b");
+    await addRow(
+      b,
+      "property",
+      "f4b",
+      propRecord({ key: "f4b", propertyName: "F4 Excluded Hotel" }),
+    );
+    const ev = await addRow(
+      b,
+      "evidence",
+      "f4b",
+      evidenceRecord({ key: "f4b", claimType: "property_exists", verificationStatus: "verified" }),
+    );
+    await review(b, "f4b", "approve_create", { destinationId: DEST_ID });
+    await childReview(ev, "exclude");
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ editorial_verification_status: string }>(
+      "select editorial_verification_status from public.hotels where name='F4 Excluded Hotel'",
+    );
+    expect(h.rows[0]!.editorial_verification_status).toBe("unverified");
+  });
+
+  it("deferred verified evidence (validation review) does NOT upgrade the hotel", async () => {
+    const b = await mkBatch("f4c");
+    await addRow(
+      b,
+      "property",
+      "f4c",
+      propRecord({ key: "f4c", propertyName: "F4 Deferred Hotel" }),
+    );
+    await addRow(
+      b,
+      "evidence",
+      "f4c",
+      evidenceRecord({ key: "f4c", claimType: "property_exists", verificationStatus: "verified" }),
+      "review", // default defer, no override → not finally included
+    );
+    await review(b, "f4c", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const h = await client.query<{ editorial_verification_status: string }>(
+      "select editorial_verification_status from public.hotels where name='F4 Deferred Hotel'",
+    );
+    expect(h.rows[0]!.editorial_verification_status).toBe("unverified");
+  });
+});
+
+d("F5 — review state immutable after promotion", () => {
+  it("rejects review mutation once the batch is promoted", async () => {
+    const b = await mkBatch("f5a");
+    await addRow(
+      b,
+      "property",
+      "f5a",
+      propRecord({ key: "f5a", propertyName: "F5 Promoted Hotel" }),
+    );
+    await review(b, "f5a", "approve_create", { destinationId: DEST_ID });
+    const res = await promoteBatch(client, b, { apply: true });
+    expect(res.batchStatus).toBe("promoted");
+
+    const manifest = { batchId: b, bundles: [{ sourcePropertyKey: "f5a", decision: "reject" }] };
+    await expect(applyReview(client, b, manifest, "Brian")).rejects.toThrow(/immutable|promoted/i);
+    // The original approved decision is unchanged.
+    const dec = await client.query<{ decision: string }>(
+      "select decision from public.import_property_reviews where import_batch_id=$1",
+      [b],
+    );
+    expect(dec.rows[0]!.decision).toBe("approve_create");
+  });
+
+  it("repeat promotion with the unchanged promoted review stays idempotent", async () => {
+    const b = await mkBatch("f5b");
+    await addRow(b, "property", "f5b", propRecord({ key: "f5b", propertyName: "F5 Repeat Hotel" }));
+    await review(b, "f5b", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    const n1 = await count("public.hotels where name='F5 Repeat Hotel'");
+    const res2 = await promoteBatch(client, b, { apply: true });
+    expect(res2.batchStatus).toBe("promoted");
+    expect(await count("public.hotels where name='F5 Repeat Hotel'")).toBe(n1);
+  });
+});
+
+d("F6 — rolled-back bundles report zero canonical mutations", () => {
+  it("a failure mid-transaction rolls back and zeroes bundle + total counters", async () => {
+    const b = await mkBatch("f6a");
+    await addRow(
+      b,
+      "property",
+      "f6a",
+      propRecord({ key: "f6a", propertyName: "F6 Rollback Hotel" }),
+    );
+    // Contact department violates the DB check → INSERT fails AFTER the hotel
+    // and property-provenance evidence were created in the same transaction.
+    await addRow(
+      b,
+      "contact",
+      "f6a",
+      contactRecord({
+        key: "f6a",
+        email: "f6@h.com",
+        department: "not_a_real_department",
+        verificationStatus: "verified",
+      }),
+    );
+    await review(b, "f6a", "approve_create", { destinationId: DEST_ID });
+
+    const res = await promoteBatch(client, b, { apply: true });
+
+    // Canonical DB state is fully rolled back.
+    expect(await count("public.hotels where name='F6 Rollback Hotel'")).toBe(0);
+    expect(await count("public.hotel_contacts where email='f6@h.com'")).toBe(0);
+    expect(await count("public.editorial_evidence where import_batch_id=$1", [b])).toBe(0);
+
+    // Bundle counters are zero for the rolled-back work; diagnostics retained.
+    const bundle = res.bundles.find((x) => x.sourcePropertyKey === "f6a")!;
+    expect(bundle.error).toBeTruthy();
+    expect(bundle.hotelId).toBeNull();
+    expect(bundle.contactsCreated).toBe(0);
+    expect(bundle.contactsReused).toBe(0);
+    expect(bundle.evidenceCreated).toBe(0);
+    expect(bundle.filledHotelFields).toEqual([]);
+
+    // Aggregate totals reflect committed state only (nothing committed).
+    expect(res.totals.hotelsCreated).toBe(0);
+    expect(res.totals.contactsCreated).toBe(0);
+    expect(res.totals.evidenceCreated).toBe(0);
+
+    // A batch with a failed bundle is never marked promoted.
+    expect(res.batchStatus).not.toBe("promoted");
   });
 });

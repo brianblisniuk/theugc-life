@@ -108,6 +108,9 @@ export async function buildReviewTemplate(
   const bundles: ReviewBundle[] = [];
   for (const row of data.rows) {
     if (row.rowKind !== "property" || !row.normalized || !row.sourcePropertyKey) continue;
+    // Structurally rejected property rows are never rendered as promotion
+    // bundles (review fix F2); they stay staging-only.
+    if (row.validationStatus === "rejected") continue;
     const p = asProperty(row);
     const dest = resolveDestination(
       { slug: p.destinationSlug, name: p.destinationName, countryCode: p.countryCode },
@@ -228,6 +231,92 @@ export async function applyReview(
     throw new Error("--reviewer label is required");
   }
 
+  // F5: review state is immutable once the batch has been canonically promoted.
+  // Canonical actions already reference the approved review; retroactively
+  // editing it would make the audit trail dishonest and can conflict with
+  // idempotent row links. Reconciliation/reversal is a separate workflow.
+  const batchRes = await client.query<{ status: string }>(
+    "select status from public.import_batches where id = $1",
+    [batchId],
+  );
+  if (batchRes.rows.length === 0) throw new Error(`Batch not found: ${batchId}`);
+  if (batchRes.rows[0]!.status === "promoted") {
+    throw new Error(
+      "batch is already promoted; review state is immutable (canonical reconciliation is a separate workflow)",
+    );
+  }
+
+  // F1: every identifier in the (untrusted) manifest must be strictly batch- and
+  // bundle-scoped. Build the authoritative row index for THIS batch first, then
+  // validate the entire manifest before writing any review state.
+  const batchRows = await client.query<{
+    id: string;
+    row_kind: string;
+    source_property_key: string | null;
+    normalized_data: unknown;
+    validation_status: string;
+  }>(
+    `select id, row_kind, source_property_key, normalized_data, validation_status
+       from public.import_rows where import_batch_id = $1`,
+    [batchId],
+  );
+  const reviewablePropertyKeys = new Set<string>();
+  const rowById = new Map<string, { rowKind: string; sourcePropertyKey: string | null }>();
+  for (const r of batchRows.rows) {
+    rowById.set(r.id, { rowKind: r.row_kind, sourcePropertyKey: r.source_property_key });
+    if (
+      r.row_kind === "property" &&
+      r.source_property_key !== null &&
+      r.normalized_data !== null &&
+      r.validation_status !== "rejected"
+    ) {
+      reviewablePropertyKeys.add(r.source_property_key);
+    }
+  }
+
+  const seenBundleKeys = new Set<string>();
+  const seenChildRows = new Set<string>();
+  for (const b of manifest.bundles) {
+    // (2) No duplicate property bundle keys.
+    if (seenBundleKeys.has(b.sourcePropertyKey)) {
+      throw new Error(`duplicate property bundle key in manifest: ${b.sourcePropertyKey}`);
+    }
+    seenBundleKeys.add(b.sourcePropertyKey);
+    // (1)+(7) The key must name exactly one reviewable property row in THIS
+    // batch. Unknown/rejected/cross-batch keys fail the whole review.
+    if (!reviewablePropertyKeys.has(b.sourcePropertyKey)) {
+      throw new Error(
+        `sourcePropertyKey ${b.sourcePropertyKey} is not a reviewable property row in batch ${batchId}`,
+      );
+    }
+    for (const override of b.childOverrides ?? []) {
+      // (6) The same child row cannot appear in more than one override entry.
+      if (seenChildRows.has(override.importRowId)) {
+        throw new Error(`child row ${override.importRowId} appears in more than one override`);
+      }
+      seenChildRows.add(override.importRowId);
+      // (3)+(7) The child row must belong to THIS batch.
+      const child = rowById.get(override.importRowId);
+      if (!child) {
+        throw new Error(
+          `child override importRowId ${override.importRowId} does not belong to batch ${batchId}`,
+        );
+      }
+      // (4) A child override row is only contact or evidence, never property.
+      if (child.rowKind !== "contact" && child.rowKind !== "evidence") {
+        throw new Error(
+          `child override importRowId ${override.importRowId} is a ${child.rowKind} row, not contact/evidence`,
+        );
+      }
+      // (5) The child row's source_property_key must equal the bundle's key.
+      if (child.sourcePropertyKey !== b.sourcePropertyKey) {
+        throw new Error(
+          `child override importRowId ${override.importRowId} belongs to bundle ${child.sourcePropertyKey}, not ${b.sourcePropertyKey}`,
+        );
+      }
+    }
+  }
+
   let bundlesWritten = 0;
   let childOverridesWritten = 0;
 
@@ -331,9 +420,14 @@ export interface BatchApprovalState {
 }
 
 /**
- * A batch's review is complete only when EVERY property bundle has a final
- * decision of approve_create / approve_match / reject (no defer, none missing)
- * (CANONICAL_PROMOTION_SPEC.md §15).
+ * A batch's review is complete only when EVERY reviewable property bundle has a
+ * final decision of approve_create / approve_match / reject (no defer, none
+ * missing) (CANONICAL_PROMOTION_SPEC.md §15, review fix F2).
+ *
+ * Only REVIEWABLE property rows count toward the denominator. Structurally
+ * rejected property rows are preserved in staging but never enter approval:
+ * they cannot be promoted and cannot block sibling bundles. A batch with zero
+ * reviewable property bundles can never become complete.
  */
 export async function computeBatchApprovalState(
   client: Client,
@@ -341,7 +435,9 @@ export async function computeBatchApprovalState(
 ): Promise<BatchApprovalState> {
   const propKeys = await client.query<{ source_property_key: string }>(
     `select distinct source_property_key from public.import_rows
-       where import_batch_id = $1 and row_kind = 'property' and source_property_key is not null`,
+       where import_batch_id = $1 and row_kind = 'property'
+         and source_property_key is not null and normalized_data is not null
+         and validation_status <> 'rejected'`,
     [batchId],
   );
   const reviews = await client.query<{ source_property_key: string; decision: string }>(

@@ -196,3 +196,114 @@ d("review-template + review-apply", () => {
     await expect(applyReview(client, b, manifest, "Brian")).rejects.toThrow(/batchId/i);
   });
 });
+
+async function reviewCount(batchId: string): Promise<number> {
+  const r = await client.query<{ n: string }>(
+    "select count(*)::text n from public.import_property_reviews where import_batch_id=$1",
+    [batchId],
+  );
+  return Number(r.rows[0]!.n);
+}
+
+d("F1 — manifest identifiers are strictly batch- and bundle-scoped", () => {
+  it("a manifest for Batch A cannot mutate review state for Batch B", async () => {
+    const a = await mkBatch("f1a");
+    await addProperty(a, "f1-a-key", "A Hotel");
+    const b = await mkBatch("f1b");
+    await addProperty(b, "f1-b-key", "B Hotel");
+    // Reviewer submits a manifest scoped to A but referencing B's property key.
+    const manifest = {
+      batchId: a,
+      bundles: [
+        { sourcePropertyKey: "f1-b-key", decision: "approve_create", destinationId: RDEST },
+      ],
+    };
+    await expect(applyReview(client, a, manifest, "Brian")).rejects.toThrow(
+      /reviewable property row/i,
+    );
+    // The entire transaction fails: neither batch gets review state.
+    expect(await reviewCount(a)).toBe(0);
+    expect(await reviewCount(b)).toBe(0);
+  });
+
+  it("a child override cannot attach a row from another property bundle", async () => {
+    const b = await mkBatch("f1child");
+    await addProperty(b, "k1", "K1 Hotel");
+    await addProperty(b, "k2", "K2 Hotel");
+    await addContact(b, "k1", { email: "k1@h.com" });
+    const k2contact = await addContact(b, "k2", { email: "k2@h.com" });
+    const manifest = {
+      batchId: b,
+      bundles: [
+        {
+          sourcePropertyKey: "k1",
+          decision: "approve_create",
+          destinationId: RDEST,
+          childOverrides: [{ importRowId: k2contact, decision: "include" }],
+        },
+        { sourcePropertyKey: "k2", decision: "reject" },
+      ],
+    };
+    await expect(applyReview(client, b, manifest, "Brian")).rejects.toThrow(/bundle/i);
+    // No property or child review state was written.
+    expect(await reviewCount(b)).toBe(0);
+    const n = await client.query<{ n: string }>(
+      "select count(*)::text n from public.import_row_reviews where import_row_id=$1",
+      [k2contact],
+    );
+    expect(Number(n.rows[0]!.n)).toBe(0);
+  });
+
+  it("rejects duplicate property bundle keys", async () => {
+    const b = await mkBatch("f1dup");
+    await addProperty(b, "dupk", "Dup Hotel");
+    const manifest = {
+      batchId: b,
+      bundles: [
+        { sourcePropertyKey: "dupk", decision: "approve_create", destinationId: RDEST },
+        { sourcePropertyKey: "dupk", decision: "reject" },
+      ],
+    };
+    await expect(applyReview(client, b, manifest, "Brian")).rejects.toThrow(/duplicate/i);
+  });
+
+  it("rejects a child override that points at a property row", async () => {
+    const b = await mkBatch("f1prop");
+    const propRowId = await addProperty(b, "pk", "Prop Hotel");
+    const manifest = {
+      batchId: b,
+      bundles: [
+        {
+          sourcePropertyKey: "pk",
+          decision: "approve_create",
+          destinationId: RDEST,
+          childOverrides: [{ importRowId: propRowId, decision: "include" }],
+        },
+      ],
+    };
+    await expect(applyReview(client, b, manifest, "Brian")).rejects.toThrow(
+      /not contact\/evidence/i,
+    );
+  });
+
+  it("rejects a child override whose row belongs to another batch", async () => {
+    const a = await mkBatch("f1xa");
+    await addProperty(a, "xa", "XA Hotel");
+    const other = await mkBatch("f1xb");
+    const otherContact = await addContact(other, "xb", { email: "xb@h.com" });
+    const manifest = {
+      batchId: a,
+      bundles: [
+        {
+          sourcePropertyKey: "xa",
+          decision: "approve_create",
+          destinationId: RDEST,
+          childOverrides: [{ importRowId: otherContact, decision: "include" }],
+        },
+      ],
+    };
+    await expect(applyReview(client, a, manifest, "Brian")).rejects.toThrow(
+      /does not belong to batch/i,
+    );
+  });
+});

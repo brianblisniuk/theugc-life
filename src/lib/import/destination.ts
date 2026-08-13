@@ -71,10 +71,17 @@ export function resolveDestination(
     }
   }
 
-  // 2. Exact active alias + compatible country.
+  // 2. Exact active alias + compatible country. Compatibility considers BOTH
+  // the alias's optional country_code AND the target canonical destination's
+  // country_code (review fix F3): a NULL-country alias must never resolve
+  // across a known country conflict on the destination itself.
   if (nameFold) {
+    const destCountryById = new Map(catalog.destinations.map((d) => [d.id, d.countryCode]));
     const aliasMatches = catalog.aliases.filter(
-      (a) => a.normalizedAlias === nameFold && countryCompatible(a.countryCode, country),
+      (a) =>
+        a.normalizedAlias === nameFold &&
+        countryCompatible(a.countryCode, country) &&
+        countryCompatible(destCountryById.get(a.destinationId) ?? null, country),
     );
     const distinct = new Set(aliasMatches.map((a) => a.destinationId));
     if (distinct.size === 1) {
@@ -253,13 +260,25 @@ export async function addAlias(client: Client, input: AddAliasInput): Promise<{ 
   const alias = normalizeString(input.alias);
   assert(alias !== null, "alias is required");
   const destSlug = normalizeSlug(input.destinationSlug);
-  const dest = await client.query<{ id: string }>(
-    "select id from public.destinations where slug = $1",
+  const dest = await client.query<{ id: string; country_code: string | null }>(
+    "select id, country_code from public.destinations where slug = $1",
     [destSlug],
   );
   assert(dest.rows.length === 1, `destination not found: ${input.destinationSlug}`);
   const country = input.countryCode ? input.countryCode.toUpperCase() : null;
   if (country !== null) assert(/^[A-Z]{2}$/.test(country), "country_code must be ISO alpha-2");
+
+  // Never permit an explicit cross-country alias mapping (review fix F3): when
+  // an alias country is supplied and the destination has a known country, they
+  // must match. This keeps the alias catalog free of country-conflicting rows
+  // that the resolver would otherwise have to defensively reject at read time.
+  const destCountry = dest.rows[0]!.country_code;
+  if (country !== null && destCountry !== null) {
+    assert(
+      country === destCountry,
+      `alias country ${country} conflicts with destination country ${destCountry}`,
+    );
+  }
 
   const res = await client.query<{ id: string }>(
     `insert into public.destination_aliases
