@@ -298,3 +298,41 @@ Status: Accepted (see SPRINT_1A_REVIEW_FIXES.md)
 
 Reason:
 Protect identity/data integrity and idempotency before the first real import.
+
+## D042 — Free-plan limit semantics: open relationships vs engaged CRM
+Status: Accepted
+
+`FREE_LIMITS` carries two distinct numbers that answer two different questions.
+They are not interchangeable, and neither replaces the database's relationship-
+cycle rule.
+
+**`savedHotels = 10` — open relationship allowance.**
+The maximum number of OPEN (non-closed) creator↔hotel relationships a Free
+creator may maintain at once. `saved` counts toward this limit. Closed cycles
+are history and do not count.
+
+**`activePipelineItems = 5` — engaged workflow allowance.**
+The maximum number of relationships a Free creator may advance beyond the
+passive `saved` state into engaged CRM workflow. The engaged statuses are
+`planned`, `pitched`, `replied`, `follow_up`, `negotiating`, `won`.
+
+`saved` does NOT consume the engaged allowance of 5. A Free creator may hold up
+to 10 open relationships, of which at most 5 may be engaged.
+
+**Relationship to D023.** D023 is unchanged and remains the database invariant:
+for cycle uniqueness, every status except `closed` is an open/non-closed cycle,
+enforced by `pipeline_items_single_active_cycle_uidx`. That is a storage rule
+about how many cycles may exist per creator+hotel. D042 is a commercial rule
+about how many relationships a Free plan may hold and how many may be engaged.
+Both apply independently; neither weakens the other.
+
+**Enforcement.** Limits are enforced server-side from typed configuration
+(`FREE_LIMITS` in `src/lib/config.ts`), never from client input, and race-safely
+inside the same transaction that creates the row. Premium coverage (active Pro,
+or an active destination entitlement covering the hotel's destination
+hierarchy) exempts a creator from the Free limits for that hotel; a destination
+creator acting outside their entitlement falls back to Free behavior.
+
+Sprint 2B implements only the `savedHotels = 10` open-relationship limit,
+because it only creates `saved` items. The `activePipelineItems = 5` engaged
+limit is enforced when status transitions ship.

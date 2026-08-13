@@ -30,6 +30,7 @@ import {
   getHotelContactsIfAuthorized,
   getHotelIntelligence,
 } from "@/lib/hotels/queries";
+import { getOpenRelationship } from "@/lib/pipeline/queries";
 
 /** Deduped per request so metadata and the page share one fetch. */
 const loadHotel = cache(getHotelById);
@@ -69,10 +70,12 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
   if (!hotel) notFound();
 
   // Access is resolved first; contacts are only fetched when authorized.
-  const [{ access, contacts, failed: contactsFailed }, intelligence] = await Promise.all([
-    getHotelContactsIfAuthorized(hotel.id),
-    getHotelIntelligence(hotel.id),
-  ]);
+  const [{ access, contacts, failed: contactsFailed }, intelligence, relationship] =
+    await Promise.all([
+      getHotelContactsIfAuthorized(hotel.id),
+      getHotelIntelligence(hotel.id),
+      getOpenRelationship(hotel.id),
+    ]);
 
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
@@ -183,7 +186,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
 
       {/* 4. The creator's private relationship */}
       <Section title="Your activity">
-        <ActivityPanel />
+        <ActivityPanel hotelId={hotel.id} relationship={relationship} />
       </Section>
     </div>
   );
