@@ -58,10 +58,11 @@ Return three tables/sheets with these exact fields.
 
 ### PROPERTIES
 
-`source_property_id, property_name, brand_name, hotel_type, star_rating, country_code, region, city, destination_name, parent_destination_name, address, latitude, longitude, website_url, instagram_url, source_url, notes`
+`source_property_id, property_name, brand_name, hotel_type, star_rating, country_code, region, city, destination_name, destination_slug, parent_destination_name, address, latitude, longitude, website_url, instagram_url, source_url, notes`
 
 Rules:
 - `source_property_id` must be a stable ID within this research batch, e.g. `bali-001`.
+- `destination_slug` should be the canonical destination slug supplied by the product team when the target destination already exists (e.g. `bali`, `dubai-marina`). Leave blank if you were not given one; never invent a slug from free-text geography.
 - `country_code` must be ISO alpha-2.
 - `hotel_type` must be one of: hotel, resort, boutique_hotel, aparthotel, hostel, villa, residence, guesthouse, lodge, other, unknown.
 - Leave unknown fields blank. Do not guess.

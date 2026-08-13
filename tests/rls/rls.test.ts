@@ -473,6 +473,10 @@ d("import/provenance internals are admin-only (Sprint 1A; IMPORT_SPEC §12)", ()
     "organizations",
     "hotel_organizations",
     "organization_contacts",
+    // Sprint 1B review/catalog internals.
+    "destination_aliases",
+    "import_property_reviews",
+    "import_row_reviews",
   ];
 
   it("creator cannot read any import/provenance internal table", async () => {

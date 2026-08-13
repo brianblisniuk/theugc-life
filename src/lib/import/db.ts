@@ -45,6 +45,22 @@ function rowKey(sheet: string, rowNum: number): string {
   return `${sheet}#${rowNum}`;
 }
 
+// ---------------------------------------------------------------------------
+// Per-batch serialization (review fix F9). applyReview and apply-promotion for
+// the same batch must not interleave or operate on mixed review snapshots.
+// A PostgreSQL session-level advisory lock, keyed deterministically by batchId
+// (via hashtextextended → bigint), provides DB-backed mutual exclusion that
+// spans the multiple per-bundle transactions a promotion runs. Different
+// batches hash to different keys and never contend. Always release in a finally.
+// ---------------------------------------------------------------------------
+export async function acquireBatchLock(client: Client, batchId: string): Promise<void> {
+  await client.query("select pg_advisory_lock(hashtextextended($1, 0)) as locked", [batchId]);
+}
+
+export async function releaseBatchLock(client: Client, batchId: string): Promise<void> {
+  await client.query("select pg_advisory_unlock(hashtextextended($1, 0)) as unlocked", [batchId]);
+}
+
 /** Load existing canonical entities used for matching. */
 export async function loadExistingData(client: Client): Promise<ExistingData> {
   const hotels = await client.query<{
@@ -83,7 +99,20 @@ export async function loadExistingData(client: Client): Promise<ExistingData> {
     countryCode: d.country_code,
   }));
 
-  return { hotels: hotelRows, destinations: destRows };
+  const aliasRows = await client.query<{
+    destination_id: string;
+    normalized_alias: string;
+    country_code: string | null;
+  }>(
+    "select destination_id, normalized_alias, country_code from public.destination_aliases where is_active",
+  );
+  const aliases = aliasRows.rows.map((a) => ({
+    destinationId: a.destination_id,
+    normalizedAlias: a.normalized_alias,
+    countryCode: a.country_code,
+  }));
+
+  return { hotels: hotelRows, destinations: destRows, aliases };
 }
 
 /** Find a prior batch for the same file+parser (idempotency / repeat detection). */
@@ -230,6 +259,90 @@ export async function persistResolution(
       [importRowId, `org_scope:${org.scope}`, `${org.inferredType}: ${org.reason}`],
     );
   }
+}
+
+export interface BatchRow {
+  importRowId: string;
+  sheetName: string | null;
+  sourceRowNumber: number | null;
+  rowKind: RowKind;
+  sourcePropertyKey: string | null;
+  normalized: Record<string, unknown> | null;
+  validationStatus: ValidationStatus;
+  validationWarnings: string[];
+}
+
+export interface BatchHotelCandidate {
+  entityId: string | null;
+  score: number;
+  method: string;
+  explanation: string;
+  deterministicSafe: boolean;
+}
+
+export interface BatchData {
+  batch: { id: string; sourceName: string; status: string };
+  rows: BatchRow[];
+  hotelCandidatesByPropertyKey: Map<string, BatchHotelCandidate[]>;
+}
+
+/** Load a batch's rows (with DB ids) + hotel candidates for review/promotion. */
+export async function loadBatchData(client: Client, batchId: string): Promise<BatchData> {
+  const batchRes = await client.query(
+    "select id, source_name, status from public.import_batches where id = $1",
+    [batchId],
+  );
+  if (batchRes.rows.length === 0) throw new Error(`Batch not found: ${batchId}`);
+
+  const rowsRes = await client.query(
+    `select id, sheet_name, source_row_number, row_kind, source_property_key,
+            normalized_data, validation_status, validation_warnings
+       from public.import_rows where import_batch_id = $1
+       order by row_kind, source_row_number`,
+    [batchId],
+  );
+  const rows: BatchRow[] = rowsRes.rows.map((r) => ({
+    importRowId: r.id,
+    sheetName: r.sheet_name,
+    sourceRowNumber: r.source_row_number,
+    rowKind: r.row_kind as RowKind,
+    sourcePropertyKey: r.source_property_key,
+    normalized: r.normalized_data,
+    validationStatus: r.validation_status as ValidationStatus,
+    validationWarnings: r.validation_warnings ?? [],
+  }));
+
+  const candRes = await client.query(
+    `select ir.source_property_key, mc.candidate_entity_id, mc.score, mc.match_method, mc.review_note
+       from public.import_match_candidates mc
+       join public.import_rows ir on ir.id = mc.import_row_id
+       where ir.import_batch_id = $1 and mc.candidate_entity_type = 'hotel'`,
+    [batchId],
+  );
+  const hotelCandidatesByPropertyKey = new Map<string, BatchHotelCandidate[]>();
+  for (const c of candRes.rows) {
+    const key = c.source_property_key as string | null;
+    if (!key) continue;
+    const list = hotelCandidatesByPropertyKey.get(key) ?? [];
+    list.push({
+      entityId: c.candidate_entity_id,
+      score: Number(c.score),
+      method: c.match_method,
+      explanation: c.review_note ?? "",
+      deterministicSafe: SAFE_METHODS.has(c.match_method),
+    });
+    hotelCandidatesByPropertyKey.set(key, list);
+  }
+
+  return {
+    batch: {
+      id: batchRes.rows[0].id,
+      sourceName: batchRes.rows[0].source_name,
+      status: batchRes.rows[0].status,
+    },
+    rows,
+    hotelCandidatesByPropertyKey,
+  };
 }
 
 async function getBatchMeta(client: Client, batchId: string): Promise<ReportBatchMeta> {

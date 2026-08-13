@@ -22,7 +22,13 @@
     "import:inspect": "tsx scripts/import/inspect.ts",
     "import:stage": "tsx scripts/import/stage.ts",
     "import:dry-run": "tsx scripts/import/dry-run.ts",
-    "import:report": "tsx scripts/import/report.ts"
+    "import:report": "tsx scripts/import/report.ts",
+    "import:review-template": "tsx scripts/import/review-template.ts",
+    "import:review-apply": "tsx scripts/import/review-apply.ts",
+    "import:promote": "tsx scripts/import/promote.ts",
+    "destination:list": "tsx scripts/import/destination/list.ts",
+    "destination:upsert": "tsx scripts/import/destination/upsert.ts",
+    "destination:alias": "tsx scripts/import/destination/alias.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

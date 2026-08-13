@@ -252,6 +252,14 @@ export function normalizeVerificationStatus(input: unknown): VerificationStatus 
   return "unverified";
 }
 
+/** Normalize a destination slug to canonical lowercase-hyphen form. */
+export function normalizeSlug(input: unknown): string | null {
+  const s = normalizeString(input);
+  if (!s) return null;
+  const slug = foldForMatch(s).replace(/\s+/g, "-");
+  return slug.length === 0 ? null : slug;
+}
+
 /** ISO 3166-1 alpha-2 normalization (best effort). */
 export function normalizeCountryCode(input: unknown): string | null {
   const s = normalizeString(input);
