@@ -23,6 +23,10 @@ export const PIPELINE_COPY = {
   errorTitle: "We couldn’t load your pipeline",
   filteredTitle: "No hotels with this status",
   limitTitle: "You’ve reached the Free saved-hotel limit.",
+  activityErrorTitle: "We couldn’t load your activity",
+  activityErrorBody:
+    "We couldn’t check whether this hotel is already in your pipeline. Reload the page to try again.",
+  unsavedTitle: "Not saved yet",
 } as const;
 
 /** Truthful Free-limit explanation. The number comes from the server result. */
@@ -35,22 +39,43 @@ export function freeLimitExplanation(limit: number): string {
 /* ------------------------------------------------------------------ */
 
 export type ActivityPanelState =
-  { kind: "open_cycle"; status: PipelineStatus; statusLabel: string } | { kind: "unsaved" };
+  | { kind: "open_cycle"; status: PipelineStatus; statusLabel: string }
+  | { kind: "unsaved"; title: string }
+  | { kind: "load_error"; title: string; body: string };
+
+/** What the relationship lookup actually established — the three are distinct. */
+export type RelationshipLoad =
+  { status: "open"; relationship: { status: string } } | { status: "none" } | { status: "error" };
 
 /**
  * An open (non-closed) cycle means the hotel is already tracked, so Save is
  * never offered a second time (D023). A closed cycle is history: the creator
  * may start a fresh one.
+ *
+ * A FAILED lookup is neither: we did not learn that the hotel is unsaved, so we
+ * must not say "Not saved yet" or offer Save. Fail safe, not fail cheerful.
  */
-export function activityPanelState(
-  relationship: { status: string } | null | undefined,
-): ActivityPanelState {
-  if (!relationship || relationship.status === "closed") return { kind: "unsaved" };
+export function activityPanelState(load: RelationshipLoad): ActivityPanelState {
+  if (load.status === "error") {
+    return {
+      kind: "load_error",
+      title: PIPELINE_COPY.activityErrorTitle,
+      body: PIPELINE_COPY.activityErrorBody,
+    };
+  }
+  if (load.status === "none" || load.relationship.status === "closed") {
+    return { kind: "unsaved", title: PIPELINE_COPY.unsavedTitle };
+  }
   return {
     kind: "open_cycle",
-    status: relationship.status as PipelineStatus,
-    statusLabel: pipelineStatusLabel(relationship.status),
+    status: load.relationship.status as PipelineStatus,
+    statusLabel: pipelineStatusLabel(load.relationship.status),
   };
+}
+
+/** Save is offered only when we KNOW there is no open relationship. */
+export function shouldOfferSave(state: ActivityPanelState): boolean {
+  return state.kind === "unsaved";
 }
 
 /* ------------------------------------------------------------------ */

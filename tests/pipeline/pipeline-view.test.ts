@@ -10,6 +10,8 @@
 import { describe, expect, it } from "vitest";
 
 import { FREE_LIMITS } from "@/lib/config";
+import { contactSectionState } from "@/lib/hotels/access";
+import { intelligencePanelState } from "@/lib/hotels/intelligence";
 import {
   PIPELINE_STATUSES,
   isSaveSuccessful,
@@ -25,6 +27,7 @@ import {
   normalizeStatusFilter,
   pipelineListState,
   saveControlState,
+  shouldOfferSave,
   shouldOfferUpgrade,
 } from "@/lib/pipeline/view";
 
@@ -35,25 +38,77 @@ const CREATED: SaveResult = {
 };
 
 describe("Hotel Detail — Save state", () => {
-  it("offers Save when the creator has no relationship with the hotel", () => {
-    expect(activityPanelState(null)).toEqual({ kind: "unsaved" });
-    expect(activityPanelState(undefined)).toEqual({ kind: "unsaved" });
+  it("offers Save when the lookup succeeded and found no relationship", () => {
+    const state = activityPanelState({ status: "none" });
+    expect(state.kind).toBe("unsaved");
+    expect(shouldOfferSave(state)).toBe(true);
     expect(saveControlState(null)).toEqual({ kind: "prompt" });
   });
 
   it("offers Save again once the previous cycle is closed (D023)", () => {
-    expect(activityPanelState({ status: "closed" })).toEqual({ kind: "unsaved" });
+    const state = activityPanelState({ status: "open", relationship: { status: "closed" } });
+    expect(state.kind).toBe("unsaved");
+    expect(shouldOfferSave(state)).toBe(true);
+  });
+});
+
+describe("Hotel Detail — a failed relationship lookup is not a domain fact (F1)", () => {
+  const failed = activityPanelState({ status: "error" });
+
+  it("renders a neutral recoverable notice, never 'Not saved yet'", () => {
+    expect(failed.kind).toBe("load_error");
+    if (failed.kind !== "load_error") throw new Error("unreachable");
+    expect(failed.title).toBe("We couldn’t load your activity");
+    expect(failed.body).toBe(
+      "We couldn’t check whether this hotel is already in your pipeline. Reload the page to try again.",
+    );
+    expect(failed.title).not.toBe(PIPELINE_COPY.unsavedTitle);
+    expect(failed).not.toHaveProperty("title", "Not saved yet");
+  });
+
+  it("does NOT offer Save, and infers no relationship status", () => {
+    expect(shouldOfferSave(failed)).toBe(false);
+    expect(failed.kind).not.toBe("unsaved");
+    expect(failed.kind).not.toBe("open_cycle");
+    expect(failed).not.toHaveProperty("status");
+    expect(failed).not.toHaveProperty("statusLabel");
+  });
+
+  it("does NOT offer an upgrade — the save control is untouched by a load failure", () => {
+    expect(saveControlState(null)).toEqual({ kind: "prompt" });
+    expect(shouldOfferUpgrade(saveControlState(null))).toBe(false);
+  });
+
+  it("only an errored lookup produces the error state", () => {
+    expect(activityPanelState({ status: "none" }).kind).toBe("unsaved");
+    expect(activityPanelState({ status: "open", relationship: { status: "saved" } }).kind).toBe(
+      "open_cycle",
+    );
+  });
+
+  it("leaves the contact and intelligence sections untouched", () => {
+    // The three sections are loaded independently; the relationship result is
+    // not an input to either of the others.
+    expect(
+      contactSectionState({ access: { status: "allowed" }, contacts: [{}], failed: false }),
+    ).toBe("contacts");
+    expect(contactSectionState({ access: { status: "denied" }, contacts: [], failed: false })).toBe(
+      "locked",
+    );
+    expect(intelligencePanelState({ status: "error" })).toBe("error");
+    expect(intelligencePanelState({ status: "none" })).toBe("insufficient");
   });
 });
 
 describe("Hotel Detail — already-saved state", () => {
   it("shows the human status and never re-offers Save while a cycle is open", () => {
     for (const status of PIPELINE_STATUSES.filter((s) => s !== "closed")) {
-      const state = activityPanelState({ status });
+      const state = activityPanelState({ status: "open", relationship: { status } });
       expect(state.kind).toBe("open_cycle");
       if (state.kind !== "open_cycle") throw new Error("unreachable");
       expect(state.statusLabel).toBe(pipelineStatusLabel(status));
       expect(state.statusLabel).not.toMatch(/_/);
+      expect(shouldOfferSave(state)).toBe(false);
     }
   });
 

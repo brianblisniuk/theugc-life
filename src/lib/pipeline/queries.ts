@@ -22,6 +22,8 @@ import { FREE_LIMITS } from "@/lib/config";
 
 import { mapSaveResult, type PipelineStatus, type SaveResult } from "./types";
 
+export type PipelineQueryClient = Awaited<ReturnType<typeof createClient>>;
+
 /** The creator's relationship with one hotel, as shown on Hotel Detail. */
 export interface HotelRelationship {
   pipelineItemId: string;
@@ -43,12 +45,28 @@ export interface PipelineListItem {
 }
 
 /**
- * The current OPEN relationship for this hotel, or null when there is none.
- * Reads under the caller's RLS, so it can only ever see the caller's own rows.
+ * Tri-state on purpose: "we could not check" is NOT "there is no relationship".
+ * Collapsing the two would let a transport failure invite the creator to save a
+ * hotel they have already saved.
  */
-export async function getOpenRelationship(hotelId: string): Promise<HotelRelationship | null> {
-  if (!isUuid(hotelId)) return null;
-  const supabase = await createClient();
+export type OpenRelationshipResult =
+  { status: "open"; relationship: HotelRelationship } | { status: "none" } | { status: "error" };
+
+/**
+ * The current OPEN relationship for this hotel. Reads under the caller's RLS,
+ * so it can only ever see the caller's own rows.
+ *
+ * An invalid id is a genuine "no relationship" (no such hotel row can match);
+ * a query/transport failure is reported as `error` and left for the UI to
+ * render as a recoverable problem.
+ */
+export async function getOpenRelationship(
+  hotelId: string,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: PipelineQueryClient,
+): Promise<OpenRelationshipResult> {
+  if (!isUuid(hotelId)) return { status: "none" };
+  const supabase = injectedClient ?? (await createClient());
   const { data, error } = await supabase
     .from("pipeline_items")
     .select("id, status")
@@ -56,9 +74,14 @@ export async function getOpenRelationship(hotelId: string): Promise<HotelRelatio
     .neq("status", "closed")
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) return { status: "error" };
+  if (!data) return { status: "none" };
+
   const row = data as { id: string; status: string };
-  return { pipelineItemId: row.id, status: row.status as PipelineStatus };
+  return {
+    status: "open",
+    relationship: { pipelineItemId: row.id, status: row.status as PipelineStatus },
+  };
 }
 
 /** Creator-owned pipeline items, most recent activity first. */
