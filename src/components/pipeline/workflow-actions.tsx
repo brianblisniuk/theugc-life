@@ -18,6 +18,7 @@ import Link from "next/link";
 
 import { capture } from "@/lib/analytics";
 import { transitionPipelineItemAction } from "@/lib/pipeline/actions";
+import { localDateToIso } from "@/lib/pipeline/input";
 import {
   CLOSE_REASONS,
   OFFER_TYPES,
@@ -88,6 +89,15 @@ export function WorkflowActions({
   const state = workflowControlState(result);
 
   async function onSubmit(formData: FormData) {
+    // The creator picked a calendar DAY. Resolve it to an instant here, in the
+    // browser, because this is the only place that knows their timezone and its
+    // DST rules for that date. The server treats the result as untrusted input;
+    // the database still rejects future or out-of-order instants.
+    const date = formData.get("date");
+    if (typeof date === "string" && date !== "") {
+      formData.set("eventAt", localDateToIso(date) ?? "");
+    }
+
     const outcome = await transitionPipelineItemAction(formData);
     setResult(outcome);
     if (outcome.result === "applied") {

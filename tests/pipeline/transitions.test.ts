@@ -12,6 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "../db/harness";
 import { FREE_LIMITS } from "@/lib/config";
+import { localDateToIso } from "@/lib/pipeline/input";
 
 const d = describe.skipIf(!hasTestDb);
 const LIMIT = FREE_LIMITS.activePipelineItems;
@@ -514,6 +515,40 @@ d("J — temporal validation", () => {
       channel: "email",
     });
     expect(res.result).toBe("applied");
+  });
+
+  it("accepts a far-eastern creator's local today, and still rejects their tomorrow", async () => {
+    // The F1 regression, end to end: the browser converts the creator's chosen
+    // calendar day; the database judges the resulting instant.
+    const tz = process.env.TZ;
+    process.env.TZ = "Pacific/Kiritimati"; // UTC+14, the worst case
+    try {
+      const now = new Date();
+      const day = (offsetDays: number) => {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+        return [
+          d.getFullYear(),
+          String(d.getMonth() + 1).padStart(2, "0"),
+          String(d.getDate()).padStart(2, "0"),
+        ].join("-");
+      };
+
+      const today = await save(U.free, HOTELS[5]!.id);
+      const accepted = await act(U.free, today, "mark_pitched", {
+        eventAt: localDateToIso(day(0)),
+        channel: "email",
+      });
+      expect(accepted.result).toBe("applied");
+
+      const tomorrow = await save(U.free, HOTELS[6]!.id);
+      const rejected = await act(U.free, tomorrow, "mark_pitched", {
+        eventAt: localDateToIso(day(1)),
+        channel: "email",
+      });
+      expect(rejected.result).toBe("invalid_event_time");
+    } finally {
+      process.env.TZ = tz;
+    }
   });
 
   it("requires the fields each event type needs", async () => {

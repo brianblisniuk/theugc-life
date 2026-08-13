@@ -62,7 +62,7 @@ export async function transitionPipelineItemAction(formData: FormData): Promise<
   const parsed = parseWorkflowForm({
     pipelineItemId: readField(formData, "pipelineItemId"),
     action: readField(formData, "action"),
-    date: readField(formData, "date"),
+    eventAt: readField(formData, "eventAt"),
     channel: readField(formData, "channel"),
     sentiment: readField(formData, "sentiment"),
     offerType: readField(formData, "offerType"),

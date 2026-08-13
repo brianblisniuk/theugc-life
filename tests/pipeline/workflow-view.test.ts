@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FREE_LIMITS } from "@/lib/config";
-import { parseEventDate, parseWorkflowForm } from "@/lib/pipeline/input";
+import { parseEventInstant, parseWorkflowForm } from "@/lib/pipeline/input";
 import {
   CLOSE_REASONS,
   OFFER_TYPES,
@@ -300,16 +300,17 @@ describe("form input validation", () => {
     });
   });
 
-  it("mark_pitched requires a date AND a known channel", () => {
-    expect(parseWorkflowForm({ ...base, action: "mark_pitched", date: "2026-08-01" }).ok).toBe(
-      false,
-    );
+  it("mark_pitched requires an instant AND a known channel", () => {
+    expect(
+      parseWorkflowForm({ ...base, action: "mark_pitched", eventAt: "2026-08-01T00:00:00.000Z" })
+        .ok,
+    ).toBe(false);
     expect(parseWorkflowForm({ ...base, action: "mark_pitched", channel: "email" }).ok).toBe(false);
     expect(
       parseWorkflowForm({
         ...base,
         action: "mark_pitched",
-        date: "2026-08-01",
+        eventAt: "2026-08-01T00:00:00.000Z",
         channel: "carrier_pigeon",
       }).ok,
     ).toBe(false);
@@ -317,28 +318,33 @@ describe("form input validation", () => {
     const parsed = parseWorkflowForm({
       ...base,
       action: "mark_pitched",
-      date: "2026-08-01",
+      eventAt: "2026-08-01T00:00:00.000Z",
       channel: "email",
     });
     expect(parsed.ok && parsed.value.eventAt).toBe("2026-08-01T00:00:00.000Z");
   });
 
-  it("mark_followup_sent requires a date; the channel is optional", () => {
+  it("mark_followup_sent requires an instant; the channel is optional", () => {
     expect(parseWorkflowForm({ ...base, action: "mark_followup_sent" }).ok).toBe(false);
-    const parsed = parseWorkflowForm({ ...base, action: "mark_followup_sent", date: "2026-08-02" });
+    const parsed = parseWorkflowForm({
+      ...base,
+      action: "mark_followup_sent",
+      eventAt: "2026-08-02T07:00:00.000Z",
+    });
     expect(parsed.ok).toBe(true);
     expect(parsed.ok && parsed.value.channel).toBeNull();
   });
 
-  it("mark_replied requires a date and a known sentiment; the offer is optional", () => {
-    expect(parseWorkflowForm({ ...base, action: "mark_replied", date: "2026-08-02" }).ok).toBe(
-      false,
-    );
+  it("mark_replied requires an instant and a known sentiment; the offer is optional", () => {
+    expect(
+      parseWorkflowForm({ ...base, action: "mark_replied", eventAt: "2026-08-02T07:00:00.000Z" })
+        .ok,
+    ).toBe(false);
     expect(
       parseWorkflowForm({
         ...base,
         action: "mark_replied",
-        date: "2026-08-02",
+        eventAt: "2026-08-02T07:00:00.000Z",
         sentiment: "delighted",
       }).ok,
     ).toBe(false);
@@ -347,7 +353,7 @@ describe("form input validation", () => {
     const none = parseWorkflowForm({
       ...base,
       action: "mark_replied",
-      date: "2026-08-02",
+      eventAt: "2026-08-02T07:00:00.000Z",
       sentiment: "positive",
       offerType: "none",
     });
@@ -356,7 +362,7 @@ describe("form input validation", () => {
     const offered = parseWorkflowForm({
       ...base,
       action: "mark_replied",
-      date: "2026-08-02",
+      eventAt: "2026-08-02T07:00:00.000Z",
       sentiment: "positive",
       offerType: "stay_plus_paid",
     });
@@ -366,7 +372,7 @@ describe("form input validation", () => {
       parseWorkflowForm({
         ...base,
         action: "mark_replied",
-        date: "2026-08-02",
+        eventAt: "2026-08-02T07:00:00.000Z",
         sentiment: "positive",
         offerType: "equity",
       }).ok,
@@ -381,10 +387,19 @@ describe("form input validation", () => {
     }
   });
 
-  it("parses only real calendar dates", () => {
-    expect(parseEventDate("2026-08-13")).toBe("2026-08-13T00:00:00.000Z");
-    for (const bad of [null, "", "13/08/2026", "2026-02-31", "2026-13-01", "yesterday"]) {
-      expect(parseEventDate(bad)).toBeNull();
+  it("accepts only a real instant, never a bare calendar date", () => {
+    expect(parseEventInstant("2026-08-13T09:30:00.000Z")).toBe("2026-08-13T09:30:00.000Z");
+    expect(parseEventInstant("2026-08-13T00:00:00+12:00")).toBe("2026-08-12T12:00:00.000Z");
+    for (const bad of [
+      null,
+      "",
+      // A bare day would be read as UTC midnight — the ambiguity this avoids.
+      "2026-08-13",
+      "13/08/2026",
+      "2026-02-31T00:00:00.000Z",
+      "yesterday",
+    ]) {
+      expect(parseEventInstant(bad)).toBeNull();
     }
   });
 
