@@ -9,6 +9,11 @@ Method: falsification-oriented. Every invariant was attacked before it was belie
 
 ## 1. Executive summary
 
+> **The consistency claim below is corrected in §22.1.** External final review
+> found two surfaces where a technical or integrity state was being reported as
+> a domain fact (F-15, F-16), so "implemented consistently" was too broad. Both
+> are fixed. The original text is preserved.
+
 The core engine is in good shape. The trusted-server boundary, the CRM state
 machine, the deal/collaboration lifecycle, the intelligence derivation and the
 privacy gating all hold up under direct attack from real database roles. Client
@@ -880,3 +885,127 @@ against the deployed database.
 The core is ready for the **CORE V1 AUDITED AND CLOSED** designation once the
 external reviewer has deployed `0024` and confirmed production matches the
 contract in `tests/rls/acl-matrix.test.ts`.
+
+---
+
+## 22. Final external review findings (F-15, F-16)
+
+The external final review of PR #14 approved the Sprint 2G work — D046, the
+`0024` ACL architecture, the explicit privilege matrix, RLS preservation, RPC
+boundaries, pagination, the >200 regression, DB-backed role resolution, the
+documentation reconciliation and this report — and returned **two required
+corrections**. Both are recorded here as first-class audit findings, because
+both are instances of the rule this audit spent §6 and §10 checking, and both
+were missed.
+
+### 22.1 Correction to the audit's own claim
+
+§1 and §6 state that the "a technical error is not a domain fact" rule is
+implemented **consistently** across Discover, Hotel Detail, contacts, pipeline,
+collaboration and intelligence. That claim was too broad, and this section
+corrects it.
+
+The rule was implemented consistently *on the surfaces the audit enumerated*.
+The audit did not enumerate session role resolution's missing-row branch, and it
+did not enumerate the billing surface at all. Both violated the rule. F-01 was
+found and reported, but its sibling — the missing-row fallback in the same
+function — was accepted as legitimate rather than questioned, and Sprint 2G's
+first fix preserved it. The correct reading is: the rule is applied widely and
+deliberately, and two surfaces were nevertheless wrong. Coverage was assumed
+from the surfaces sampled, which is exactly the failure mode a
+falsification-oriented audit is supposed to avoid.
+
+### 22.2 F-15 — a missing `public.users` row was treated as a creator (P1, CONFIRMED)
+
+**Location.** `src/lib/auth/guards.ts`, the `resolveSession()` no-row branch, as
+shipped in the first Sprint 2G correction.
+
+**Description.** `resolveSession()` resolved
+
+> authenticated Supabase user **+** successful `public.users` query **+** no row
+
+to `authenticated` with role `creator`, on the stated rationale that a brand-new
+account's signup trigger might not have landed yet.
+
+That rationale is wrong for the architecture actually implemented.
+`handle_new_user()` (migration `0011`) is an `AFTER INSERT` trigger on
+`auth.users`; it inserts the `public.users` row and the `creator_profiles` row
+**inside the same transaction that creates the auth user**. There is no
+asynchronous provisioning worker anywhere in this system. An auth user without
+an application row therefore cannot be a transient mid-provisioning state — it
+is an integrity inconsistency.
+
+**Impact.** A broken invariant was reported as an ordinary creator account: the
+session resolved, the app shell rendered, and every downstream read silently
+operated against a user with no `creator_profiles` row. The same
+technical-state-as-domain-fact collapse as F-01, one branch further down.
+
+**Status: FIXED.** `resolveSession()` now has exactly three outcomes — no auth
+user → `anonymous`; successful read of a valid row → `authenticated` with the
+stored role; everything else → `error`. "Everything else" covers an
+auth-service failure, a failed `public.users` read, an unmodelled or corrupt
+role, and a missing row. Nothing repairs the inconsistency: no INSERT, no
+`creator_profiles` creation, no fallback. The signup trigger remains the only
+provisioning mechanism. `requireUser` and `requireRole` raise
+`SessionUnavailableError` for a rowless session rather than redirecting to
+`/login` (which would claim the user is signed out) or to `/app` (which would
+claim they are not staff), and the four server actions return their sanitized
+`error` result without attempting a mutation.
+
+### 22.3 F-16 — a failed entitlement read was rendered as the Free plan (P1, CONFIRMED)
+
+**Location.** `src/app/(app)/app/billing/page.tsx`.
+
+**Description.** The page read entitlements, discarded the error, and did
+`(entitlements ?? []).filter(e => e.status === "active")`. An empty array then
+rendered "You're on the Free plan". A permission failure, a transport failure or
+any database error produced `null`, which became `[]`, which became a positive
+claim about the creator's commercial standing.
+
+**Impact.** A creator holding an active Pro subscription or Destination Pass
+could be told they have no premium access, and offered an upgrade, purely
+because a query failed. This is the highest-consequence instance of the
+collapse found so far: it is a false statement about something the creator has
+paid for. It was not exposure and not data loss, but it is a claim the product
+is not entitled to make.
+
+**Status: FIXED.** Reads moved to `src/lib/billing/queries.ts`, returning
+`{ status: "ok"; entitlements } | { status: "error" }`, and the decision moved
+to the pure `billingAccessState()` in `src/lib/billing/view.ts`. "You're on the
+Free plan" is derivable **only** from `status = "ok"` with zero active
+entitlements. A failed read renders a neutral, recoverable notice; it never
+shows Free, never offers an upgrade, is never described as expired or revoked,
+and never carries the underlying PostgREST error. "Active" is defined exactly as
+migration `0010` defines it (`status = 'active'` and `starts_at <= now()` and
+`expires_at` null or in the future), so the page cannot disagree with the helper
+that actually grants premium reads. The stale "arrives in Sprint 1" copy was
+replaced with timeless product copy; no checkout was implemented.
+
+Two comparable stale copy strings remain outside this fix's scope, on
+`/admin` ("Admin workflows arrive in Sprint 1") and `/app/trips` ("Trip planning
+arrives in Sprint 2"). They are noted here rather than changed.
+
+### 22.4 Coverage added
+
+| Suite | Proves |
+|---|---|
+| `tests/auth/session-role.test.ts` | rowless session → `error`, not `creator`; no repair attempted (neither `public.users` nor `creator_profiles` gains a row); `requireUser` / `requireRole` raise rather than redirect; all four server actions return a sanitized error and call no mutation and no `revalidatePath` |
+| `tests/billing/entitlements.test.ts` | successful-and-empty → Free; active Pro → premium; active Destination → premium; failed read → error state that contains neither "Free plan" nor an upgrade nor an expiry claim; raw driver error never surfaced; another user's entitlements invisible under RLS; the active-access definition matches migration `0010` |
+
+Three of the billing assertions fail against the previous
+`(entitlements ?? [])` collapse, verified by reintroducing it.
+
+### 22.5 Standing after F-15 and F-16
+
+Both are FIXED. The severity picture is unchanged in kind — no P0, no
+outstanding P1, no exposure, no cross-creator leakage, no core redesign — and
+the final recommendation of §21.8 stands:
+
+**B — CORE AUDIT PASSED WITH NON-BLOCKING DEBT.**
+
+With one honest addition to the debt column: this audit's claim of *consistent*
+technical-error/domain-fact discipline was not verified surface by surface. Two
+violations were found by external review after the audit signed off. The rule
+itself is sound and is now enforced by regression tests on the session and
+billing paths; what should not be assumed again is that a rule applied on the
+surfaces someone sampled is applied everywhere.

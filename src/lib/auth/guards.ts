@@ -14,11 +14,11 @@ export interface SessionContext {
 }
 
 /**
- * Tri-state on purpose. "We could not read the role" is NOT "this user is a
- * creator" — the first is a technical failure, the second is a claim about the
- * account. Collapsing them is the same class of bug the pipeline and hotel
- * surfaces already guard against, and here it silently downgrades every
- * privileged session whenever the lookup breaks.
+ * Tri-state on purpose. "We could not establish the role" is NOT "this user is
+ * a creator" — the first is a technical or integrity failure, the second is a
+ * claim about the account. Collapsing them is the same class of bug the
+ * pipeline and hotel surfaces already guard against, and here it silently
+ * downgrades every privileged session whenever the lookup breaks.
  */
 export type SessionResolution =
   | { status: "authenticated"; session: SessionContext }
@@ -46,16 +46,26 @@ const ROLES: readonly AppRole[] = ["creator", "editor", "admin"];
  * `user_metadata`, a client-supplied field, a query parameter or an
  * application-controlled cookie. The database is the only authority.
  *
- * Four outcomes, deliberately distinct:
+ * Exactly three outcomes:
  *
  *  - no Supabase user            -> `anonymous`
- *  - lookup succeeded, row found -> `authenticated` with the stored role
- *  - lookup succeeded, no row    -> `authenticated` as `creator`. This is the
- *    ONLY case where the fallback is legitimate: a brand-new account whose
- *    signup trigger has not landed yet genuinely has no role, and the
- *    least-privileged answer is the correct one.
- *  - lookup failed               -> `error`. A permission failure, a transport
- *    failure or a malformed row is a technical error, not a role.
+ *  - lookup succeeded, valid row -> `authenticated` with the stored role
+ *  - anything else               -> `error`
+ *
+ * "Anything else" covers an auth-service failure, a failed `public.users` read,
+ * a row carrying a role this application does not model, and — deliberately —
+ * an authenticated user with NO `public.users` row at all.
+ *
+ * That last case is not a new account mid-provisioning. `handle_new_user()`
+ * (migration 0011) is an AFTER INSERT trigger on `auth.users`: it writes the
+ * `public.users` row and the `creator_profiles` row inside the same transaction
+ * that creates the auth user, and there is no asynchronous provisioning worker
+ * anywhere in this system. An auth user without an application row is therefore
+ * an integrity inconsistency, not a transient state, and resolving it to
+ * `creator` would report a broken invariant as an ordinary account.
+ *
+ * Nothing here repairs it: no INSERT, no creator_profile creation, no fallback.
+ * The signup trigger remains the only provisioning mechanism.
  */
 export async function resolveSession(): Promise<SessionResolution> {
   const supabase = await createClient();
@@ -77,24 +87,24 @@ export async function resolveSession(): Promise<SessionResolution> {
   // infrastructure problem into a domain fact about the account.
   if (error) return { status: "error" };
 
-  const rawRole = (row as { role?: unknown } | null)?.role;
+  // The query succeeded and the account has no application row. See above: this
+  // is an integrity inconsistency, not a role.
+  if (!row) return { status: "error" };
 
-  // A row exists but carries a role this application does not model
-  // (`moderator`/`brand` are reserved, and anything else is corruption). That is
-  // not a creator either — it is an unresolvable session.
-  if (rawRole !== undefined && rawRole !== null && !ROLES.includes(rawRole as AppRole)) {
-    return { status: "error" };
-  }
+  const rawRole = (row as { role?: unknown }).role;
 
-  const role = (rawRole as AppRole | undefined | null) ?? "creator";
-  const rowEmail = (row as { email?: unknown } | null)?.email;
+  // The row carries a role this application does not model (`moderator` and
+  // `brand` are reserved; anything else is corruption). Also not a creator.
+  if (!ROLES.includes(rawRole as AppRole)) return { status: "error" };
+
+  const rowEmail = (row as { email?: unknown }).email;
 
   return {
     status: "authenticated",
     session: {
       userId: user.id,
       email: (typeof rowEmail === "string" ? rowEmail : null) ?? user.email ?? null,
-      role,
+      role: rawRole as AppRole,
     },
   };
 }

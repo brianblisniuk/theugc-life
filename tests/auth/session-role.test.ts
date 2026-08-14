@@ -46,6 +46,25 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
+/** Paths the server actions asked Next to revalidate. Must stay empty here. */
+const revalidated = vi.hoisted(() => [] as string[]);
+
+vi.mock("next/cache", () => ({
+  revalidatePath: (path: string) => {
+    revalidated.push(path);
+  },
+}));
+
+// Every mutation entry point is spied on, so "no mutation" is proven rather
+// than inferred from the returned value.
+vi.mock("@/lib/pipeline/queries", () => ({
+  saveHotelToPipeline: vi.fn(async () => ({ result: "error" })),
+  transitionPipelineItem: vi.fn(async () => ({ result: "error" })),
+  progressPipelineDeal: vi.fn(async () => ({ result: "error" })),
+  progressCollaboration: vi.fn(async () => ({ result: "error" })),
+  refreshIntelligenceForPipelineItem: vi.fn(async () => false),
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
@@ -215,18 +234,36 @@ d("session role resolution", () => {
     expect(await resolveSession()).toEqual({ status: "anonymous" });
   });
 
-  it("falls back to creator ONLY when the lookup succeeded and found no row", async () => {
+  /* -------------------------------------------------------------- */
+  /* Technical / integrity failure is not a role (F-15)               */
+  /* -------------------------------------------------------------- */
+
+  it("an auth user with NO public.users row is an integrity error, not a creator", async () => {
+    // handle_new_user() (0011) writes public.users and creator_profiles inside
+    // the auth.users insert transaction, and nothing provisions asynchronously.
+    // A missing row is therefore a broken invariant, not a new account.
     signIn(U.rowless);
     const resolution = await resolveSession();
-    expect(resolution).toEqual({
-      status: "authenticated",
-      session: { userId: U.rowless, email: `${U.rowless}@test.local`, role: "creator" },
-    });
+    expect(resolution).toEqual({ status: "error" });
+    expect(resolution).not.toMatchObject({ status: "authenticated" });
+    expect(JSON.stringify(resolution)).not.toMatch(/creator/);
   });
 
-  /* -------------------------------------------------------------- */
-  /* Technical failure is not a role                                  */
-  /* -------------------------------------------------------------- */
+  it("does not repair a missing row: no insert, no creator_profile", async () => {
+    signIn(U.rowless);
+    await resolveSession();
+
+    const users = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.users where id = $1",
+      [U.rowless],
+    );
+    const profiles = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.creator_profiles where user_id = $1",
+      [U.rowless],
+    );
+    expect(users[0]!.n).toBe("0");
+    expect(profiles[0]!.n).toBe("0");
+  });
 
   it("a permission failure is an error, NOT the creator role", async () => {
     signIn(U.admin);
@@ -308,5 +345,88 @@ d("session role resolution", () => {
       SessionUnavailableError,
     );
     expect(state.redirects).toEqual([]);
+  });
+
+  it("requireUser on a missing public.users row raises, and does NOT send to /login", async () => {
+    signIn(U.rowless);
+    await expect(requireUser("/app")).rejects.toBeInstanceOf(SessionUnavailableError);
+    expect(state.redirects).toEqual([]);
+  });
+
+  it("requireRole on a missing public.users row raises, and does NOT redirect as a creator", async () => {
+    signIn(U.rowless);
+    await expect(requireRole(["admin", "editor"], "/admin")).rejects.toBeInstanceOf(
+      SessionUnavailableError,
+    );
+    expect(state.redirects).toEqual([]);
+  });
+
+  /* -------------------------------------------------------------- */
+  /* Server actions                                                   */
+  /* -------------------------------------------------------------- */
+
+  it("server actions refuse an unresolvable session and mutate nothing", async () => {
+    const actions = await import("@/lib/pipeline/actions");
+    const queries = await import("@/lib/pipeline/queries");
+
+    const cases: [string, () => Promise<{ result: string }>][] = [
+      [
+        "save",
+        () => {
+          const form = new FormData();
+          form.set("hotelId", "00000000-0000-0000-0000-000000000001");
+          return actions.saveHotelAction(form);
+        },
+      ],
+      [
+        "transition",
+        () => {
+          const form = new FormData();
+          form.set("pipelineItemId", "00000000-0000-0000-0000-000000000002");
+          form.set("action", "mark_pitched");
+          return actions.transitionPipelineItemAction(form);
+        },
+      ],
+      [
+        "deal",
+        () => {
+          const form = new FormData();
+          form.set("pipelineItemId", "00000000-0000-0000-0000-000000000002");
+          form.set("action", "mark_won");
+          return actions.progressPipelineDealAction(form);
+        },
+      ],
+      [
+        "collaboration",
+        () => {
+          const form = new FormData();
+          form.set("pipelineItemId", "00000000-0000-0000-0000-000000000002");
+          form.set("action", "start");
+          return actions.progressCollaborationAction(form);
+        },
+      ],
+    ];
+
+    // A missing public.users row, and a failed lookup, must behave identically:
+    // a sanitized error result, and not a single mutation attempted.
+    for (const setup of [
+      () => signIn(U.rowless),
+      () => {
+        signIn(U.admin);
+        state.read = realRead("anon");
+      },
+    ]) {
+      for (const [label, run] of cases) {
+        setup();
+        expect(await run(), label).toEqual({ result: "error" });
+      }
+    }
+
+    expect(queries.saveHotelToPipeline).not.toHaveBeenCalled();
+    expect(queries.transitionPipelineItem).not.toHaveBeenCalled();
+    expect(queries.progressPipelineDeal).not.toHaveBeenCalled();
+    expect(queries.progressCollaboration).not.toHaveBeenCalled();
+    expect(queries.refreshIntelligenceForPipelineItem).not.toHaveBeenCalled();
+    expect(revalidated).toEqual([]);
   });
 });

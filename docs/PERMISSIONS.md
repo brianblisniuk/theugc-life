@@ -11,8 +11,14 @@ Security model: Supabase Auth + PostgreSQL RLS + server-side entitlement checks.
 - Creator-private rows are owner-only by default.
 - Admin/editor privileges are server-verified.
 - Service-role credentials never ship to browser.
-- A failed authorization lookup is a technical error, never a domain answer. It
-  must not resolve to the least-privileged role, to "not saved", or to zero.
+- A failed authorization or entitlement lookup is a technical error, never a
+  domain answer. It must not resolve to the least-privileged role, to "not
+  saved", to zero, or to a plan the creator is not on.
+- An authenticated user with no `public.users` row is an integrity
+  inconsistency, not a new account. `handle_new_user()` provisions the
+  application row inside the `auth.users` insert transaction and nothing
+  provisions asynchronously, so a missing row resolves to an error. Nothing in
+  the application repairs it; the signup trigger is the only provisioning path.
 - Table privileges are stated by migrations, never inherited from hosted
   defaults (D046). RLS decides which rows; the ACL decides whether the
   operation may be attempted at all; both must hold independently.
