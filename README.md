@@ -13,19 +13,29 @@ production both satisfy.
 
 **The current phase is Product Experience.** The Visual Direction Gate has
 passed: Visual Direction V1 is **A2 — Sunlit Creator OS**, with **Sun `#FFE01B`**
-as the approved primary accent. Sprint 3A implements it on Discover + map.
-Typography is still open, and photography and map coordinates each need a
-product/data decision before they can ship — see
+as the approved primary accent and **Archivo** as the primary product typeface.
+Sprint 3A implements it on Discover + map. Photography and map coordinates each
+still need a product/data decision before they can ship — see
 [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md).
 
-| Question                                       | Where it is answered                                                                                                 |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| What is the product?                           | [`docs/PRD.md`](docs/PRD.md) §1                                                                                      |
-| What is already built?                         | [`docs/PRD.md`](docs/PRD.md) §30.0, [`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](docs/audits/CORE_V1_AUDIT_CLOSEOUT.md) |
-| What phase are we entering?                    | [`docs/PRD.md`](docs/PRD.md) §30.0 — **Sprint 3 = Product Experience**                                               |
-| What does A2 mean, and what is locked vs open? | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md)                                                               |
-| What is explicitly out of Sprint 3A scope?     | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §23                                                           |
-| Why is a decision the way it is?               | [`docs/DECISIONS.md`](docs/DECISIONS.md)                                                                             |
+**The V1 commercial contract is fixed.** One canonical hotel inventory that
+everyone can discover worldwide, with two intelligence layers — Public for all,
+Premium for paid — and identical privacy on every plan. Creator Destination Pass
+is **$39 / 30 days / one destination**; Creator Pro is **$199/year worldwide**.
+See [`docs/PRD.md`](docs/PRD.md) §5 and §12.8. The code does not implement the
+Public/Premium split yet; the per-file scope is
+[`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
+
+| Question                                         | Where it is answered                                                                                                 |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| What is the product?                             | [`docs/PRD.md`](docs/PRD.md) §1                                                                                      |
+| What is already built?                           | [`docs/PRD.md`](docs/PRD.md) §30.0, [`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](docs/audits/CORE_V1_AUDIT_CLOSEOUT.md) |
+| What phase are we entering?                      | [`docs/PRD.md`](docs/PRD.md) §30.0 — **Sprint 3 = Product Experience**                                               |
+| What does A2 mean, and what is locked vs open?   | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md)                                                               |
+| What is explicitly out of Sprint 3A scope?       | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §23                                                           |
+| What does each plan actually include?            | [`docs/PRD.md`](docs/PRD.md) §5.3.1                                                                                  |
+| What still needs building to match the contract? | [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)                           |
+| Why is a decision the way it is?                 | [`docs/DECISIONS.md`](docs/DECISIONS.md)                                                                             |
 
 > The product specification in [`docs/`](docs/) is the source of truth.
 > `docs/PRD.md` is the master; the other docs add implementation detail and must
@@ -211,7 +221,10 @@ be improvised: the hotel **media/photography** data and provenance contract, and
 **canonical coordinate coverage** for the map
 ([`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §21).
 
-One product contract is open and needs an owner decision before it is sold or
-rendered: commercial copy promises _premium intelligence_ to paid plans, but the
-built system exposes one privacy-safe projection to every browser role and gates
-**contacts**, not intelligence ([`docs/PRD.md`](docs/PRD.md) §12.8.1).
+The V1 commercial contract is closed (D049–D053). What remains is
+implementation: the Public/Premium intelligence split, the $39 / 30-day pricing
+values, the Sun accent and Archivo — listed per file in
+[`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
+Until that lands, **reply rate is still visible to every browser role**, which
+contradicts the approved contract; no surface may claim otherwise in the
+meantime.

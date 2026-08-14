@@ -32,7 +32,11 @@ Reason:
 Preserves global wow factor without spreading network-effect efforts too thin.
 
 ## D004 — Creator Destination Pass
-Status: Accepted
+Status: Accepted — pricing/duration hypothesis superseded by **D051**
+
+The product rationale below still stands. The `$29–39 / 90 days` figure was a
+hypothesis; the V1 commercial contract is fixed at **USD 39 / 30 days / one
+destination** in D051.
 
 A destination-specific, time-limited paid product is an acquisition/paid-trial mechanism.
 Initial hypothesis: $29–39 / 90 days.
@@ -43,7 +47,10 @@ Reduces commitment for creators planning one trip, creates high-intent destinati
 Public abbreviation “CDP” is avoided because it commonly means Customer Data Platform.
 
 ## D005 — Creator Pro pricing
-Status: Accepted hypothesis
+Status: Accepted hypothesis — launch price confirmed by **D052**
+
+The reference and later prices below remain future hypotheses. **USD 199/year is
+the V1 launch price**, fixed in D052.
 
 Reference/original price: $299/year.
 Launch: $199/year.
@@ -204,7 +211,11 @@ supporting repeat partnerships as sequential cycles. This finalizes the
 required — the index already implements this rule.
 
 ## D024 — Destination Pass default pricing hypothesis
-Status: Accepted hypothesis
+Status: Accepted hypothesis — **duration superseded by D051**
+
+The price held: USD 39. The **90-day duration did not** — V1 is **30 days**
+(D051). The reasoning below is preserved as the historical record of what was
+assumed before the owner review.
 
 Within the D004 range (USD 29–39 / 90 days), the default launch hypothesis is
 fixed at **USD 39 / 90 days**. This lives in the typed config source
@@ -669,3 +680,177 @@ Consequence:
 `--accent` becomes `#FFE01B` when Sprint 3A replaces the current placeholder
 blue. `--success`, `--warning` and `--danger` remain an independent system, and
 the warning color must be chosen so it cannot be mistaken for the accent.
+
+## D049 — One canonical hotel inventory; there is no "premium hotels" class
+Status: Accepted
+
+There is **one** canonical hotel inventory. Every publishable hotel is
+discoverable worldwide by every user, including anonymous visitors and Free
+creators. No plan unlocks a separate, larger or better hotel dataset, and no
+hotel record is duplicated per plan or per destination.
+
+**Discoverable ≠ fully unlocked.** A Free creator may discover a hotel, open it,
+see its basic information, and see the Public Intelligence layer where
+confidence and privacy thresholds allow — and see clearly that richer
+intelligence and actionable contacts are locked.
+
+Plan differentiation happens through **access**, never through inventory:
+
+- Premium Intelligence (D050);
+- actionable/verified hotel contacts;
+- workflow scope and capacity;
+- geographic scope of that access.
+
+Reason:
+"Premium hotels" was language, not architecture — the database has never had two
+hotel datasets, and building one would duplicate records, fracture canonical
+identity, break the staging → review → promotion contract, and make every
+intelligence aggregate ambiguous about which copy it describes. It would also
+sell the wrong thing. A hotel's name and address are not scarce; knowing that
+creators get replies there, and being able to act on it, is.
+
+Consequence:
+Remove "premium hotels", "premium hotel records" and "premium database" wherever
+they imply a gated inventory. Access remains expressed through
+`access_entitlements` / purchases / subscriptions (D050, D051, D052); there is
+no per-destination application instance and no duplicated hotel row.
+
+## D050 — Two intelligence layers: Public and Premium, with identical privacy
+Status: Accepted — supersedes the interim framing in PR #18 (PRD §12.8.1)
+
+**Premium Intelligence is required in V1.** The pre-Sprint-3 contract sync
+recorded that no premium intelligence tier existed and listed "drop the promise"
+as one option; the owner chose to build the split instead. This decision
+replaces that interim framing.
+
+There are exactly **two deliberately designed, browser-safe intelligence
+projections**:
+
+**Public Intelligence** — purpose: show that theugc.life has proprietary
+creator-network knowledge, and make Discover useful before payment. Coarse, safe
+signals: creator activity level, a broad activity/freshness signal, a safe
+collaboration-presence signal where supported, and confidence/data-availability
+state where useful.
+
+**Premium Intelligence** — purpose: help a paying creator decide whether and how
+to pursue an opportunity. Richer actionable signals, where derivable from real
+data: reply rate, typical reply-time range, richer recency of qualifying creator
+activity, collaboration types observed, stronger network signals, and
+data-strength context.
+
+Exact field projections are designed in the implementation PR, not here. No
+field may be invented that is not derivable from real qualifying creator
+workflow data.
+
+### Privacy does not change by plan — non-negotiable
+
+Free, Destination Pass and Pro obey **the same** contributor anonymity, minimum
+observation thresholds, confidence thresholds, suppression rules, NULL-vs-zero
+semantics, and protection of raw creator events. Premium buys *more of the safe
+aggregate*, never *less privacy*.
+
+A Pro subscription must never expose raw creator workflow data or base
+intelligence tables. Premium Intelligence must **never** be implemented by
+granting a browser role access to `hotel_intelligence`,
+`destination_intelligence`, `outreach_events`, `collaborations`, or any
+creator-level/raw aggregate source. Those remain trusted/server-only (D046,
+migration 0022). Premium Intelligence gets its own scoped projection with its
+own suppression rules, entitlement-gated in the database.
+
+Reason:
+The two-layer split is what makes the free tier honest and the paid tier worth
+buying: Public proves the asset exists, Premium makes it actionable. Tying the
+split to privacy instead would sell contributors' exposure, which destroys the
+willingness to contribute that the whole flywheel depends on. Contributors must
+be able to trust that no price unlocks them.
+
+Consequence:
+Reply rate moves from the public projection to the premium one — it is currently
+disclosed to every browser role at `strong` confidence, which the implementation
+PR must correct. Editorial/research evidence still may not manufacture creator
+network metrics (D027): reply rate, response time and interaction recency derive
+only from qualifying real creator workflow data, at every tier.
+
+## D051 — Creator Destination Pass V1: USD 39 / 30 days / one destination
+Status: Accepted — supersedes the 90-day duration in D024 and the range in D004
+
+| Term | V1 |
+|---|---|
+| Price | **USD 39** |
+| Duration | **30 days** (was 90 — D024) |
+| Scope | **one destination** |
+
+Job to be done: *"I'm going to Bali and I want to get collaborations."*
+
+Inside the entitled destination the Pass unlocks Premium Intelligence, premium/
+actionable hotel contacts, and the approved full destination workflow/CRM scope
+including follow-ups and pipeline behaviour under the existing product rules.
+
+Hotel **discovery remains worldwide** (D049). Outside the entitled destination
+the user falls back to the Free discovery + Public Intelligence experience.
+
+On expiry: Premium Intelligence and premium contacts for that destination lock
+again. **Creator-owned historical pipeline, outreach and collaboration data does
+not disappear** and remains readable, per the existing permissions contract.
+
+Reason:
+30 days matches the actual job. The Pass is bought by someone with a trip
+already booked, and pitching for one trip is a weeks-long task, not a quarter.
+A 90-day window priced the same was mostly idle time, weakened the upgrade path
+to Pro, and made the product look like a cheap subscription rather than a
+low-friction acquisition product for a specific trip.
+
+Consequence:
+`PRICING.destinationPass.durationDays` moves 90 → 30 in the typed config, and
+every surface that renders it follows. Entitlement expiry semantics are
+unchanged in the database — only the granted duration differs.
+
+## D052 — Creator Pro V1: USD 199/year, worldwide
+Status: Accepted — confirms the launch price in D005 as the V1 decision
+
+Creator Pro is the full creator operating system. **V1 launch price: USD 199 per
+year. Scope: worldwide.**
+
+Job to be done: *"I'm a travel creator and I want theugc.life to be my operating
+system."*
+
+Pro unlocks Premium Intelligence worldwide, premium/actionable hotel contacts
+worldwide, full CRM/workflow scope, Trips, Portfolio, and other approved Pro
+capabilities **that actually exist**.
+
+The USD 299 reference and USD 249 later prices from D005 remain future pricing
+hypotheses, not commitments.
+
+Future AI and community capabilities may become Pro benefits when they are
+genuinely built and separately approved. **Do not promise "all future features
+forever."**
+
+Reason:
+Fixing the launch number removes an open variable from every commercial surface,
+and stating that Pro includes only what exists keeps the upgrade honest as the
+product grows.
+
+## D053 — Archivo is the primary product typeface V1
+Status: Accepted — closes the open item in VISUAL_DIRECTION.md §7
+
+**Archivo** is approved as the primary product typeface for Visual Direction V1
+(A2 — Sunlit Creator OS, D047), preferred over Schibsted Grotesk. Typography
+exploration for V1 is closed.
+
+Reason:
+
+- high legibility at the dense product-UI sizes A2's result rows require;
+- strong numeric rendering, which the product needs constantly for dates,
+  counts, rates and confidence;
+- enough editorial personality to avoid an enterprise-SaaS default, without
+  becoming a display-only magazine face;
+- variable-width capability, which supports A2's no-photo and editorial
+  typographic treatments where an image cannot carry the row;
+- suitable for the master brand beyond travel (D047), so a vertical expansion
+  does not force a type change.
+
+Scope of this approval:
+It fixes the **typeface**. It does **not** promote any A2 prototype font size,
+weight, width or line-height to a token — those remain implementation references
+until validated on a real surface (VISUAL_DIRECTION.md §22). Production font
+loading is unchanged until the implementation PR.

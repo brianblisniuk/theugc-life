@@ -126,22 +126,25 @@ Avoid laptop-on-beach stock imagery, champagne/passport/airplane-wing clichés, 
 
 ## 7. Typography direction
 
-**Status: NOT LOCKED. Owner approval pending.**
+**Status: APPROVED — Archivo is the primary product typeface V1 (D053).**
 
-The current recommended candidate is **Archivo**, preferred over Schibsted
-Grotesk during the exploration. It fits A2 because it is a grotesk with real
-structural personality rather than a neutral default, it holds up at small sizes
-in dense result rows, its numerals are strong enough for dates, counts and
-rates, and its weight range supports editorial scale contrast without needing a
-second display face.
+Preferred over Schibsted Grotesk. Typography exploration for V1 is closed.
 
-This is a recommendation, not a decision. Until the owner approves it:
+Why it fits A2:
 
-- do not record Archivo as locked anywhere;
-- do not replace the production typography;
-- do not build tokens that assume it.
+- high legibility at the dense product-UI sizes A2's result rows require;
+- strong numeric rendering, for dates, counts, rates and confidence;
+- enough editorial personality to avoid an enterprise-SaaS default, without
+  becoming a display-only magazine face;
+- variable-width capability, which supports A2's no-photo and editorial
+  typographic treatments where no image can carry the row;
+- suitable for the master brand beyond travel (§14), so a vertical expansion
+  does not force a type change.
 
-Exact typefaces are not locked in this gate.
+**Approving the typeface does not promote any prototype size, weight, width or
+line-height to a token** — those remain implementation references until
+validated on a real surface (§22). Production font loading is unchanged until
+the implementation PR; the app currently uses system defaults.
 
 Use a highly legible modern grotesk / neo-grotesk for product UI, with enough personality to avoid enterprise SaaS defaults, strong numeric rendering and editorial scale contrast in destination/lifestyle moments.
 
@@ -302,6 +305,7 @@ Technical errors remain technical states. Suppressed/unknown intelligence remain
 | 1. Produce the three Discover explorations | ✅ done |
 | 2. Review them against §17 | ✅ done |
 | 3. Select/finalize one direction | ✅ **A2 — Sunlit Creator OS** (D047) |
+| 3b. Approve V1 typography | ✅ **Archivo** (D053) |
 | 4. Convert that direction into semantic tokens and reusable primitives | ⬜ Sprint 3A |
 | 5. Implement Sprint 3A Discover + Map | ⬜ Sprint 3A, subject to §21 prerequisites |
 

@@ -2,7 +2,8 @@
 Version: 0.2 — implementation guardrails, not final brand bible.
 
 Visual Direction V1 is **A2 — Sunlit Creator OS** (D047), with **Sun `#FFE01B`**
-as the approved primary accent (D048). See
+as the approved primary accent (D048) and **Archivo** as the primary product
+typeface (D053). See
 [`VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md) for the direction itself, the
 approved Discover interaction model, and what remains open. This document covers
 how it is built.
@@ -140,11 +141,15 @@ choosing a warning color, choose one that cannot be confused with the accent.
 Yellow must read bright, sunlit, contemporary and energetic — never mustard,
 ochre, beige, terracotta, rustic or bohemian.
 
-### 9.2 Typography — still open
+### 9.2 Typography — Archivo (D053)
 
-Typefaces remain **unlocked**. **Archivo** is the current recommended candidate
-(VISUAL_DIRECTION.md §7) but has not been approved. Do not change the production
-type stack, and do not build tokens that assume a specific family, until it is.
+**Archivo** is the approved primary product typeface for V1. The app currently
+loads no custom font at all; adding it is implementation work for the next PR,
+not a change made in the contract PR.
+
+Approving the typeface does **not** promote any A2 prototype size, weight, width
+or line-height to a token. The type scale is derived from a real surface with
+real content (VISUAL_DIRECTION.md §22).
 
 ### 9.3 Containers are earned
 
