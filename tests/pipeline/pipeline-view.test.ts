@@ -26,9 +26,11 @@ import {
   freeLimitExplanation,
   normalizeStatusFilter,
   pipelineListState,
+  pipelinePageHref,
   saveControlState,
   shouldOfferSave,
   shouldOfferUpgrade,
+  type PipelinePageInput,
 } from "@/lib/pipeline/view";
 
 const CREATED: SaveResult = {
@@ -207,8 +209,26 @@ describe("sanitized errors", () => {
 describe("Pipeline list state", () => {
   const item = { id: "a" };
 
+  /** One page of results, with sane defaults for the paging metadata. */
+  function page(overrides: Partial<PipelinePageInput> & { items: readonly unknown[] }) {
+    const items = overrides.items;
+    const total = overrides.total ?? items.length;
+    const pageSize = overrides.pageSize ?? 50;
+    const totalPages = overrides.totalPages ?? (total === 0 ? 1 : Math.ceil(total / pageSize));
+    const current = overrides.page ?? 1;
+    return {
+      items,
+      total,
+      pageSize,
+      totalPages,
+      page: current,
+      hasPrevious: overrides.hasPrevious ?? current > 1,
+      hasNext: overrides.hasNext ?? current < totalPages,
+    } satisfies PipelinePageInput;
+  }
+
   it("shows the empty pipeline copy with a Discover CTA", () => {
-    const state = pipelineListState({ failed: false, items: [], status: null });
+    const state = pipelineListState({ failed: false, page: page({ items: [] }), status: null });
     expect(state).toEqual({
       kind: "empty",
       title: "Your pipeline is empty",
@@ -218,16 +238,20 @@ describe("Pipeline list state", () => {
   });
 
   it("distinguishes an empty FILTER from an empty pipeline", () => {
-    const filtered = pipelineListState({ failed: false, items: [], status: "pitched" });
+    const filtered = pipelineListState({
+      failed: false,
+      page: page({ items: [] }),
+      status: "pitched",
+    });
     expect(filtered.kind).toBe("empty_filtered");
     expect(filtered).not.toHaveProperty("body", PIPELINE_COPY.emptyBody);
   });
 
   it("a failed query renders an error, NOT an empty pipeline", () => {
     for (const input of [
-      { failed: true, items: [], status: null },
-      { failed: false, items: null, status: null },
-      { failed: true, items: null, status: "saved" },
+      { failed: true, page: page({ items: [] }), status: null },
+      { failed: false, page: null, status: null },
+      { failed: true, page: null, status: "saved" },
     ]) {
       const state = pipelineListState(input);
       expect(state.kind).toBe("error");
@@ -238,19 +262,92 @@ describe("Pipeline list state", () => {
   });
 
   it("summarizes the rows, pluralizing and naming the active filter", () => {
-    expect(pipelineListState({ failed: false, items: [item], status: null })).toEqual({
-      kind: "items",
-      count: 1,
-      summary: "1 hotel",
+    expect(
+      pipelineListState({ failed: false, page: page({ items: [item] }), status: null }),
+    ).toMatchObject({ kind: "items", visible: 1, total: 1, summary: "1 hotel" });
+    expect(
+      pipelineListState({ failed: false, page: page({ items: [item, item] }), status: null }),
+    ).toMatchObject({ kind: "items", visible: 2, total: 2, summary: "2 hotels" });
+    expect(
+      pipelineListState({ failed: false, page: page({ items: [item] }), status: "follow_up" }),
+    ).toMatchObject({ summary: "1 hotel with status Follow-up" });
+  });
+
+  it("a single page needs no range line and no pagination controls", () => {
+    const state = pipelineListState({
+      failed: false,
+      page: page({ items: Array.from({ length: 12 }, () => item) }),
+      status: null,
     });
-    expect(pipelineListState({ failed: false, items: [item, item], status: null })).toEqual({
-      kind: "items",
-      count: 2,
-      summary: "2 hotels",
+    expect(state).toMatchObject({ kind: "items", range: null, pagination: null });
+  });
+
+  it("states the WHOLE pipeline, not the page — 243 hotels showing 1-50", () => {
+    const state = pipelineListState({
+      failed: false,
+      page: page({ items: Array.from({ length: 50 }, () => item), total: 243 }),
+      status: null,
     });
-    expect(pipelineListState({ failed: false, items: [item], status: "follow_up" })).toMatchObject({
-      summary: "1 hotel with status Follow-up",
+    if (state.kind !== "items") throw new Error("unreachable");
+    expect(state.summary).toBe("243 hotels");
+    expect(state.summary).not.toBe("50 hotels");
+    expect(state.visible).toBe(50);
+    expect(state.total).toBe(243);
+    expect(state.range).toBe("Showing 1\u201350");
+  });
+
+  it("computes the visible range from the page number", () => {
+    const state = pipelineListState({
+      failed: false,
+      page: page({ items: Array.from({ length: 50 }, () => item), total: 243, page: 3 }),
+      status: null,
     });
+    if (state.kind !== "items") throw new Error("unreachable");
+    expect(state.range).toBe("Showing 101\u2013150");
+    expect(state.pagination).toMatchObject({
+      page: 3,
+      totalPages: 5,
+      hasPrevious: true,
+      hasNext: true,
+      previousHref: "/app/pipeline?page=2",
+      nextHref: "/app/pipeline?page=4",
+      label: "Page 3 of 5",
+    });
+  });
+
+  it("offers no Previous on the first page and no Next on the last", () => {
+    const first = pipelineListState({
+      failed: false,
+      page: page({ items: Array.from({ length: 50 }, () => item), total: 243, page: 1 }),
+      status: null,
+    });
+    const last = pipelineListState({
+      failed: false,
+      page: page({ items: Array.from({ length: 43 }, () => item), total: 243, page: 5 }),
+      status: null,
+    });
+    if (first.kind !== "items" || last.kind !== "items") throw new Error("unreachable");
+    expect(first.pagination).toMatchObject({ hasPrevious: false, previousHref: null });
+    expect(last.pagination).toMatchObject({ hasNext: false, nextHref: null });
+    expect(last.range).toBe("Showing 201\u2013243");
+  });
+
+  it("keeps the status filter in the paging links", () => {
+    const state = pipelineListState({
+      failed: false,
+      page: page({ items: Array.from({ length: 50 }, () => item), total: 120, page: 2 }),
+      status: "pitched",
+    });
+    if (state.kind !== "items") throw new Error("unreachable");
+    expect(state.summary).toBe("120 hotels with status Pitched");
+    expect(state.pagination?.previousHref).toBe("/app/pipeline?status=pitched");
+    expect(state.pagination?.nextHref).toBe("/app/pipeline?status=pitched&page=3");
+  });
+
+  it("page 1 has exactly one URL spelling", () => {
+    expect(pipelinePageHref(null, 1)).toBe("/app/pipeline");
+    expect(pipelinePageHref("won", 1)).toBe("/app/pipeline?status=won");
+    expect(pipelinePageHref("won", 4)).toBe("/app/pipeline?status=won&page=4");
   });
 });
 

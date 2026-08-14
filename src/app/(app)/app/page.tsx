@@ -1,18 +1,18 @@
 import { EmptyState } from "@/components/empty-state";
-import { getSessionContext } from "@/lib/auth/guards";
+import { requireUser } from "@/lib/auth/guards";
 import { createClient } from "@/lib/supabase/server";
 
 /** Dashboard/home. Sprint 0 renders a greeting shell; content lands in later sprints. */
 export default async function AppHomePage() {
-  const session = await getSessionContext();
+  const session = await requireUser("/app");
   const supabase = await createClient();
   const { data: profile } = await supabase
     .from("creator_profiles")
     .select("display_name")
-    .eq("user_id", session?.userId ?? "")
+    .eq("user_id", session.userId)
     .maybeSingle();
 
-  const name = profile?.display_name ?? session?.email ?? "creator";
+  const name = profile?.display_name ?? session.email ?? "creator";
 
   return (
     <div className="space-y-6">

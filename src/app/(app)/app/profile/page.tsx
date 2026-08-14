@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { getSessionContext } from "@/lib/auth/guards";
+import { requireUser } from "@/lib/auth/guards";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Profile" };
@@ -11,12 +11,12 @@ export const metadata: Metadata = { title: "Profile" };
  * (a foundation read; the full editor is a later sprint).
  */
 export default async function ProfilePage() {
-  const session = await getSessionContext();
+  const session = await requireUser("/app/profile");
   const supabase = await createClient();
   const { data: profile } = await supabase
     .from("creator_profiles")
     .select("display_name, username, public_profile_enabled")
-    .eq("user_id", session?.userId ?? "")
+    .eq("user_id", session.userId)
     .maybeSingle();
 
   return (

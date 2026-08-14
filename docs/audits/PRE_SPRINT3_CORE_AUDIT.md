@@ -1,0 +1,1077 @@
+# Pre-Sprint-3 Core Audit
+
+Audited commit: `d12f8f7dd624cb659414e3b357d2e1b82753b0ed` (origin/main)
+Date: 2026-08-14
+Scope: entire V1 core engine (Sprints 0 → 2F), foundation and documentation.
+Method: falsification-oriented. Every invariant was attacked before it was believed.
+
+---
+
+## 1. Executive summary
+
+> **The consistency claim below is corrected in §22.1.** External final review
+> found three defects on surfaces this audit did not attack — two where a
+> technical or integrity state was reported as a domain fact (F-15, F-16) and
+> one where a self-service query lost its user scope (F-17) — so "implemented
+> consistently" was too broad. All three are fixed. The original text is
+> preserved.
+
+The core engine is in good shape. The trusted-server boundary, the CRM state
+machine, the deal/collaboration lifecycle, the intelligence derivation and the
+privacy gating all hold up under direct attack from real database roles. Client
+write access to every workflow table has been revoked, identity is never
+accepted from the browser, and the "a technical error is not a domain fact"
+rule is implemented consistently across Discover, Hotel Detail, contacts,
+pipeline, collaboration and intelligence.
+
+**One P1 defect was found**, and it is a real one: the application cannot read
+`public.users`, so `getSessionContext()` silently falls back to the `creator`
+role for every user, including genuine admins and editors. The admin surface is
+therefore unreachable, and the fallback is itself an instance of the very
+anti-pattern the codebase polices everywhere else — a permission error being
+read as a domain fact. It fails closed (no privilege escalation), and the
+database-side role checks (`is_admin_or_editor()`) are unaffected.
+
+Beyond that: two P2 hardening items, five P3 debt items, six P4 documentation
+divergences. No P0. No secret material in the tree. No cross-creator data
+exposure found under direct probing.
+
+**Recommendation: C — HARDENING SPRINT REQUIRED**, on the strict reading of the
+severity rubric (one P1 exists). In practice this is a single small fix plus a
+regression test, not a broad hardening effort; see §19.
+
+---
+
+## 2. Audit baseline
+
+| Item | Value |
+|---|---|
+| `git rev-parse origin/main` | `d12f8f7dd624cb659414e3b357d2e1b82753b0ed` ✅ matches required |
+| Working tree | clean (audited on scratch branch `audit/pre-sprint3` at that SHA) |
+| Migrations | 0001 → 0023 (23 files) |
+| Fresh replay from empty DB | PASS (23/23 applied) |
+| `npm test` | 676 passed, 33 files |
+| `npm run lint` | clean |
+| `npm run typecheck` | clean |
+| `npm run build` | clean |
+| `npm run format:check` | clean |
+| Production Supabase | NOT contacted |
+
+### Inventory
+
+**Migrations (23).** 0001 extensions/helpers · 0002 users/profiles · 0003
+geography/inventory · 0004 commerce/entitlements · 0005 trips/pipeline · 0006
+events/collaborations · 0007 verification/signals/flags · 0008 intelligence ·
+0009 growth · 0010 access helpers · 0011 signup trigger · 0012 RLS policies ·
+0013 public intelligence view · 0014 import/organizations · 0015 import
+backstops · 0016 destination catalog/review · 0017 one property row per key ·
+0018 grant hardening · 0019 save-to-pipeline RPC · 0020 pipeline transitions ·
+0021 negotiation/deal-won/collaboration · 0022 hotel intelligence aggregation ·
+0023 collaboration lifecycle.
+
+**Application RPCs (service_role-only).** `save_hotel_to_pipeline`,
+`transition_pipeline_item`, `progress_pipeline_deal`, `progress_collaboration`,
+`recompute_hotel_intelligence`, `recompute_hotel_intelligence_for_pipeline_item`,
+`recompute_all_hotel_intelligence`, `hotel_intelligence_lock_key`.
+
+**Client-callable helper functions (SECURITY DEFINER, self-scoped).**
+`current_creator_id`, `current_user_role`, `is_admin_or_editor`,
+`has_active_pro`, `has_active_destination_access`, `has_premium_hotel_access`.
+Private `_`-prefixed variants are revoked from client roles (0018).
+
+**Tables/views.** 36 tables + 1 view (`hotel_public_intelligence`). RLS is
+enabled on **all 36 tables** (zero exceptions). 105 functions in `public`,
+of which ~85 are extension-provided (citext, pgcrypto).
+
+**Routes.** Public `/`, `/pricing`; auth `/login`, `/signup`,
+`/forgot-password`, `/reset-password`, `/onboarding`, `/auth/callback`;
+app `/app`, `/app/discover`, `/app/hotels/[id]`, `/app/pipeline`, `/app/trips`,
+`/app/profile`, `/app/profile/portfolio`, `/app/account`, `/app/billing`;
+admin `/admin`.
+
+**Server actions.** `saveHotelAction`, `transitionPipelineItemAction`,
+`progressPipelineDealAction`, `progressCollaborationAction`.
+
+**Tests.** 33 files / 676 assertions-bearing tests; 15 DB-backed, 18 pure.
+
+---
+
+## 3. System architecture snapshot
+
+```
+browser (client component, no secrets)
+   │  posts only: ids the user is acting on + fields the user typed
+   ▼
+server action ("use server")
+   │  identity ONLY from getSessionContext()
+   │  limits ONLY from typed config (FREE_LIMITS)
+   ▼
+server-only service (src/lib/pipeline/queries.ts, "server-only")
+   │  createAdminClient() → service_role
+   ▼
+service_role-only RPC (SECURITY INVOKER, search_path pinned)
+   │  resolves creator_profile from p_user_id
+   │  resolves pipeline item by (id AND creator_id)
+   │  resolves collaboration/hotel from the item
+   │  locks creator → item → collaboration
+   ▼
+tables (client INSERT/UPDATE/DELETE revoked; RLS retained as defence in depth)
+```
+
+Reads take the opposite path: the cookie-bound client under the caller's own
+RLS, never service_role.
+
+---
+
+## 4. Migration / schema assessment
+
+Fresh replay from an empty database: **PASS**, 23/23, no ordering surprises, no
+dependency on production-only data, no duplicate object definitions shadowing
+earlier behaviour.
+
+`CREATE OR REPLACE` is used twice on already-shipped functions
+(`transition_pipeline_item` in 0023, `hotel_public_intelligence` in 0022). Both
+re-issue their `REVOKE`/`GRANT` immediately after replacement, and the audit
+confirmed on the replayed schema that no client role regained EXECUTE and that
+`prosecdef`/`proconfig` are as intended. This is the correct pattern and it was
+followed.
+
+Structural invariants that the database genuinely enforces (verified by
+attempting to violate them as superuser):
+
+| Invariant | Enforced by | Result |
+|---|---|---|
+| One non-closed cycle per creator+hotel | `pipeline_items_single_active_cycle_uidx` | **blocked** ✅ |
+| One collaboration per relationship cycle | `collaborations_one_per_cycle_uidx` | **blocked** ✅ |
+| `end_date >= start_date` on collaborations | `collaborations_dates_valid` | enforced ✅ |
+| `cycle_number >= 1` | `pipeline_items_cycle_positive` | enforced ✅ |
+| Event/status/channel vocabularies | CHECK constraints | enforced ✅ |
+
+See §8 for the invariants that are **not** structural.
+
+---
+
+## 5. Security / RLS assessment
+
+RLS is enabled on every table. The full privilege matrix was read from the
+replayed schema; the security-relevant rows:
+
+| Object | anon | authenticated | service_role |
+|---|---|---|---|
+| `pipeline_items` | — | SELECT | ALL |
+| `outreach_events` | — | SELECT | ALL |
+| `collaborations` | — | SELECT | ALL |
+| `hotel_intelligence` | — | **—** | ALL |
+| `destination_intelligence` | — | **—** | ALL |
+| `hotel_public_intelligence` (view) | SELECT | SELECT | **—** |
+| `hotel_contacts` | — | ALL (RLS: admin/editor write; premium read) | ALL |
+| `access_entitlements` | — | SELECT (own or admin) | ALL |
+| `users` | — | **—** | ALL |
+| import/admin tables | — | ALL (RLS: `is_admin_or_editor()`) | ALL |
+
+Verified by direct role impersonation:
+
+- authenticated cannot INSERT/UPDATE/DELETE `pipeline_items`, `outreach_events`
+  or `collaborations` (`permission denied`), while SELECT of **own** rows works
+  and another creator's rows return zero rows.
+- authenticated and anon cannot SELECT `hotel_intelligence` or
+  `destination_intelligence` at all.
+- anon and authenticated cannot EXECUTE any of the eight application RPCs.
+- All four workflow RPCs: `public_exec = false`, `anon = false`,
+  `authenticated = false`, `service_role = true`, `search_path` pinned.
+  `save_hotel_to_pipeline` is DEFINER by design (0019); the three added since
+  are INVOKER, as intended.
+
+**Accepted legacy exceptions (not new findings).** Extension functions from
+`citext` and `pgcrypto` carry PUBLIC EXECUTE and no pinned `search_path`; they
+live in `public` because Supabase installs them there. `set_updated_at`,
+`prevent_user_privilege_change` and the six self-scoped `has_*`/`current_*`
+wrappers are intentionally PUBLIC-executable (0010/0018) — the wrappers take no
+user id and read only `auth.uid()`.
+
+No cross-creator exposure was found.
+
+---
+
+## 6. Trusted-boundary assessment
+
+Every mutation path was traced end to end. In all four server actions the
+browser supplies only: the id of the object it is acting on, and the values the
+creator typed. Identity comes from `getSessionContext()`; limits come from
+`FREE_LIMITS`. The RPCs re-derive creator, item ownership, hotel id,
+collaboration id, current status and entitlements internally.
+
+Specifically confirmed **not** accepted from the client anywhere:
+`user_id`, `creator_id`, hotel ownership, pipeline ownership, current status,
+collaboration status, collaboration id, plan, entitlement, engaged count, and
+the intelligence recompute target (resolved from the mutated `pipelineItemId`,
+never the browser's `hotelId`).
+
+`NEXT_PUBLIC_*` contains only the Supabase URL, anon key, site URL and PostHog
+keys. `SUPABASE_SERVICE_ROLE_KEY` is read only in `src/lib/supabase/admin.ts`,
+which is `server-only`. No raw SQL text or PostgREST error object reaches the
+UI: every RPC result passes through a `map*Result` function whose default arm
+is `{ result: "error" }`.
+
+---
+
+## 7. CRM state-machine assessment
+
+Real transition graph, derived from 0020/0021/0023 rather than from docs:
+
+| From | Action | To | Event(s) | Consumes engaged slot |
+|---|---|---|---|---|
+| saved | plan | planned | *(none)* | **yes** |
+| saved, planned | mark_pitched | pitched | `pitch_sent` | yes (only from saved) |
+| pitched | mark_followup_sent | follow_up | `followup_sent` | no |
+| pitched, follow_up | mark_replied | replied | `reply_received` (+`positive_reply`/`negative_reply`/`offer_received`) | no |
+| replied | start_negotiation | negotiating | `negotiation_started` | no |
+| negotiating | mark_won | won | `deal_won` + collaboration row | no |
+| saved, planned | close | closed | `creator_closed_pipeline` | frees |
+| pitched, follow_up, replied, negotiating | close | closed | `deal_lost` | frees |
+| won | *(no close)* | — | — | — |
+| won + collaboration terminal | complete/cancel | closed | `collaboration_completed` / `creator_closed_pipeline` | frees |
+
+Every other combination returns `invalid_transition`. A `closed` cycle accepts
+no action except an idempotent `close`. Retries return `already_applied` and
+write nothing. No reachable-but-undocumented status combination was found: the
+only way into each status is the action above, and `negotiating`/`won` are
+unreachable without their predecessors.
+
+Idempotency was probed for every action, including two independent connections
+racing the same and different transitions; all converge correctly.
+
+---
+
+## 8. Deal / collaboration lifecycle assessment
+
+The `won` invariant (pipeline `won` + exactly one `deal_won` + exactly one
+collaboration) and the collaboration lifecycle
+(`agreed → scheduled? → active → completed|cancelled → cycle closed`) behave
+correctly through the RPCs, including the 2F review hardening that validates
+status against event counts before any branch.
+
+**Critical distinction requested by §12 — structural vs merely detected:**
+
+| Invalid state | Structurally prevented? | Notes |
+|---|---|---|
+| Two open cycles per creator+hotel | **YES** (partial unique index) | verified blocked |
+| Two collaborations per cycle | **YES** (partial unique index) | verified blocked |
+| Collaboration with no `deal_won` | **NO** — RPC-detected only | insert succeeded |
+| Pipeline `won` with no collaboration | **NO** — RPC-detected only | update succeeded |
+| Terminal collaboration with non-closed pipeline | **NO** — RPC-detected only | update succeeded |
+| Duplicate `deal_won` in one cycle | **NO** — RPC-detected only | two rows inserted |
+| Collaboration with NULL `pipeline_item_id` | **NO** — allowed by schema | excluded from the unique index |
+
+Because client writes to all three tables are revoked and the RPCs are the only
+writers, none of these is reachable from the browser today. They are reachable
+by service-role code, a future admin correction tool, or a hand-written fix.
+Recorded as **F-02 (P2)**.
+
+---
+
+## 9. Intelligence assessment
+
+D044 semantics were re-derived independently from 0022 and match the decision
+record: the unit of observation is the relationship cycle, not the event; the
+qualifying-reply rule (`event_at >= initial pitch`) is implemented; classification
+events are tied to the qualifying reply through `metadata.reply_event_id` with a
+documented same-cycle fallback; `deal_won` is the only collaboration signal;
+medians use `event_at`, never `created_at`; rolling windows and activity level
+use `event_at`; activity counts **distinct recently active cycles**, so one busy
+relationship cannot manufacture "high" activity.
+
+Contamination checks: editorial evidence (including a
+`creator_collaboration_evidence` claim), contact verification, hotel metadata,
+star rating, brand and import activity have **zero** effect — verified by
+snapshotting the derived row before and after inserting evidence. `hotel_saved`
+alone produces **no row at all**.
+
+`0` vs `NULL` is correct after the 2E review: `reply_rate = 0` is a measured
+rate for a pitched-but-unanswered hotel; `NULL` means no denominator. Activity
+is `NULL` (never `low`) when no cycle was active in 90 days. A hotel with no
+qualifying activity has **no row**, and a recompute that finds none **deletes**
+the row.
+
+Per-hotel recompute is serialised by a transaction-scoped advisory lock keyed
+per hotel, so two refreshes cannot overwrite each other out of order; different
+hotels do not block each other. Full rebuild is deterministic, equals per-hotel
+recompute field-for-field, and counts removals exactly (per hotel, not by net
+row count). Refresh is best-effort, post-commit, driven by the pipeline item id,
+and its failure never changes the workflow result.
+
+---
+
+## 10. Privacy assessment
+
+Base intelligence tables are unreadable by anon and authenticated (0022). The
+public projection exposes exactly seven columns — `hotel_id`, `hotel_slug`,
+`activity_level`, `confidence_level`, `reply_rate`,
+`has_confirmed_collaboration`, `recency_band` — with no creator id, no pipeline
+id, no exact counts and no raw timestamps. Progressive disclosure verified at
+each band: insufficient → confidence only; emerging → + activity + collaboration
+boolean; moderate → + coarse recency; strong → + reply rate.
+
+The NULL-not-false invariant holds in SQL and in the panel: a suppressed
+collaboration answer is `NULL`, and the UI renders the collaboration row only
+for `true`, so neither `NULL` nor `false` ever prints "No collaboration".
+Financial columns (`private_value_amount`, `private_value_currency`) are never
+selected by any read path.
+
+---
+
+## 11. Concurrency / idempotency assessment
+
+Lock inventory:
+
+| Site | Mechanism | Order |
+|---|---|---|
+| `save_hotel_to_pipeline` | `FOR UPDATE` creator | creator |
+| `transition_pipeline_item` | `FOR UPDATE` creator → item | creator → item |
+| `progress_pipeline_deal` | `FOR UPDATE` creator → item | creator → item |
+| `progress_collaboration` | `FOR UPDATE` creator → item → collaboration | creator → item → collaboration |
+| `recompute_hotel_intelligence` | `pg_advisory_xact_lock(hotel key)` | per hotel |
+| import review/promote | session advisory lock per batch | per batch |
+
+The order is consistent everywhere (creator first, then item, then
+collaboration), so no inversion path exists between the four workflow functions.
+The intelligence lock is taken in a separate post-commit transaction and never
+while holding a workflow row lock, so it cannot participate in a cycle. Import
+locks are keyed on a disjoint namespace.
+
+Unique-violation recovery is used deliberately in two places
+(`save_hotel_to_pipeline`, `progress_pipeline_deal`) to convert a lost race into
+the winner's row rather than an error.
+
+---
+
+## 12. Import-system assessment
+
+Reviewed without touching production. The canonical rules hold in code:
+editorial evidence is stored separately and proven to have no path into creator
+intelligence; property identity is keyed per property, not per shared endpoint;
+the review/apply flow is serialised per batch by an advisory lock; promotion is
+idempotent with a database backstop on `(file_sha256, parser_name,
+parser_version)`; rollback and manifest snapshots are covered by DB-backed
+tests. All import tables are admin/editor-only by RLS.
+
+The one operational coupling worth noting: the import CLI's admin-gated
+workflows depend on a role that the **application** can no longer resolve
+(F-01); the CLI itself uses service_role and is unaffected.
+
+---
+
+## 13. Test-suite assessment
+
+676 tests, 33 files, 15 DB-backed. Coverage by subsystem:
+
+| Subsystem | DB-backed | Pure | Gap |
+|---|---|---|---|
+| Save to pipeline | ✅ 19 | ✅ | — |
+| Workflow transitions | ✅ 50 | ✅ 29 | — |
+| Deal path | ✅ 36 | ✅ 32 | — |
+| Collaboration lifecycle | ✅ 58 | ✅ 35 | — |
+| Intelligence aggregation | ✅ 70 | ✅ 29 | — |
+| RLS / grants | ✅ 47 | — | **no test of `public.users` grants** |
+| Import | ✅ 5 files | ✅ 4 files | — |
+| Discover / hotel detail | ✅ 34 | ✅ | — |
+| **Auth / role resolution** | — | — | **no test at all** |
+| Trips | partial (RLS only) | — | no feature yet |
+
+The decisive gap is auth: **no test exercises `getSessionContext()` or
+`requireRole()` against a real database role.** That gap is exactly why F-01
+survived to this audit. Concurrency is genuinely tested with independent
+connections (not simulated), and security checks use real Postgres roles rather
+than mocks — both good.
+
+Minor: the pure view-state suites overlap somewhat with the DB suites on label
+vocabularies, but they assert distinct product copy, so this is duplication of
+subject rather than of coverage.
+
+---
+
+## 14. Performance / scalability assessment
+
+Nothing here blocks beta. Hazards worth tracking:
+
+- `listPipelineItems` caps at `.limit(200)` with no pagination and no
+  disclosure — see F-03.
+- Discover uses `count: "exact"` on every search; fine at 30 hotels, a known
+  cost at catalogue scale.
+- `recompute_all_hotel_intelligence` is a synchronous loop over every hotel with
+  activity — correct, but O(hotels) and unbounded in one transaction per hotel.
+- The best-effort refresh is `await`ed inside the workflow action, adding a
+  round trip (and a possible advisory-lock wait) to user-facing latency.
+- Index coverage for the aggregation, cycle lookup and pipeline listing is
+  present and appropriate.
+
+---
+
+## 15. Documentation consistency assessment
+
+The decision record (D001–D045) is the strongest document and matches the code.
+The divergences found are all in the older reference docs, and all are
+documentation-only (F-08 … F-13). None describes a security property that the
+code fails to implement; they describe capabilities that were later revoked or
+deferred.
+
+---
+
+## 16. Production verification checklist
+
+To be run by the external reviewer against production (not by this audit):
+
+1. `main` SHA equals `d12f8f7dd624cb659414e3b357d2e1b82753b0ed`.
+2. `supabase_migrations.schema_migrations` contains exactly versions 0001…0023,
+   no extras, no gaps.
+3. Function signatures exist and match: the eight application RPCs, with
+   `prosecdef` false for all except `save_hotel_to_pipeline`, and
+   `proconfig` containing `search_path=public, pg_temp` on all eight.
+4. `has_function_privilege('anon'|'authenticated', …, 'EXECUTE') = false` and
+   `service_role = true` for all eight; PUBLIC not present in `proacl`.
+5. `has_table_privilege('authenticated', …)` — INSERT/UPDATE/DELETE false on
+   `pipeline_items`, `outreach_events`, `collaborations`; SELECT true.
+6. `has_table_privilege('authenticated', 'hotel_intelligence'|'destination_intelligence', 'SELECT') = false`.
+7. `hotel_public_intelligence` selectable by anon and authenticated; column list
+   is exactly the seven approved columns.
+8. `relrowsecurity = true` on all `public` tables; policy list matches the 51
+   policies in this audit.
+9. Indexes present: `pipeline_items_single_active_cycle_uidx`,
+   `collaborations_one_per_cycle_uidx`.
+10. Row counts: 30 hotels, 0 pipeline_items, 0 outreach_events, 0
+    collaborations, 0 hotel_intelligence, 0 destination_intelligence.
+11. Supabase security advisor: no new findings beyond the accepted extension
+    exceptions in §5.
+12. No schema drift: object list diffed against a fresh local replay of 0001–0023.
+
+---
+
+## 17. Findings
+
+| ID | Sev | Confidence | Subsystem | Location |
+|---|---|---|---|---|
+| F-01 | **P1** | CONFIRMED | Auth / role resolution | `src/lib/auth/guards.ts:28-36`; grants in `0012` |
+| F-02 | P2 | CONFIRMED | Deal/collaboration integrity | `0006`, `0021`, `0023` schema |
+| F-03 | P2 | CONFIRMED | Pipeline list | `src/lib/pipeline/queries.ts:117` |
+| F-04 | P3 | CONFIRMED | Collaboration schema | `0006` `collaborations.pipeline_item_id` |
+| F-05 | P3 | CONFIRMED | Intelligence lifecycle | no recompute on creator deletion |
+| F-06 | P3 | LIKELY | Workflow latency | `src/lib/pipeline/actions.ts` |
+| F-07 | P3 | CONFIRMED | Public view grants | `0013`/`0022` view grants |
+| F-08 | P3 | CONFIRMED | Discover scale | `src/lib/hotels/queries.ts:175` |
+| F-09 | P4 | DOCUMENTATION-ONLY | EVENTS.md §4 | stale transition map |
+| F-10 | P4 | DOCUMENTATION-ONLY | EVENTS.md §5 | "Mark won → optional collaboration dates" |
+| F-11 | P4 | DOCUMENTATION-ONLY | PERMISSIONS.md §9 | premium detailed intelligence |
+| F-12 | P4 | DOCUMENTATION-ONLY | PERMISSIONS.md §5/§6 | creator write access |
+| F-13 | P4 | DOCUMENTATION-ONLY | EVENTS.md §3 | `contact_bounced` has no producer |
+| F-14 | P4 | DOCUMENTATION-ONLY | Test suite | no auth/role test |
+
+### F-01 — Application cannot resolve user roles (P1, CONFIRMED)
+
+> **Partially superseded — read §20 before acting on this finding.** External
+> verification against production established that the *production* privilege
+> state differs from a clean migration replay, so the impact paragraph below
+> ("every session is treated as `creator`") describes the replayed schema, not
+> production. The finding itself stands. The original wording is preserved
+> verbatim as the historical record.
+
+**Location.** `src/lib/auth/guards.ts:28-36`; migration `0012` never grants
+`SELECT` on `public.users` to `authenticated`.
+
+**Description.** `getSessionContext()` reads `public.users` with the
+cookie-bound client to resolve the user's role. `authenticated` has no table
+privilege on `public.users`, so the query fails. The code discards the error
+and applies `?? "creator"`.
+
+**Reproduction.**
+```sql
+begin;
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"<admin uuid>","role":"authenticated"}';
+  select role, email from public.users where id = '<admin uuid>';
+  -- ERROR: permission denied for table users
+rollback;
+select has_table_privilege('authenticated','public.users','SELECT');  -- false
+```
+The same user's `public.is_admin_or_editor()` returns **true** — the database
+half of the role system is intact; only the application half is broken.
+
+**Impact.** Every session is treated as `creator`. `requireRole(["admin","editor"])`
+in `src/app/admin/layout.tsx` always redirects, so `/admin` is unreachable by
+anyone, and `isStaff` in the app layout is permanently false. It fails closed,
+so there is no privilege escalation and no data exposure. It is also a direct
+violation of the project's own rule — a permission error is being reported as
+the domain fact "this user is a creator". The two RLS policies
+`users_select_own` / `users_update_own` are dead code today.
+
+**Recommended fix.** Either grant `select` on `public.users` to `authenticated`
+(the existing `users_select_own` policy already restricts it to the caller's own
+row), or resolve the role through the existing `public.current_user_role()`
+SECURITY DEFINER wrapper, which is already client-executable and self-scoped.
+Either way, distinguish a failed lookup from a genuine `creator` role rather
+than collapsing both to the least-privileged answer, and add a DB-backed test
+asserting an admin resolves as admin.
+
+### F-02 — Cross-table lifecycle invariants are policy, not structure (P2, CONFIRMED)
+
+**Location.** `collaborations` / `pipeline_items` / `outreach_events` schema.
+
+**Description.** Four invariants the system treats as inviolable are enforced
+only inside the RPCs: collaboration without `deal_won`; pipeline `won` without a
+collaboration; terminal collaboration with a non-closed pipeline; duplicate
+`deal_won` in one cycle. All four were created successfully by direct SQL.
+
+**Impact.** Not reachable from the browser (client writes are revoked), so this
+is hardening rather than an active hole. It becomes material the moment an admin
+correction tool, a data migration or a second service writes these tables — the
+RPCs would then classify the result as `integrity_error` with no way to repair it.
+
+**Recommended fix.** Either add the missing constraints (e.g. a trigger or a
+deferred check tying collaboration status to pipeline status), or explicitly
+record in DATABASE.md that these are RPC-enforced and that any out-of-band
+writer must uphold them. Prefer the second for V1; the first for the sprint that
+introduces admin corrections.
+
+### F-03 — Pipeline list silently truncates at 200 (P2, CONFIRMED)
+
+**Location.** `src/lib/pipeline/queries.ts:117`.
+
+**Description.** `listPipelineItems` applies `.limit(200)` with no pagination and
+no count. A creator with more than 200 relationships sees an arbitrary subset
+with no indication that anything is missing.
+
+**Impact.** The Pipeline page states "N hotels" from the truncated array, so the
+UI would assert a false count of the creator's own data. Low likelihood at
+current scale; the failure mode is a quiet misstatement rather than an error.
+
+**Recommended fix.** Paginate, or fetch an exact count and disclose truncation.
+
+### F-04 — Orphan collaborations are permitted (P3, CONFIRMED)
+
+`collaborations.pipeline_item_id` is nullable with `ON DELETE SET NULL`, and the
+per-cycle unique index is partial (`where pipeline_item_id is not null`).
+Deleting a pipeline item would therefore leave an unowned collaboration that no
+lifecycle code can reach and no constraint deduplicates. No current code path
+deletes a pipeline item, so this is theoretical today.
+
+### F-05 — Derived intelligence is not refreshed when a creator is deleted (P3, CONFIRMED)
+
+`creator_profiles` cascades to `pipeline_items` and `outreach_events`, but
+nothing recomputes `hotel_intelligence` afterwards and no scheduled rebuild
+exists. A deleted creator's outcomes remain in every affected hotel's aggregate
+until someone runs `recompute_all_hotel_intelligence()`. Aggregates are
+anonymous, so this is accuracy debt rather than a privacy breach — but it should
+be resolved before account deletion ships.
+
+### F-06 — Best-effort refresh is awaited in-band (P3, LIKELY)
+
+`refreshIntelligenceForPipelineItem` is `await`ed inside every successful
+workflow action, adding a service-role round trip and a possible per-hotel
+advisory-lock wait to the creator's perceived latency. Correctness is unaffected
+(failures are swallowed). Consider deferring it once a job runner exists.
+
+### F-07 — `hotel_public_intelligence` is not granted to `service_role` (P3, CONFIRMED)
+
+The view is granted to `anon` and `authenticated` only. All current reads use the
+cookie-bound client, so nothing is broken today; a future server-side read via
+`createAdminClient()` would fail with a confusing permission error.
+
+### F-08 — Discover counts exactly on every search (P3, CONFIRMED)
+
+`count: "exact"` forces a full count per search request. Immaterial at 30 hotels;
+revisit before the catalogue grows.
+
+### F-09 … F-13 — Documentation divergences (P4, DOCUMENTATION-ONLY)
+
+- **F-09** `EVENTS.md §4` transition map predates D043/D045: it still says
+  "won → closed only when closing archived cycle … if product UI requires" and
+  omits the collaboration lifecycle and the close-classification rule entirely.
+- **F-10** `EVENTS.md §5` says Mark-won asks for "optional collaboration dates";
+  the implementation deliberately does not (dates belong to schedule/start).
+- **F-11** `PERMISSIONS.md §9` promises premium users "detailed intelligence";
+  0022 revoked all client access to the base tables and no surface exposes it.
+- **F-12** `PERMISSIONS.md §5/§6` describe creator read/**write** on
+  `pipeline_items`, `outreach_events`, `collaborations` and owner-writable
+  `private_notes`; 0020/0021 revoked every client write.
+- **F-13** `contact_bounced` is in the event enum and documented in EVENTS.md §3
+  with no producer anywhere. Roadmap, but it should be marked as such.
+- **F-14** No test covers auth/role resolution at all (see §13).
+
+---
+
+## 18. Deferred roadmap items — explicitly NOT defects
+
+Mapbox and coordinates; Trips UX (`/app/trips` placeholder, `/app/trips/[id]`
+absent); collaboration dashboard/history; Gmail/Outlook integration; destination
+intelligence aggregation; Experience Intelligence aggregates over
+`terms_matched`/`would_work_again`; repeat follow-ups; financial tracking and
+`private_value_*` surfacing; collaboration rescheduling/editing; notes editing
+and `next_followup_at` editing; Kanban; checkout/billing beyond the link target;
+the seven unbuilt `/admin/*` routes; marketplace. None of these breaks an
+existing promise.
+
+---
+
+## 19. Final recommendation
+
+> **Superseded by §21.** This was the recommendation at audit time, before any
+> remediation existed. Sprint 2G has since closed the P1 and both P2 items; the
+> current standing is recorded in §21. The original text is preserved.
+
+**C — HARDENING SPRINT REQUIRED.**
+
+The rubric assigns C whenever a P1 exists, and F-01 is a genuine P1: an entire
+role-gated surface is unreachable and the application's role resolution silently
+reports a technical failure as a domain fact.
+
+That said, the honest scope is small. F-01 is a one-line grant (or a switch to
+the existing `current_user_role()` wrapper) plus error handling and one
+DB-backed regression test. Pairing it with F-02's documentation and F-03's
+pagination would clear everything that could plausibly affect Sprint 3 work.
+Nothing in the core engine — state machine, trusted boundary, intelligence,
+privacy, concurrency — requires redesign.
+
+Suggested minimal pre-Sprint-3 hardening: **F-01 (required), F-03, F-09 … F-12.**
+
+---
+
+## 20. External verification addendum (2026-08-14)
+
+This section was added **after** §1–§19 were written, on the basis of an
+independent verification pass run by the external reviewer against the hosted
+production project. This audit never contacted production; §1–§19 were derived
+from a clean replay of `0001 → 0023` into an empty local database. The addendum
+records where the two diverge, and corrects one claim that the audit was not
+entitled to make.
+
+### 20.1 What the external verification confirmed
+
+| Check | Result |
+|---|---|
+| Production migration ledger | contains **0001 … 0023**, independently verified — no gaps, no extras |
+| Cross-creator data exposure | none identified, in replay or in production |
+| Core engine redesign required | **no** |
+| Sprint 2G | is the remediation gate for everything below |
+
+### 20.2 Correction to F-01's impact claim
+
+§17/F-01 states that "every session is treated as `creator`" and that "`/admin`
+is unreachable by anyone". That is what a **clean replay** produces: 0012 creates
+the `users_select_own` / `users_update_own` policies but never grants any table
+privilege on `public.users` to `authenticated`, so the read fails and
+`row?.role ?? "creator"` converts a technical failure into a domain role.
+
+External verification found that **production is not in that state**: hosted
+Supabase left broader default grants in place, and production currently *does*
+have `authenticated` `SELECT`/`UPDATE` on `public.users`. The audit's statement
+that real production admins are currently reduced to `creator` was therefore
+**not independently reproduced and is not established**. It should be read as a
+property of the replayed schema, not of the deployed system.
+
+### 20.3 What the finding actually is
+
+Removing the unsupported impact claim does **not** dissolve F-01. Four distinct
+problems remain, and all four are real:
+
+- **(A) Migration replay is not equivalent to production.** The same migration
+  set produces two different privilege states depending on whether hosted
+  Supabase default grants happened to be present. Replay is therefore not a
+  faithful rehearsal of production, which is the property the whole test suite
+  depends on.
+- **(B) A role-lookup error is incorrectly collapsed into `creator`.** This is
+  wrong regardless of which privilege state the database is in. A failed read is
+  a technical error; reporting it as the least-privileged *domain role* is the
+  precise anti-pattern the codebase polices everywhere else.
+- **(C) Table ACLs are not fully controlled by migrations.** The intended
+  privilege contract is partly inherited from the hosting platform rather than
+  being established explicitly by versioned SQL.
+- **(D) Hosted default grants are broader than the intended contract.**
+  Production reports privileges — including `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`
+  for `anon` and `authenticated` on relations that were never meant to be
+  client-writable — that no migration in this repository requested.
+
+On (D): RLS is enabled on every table and the audit's direct probing found no
+row-level path through those grants, so this is **not evidence of current
+exposure**. It is evidence that the reachable surface is wider than the contract
+intends, and that the contract is not written down anywhere the database can
+enforce it.
+
+### 20.4 F-02 — accepted as deferred hardening
+
+F-02 is **accepted as deferred hardening (P2)**, not scheduled for Sprint 2G.
+Adding cross-table constraint triggers now would introduce write-path complexity
+and lock behaviour into the exact code the rest of this sprint is hardening.
+
+The important thing is to state the position accurately rather than to overstate
+the guarantee:
+
+- The database **does** structurally prevent two open cycles per creator+hotel
+  and two collaborations per relationship cycle (two partial unique indexes).
+- The database **does not** structurally encode every cross-table lifecycle
+  invariant. Collaboration-without-`deal_won`, `won`-without-collaboration,
+  terminal-collaboration-with-open-pipeline and duplicate `deal_won` are
+  detected by the RPCs, not prevented by constraints.
+- The trusted RPCs are the **canonical mutation boundary** for pipeline,
+  outreach and collaboration state. Client write access to all three tables is
+  revoked, so no browser path can reach these states.
+- Any future privileged tooling — an admin correction surface, a data migration,
+  a second service, hand-written `postgres`/`service_role` SQL — **must uphold
+  these invariants itself**. Arbitrary superuser or service-role SQL against
+  these tables is not safe by construction and must not be assumed to be.
+
+### 20.5 Status of this audit
+
+F-01 remains a real reproducibility and error-semantics defect. Its blast radius
+is narrower than §17 asserted. No P0 was found in either the replay or the
+external verification, no cross-creator exposure was identified, and no core
+redesign is required. **Sprint 2G is the remediation gate**; the per-finding
+outcome is recorded in §21.
+
+---
+
+## 21. Sprint 2G remediation status
+
+Sprint 2G was the remediation gate for this audit. It added no product
+capability and changed no domain rule. This section records, per finding, what
+was actually done.
+
+### 21.1 Per-finding outcome
+
+| ID | Sev | Status | Where |
+|---|---|---|---|
+| F-01 | P1 | **FIXED** | `0024`, `src/lib/auth/guards.ts`, `tests/auth/session-role.test.ts` |
+| External ACL drift (§20.3 C/D) | P1-equivalent | **FIXED** | `0024`, `tests/rls/acl-matrix.test.ts`, D046 |
+| F-02 | P2 | **ACCEPTED DEFERRED (P2)** | §20.4, D046 boundaries |
+| F-03 | P2 | **FIXED** | `src/lib/pipeline/{queries,view}.ts`, `tests/pipeline/pagination.test.ts` |
+| F-04 | P3 | DEFERRED | orphan collaborations; no code path deletes a pipeline item today |
+| F-05 | P3 | DEFERRED — **blocks account deletion** | intelligence is not recomputed when a creator is deleted |
+| F-06 | P3 | DEFERRED | in-band best-effort refresh; revisit when a job runner exists |
+| F-07 | P3 | **FIXED** | `0024` grants `service_role` SELECT on `hotel_public_intelligence` |
+| F-08 | P3 | DEFERRED | Discover's exact count; immaterial at catalogue scale today |
+| F-09 … F-13 | P4 | **FIXED** | EVENTS.md §3/§4/§5, PERMISSIONS.md §1/§4/§5/§6/§9/§13 |
+| F-14 | P4 | **FIXED** | `tests/auth/session-role.test.ts` (18 tests, DB-backed) |
+
+### 21.2 F-01 — exact remediation
+
+Two halves, because the finding had two halves.
+
+**Database.** `0024_explicit_acl_contract.sql` grants `select, update on
+public.users to authenticated`. `users_select_own` / `users_update_own` restrict
+both to `id = auth.uid()`, and `prevent_user_privilege_change` still rejects any
+attempt to alter `role` or `status` from a client role. No INSERT (rows come
+from the signup trigger), no DELETE, no TRUNCATE. The two policies are no longer
+dead code.
+
+**Application.** `getSessionContext()` is replaced by `resolveSession()`, which
+returns `authenticated` / `anonymous` / `error` instead of `SessionContext |
+null`. The `creator` fallback survives in exactly one condition — the query
+succeeded and returned no row, which is a genuinely roleless brand-new account.
+A permission failure, a transport failure, an auth-service failure or a row
+carrying a role the application does not model all resolve to `error`.
+`requireUser` raises a sanitized `SessionUnavailableError` rather than rendering
+a protected surface under a guessed role, and never reports a database failure
+as "you are signed out"; `requireRole` therefore cannot present a lookup failure
+as "you are not an admin". Server actions map both non-authenticated outcomes to
+their existing sanitized `error` result. No PostgREST payload reaches a rendered
+page.
+
+**Proof.** `tests/auth/session-role.test.ts` runs the `public.users` read as the
+real `authenticated` Postgres role under the real policy. Six of its assertions
+fail against the pre-fix `?? "creator"` behaviour, verified by reverting the
+guard and re-running.
+
+### 21.3 External ACL drift — exact remediation
+
+`0024` revokes every relation privilege in `public` from `anon`,
+`authenticated` and `PUBLIC` — blanket first, then by name — and re-grants, by
+name, exactly what each client role needs. `service_role` coverage is stated
+rather than inherited. `TRUNCATE`, `REFERENCES` and `TRIGGER` are false for
+every client role on every relation. Default privileges for future tables,
+sequences and functions in `public` are revoked from the client roles, so the
+same divergence cannot reappear the next time a migration creates an object.
+
+No RLS policy was added, dropped or widened: all 51 policies and all function
+execute boundaries are byte-for-byte what they were. Supabase-owned schemas
+(`auth`, `storage`, `supabase_migrations`) were not touched.
+
+`tests/rls/acl-matrix.test.ts` pins the whole matrix, asserts it as a single map
+so one drifted bit fails, and fails if a relation appears that the contract does
+not name — which is what turns "a future migration relied on hosted defaults"
+into a red build rather than a silent divergence. Eleven of its assertions fail
+without `0024`. D046 records the principle.
+
+### 21.4 F-03 — exact remediation
+
+`listPipelineItems` now takes a page number and returns
+`{ items, total, page, pageSize, totalPages, hasPrevious, hasNext }` or a
+sanitized error. The total is an exact database count of the filtered set, taken
+before the page read; a failed count is an error, never a zero. Page size is 50,
+paging is URL-backed through `?page=N`, a page past the end clamps to the last
+real page rather than rendering as an empty pipeline, and any `?page=` value
+that is not a positive whole number resolves to page 1. The summary states the
+whole pipeline and the visible window ("243 hotels · Showing 51–100") rather
+than the page size. Reads stay on the cookie-bound client, so `pipeline_items_all`
+still enforces ownership — pagination was not an excuse to reach for
+service_role.
+
+`tests/pipeline/pagination.test.ts` seeds 243 relationships for one creator and
+7 for another against a real database and asserts the exact total, per-page
+contents and ordering, no overlap across pages, filtered totals, out-of-range
+clamping, another creator's rows never appearing, and both failure paths.
+
+### 21.5 F-02 — why it stays deferred
+
+Recorded in §20.4 and in D046's boundaries. In short: two partial unique indexes
+genuinely prevent two open cycles per creator+hotel and two collaborations per
+cycle; the remaining cross-table lifecycle invariants are detected by the RPCs,
+not prevented by constraints; the RPCs are the canonical mutation boundary and
+client writes to all three tables are revoked, so no browser path reaches these
+states; and any future privileged tooling must uphold the invariants itself.
+Arbitrary `postgres` or `service_role` SQL against these tables is not safe by
+construction. Adding constraint triggers now would put new write-path and lock
+behaviour into the exact code this sprint hardened.
+
+### 21.6 Explicitly out of scope, and why
+
+- **`users.status` as a session gate.** No document defines `suspended` or
+  `deleted` as a condition that blocks a session — `DATABASE.md §3` only lists
+  the allowed values. Implementing a block would have been inventing a contract,
+  and inventing one silently is worse than not having one. Left unchanged and
+  recorded here as future work: if suspension is to mean anything, it needs a
+  decision record first, then a resolution rule, then a test.
+- **F-04, F-05, F-06, F-08**, plus the advisor's RLS-performance warnings,
+  unindexed non-critical foreign keys and "unused index" findings. The last of
+  these deserves a note: the production database has had effectively no traffic,
+  so "unused" means "not yet used". **No index was removed on the strength of
+  usage statistics from an idle database.**
+
+### 21.7 Gate results
+
+| Gate | Result |
+|---|---|
+| Fresh replay `0001 → 0024` from an empty database | **PASS** (24/24) |
+| `0001 … 0023` unchanged | **PASS** (diff against `origin/main` touches no existing migration) |
+| `npm test` | **PASS** — 731 tests, 36 files (was 676 / 33) |
+| `npm run lint` | PASS |
+| `npm run typecheck` | PASS |
+| `npm run build` | PASS |
+| `npm run format:check` | PASS |
+| RLS enabled on every application table | PASS (36/36) |
+| Policy count | 51, unchanged |
+| Application RPC execute boundaries | unchanged; `anon`/`authenticated` false, `service_role` true, `search_path` pinned on all eight |
+| Production Supabase | **NOT contacted**; `0024` **NOT deployed** |
+
+Security advisor (§22 of the sprint brief): `0024` creates no function, no view,
+no extension and no `SECURITY DEFINER` object, and changes no `search_path`. The
+accepted pre-existing findings — the definer-rights `hotel_public_intelligence`
+view, `citext` and `pgcrypto` in `public`, and the deliberately
+PUBLIC-executable self-scoped wrappers — are untouched, and every table retains
+at least one policy. No new finding is introduced. Confirmation against the
+hosted advisor is the external reviewer's step, after deployment.
+
+### 21.8 Final recommendation
+
+**B — CORE AUDIT PASSED WITH NON-BLOCKING DEBT.**
+
+No P0. No P1 outstanding: F-01 and the external ACL drift finding are both
+fixed, with regression coverage that fails against the pre-fix code. Both P2
+items are resolved or explicitly accepted with a written rationale. Every 2G
+gate is green.
+
+Not A. The debt is real and is written down rather than waved away: F-02's
+cross-table invariants are policy rather than structure; account deletion is
+blocked by F-05; the in-band intelligence refresh and Discover's exact count are
+known costs; `users.status` has no defined meaning; and the privilege contract's
+convergence with production is asserted locally but has not yet been confirmed
+against the deployed database.
+
+The core is ready for the **CORE V1 AUDITED AND CLOSED** designation once the
+external reviewer has deployed `0024` and confirmed production matches the
+contract in `tests/rls/acl-matrix.test.ts`.
+
+---
+
+## 22. Final external review findings (F-15, F-16, F-17)
+
+The external final review of PR #14 approved the Sprint 2G work — D046, the
+`0024` ACL architecture, the explicit privilege matrix, RLS preservation, RPC
+boundaries, pagination, the >200 regression, DB-backed role resolution, the
+documentation reconciliation and this report — and returned required
+corrections across two rounds: **F-15 and F-16** first, then **F-17**, a
+regression introduced by the F-16 fix itself.
+
+All three are recorded here as first-class audit findings. F-15 and F-16 are
+instances of the rule this audit spent §6 and §10 checking, on surfaces it did
+not enumerate. F-17 is a different failure: a correct-looking read that never
+said whose account it was asking about, on a table whose RLS policy is
+deliberately permissive for staff.
+
+### 22.1 Correction to the audit's own claim
+
+§1 and §6 state that the "a technical error is not a domain fact" rule is
+implemented **consistently** across Discover, Hotel Detail, contacts, pipeline,
+collaboration and intelligence. That claim was too broad, and this section
+corrects it.
+
+The rule was implemented consistently *on the surfaces the audit enumerated*.
+The audit did not enumerate session role resolution's missing-row branch, and it
+did not enumerate the billing surface at all. Both violated the rule. F-01 was
+found and reported, but its sibling — the missing-row fallback in the same
+function — was accepted as legitimate rather than questioned, and Sprint 2G's
+first fix preserved it. The correct reading is: the rule is applied widely and
+deliberately, and two surfaces were nevertheless wrong. Coverage was assumed
+from the surfaces sampled, which is exactly the failure mode a
+falsification-oriented audit is supposed to avoid.
+
+§6 needs the same correction for a different reason. It states that every
+mutation path was traced end to end and lists what is not accepted from the
+client. That was true, and it was also not the whole question: F-17 was not a
+forged input but a **missing** one — a read that never stated whose account it
+concerned. "Nothing untrusted comes in" and "the right scope goes in" are two
+separate properties, and only the first was checked.
+
+### 22.2 F-15 — a missing `public.users` row was treated as a creator (P1, CONFIRMED)
+
+**Location.** `src/lib/auth/guards.ts`, the `resolveSession()` no-row branch, as
+shipped in the first Sprint 2G correction.
+
+**Description.** `resolveSession()` resolved
+
+> authenticated Supabase user **+** successful `public.users` query **+** no row
+
+to `authenticated` with role `creator`, on the stated rationale that a brand-new
+account's signup trigger might not have landed yet.
+
+That rationale is wrong for the architecture actually implemented.
+`handle_new_user()` (migration `0011`) is an `AFTER INSERT` trigger on
+`auth.users`; it inserts the `public.users` row and the `creator_profiles` row
+**inside the same transaction that creates the auth user**. There is no
+asynchronous provisioning worker anywhere in this system. An auth user without
+an application row therefore cannot be a transient mid-provisioning state — it
+is an integrity inconsistency.
+
+**Impact.** A broken invariant was reported as an ordinary creator account: the
+session resolved, the app shell rendered, and every downstream read silently
+operated against a user with no `creator_profiles` row. The same
+technical-state-as-domain-fact collapse as F-01, one branch further down.
+
+**Status: FIXED.** `resolveSession()` now has exactly three outcomes — no auth
+user → `anonymous`; successful read of a valid row → `authenticated` with the
+stored role; everything else → `error`. "Everything else" covers an
+auth-service failure, a failed `public.users` read, an unmodelled or corrupt
+role, and a missing row. Nothing repairs the inconsistency: no INSERT, no
+`creator_profiles` creation, no fallback. The signup trigger remains the only
+provisioning mechanism. `requireUser` and `requireRole` raise
+`SessionUnavailableError` for a rowless session rather than redirecting to
+`/login` (which would claim the user is signed out) or to `/app` (which would
+claim they are not staff), and the four server actions return their sanitized
+`error` result without attempting a mutation.
+
+### 22.3 F-16 — a failed entitlement read was rendered as the Free plan (P1, CONFIRMED)
+
+**Location.** `src/app/(app)/app/billing/page.tsx`.
+
+**Description.** The page read entitlements, discarded the error, and did
+`(entitlements ?? []).filter(e => e.status === "active")`. An empty array then
+rendered "You're on the Free plan". A permission failure, a transport failure or
+any database error produced `null`, which became `[]`, which became a positive
+claim about the creator's commercial standing.
+
+**Impact.** A creator holding an active Pro subscription or Destination Pass
+could be told they have no premium access, and offered an upgrade, purely
+because a query failed. This is the highest-consequence instance of the
+collapse found so far: it is a false statement about something the creator has
+paid for. It was not exposure and not data loss, but it is a claim the product
+is not entitled to make.
+
+**Status: FIXED.** Reads moved to `src/lib/billing/queries.ts`, returning
+`{ status: "ok"; entitlements } | { status: "error" }`, and the decision moved
+to the pure `billingAccessState()` in `src/lib/billing/view.ts`. "You're on the
+Free plan" is derivable **only** from `status = "ok"` with zero active
+entitlements. A failed read renders a neutral, recoverable notice; it never
+shows Free, never offers an upgrade, is never described as expired or revoked,
+and never carries the underlying PostgREST error. "Active" is defined exactly as
+migration `0010` defines it (`status = 'active'` and `starts_at <= now()` and
+`expires_at` null or in the future), so the page cannot disagree with the helper
+that actually grants premium reads. The stale "arrives in Sprint 1" copy was
+replaced with timeless product copy; no checkout was implemented.
+
+Two comparable stale copy strings remain outside this fix's scope, on
+`/admin` ("Admin workflows arrive in Sprint 1") and `/app/trips` ("Trip planning
+arrives in Sprint 2"). They are noted here rather than changed.
+
+### 22.4 F-17 — the self-service billing query lost its current-user scope (P1, CONFIRMED)
+
+**Location.** `src/lib/billing/queries.ts` and
+`src/app/(app)/app/billing/page.tsx`, as shipped in the F-16 correction.
+
+**Description.** The F-16 refactor moved the entitlement read into
+`loadBillingAccess()` — and dropped the user predicate on the way. The page
+called `requireUser()` and then discarded the session, and the query selected
+from `access_entitlements` with no `where user_id = …` at all, relying entirely
+on RLS to decide which rows came back.
+
+`access_entitlements_select` is `user_id = auth.uid() OR is_admin_or_editor()`.
+That second arm is deliberate: reconciliation and support need to read every
+entitlement row. It is an **authorization** rule, not a scope, and it is the
+wrong thing for a page whose question is "what does THIS account have".
+
+**Impact.** An admin or editor with no entitlement of their own, opening
+`/app/billing`, received other users' rows — RLS permitted them — and
+`billingAccessState()` classified the result as premium. The application would
+then tell that admin they hold premium access, and could render another user's
+entitlement rows as their own. A domain-scoping bug, and a regression introduced
+by the previous fix rather than an original defect.
+
+**Status: FIXED.** `BillingPage` retains the session from `requireUser()` and
+calls `loadBillingAccess(session.userId)`, which applies
+`.eq("user_id", userId)` explicitly. The id comes only from the server session —
+never from the browser, a query parameter, a form field or an
+application-controlled cookie. RLS is untouched: no policy was changed, and the
+admin/editor reconciliation arm remains fully available to explicit admin
+queries elsewhere. The predicate defines the *scope of the question*; RLS
+independently defines *what the caller is permitted to read*, and both still
+apply.
+
+**Generalisation worth carrying forward.** A permissive RLS arm added for one
+audience silently widens every query that forgets to say who it is asking about.
+"RLS will scope it" is safe only when the policy's scope and the surface's scope
+are the same; here they were not, and the surface was the one that had to say so.
+
+### 22.5 Coverage added
+
+| Suite | Proves |
+|---|---|
+| `tests/auth/session-role.test.ts` | rowless session → `error`, not `creator`; no repair attempted (neither `public.users` nor `creator_profiles` gains a row); `requireUser` / `requireRole` raise rather than redirect; all four server actions return a sanitized error and call no mutation and no `revalidatePath` |
+| `tests/billing/entitlements.test.ts` | successful-and-empty → Free; active Pro → premium; active Destination → premium; failed read → error state that contains neither "Free plan" nor an upgrade nor an expiry claim; raw driver error never surfaced; the active-access definition matches migration `0010` |
+| `tests/billing/entitlements.test.ts` (F-17) | a creator cannot see another creator's entitlement even when asking for it; an admin and an editor with no entitlement of their own are Free, not premium, despite RLS permitting them to read everyone's rows; an admin who does hold Pro sees only their own row while the table still returns more to an unscoped query; admin, editor and admin-with-Pro can all still read **every** entitlement row through an explicit reconciliation query, and a regular creator still cannot |
+
+Three of the billing assertions fail against the previous
+`(entitlements ?? [])` collapse, and four more fail without the
+`.eq("user_id", …)` predicate — both verified by reintroducing the old code.
+
+### 22.6 Standing after F-15, F-16 and F-17
+
+All three are FIXED. The severity picture is unchanged in kind — no P0, no
+outstanding P1, no core redesign — and the final recommendation of §21.8 stands:
+
+**B — CORE AUDIT PASSED WITH NON-BLOCKING DEBT.**
+
+One correction of fact is owed on the way there. §5 and §17 state that no
+cross-creator exposure was found. That remains true of everything the audit
+probed and of the shipped `main` at `d12f8f7`, but F-17 — introduced inside this
+very sprint — would have shown one user's entitlement rows to another
+authenticated user holding a staff role. It never reached `main`, and it is
+fixed with regression coverage, but "no cross-creator exposure" is a claim about
+what was tested, not a property the system holds automatically.
+
+And one addition to the debt column: this audit's claim of *consistent*
+technical-error/domain-fact discipline was not verified surface by surface, and
+its trusted-boundary review checked that no untrusted input comes in without
+checking that the right scope goes in. Three violations were found by external
+review after the audit signed off, one of them introduced by a fix written in
+response to the previous round. The rules themselves are sound and are now
+enforced by regression tests on the session and billing paths. What should not
+be assumed again: that a rule applied on the surfaces someone sampled is applied
+everywhere, that a permissive RLS arm added for staff scopes a self-service
+query, or that a correction is safe because the thing it corrected was
+understood.

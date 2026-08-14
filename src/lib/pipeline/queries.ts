@@ -100,25 +100,94 @@ export async function getOpenRelationship(
   };
 }
 
-/** Creator-owned pipeline items, most recent activity first. */
-export async function listPipelineItems(status?: string | null): Promise<PipelineListItem[]> {
-  const supabase = await createClient();
-  let builder = supabase
-    .from("pipeline_items")
-    .select(
-      "id, status, saved_at, last_activity_at, next_followup_at, hotel:hotels(id, name, country_code, destination:destinations(name))",
-    );
+/** One page of the creator's pipeline. 50 keeps the page useful without paging forever. */
+export const PIPELINE_PAGE_SIZE = 50;
 
+export interface PipelinePage {
+  items: PipelineListItem[];
+  /** Exact number of matching rows in the database, NOT the number on this page. */
+  total: number;
+  /** 1-based, already clamped to a page that exists. */
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}
+
+/**
+ * Tri-state for the same reason every other read here is: a failed count or a
+ * failed page read must never be rendered as "you have no hotels".
+ */
+export type PipelineListResult = { status: "ok"; page: PipelinePage } | { status: "error" };
+
+const SELECT_COLUMNS =
+  "id, status, saved_at, last_activity_at, next_followup_at, hotel:hotels(id, name, country_code, destination:destinations(name))";
+
+/**
+ * Normalize a `?page=` value. Anything that is not a positive whole number —
+ * missing, negative, zero, fractional, alphabetic, absurdly large — means page
+ * one. A malformed URL is never an error state and never an empty pipeline.
+ */
+export function normalizePageParam(raw: string | string[] | undefined | null): number {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") return 1;
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return 1;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+/**
+ * One page of the creator's relationships, most recent activity first.
+ *
+ * The count is taken from the database rather than from the returned array, so
+ * the page can state how many relationships the creator actually has instead of
+ * how many happen to be on screen. The previous implementation capped the query
+ * at 200 rows with no count and reported `items.length` as the total, which
+ * silently understated any pipeline larger than that.
+ *
+ * Reads stay on the cookie-bound client so `pipeline_items_all` keeps enforcing
+ * ownership. Paginating is not a reason to reach for service_role.
+ */
+export async function listPipelineItems(
+  status?: string | null,
+  requestedPage = 1,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: PipelineQueryClient,
+): Promise<PipelineListResult> {
+  const supabase = injectedClient ?? (await createClient());
+  const pageSize = PIPELINE_PAGE_SIZE;
+
+  // Exact count first, so an out-of-range page can be resolved deterministically
+  // instead of being guessed from an empty result set.
+  let countBuilder = supabase.from("pipeline_items").select("id", { count: "exact", head: true });
+  if (status) countBuilder = countBuilder.eq("status", status);
+  const { count, error: countError } = await countBuilder;
+
+  // A count we could not take is an error. Reporting it as zero would assert
+  // something false about the creator's own data.
+  if (countError || count === null || count === undefined) return { status: "error" };
+
+  const total = count;
+  const totalPages = total === 0 ? 1 : Math.ceil(total / pageSize);
+  // Clamp rather than 404: a stale bookmark past the end lands on the last real
+  // page, and is never described as an empty pipeline.
+  const page = Math.min(Math.max(1, Math.trunc(requestedPage) || 1), totalPages);
+  const from = (page - 1) * pageSize;
+
+  let builder = supabase.from("pipeline_items").select(SELECT_COLUMNS);
   if (status) builder = builder.eq("status", status);
 
   const { data, error } = await builder
     .order("last_activity_at", { ascending: false })
     .order("id", { ascending: true })
-    .limit(200);
+    .range(from, from + pageSize - 1);
 
-  if (error) throw new Error("pipeline_list_failed");
+  if (error) return { status: "error" };
 
-  return (data ?? []).map((raw) => {
+  const items = (data ?? []).map((raw) => {
     const row = raw as unknown as Record<string, unknown>;
     const hotelRaw = row.hotel as Record<string, unknown> | Record<string, unknown>[] | null;
     const hotel = Array.isArray(hotelRaw) ? hotelRaw[0] : hotelRaw;
@@ -142,6 +211,19 @@ export async function listPipelineItems(status?: string | null): Promise<Pipelin
         : null,
     } satisfies PipelineListItem;
   });
+
+  return {
+    status: "ok",
+    page: {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+      hasPrevious: page > 1,
+      hasNext: page < totalPages,
+    },
+  };
 }
 
 /**

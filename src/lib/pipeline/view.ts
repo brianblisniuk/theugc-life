@@ -139,29 +139,100 @@ export function normalizeStatusFilter(
     : null;
 }
 
+/** The shape `pipelineListState` needs from a loaded page. */
+export interface PipelinePageInput {
+  items: readonly unknown[];
+  /** Exact matching rows in the database — NOT `items.length`. */
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}
+
+export interface PipelinePaginationState {
+  page: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  previousHref: string | null;
+  nextHref: string | null;
+  label: string;
+}
+
 export type PipelineListState =
   | { kind: "error"; title: string }
-  | { kind: "items"; count: number; summary: string }
+  | {
+      kind: "items";
+      /** Rows rendered on this page. */
+      visible: number;
+      /** Every matching row the creator has. */
+      total: number;
+      summary: string;
+      /** "Showing 51–100" — present only when there is more than one page. */
+      range: string | null;
+      pagination: PipelinePaginationState | null;
+    }
   | { kind: "empty_filtered"; title: string }
   | { kind: "empty"; title: string; body: string };
+
+/** Canonical pipeline URL. Page 1 is the bare URL, so it has one spelling. */
+export function pipelinePageHref(status: string | null, page: number): string {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/app/pipeline?${query}` : "/app/pipeline";
+}
 
 /**
  * A failed query renders a neutral error — never "your pipeline is empty",
  * which would be a lie the creator might act on.
+ *
+ * The summary counts the creator's WHOLE pipeline, not the current page. A
+ * creator with 243 relationships sees "243 hotels" and "Showing 1–50"; they
+ * never see "50 hotels", which is what the old unpaginated list asserted once a
+ * pipeline outgrew its silent 200-row cap.
  */
 export function pipelineListState(input: {
   failed: boolean;
-  items: readonly unknown[] | null;
+  page: PipelinePageInput | null;
   status: string | null;
 }): PipelineListState {
-  if (input.failed || input.items === null) {
+  if (input.failed || input.page === null) {
     return { kind: "error", title: PIPELINE_COPY.errorTitle };
   }
-  const count = input.items.length;
-  if (count > 0) {
+
+  const { items, total, page, pageSize, totalPages, hasPrevious, hasNext } = input.page;
+  const visible = items.length;
+
+  if (total > 0) {
     const suffix = input.status ? ` with status ${pipelineStatusLabel(input.status)}` : "";
-    return { kind: "items", count, summary: `${count} hotel${count === 1 ? "" : "s"}${suffix}` };
+    const first = (page - 1) * pageSize + 1;
+    const last = first + visible - 1;
+    const multiPage = totalPages > 1;
+
+    return {
+      kind: "items",
+      visible,
+      total,
+      summary: `${total} hotel${total === 1 ? "" : "s"}${suffix}`,
+      range: multiPage && visible > 0 ? `Showing ${first}–${last}` : null,
+      pagination: multiPage
+        ? {
+            page,
+            totalPages,
+            hasPrevious,
+            hasNext,
+            previousHref: hasPrevious ? pipelinePageHref(input.status, page - 1) : null,
+            nextHref: hasNext ? pipelinePageHref(input.status, page + 1) : null,
+            label: `Page ${page} of ${totalPages}`,
+          }
+        : null,
+    };
   }
+
   if (input.status) return { kind: "empty_filtered", title: PIPELINE_COPY.filteredTitle };
   return { kind: "empty", title: PIPELINE_COPY.emptyTitle, body: PIPELINE_COPY.emptyBody };
 }

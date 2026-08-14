@@ -103,26 +103,55 @@ Use when creator closes without a definitive deal-loss classification.
 Metadata reason if supplied.
 
 ### contact_bounced
-Domain signal that an attempted contact bounced.
-Also create/contact-signal workflow as defined by implementation.
-Does not automatically invalidate master contact.
+**Reserved — no V1 producer yet.** The event type exists in the enum so the
+ledger vocabulary is stable, but nothing in V1 emits it: there is no email
+integration and no bounce feed. When one ships, it will be a domain signal that
+an attempted contact bounced, feeding the contact-signal workflow. It will not
+automatically invalidate a master contact. Until then, treat any occurrence as
+impossible rather than as a gap in a surface.
 
 ## 4. Pipeline transition map
 
-Allowed ordinary transitions:
+This map is what the database enforces (migrations 0020, 0021, 0023). Every
+combination not listed is rejected as `invalid_transition`. Retrying a
+transition that already happened is idempotent: it writes nothing and reports
+`already_applied`.
 
-- saved → planned
-- saved → pitched
-- planned → pitched
-- pitched → follow_up
-- pitched → replied
-- follow_up → replied
-- replied → negotiating
-- replied → closed
-- negotiating → won
-- negotiating → closed
-- won → closed only when closing archived cycle after collaboration lifecycle if product UI requires
-- any active state → closed with reason
+| From | Action | To | Event(s) |
+|---|---|---|---|
+| `saved` | plan | `planned` | *(none — planning is not a hotel interaction)* |
+| `saved`, `planned` | mark pitched | `pitched` | `pitch_sent` |
+| `pitched` | mark follow-up sent | `follow_up` | `followup_sent` |
+| `pitched`, `follow_up` | mark replied | `replied` | `reply_received` **+** one of `positive_reply` / `negative_reply` / `offer_received` |
+| `replied` | start negotiation | `negotiating` | `negotiation_started` |
+| `negotiating` | mark won | `won` | `deal_won` **+** a collaboration row |
+| `saved`, `planned` | close | `closed` | `creator_closed_pipeline` |
+| `pitched`, `follow_up`, `replied`, `negotiating` | close | `closed` | `deal_lost` |
+| `won` | *(outreach cannot close a won cycle)* | — | — |
+| `won` | complete collaboration | `closed` | `collaboration_completed` |
+| `won` | cancel collaboration | `closed` | `creator_closed_pipeline` (reason `collaboration_cancelled`) |
+| `closed` | *(terminal — a new cycle starts through Save)* | — | — |
+
+**Close classification (D043).** Closing from `saved` or `planned` is
+abandonment and emits `creator_closed_pipeline`; closing from any state where
+the hotel was actually contacted (`pitched`, `follow_up`, `replied`,
+`negotiating`) is a lost deal and emits `deal_lost`. The two are different
+facts and must not be merged.
+
+**A won cycle closes through the collaboration, not through outreach (D045).**
+
+```
+won + agreed → scheduled (optional) → active → completed | cancelled → cycle closed
+```
+
+The pipeline cycle stays `won` while the collaboration is `agreed`, `scheduled`
+or `active`. Only a terminal collaboration closes the cycle and frees the Free
+engaged slot. Scheduling emits no domain event (it is the creator's own
+planning, not a creator↔hotel interaction). Starting emits
+`collaboration_started`. Completing emits `collaboration_completed`.
+**Cancelling is not a lost deal**: it never emits `deal_lost` and never rewrites
+`deal_won`, because the deal really was won and the collaboration later failed
+to happen.
 
 Backwards corrections require an explicit correction workflow; do not silently delete emitted history.
 
@@ -146,12 +175,31 @@ No unnecessary questionnaire.
 Ask:
 - collaboration type
 - agreed date
-- optional collaboration dates
+
+Collaboration dates are deliberately NOT asked here. On the day a deal is
+agreed the creator usually does not know them yet, and asking would either
+invent data or add an optional field nobody fills. Dates belong to Schedule and
+Start, where they are actually known.
+
+### Schedule collaboration (optional)
+Ask:
+- planned start date
+- optional end date
+
+### Start collaboration
+Ask:
+- start date
 
 ### Complete collaboration
 Ask:
+- end date
 - terms matched?
-- work with them again?
+- work with them again? (yes / no / not sure — "not sure" is recorded as
+  unknown, never as "no")
+
+### Cancel collaboration
+Ask:
+- who cancelled: creator / hotel / mutual / other
 
 ### Close
 Ask:

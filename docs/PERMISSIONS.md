@@ -11,6 +11,22 @@ Security model: Supabase Auth + PostgreSQL RLS + server-side entitlement checks.
 - Creator-private rows are owner-only by default.
 - Admin/editor privileges are server-verified.
 - Service-role credentials never ship to browser.
+- A failed authorization or entitlement lookup is a technical error, never a
+  domain answer. It must not resolve to the least-privileged role, to "not
+  saved", to zero, or to a plan the creator is not on.
+- RLS scope is not query scope. A self-service surface must name the account it
+  is asking about, with an id taken from the server session, even when a policy
+  would already limit the rows. Policies that intentionally admit a second
+  audience — `access_entitlements_select` admits admin/editor for
+  reconciliation — otherwise widen every query that forgets to say who it means.
+- An authenticated user with no `public.users` row is an integrity
+  inconsistency, not a new account. `handle_new_user()` provisions the
+  application row inside the `auth.users` insert transaction and nothing
+  provisions asynchronously, so a missing row resolves to an error. Nothing in
+  the application repairs it; the signup trigger is the only provisioning path.
+- Table privileges are stated by migrations, never inherited from hosted
+  defaults (D046). RLS decides which rows; the ACL decides whether the
+  operation may be attempted at all; both must hold independently.
 
 ## 2. Actors
 
@@ -68,6 +84,14 @@ Anonymous read forbidden:
 - verification internal notes
 - admin flags
 
+**As implemented (V1).** `anon` holds `SELECT` on exactly four relations:
+`hotels`, `destinations`, `brands` and `hotel_public_intelligence`, plus
+`creator_profiles` and `portfolio_assets` where the row is opted into public
+display. Everything else in the forbidden list above is enforced by the absence
+of a privilege, not only by policy. Share cards and published reports appear in
+the allowed list as intended future projections; neither has a public surface
+today, and `share_cards` is owner-read-only.
+
 ## 5. Creator ownership policies
 
 For `creator_profiles`, creator may select/update own row where `user_id = auth.uid()`.
@@ -84,10 +108,39 @@ For creator-owned child tables, resolve ownership through creator profile:
 
 A creator may never choose another creator's ID during insert. Server should derive it from authenticated identity.
 
+### 5.1 What the browser may actually do (as implemented)
+
+Ownership decides which ROWS a creator reaches. It does not follow that the
+browser may write them. The CRM tables are **read-only to the browser**:
+
+| Table | Browser (`authenticated`) | How mutations happen |
+|---|---|---|
+| `trips`, `trip_hotels` | select, insert, update, delete (own rows) | direct, under RLS |
+| `portfolio_assets` | select, insert, update, delete (own rows) | direct, under RLS |
+| `creator_profiles` | select, insert, update (own row) | direct, under RLS |
+| `pipeline_items` | **select only** | trusted RPC |
+| `outreach_events` | **select only** | trusted RPC |
+| `collaborations` | **select only** | trusted RPC |
+| `milestones`, `share_cards`, `referrals`, `public_creator_profile_views` | **select only** | no client write surface exists |
+
+Client `INSERT` / `UPDATE` / `DELETE` on `pipeline_items` and `outreach_events`
+was revoked in migration 0020, and on `collaborations` in 0021. Every state
+change on those three tables goes through a service-role-only RPC
+(`save_hotel_to_pipeline`, `transition_pipeline_item`, `progress_pipeline_deal`,
+`progress_collaboration`) which, in one transaction, locks the creator,
+re-derives ownership from the session user, validates the transition, enforces
+the Free limits and appends the event ledger entry. A direct client write would
+bypass all of it, which is why the privilege does not exist.
+
+The RLS policies on those tables are retained as defence in depth, not as the
+mechanism: both layers must hold independently (D046).
+
 ## 6. Private notes
 
 `pipeline_items.private_notes` are especially sensitive.
-- owner read/write
+- owner read (the browser holds no write privilege on `pipeline_items`; notes
+  editing is not implemented in V1, and when it ships it must go through the
+  trusted RPC path like every other pipeline mutation)
 - excluded from product analytics payloads
 - excluded from logs
 - excluded from public/admin list views
@@ -124,15 +177,39 @@ If a Destination Pass expires, do not revoke ownership/read access to creator's 
 
 ## 9. Intelligence access
 
-### Public
-Only safe coarse projection.
+### What the browser can reach
+
+**Only the safe coarse projection, `public.hotel_public_intelligence`.**
+
+Migration 0022 revoked all client access to the base aggregate tables:
+`hotel_intelligence` and `destination_intelligence` are readable by
+`service_role` only. No plan changes that — not Pro, not a Destination Pass.
+Their RLS policies are retained as defence in depth, but no client role holds a
+privilege to reach them at all.
+
+The projection exposes exactly seven columns — `hotel_id`, `hotel_slug`,
+`activity_level`, `confidence_level`, `reply_rate`,
+`has_confirmed_collaboration`, `recency_band` — with no creator id, no pipeline
+id, no exact counts and no raw timestamps, and it applies progressive
+disclosure by confidence band (D044):
+
+| Confidence | Disclosed |
+|---|---|
+| insufficient | confidence only |
+| emerging | + activity level, + collaboration boolean |
+| moderate | + coarse recency band |
+| strong | + reply rate |
+
+A suppressed answer is `NULL`, never `false`. "We are not telling you" and "the
+answer is no" are different statements and are never collapsed.
 
 ### Premium
-Detailed intelligence can be returned if:
-- active Pro; or
-- active Destination entitlement covers hotel/destination.
 
-Premium intelligence still obeys confidence/privacy suppression.
+Premium entitlements (Pro, Destination Pass) gate **contacts** (§7), not
+detailed intelligence. No surface returns detailed or per-creator intelligence
+to any browser role, and nothing in V1 is planned to. If a richer premium
+intelligence surface is ever introduced it must be a new, deliberately designed
+projection with its own suppression rules — not a grant on the base tables.
 
 No plan bypasses privacy thresholds.
 
@@ -195,6 +272,23 @@ Automated permission tests must cover:
 14. Cancelled Pro retains access until entitlement expiry.
 15. Refunded/revoked entitlement removes premium access.
 16. Admin route rejects creator role even if UI URL is manually entered.
+17. `authenticated` holds no INSERT/UPDATE/DELETE on `pipeline_items`,
+    `outreach_events` or `collaborations`, while SELECT of own rows still works.
+18. No client role holds any privilege on `hotel_intelligence` or
+    `destination_intelligence`.
+19. No client role holds TRUNCATE on any relation in `public`.
+20. The full privilege matrix matches the declared contract, and a relation
+    outside the contract fails the suite (drift detection).
+21. An admin resolves as admin, an editor as editor, a creator as creator, from
+    the database — never from `user_metadata` or any client-supplied value.
+22. A failed role lookup resolves to a technical error, not to `creator`, and
+    the admin surface is not rendered under a guessed role.
+23. Role and status escalation from the `authenticated` role is rejected.
+24. `/app/billing` reports only the signed-in account's entitlements: an
+    admin or editor with none of their own sees the Free state even though
+    `access_entitlements_select` permits them to read every row.
+25. Admin and editor can still read every entitlement row through an explicit
+    reconciliation query, and a regular creator still cannot.
 
 ## 14. Free-limit enforcement
 
