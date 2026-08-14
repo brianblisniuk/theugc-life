@@ -21,10 +21,14 @@ import { isUuid } from "@/lib/hotels/ids";
 import { FREE_LIMITS } from "@/lib/config";
 
 import {
+  DEAL_ACTIONS,
   WORKFLOW_ACTIONS,
+  mapDealResult,
   mapSaveResult,
   mapTransitionResult,
   type PipelineStatus,
+  type DealAction,
+  type DealResult,
   type SaveResult,
   type TransitionResult,
   type WorkflowAction,
@@ -204,4 +208,89 @@ export async function transitionPipelineItem(
   // Never surface a raw Postgres/PostgREST error to the browser.
   if (error) return { result: "error" };
   return mapTransitionResult(data);
+}
+
+/** The creator's collaboration for one relationship cycle. */
+export interface CycleCollaboration {
+  id: string;
+  status: string;
+  collaborationType: string | null;
+  agreedAt: string | null;
+}
+
+/**
+ * Tri-state, for the same reason `getOpenRelationship` is: "we could not read
+ * it" is NOT "there is no collaboration". On a `won` cycle those two answers
+ * mean very different things — one is a temporary glitch, the other is a
+ * contradiction worth surfacing.
+ */
+export type CollaborationLoad =
+  { status: "found"; collaboration: CycleCollaboration } | { status: "none" } | { status: "error" };
+
+/**
+ * The collaboration attached to a relationship cycle. Reads under the caller's
+ * RLS (`collaborations_all`), so it can only ever see the caller's own rows.
+ * Financial columns are deliberately not selected — Sprint 2D shows none.
+ */
+export async function getCycleCollaboration(
+  pipelineItemId: string,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: PipelineQueryClient,
+): Promise<CollaborationLoad> {
+  if (!isUuid(pipelineItemId)) return { status: "none" };
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await supabase
+    .from("collaborations")
+    .select("id, status, collaboration_type, agreed_at")
+    .eq("pipeline_item_id", pipelineItemId)
+    .maybeSingle();
+
+  if (error) return { status: "error" };
+  if (!data) return { status: "none" };
+
+  const row = data as unknown as Record<string, unknown>;
+  return {
+    status: "found",
+    collaboration: {
+      id: String(row.id),
+      status: String(row.status),
+      collaborationType: (row.collaboration_type as string | null) ?? null,
+      agreedAt: (row.agreed_at as string | null) ?? null,
+    },
+  };
+}
+
+/** The user-supplied half of a deal request. Identity is NOT in here. */
+export interface DealInput {
+  pipelineItemId: string;
+  action: DealAction;
+  agreedAt?: string | null;
+  collaborationType?: string | null;
+}
+
+/**
+ * Progress a relationship along the deal path: replied → negotiating → won.
+ *
+ * `userId` MUST come from the server-side session. The RPC re-derives the
+ * creator, re-checks the transition, and writes the collaboration and its
+ * `deal_won` event in the same transaction as the status change.
+ */
+export async function progressPipelineDeal(userId: string, input: DealInput): Promise<DealResult> {
+  if (!isUuid(userId) || !isUuid(input.pipelineItemId)) return { result: "invalid_input" };
+  if (!(DEAL_ACTIONS as readonly string[]).includes(input.action)) {
+    return { result: "invalid_input" };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("progress_pipeline_deal", {
+    p_user_id: userId,
+    p_pipeline_item_id: input.pipelineItemId,
+    p_action: input.action,
+    p_agreed_at: input.agreedAt ?? null,
+    p_collaboration_type: input.collaborationType ?? null,
+  });
+
+  // Never surface a raw Postgres/PostgREST error to the browser.
+  if (error) return { result: "error" };
+  return mapDealResult(data);
 }

@@ -9,13 +9,17 @@
 import {
   PIPELINE_STATUSES,
   isSaveSuccessful,
+  collaborationTypeLabel,
+  dealResultMessage,
+  isDealSuccessful,
   pipelineStatusLabel,
   saveResultMessage,
   transitionResultMessage,
   type PipelineStatus,
+  type DealResult,
+  type PipelineAction,
   type SaveResult,
   type TransitionResult,
-  type WorkflowAction,
 } from "./types";
 
 /** Copy owned by the product, asserted by tests so it cannot drift silently. */
@@ -165,22 +169,25 @@ export function pipelineListState(input: {
  * Which workflow actions the creator may take from a given status.
  *
  * This mirrors the transition map the database enforces, so the UI never
- * offers a step the RPC would reject. `negotiating`/`won` are absent on
- * purpose: their workflow is the next slice, and offering a control that
- * cannot succeed is worse than offering none.
+ * offers a step the RPC would reject. Sprint 2D adds the deal path
+ * (replied → negotiating → won); collaboration execution and closing a won
+ * cycle remain absent, because offering a control that cannot succeed is
+ * worse than offering none.
  */
-const ACTIONS_BY_STATUS: Record<string, readonly WorkflowAction[]> = {
+const ACTIONS_BY_STATUS: Record<string, readonly PipelineAction[]> = {
   saved: ["plan", "mark_pitched", "close"],
   planned: ["mark_pitched", "close"],
   pitched: ["mark_followup_sent", "mark_replied", "close"],
   follow_up: ["mark_replied", "close"],
-  replied: ["close"],
-  negotiating: [],
+  replied: ["start_negotiation", "close"],
+  negotiating: ["mark_won", "close"],
+  // A won cycle is finished for this slice: closing it belongs to the
+  // collaboration lifecycle, not to outreach.
   won: [],
   closed: [],
 };
 
-export function availableActions(status: string | null | undefined): readonly WorkflowAction[] {
+export function availableActions(status: string | null | undefined): readonly PipelineAction[] {
   if (!status) return [];
   return ACTIONS_BY_STATUS[status] ?? [];
 }
@@ -238,4 +245,97 @@ export function workflowControlState(
 /** Only a real commercial limit may advertise upgrading. */
 export function shouldOfferWorkflowUpgrade(state: WorkflowControlState): boolean {
   return state.kind === "limit";
+}
+
+/* ------------------------------------------------------------------ */
+/* Deal progress + collaboration (Sprint 2D)                           */
+/* ------------------------------------------------------------------ */
+
+export const COLLABORATION_COPY = {
+  agreedTitle: "Collaboration agreed",
+  errorTitle: "We couldn’t load your collaboration",
+  errorBody:
+    "This is a temporary problem on our side, not a missing collaboration. Reload the page to try again.",
+  integrityTitle: "This deal needs a second look",
+  integrityBody:
+    "This relationship is marked won but we can’t find its collaboration record. Nothing was changed. Please contact support.",
+} as const;
+
+export type DealControlState =
+  | { kind: "idle" }
+  | { kind: "applied"; message: string; status: PipelineStatus }
+  | { kind: "problem"; message: string };
+
+/**
+ * `already_applied` is a success — a double click on "Mark as won" must not
+ * read as a failure. Nothing on the deal path offers an upgrade: none of these
+ * outcomes is a commercial limit.
+ */
+export function dealControlState(result: DealResult | null | undefined): DealControlState {
+  if (!result) return { kind: "idle" };
+  if (result.result === "applied" || result.result === "already_applied") {
+    return { kind: "applied", message: dealResultMessage(result), status: result.status };
+  }
+  return { kind: "problem", message: dealResultMessage(result) };
+}
+
+/** No deal outcome is ever a reason to sell an upgrade. */
+export function shouldOfferDealUpgrade(_state: DealControlState): boolean {
+  return false;
+}
+
+export { isDealSuccessful };
+
+/** What the collaboration lookup established — the three are distinct. */
+export type CollaborationLoadState =
+  | {
+      status: "found";
+      collaboration: { collaborationType: string | null; agreedAt: string | null };
+    }
+  | { status: "none" }
+  | { status: "error" };
+
+export type CollaborationPanelState =
+  | { kind: "hidden" }
+  | { kind: "agreed"; title: string; typeLabel: string | null; agreedAt: string | null }
+  | { kind: "load_error"; title: string; body: string }
+  | { kind: "integrity_problem"; title: string; body: string };
+
+/**
+ * A `won` cycle must have a collaboration; that is the whole point of writing
+ * them together. So the three lookup answers mean three different things:
+ *
+ *   found → show it
+ *   error → a temporary glitch; say so, and do NOT claim there is none
+ *   none  → a contradiction, not an empty state. Surface it rather than
+ *           rendering a reassuring blank.
+ */
+export function collaborationPanelState(input: {
+  status: string;
+  load: CollaborationLoadState;
+}): CollaborationPanelState {
+  if (input.status !== "won") return { kind: "hidden" };
+
+  if (input.load.status === "error") {
+    return {
+      kind: "load_error",
+      title: COLLABORATION_COPY.errorTitle,
+      body: COLLABORATION_COPY.errorBody,
+    };
+  }
+  if (input.load.status === "none") {
+    return {
+      kind: "integrity_problem",
+      title: COLLABORATION_COPY.integrityTitle,
+      body: COLLABORATION_COPY.integrityBody,
+    };
+  }
+  return {
+    kind: "agreed",
+    title: COLLABORATION_COPY.agreedTitle,
+    typeLabel: input.load.collaboration.collaborationType
+      ? collaborationTypeLabel(input.load.collaboration.collaborationType)
+      : null,
+    agreedAt: input.load.collaboration.agreedAt,
+  };
 }
