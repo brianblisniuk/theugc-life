@@ -5,14 +5,16 @@ exists so that PR starts from an unambiguous list rather than a re-reading of
 the decision log.
 
 Produced during the pre-Sprint-3 product contract sync, after the owner approved
-D049–D053. Every item below is production code or test code that contradicts one
+D049–D056. Every item below is production code or test code that contradicts one
 of those decisions, or a gap the decisions created.
 
 **Nothing in this backlog was changed in the PR that created this file.**
 
 Governing decisions: **D049** (one canonical inventory, no "premium hotels"),
 **D050** (Public + Premium Intelligence, identical privacy), **D051**
-(Destination Pass $39 / 30 days), **D052** (Pro $199/year), **D053** (Archivo).
+(Destination Pass $39 / 30 days), **D052** (Pro $199/year), **D053** (Archivo),
+**D054** (100% map coverage of publishable inventory), **D055** (destination
+inventory complete, not capped), **D056** (Destination Pass workflow scope).
 
 ---
 
@@ -108,12 +110,49 @@ Migrations `0001`–`0025` are immutable. All of this lands in `0026+`.
 
 ---
 
-## 6. Explicitly NOT in this backlog
+## 6. Entitlement scope and workflow limits (D056)
+
+| # | Location | Required |
+|---|---|---|
+| 6.1 | `save_hotel_to_pipeline` (migration `0019`) | Already exempts premium-covered hotels from the Free limits via `has_premium_hotel_access`. **Verify** this still matches D056 before relying on it — the exemption is the mechanism D056 depends on |
+| 6.2 | `transition_pipeline_item` (migration `0020`) | Same check for the engaged (`activePipelineItems`) limit |
+| 6.3 | *(new tests)* | Entitled-destination creator exceeds both Free limits inside the entitlement; the same creator is still limited outside it; an expired Pass returns them to Free limits while their history stays readable |
+| 6.4 | Copy | Nothing currently tells a Pass holder their limits lift inside the destination. Billing/pricing copy should say so once §1 is corrected |
+
+## 7. Map coverage (D054)
+
+| # | Location | Required |
+|---|---|---|
+| 7.1 | Promotion path (`scripts/import/promote.ts`, `CANONICAL_PROMOTION_SPEC.md`) | Coordinates become a **publishability precondition**: a candidate without valid canonical lat/long must be held back, not promoted. This is a promotion-gate change, not a schema change |
+| 7.2 | `src/app/(app)/app/discover/page.tsx:8` | Doc comment says the map is deferred because "the canonical dataset currently has no coordinates". Restate against D054: the map ships when coverage does, and coverage is a precondition |
+| 7.3 | Discover map (Sprint 3A) | The unmapped state is a defensive fallback only. Do not build product affordances around it (filters, counts, an "unmapped" tab) that would normalise it |
+| 7.4 | *(new)* coverage check | A publishable hotel without coordinates should be detectable — a validation/report step, so coverage can be audited rather than assumed |
+| 7.5 | Pilot data | The 30-property Dubai pilot needs coordinate enrichment before Discover's map ships. Provenance-backed; never fabricated |
+
+## 8. Destination completeness (D055)
+
+| # | Location | Required |
+|---|---|---|
+| 8.1 | Exclusion recording | Excluded properties need an explicit, auditable reason (duplicate / closed / HQ / non-property org / out of scope). The import pipeline records resolution decisions; confirm an exclusion reason is durable and reviewable |
+| 8.2 | Coverage measurement | Coverage is measured against a destination's universe, not a target count. There is no such measure today |
+| 8.3 | Copy | Nothing may describe a destination as "curated", "top N" or "selected hotels" |
+
+Provider selection is **not** in scope — see §9.
+
+---
+
+## 9. Explicitly NOT in this backlog
 
 - Media/photography schema, sourcing or ingestion — still an open product
   contract (VISUAL_DIRECTION.md §21A).
-- Geocoding provider and canonical coordinate enrichment — still open
-  (VISUAL_DIRECTION.md §21B).
+- **Property inventory sources** for D055's coverage universe — the next
+  Property Content contract. Booking, Expedia, Google and any other provider are
+  explicitly unchosen.
+- **Geocoding provider** — unchosen (VISUAL_DIRECTION.md §21B). D054 fixes the
+  coverage target, not the supplier.
+- The **initial destination list** — not selected.
+- The exact **Premium Intelligence field projection and numeric thresholds** —
+  the next product-contract block.
 - Payment-provider integration (Hotmart or otherwise) — a later concern (D051,
   Owner Decision 7). Fixing price/duration copy is not the same as building
   checkout.

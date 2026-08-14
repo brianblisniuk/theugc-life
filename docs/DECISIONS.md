@@ -854,3 +854,151 @@ It fixes the **typeface**. It does **not** promote any A2 prototype font size,
 weight, width or line-height to a token — those remain implementation references
 until validated on a real surface (VISUAL_DIRECTION.md §22). Production font
 loading is unchanged until the implementation PR.
+
+## D054 — Map coverage V1: 100% of publishable inventory
+Status: Accepted — supersedes the "partial coverage is acceptable" position in
+VISUAL_DIRECTION.md §21B
+
+**Every publishable hotel in Discover must have canonical latitude/longitude and
+must appear on the map. The V1 coverage target for publishable inventory is
+100%.**
+
+Coordinates are a **publishability precondition**, not an enrichment that
+catches up later. A hotel may not enter the publishable Discover inventory
+without them.
+
+Internal, staging and research records may temporarily lack coordinates while
+they are being enriched or reviewed — that is the normal state of the pipeline
+before promotion. The rule binds at the promotion boundary, not before it.
+
+Coordinates remain **provenance-backed and are never fabricated** (D025, D027).
+An unlocated hotel is held back from publication; it is not given a plausible
+point.
+
+### The unmapped state is a fallback, not a plan
+
+The unmapped state described in VISUAL_DIRECTION.md §20 remains in the UI as a
+**defensive data-integrity fallback**, so the surface degrades honestly instead
+of failing if bad data ever escapes validation. It is **not** an acceptable
+planned state of production inventory and does not satisfy this contract.
+
+The A2 prototype showed unmapped hotels because it was demonstrating incomplete
+demo data. That was a property of the prototype's fixtures, not a product
+target.
+
+Reason:
+A map with holes in it is worse than no map. The creator cannot tell whether a
+destination genuinely has nothing in that area or whether the product simply
+does not know, and every gap silently understates the inventory the product is
+selling. Treating "unmapped" as a normal condition also removes the pressure
+that keeps coverage complete: a first-class empty state is a permanent excuse.
+Making coordinates a precondition of publishing puts the cost where it belongs —
+in enrichment and review — instead of on the creator's ability to trust the map.
+
+Consequence:
+The promotion path must reject or hold publishable candidates without valid
+coordinates, and Discover's map is a complete view of what Discover lists.
+Choosing a geocoding source remains an open decision (VISUAL_DIRECTION.md §21B);
+this decision fixes the target, not the supplier.
+
+## D055 — Destination inventory is complete, not capped
+Status: Accepted
+
+There is **no arbitrary property cap per destination**. A Destination Pass is
+not "the best 30 hotels", not "100 curated hotels", not a sample, and not any
+other capped subset.
+
+For every supported destination the goal is **all unique in-scope hospitality
+properties in the defined coverage universe for that destination**. A
+destination may naturally hold 40 properties, or 150, or 500. **The number is
+determined by the destination, not by the product packaging.**
+
+The coverage universe is assembled from approved property inventory sources and
+the existing research pipeline, then passed through conservative identity
+resolution and deduplication (D028).
+
+### Exclusions must be explicit and auditable
+
+A property may be excluded only for a stated, reviewable reason:
+
+- duplicate;
+- permanently closed or inactive;
+- corporate/group HQ rather than a property;
+- agency or other non-property organization (D029);
+- property type explicitly outside product scope.
+
+A property must **NOT** be excluded because:
+
+- no premium contact has been found yet;
+- creator-network intelligence is still insufficient;
+- photography is not yet available.
+
+Those are **field states, not existence states**. A hotel with an unknown
+contact is a hotel with an unknown contact; pretending it does not exist makes
+the product lie about the destination.
+
+Reason:
+Completeness is the actual product promise of a Destination Pass. A creator
+going to Bali is asking "who could I pitch here?", and any answer that silently
+omits properties is wrong in the one way the buyer cannot detect. A capped
+"curated" set also destroys the flywheel's denominator: reply rates and activity
+levels only mean something relative to a known universe. And a cap creates a
+permanent editorial argument about which hotels deserve to exist, which is not a
+question the product should be answering.
+
+Consequence:
+Coverage is measured against the destination's universe, not against a target
+count. Excluded properties carry a recorded reason, so coverage can be audited
+rather than asserted. The external inventory sources are **not** chosen here —
+that is the next Property Content contract.
+
+## D056 — Destination Pass workflow scope
+Status: Accepted — makes the "full workflow" of D051 explicit; confirms and
+extends D042's premium-coverage exemption
+
+While a Creator Destination Pass is active:
+
+**Inside the entitled destination** (including valid descendant destinations per
+the existing hierarchy rules):
+
+- the creator receives the full approved pipeline/workflow;
+- all existing pipeline states and transitions are available;
+- the follow-up / outreach lifecycle is available;
+- the collaboration lifecycle is available;
+- **those relationships are not constrained by the Free saved/open/engaged
+  workspace limits** (`FREE_LIMITS`).
+
+**Outside the entitled destination:**
+
+- worldwide discovery remains available (D049);
+- Public Intelligence remains available (D050);
+- the creator keeps the normal Free-tier workspace capabilities and limits;
+- the Pass provides no Premium Intelligence and no premium contacts there.
+
+**A paid Destination Pass must never remove a right the account would have had
+as Free.** Paying is strictly additive.
+
+**Creator Pro** applies the full premium and workflow scope worldwide (D052).
+
+**After expiry:** Premium Intelligence re-locks, premium contacts re-lock, and
+creator-owned historical workflow remains readable under the existing contract
+(PERMISSIONS.md §8, PRD §11.10). Expiry removes access to premium data, never
+the creator's own records.
+
+Reason:
+"Full workflow for the entitled destination" was the last piece of D051 that a
+reader could interpret two ways, and the two readings price very differently. A
+Pass that still capped the creator at 10 open and 5 engaged relationships would
+be unusable for its stated job — a creator pitching a destination works through
+far more than five hotels — so the limits have to lift inside the entitlement or
+the product does not do what it sells.
+
+Relationship to D042:
+D042 already states that "premium coverage (active Pro, or an active destination
+entitlement covering the hotel's destination hierarchy) exempts a creator from
+the Free limits for that hotel", and that "a destination creator acting outside
+their entitlement falls back to Free behavior". D056 **confirms** that rule and
+names the workflow surface it applies to. Nothing in D042 is superseded; the
+exemption is per-hotel and resolved through the destination hierarchy, which is
+what makes "inside the entitled destination" checkable in the database rather
+than in the UI.

@@ -14,14 +14,17 @@ production both satisfy.
 **The current phase is Product Experience.** The Visual Direction Gate has
 passed: Visual Direction V1 is **A2 — Sunlit Creator OS**, with **Sun `#FFE01B`**
 as the approved primary accent and **Archivo** as the primary product typeface.
-Sprint 3A implements it on Discover + map. Photography and map coordinates each
-still need a product/data decision before they can ship — see
+Sprint 3A implements it on Discover + map. Photography still needs a product/data
+decision before it can ship, and the map ships only when **100% of publishable
+inventory has canonical coordinates** — see
 [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md).
 
 **The V1 commercial contract is fixed.** One canonical hotel inventory that
 everyone can discover worldwide, with two intelligence layers — Public for all,
 Premium for paid — and identical privacy on every plan. Creator Destination Pass
-is **$39 / 30 days / one destination**; Creator Pro is **$199/year worldwide**.
+is **$39 / 30 days / one destination**, covering *every* in-scope property in
+that destination with the Free workspace limits lifted inside it; Creator Pro is
+**$199/year worldwide**.
 See [`docs/PRD.md`](docs/PRD.md) §5 and §12.8. The code does not implement the
 Public/Premium split yet; the per-file scope is
 [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
@@ -218,8 +221,9 @@ collaboration lifecycle, and the explicit ACL contract (Sprint 2A–2G).
 Next: **Sprint 3 — Product Experience**, starting with Sprint 3A (Discover +
 map) against Visual Direction V1. Two prerequisites are unresolved and must not
 be improvised: the hotel **media/photography** data and provenance contract, and
-**canonical coordinate coverage** for the map
-([`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §21).
+**canonical coordinate coverage** for the map — which is now a 100%-of-
+publishable-inventory contract, not a best-effort one
+([`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §21, D054).
 
 The V1 commercial contract is closed (D049–D053). What remains is
 implementation: the Public/Premium intelligence split, the $39 / 30-day pricing

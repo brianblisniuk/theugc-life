@@ -354,8 +354,10 @@ behaviour, not pixels — see §22.
 - A **distinctive marker grammar**, recognisable as this product.
 - A **selected marker** state.
 - **Clusters** at low zoom.
-- An **explicit unmapped state** for hotels without coordinates — this is a
-  designed, first-class condition (see §21B), not an error.
+- An **unmapped fallback state** for a hotel without coordinates. This exists so
+  the surface degrades honestly if bad data ever escapes validation — it is a
+  **defensive data-integrity state, not a planned condition of production
+  inventory** (D054). Publishable hotels all have coordinates.
 - **No fake geographic entitlement polygons.** Destination entitlement is a
   hierarchy of catalogue records, not a drawn boundary, and drawing one would
   assert coverage the data does not define.
@@ -399,16 +401,26 @@ the schema, so **no migration is needed** — the gap is data coverage, not
 structure. The canonical pilot does not yet have enough coordinates for a
 credible production map.
 
-- **Canonical coordinate enrichment is a prerequisite for a real map.**
-- **Do not add fake production coordinates.**
+**Coverage target: 100% of publishable inventory (D054).** Every hotel Discover
+lists has canonical coordinates and appears on the map. Coordinates are a
+**publishability precondition**, not enrichment that catches up later.
+
+- **Canonical coordinate enrichment is a prerequisite for a real map**, and for
+  publishing a hotel at all.
+- Internal/staging/research records may lack coordinates while being enriched or
+  reviewed. The rule binds at the **promotion boundary**, not before it.
+- **Do not add fake production coordinates.** An unlocated hotel is held back
+  from publication, never given a plausible point.
 - **Do not use prototype marker positions as data.** Positions in the A2
   artifact were illustrative.
 - Coordinates must arrive through the canonical staging → review → promotion
   path with the same provenance discipline as every other hotel field, which
   also means choosing a geocoding source is itself an open decision.
-- **Partial coverage is acceptable**, because A2 explicitly supports unmapped
-  hotels (§20). Sprint 3A does not need 100% coverage to ship a map — it needs
-  the unmapped state to be honest.
+- **Partial coverage is not an acceptable V1 target.** An earlier version of
+  this section said it was, on the grounds that A2 supports unmapped hotels;
+  that is superseded by D054. The unmapped state in §20 survives as a defensive
+  fallback only. A2 showed unmapped hotels because its fixtures were incomplete
+  demo data — that was a property of the prototype, not a coverage target.
 
 ---
 

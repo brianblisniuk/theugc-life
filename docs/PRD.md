@@ -160,14 +160,21 @@ Job to be done: *"I'm going to Bali and I want to get collaborations."* This is
 the low-friction paid acquisition product, bought by a creator with a trip
 already in view.
 
-Includes inside the entitled destination:
+Includes inside the entitled destination (and its valid descendant
+destinations), per **D056**:
 
 - **Premium Intelligence** (§12.8).
 - Premium/actionable hotel contacts.
-- The approved full destination workflow/CRM scope, including follow-ups and
-  pipeline behaviour under the existing product rules.
+- The **full approved pipeline/workflow**: all pipeline states and transitions,
+  the follow-up/outreach lifecycle, and the collaboration lifecycle.
+- **Relationships in the entitled destination are not constrained by the Free
+  saved/open/engaged workspace limits** (§5.1, D042). A creator pitching a
+  destination works through far more than five hotels.
 - Trips.
 - Creator profile and portfolio.
+
+**The destination has no property cap** (D055). A Pass covers *all* in-scope
+properties in that destination's coverage universe — not a curated subset.
 
 Outside the entitled destination the creator falls back to the Free experience:
 
@@ -175,7 +182,11 @@ Outside the entitled destination the creator falls back to the Free experience:
   be found.
 - Public Intelligence remains visible.
 - Premium Intelligence and premium contacts remain locked.
+- Normal Free-tier workspace capabilities and limits apply.
 - User is offered another Destination Pass or Creator Pro.
+
+**A paid Pass never removes a right the account would have had as Free.** Paying
+is strictly additive.
 
 On expiry:
 
@@ -199,7 +210,7 @@ Includes, worldwide:
 
 - **Premium Intelligence** (§12.8).
 - All premium/actionable hotel contacts.
-- Full CRM/workflow scope.
+- Full CRM/workflow scope, unconstrained by the Free workspace limits (D056).
 - Trips.
 - Creator portfolio/profile.
 
@@ -217,12 +228,15 @@ Do not promise “all future features forever”.
 | Public Intelligence | Yes | Yes | Yes |
 | **Premium Intelligence** | No | Entitled destination | Worldwide |
 | **Premium contacts** | No | Entitled destination | Worldwide |
-| CRM / workspace | Limited by Free limits | Full, for the entitled destination | Full |
+| CRM / workspace | Limited by Free limits | **Unlimited inside the entitled destination**; Free limits elsewhere | Full, worldwide |
 | Trips | 1 active | Approved scope | Yes |
 | Creator profile / portfolio | Basic | Yes | Yes |
 
 The hotel is never the premium object (D049). What is sold is richer
 intelligence, actionable contacts, and the capacity to act on the opportunity.
+
+Destinations are **not capped** (D055): a Pass covers every in-scope property in
+that destination's coverage universe, however many that turns out to be.
 
 ### 5.4 Referral Program
 Economic incentives are permitted only for customer acquisition/referral.
@@ -278,6 +292,13 @@ MVP recommendation logic may be rules-based. Do not claim AI matching unless act
 ## 7.2 Discover
 
 Purpose: hotel discovery and initial wow factor.
+
+**Map coverage is 100% of publishable inventory (D054).** Every hotel Discover
+lists has canonical coordinates and appears on the map; coordinates are a
+publishability precondition, not later enrichment. The unmapped state in the UI
+is a defensive fallback for bad data escaping validation, not a planned
+condition. Coordinates are never fabricated — an unlocated hotel is held back
+from publication.
 
 Must include:
 
@@ -599,6 +620,11 @@ The implementation must preserve these decisions:
 10. Raw structured events are retained so future scores can be recalculated.
 11. There is no primary “reports” table exposed to creators.
 12. CRM behavior creates intelligence as a side effect.
+13. Canonical coordinates are a publishability precondition, not enrichment
+    (D054). Publishable inventory is 100% mapped.
+14. A destination's inventory is complete, not capped (D055). Exclusions are
+    explicit and auditable; a missing contact, insufficient intelligence or
+    absent photography are field states, never reasons to omit a property.
 
 ---
 

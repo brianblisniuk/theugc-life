@@ -168,7 +168,16 @@ Private historical workspace survives entitlement expiry.
 May use configured free limits. Limits are application/business rules in addition to RLS ownership.
 
 ### Destination
-Full approved CRM behavior for entitled destination hotels. Existing historical pipeline remains readable after pass expiry; premium contact/intelligence access is removed.
+Full approved CRM behavior for entitled destination hotels (D056): all pipeline
+states and transitions, the follow-up/outreach lifecycle, and the collaboration
+lifecycle. **Relationships with hotels inside the entitled destination — and its
+valid descendant destinations — are exempt from the Free saved/open/engaged
+limits** (D042). Outside the entitlement, normal Free-tier capabilities and
+limits apply, and a paid Pass never removes a right the account would have had
+as Free.
+
+Existing historical pipeline remains readable after pass expiry; premium contact
+and Premium Intelligence access is removed.
 
 ### Pro
 Worldwide.
