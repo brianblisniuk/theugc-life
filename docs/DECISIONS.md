@@ -366,3 +366,112 @@ Scope: Sprint 2C defines close behavior for `saved`, `planned`, `pitched`,
 `follow_up` and `replied` only. Close semantics for `negotiating` and `won`
 (including the collaboration lifecycle they imply) are deliberately left to the
 sprint that introduces those transitions.
+
+## D044 — Hotel intelligence metric semantics
+Status: Accepted
+
+Hotel intelligence is DERIVED from `outreach_events` and is fully rebuildable.
+Raw creator events remain authoritative (D008); nothing in the workflow is ever
+modified to make an aggregate look better.
+
+**The unit of observation is a relationship cycle, not an event.**
+Every metric below counts distinct `pipeline_item_id` values, so one creator
+pitching, following up three times and recording a reply is one data point, not
+five. Counting events would let a single busy relationship masquerade as market
+demand.
+
+**Pitch count.** Distinct cycles with at least one `pitch_sent`. The EARLIEST
+`pitch_sent` in a cycle is its initial pitch.
+
+**Reply count.** Distinct pitched cycles with at least one `reply_received`
+whose `event_at` is at or after that cycle's initial pitch. The first such reply
+is the qualifying reply. A reply that predates its pitch is not evidence the
+pitch worked; a reply in a cycle with no pitch never enters the funnel at all.
+
+**Positive / negative reply count.** Distinct qualifying replied cycles whose
+classification event references the qualifying reply through
+`metadata.reply_event_id`. A classification carrying no reference (an admin
+correction, say) falls back to "same cycle, at or after the qualifying reply".
+Classification events are never counted as replies in their own right.
+
+**Collaboration count.** Distinct cycles with `deal_won`. This is the canonical
+confirmed-deal signal; editorial evidence and pipeline status alone are never
+used.
+
+**Reply rate.** `reply_count / pitch_count` when `pitch_count > 0`, otherwise
+NULL.
+
+NULL and 0 are different answers and must not be collapsed. NULL means "not
+measurable": there is no qualifying pitch sample, so there is no denominator and
+no claim to make. A numeric 0 means "measured, and nobody replied" — a real
+finding about a hotel that was pitched. A hotel with `pitch_count > 0` and
+`reply_count = 0` therefore has `reply_rate = 0`, not NULL.
+
+Public exposure of the value is still gated by confidence: 0 is no more
+publishable at low N than any other rate.
+
+**Median reply hours.** Per qualifying replied cycle, the hours between the
+initial pitch and the qualifying reply, then the median across those cycles.
+Always `event_at`, never `created_at`, so backfilled outreach measures from when
+it actually happened. Negative durations are excluded.
+
+**Qualifying primary activity events.** `pitch_sent`, `followup_sent`,
+`reply_received`, `negotiation_started`, `deal_won`, `deal_lost`,
+`collaboration_started`, `collaboration_completed`.
+
+Deliberately excluded: `hotel_saved` (creator intent, not hotel interaction),
+`positive_reply` / `negative_reply` / `offer_received` (classifications or
+enrichment of an event already counted), `creator_closed_pipeline` (can precede
+any outreach), and `contact_bounced`.
+
+**Rolling counts.** `interaction_count_30d/90d/365d` are counts of qualifying
+primary events by `event_at`.
+
+**Activity level** is computed from DISTINCT cycles with at least one qualifying
+primary event in the last 90 days — not from the event count, for the same
+reason the funnel metrics use cycles:
+
+| Active cycles (90d) | activity_level |
+|---|---|
+| 0 | NULL |
+| 1 | emerging |
+| 2–4 | low |
+| 5–9 | medium |
+| 10+ | high |
+
+Zero recent cycles is NULL, never `low`. No label is better than a false
+negative statement about a hotel. These thresholds are an initial product
+hypothesis, to be revisited once real distribution data exists.
+
+**Confidence** uses the existing D012 vocabulary, computed from pitch count —
+the sample supporting the funnel metrics:
+
+| Pitched cycles | confidence_level |
+|---|---|
+| 0–4 | insufficient |
+| 5–14 | emerging |
+| 15–49 | moderate |
+| 50+ | strong |
+
+**No-data semantics.** A hotel with no qualifying primary activity has NO
+`hotel_intelligence` row. A row of zeros would read as a claim ("0% reply rate",
+"low activity") about a hotel nobody has contacted. If a recompute finds an
+existing row's source events no longer qualify, the derived row is DELETED.
+
+**Public exposure** is progressive, and suppression yields NULL rather than
+`false` or `0`:
+
+| Confidence | Exposed by `hotel_public_intelligence` |
+|---|---|
+| insufficient | `confidence_level` only |
+| emerging | + `activity_level`, `has_confirmed_collaboration` |
+| moderate | + `recency_band` (coarse) |
+| strong | + `reply_rate` |
+
+Contributor identifiers are never exposed at any level. Cycles are also not
+creators: the product must never render a count of cycles as a number of people.
+
+Reason:
+These are the first metrics theugc.life asserts about someone else's business.
+An inflated or fabricated one is not a rounding error — it is a false public
+claim about a hotel, made from data its subject cannot see or correct.
