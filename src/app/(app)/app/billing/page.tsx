@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
-import { getSessionContext } from "@/lib/auth/guards";
+import { requireUser } from "@/lib/auth/guards";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Billing" };
@@ -11,12 +11,12 @@ export const metadata: Metadata = { title: "Billing" };
  * flows (Hotmart) are a Sprint 1 non-goal for this foundation.
  */
 export default async function BillingPage() {
-  const session = await getSessionContext();
+  const session = await requireUser("/app/billing");
   const supabase = await createClient();
   const { data: entitlements } = await supabase
     .from("access_entitlements")
     .select("access_type, status, starts_at, expires_at")
-    .eq("user_id", session?.userId ?? "")
+    .eq("user_id", session.userId)
     .order("starts_at", { ascending: false });
 
   const active = (entitlements ?? []).filter((e) => e.status === "active");

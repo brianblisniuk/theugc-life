@@ -12,7 +12,7 @@
  */
 import { revalidatePath } from "next/cache";
 
-import { getSessionContext } from "@/lib/auth/guards";
+import { resolveSession } from "@/lib/auth/guards";
 
 import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
 
@@ -42,9 +42,12 @@ function readField(formData: FormData, name: string): string | null {
 }
 
 export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
-  // Identity comes ONLY from the session cookie.
-  const session = await getSessionContext();
-  if (!session) return { result: "error" };
+  // Identity comes ONLY from the session cookie: either a resolved identity or
+  // a sanitized error. A failed session resolution is reported as
+  // `error`, never as "not signed in" and never under a guessed role.
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const session = resolution.session;
 
   const hotelId = formData.get("hotelId");
   if (typeof hotelId !== "string") return { result: "error" };
@@ -68,8 +71,11 @@ export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
  * config — neither is read from the form, so neither can be forged.
  */
 export async function transitionPipelineItemAction(formData: FormData): Promise<TransitionResult> {
-  const session = await getSessionContext();
-  if (!session) return { result: "error" };
+  // Identity, or a sanitized error. A failed session resolution is reported as
+  // `error`, never as "not signed in" and never under a guessed role.
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const session = resolution.session;
 
   const parsed = parseWorkflowForm({
     pipelineItemId: readField(formData, "pipelineItemId"),
@@ -111,8 +117,11 @@ export async function transitionPipelineItemAction(formData: FormData): Promise<
  * `deal_won` event, never by this layer.
  */
 export async function progressPipelineDealAction(formData: FormData): Promise<DealResult> {
-  const session = await getSessionContext();
-  if (!session) return { result: "error" };
+  // Identity, or a sanitized error. A failed session resolution is reported as
+  // `error`, never as "not signed in" and never under a guessed role.
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const session = resolution.session;
 
   const parsed = parseDealForm({
     pipelineItemId: readField(formData, "pipelineItemId"),
@@ -149,8 +158,11 @@ export async function progressPipelineDealAction(formData: FormData): Promise<De
 export async function progressCollaborationAction(
   formData: FormData,
 ): Promise<CollaborationResult> {
-  const session = await getSessionContext();
-  if (!session) return { result: "error" };
+  // Identity, or a sanitized error. A failed session resolution is reported as
+  // `error`, never as "not signed in" and never under a guessed role.
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const session = resolution.session;
 
   const parsed = parseCollaborationForm({
     pipelineItemId: readField(formData, "pipelineItemId"),
