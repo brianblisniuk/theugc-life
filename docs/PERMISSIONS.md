@@ -211,6 +211,14 @@ to any browser role, and nothing in V1 is planned to. If a richer premium
 intelligence surface is ever introduced it must be a new, deliberately designed
 projection with its own suppression rules — not a grant on the base tables.
 
+> **⚠ Open product contract.** Commercial copy in `PRD.md` §5.1/§5.2/§5.3 and
+> §10.3/§10.4 promises *premium intelligence* to paid plans. The built system
+> does not have it: disclosure is graduated by confidence, not by plan, and Free
+> creators see exactly what Pro sees. The contradiction and the three ways out
+> are set out in `PRD.md` §12.8.1 and need an owner decision. **This section
+> describes the implementation and remains authoritative for what the system
+> does** — nothing here may be widened to make the commercial copy true.
+
 No plan bypasses privacy thresholds.
 
 ## 10. Signals

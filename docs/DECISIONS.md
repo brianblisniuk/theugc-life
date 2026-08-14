@@ -600,3 +600,72 @@ A fresh replay of the full migration set and a deployed production database must
 converge on the **same** privilege matrix. `0024_explicit_acl_contract.sql`
 establishes that matrix, and a DB-backed assertion fails the build if a future
 migration reintroduces a dependency on inherited defaults.
+
+## D047 — Visual Direction V1 is A2 — Sunlit Creator OS
+Status: Accepted
+
+The approved visual direction for theugc.life is **A2 — Sunlit Creator OS**, a
+synthesis of the three explorations produced for the Visual Direction Gate:
+
+- ~70% Direction A — Sunlit Editorial Utility
+- ~20% Direction B — Creator Command Center
+- ~10% Direction C — Visual Opportunity Network
+
+Product principle:
+
+**Lifestyle aspiration + professional creator infrastructure.**
+
+For travel: *Bright travel ambition. Serious creator infrastructure.*
+
+Discover must produce "I want to be there", then "this tool can help me get
+there" — in that order.
+
+Reason:
+Direction A alone risked becoming a beautiful travel publication that is slow to
+work in. Direction B alone was credible software with no reason to want it.
+Direction C alone made the map the substrate and the product a layer on top of
+it. The 20% from B is what preserves density, state language and comparison
+velocity; the 10% from C is what keeps the map and the intelligence signals
+functional rather than decorative. Those proportions are the decision — not
+merely "Direction A won".
+
+Consequence:
+Two principles become binding for implementation. **Containers are earned**:
+hierarchy comes from thin rules, typography, restrained geometry and real
+content, not from putting every fact in its own rounded card. **The master brand
+must outlive travel**: Sun yellow, ink, paper, typography, thin rules and
+restrained geometry carry the identity, while travel aspiration comes from
+product content and photography — so the brand extends to beauty, fashion, food,
+fitness, lifestyle and tech without depending on maps, hotels, airplanes,
+passport stamps, palms or beaches.
+
+Not decided here:
+Typography remains open (Archivo is a recommendation, not an approval), and the
+prototype's specific dimensions are implementation references rather than
+tokens. See `VISUAL_DIRECTION.md` §7 and §22.
+
+## D048 — Primary brand accent is Sun `#FFE01B`
+Status: Accepted
+
+The primary brand accent is **Sun `#FFE01B`**. The yellow exploration is closed;
+the warmer and brighter alternatives considered alongside it are rejected.
+
+Yellow must read bright, sunlit, contemporary and energetic. It must never read
+as mustard, ochre, beige, terracotta, rustic or bohemian.
+
+**Yellow is a brand / accent / selection / action color. It must never become a
+semantic success, warning or error color.**
+
+Reason:
+A single locked value removes an open question that would otherwise be
+re-litigated on every surface, and it lets tokens be built once. Keeping it out
+of the semantic palette is not a stylistic preference: A2's selection language
+depends on yellow meaning "this is the active thing" and "this is the primary
+action". A yellow that also means "warning" cannot carry either meaning
+reliably, and status would end up encoded by color alone — which the
+accessibility rules already forbid.
+
+Consequence:
+`--accent` becomes `#FFE01B` when Sprint 3A replaces the current placeholder
+blue. `--success`, `--warning` and `--danger` remain an independent system, and
+the warning color must be chosen so it cannot be mistaken for the accent.

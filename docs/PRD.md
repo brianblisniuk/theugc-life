@@ -134,7 +134,7 @@ Initial limits:
 - Up to 5 active pipeline items.
 - 1 active trip.
 - No premium hotel contacts.
-- No detailed premium intelligence.
+- No detailed premium intelligence. *(⚠ §12.8.1: no such tier is implemented — Free currently sees the same intelligence as every paid plan.)*
 - No AI outreach.
 
 Free limits must be configuration-driven, not hardcoded in UI business logic.
@@ -152,7 +152,7 @@ Includes inside purchased destination:
 
 - All premium hotel records.
 - Hotel contacts.
-- Premium creator intelligence.
+- Premium creator intelligence. *(⚠ not implemented — see §12.8.1.)*
 - CRM/pipeline functionality for destination hotels.
 - Trips.
 - Creator profile and portfolio.
@@ -177,7 +177,7 @@ Includes:
 
 - Worldwide premium database.
 - All hotel contacts.
-- All premium intelligence.
+- All premium intelligence. *(⚠ not implemented — see §12.8.1.)*
 - Full CRM.
 - Trips.
 - Creator portfolio/profile.
@@ -1126,11 +1126,15 @@ Cannot access premium hotel contacts.
 
 ### 10.3 Destination Pass
 
-Can access premium hotels/contacts/intelligence where hotel belongs to entitled destination or valid descendant destination according to access rules.
+Can access premium hotels/contacts where the hotel belongs to an entitled destination or a valid descendant destination according to access rules.
+
+*(⚠ Intelligence is NOT entitlement-gated in the built system — see §12.8.1.)*
 
 ### 10.4 Creator Pro
 
-Can access worldwide premium hotels, contacts, intelligence, CRM, trips, portfolio, and approved Pro features.
+Can access worldwide premium hotels, contacts, CRM, trips, portfolio, and approved Pro features.
+
+*(⚠ Intelligence is NOT entitlement-gated in the built system — see §12.8.1.)*
 
 ### 10.5 Private creator data
 
@@ -1427,6 +1431,11 @@ Exact dates may be replaced with coarser labels if re-identification risk is mat
 
 ### 12.8 Public vs Premium Intelligence
 
+> **⚠ UNRESOLVED PRODUCT CONTRACT — requires an owner decision.**
+> This section describes an intended split that **does not exist in the built
+> system**, and several commercial claims elsewhere in this PRD depend on it.
+> Read §12.8.1 before quoting any of it in marketing, pricing or UI copy.
+
 Public intelligence may include:
 
 - activity level
@@ -1441,6 +1450,67 @@ Premium intelligence may include, when confidence permits:
 - detailed collaboration signals
 
 Exact split is configuration/product policy, not hardcoded into database schema.
+
+#### 12.8.1 What is actually implemented (and the contradiction it creates)
+
+There is **one** intelligence projection reachable from a browser:
+`public.hotel_public_intelligence`. Since migration `0022`, the base aggregate
+tables (`hotel_intelligence`, `destination_intelligence`) are readable by
+`service_role` only — no client role, on any plan, holds a privilege to reach
+them. See [`docs/PERMISSIONS.md`](PERMISSIONS.md) §9.
+
+Disclosure in that projection is graduated by **confidence**, not by **plan**
+(D044):
+
+| Confidence | Disclosed |
+|---|---|
+| insufficient | confidence only |
+| emerging | + activity level, + collaboration boolean |
+| moderate | + coarse recency band |
+| strong | + reply rate |
+
+Two consequences follow, and both contradict the commercial language in this
+document:
+
+1. **Reply rate is not premium.** It is disclosed to anonymous visitors and Free
+   creators alike once a hotel reaches `strong` confidence. §12.8 above lists it
+   as premium.
+2. **No paid plan currently unlocks any intelligence a Free creator cannot
+   see.** Entitlements gate **contacts** (§7.3, PERMISSIONS.md §7), not
+   intelligence.
+
+The claims that depend on the unbuilt split, and are therefore **not currently
+true as written**:
+
+| Location | Claim | Status |
+|---|---|---|
+| §5.1 Free | "No detailed premium intelligence" | No such tier exists to withhold |
+| §5.2 Destination Pass | "Premium creator intelligence" | Not implemented |
+| §5.3 Creator Pro | "All premium intelligence" | Not implemented |
+| §10.3 Destination Pass | "premium hotels/contacts/intelligence" | Intelligence half not implemented |
+| §10.4 Creator Pro | "worldwide premium … intelligence" | Intelligence half not implemented |
+
+"Typical reply time" and "detailed collaboration signals" are not disclosed by
+any surface at all; `median_reply_hours` is computed and stored but never
+projected to a client.
+
+**This sync does not resolve the contradiction**, because resolving it is a
+commercial decision, not a wording fix. The owner must choose one of:
+
+- **(a) Drop the promise.** Intelligence is a universal, privacy-safe, confidence-
+  graduated layer; paid plans sell contacts, CRM, trips and future AI. Remove
+  the premium-intelligence language from §5.1/§5.2/§5.3/§10.3/§10.4 and §12.8.
+- **(b) Build the split.** Design a second, deliberately scoped premium
+  projection with its own suppression rules — never a grant on the base tables —
+  and define exactly which fields move behind entitlement, accepting that
+  removing already-public fields from the free tier is a regression for existing
+  users.
+- **(c) Redefine "premium intelligence"** as something the product already has
+  or plans (for example destination-level intelligence, which is unbuilt), and
+  restate the plan inclusions accordingly.
+
+Until then: **do not sell, promise, or render premium intelligence.** No surface
+may imply a creator is missing intelligence that a paid plan would reveal.
 
 ---
 
@@ -1961,6 +2031,65 @@ Goal: the creator feels they are maintaining their CRM, not completing surveys.
 ---
 
 ## 30. MVP Sprint Plan
+
+> **Read §30.0 first.** The original plan below was written before implementation
+> began, and the work did not land under those exact labels. §30.0 states what is
+> actually built, where each original sprint's deliverables ended up, and what
+> "Sprint 3" means from here. The original plan is preserved unedited as the
+> historical record; where the two disagree, §30.0 describes reality.
+
+### 30.0 As-built roadmap — current state and next phase
+
+#### Delivered (Core V1 — audited and closed)
+
+| Phase | Delivered |
+|---|---|
+| Sprint 0 / 0.1 | Repository, Next.js App Router, strict TypeScript, Tailwind, Supabase schema + RLS, auth, migrations, logging, analytics foundation, CI |
+| Sprint 1A | Seed-import foundation: canonical contract, staging, validation, conservative entity resolution, dry-run reports |
+| Sprint 1B | Destination catalog, review manifests, canonical promotion engine |
+| Sprint 1C | 30-property Dubai canonical pilot promoted to production |
+| Sprint 2A | Discover (search/filter/pagination) + Hotel Detail, entitlement-gated contacts |
+| Sprint 2B | Save to Pipeline (transactional, limit-safe) |
+| Sprint 2C | Pipeline transitions + trusted outreach event ledger |
+| Sprint 2D | Negotiation → deal won → collaboration |
+| Sprint 2E | Rebuildable hotel intelligence aggregation + privacy-safe public projection |
+| Sprint 2F | Collaboration lifecycle + won-cycle closure |
+| Sprint 2G | Pre-Sprint-3 core hardening: explicit ACL contract, session role resolution, pipeline pagination |
+
+**The original "Sprint 3 — Data Flywheel" was delivered under Sprints 2C–2F.**
+Outreach events, the collaboration entity, progressive event forms, intelligence
+aggregation, the confidence system and the safe public intelligence view all
+exist and are in production. Destination intelligence UI and the contact-signal
+workflow from that original list remain unbuilt and are tracked as open scope,
+not as a pending sprint.
+
+Core V1 is audited and closed — see
+[`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](audits/CORE_V1_AUDIT_CLOSEOUT.md) and
+[`docs/audits/PRE_SPRINT3_CORE_AUDIT.md`](audits/PRE_SPRINT3_CORE_AUDIT.md).
+
+#### Current phase
+
+**Visual Direction Gate — PASSED.** Visual Direction V1 is
+**A2 — Sunlit Creator OS** (D047), with **Sun `#FFE01B`** as the approved primary
+accent (D048). See [`docs/VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md).
+
+#### Next phase — the single meaning of "Sprint 3"
+
+**Sprint 3 = Product Experience.** From this point forward the label refers only
+to the implementation of Visual Direction V1 across the product surfaces. It
+does not refer to the data flywheel, which is already built.
+
+- **Sprint 3A** — Discover + map, implemented against A2.
+- Later Sprint 3 sub-phases — Hotel Detail, Pipeline, Home, applied
+  progressively as the visual language proves itself on real surfaces.
+
+Sprint 3A has explicit prerequisites and explicit out-of-scope items recorded in
+[`docs/VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md) §21–§23. Sprints 4–7 and the
+marketplace keep their original numbering and meaning below.
+
+---
+
+### Original MVP sprint plan (historical — written pre-implementation)
 
 ### Sprint 0 — Foundation
 

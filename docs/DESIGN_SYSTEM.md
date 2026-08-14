@@ -1,5 +1,11 @@
 # theugc.life — DESIGN_SYSTEM.md
-Version: 0.1 — implementation guardrails, not final brand bible.
+Version: 0.2 — implementation guardrails, not final brand bible.
+
+Visual Direction V1 is **A2 — Sunlit Creator OS** (D047), with **Sun `#FFE01B`**
+as the approved primary accent (D048). See
+[`VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md) for the direction itself, the
+approved Discover interaction model, and what remains open. This document covers
+how it is built.
 
 ## 1. Product feeling
 
@@ -107,7 +113,6 @@ No blank white screens.
 
 ## 9. Brand tokens
 
-Do not invent final brand colors/typefaces without approved brand direction.
 Implement semantic design tokens so visual branding can change centrally:
 - background
 - surface
@@ -119,6 +124,59 @@ Implement semantic design tokens so visual branding can change centrally:
 - radius
 - spacing
 - typography scale
+
+### 9.1 Accent — Sun `#FFE01B` (D048)
+
+`--accent` is **Sun `#FFE01B`**. The current `#2f6df6` blue in
+`src/app/globals.css` is the remaining placeholder and is replaced in Sprint 3A,
+not before.
+
+**The accent is a brand / selection / action color and must never carry semantic
+status meaning.** `--success`, `--warning` and `--danger` remain an independent
+system. A yellow that also means "warning" cannot simultaneously mean "selected"
+or "primary action", and A2's selection language depends on the latter. When
+choosing a warning color, choose one that cannot be confused with the accent.
+
+Yellow must read bright, sunlit, contemporary and energetic — never mustard,
+ochre, beige, terracotta, rustic or bohemian.
+
+### 9.2 Typography — still open
+
+Typefaces remain **unlocked**. **Archivo** is the current recommended candidate
+(VISUAL_DIRECTION.md §7) but has not been approved. Do not change the production
+type stack, and do not build tokens that assume a specific family, until it is.
+
+### 9.3 Containers are earned
+
+Avoid the generic SaaS composition in which every piece of information sits
+inside its own rounded card. A container is justified when it groups things that
+genuinely belong together, or when it is interactive as a unit — not by default.
+
+Prefer:
+
+- thin rules;
+- typographic hierarchy;
+- restrained geometry;
+- high information density;
+- real content — photography, names, places, numbers — as the visual structure.
+
+A screen where every element is boxed has no hierarchy left to express, and it is
+the fastest route to looking like every other creator-economy dashboard.
+
+### 9.4 The master brand must outlive travel
+
+The master-brand system is: **Sun yellow · ink · paper/near-white · typography ·
+thin structural rules · restrained geometry · photography and content where
+relevant.**
+
+Travel aspiration comes from **product content and photography**, not from the
+brand furniture. The identity must therefore not depend intrinsically on maps,
+hotels, airplanes, passport stamps, palms, beaches or any travel iconography, so
+that it extends to beauty, fashion, food, fitness, lifestyle, tech and other
+creator verticals without a rebrand.
+
+Travel motifs belong to the current vertical's content layer. If removing every
+travel image would leave the brand unrecognisable, the brand is too narrow.
 
 ## 10. Share outputs
 
