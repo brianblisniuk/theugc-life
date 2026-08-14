@@ -27,6 +27,10 @@ import {
   mapSaveResult,
   mapTransitionResult,
   type PipelineStatus,
+  COLLABORATION_ACTIONS,
+  mapCollaborationResult,
+  type CollaborationAction,
+  type CollaborationResult,
   type DealAction,
   type DealResult,
   type SaveResult,
@@ -216,6 +220,8 @@ export interface CycleCollaboration {
   status: string;
   collaborationType: string | null;
   agreedAt: string | null;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 /**
@@ -241,7 +247,8 @@ export async function getCycleCollaboration(
   const supabase = injectedClient ?? (await createClient());
   const { data, error } = await supabase
     .from("collaborations")
-    .select("id, status, collaboration_type, agreed_at")
+    // Financial columns are deliberately never selected — Sprint 2F shows none.
+    .select("id, status, collaboration_type, agreed_at, start_date, end_date")
     .eq("pipeline_item_id", pipelineItemId)
     .maybeSingle();
 
@@ -256,6 +263,8 @@ export async function getCycleCollaboration(
       status: String(row.status),
       collaborationType: (row.collaboration_type as string | null) ?? null,
       agreedAt: (row.agreed_at as string | null) ?? null,
+      startDate: (row.start_date as string | null) ?? null,
+      endDate: (row.end_date as string | null) ?? null,
     },
   };
 }
@@ -323,4 +332,51 @@ export async function refreshIntelligenceForPipelineItem(
   } catch {
     return false;
   }
+}
+
+/** The user-supplied half of a lifecycle request. Identity is NOT in here. */
+export interface CollaborationInput {
+  pipelineItemId: string;
+  action: CollaborationAction;
+  eventAt?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  termsMatched?: string | null;
+  wouldWorkAgain?: boolean | null;
+  cancelReason?: string | null;
+}
+
+/**
+ * Move a collaboration through its lifecycle (D045).
+ *
+ * `userId` MUST come from the server-side session. The RPC re-derives the
+ * creator, resolves the pipeline item and its collaboration itself, and closes
+ * the pipeline cycle in the same transaction when the collaboration reaches a
+ * terminal state — no collaboration id or hotel id is ever accepted here.
+ */
+export async function progressCollaboration(
+  userId: string,
+  input: CollaborationInput,
+): Promise<CollaborationResult> {
+  if (!isUuid(userId) || !isUuid(input.pipelineItemId)) return { result: "invalid_input" };
+  if (!(COLLABORATION_ACTIONS as readonly string[]).includes(input.action)) {
+    return { result: "invalid_input" };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("progress_collaboration", {
+    p_user_id: userId,
+    p_pipeline_item_id: input.pipelineItemId,
+    p_action: input.action,
+    p_event_at: input.eventAt ?? null,
+    p_start_date: input.startDate ?? null,
+    p_end_date: input.endDate ?? null,
+    p_terms_matched: input.termsMatched ?? null,
+    p_would_work_again: input.wouldWorkAgain ?? null,
+    p_cancel_reason: input.cancelReason ?? null,
+  });
+
+  // Never surface a raw Postgres/PostgREST error to the browser.
+  if (error) return { result: "error" };
+  return mapCollaborationResult(data);
 }

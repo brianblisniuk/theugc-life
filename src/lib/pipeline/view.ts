@@ -9,6 +9,8 @@
 import {
   PIPELINE_STATUSES,
   isSaveSuccessful,
+  collaborationResultMessage,
+  collaborationStatusLabel,
   collaborationTypeLabel,
   dealResultMessage,
   isDealSuccessful,
@@ -16,6 +18,9 @@ import {
   saveResultMessage,
   transitionResultMessage,
   type PipelineStatus,
+  type CollaborationAction,
+  type CollaborationResult,
+  type CollaborationStatus,
   type DealResult,
   type PipelineAction,
   type SaveResult,
@@ -290,16 +295,51 @@ export { isDealSuccessful };
 export type CollaborationLoadState =
   | {
       status: "found";
-      collaboration: { collaborationType: string | null; agreedAt: string | null };
+      collaboration: {
+        status?: string | null;
+        collaborationType: string | null;
+        agreedAt: string | null;
+        startDate?: string | null;
+        endDate?: string | null;
+      };
     }
   | { status: "none" }
   | { status: "error" };
 
 export type CollaborationPanelState =
   | { kind: "hidden" }
-  | { kind: "agreed"; title: string; typeLabel: string | null; agreedAt: string | null }
+  | {
+      kind: "lifecycle";
+      title: string;
+      status: CollaborationStatus;
+      typeLabel: string | null;
+      agreedAt: string | null;
+      startDate: string | null;
+      endDate: string | null;
+      actions: readonly CollaborationAction[];
+    }
   | { kind: "load_error"; title: string; body: string }
   | { kind: "integrity_problem"; title: string; body: string };
+
+/**
+ * Which lifecycle steps are offered from each collaboration status (D045).
+ * Terminal states offer none: the pipeline cycle is closed by then, and the
+ * relationship is free to start again through Save.
+ */
+const LIFECYCLE_ACTIONS: Record<string, readonly CollaborationAction[]> = {
+  agreed: ["schedule", "start", "cancel"],
+  scheduled: ["start", "cancel"],
+  active: ["complete", "cancel"],
+  completed: [],
+  cancelled: [],
+};
+
+export function collaborationLifecycleActions(
+  status: string | null | undefined,
+): readonly CollaborationAction[] {
+  if (!status) return [];
+  return LIFECYCLE_ACTIONS[status] ?? [];
+}
 
 /**
  * A `won` cycle must have a collaboration; that is the whole point of writing
@@ -330,12 +370,42 @@ export function collaborationPanelState(input: {
       body: COLLABORATION_COPY.integrityBody,
     };
   }
+  const collaboration = input.load.collaboration;
+  const status = (collaboration.status ?? "agreed") as CollaborationStatus;
+
   return {
-    kind: "agreed",
-    title: COLLABORATION_COPY.agreedTitle,
-    typeLabel: input.load.collaboration.collaborationType
-      ? collaborationTypeLabel(input.load.collaboration.collaborationType)
+    kind: "lifecycle",
+    title: collaborationStatusLabel(status),
+    status,
+    typeLabel: collaboration.collaborationType
+      ? collaborationTypeLabel(collaboration.collaborationType)
       : null,
-    agreedAt: input.load.collaboration.agreedAt,
+    agreedAt: collaboration.agreedAt,
+    startDate: collaboration.startDate ?? null,
+    endDate: collaboration.endDate ?? null,
+    actions: collaborationLifecycleActions(status),
   };
+}
+
+/** Lifecycle controls exist only for a collaboration we actually loaded. */
+export function shouldOfferLifecycle(state: CollaborationPanelState): boolean {
+  return state.kind === "lifecycle" && state.actions.length > 0;
+}
+
+export type LifecycleControlState =
+  { kind: "idle" } | { kind: "applied"; message: string } | { kind: "problem"; message: string };
+
+/**
+ * `already_applied` is a success: a double-clicked "Complete collaboration"
+ * must not read as a failure. Nothing on this path is a commercial limit, so
+ * no lifecycle outcome ever offers an upgrade.
+ */
+export function lifecycleControlState(
+  result: CollaborationResult | null | undefined,
+): LifecycleControlState {
+  if (!result) return { kind: "idle" };
+  if (result.result === "applied" || result.result === "already_applied") {
+    return { kind: "applied", message: collaborationResultMessage(result) };
+  }
+  return { kind: "problem", message: collaborationResultMessage(result) };
 }

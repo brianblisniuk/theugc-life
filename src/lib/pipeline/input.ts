@@ -13,14 +13,19 @@
 import { isUuid } from "@/lib/hotels/ids";
 
 import {
+  CANCELLATION_REASONS,
   CLOSE_REASONS,
   COLLABORATION_TYPES,
   DEAL_ACTIONS,
   OFFER_TYPES,
   OUTREACH_CHANNELS,
   REPLY_SENTIMENTS,
+  TERMS_MATCHED_VALUES,
   WORKFLOW_ACTIONS,
+  isCollaborationAction,
   isDealAction,
+  parseWouldWorkAgain,
+  type CollaborationAction,
   type DealAction,
   type PipelineAction,
   type WorkflowAction,
@@ -43,6 +48,11 @@ export interface WorkflowFormFields {
   offerType?: string | null;
   closeReason?: string | null;
   collaborationType?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  termsMatched?: string | null;
+  wouldWorkAgain?: string | null;
+  cancelReason?: string | null;
 }
 
 export interface ParsedTransition {
@@ -224,3 +234,93 @@ export const ALL_PIPELINE_ACTIONS: readonly PipelineAction[] = [
   ...WORKFLOW_ACTIONS,
   ...DEAL_ACTIONS,
 ];
+
+/** A parsed collaboration lifecycle request. */
+export interface ParsedCollaboration {
+  pipelineItemId: string;
+  action: CollaborationAction;
+  /** Full ISO instant for event-producing actions; null for `schedule`. */
+  eventAt: string | null;
+  /** Calendar dates, stored as DATE columns. */
+  startDate: string | null;
+  endDate: string | null;
+  termsMatched: string | null;
+  wouldWorkAgain: boolean | null;
+  cancelReason: string | null;
+}
+
+export type CollaborationParseResult =
+  { ok: true; value: ParsedCollaboration } | { ok: false; reason: "invalid_input" };
+
+/** Accept only a bare YYYY-MM-DD for a DATE column, and only a real day. */
+export function parseCalendarDate(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number) as [number, number, number];
+  const civil = new Date(Date.UTC(year, month - 1, day));
+  if (
+    civil.getUTCFullYear() !== year ||
+    civil.getUTCMonth() !== month - 1 ||
+    civil.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Parse the collaboration lifecycle form.
+ *
+ * Two date shapes travel together on purpose (Sprint 2C's timezone lesson): an
+ * ISO instant the browser derived from the creator's local calendar day, for
+ * the domain event, and the plain YYYY-MM-DD for the DATE columns. A bare day
+ * is refused where an instant is required, because reading it as UTC midnight
+ * is exactly the bug that told creators their work happened in the future.
+ */
+export function parseCollaborationForm(fields: WorkflowFormFields): CollaborationParseResult {
+  const pipelineItemId = clean(fields.pipelineItemId);
+  const action = clean(fields.action);
+
+  if (!pipelineItemId || !isUuid(pipelineItemId)) return INVALID;
+  if (!action || !isCollaborationAction(action)) return INVALID;
+
+  const eventAt = parseEventInstant(clean(fields.eventAt));
+  const startDate = parseCalendarDate(clean(fields.startDate));
+  const endDate = parseCalendarDate(clean(fields.endDate));
+  const termsMatched = clean(fields.termsMatched);
+  const cancelReason = clean(fields.cancelReason);
+  const wouldWorkAgain = parseWouldWorkAgain(clean(fields.wouldWorkAgain));
+
+  const base = {
+    pipelineItemId,
+    action,
+    eventAt,
+    startDate,
+    endDate,
+    termsMatched,
+    wouldWorkAgain,
+    cancelReason,
+  } satisfies ParsedCollaboration;
+
+  switch (action) {
+    case "schedule":
+      // Planning state, not an event: a future date is valid and none is sent.
+      if (!startDate) return INVALID;
+      if (endDate && endDate < startDate) return INVALID;
+      return { ok: true, value: { ...base, eventAt: null } };
+    case "start":
+      if (!eventAt || !startDate) return INVALID;
+      return { ok: true, value: base };
+    case "complete":
+      if (!eventAt || !endDate) return INVALID;
+      if (!termsMatched || !(TERMS_MATCHED_VALUES as readonly string[]).includes(termsMatched)) {
+        return INVALID;
+      }
+      return { ok: true, value: base };
+    case "cancel":
+      if (!eventAt) return INVALID;
+      if (!cancelReason || !(CANCELLATION_REASONS as readonly string[]).includes(cancelReason)) {
+        return INVALID;
+      }
+      return { ok: true, value: base };
+  }
+}

@@ -16,17 +16,20 @@ import { getSessionContext } from "@/lib/auth/guards";
 
 import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
 
-import { parseDealForm, parseWorkflowForm } from "./input";
+import { parseCollaborationForm, parseDealForm, parseWorkflowForm } from "./input";
 import {
+  progressCollaboration,
   progressPipelineDeal,
   refreshIntelligenceForPipelineItem,
   saveHotelToPipeline,
   transitionPipelineItem,
 } from "./queries";
 import {
+  isCollaborationSuccessful,
   isDealSuccessful,
   isSaveSuccessful,
   isTransitionSuccessful,
+  type CollaborationResult,
   type DealResult,
   type SaveResult,
   type TransitionResult,
@@ -130,6 +133,50 @@ export async function progressPipelineDealAction(formData: FormData): Promise<De
   // Same best-effort contract as the workflow action: the deal is recorded
   // whatever the aggregate does.
   if (shouldRefreshIntelligence(result)) {
+    await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
+  }
+
+  return result;
+}
+
+/**
+ * Collaboration lifecycle server action (PRD §7.4, D045).
+ *
+ * The browser names a pipeline item, an action, and the fields the creator
+ * filled in. Identity comes from the session; the collaboration and the hotel
+ * are resolved inside the database.
+ */
+export async function progressCollaborationAction(
+  formData: FormData,
+): Promise<CollaborationResult> {
+  const session = await getSessionContext();
+  if (!session) return { result: "error" };
+
+  const parsed = parseCollaborationForm({
+    pipelineItemId: readField(formData, "pipelineItemId"),
+    action: readField(formData, "action"),
+    eventAt: readField(formData, "eventAt"),
+    startDate: readField(formData, "startDate"),
+    endDate: readField(formData, "endDate"),
+    termsMatched: readField(formData, "termsMatched"),
+    wouldWorkAgain: readField(formData, "wouldWorkAgain"),
+    cancelReason: readField(formData, "cancelReason"),
+  });
+  if (!parsed.ok) return { result: "invalid_input" };
+
+  const hotelId = readField(formData, "hotelId");
+  const result = await progressCollaboration(session.userId, parsed.value);
+
+  if (isCollaborationSuccessful(result)) {
+    if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
+    revalidatePath("/app/pipeline");
+  }
+
+  // `collaboration_started` and `collaboration_completed` are qualifying
+  // activity events for 0022, so a successful lifecycle move refreshes the
+  // derived intelligence — after the fact, from the item id, and with its
+  // outcome ignored. `schedule` emits no event and needs no refresh.
+  if (isCollaborationSuccessful(result) && parsed.value.action !== "schedule") {
     await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
   }
 
