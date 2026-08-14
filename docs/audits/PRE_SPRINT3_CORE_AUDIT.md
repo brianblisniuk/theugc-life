@@ -606,6 +606,10 @@ existing promise.
 
 ## 19. Final recommendation
 
+> **Superseded by §21.** This was the recommendation at audit time, before any
+> remediation existed. Sprint 2G has since closed the P1 and both P2 items; the
+> current standing is recorded in §21. The original text is preserved.
+
 **C — HARDENING SPRINT REQUIRED.**
 
 The rubric assigns C whenever a P1 exists, and F-01 is a genuine P1: an entire
@@ -714,3 +718,165 @@ is narrower than §17 asserted. No P0 was found in either the replay or the
 external verification, no cross-creator exposure was identified, and no core
 redesign is required. **Sprint 2G is the remediation gate**; the per-finding
 outcome is recorded in §21.
+
+---
+
+## 21. Sprint 2G remediation status
+
+Sprint 2G was the remediation gate for this audit. It added no product
+capability and changed no domain rule. This section records, per finding, what
+was actually done.
+
+### 21.1 Per-finding outcome
+
+| ID | Sev | Status | Where |
+|---|---|---|---|
+| F-01 | P1 | **FIXED** | `0024`, `src/lib/auth/guards.ts`, `tests/auth/session-role.test.ts` |
+| External ACL drift (§20.3 C/D) | P1-equivalent | **FIXED** | `0024`, `tests/rls/acl-matrix.test.ts`, D046 |
+| F-02 | P2 | **ACCEPTED DEFERRED (P2)** | §20.4, D046 boundaries |
+| F-03 | P2 | **FIXED** | `src/lib/pipeline/{queries,view}.ts`, `tests/pipeline/pagination.test.ts` |
+| F-04 | P3 | DEFERRED | orphan collaborations; no code path deletes a pipeline item today |
+| F-05 | P3 | DEFERRED — **blocks account deletion** | intelligence is not recomputed when a creator is deleted |
+| F-06 | P3 | DEFERRED | in-band best-effort refresh; revisit when a job runner exists |
+| F-07 | P3 | **FIXED** | `0024` grants `service_role` SELECT on `hotel_public_intelligence` |
+| F-08 | P3 | DEFERRED | Discover's exact count; immaterial at catalogue scale today |
+| F-09 … F-13 | P4 | **FIXED** | EVENTS.md §3/§4/§5, PERMISSIONS.md §1/§4/§5/§6/§9/§13 |
+| F-14 | P4 | **FIXED** | `tests/auth/session-role.test.ts` (18 tests, DB-backed) |
+
+### 21.2 F-01 — exact remediation
+
+Two halves, because the finding had two halves.
+
+**Database.** `0024_explicit_acl_contract.sql` grants `select, update on
+public.users to authenticated`. `users_select_own` / `users_update_own` restrict
+both to `id = auth.uid()`, and `prevent_user_privilege_change` still rejects any
+attempt to alter `role` or `status` from a client role. No INSERT (rows come
+from the signup trigger), no DELETE, no TRUNCATE. The two policies are no longer
+dead code.
+
+**Application.** `getSessionContext()` is replaced by `resolveSession()`, which
+returns `authenticated` / `anonymous` / `error` instead of `SessionContext |
+null`. The `creator` fallback survives in exactly one condition — the query
+succeeded and returned no row, which is a genuinely roleless brand-new account.
+A permission failure, a transport failure, an auth-service failure or a row
+carrying a role the application does not model all resolve to `error`.
+`requireUser` raises a sanitized `SessionUnavailableError` rather than rendering
+a protected surface under a guessed role, and never reports a database failure
+as "you are signed out"; `requireRole` therefore cannot present a lookup failure
+as "you are not an admin". Server actions map both non-authenticated outcomes to
+their existing sanitized `error` result. No PostgREST payload reaches a rendered
+page.
+
+**Proof.** `tests/auth/session-role.test.ts` runs the `public.users` read as the
+real `authenticated` Postgres role under the real policy. Six of its assertions
+fail against the pre-fix `?? "creator"` behaviour, verified by reverting the
+guard and re-running.
+
+### 21.3 External ACL drift — exact remediation
+
+`0024` revokes every relation privilege in `public` from `anon`,
+`authenticated` and `PUBLIC` — blanket first, then by name — and re-grants, by
+name, exactly what each client role needs. `service_role` coverage is stated
+rather than inherited. `TRUNCATE`, `REFERENCES` and `TRIGGER` are false for
+every client role on every relation. Default privileges for future tables,
+sequences and functions in `public` are revoked from the client roles, so the
+same divergence cannot reappear the next time a migration creates an object.
+
+No RLS policy was added, dropped or widened: all 51 policies and all function
+execute boundaries are byte-for-byte what they were. Supabase-owned schemas
+(`auth`, `storage`, `supabase_migrations`) were not touched.
+
+`tests/rls/acl-matrix.test.ts` pins the whole matrix, asserts it as a single map
+so one drifted bit fails, and fails if a relation appears that the contract does
+not name — which is what turns "a future migration relied on hosted defaults"
+into a red build rather than a silent divergence. Eleven of its assertions fail
+without `0024`. D046 records the principle.
+
+### 21.4 F-03 — exact remediation
+
+`listPipelineItems` now takes a page number and returns
+`{ items, total, page, pageSize, totalPages, hasPrevious, hasNext }` or a
+sanitized error. The total is an exact database count of the filtered set, taken
+before the page read; a failed count is an error, never a zero. Page size is 50,
+paging is URL-backed through `?page=N`, a page past the end clamps to the last
+real page rather than rendering as an empty pipeline, and any `?page=` value
+that is not a positive whole number resolves to page 1. The summary states the
+whole pipeline and the visible window ("243 hotels · Showing 51–100") rather
+than the page size. Reads stay on the cookie-bound client, so `pipeline_items_all`
+still enforces ownership — pagination was not an excuse to reach for
+service_role.
+
+`tests/pipeline/pagination.test.ts` seeds 243 relationships for one creator and
+7 for another against a real database and asserts the exact total, per-page
+contents and ordering, no overlap across pages, filtered totals, out-of-range
+clamping, another creator's rows never appearing, and both failure paths.
+
+### 21.5 F-02 — why it stays deferred
+
+Recorded in §20.4 and in D046's boundaries. In short: two partial unique indexes
+genuinely prevent two open cycles per creator+hotel and two collaborations per
+cycle; the remaining cross-table lifecycle invariants are detected by the RPCs,
+not prevented by constraints; the RPCs are the canonical mutation boundary and
+client writes to all three tables are revoked, so no browser path reaches these
+states; and any future privileged tooling must uphold the invariants itself.
+Arbitrary `postgres` or `service_role` SQL against these tables is not safe by
+construction. Adding constraint triggers now would put new write-path and lock
+behaviour into the exact code this sprint hardened.
+
+### 21.6 Explicitly out of scope, and why
+
+- **`users.status` as a session gate.** No document defines `suspended` or
+  `deleted` as a condition that blocks a session — `DATABASE.md §3` only lists
+  the allowed values. Implementing a block would have been inventing a contract,
+  and inventing one silently is worse than not having one. Left unchanged and
+  recorded here as future work: if suspension is to mean anything, it needs a
+  decision record first, then a resolution rule, then a test.
+- **F-04, F-05, F-06, F-08**, plus the advisor's RLS-performance warnings,
+  unindexed non-critical foreign keys and "unused index" findings. The last of
+  these deserves a note: the production database has had effectively no traffic,
+  so "unused" means "not yet used". **No index was removed on the strength of
+  usage statistics from an idle database.**
+
+### 21.7 Gate results
+
+| Gate | Result |
+|---|---|
+| Fresh replay `0001 → 0024` from an empty database | **PASS** (24/24) |
+| `0001 … 0023` unchanged | **PASS** (diff against `origin/main` touches no existing migration) |
+| `npm test` | **PASS** — 731 tests, 36 files (was 676 / 33) |
+| `npm run lint` | PASS |
+| `npm run typecheck` | PASS |
+| `npm run build` | PASS |
+| `npm run format:check` | PASS |
+| RLS enabled on every application table | PASS (36/36) |
+| Policy count | 51, unchanged |
+| Application RPC execute boundaries | unchanged; `anon`/`authenticated` false, `service_role` true, `search_path` pinned on all eight |
+| Production Supabase | **NOT contacted**; `0024` **NOT deployed** |
+
+Security advisor (§22 of the sprint brief): `0024` creates no function, no view,
+no extension and no `SECURITY DEFINER` object, and changes no `search_path`. The
+accepted pre-existing findings — the definer-rights `hotel_public_intelligence`
+view, `citext` and `pgcrypto` in `public`, and the deliberately
+PUBLIC-executable self-scoped wrappers — are untouched, and every table retains
+at least one policy. No new finding is introduced. Confirmation against the
+hosted advisor is the external reviewer's step, after deployment.
+
+### 21.8 Final recommendation
+
+**B — CORE AUDIT PASSED WITH NON-BLOCKING DEBT.**
+
+No P0. No P1 outstanding: F-01 and the external ACL drift finding are both
+fixed, with regression coverage that fails against the pre-fix code. Both P2
+items are resolved or explicitly accepted with a written rationale. Every 2G
+gate is green.
+
+Not A. The debt is real and is written down rather than waved away: F-02's
+cross-table invariants are policy rather than structure; account deletion is
+blocked by F-05; the in-band intelligence refresh and Discover's exact count are
+known costs; `users.status` has no defined meaning; and the privilege contract's
+convergence with production is asserted locally but has not yet been confirmed
+against the deployed database.
+
+The core is ready for the **CORE V1 AUDITED AND CLOSED** designation once the
+external reviewer has deployed `0024` and confirmed production matches the
+contract in `tests/rls/acl-matrix.test.ts`.
