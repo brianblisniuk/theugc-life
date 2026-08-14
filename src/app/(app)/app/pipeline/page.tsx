@@ -1,16 +1,24 @@
 /**
  * Pipeline — the creator's private CRM list (PRD §7.4).
  *
- * Sprint 2B ships the LIST only: no Kanban, no status transitions, no notes or
- * follow-up editing. Rows are creator-owned by RLS (`pipeline_items_all`), and
- * contacts are deliberately never queried here.
+ * The list is paginated server-side: the page states how many relationships the
+ * creator actually has (an exact database count) and how many of them are on
+ * screen, so a large pipeline is never silently truncated. Rows are
+ * creator-owned by RLS (`pipeline_items_all`), and contacts are deliberately
+ * never queried here.
  */
 import Link from "next/link";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
+import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
 import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filter";
-import { listPipelineItems, type PipelineListItem } from "@/lib/pipeline/queries";
+import {
+  listPipelineItems,
+  normalizePageParam,
+  type PipelineListItem,
+  type PipelinePage,
+} from "@/lib/pipeline/queries";
 import { pipelineStatusLabel } from "@/lib/pipeline/types";
 import { PIPELINE_COPY, normalizeStatusFilter, pipelineListState } from "@/lib/pipeline/view";
 
@@ -63,16 +71,20 @@ export default async function PipelinePage({
 }) {
   const raw = await searchParams;
   const status = normalizeStatusFilter(raw.status);
+  const requestedPage = normalizePageParam(raw.page);
 
-  let items: PipelineListItem[] | null = null;
+  let loaded: PipelinePage | null = null;
   let failed = false;
   try {
-    items = await listPipelineItems(status);
+    const result = await listPipelineItems(status, requestedPage);
+    if (result.status === "ok") loaded = result.page;
+    else failed = true;
   } catch {
     failed = true;
   }
 
-  const state = pipelineListState({ failed, items, status });
+  const state = pipelineListState({ failed, page: loaded, status });
+  const items: PipelineListItem[] = loaded?.items ?? [];
 
   return (
     <div className="space-y-6">
@@ -94,12 +106,14 @@ export default async function PipelinePage({
         <div className="space-y-3">
           <p className="text-sm text-muted" role="status" aria-live="polite">
             {state.summary}
+            {state.range ? <span className="ml-2">· {state.range}</span> : null}
           </p>
           <ul className="space-y-3">
-            {(items ?? []).map((item) => (
+            {items.map((item) => (
               <Row key={item.id} item={item} />
             ))}
           </ul>
+          {state.pagination ? <PipelinePagination state={state.pagination} /> : null}
         </div>
       ) : state.kind === "empty_filtered" ? (
         <EmptyState title={state.title} description="Try a different status, or clear the filter.">
