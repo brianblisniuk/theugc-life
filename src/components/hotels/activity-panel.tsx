@@ -13,12 +13,14 @@
  */
 import Link from "next/link";
 
+import { CollaborationLifecycle } from "@/components/pipeline/collaboration-lifecycle";
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
 import {
   activityPanelState,
   collaborationPanelState,
+  shouldOfferLifecycle,
   shouldOfferWorkflow,
 } from "@/lib/pipeline/view";
 
@@ -71,23 +73,47 @@ export function ActivityPanel({
           </p>
         </div>
 
-        {deal.kind === "agreed" ? (
-          <div className="space-y-1 rounded-[var(--radius-app)] border border-border bg-background p-4">
-            <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
-              {deal.typeLabel ? (
-                <div className="flex gap-2">
-                  <dt>Type</dt>
-                  <dd className="font-medium text-text">{deal.typeLabel}</dd>
-                </div>
-              ) : null}
-              {formatDate(deal.agreedAt) ? (
-                <div className="flex gap-2">
-                  <dt>Agreed</dt>
-                  <dd className="font-medium text-text">{formatDate(deal.agreedAt)}</dd>
-                </div>
-              ) : null}
-            </dl>
+        {deal.kind === "lifecycle" ? (
+          <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-background p-4">
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
+              <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
+                {deal.typeLabel ? (
+                  <div className="flex gap-2">
+                    <dt>Type</dt>
+                    <dd className="font-medium text-text">{deal.typeLabel}</dd>
+                  </div>
+                ) : null}
+                {formatDate(deal.agreedAt) ? (
+                  <div className="flex gap-2">
+                    <dt>Agreed</dt>
+                    <dd className="font-medium text-text">{formatDate(deal.agreedAt)}</dd>
+                  </div>
+                ) : null}
+                {deal.startDate ? (
+                  <div className="flex gap-2">
+                    <dt>Start</dt>
+                    <dd className="font-medium text-text">{deal.startDate}</dd>
+                  </div>
+                ) : null}
+                {deal.endDate ? (
+                  <div className="flex gap-2">
+                    <dt>End</dt>
+                    <dd className="font-medium text-text">{deal.endDate}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+
+            {/* Lifecycle controls exist only for a collaboration we actually
+                loaded — never for a failed read or a missing record. */}
+            {shouldOfferLifecycle(deal) && relationship.status === "open" ? (
+              <CollaborationLifecycle
+                pipelineItemId={relationship.relationship.pipelineItemId}
+                hotelId={hotelId}
+                actions={deal.actions}
+              />
+            ) : null}
           </div>
         ) : deal.kind === "load_error" || deal.kind === "integrity_problem" ? (
           <div className="space-y-1 rounded-[var(--radius-app)] border border-border bg-background p-4">

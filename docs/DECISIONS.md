@@ -475,3 +475,74 @@ Reason:
 These are the first metrics theugc.life asserts about someone else's business.
 An inflated or fabricated one is not a rounding error — it is a false public
 claim about a hotel, made from data its subject cannot see or correct.
+
+## D045 — Collaboration lifecycle and won-cycle closure
+Status: Accepted
+
+`won` describes the DEAL, not the collaboration. A cycle therefore stays open
+while the collaboration runs, and closes only when the collaboration reaches a
+terminal state.
+
+**Lifecycle.**
+
+```
+won + agreed  →  scheduled (optional)  →  active  →  completed | cancelled  →  pipeline closed
+```
+
+The pipeline cycle remains `won` while the collaboration is `agreed`,
+`scheduled` or `active`. It becomes `closed` only on `completed` or
+`cancelled`.
+
+Reason:
+Before this, a won cycle stayed open forever — it held a Free engaged slot and
+permanently blocked the creator↔hotel pair from a second relationship, because
+the database allows only one non-closed cycle per pair (D023). Winning a deal
+should not cost a creator a slot for the rest of time. Only the end of the
+collaboration should free the relationship and the capacity.
+
+**A cancelled collaboration is not a lost deal.**
+
+Cancellation never emits `deal_lost` and never erases or rewrites `deal_won`.
+The deal really was won; the collaboration later failed to complete. Those are
+two different facts about two different moments, and collapsing them would
+corrupt every funnel metric derived from the ledger (D044 counts a cycle's
+`deal_won` exactly once) while destroying the distinction Experience
+Intelligence will need — "agreed then cancelled" is a materially different
+signal from "never agreed at all".
+
+`collaborations.status = 'cancelled'` is the first-class collaboration fact.
+The cycle's closure is recorded with the existing `creator_closed_pipeline`
+event, whose meaning is already "closed without a deal-loss classification",
+carrying `reason = 'collaboration_cancelled'`, the `cancellation_reason`
+(`creator_cancelled` | `hotel_cancelled` | `mutual` | `other`) and the
+`collaboration_id`. No new event type is added to finish this slice.
+
+**Per-action semantics.**
+
+- **Schedule** (`agreed → scheduled`) records planned `start_date` and optional
+  `end_date`. It emits no domain event: scheduling is the creator's own
+  planning state, not a creator↔hotel interaction, so future dates are valid
+  and it contributes nothing to intelligence.
+- **Start** (`agreed | scheduled → active`) emits `collaboration_started`,
+  stores `start_date`, and preserves any scheduled `end_date`.
+- **Complete** (`active → completed`) emits `collaboration_completed` carrying
+  `collaboration_id`, `terms_matched` and `would_work_again`, stores the end
+  date and both answers, and closes the cycle.
+- **Cancel** (`agreed | scheduled | active → cancelled`) closes the cycle as
+  described above. Cancelling an ACTIVE collaboration sets `end_date` to the
+  supplied cancellation day when none is recorded yet; cancelling before it
+  started leaves `end_date` untouched, because there was no period to end.
+
+**`would_work_again` is three-valued.** `yes` → true, `no` → false, "not sure"
+→ NULL. Recording uncertainty as "no" would invent a negative judgement about a
+hotel that the creator did not make.
+
+**Rescheduling and editing are out of scope.** Retries are idempotent and
+report the ORIGINAL stored values rather than overwriting them with whatever
+was posted again, so a double-clicked form cannot silently rewrite a recorded
+date, reason or answer.
+
+**Terminal states are terminal.** Once closed, the lifecycle offers nothing
+further; the creator starts a NEW cycle through Save, which increments
+`cycle_number` and leaves all previous history — including the completed or
+cancelled collaboration — intact.

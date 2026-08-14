@@ -403,3 +403,179 @@ export function dealResultMessage(result: DealResult): string {
       return "We couldn’t record that just now. Please try again.";
   }
 }
+
+/* ==================================================================== */
+/* Collaboration lifecycle (Sprint 2F — EVENTS.md §3, D045)             */
+/* ==================================================================== */
+
+export const COLLABORATION_ACTIONS = ["schedule", "start", "complete", "cancel"] as const;
+export type CollaborationAction = (typeof COLLABORATION_ACTIONS)[number];
+
+export function isCollaborationAction(action: string): action is CollaborationAction {
+  return (COLLABORATION_ACTIONS as readonly string[]).includes(action);
+}
+
+/** `collaborations.status` vocabulary (migration 0006 CHECK constraint). */
+export const COLLABORATION_STATUSES = [
+  "agreed",
+  "scheduled",
+  "active",
+  "completed",
+  "cancelled",
+] as const;
+export type CollaborationStatus = (typeof COLLABORATION_STATUSES)[number];
+
+/** `collaborations.terms_matched` vocabulary (migration 0006). */
+export const TERMS_MATCHED_VALUES = ["yes", "partially", "no", "unknown"] as const;
+export type TermsMatched = (typeof TERMS_MATCHED_VALUES)[number];
+
+export const CANCELLATION_REASONS = [
+  "creator_cancelled",
+  "hotel_cancelled",
+  "mutual",
+  "other",
+] as const;
+export type CancellationReason = (typeof CANCELLATION_REASONS)[number];
+
+const COLLABORATION_ACTION_LABEL: Record<CollaborationAction, string> = {
+  schedule: "Schedule",
+  start: "Start collaboration",
+  complete: "Complete collaboration",
+  cancel: "Cancel collaboration",
+};
+
+const COLLABORATION_STATUS_LABEL: Record<string, string> = {
+  agreed: "Collaboration agreed",
+  scheduled: "Collaboration scheduled",
+  active: "Collaboration active",
+  completed: "Collaboration completed",
+  cancelled: "Collaboration cancelled",
+};
+
+const TERMS_MATCHED_LABEL: Record<string, string> = {
+  yes: "Yes",
+  partially: "Partially",
+  no: "No",
+  unknown: "Not sure",
+};
+
+const CANCELLATION_REASON_LABEL: Record<string, string> = {
+  creator_cancelled: "I cancelled",
+  hotel_cancelled: "The hotel cancelled",
+  mutual: "Mutual",
+  other: "Other",
+};
+
+export function collaborationActionLabel(action: CollaborationAction): string {
+  return COLLABORATION_ACTION_LABEL[action];
+}
+export function collaborationStatusLabel(status: string | null): string {
+  if (!status) return "Collaboration";
+  return COLLABORATION_STATUS_LABEL[status] ?? "Collaboration";
+}
+export function termsMatchedLabel(value: string): string {
+  return TERMS_MATCHED_LABEL[value] ?? value;
+}
+export function cancellationReasonLabel(value: string): string {
+  return CANCELLATION_REASON_LABEL[value] ?? value.replace(/_/g, " ");
+}
+
+/**
+ * "Would you work with them again?" has THREE answers. `null` is "not sure",
+ * which is a real response and must never be stored as "no".
+ */
+export function parseWouldWorkAgain(value: string | null | undefined): boolean | null {
+  if (value === "yes") return true;
+  if (value === "no") return false;
+  return null;
+}
+
+/** Sanitized outcomes of a collaboration lifecycle attempt. */
+export type CollaborationResult =
+  | {
+      result: "applied";
+      collaborationStatus: CollaborationStatus;
+      pipelineStatus: PipelineStatus;
+    }
+  | {
+      result: "already_applied";
+      collaborationStatus: CollaborationStatus;
+      pipelineStatus: PipelineStatus;
+    }
+  | { result: "invalid_transition" }
+  | { result: "invalid_input" }
+  | { result: "invalid_event_time" }
+  | { result: "pipeline_item_not_found" }
+  | { result: "creator_profile_missing" }
+  | { result: "collaboration_not_found" }
+  | { result: "integrity_error" }
+  | { result: "error" };
+
+export function isCollaborationSuccessful(result: CollaborationResult): boolean {
+  return result.result === "applied" || result.result === "already_applied";
+}
+
+/** Map the RPC payload to a typed, sanitized result. */
+export function mapCollaborationResult(payload: unknown): CollaborationResult {
+  if (!payload || typeof payload !== "object") return { result: "error" };
+  const row = payload as Record<string, unknown>;
+  const collaborationStatus =
+    typeof row.collaboration_status === "string"
+      ? (row.collaboration_status as CollaborationStatus)
+      : null;
+  const pipelineStatus =
+    typeof row.pipeline_status === "string" ? (row.pipeline_status as PipelineStatus) : null;
+
+  switch (row.result) {
+    case "applied":
+    case "already_applied":
+      return collaborationStatus && pipelineStatus
+        ? {
+            result: row.result === "applied" ? "applied" : "already_applied",
+            collaborationStatus,
+            pipelineStatus,
+          }
+        : { result: "error" };
+    case "invalid_transition":
+      return { result: "invalid_transition" };
+    case "invalid_input":
+      return { result: "invalid_input" };
+    case "invalid_event_time":
+      return { result: "invalid_event_time" };
+    case "pipeline_item_not_found":
+      return { result: "pipeline_item_not_found" };
+    case "creator_profile_missing":
+      return { result: "creator_profile_missing" };
+    case "collaboration_not_found":
+      return { result: "collaboration_not_found" };
+    case "integrity_error":
+      return { result: "integrity_error" };
+    default:
+      return { result: "error" };
+  }
+}
+
+/** User-facing message for a lifecycle outcome. Never leaks internal detail. */
+export function collaborationResultMessage(result: CollaborationResult): string {
+  switch (result.result) {
+    case "applied":
+    case "already_applied":
+      return `${collaborationStatusLabel(result.collaborationStatus)}.`;
+    case "invalid_transition":
+      return "That step isn’t available at this stage. Reload the page to see the current state.";
+    case "invalid_input":
+      return "Please check the dates and details and try again.";
+    case "invalid_event_time":
+      return "That date doesn’t fit this collaboration — it can’t be in the future or before it started.";
+    case "pipeline_item_not_found":
+      return "We couldn’t find this relationship. Reload the page to try again.";
+    case "creator_profile_missing":
+      return "We couldn’t find your creator profile. Please reload and try again.";
+    case "collaboration_not_found":
+      return "We couldn’t find a collaboration for this relationship.";
+    case "integrity_error":
+      return "This collaboration’s records don’t line up, so we didn’t change anything. Please contact support.";
+    default:
+      return "We couldn’t record that just now. Please try again.";
+  }
+}

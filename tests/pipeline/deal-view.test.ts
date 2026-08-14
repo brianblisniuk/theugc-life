@@ -341,8 +341,11 @@ describe("collaboration panel", () => {
 
   it("shows the agreed collaboration on a won cycle", () => {
     const state = collaborationPanelState({ status: "won", load: found });
-    expect(state).toEqual({
-      kind: "agreed",
+    // Sprint 2F widened this panel into the lifecycle surface; an agreed
+    // collaboration is its first state.
+    expect(state).toMatchObject({
+      kind: "lifecycle",
+      status: "agreed",
       title: "Collaboration agreed",
       typeLabel: "Stay + paid",
       agreedAt: "2026-08-01T00:00:00.000Z",
@@ -376,7 +379,19 @@ describe("collaboration panel", () => {
 
   it("shows no financial detail", () => {
     const state = collaborationPanelState({ status: "won", load: found });
-    expect(Object.keys(state).sort()).toEqual(["agreedAt", "kind", "title", "typeLabel"]);
+    expect(Object.keys(state).sort()).toEqual([
+      "actions",
+      "agreedAt",
+      "endDate",
+      "kind",
+      "startDate",
+      "status",
+      "title",
+      "typeLabel",
+    ]);
+    for (const key of Object.keys(state)) {
+      expect(key).not.toMatch(/value|amount|currency/i);
+    }
   });
 
   it("labels every collaboration type in plain words", () => {
