@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FREE_LIMITS } from "@/lib/config";
-import { parseEventInstant, parseWorkflowForm } from "@/lib/pipeline/input";
+import { ALL_PIPELINE_ACTIONS, parseEventInstant, parseWorkflowForm } from "@/lib/pipeline/input";
 import {
   CLOSE_REASONS,
   OFFER_TYPES,
@@ -48,29 +48,32 @@ describe("action availability by status", () => {
     expect(availableActions("planned")).toEqual(["mark_pitched", "close"]);
     expect(availableActions("pitched")).toEqual(["mark_followup_sent", "mark_replied", "close"]);
     expect(availableActions("follow_up")).toEqual(["mark_replied", "close"]);
-    expect(availableActions("replied")).toEqual(["close"]);
+    // The deal path (Sprint 2D) is covered in deal-view.test.ts.
+    expect(availableActions("replied")).toEqual(["start_negotiation", "close"]);
   });
 
   it("offers nothing for stages this slice does not implement", () => {
-    expect(availableActions("negotiating")).toEqual([]);
+    // A won cycle is finished here: closing it belongs to the collaboration
+    // lifecycle, which is a later sprint.
     expect(availableActions("won")).toEqual([]);
     expect(availableActions("closed")).toEqual([]);
     expect(availableActions(null)).toEqual([]);
     expect(availableActions("nonsense")).toEqual([]);
   });
 
-  it("never offers negotiation or won controls anywhere", () => {
+  it("never offers a control the server has no action for", () => {
     const offered = PIPELINE_STATUSES.flatMap((s) => availableActions(s));
-    expect(offered).not.toContain("negotiation_started");
-    expect(offered).not.toContain("mark_won");
-    // Every offered action is one the server accepts.
+    // Collaboration execution/completion are not implemented anywhere yet.
+    expect(offered).not.toContain("collaboration_started");
+    expect(offered).not.toContain("collaboration_completed");
+    // Every offered action is one of the two RPC families the server accepts.
     for (const action of offered) {
-      expect(WORKFLOW_ACTIONS).toContain(action);
+      expect(ALL_PIPELINE_ACTIONS).toContain(action);
     }
   });
 
   it("close is available from every stage this slice supports", () => {
-    for (const status of ["saved", "planned", "pitched", "follow_up", "replied"]) {
+    for (const status of ["saved", "planned", "pitched", "follow_up", "replied", "negotiating"]) {
       expect(availableActions(status)).toContain("close");
     }
   });

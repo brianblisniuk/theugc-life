@@ -30,7 +30,7 @@ import {
   getHotelContactsIfAuthorized,
   getHotelIntelligence,
 } from "@/lib/hotels/queries";
-import { getOpenRelationship } from "@/lib/pipeline/queries";
+import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
 
 /** Deduped per request so metadata and the page share one fetch. */
 const loadHotel = cache(getHotelById);
@@ -81,6 +81,13 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
   const type = hotelTypeLabel(hotel.hotelType);
   const statusNote = ACTIVE_STATUS_LABEL[hotel.activeStatus];
   const contactState = contactSectionState({ access, contacts, failed: contactsFailed });
+
+  // Only a won cycle has a collaboration to show, so only a won cycle pays for
+  // the query. Its own tri-state answer is what the panel renders.
+  const collaboration =
+    relationship.status === "open" && relationship.relationship.status === "won"
+      ? await getCycleCollaboration(relationship.relationship.pipelineItemId)
+      : ({ status: "none" } as const);
 
   return (
     <div className="space-y-8">
@@ -186,7 +193,11 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
 
       {/* 4. The creator's private relationship */}
       <Section title="Your activity">
-        <ActivityPanel hotelId={hotel.id} relationship={relationship} />
+        <ActivityPanel
+          hotelId={hotel.id}
+          relationship={relationship}
+          collaboration={collaboration}
+        />
       </Section>
     </div>
   );

@@ -14,10 +14,15 @@ import { isUuid } from "@/lib/hotels/ids";
 
 import {
   CLOSE_REASONS,
+  COLLABORATION_TYPES,
+  DEAL_ACTIONS,
   OFFER_TYPES,
   OUTREACH_CHANNELS,
   REPLY_SENTIMENTS,
   WORKFLOW_ACTIONS,
+  isDealAction,
+  type DealAction,
+  type PipelineAction,
   type WorkflowAction,
 } from "./types";
 
@@ -37,6 +42,7 @@ export interface WorkflowFormFields {
   sentiment?: string | null;
   offerType?: string | null;
   closeReason?: string | null;
+  collaborationType?: string | null;
 }
 
 export interface ParsedTransition {
@@ -167,3 +173,54 @@ export function parseWorkflowForm(fields: WorkflowFormFields): ParseResult {
       return { ok: true, value: { ...value, eventAt: null } };
   }
 }
+
+/** A parsed deal request. `agreedAt` is the browser-converted instant. */
+export interface ParsedDeal {
+  pipelineItemId: string;
+  action: DealAction;
+  agreedAt: string | null;
+  collaborationType: string | null;
+}
+
+export type DealParseResult =
+  { ok: true; value: ParsedDeal } | { ok: false; reason: "invalid_input" };
+
+/**
+ * Parse the deal half of the workflow form. Same posture as
+ * `parseWorkflowForm`: a convenience, not the boundary — the RPC re-validates
+ * the vocabulary, the transition and the agreed date.
+ */
+export function parseDealForm(fields: WorkflowFormFields): DealParseResult {
+  const pipelineItemId = clean(fields.pipelineItemId);
+  const action = clean(fields.action);
+
+  if (!pipelineItemId || !isUuid(pipelineItemId)) return INVALID;
+  if (!action || !isDealAction(action)) return INVALID;
+
+  const collaborationType = clean(fields.collaborationType);
+  const agreedAt = parseEventInstant(clean(fields.eventAt));
+
+  if (action === "start_negotiation") {
+    // One action, no questionnaire: the offer type was already captured with
+    // the reply, and asking again would be a worse product, not a safer one.
+    return {
+      ok: true,
+      value: { pipelineItemId, action, agreedAt: null, collaborationType: null },
+    };
+  }
+
+  if (!agreedAt || !inList(collaborationType, COLLABORATION_TYPES)) return INVALID;
+  return { ok: true, value: { pipelineItemId, action, agreedAt, collaborationType } };
+}
+
+/** Which family of RPC an action belongs to, for the server action to route. */
+export function actionFamily(action: string): "deal" | "workflow" | null {
+  if (isDealAction(action)) return "deal";
+  return (WORKFLOW_ACTIONS as readonly string[]).includes(action) ? "workflow" : null;
+}
+
+/** Every action the UI may post, for exhaustiveness in tests. */
+export const ALL_PIPELINE_ACTIONS: readonly PipelineAction[] = [
+  ...WORKFLOW_ACTIONS,
+  ...DEAL_ACTIONS,
+];

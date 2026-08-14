@@ -14,11 +14,13 @@ import { revalidatePath } from "next/cache";
 
 import { getSessionContext } from "@/lib/auth/guards";
 
-import { parseWorkflowForm } from "./input";
-import { saveHotelToPipeline, transitionPipelineItem } from "./queries";
+import { parseDealForm, parseWorkflowForm } from "./input";
+import { progressPipelineDeal, saveHotelToPipeline, transitionPipelineItem } from "./queries";
 import {
+  isDealSuccessful,
   isSaveSuccessful,
   isTransitionSuccessful,
+  type DealResult,
   type SaveResult,
   type TransitionResult,
 } from "./types";
@@ -75,6 +77,37 @@ export async function transitionPipelineItemAction(formData: FormData): Promise<
 
   if (isTransitionSuccessful(result)) {
     // Both surfaces must reflect the new status and the new activity order.
+    if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
+    revalidatePath("/app/pipeline");
+  }
+
+  return result;
+}
+
+/**
+ * Deal-progress server action (PRD §7.4, EVENTS.md §3).
+ *
+ * Same boundary as the workflow action: the browser names an item and an
+ * action and supplies the fields the creator filled in. Identity comes from
+ * the session; the collaboration is created by the database alongside its
+ * `deal_won` event, never by this layer.
+ */
+export async function progressPipelineDealAction(formData: FormData): Promise<DealResult> {
+  const session = await getSessionContext();
+  if (!session) return { result: "error" };
+
+  const parsed = parseDealForm({
+    pipelineItemId: readField(formData, "pipelineItemId"),
+    action: readField(formData, "action"),
+    eventAt: readField(formData, "eventAt"),
+    collaborationType: readField(formData, "collaborationType"),
+  });
+  if (!parsed.ok) return { result: "invalid_input" };
+
+  const hotelId = readField(formData, "hotelId");
+  const result = await progressPipelineDeal(session.userId, parsed.value);
+
+  if (isDealSuccessful(result)) {
     if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
     revalidatePath("/app/pipeline");
   }

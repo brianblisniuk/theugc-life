@@ -286,3 +286,120 @@ export function transitionResultMessage(result: TransitionResult): string {
       return "We couldn’t record that just now. Please try again.";
   }
 }
+
+/* ==================================================================== */
+/* Deal progress (Sprint 2D — EVENTS.md §3, DATABASE.md §8)             */
+/* ==================================================================== */
+
+/**
+ * Deal actions live behind their own RPC because they carry different inputs
+ * and, for `mark_won`, write a collaboration alongside the event.
+ */
+export const DEAL_ACTIONS = ["start_negotiation", "mark_won"] as const;
+export type DealAction = (typeof DEAL_ACTIONS)[number];
+
+/** Everything the workflow UI may offer, whichever RPC ultimately serves it. */
+export type PipelineAction = WorkflowAction | DealAction;
+
+export function isDealAction(action: string): action is DealAction {
+  return (DEAL_ACTIONS as readonly string[]).includes(action);
+}
+
+/** `collaborations.collaboration_type` vocabulary (migration 0006). */
+export const COLLABORATION_TYPES = ["stay", "product", "paid", "stay_plus_paid", "other"] as const;
+export type CollaborationType = (typeof COLLABORATION_TYPES)[number];
+
+const DEAL_ACTION_LABEL: Record<DealAction, string> = {
+  start_negotiation: "Start negotiation",
+  mark_won: "Mark as won",
+};
+
+const COLLABORATION_TYPE_LABEL: Record<string, string> = {
+  stay: "Stay",
+  product: "Product",
+  paid: "Paid",
+  stay_plus_paid: "Stay + paid",
+  other: "Other",
+};
+
+export function pipelineActionLabel(action: PipelineAction): string {
+  return isDealAction(action) ? DEAL_ACTION_LABEL[action] : workflowActionLabel(action);
+}
+
+export function collaborationTypeLabel(value: string): string {
+  return COLLABORATION_TYPE_LABEL[value] ?? value.replace(/_/g, " ");
+}
+
+/** Sanitized outcomes of a deal-progress attempt. */
+export type DealResult =
+  | { result: "applied"; status: PipelineStatus; collaborationId: string | null }
+  | { result: "already_applied"; status: PipelineStatus; collaborationId: string | null }
+  | { result: "invalid_transition" }
+  | { result: "invalid_input" }
+  | { result: "invalid_event_time" }
+  | { result: "pipeline_item_not_found" }
+  | { result: "creator_profile_missing" }
+  /** The stored state is self-contradictory; we refuse to guess which half is right. */
+  | { result: "integrity_error" }
+  | { result: "error" };
+
+export function isDealSuccessful(result: DealResult): boolean {
+  return result.result === "applied" || result.result === "already_applied";
+}
+
+/** Map the RPC's JSON payload to a typed, sanitized result. */
+export function mapDealResult(payload: unknown): DealResult {
+  if (!payload || typeof payload !== "object") return { result: "error" };
+  const row = payload as Record<string, unknown>;
+  const status = typeof row.status === "string" ? (row.status as PipelineStatus) : null;
+  const collaborationId = typeof row.collaboration_id === "string" ? row.collaboration_id : null;
+
+  switch (row.result) {
+    case "applied":
+      return status ? { result: "applied", status, collaborationId } : { result: "error" };
+    case "already_applied":
+      return status ? { result: "already_applied", status, collaborationId } : { result: "error" };
+    case "invalid_transition":
+      return { result: "invalid_transition" };
+    case "invalid_input":
+      return { result: "invalid_input" };
+    case "invalid_event_time":
+      return { result: "invalid_event_time" };
+    case "pipeline_item_not_found":
+      return { result: "pipeline_item_not_found" };
+    case "creator_profile_missing":
+      return { result: "creator_profile_missing" };
+    case "integrity_error":
+      return { result: "integrity_error" };
+    default:
+      return { result: "error" };
+  }
+}
+
+/** User-facing message for a deal outcome. Never leaks internal detail. */
+export function dealResultMessage(result: DealResult): string {
+  switch (result.result) {
+    case "applied":
+      return result.status === "won"
+        ? "Collaboration agreed."
+        : `Updated to ${pipelineStatusLabel(result.status)}.`;
+    case "already_applied":
+      return result.status === "won"
+        ? "This collaboration is already recorded."
+        : `Already ${pipelineStatusLabel(result.status)} — nothing was recorded twice.`;
+    case "invalid_transition":
+      return "That step isn’t available from this stage. Reload the page to see the current status.";
+    case "invalid_input":
+      return "Please check the details and try again.";
+    case "invalid_event_time":
+      return "That agreed date can’t be in the future.";
+    case "pipeline_item_not_found":
+      return "We couldn’t find this relationship. Reload the page to try again.";
+    case "creator_profile_missing":
+      return "We couldn’t find your creator profile. Please reload and try again.";
+    case "integrity_error":
+      return "This deal’s records don’t line up, so we didn’t change anything. Please contact support.";
+    default:
+      return "We couldn’t record that just now. Please try again.";
+  }
+}

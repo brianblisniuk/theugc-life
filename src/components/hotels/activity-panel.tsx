@@ -7,15 +7,26 @@
  *   lookup failed → neutral recoverable notice, and NO Save, NO status, NO
  *                   upgrade — we did not learn that this hotel is unsaved.
  *
- * Status transitions (pitched/replied/follow-up/…) are a later sprint; this
- * surface only reads the relationship and offers Save.
+ * On a `won` cycle the panel also shows the agreed collaboration. That read is
+ * tri-state for the same reason the relationship read is: on a won cycle,
+ * "we could not load it" and "there is none" mean very different things.
  */
 import Link from "next/link";
 
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
-import type { OpenRelationshipResult } from "@/lib/pipeline/queries";
-import { activityPanelState, shouldOfferWorkflow } from "@/lib/pipeline/view";
+import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
+import {
+  activityPanelState,
+  collaborationPanelState,
+  shouldOfferWorkflow,
+} from "@/lib/pipeline/view";
+
+function formatDate(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
 
 function Panel({ children }: { children: React.ReactNode }) {
   return (
@@ -28,9 +39,12 @@ function Panel({ children }: { children: React.ReactNode }) {
 export function ActivityPanel({
   hotelId,
   relationship,
+  collaboration,
 }: {
   hotelId: string;
   relationship: OpenRelationshipResult;
+  /** Only read for a `won` cycle; `none` elsewhere. */
+  collaboration: CollaborationLoad;
 }) {
   const state = activityPanelState(relationship);
 
@@ -46,6 +60,8 @@ export function ActivityPanel({
   }
 
   if (state.kind === "open_cycle") {
+    const deal = collaborationPanelState({ status: state.status, load: collaboration });
+
     return (
       <Panel>
         <div className="space-y-1">
@@ -54,6 +70,31 @@ export function ActivityPanel({
             This hotel is in your pipeline. Your notes and outreach history stay private to you.
           </p>
         </div>
+
+        {deal.kind === "agreed" ? (
+          <div className="space-y-1 rounded-[var(--radius-app)] border border-border bg-background p-4">
+            <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
+            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
+              {deal.typeLabel ? (
+                <div className="flex gap-2">
+                  <dt>Type</dt>
+                  <dd className="font-medium text-text">{deal.typeLabel}</dd>
+                </div>
+              ) : null}
+              {formatDate(deal.agreedAt) ? (
+                <div className="flex gap-2">
+                  <dt>Agreed</dt>
+                  <dd className="font-medium text-text">{formatDate(deal.agreedAt)}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+        ) : deal.kind === "load_error" || deal.kind === "integrity_problem" ? (
+          <div className="space-y-1 rounded-[var(--radius-app)] border border-border bg-background p-4">
+            <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
+            <p className="max-w-prose text-sm text-muted">{deal.body}</p>
+          </div>
+        ) : null}
 
         {shouldOfferWorkflow(state) && relationship.status === "open" ? (
           <WorkflowActions

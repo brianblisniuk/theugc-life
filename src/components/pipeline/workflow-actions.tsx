@@ -17,24 +17,29 @@ import { useFormStatus } from "react-dom";
 import Link from "next/link";
 
 import { capture } from "@/lib/analytics";
-import { transitionPipelineItemAction } from "@/lib/pipeline/actions";
+import { progressPipelineDealAction, transitionPipelineItemAction } from "@/lib/pipeline/actions";
 import { localDateToIso } from "@/lib/pipeline/input";
 import {
   CLOSE_REASONS,
+  COLLABORATION_TYPES,
   OFFER_TYPES,
   OUTREACH_CHANNELS,
   REPLY_SENTIMENTS,
   channelLabel,
   closeReasonLabel,
+  collaborationTypeLabel,
+  isDealAction,
   offerTypeLabel,
+  pipelineActionLabel,
   sentimentLabel,
-  workflowActionLabel,
+  type DealResult,
+  type PipelineAction,
   type PipelineStatus,
   type TransitionResult,
-  type WorkflowAction,
 } from "@/lib/pipeline/types";
 import {
   availableActions,
+  dealControlState,
   shouldOfferWorkflowUpgrade,
   workflowControlState,
 } from "@/lib/pipeline/view";
@@ -83,10 +88,12 @@ export function WorkflowActions({
   hotelId: string;
   status: PipelineStatus;
 }) {
-  const [open, setOpen] = useState<WorkflowAction | null>(null);
+  const [open, setOpen] = useState<PipelineAction | null>(null);
   const [result, setResult] = useState<TransitionResult | null>(null);
+  const [dealResult, setDealResult] = useState<DealResult | null>(null);
   const actions = availableActions(status);
   const state = workflowControlState(result);
+  const deal = dealControlState(dealResult);
 
   async function onSubmit(formData: FormData) {
     // The creator picked a calendar DAY. Resolve it to an instant here, in the
@@ -98,8 +105,23 @@ export function WorkflowActions({
       formData.set("eventAt", localDateToIso(date) ?? "");
     }
 
+    // Two families of action, two trusted RPCs behind two server actions. The
+    // routing is by action name only; nothing about identity travels with it.
+    const action = formData.get("action");
+    if (typeof action === "string" && isDealAction(action)) {
+      const outcome = await progressPipelineDealAction(formData);
+      setDealResult(outcome);
+      setResult(null);
+      if (outcome.result === "applied") {
+        setOpen(null);
+        capture("pipeline_status_changed", { hotel_id: hotelId, status: outcome.status });
+      }
+      return;
+    }
+
     const outcome = await transitionPipelineItemAction(formData);
     setResult(outcome);
+    setDealResult(null);
     if (outcome.result === "applied") {
       setOpen(null);
       // Product analytics only — outreach_events remains the source of truth.
@@ -107,7 +129,7 @@ export function WorkflowActions({
     }
   }
 
-  function Form({ action, children }: { action: WorkflowAction; children?: React.ReactNode }) {
+  function Form({ action, children }: { action: PipelineAction; children?: React.ReactNode }) {
     return (
       <form action={onSubmit} className="space-y-3">
         <input type="hidden" name="pipelineItemId" value={pipelineItemId} />
@@ -115,7 +137,7 @@ export function WorkflowActions({
         <input type="hidden" name="action" value={action} />
         {children}
         <div className="flex flex-wrap items-center gap-3">
-          <SubmitButton label={workflowActionLabel(action)} />
+          <SubmitButton label={pipelineActionLabel(action)} />
           <button
             type="button"
             onClick={() => setOpen(null)}
@@ -138,11 +160,12 @@ export function WorkflowActions({
               type="button"
               onClick={() => {
                 setResult(null);
+                setDealResult(null);
                 setOpen(action);
               }}
               className="inline-flex rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-background"
             >
-              {workflowActionLabel(action)}
+              {pipelineActionLabel(action)}
             </button>
           ))}
         </div>
@@ -264,6 +287,50 @@ export function WorkflowActions({
         </Form>
       ) : null}
 
+      {open === "start_negotiation" ? (
+        <Form action="start_negotiation">
+          <p className="max-w-prose text-sm text-muted">
+            Record that you are actively negotiating terms with this hotel. Nothing else is asked —
+            you already captured the offer with the reply.
+          </p>
+        </Form>
+      ) : null}
+
+      {open === "mark_won" ? (
+        <Form action="mark_won">
+          <div className="flex flex-wrap gap-3">
+            <Field id="won-type" label="Collaboration type">
+              <select
+                id="won-type"
+                name="collaborationType"
+                required
+                defaultValue=""
+                className={fieldClass}
+              >
+                <option value="" disabled>
+                  Choose a type
+                </option>
+                {COLLABORATION_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {collaborationTypeLabel(t)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="won-date" label="Agreed date">
+              <input
+                id="won-date"
+                name="date"
+                type="date"
+                required
+                defaultValue={todayValue()}
+                className={fieldClass}
+              />
+            </Field>
+          </div>
+        </Form>
+      ) : null}
+
       {open === "close" ? (
         <Form action="close">
           <Field id="close-reason" label="Reason">
@@ -289,6 +356,12 @@ export function WorkflowActions({
             cycle.
           </p>
         </Form>
+      ) : null}
+
+      {deal.kind !== "idle" ? (
+        <div role="status" aria-live="polite" className="space-y-2">
+          <p className="text-sm text-text">{deal.message}</p>
+        </div>
       ) : null}
 
       {state.kind !== "idle" ? (
