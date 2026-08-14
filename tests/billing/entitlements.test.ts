@@ -145,16 +145,30 @@ describe("billing access state", () => {
 /* Read                                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A PostgREST-shaped client whose queries run as a real Postgres role with a
+ * real JWT `sub`, so `access_entitlements_select` is genuinely evaluated. The
+ * `.eq()` filters the production code applies are translated to SQL rather than
+ * ignored — that is the whole point of these tests.
+ */
 function shimClient(role: Role, sub: string | null): BillingQueryClient {
   const from = (table: string) => {
+    const eqs: [string, unknown][] = [];
     const builder = {
       select: () => builder,
+      eq: (column: string, value: unknown) => {
+        eqs.push([column, value]);
+        return builder;
+      },
       order: () => builder,
       then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) {
+        const where = eqs.map(([column], i) => `${column} = $${i + 1}`);
+        const clause = where.length ? ` where ${where.join(" and ")}` : "";
         return queryAs(
           { role, sub },
           `select access_type, status, starts_at, expires_at
-             from public.${table} order by starts_at desc`,
+             from public.${table}${clause} order by starts_at desc`,
+          eqs.map(([, value]) => value),
         )
           .then((res) =>
             res.error ? { data: null, error: res.error } : { data: res.rows, error: null },
@@ -173,6 +187,11 @@ d("billing access read", () => {
     destination: "c1000000-0000-0000-0000-000000000002",
     free: "c1000000-0000-0000-0000-000000000003",
     expired: "c1000000-0000-0000-0000-000000000004",
+    /** Staff with NO entitlement of their own. */
+    admin: "c1000000-0000-0000-0000-000000000005",
+    editor: "c1000000-0000-0000-0000-000000000006",
+    /** Staff who DO hold their own Pro. */
+    adminWithPro: "c1000000-0000-0000-0000-000000000007",
   } as const;
   const DEST = "c2000000-0000-0000-0000-000000000001";
 
@@ -203,14 +222,28 @@ d("billing access read", () => {
          values ($1,'pro','active', now() - interval '100 days', now() - interval '10 days')`,
       [U.expired],
     );
+
+    await adminQuery("update public.users set role = 'admin' where id = any($1)", [
+      [U.admin, U.adminWithPro],
+    ]);
+    await adminQuery("update public.users set role = 'editor' where id = $1", [U.editor]);
+    await adminQuery(
+      `insert into public.access_entitlements (user_id, access_type, status, starts_at)
+         values ($1,'pro','active', now() - interval '2 days')`,
+      [U.adminWithPro],
+    );
   }, 60_000);
 
   afterAll(async () => {
     await teardownDatabase();
   });
 
-  const load = (userId: string | null, role: Role = "authenticated") =>
-    loadBillingAccess(shimClient(role, userId));
+  /**
+   * Exactly what BillingPage does: the id scoping the question and the id
+   * authenticating the request are the same server-session id.
+   */
+  const load = (userId: string, role: Role = "authenticated") =>
+    loadBillingAccess(userId, shimClient(role, userId));
 
   it("reads the caller's own active Pro entitlement", async () => {
     const result = await load(U.pro);
@@ -252,9 +285,81 @@ d("billing access read", () => {
     }
   });
 
+  /* ---------------------------------------------------------------- */
+  /* F-17 — self-service scope                                          */
+  /* ---------------------------------------------------------------- */
+
+  it("a creator cannot see another creator's entitlement", async () => {
+    // Even asking for someone else's row explicitly returns nothing: RLS is the
+    // second, independent layer.
+    const asOtherCreator = await loadBillingAccess(
+      U.pro,
+      shimClient("authenticated", U.destination),
+    );
+    if (asOtherCreator.status !== "ok") throw new Error("unreachable");
+    expect(asOtherCreator.entitlements).toEqual([]);
+  });
+
+  it("an admin with no entitlement of their own is Free, not premium", async () => {
+    // The whole point of F-17: access_entitlements_select lets this admin READ
+    // every row in the table, including U.pro's active Pro. The self-service
+    // page must still say Free, because the admin has nothing.
+    const result = await load(U.admin);
+    expect(result).toEqual({ status: "ok", entitlements: [] });
+
+    const state = billingAccessState(result);
+    expect(state.kind).toBe("free");
+    expect(state.kind).not.toBe("premium");
+  });
+
+  it("an editor with no entitlement of their own is Free, not premium", async () => {
+    const result = await load(U.editor);
+    expect(result).toEqual({ status: "ok", entitlements: [] });
+    expect(billingAccessState(result).kind).toBe("free");
+  });
+
+  it("an admin who does hold Pro sees ONLY their own Pro", async () => {
+    const result = await load(U.adminWithPro);
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.entitlements).toHaveLength(1);
+    expect(result.entitlements.map((e) => e.accessType)).toEqual(["pro"]);
+    expect(billingAccessState(result).kind).toBe("premium");
+
+    // Not the other users' rows, which this admin is permitted to read.
+    const everything = await queryAs<{ n: string }>(
+      { role: "authenticated", sub: U.adminWithPro },
+      "select count(*)::text as n from public.access_entitlements",
+    );
+    expect(Number(everything.rows[0]!.n)).toBeGreaterThan(result.entitlements.length);
+  });
+
+  it("still lets admin and editor read every entitlement in an explicit admin query", async () => {
+    // The self-service predicate scopes ONE page. It must not have narrowed the
+    // underlying authorization contract that reconciliation depends on.
+    const total = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.access_entitlements",
+    );
+
+    for (const staff of [U.admin, U.editor, U.adminWithPro]) {
+      const all = await queryAs<{ n: string }>(
+        { role: "authenticated", sub: staff },
+        "select count(*)::text as n from public.access_entitlements",
+      );
+      expect(all.error).toBeNull();
+      expect(all.rows[0]!.n, staff).toBe(total[0]!.n);
+    }
+
+    // ...and a regular creator still cannot.
+    const creator = await queryAs<{ n: string }>(
+      { role: "authenticated", sub: U.free },
+      "select count(*)::text as n from public.access_entitlements",
+    );
+    expect(creator.rows[0]!.n).toBe("0");
+  });
+
   it("a permission failure is an error, NOT the Free plan", async () => {
     // `anon` holds no privilege on access_entitlements.
-    const result = await load(null, "anon");
+    const result = await loadBillingAccess(U.pro, shimClient("anon", null));
     expect(result).toEqual({ status: "error" });
     expect(billingAccessState(result).kind).toBe("error");
     expect(billingAccessState(result).kind).not.toBe("free");
@@ -270,6 +375,7 @@ d("billing access read", () => {
       from: () => {
         const builder = {
           select: () => builder,
+          eq: () => builder,
           order: () => builder,
           then: (resolve: (value: unknown) => unknown) =>
             Promise.resolve({ data: null, error: raw }).then(resolve),
@@ -278,7 +384,7 @@ d("billing access read", () => {
       },
     } as unknown as BillingQueryClient;
 
-    const result: BillingAccessResult = await loadBillingAccess(client);
+    const result: BillingAccessResult = await loadBillingAccess(U.pro, client);
     expect(result).toEqual({ status: "error" });
 
     const rendered = JSON.stringify(billingAccessState(result));

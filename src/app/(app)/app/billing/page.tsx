@@ -10,14 +10,21 @@ export const metadata: Metadata = { title: "Billing" };
 /**
  * Billing/access overview. Reads the creator's own entitlements under RLS.
  *
+ * This is a SELF-SERVICE surface: it answers "what does this account have".
+ * The user id therefore comes from the server session and is applied as an
+ * explicit predicate. `access_entitlements_select` also lets an admin or editor
+ * read every entitlement row — correctly, for reconciliation — so without the
+ * predicate an admin with no entitlement of their own would be shown somebody
+ * else's Pro as their own plan.
+ *
  * "You're on the Free plan" is a claim about the account and is made only when
  * the read succeeded and found no active access. A failed read establishes
  * nothing — not Free, not expired, not revoked — so it renders a neutral,
  * recoverable notice instead (see src/lib/billing/view.ts).
  */
 export default async function BillingPage() {
-  await requireUser("/app/billing");
-  const state = billingAccessState(await loadBillingAccess());
+  const session = await requireUser("/app/billing");
+  const state = billingAccessState(await loadBillingAccess(session.userId));
 
   return (
     <div className="space-y-6">

@@ -10,9 +10,11 @@ Method: falsification-oriented. Every invariant was attacked before it was belie
 ## 1. Executive summary
 
 > **The consistency claim below is corrected in §22.1.** External final review
-> found two surfaces where a technical or integrity state was being reported as
-> a domain fact (F-15, F-16), so "implemented consistently" was too broad. Both
-> are fixed. The original text is preserved.
+> found three defects on surfaces this audit did not attack — two where a
+> technical or integrity state was reported as a domain fact (F-15, F-16) and
+> one where a self-service query lost its user scope (F-17) — so "implemented
+> consistently" was too broad. All three are fixed. The original text is
+> preserved.
 
 The core engine is in good shape. The trusted-server boundary, the CRM state
 machine, the deal/collaboration lifecycle, the intelligence derivation and the
@@ -888,15 +890,20 @@ contract in `tests/rls/acl-matrix.test.ts`.
 
 ---
 
-## 22. Final external review findings (F-15, F-16)
+## 22. Final external review findings (F-15, F-16, F-17)
 
 The external final review of PR #14 approved the Sprint 2G work — D046, the
 `0024` ACL architecture, the explicit privilege matrix, RLS preservation, RPC
 boundaries, pagination, the >200 regression, DB-backed role resolution, the
-documentation reconciliation and this report — and returned **two required
-corrections**. Both are recorded here as first-class audit findings, because
-both are instances of the rule this audit spent §6 and §10 checking, and both
-were missed.
+documentation reconciliation and this report — and returned required
+corrections across two rounds: **F-15 and F-16** first, then **F-17**, a
+regression introduced by the F-16 fix itself.
+
+All three are recorded here as first-class audit findings. F-15 and F-16 are
+instances of the rule this audit spent §6 and §10 checking, on surfaces it did
+not enumerate. F-17 is a different failure: a correct-looking read that never
+said whose account it was asking about, on a table whose RLS policy is
+deliberately permissive for staff.
 
 ### 22.1 Correction to the audit's own claim
 
@@ -914,6 +921,13 @@ first fix preserved it. The correct reading is: the rule is applied widely and
 deliberately, and two surfaces were nevertheless wrong. Coverage was assumed
 from the surfaces sampled, which is exactly the failure mode a
 falsification-oriented audit is supposed to avoid.
+
+§6 needs the same correction for a different reason. It states that every
+mutation path was traced end to end and lists what is not accepted from the
+client. That was true, and it was also not the whole question: F-17 was not a
+forged input but a **missing** one — a read that never stated whose account it
+concerned. "Nothing untrusted comes in" and "the right scope goes in" are two
+separate properties, and only the first was checked.
 
 ### 22.2 F-15 — a missing `public.users` row was treated as a creator (P1, CONFIRMED)
 
@@ -985,27 +999,79 @@ Two comparable stale copy strings remain outside this fix's scope, on
 `/admin` ("Admin workflows arrive in Sprint 1") and `/app/trips` ("Trip planning
 arrives in Sprint 2"). They are noted here rather than changed.
 
-### 22.4 Coverage added
+### 22.4 F-17 — the self-service billing query lost its current-user scope (P1, CONFIRMED)
+
+**Location.** `src/lib/billing/queries.ts` and
+`src/app/(app)/app/billing/page.tsx`, as shipped in the F-16 correction.
+
+**Description.** The F-16 refactor moved the entitlement read into
+`loadBillingAccess()` — and dropped the user predicate on the way. The page
+called `requireUser()` and then discarded the session, and the query selected
+from `access_entitlements` with no `where user_id = …` at all, relying entirely
+on RLS to decide which rows came back.
+
+`access_entitlements_select` is `user_id = auth.uid() OR is_admin_or_editor()`.
+That second arm is deliberate: reconciliation and support need to read every
+entitlement row. It is an **authorization** rule, not a scope, and it is the
+wrong thing for a page whose question is "what does THIS account have".
+
+**Impact.** An admin or editor with no entitlement of their own, opening
+`/app/billing`, received other users' rows — RLS permitted them — and
+`billingAccessState()` classified the result as premium. The application would
+then tell that admin they hold premium access, and could render another user's
+entitlement rows as their own. A domain-scoping bug, and a regression introduced
+by the previous fix rather than an original defect.
+
+**Status: FIXED.** `BillingPage` retains the session from `requireUser()` and
+calls `loadBillingAccess(session.userId)`, which applies
+`.eq("user_id", userId)` explicitly. The id comes only from the server session —
+never from the browser, a query parameter, a form field or an
+application-controlled cookie. RLS is untouched: no policy was changed, and the
+admin/editor reconciliation arm remains fully available to explicit admin
+queries elsewhere. The predicate defines the *scope of the question*; RLS
+independently defines *what the caller is permitted to read*, and both still
+apply.
+
+**Generalisation worth carrying forward.** A permissive RLS arm added for one
+audience silently widens every query that forgets to say who it is asking about.
+"RLS will scope it" is safe only when the policy's scope and the surface's scope
+are the same; here they were not, and the surface was the one that had to say so.
+
+### 22.5 Coverage added
 
 | Suite | Proves |
 |---|---|
 | `tests/auth/session-role.test.ts` | rowless session → `error`, not `creator`; no repair attempted (neither `public.users` nor `creator_profiles` gains a row); `requireUser` / `requireRole` raise rather than redirect; all four server actions return a sanitized error and call no mutation and no `revalidatePath` |
-| `tests/billing/entitlements.test.ts` | successful-and-empty → Free; active Pro → premium; active Destination → premium; failed read → error state that contains neither "Free plan" nor an upgrade nor an expiry claim; raw driver error never surfaced; another user's entitlements invisible under RLS; the active-access definition matches migration `0010` |
+| `tests/billing/entitlements.test.ts` | successful-and-empty → Free; active Pro → premium; active Destination → premium; failed read → error state that contains neither "Free plan" nor an upgrade nor an expiry claim; raw driver error never surfaced; the active-access definition matches migration `0010` |
+| `tests/billing/entitlements.test.ts` (F-17) | a creator cannot see another creator's entitlement even when asking for it; an admin and an editor with no entitlement of their own are Free, not premium, despite RLS permitting them to read everyone's rows; an admin who does hold Pro sees only their own row while the table still returns more to an unscoped query; admin, editor and admin-with-Pro can all still read **every** entitlement row through an explicit reconciliation query, and a regular creator still cannot |
 
 Three of the billing assertions fail against the previous
-`(entitlements ?? [])` collapse, verified by reintroducing it.
+`(entitlements ?? [])` collapse, and four more fail without the
+`.eq("user_id", …)` predicate — both verified by reintroducing the old code.
 
-### 22.5 Standing after F-15 and F-16
+### 22.6 Standing after F-15, F-16 and F-17
 
-Both are FIXED. The severity picture is unchanged in kind — no P0, no
-outstanding P1, no exposure, no cross-creator leakage, no core redesign — and
-the final recommendation of §21.8 stands:
+All three are FIXED. The severity picture is unchanged in kind — no P0, no
+outstanding P1, no core redesign — and the final recommendation of §21.8 stands:
 
 **B — CORE AUDIT PASSED WITH NON-BLOCKING DEBT.**
 
-With one honest addition to the debt column: this audit's claim of *consistent*
-technical-error/domain-fact discipline was not verified surface by surface. Two
-violations were found by external review after the audit signed off. The rule
-itself is sound and is now enforced by regression tests on the session and
-billing paths; what should not be assumed again is that a rule applied on the
-surfaces someone sampled is applied everywhere.
+One correction of fact is owed on the way there. §5 and §17 state that no
+cross-creator exposure was found. That remains true of everything the audit
+probed and of the shipped `main` at `d12f8f7`, but F-17 — introduced inside this
+very sprint — would have shown one user's entitlement rows to another
+authenticated user holding a staff role. It never reached `main`, and it is
+fixed with regression coverage, but "no cross-creator exposure" is a claim about
+what was tested, not a property the system holds automatically.
+
+And one addition to the debt column: this audit's claim of *consistent*
+technical-error/domain-fact discipline was not verified surface by surface, and
+its trusted-boundary review checked that no untrusted input comes in without
+checking that the right scope goes in. Three violations were found by external
+review after the audit signed off, one of them introduced by a fix written in
+response to the previous round. The rules themselves are sound and are now
+enforced by regression tests on the session and billing paths. What should not
+be assumed again: that a rule applied on the surfaces someone sampled is applied
+everywhere, that a permissive RLS arm added for staff scopes a self-service
+query, or that a correction is safe because the thing it corrected was
+understood.

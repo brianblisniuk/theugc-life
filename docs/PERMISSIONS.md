@@ -14,6 +14,11 @@ Security model: Supabase Auth + PostgreSQL RLS + server-side entitlement checks.
 - A failed authorization or entitlement lookup is a technical error, never a
   domain answer. It must not resolve to the least-privileged role, to "not
   saved", to zero, or to a plan the creator is not on.
+- RLS scope is not query scope. A self-service surface must name the account it
+  is asking about, with an id taken from the server session, even when a policy
+  would already limit the rows. Policies that intentionally admit a second
+  audience — `access_entitlements_select` admits admin/editor for
+  reconciliation — otherwise widen every query that forgets to say who it means.
 - An authenticated user with no `public.users` row is an integrity
   inconsistency, not a new account. `handle_new_user()` provisions the
   application row inside the `auth.users` insert transaction and nothing
@@ -279,6 +284,11 @@ Automated permission tests must cover:
 22. A failed role lookup resolves to a technical error, not to `creator`, and
     the admin surface is not rendered under a guessed role.
 23. Role and status escalation from the `authenticated` role is rejected.
+24. `/app/billing` reports only the signed-in account's entitlements: an
+    admin or editor with none of their own sees the Free state even though
+    `access_entitlements_select` permits them to read every row.
+25. Admin and editor can still read every entitlement row through an explicit
+    reconciliation query, and a regular creator still cannot.
 
 ## 14. Free-limit enforcement
 
