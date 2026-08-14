@@ -57,6 +57,20 @@ comment on table public.destination_intelligence is
 -- not five. That is what makes the confidence bands honest (D044).
 -- ===========================================================================
 
+-- Stable lock key for one hotel's aggregation. Namespaced so it cannot collide
+-- with the import-batch advisory locks, which hash a bare uuid the same way.
+create or replace function public.hotel_intelligence_lock_key(p_hotel_id uuid)
+returns bigint
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select hashtextextended('hotel_intelligence:' || p_hotel_id::text, 0);
+$$;
+
+comment on function public.hotel_intelligence_lock_key(uuid) is
+  'Deterministic advisory-lock key serializing recomputation of one hotel''s derived intelligence.';
+
 create or replace function public.recompute_hotel_intelligence(p_hotel_id uuid)
 returns jsonb
 language plpgsql
@@ -98,6 +112,20 @@ begin
   if not exists (select 1 from public.hotels where id = p_hotel_id) then
     return jsonb_build_object('result', 'hotel_not_found');
   end if;
+
+  -- Serialize recomputation FOR THIS HOTEL before reading any facts.
+  --
+  -- Without it, two refreshes triggered by two creators can interleave: the
+  -- second reads newer history and finishes first, then the first — working
+  -- from an older snapshot — overwrites it with stale aggregates. With no
+  -- scheduled rebuild yet, that wrong row would simply persist. The lock is
+  -- transaction-scoped, so it is released the moment this call commits, and it
+  -- is keyed per hotel, so aggregating hotel A never blocks hotel B.
+  --
+  -- This does NOT pull aggregation into the workflow transaction: the caller is
+  -- still a separate post-commit, best-effort operation, and a failure here
+  -- still cannot roll back a creator's recorded event.
+  perform pg_advisory_xact_lock(public.hotel_intelligence_lock_key(p_hotel_id));
 
   -- A hotel with no primary activity gets NO derived row. "Not enough creator
   -- data yet" is an absence, and must never be stored as pitch_count = 0 /
@@ -218,8 +246,9 @@ begin
    where oe.hotel_id = p_hotel_id
      and oe.event_type = 'deal_won';
 
-  -- Reply rate is NULL, not 0, when nothing has been pitched: no denominator,
-  -- no claim.
+  -- NULL means "not measurable" — there is no denominator. A numeric 0 means
+  -- "measured, and nobody replied", which is a real and useful finding. The two
+  -- are different answers and must not be collapsed.
   v_reply_rate := case
     when v_pitch_count > 0 then round(v_reply_count::numeric / v_pitch_count, 4)
     else null
@@ -354,16 +383,18 @@ declare
     'deal_won', 'deal_lost', 'collaboration_started', 'collaboration_completed'
   ];
   v_hotel_id uuid;
+  v_had_row boolean;
+  v_outcome text;
   v_recomputed integer := 0;
   v_removed integer := 0;
-  v_before integer;
 begin
-  select count(*) into v_before from public.hotel_intelligence;
-
   -- Every hotel that either HAS activity or currently has a derived row: the
-  -- second half is what makes stale rows disappear after a correction.
-  for v_hotel_id in
-    select h.id
+  -- second half is what makes stale rows disappear after a correction. The
+  -- cursor's snapshot is taken here, so `v_had_row` reports the state BEFORE
+  -- this rebuild touched anything.
+  for v_hotel_id, v_had_row in
+    select h.id,
+           exists (select 1 from public.hotel_intelligence hi where hi.hotel_id = h.id)
       from public.hotels h
      where exists (
              select 1 from public.outreach_events oe
@@ -372,14 +403,17 @@ begin
         or exists (select 1 from public.hotel_intelligence hi where hi.hotel_id = h.id)
      order by h.id
   loop
-    if (public.recompute_hotel_intelligence(v_hotel_id) ->> 'result') = 'recomputed' then
+    v_outcome := public.recompute_hotel_intelligence(v_hotel_id) ->> 'result';
+
+    -- Count what actually happened per hotel. A net before/after row count
+    -- would silently cancel a removal against an addition and report zero
+    -- removals for a rebuild that really did delete a stale row.
+    if v_outcome = 'recomputed' then
       v_recomputed := v_recomputed + 1;
+    elsif v_outcome = 'no_data' and v_had_row then
+      v_removed := v_removed + 1;
     end if;
   end loop;
-
-  -- Derived rows for hotels that no longer exist cannot occur (the FK cascades),
-  -- so the only removals are the no-data deletes above.
-  v_removed := greatest(v_before - (select count(*) from public.hotel_intelligence), 0);
 
   return jsonb_build_object(
     'result', 'rebuilt',
@@ -394,11 +428,13 @@ comment on function public.recompute_all_hotel_intelligence() is
 
 -- Aggregation is trusted server work only. Hosted Supabase can grant EXECUTE to
 -- client roles by default, so revoke explicitly before granting (cf. 0018).
+revoke all on function public.hotel_intelligence_lock_key(uuid) from public, anon, authenticated;
 revoke all on function public.recompute_hotel_intelligence(uuid) from public, anon, authenticated;
 revoke all on function public.recompute_hotel_intelligence_for_pipeline_item(uuid)
   from public, anon, authenticated;
 revoke all on function public.recompute_all_hotel_intelligence() from public, anon, authenticated;
 
+grant execute on function public.hotel_intelligence_lock_key(uuid) to service_role;
 grant execute on function public.recompute_hotel_intelligence(uuid) to service_role;
 grant execute on function public.recompute_hotel_intelligence_for_pipeline_item(uuid) to service_role;
 grant execute on function public.recompute_all_hotel_intelligence() to service_role;

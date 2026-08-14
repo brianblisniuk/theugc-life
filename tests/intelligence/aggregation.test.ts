@@ -10,6 +10,7 @@
  * Events are inserted directly with fixed timestamps: the point is to pin the
  * aggregator's reading of history, independent of the workflow that wrote it.
  */
+import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "../db/harness";
@@ -256,7 +257,8 @@ d("D/E — a relationship cycle counts once", () => {
     expect(row.pitch_count).toBe(1);
     expect(row.reply_count).toBe(0);
     expect(row.confidence_level).toBe("insufficient");
-    // No replies means no rate at all — not 0%.
+    // A pitched hotel that nobody answered has a MEASURED rate of 0. That is a
+    // real finding; NULL is reserved for "no denominator at all".
     expect(row.reply_rate).toBe("0.0000");
   });
 
@@ -315,6 +317,7 @@ d("I/J/K/L/M — replies", () => {
     const row = (await intel())!;
     expect(row.pitch_count).toBe(1);
     expect(row.reply_count).toBe(0);
+    // Measured zero, because a pitch WAS sent — just not answered.
     expect(row.reply_rate).toBe("0.0000");
   });
 
@@ -716,12 +719,164 @@ d("AB/AC — full rebuild", () => {
     expect(await intel()).toBeNull();
   });
 
+  it("counts removals exactly, even when the rebuild also adds rows", async () => {
+    // Hotel A has a stale derived row whose source events are gone…
+    await cycle({ pitchAt: [daysAgo(10)] });
+    await recompute(HOTEL);
+    await adminQuery("delete from public.outreach_events where hotel_id = $1", [HOTEL]);
+
+    // …while Hotel B has new activity and no row yet.
+    await cycle({ hotel: HOTEL_B, pitchAt: [daysAgo(5)] });
+    await cycle({ hotel: HOTEL_B, pitchAt: [daysAgo(4)] });
+
+    const before = await adminQuery<{ n: string }>(
+      "select count(*)::text n from public.hotel_intelligence",
+    );
+    expect(Number(before[0]!.n)).toBe(1);
+
+    const rebuild = await adminQuery<{ r: Record<string, unknown> }>(
+      "select public.recompute_all_hotel_intelligence() as r",
+    );
+
+    // The net row count is unchanged (1 → 1), so a before/after difference
+    // would report zero removals. One row really was removed.
+    const after = await adminQuery<{ n: string }>(
+      "select count(*)::text n from public.hotel_intelligence",
+    );
+    expect(Number(after[0]!.n)).toBe(1);
+    expect(rebuild[0]!.r.removed).toBe(1);
+    expect(rebuild[0]!.r.recomputed).toBe(1);
+
+    expect(await intel(HOTEL)).toBeNull();
+    expect((await intel(HOTEL_B))!.pitch_count).toBe(2);
+  });
+
+  it("reports zero removals when nothing was stale", async () => {
+    await cycle({ pitchAt: [daysAgo(10)] });
+    const rebuild = await adminQuery<{ r: Record<string, unknown> }>(
+      "select public.recompute_all_hotel_intelligence() as r",
+    );
+    expect(rebuild[0]!.r).toEqual({ result: "rebuilt", recomputed: 1, removed: 0 });
+  });
+
   it("leaves hotels without creator activity with no row at all", async () => {
     await cycle({ pitchAt: [daysAgo(10)] });
     await adminQuery("select public.recompute_all_hotel_intelligence()");
 
     expect(await intel(HOTEL)).not.toBeNull();
     expect(await intel(HOTEL_B)).toBeNull();
+  });
+});
+
+d("F1 — recomputes for one hotel serialize", () => {
+  /** The exact key the function locks on, derived by the database itself. */
+  async function lockKey(hotel: string): Promise<string> {
+    const rows = await adminQuery<{ k: string }>(
+      "select public.hotel_intelligence_lock_key($1)::text as k",
+      [hotel],
+    );
+    return rows[0]!.k;
+  }
+
+  it("a second recompute waits behind the per-hotel lock", async () => {
+    await cycle({ pitchAt: [daysAgo(10)] });
+
+    const holder = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const worker = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await holder.connect();
+    await worker.connect();
+    try {
+      const key = await lockKey(HOTEL);
+
+      // Hold the hotel's lock in an open transaction.
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock($1::bigint)", [key]);
+
+      let done = false;
+      const pending = worker
+        .query("select public.recompute_hotel_intelligence($1) as r", [HOTEL])
+        .then((res) => {
+          done = true;
+          return res;
+        });
+
+      // Give it every chance to finish if it were not blocked.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(done).toBe(false);
+      expect(await intel()).toBeNull(); // nothing written while blocked
+
+      await holder.query("commit");
+      const res = await pending;
+      expect(done).toBe(true);
+      expect(res.rows[0].r.result).toBe("recomputed");
+      expect((await intel())!.pitch_count).toBe(1);
+    } finally {
+      await holder.end();
+      await worker.end();
+    }
+  });
+
+  it("a different hotel is NOT blocked by that lock", async () => {
+    await cycle({ pitchAt: [daysAgo(10)] });
+    await cycle({ hotel: HOTEL_B, pitchAt: [daysAgo(10)] });
+
+    const holder = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const worker = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await holder.connect();
+    await worker.connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock($1::bigint)", [await lockKey(HOTEL)]);
+
+      // Hotel B proceeds immediately: per-hotel keys, not a global lock.
+      const res = await worker.query("select public.recompute_hotel_intelligence($1) as r", [
+        HOTEL_B,
+      ]);
+      expect(res.rows[0].r.result).toBe("recomputed");
+      expect((await intel(HOTEL_B))!.pitch_count).toBe(1);
+
+      await holder.query("commit");
+    } finally {
+      await holder.end();
+      await worker.end();
+    }
+  });
+
+  it("the lock key is stable per hotel and distinct between hotels", async () => {
+    expect(await lockKey(HOTEL)).toBe(await lockKey(HOTEL));
+    expect(await lockKey(HOTEL)).not.toBe(await lockKey(HOTEL_B));
+  });
+
+  it("interleaved events and refreshes converge on the deterministic result", async () => {
+    // Two creators act on the same hotel, each triggering its own refresh, with
+    // the second event landing while the first refresh is in flight.
+    await cycle({ pitchAt: [daysAgo(10)] });
+
+    const a = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const b = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await a.connect();
+    await b.connect();
+    try {
+      const sql = "select public.recompute_hotel_intelligence($1) as r";
+      const second = cycle({ pitchAt: [daysAgo(9)] });
+      await Promise.all([a.query(sql, [HOTEL]), second.then(() => b.query(sql, [HOTEL]))]);
+    } finally {
+      await a.end();
+      await b.end();
+    }
+
+    const raced = (await intel())!;
+    // One more deterministic recompute over the same facts must agree with
+    // whatever the race left behind: no stale overwrite survived.
+    await recompute();
+    const settled = (await intel())!;
+
+    const strip = (row: IntelRow) => {
+      const { calculated_at: _ignored, ...rest } = row;
+      return rest;
+    };
+    expect(strip(raced)).toEqual(strip(settled));
+    expect(settled.pitch_count).toBe(2);
   });
 });
 

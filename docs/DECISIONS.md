@@ -399,7 +399,16 @@ confirmed-deal signal; editorial evidence and pipeline status alone are never
 used.
 
 **Reply rate.** `reply_count / pitch_count` when `pitch_count > 0`, otherwise
-NULL. Never 0 — no denominator means no claim.
+NULL.
+
+NULL and 0 are different answers and must not be collapsed. NULL means "not
+measurable": there is no qualifying pitch sample, so there is no denominator and
+no claim to make. A numeric 0 means "measured, and nobody replied" — a real
+finding about a hotel that was pitched. A hotel with `pitch_count > 0` and
+`reply_count = 0` therefore has `reply_rate = 0`, not NULL.
+
+Public exposure of the value is still gated by confidence: 0 is no more
+publishable at low N than any other rate.
 
 **Median reply hours.** Per qualifying replied cycle, the hours between the
 initial pitch and the qualifying reply, then the median across those cycles.
