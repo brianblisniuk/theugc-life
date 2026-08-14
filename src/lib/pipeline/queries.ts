@@ -294,3 +294,33 @@ export async function progressPipelineDeal(userId: string, input: DealInput): Pr
   if (error) return { result: "error" };
   return mapDealResult(data);
 }
+
+/**
+ * Best-effort refresh of the derived intelligence behind a pipeline item.
+ *
+ * The hotel is resolved INSIDE the database from the item that was just
+ * mutated — a browser-supplied hotel id is never used, so a valid workflow
+ * action cannot be turned into a request to recompute an arbitrary hotel.
+ *
+ * This never throws and never reports failure to the caller as an error: raw
+ * event truth has already been committed, and a stale aggregate heals on the
+ * next successful mutation or a full rebuild.
+ */
+export async function refreshIntelligenceForPipelineItem(
+  pipelineItemId: string,
+  /** Injectable for tests; production always uses the service-role client. */
+  injectedAdmin?: {
+    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
+  },
+): Promise<boolean> {
+  if (!isUuid(pipelineItemId)) return false;
+  try {
+    const admin = injectedAdmin ?? createAdminClient();
+    const { error } = await admin.rpc("recompute_hotel_intelligence_for_pipeline_item", {
+      p_pipeline_item_id: pipelineItemId,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}

@@ -14,8 +14,15 @@ import { revalidatePath } from "next/cache";
 
 import { getSessionContext } from "@/lib/auth/guards";
 
+import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
+
 import { parseDealForm, parseWorkflowForm } from "./input";
-import { progressPipelineDeal, saveHotelToPipeline, transitionPipelineItem } from "./queries";
+import {
+  progressPipelineDeal,
+  refreshIntelligenceForPipelineItem,
+  saveHotelToPipeline,
+  transitionPipelineItem,
+} from "./queries";
 import {
   isDealSuccessful,
   isSaveSuccessful,
@@ -81,6 +88,14 @@ export async function transitionPipelineItemAction(formData: FormData): Promise<
     revalidatePath("/app/pipeline");
   }
 
+  // Derived intelligence is refreshed AFTER the workflow committed, from the
+  // item id (never the browser's hotel id), and its outcome is ignored: the
+  // creator's event is already recorded, so a stale aggregate must not turn a
+  // successful action into an error.
+  if (shouldRefreshIntelligence(result)) {
+    await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
+  }
+
   return result;
 }
 
@@ -110,6 +125,12 @@ export async function progressPipelineDealAction(formData: FormData): Promise<De
   if (isDealSuccessful(result)) {
     if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
     revalidatePath("/app/pipeline");
+  }
+
+  // Same best-effort contract as the workflow action: the deal is recorded
+  // whatever the aggregate does.
+  if (shouldRefreshIntelligence(result)) {
+    await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
   }
 
   return result;
