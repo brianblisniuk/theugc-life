@@ -141,12 +141,65 @@ begin
    where oe.pipeline_item_id = p_pipeline_item_id;
 
   -- ---------------------------------------------------------------------
+  -- The collaboration's STATUS and its lifecycle HISTORY must agree, and that
+  -- is checked before any branch — retry or mutation.
+  --
+  -- Otherwise a partial technical state becomes new domain history: an `active`
+  -- collaboration whose `collaboration_started` event is missing would skip the
+  -- chronology guard (there is no start to compare against), sail through
+  -- completion, and mint a `collaboration_completed` event plus a closed cycle
+  -- describing something that never demonstrably happened. Those events are
+  -- inputs to hotel intelligence now, so guessing is not a small mistake.
+  --
+  -- A technical inconsistency is not a domain fact. We refuse and say so.
+  -- ---------------------------------------------------------------------
+  if v_collab_status in ('agreed', 'scheduled') then
+    -- Nothing has happened yet, and the cycle must still be live.
+    if v_pipeline_status <> 'won'
+       or v_started_count <> 0
+       or v_completed_count <> 0
+       or v_cancelled_count <> 0 then
+      return jsonb_build_object('result', 'integrity_error');
+    end if;
+
+  elsif v_collab_status = 'active' then
+    -- Exactly one start, nothing terminal, cycle still live.
+    if v_pipeline_status <> 'won'
+       or v_started_count <> 1
+       or v_completed_count <> 0
+       or v_cancelled_count <> 0 then
+      return jsonb_build_object('result', 'integrity_error');
+    end if;
+
+  elsif v_collab_status = 'completed' then
+    -- A completed collaboration was necessarily started, exactly once, and
+    -- never cancelled; the cycle is closed.
+    if v_pipeline_status <> 'closed'
+       or v_started_count <> 1
+       or v_completed_count <> 1
+       or v_cancelled_count <> 0 then
+      return jsonb_build_object('result', 'integrity_error');
+    end if;
+
+  elsif v_collab_status = 'cancelled' then
+    -- Cancellation may precede a start (from agreed/scheduled) or follow one
+    -- (from active), so 0 or 1 starts are both coherent — but nothing else is.
+    if v_pipeline_status <> 'closed'
+       or v_completed_count <> 0
+       or v_cancelled_count <> 1
+       or v_started_count not in (0, 1) then
+      return jsonb_build_object('result', 'integrity_error');
+    end if;
+  end if;
+
+  -- ---------------------------------------------------------------------
   -- Retries are answered BEFORE the `won` requirement, because the terminal
-  -- actions deliberately leave the pipeline `closed`.
+  -- actions deliberately leave the pipeline `closed`. The history behind each
+  -- of these has just been validated, so a retry reports the ORIGINAL stored
+  -- values rather than overwriting them with whatever was posted again.
   -- ---------------------------------------------------------------------
   if p_action = 'schedule' and v_collab_status = 'scheduled' then
-    -- Rescheduling is out of scope: a retry reports the ORIGINAL schedule
-    -- rather than quietly overwriting it with whatever was posted again.
+    -- Rescheduling is out of scope.
     return jsonb_build_object(
       'result', 'already_applied',
       'collaboration_status', v_collab_status,
@@ -157,38 +210,29 @@ begin
   end if;
 
   if p_action = 'start' and v_collab_status = 'active' then
-    if v_started_count = 1 then
-      return jsonb_build_object(
-        'result', 'already_applied',
-        'collaboration_status', v_collab_status,
-        'pipeline_status', v_pipeline_status,
-        'start_date', v_collab_start
-      );
-    end if;
-    return jsonb_build_object('result', 'integrity_error');
+    return jsonb_build_object(
+      'result', 'already_applied',
+      'collaboration_status', v_collab_status,
+      'pipeline_status', v_pipeline_status,
+      'start_date', v_collab_start
+    );
   end if;
 
   if p_action = 'complete' and v_collab_status = 'completed' then
-    if v_completed_count = 1 and v_pipeline_status = 'closed' then
-      return jsonb_build_object(
-        'result', 'already_applied',
-        'collaboration_status', v_collab_status,
-        'pipeline_status', v_pipeline_status,
-        'end_date', v_collab_end
-      );
-    end if;
-    return jsonb_build_object('result', 'integrity_error');
+    return jsonb_build_object(
+      'result', 'already_applied',
+      'collaboration_status', v_collab_status,
+      'pipeline_status', v_pipeline_status,
+      'end_date', v_collab_end
+    );
   end if;
 
   if p_action = 'cancel' and v_collab_status = 'cancelled' then
-    if v_cancelled_count = 1 and v_pipeline_status = 'closed' then
-      return jsonb_build_object(
-        'result', 'already_applied',
-        'collaboration_status', v_collab_status,
-        'pipeline_status', v_pipeline_status
-      );
-    end if;
-    return jsonb_build_object('result', 'integrity_error');
+    return jsonb_build_object(
+      'result', 'already_applied',
+      'collaboration_status', v_collab_status,
+      'pipeline_status', v_pipeline_status
+    );
   end if;
 
   -- Any non-retry lifecycle move requires a live won cycle. This is also what

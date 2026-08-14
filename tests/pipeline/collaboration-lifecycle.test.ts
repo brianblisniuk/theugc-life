@@ -735,6 +735,334 @@ d("M/N/O/P/Q/R — cancel", () => {
   });
 });
 
+d("F1 — state and lifecycle history must agree", () => {
+  /** Snapshot everything a corrupted lifecycle attempt must leave untouched. */
+  async function snapshot(itemId: string) {
+    return {
+      collaboration: await collab(itemId),
+      pipeline: await statusOf(itemId),
+      events: (await events(itemId)).map((e) => e.event_type),
+    };
+  }
+
+  async function dropStartEvent(itemId: string) {
+    await adminQuery(
+      "delete from public.outreach_events where pipeline_item_id = $1 and event_type = 'collaboration_started'",
+      [itemId],
+    );
+  }
+
+  /** Duplicate an existing event of this type, as a botched retry would. */
+  async function duplicateEvent(itemId: string, type: string) {
+    await adminQuery(
+      `insert into public.outreach_events
+         (creator_id, hotel_id, pipeline_item_id, event_type, event_at, metadata, source)
+       select creator_id, hotel_id, pipeline_item_id, event_type, event_at, metadata, source
+         from public.outreach_events
+        where pipeline_item_id = $1 and event_type = $2
+        limit 1`,
+      [itemId, type],
+    );
+  }
+
+  it("active with NO collaboration_started refuses to complete", async () => {
+    const id = await active(U.free, HOTELS[0]!.id);
+    await dropStartEvent(id);
+    const before = await snapshot(id);
+
+    const res = await lifecycle(U.free, id, "complete", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      termsMatched: "yes",
+      wouldWorkAgain: true,
+    });
+
+    // Without a start there is nothing to compare against, so the chronology
+    // guard would have been skipped and a completion invented.
+    expect(res.result).toBe("integrity_error");
+    expect(await snapshot(id)).toEqual(before);
+    expect((await snapshot(id)).events).not.toContain("collaboration_completed");
+    expect(await statusOf(id)).toBe("won");
+  });
+
+  it("active with NO collaboration_started refuses to cancel", async () => {
+    const id = await active(U.free, HOTELS[1]!.id);
+    await dropStartEvent(id);
+    const before = await snapshot(id);
+
+    const res = await lifecycle(U.free, id, "cancel", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      cancelReason: "mutual",
+    });
+    expect(res.result).toBe("integrity_error");
+    expect(await snapshot(id)).toEqual(before);
+    expect(await statusOf(id)).toBe("won");
+  });
+
+  it("active with TWO collaboration_started events refuses to complete or cancel", async () => {
+    for (const [i, action] of ["complete", "cancel"].entries()) {
+      const id = await active(U.free, HOTELS[i]!.id);
+      await duplicateEvent(id, "collaboration_started");
+      const before = await snapshot(id);
+
+      const res = await lifecycle(U.free, id, action, {
+        eventAt: daysAgo(1),
+        endDate: dayOf(daysAgo(1)),
+        termsMatched: "yes",
+        cancelReason: "mutual",
+      });
+      expect(res.result).toBe("integrity_error");
+      expect(await snapshot(id)).toEqual(before);
+    }
+  });
+
+  it("active with a duplicate start refuses the start retry too", async () => {
+    const id = await active(U.free, HOTELS[0]!.id);
+    await duplicateEvent(id, "collaboration_started");
+
+    const res = await lifecycle(U.free, id, "start", {
+      eventAt: daysAgo(1),
+      startDate: dayOf(daysAgo(1)),
+    });
+    // Not `already_applied`: we cannot say which start is the real one.
+    expect(res.result).toBe("integrity_error");
+  });
+
+  it("scheduled with a stray collaboration_started refuses start and cancel", async () => {
+    for (const [i, action] of ["start", "cancel"].entries()) {
+      const id = await won(U.free, HOTELS[i]!.id);
+      await lifecycle(U.free, id, "schedule", { startDate: inDays(2) });
+      // A start event with the collaboration still `scheduled` is impossible.
+      await adminQuery(
+        `insert into public.outreach_events
+           (creator_id, hotel_id, pipeline_item_id, event_type, event_at, source)
+         select creator_id, hotel_id, id, 'collaboration_started', now() - interval '1 day', 'manual_creator'
+           from public.pipeline_items where id = $1`,
+        [id],
+      );
+      const before = await snapshot(id);
+
+      const res = await lifecycle(U.free, id, action, {
+        eventAt: daysAgo(1),
+        startDate: dayOf(daysAgo(1)),
+        endDate: dayOf(daysAgo(1)),
+        cancelReason: "mutual",
+      });
+      expect(res.result).toBe("integrity_error");
+      expect(await snapshot(id)).toEqual(before);
+    }
+  });
+
+  it("agreed or scheduled carrying a terminal event refuses every action", async () => {
+    const id = await won(U.free, HOTELS[0]!.id);
+    await adminQuery(
+      `insert into public.outreach_events
+         (creator_id, hotel_id, pipeline_item_id, event_type, event_at, metadata, source)
+       select creator_id, hotel_id, id, 'creator_closed_pipeline', now() - interval '1 day',
+              jsonb_build_object('reason','collaboration_cancelled'), 'manual_creator'
+         from public.pipeline_items where id = $1`,
+      [id],
+    );
+    const before = await snapshot(id);
+
+    for (const action of ["schedule", "start", "cancel"]) {
+      const res = await lifecycle(U.free, id, action, {
+        eventAt: daysAgo(1),
+        startDate: inDays(1),
+        endDate: dayOf(daysAgo(1)),
+        cancelReason: "mutual",
+      });
+      expect(res.result).toBe("integrity_error");
+    }
+    expect(await snapshot(id)).toEqual(before);
+  });
+
+  it("a scheduled collaboration in a closed cycle refuses the schedule retry", async () => {
+    const id = await won(U.free, HOTELS[0]!.id);
+    await lifecycle(U.free, id, "schedule", { startDate: inDays(2) });
+    await adminQuery("update public.pipeline_items set status = 'closed' where id = $1", [id]);
+
+    const res = await lifecycle(U.free, id, "schedule", { startDate: inDays(5) });
+    expect(res.result).toBe("integrity_error");
+    expect(asDay((await collab(id))!.start_date)).toBe(inDays(2));
+  });
+
+  it("a completed collaboration with broken history refuses the retry", async () => {
+    // Missing start.
+    const missing = await active(U.free, HOTELS[0]!.id);
+    await lifecycle(U.free, missing, "complete", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      termsMatched: "yes",
+    });
+    await dropStartEvent(missing);
+    expect(
+      (
+        await lifecycle(U.free, missing, "complete", {
+          eventAt: daysAgo(1),
+          endDate: dayOf(daysAgo(1)),
+          termsMatched: "no",
+        })
+      ).result,
+    ).toBe("integrity_error");
+
+    // Duplicate completion.
+    const duplicated = await active(U.free, HOTELS[1]!.id);
+    await lifecycle(U.free, duplicated, "complete", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      termsMatched: "yes",
+    });
+    await duplicateEvent(duplicated, "collaboration_completed");
+    expect(
+      (
+        await lifecycle(U.free, duplicated, "complete", {
+          eventAt: daysAgo(1),
+          endDate: dayOf(daysAgo(1)),
+          termsMatched: "yes",
+        })
+      ).result,
+    ).toBe("integrity_error");
+
+    // A cancellation event alongside a completion.
+    const both = await active(U.free, HOTELS[2]!.id);
+    await lifecycle(U.free, both, "complete", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      termsMatched: "yes",
+    });
+    await adminQuery(
+      `insert into public.outreach_events
+         (creator_id, hotel_id, pipeline_item_id, event_type, event_at, metadata, source)
+       select creator_id, hotel_id, id, 'creator_closed_pipeline', now() - interval '1 day',
+              jsonb_build_object('reason','collaboration_cancelled'), 'manual_creator'
+         from public.pipeline_items where id = $1`,
+      [both],
+    );
+    expect(
+      (
+        await lifecycle(U.free, both, "complete", {
+          eventAt: daysAgo(1),
+          endDate: dayOf(daysAgo(1)),
+          termsMatched: "yes",
+        })
+      ).result,
+    ).toBe("integrity_error");
+  });
+
+  it("a cancelled collaboration with broken history refuses the retry", async () => {
+    // Duplicate cancellation.
+    const duplicated = await won(U.free, HOTELS[0]!.id);
+    await lifecycle(U.free, duplicated, "cancel", { eventAt: daysAgo(1), cancelReason: "mutual" });
+    await duplicateEvent(duplicated, "creator_closed_pipeline");
+    expect(
+      (
+        await lifecycle(U.free, duplicated, "cancel", {
+          eventAt: daysAgo(1),
+          cancelReason: "other",
+        })
+      ).result,
+    ).toBe("integrity_error");
+
+    // A completion event alongside a cancellation.
+    const both = await active(U.free, HOTELS[1]!.id);
+    await lifecycle(U.free, both, "cancel", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      cancelReason: "mutual",
+    });
+    await adminQuery(
+      `insert into public.outreach_events
+         (creator_id, hotel_id, pipeline_item_id, event_type, event_at, source)
+       select creator_id, hotel_id, id, 'collaboration_completed', now() - interval '1 day', 'manual_creator'
+         from public.pipeline_items where id = $1`,
+      [both],
+    );
+    expect(
+      (await lifecycle(U.free, both, "cancel", { eventAt: daysAgo(1), cancelReason: "other" }))
+        .result,
+    ).toBe("integrity_error");
+
+    // More than one start behind a cancellation.
+    const twoStarts = await active(U.free, HOTELS[2]!.id);
+    await lifecycle(U.free, twoStarts, "cancel", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      cancelReason: "mutual",
+    });
+    await duplicateEvent(twoStarts, "collaboration_started");
+    expect(
+      (await lifecycle(U.free, twoStarts, "cancel", { eventAt: daysAgo(1), cancelReason: "other" }))
+        .result,
+    ).toBe("integrity_error");
+  });
+
+  it("coherent retries still report already_applied", async () => {
+    // Completed.
+    const completed = await active(U.free, HOTELS[0]!.id);
+    await lifecycle(U.free, completed, "complete", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      termsMatched: "yes",
+      wouldWorkAgain: true,
+    });
+    expect(
+      (
+        await lifecycle(U.free, completed, "complete", {
+          eventAt: daysAgo(1),
+          endDate: dayOf(daysAgo(1)),
+          termsMatched: "no",
+        })
+      ).result,
+    ).toBe("already_applied");
+
+    // Cancelled BEFORE any start: zero start events is coherent.
+    const early = await won(U.free, HOTELS[1]!.id);
+    await lifecycle(U.free, early, "cancel", { eventAt: daysAgo(1), cancelReason: "mutual" });
+    expect(
+      (await lifecycle(U.free, early, "cancel", { eventAt: daysAgo(1), cancelReason: "other" }))
+        .result,
+    ).toBe("already_applied");
+
+    // Cancelled AFTER a start: exactly one start event is coherent too.
+    const late = await active(U.free, HOTELS[2]!.id);
+    await lifecycle(U.free, late, "cancel", {
+      eventAt: daysAgo(1),
+      endDate: dayOf(daysAgo(1)),
+      cancelReason: "hotel_cancelled",
+    });
+    const retry = await lifecycle(U.free, late, "cancel", {
+      eventAt: daysAgo(1),
+      cancelReason: "other",
+    });
+    expect(retry.result).toBe("already_applied");
+
+    // …and the original cancellation data is preserved.
+    const closed = (await events(late)).filter((e) => e.event_type === "creator_closed_pipeline");
+    expect(closed).toHaveLength(1);
+    expect(closed[0]!.metadata.cancellation_reason).toBe("hotel_cancelled");
+
+    // Scheduled.
+    const scheduled = await won(U.free, HOTELS[3]!.id);
+    await lifecycle(U.free, scheduled, "schedule", { startDate: inDays(3) });
+    expect((await lifecycle(U.free, scheduled, "schedule", { startDate: inDays(9) })).result).toBe(
+      "already_applied",
+    );
+
+    // Started.
+    const started = await active(U.free, HOTELS[4]!.id);
+    expect(
+      (
+        await lifecycle(U.free, started, "start", {
+          eventAt: daysAgo(1),
+          startDate: dayOf(daysAgo(1)),
+        })
+      ).result,
+    ).toBe("already_applied");
+  });
+});
+
 d("S — a complete/cancel race has exactly one winner", () => {
   it("never produces contradictory history", async () => {
     const id = await active(U.free, HOTELS[0]!.id);
