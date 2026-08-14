@@ -546,3 +546,57 @@ date, reason or answer.
 further; the creator starts a NEW cycle through Save, which increments
 `cycle_number` and leaves all previous history — including the completed or
 cancelled collaboration — intact.
+
+## D046 — Database privileges are an explicit migration contract
+
+**Hosted default privileges are not part of the application security model.**
+
+Decision:
+The final privilege state of every application relation, view and function in
+`public` is established **explicitly by migrations**. Nothing in the security
+model may depend on a grant that a hosting platform happened to create, on a
+`GRANT` inherited from `PUBLIC`, or on the default privileges attached to the
+role that ran a migration. If a privilege is required, a migration in this
+repository grants it by name. If a privilege is not required, a migration in
+this repository revokes it by name.
+
+Reason:
+The pre-Sprint-3 audit replayed `0001 → 0023` into an empty database and read
+the resulting privilege matrix. External verification then read the same matrix
+from the deployed project and got a **different answer**: hosted Supabase had
+left broader default grants in place, including client-role write privileges on
+relations no migration ever intended to be client-writable. Two consequences
+follow, and both are unacceptable:
+
+1. **Replay stopped being a rehearsal.** The test suite, every DB-backed
+   security assertion and every review of "what the migrations do" were all
+   reasoning about a schema that is not the schema in production. A privilege
+   test that passes locally proves nothing about the deployed system if the two
+   privilege states are allowed to diverge.
+2. **The contract was unwritten.** The intended matrix existed only in
+   `PERMISSIONS.md` and in reviewers' heads. Nothing in the database asserted
+   it, so nothing could detect drift from it.
+
+Boundaries this decision does **not** move:
+
+- **RLS remains the authorization mechanism.** Row-level policies decide *which
+  rows* a caller may see or change. Normalizing table ACLs does not replace a
+  single policy, and no policy may be widened to compensate for a revoked
+  privilege.
+- **Table ACLs remain the capability and exposure control.** A privilege decides
+  whether a caller may attempt an operation at all. Defence in depth means both
+  layers hold independently: RLS must be correct even if a grant is too wide,
+  and the grant must be correct even if a policy is too permissive.
+- **`TRUNCATE` is never a client capability.** For every relation reachable by
+  `anon` or `authenticated`, `TRUNCATE` is false. `TRUNCATE` bypasses row-level
+  security entirely, so a client-role `TRUNCATE` grant is an unconditional
+  data-loss primitive no policy can restrain.
+- **Supabase-owned schemas are out of scope.** `auth.*`, `storage.*` and
+  `supabase_migrations.*` are the platform's, not the application's. This
+  decision governs `public` only.
+
+Consequence:
+A fresh replay of the full migration set and a deployed production database must
+converge on the **same** privilege matrix. `0024_explicit_acl_contract.sql`
+establishes that matrix, and a DB-backed assertion fails the build if a future
+migration reintroduces a dependency on inherited defaults.
