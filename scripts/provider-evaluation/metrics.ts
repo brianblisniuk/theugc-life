@@ -7,6 +7,7 @@
  * claim: under D061 a destination is complete only when zero coverage-critical
  * candidates remain unresolved, which no bake-off can establish.
  */
+import { interpretClassificationForD060 } from "./classification";
 import { classifyStarEligibility, hasValidCoordinates, isD060Evidence } from "./normalize";
 import type {
   AdapterDescriptor,
@@ -75,6 +76,8 @@ export function computeMetrics(
   let usableEvidence = 0;
 
   const starValueDistribution: Record<string, number> = {};
+  const classificationResolutionDistribution: Record<string, number> = {};
+  const classificationAccommodationTypeDistribution: Record<string, number> = {};
 
   for (const record of records) {
     if (isD060Evidence(record.star, descriptor)) usableEvidence += 1;
@@ -84,7 +87,23 @@ export function computeMetrics(
     const key = record.star.value === null ? "(none)" : String(record.star.value);
     starValueDistribution[key] = (starValueDistribution[key] ?? 0) + 1;
 
-    switch (classifyStarEligibility(record.star, descriptor)) {
+    // Classification-mode providers resolve through master data; inline-star
+    // providers use the star observation. Both funnel into the same buckets.
+    if (record.classification) {
+      const key = record.classification.resolution;
+      classificationResolutionDistribution[key] =
+        (classificationResolutionDistribution[key] ?? 0) + 1;
+      const type = record.classification.master?.accommodationType ?? "(unknown)";
+      classificationAccommodationTypeDistribution[type] =
+        (classificationAccommodationTypeDistribution[type] ?? 0) + 1;
+    }
+
+    const eligibility =
+      descriptor.classification.mode === "code_with_master_lookup" && record.classification
+        ? interpretClassificationForD060(record.classification, descriptor)
+        : classifyStarEligibility(record.star, descriptor);
+
+    switch (eligibility) {
       case "exact_five":
         exactFive += 1;
         break;
@@ -109,6 +128,8 @@ export function computeMetrics(
       classifiedNotV1Scope: classifiedNotV1,
       unresolvedStar: unresolved,
       starValueDistribution,
+      classificationResolutionDistribution,
+      classificationAccommodationTypeDistribution,
       propertyTypeDistribution: distribution(records.map((r) => r.propertyType)),
       activeStatusDistribution: distribution(records.map((r) => r.activeStatus)),
       apparentPhysicalHospitalityProperties: countHospitality(records, descriptor),
@@ -128,7 +149,7 @@ export function computeMetrics(
       phonePct: pct(records.filter((r) => r.phone !== null).length, total),
       providerContactPct: pct(records.filter((r) => r.providerContact !== null).length, total),
       photoPct: pct(records.filter((r) => r.photoCount > 0).length, total),
-      heroImagePct: pct(records.filter((r) => r.hasHeroImage).length, total),
+      heroImagePct: pct(records.filter((r) => r.hasPrincipalImageCandidate).length, total),
       averagePhotosPerProperty:
         total === 0 ? 0 : Math.round((photoCounts.reduce((a, b) => a + b, 0) / total) * 100) / 100,
       medianPhotosPerProperty: median(photoCounts),
@@ -147,15 +168,22 @@ export function computeMetrics(
 export function computeMediaEvidence(
   records: readonly EvaluationRecord[],
   descriptor: AdapterDescriptor,
-  categoryDistribution: Record<string, number> = {},
+  categoryDistributionOverride?: Record<string, number>,
   dimensionsSupplied: boolean | null = null,
   provenanceMetadataAvailable: boolean | null = null,
 ): MediaEvidence {
   return {
     propertiesWithAnyImage: records.filter((r) => r.photoCount > 0).length,
-    propertiesWithHeroImage: records.filter((r) => r.hasHeroImage).length,
+    propertiesWithPrincipalImageCandidate: records.filter((r) => r.hasPrincipalImageCandidate)
+      .length,
     totalImages: records.reduce((sum, r) => sum + r.photoCount, 0),
-    categoryDistribution,
+    imagesWithPath: records.reduce((sum, r) => sum + r.imagesWithPath, 0),
+    categoryDistribution:
+      categoryDistributionOverride ??
+      records.reduce<Record<string, number>>((acc, r) => {
+        for (const type of r.imageTypes) acc[type] = (acc[type] ?? 0) + 1;
+        return acc;
+      }, {}),
     dimensionsSupplied,
     provenanceMetadataAvailable,
     documentedUsageConstraints: descriptor.media.documentedUsageConstraints,

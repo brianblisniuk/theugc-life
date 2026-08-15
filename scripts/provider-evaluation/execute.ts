@@ -13,6 +13,7 @@
  * touches Supabase or `hotels`, and is not imported by the application.
  */
 import { writeArtifact } from "./artifacts";
+import { assessAllCapabilities } from "./capabilities";
 import { computeMediaEvidence, computeMetrics } from "./metrics";
 import { normalizeAll } from "./normalize";
 import { paginateAll, type PageResult } from "./paginate";
@@ -21,7 +22,9 @@ import type {
   EvaluationDestination,
   EvaluationRunResult,
   ProviderGeographyResolution,
+  ReferenceData,
 } from "./types";
+import { emptyReferenceData } from "./types";
 
 /**
  * The provider-specific surface, kept as small as possible.
@@ -54,6 +57,8 @@ export interface ExecuteOptions {
   retainRawPayloads?: boolean;
   /** Runaway guards, NOT coverage caps. Passed through to the paginator. */
   maxRequestsPerEntity?: number;
+  /** Master/reference data for code→meaning joins (e.g. Hotelbeds categories). */
+  reference?: ReferenceData;
 }
 
 function geographyFor(
@@ -138,7 +143,8 @@ export async function executeEvaluation(options: ExecuteOptions): Promise<Evalua
     coverageRisks,
   };
 
-  const { records, accounting } = normalizeAll(rawPayloads, descriptor, destination);
+  const reference = options.reference ?? emptyReferenceData();
+  const { records, accounting } = normalizeAll(rawPayloads, descriptor, destination, reference);
   const metrics = computeMetrics(records, accounting, descriptor, destination, pagination);
   const media = computeMediaEvidence(records, descriptor);
 
@@ -161,6 +167,7 @@ export async function executeEvaluation(options: ExecuteOptions): Promise<Evalua
     metrics,
     media,
     operations: descriptor.operations,
+    capabilities: assessAllCapabilities(descriptor, destination),
     artifacts,
     coverageDisclaimer:
       "These are provider metrics, NOT a coverage claim. Under D061 a destination is coverage complete only when zero coverage-critical candidates remain unresolved, which this run does not establish.",

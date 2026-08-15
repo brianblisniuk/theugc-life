@@ -26,6 +26,12 @@ export const nuiteeLiteApiDescriptor: AdapterDescriptor = {
   usesAvailabilityEndpointForCoverage: false,
   pagination: null,
   fieldMap: {},
+  imageFieldMap: {},
+  classification: {
+    mode: "unknown",
+    hotelAccommodationTypes: [],
+    issuerEstablished: false,
+  },
   starSemantics: [],
   starKindsAcceptedAsD060Evidence: [],
   starKindDocumentedAbsent: false,
@@ -43,6 +49,7 @@ export const nuiteeLiteApiDescriptor: AdapterDescriptor = {
     sandboxVsProductionNotes: null,
   },
   media: { documentedUsageConstraints: [] },
+  capabilityBlockers: {},
   blockers: [
     "SELF_SERVICE_SANDBOX_AVAILABLE / CREDENTIAL_NOT_YET_SUPPLIED: NUITEE_API_KEY is NOT AVAILABLE.",
     "LIVE_NOT_RUN: no request has been made and no metric exists.",

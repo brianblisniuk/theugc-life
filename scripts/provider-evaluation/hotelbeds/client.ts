@@ -25,7 +25,13 @@ import {
   terminalReasonFor,
 } from "./budget";
 import { cacheKey, readCache, writeCache, type CachedResponse } from "./cache";
-import { buildAuthHeaders, redactHeaders, type HotelbedsCredentials } from "./signature";
+import { DailyQuotaExhaustedError, QuotaLedger } from "./quota-ledger";
+import {
+  accountFingerprint,
+  buildAuthHeaders,
+  redactHeaders,
+  type HotelbedsCredentials,
+} from "./signature";
 
 export interface HotelbedsClientOptions {
   baseUrl: string;
@@ -39,6 +45,13 @@ export interface HotelbedsClientOptions {
   cacheRoot?: string;
   /** When false, a cached entry is ignored and a fresh request is made. */
   useCache?: boolean;
+  /**
+   * Persistent daily-quota ledger.
+   *
+   * Required in practice: without it a second process would start with a fresh
+   * allowance and could push the account past 50/day.
+   */
+  ledger: QuotaLedger;
   /** Diagnostic sink. Receives only redacted material. */
   log?: (message: string) => void;
 }
@@ -56,11 +69,14 @@ export class HotelbedsClient {
   private readonly fetchImpl: typeof fetch;
   private readonly nowSeconds: () => number;
   private readonly log: (message: string) => void;
+  /** Non-secret, printable, irreversible. Never the key itself. */
+  readonly accountFingerprint: string;
 
   constructor(private readonly options: HotelbedsClientOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.nowSeconds = options.nowSeconds ?? (() => Math.floor(Date.now() / 1000));
     this.log = options.log ?? (() => {});
+    this.accountFingerprint = accountFingerprint(options.credentials.apiKey);
   }
 
   /**
@@ -72,12 +88,20 @@ export class HotelbedsClient {
   async request(
     path: string,
     query: Record<string, string | number> = {},
+    options: { bypassCache?: boolean } = {},
   ): Promise<HotelbedsResponse> {
     const url = this.buildUrl(path, query);
-    const key = cacheKey("GET", url);
+    const key = cacheKey({
+      provider: "hotelbeds",
+      baseUrl: this.options.baseUrl,
+      accountFingerprint: this.accountFingerprint,
+      method: "GET",
+      url,
+    });
 
-    if (this.options.useCache !== false) {
-      const cached = readCache(key, this.options.cacheRoot);
+    const useCache = this.options.useCache !== false && !options.bypassCache;
+    if (useCache) {
+      const cached = readCache(key, this.accountFingerprint, this.options.cacheRoot);
       if (cached) {
         this.options.budget.recordCacheHit();
         this.log(`cache hit: ${cached.requestSummary}`);
@@ -88,7 +112,15 @@ export class HotelbedsClient {
     let lastError: unknown = null;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_REQUEST; attempt += 1) {
-      // Throws when the budget is spent — before any network activity.
+      // The DAILY allowance is checked first and independently of the local
+      // run budget: a fresh process resets the second but never the first.
+      const spent = this.options.ledger.spent();
+      if (this.options.ledger.remaining() <= 0) {
+        this.options.budget.stop("blocked_by_daily_quota");
+        throw new DailyQuotaExhaustedError(spent, spent + this.options.ledger.remaining());
+      }
+
+      // Throws when the local run budget is spent — before any network activity.
       await this.options.budget.reserve(attempt > 1);
 
       const headers = buildAuthHeaders(this.options.credentials, this.nowSeconds());
@@ -117,8 +149,10 @@ export class HotelbedsClient {
       }
 
       // From here the response genuinely came from the provider, so the request
-      // consumed provider quota.
+      // consumed provider quota — record it durably BEFORE anything can throw,
+      // or a crash would lose the fact that the allowance was spent.
       this.options.budget.recordProviderReached();
+      this.options.ledger.record(response.status, attempt > 1);
 
       const terminal = terminalReasonFor(response.status);
       if (terminal === "authentication_failed") {
@@ -141,7 +175,7 @@ export class HotelbedsClient {
           requestKey: key,
           requestSummary: `GET ${url}`,
         };
-        writeCache(key, entry, this.options.cacheRoot);
+        writeCache(key, this.accountFingerprint, entry, this.options.cacheRoot);
         return { status: response.status, body, fromCache: false };
       }
 

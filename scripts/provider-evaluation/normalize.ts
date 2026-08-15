@@ -11,14 +11,17 @@
  * it is gone. If a provider supplies no qualifier, the descriptor must say so
  * explicitly (`starKindDocumentedAbsent`).
  */
+import { observeClassification } from "./classification";
 import type {
   AdapterDescriptor,
   EvaluationDestination,
   EvaluationRecord,
   RecordAccounting,
+  ReferenceData,
   StarEligibility,
   StarObservation,
 } from "./types";
+import { emptyReferenceData } from "./types";
 
 /** Read a dotted path out of an arbitrary payload. Missing → null, never throw. */
 export function readPath(source: unknown, path: string | null | undefined): unknown {
@@ -127,10 +130,62 @@ export function classifyStarEligibility(
   return "classified_not_v1_scope";
 }
 
+/**
+ * Derive image evidence from the images COLLECTION.
+ *
+ * A principal image is not always a field on the property. Hotelbeds marks one
+ * with `visualOrder = 0` inside each image entry, so pointing a `heroImage` path
+ * at the property record would read `undefined` forever and report 0% hero
+ * coverage for a provider that actually supplies it.
+ */
+export function deriveImageEvidence(
+  payload: unknown,
+  descriptor: AdapterDescriptor,
+): {
+  photoCount: number;
+  hasPrincipalImageCandidate: boolean;
+  imageTypes: string[];
+  imagesWithPath: number;
+} {
+  const raw = descriptor.fieldMap.photos ? readPath(payload, descriptor.fieldMap.photos) : null;
+  const images = Array.isArray(raw) ? raw : [];
+  const { path: pathKey, type: typeKey, visualOrder: orderKey } = descriptor.imageFieldMap;
+
+  const types = new Set<string>();
+  let withPath = 0;
+  let principal = false;
+
+  for (const image of images) {
+    if (pathKey && asString(readPath(image, pathKey)) !== null) withPath += 1;
+    if (typeKey) {
+      const type = asString(readPath(image, typeKey));
+      if (type) types.add(type);
+    }
+    if (orderKey) {
+      const order = asNumber(readPath(image, orderKey));
+      // visualOrder === 0 identifies a principal-image candidate.
+      if (order === 0) principal = true;
+    }
+  }
+
+  // A provider WITH an explicit hero field still wins, when it has one.
+  if (!principal && descriptor.fieldMap.heroImage) {
+    principal = readPath(payload, descriptor.fieldMap.heroImage) !== null;
+  }
+
+  return {
+    photoCount: images.length,
+    hasPrincipalImageCandidate: principal,
+    imageTypes: [...types],
+    imagesWithPath: withPath,
+  };
+}
+
 export function normalizeRecord(
   payload: unknown,
   descriptor: AdapterDescriptor,
   destination: EvaluationDestination,
+  reference: ReferenceData = emptyReferenceData(),
 ): EvaluationRecord | null {
   const sourcePropertyId = asString(readPath(payload, descriptor.fieldMap.sourcePropertyId));
   // A record with no provider id cannot be counted, deduplicated or matched.
@@ -154,8 +209,8 @@ export function normalizeRecord(
     phone: asString(readPath(payload, fieldMap.phone)),
     providerContact: asString(readPath(payload, fieldMap.providerContact)),
     star: buildStarObservation(payload, descriptor),
-    photoCount: fieldMap.photos ? asCount(readPath(payload, fieldMap.photos)) : 0,
-    hasHeroImage: fieldMap.heroImage ? readPath(payload, fieldMap.heroImage) !== null : false,
+    classification: observeClassification(payload, descriptor, reference),
+    ...deriveImageEvidence(payload, descriptor),
     activeStatus: asString(readPath(payload, fieldMap.activeStatus)),
   };
 }
@@ -177,12 +232,13 @@ export function normalizeAll(
   payloads: readonly unknown[],
   descriptor: AdapterDescriptor,
   destination: EvaluationDestination,
+  reference: ReferenceData = emptyReferenceData(),
 ): NormalizationOutcome {
   const records: EvaluationRecord[] = [];
   let missingId = 0;
 
   for (const payload of payloads) {
-    const record = normalizeRecord(payload, descriptor, destination);
+    const record = normalizeRecord(payload, descriptor, destination, reference);
     if (record) {
       records.push(record);
     } else {

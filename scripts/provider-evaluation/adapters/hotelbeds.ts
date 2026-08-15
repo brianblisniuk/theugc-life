@@ -103,16 +103,38 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
     websiteUrl: "web",
     phone: "phones.0.phoneNumber",
     providerContact: "email",
-    starValue: "category.simpleCode",
-    starKind: "category.code",
+    // NOT a star path. Hotelbeds expresses classification as a CODE on the
+    // property, resolved through the categories master (see `classification`).
+    // Pointing starValue at "category.simpleCode" assumed the hotels response
+    // embeds a category object, which the documented architecture does not say.
+    starValue: null,
+    starKind: null,
     // Content API is a static-content product; a guest-review score is not among
     // the documented sections. Left UNSET rather than null: absence has not been
     // positively documented, and claiming it would be the error class this
     // harness exists to prevent.
     reviewScore: undefined,
     photos: "images",
+    // No principal-image FIELD on the property; it is derived from the images
+    // collection via `visualOrder = 0` (see imageFieldMap).
     heroImage: null,
     activeStatus: "status",
+  },
+  imageFieldMap: {
+    path: "path",
+    type: "imageTypeCode",
+    visualOrder: "visualOrder",
+  },
+  classification: {
+    // The documented architecture: the hotels operation returns CODES, and the
+    // descriptive/master operations explain them.
+    mode: "code_with_master_lookup",
+    codePath: "categoryCode",
+    // Empty until the live accommodationType distribution is observed. With none
+    // declared, no classification resolves D060 — which is the honest state.
+    hotelAccommodationTypes: [],
+    // No issuing authority is documented for Hotelbeds categories.
+    issuerEstablished: false,
   },
   starSemantics: [
     {
@@ -170,11 +192,21 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
       "TECHNICALLY_AVAILABLE / PRODUCTION_RIGHTS_REVIEW_REQUIRED: redistribution and storage rights are governed by the commercial contract and are NOT established by developer documentation (D064).",
     ],
   },
+  // GLOBAL blockers only: things that stop every dimension.
   blockers: [
     "EGRESS BLOCKED: api.test.hotelbeds.com is unreachable from the Claude Code environment (egress proxy returned HTTP 403 on CONNECT). No live request has been made and no quota consumed.",
-    "Bali and Dubai destination codes are unresolved; they require live Content API destination master data.",
-    "category.simpleCode semantics are country-dependent and the issuing authority is undocumented, so no category value is accepted as D060 evidence ('5 KEY' is not five hotel stars).",
-    "accommodationType / category distribution has not been observed, so no hospitality property-type mapping is established.",
-    "Documented field paths have not been exercised against a live payload.",
   ],
+  // Dimension-scoped blockers. Crucially, the unresolved classification issuer
+  // does NOT appear under inventory/location/media — those are measurable as
+  // soon as egress and geography exist.
+  capabilityBlockers: {
+    assess_classification: [
+      "Category master join is documented but unexercised: the exact category-code field on the hotels response has not been confirmed against a live payload.",
+    ],
+    resolve_d060_classification: [
+      "Category standards are country-dependent and the issuing authority is undocumented, so no category resolves D060 ('5 KEY' on an apartment is not five hotel stars).",
+      "accommodationType distribution has not been observed, so no accommodation type is accepted as carrying a hotel star classification.",
+      "Whether classification provenance can be stored and cited — publishability condition 7 (D062) — is unresolved.",
+    ],
+  },
 };

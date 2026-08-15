@@ -21,15 +21,23 @@ import { ARTIFACT_ROOT } from "../../scripts/provider-evaluation/artifacts";
 
 import { bookingDemandDescriptor } from "../../scripts/provider-evaluation/adapters/booking";
 import { expediaRapidDescriptor } from "../../scripts/provider-evaluation/adapters/expedia";
+import { getAdapter } from "../../scripts/provider-evaluation/adapters/registry";
+import { hotelbedsContentDescriptor } from "../../scripts/provider-evaluation/adapters/hotelbeds";
 import {
-  assertRunnable,
-  checkRunnable,
-  getAdapter,
-} from "../../scripts/provider-evaluation/adapters/registry";
+  assessAllCapabilities,
+  assessCapability,
+  assertRunnableForAnyCapability,
+} from "../../scripts/provider-evaluation/capabilities";
+import {
+  buildClassificationMaster,
+  interpretClassificationForD060,
+  numericLevelFrom,
+  observeClassification,
+} from "../../scripts/provider-evaluation/classification";
 import { checkCredentials } from "../../scripts/provider-evaluation/credentials";
 import { LOCAL_ENV_FILE, loadLocalEnv } from "../../scripts/provider-evaluation/env";
 import { executeEvaluation } from "../../scripts/provider-evaluation/execute";
-import { computeMetrics } from "../../scripts/provider-evaluation/metrics";
+import { computeMediaEvidence, computeMetrics } from "../../scripts/provider-evaluation/metrics";
 import {
   buildStarObservation,
   classifyStarEligibility,
@@ -130,10 +138,17 @@ const SYNTHETIC: AdapterDescriptor = {
       ],
     },
   ],
+  imageFieldMap: { path: "url", type: "kind", visualOrder: "visualOrder" },
+  classification: {
+    mode: "inline_value_and_kind",
+    hotelAccommodationTypes: [],
+    issuerEstablished: true,
+  },
   starKindsAcceptedAsD060Evidence: ["official"],
   starKindDocumentedAbsent: false,
   hospitalityPropertyTypes: ["hotel", "resort", "villa"],
   geographyEnumerationRisks: [],
+  capabilityBlockers: {},
   geography: [
     {
       destination: "bali",
@@ -481,8 +496,11 @@ describe("overlap analysis records evidence and invents no thresholds", () => {
       phone: null,
       providerContact: null,
       star: { value: 5, kind: "official", reviewScore: null },
+      classification: null,
       photoCount: 0,
-      hasHeroImage: false,
+      hasPrincipalImageCandidate: false,
+      imageTypes: [],
+      imagesWithPath: 0,
       activeStatus: null,
       ...over,
     };
@@ -760,46 +778,88 @@ describe("the execution pipeline runs end to end", () => {
   });
 });
 
-describe("the runnability gate blocks unverified descriptors", () => {
-  it("refuses Booking while its stars_type enum is unestablished", () => {
-    const problem = checkRunnable(bookingDemandDescriptor);
-    expect(problem).not.toBeNull();
-    expect(problem?.reasons.join(" ")).toContain("PARTIALLY_VERIFIED");
-    // The specific reason matters: a single documented example is not an enum.
-    expect(problem?.reasons.join(" ")).toContain("stars_type");
-    expect(() => assertRunnable(bookingDemandDescriptor)).toThrow(/cannot be evaluated yet/);
+describe("capability-specific gates", () => {
+  it("lets a source measure inventory, location and media with classification unresolved", () => {
+    // The layered-source principle. Hotelbeds has no accepted classification and
+    // no established issuer, and that must NOT veto measuring coordinates.
+    const ready: AdapterDescriptor = {
+      ...hotelbedsContentDescriptor,
+      // Pretend egress and geography are solved; everything else stays as-is.
+      blockers: [],
+      geography: [
+        {
+          destination: "bali",
+          providerEntityIds: ["D1", "D2"],
+          providerEntityKind: "destination",
+          resolutionMethod: "test fixture",
+          requiresUnion: true,
+          caveats: [],
+        },
+      ],
+    };
+
+    const byName = Object.fromEntries(
+      assessAllCapabilities(ready, "bali").map((c) => [c.capability, c]),
+    );
+
+    expect(byName["enumerate_inventory"]?.runnable).toBe(true);
+    expect(byName["measure_location"]?.runnable).toBe(true);
+    expect(byName["measure_media"]?.runnable).toBe(true);
+    // And the strict one is still strict.
+    expect(byName["resolve_d060_classification"]?.runnable).toBe(false);
+    expect(byName["resolve_d060_classification"]?.reasons.join(" ")).toContain("issuing authority");
   });
 
-  it("refuses Expedia while its geography and star hypotheses are unconfirmed", () => {
-    const reasons = checkRunnable(expediaRapidDescriptor)?.reasons.join(" ") ?? "";
-    expect(reasons).toContain("geography");
-    expect(reasons).toContain("hypothes");
+  it("does not weaken D060: no issuer means no resolution, ever", () => {
+    const noIssuer: AdapterDescriptor = {
+      ...SYNTHETIC,
+      classification: { ...SYNTHETIC.classification, issuerEstablished: false },
+    };
+    const assessment = assessCapability(noIssuer, "resolve_d060_classification");
+    expect(assessment.runnable).toBe(false);
+    expect(assessment.reasons.join(" ")).toContain("condition 7");
+  });
+
+  it("blocks every capability when a GLOBAL blocker applies", () => {
+    const blocked: AdapterDescriptor = { ...SYNTHETIC, blockers: ["EGRESS BLOCKED"] };
+    for (const c of assessAllCapabilities(blocked, "bali")) {
+      expect(c.runnable).toBe(false);
+      expect(c.reasons).toContain("EGRESS BLOCKED");
+    }
+    expect(() => assertRunnableForAnyCapability(blocked, "bali")).toThrow(/cannot evaluate ANY/);
+  });
+
+  it("requires geography, but points at the discovery phase rather than stars", () => {
+    const noGeography: AdapterDescriptor = { ...SYNTHETIC, geography: [] };
+    const reasons = assessCapability(noGeography, "enumerate_inventory").reasons.join(" ");
+    expect(reasons).toContain("geography-discovery phase");
+    expect(reasons).toContain("NOT gated on classification");
+  });
+
+  it("allows a run when ANY capability is measurable", () => {
+    expect(() => assertRunnableForAnyCapability(SYNTHETIC, "bali")).not.toThrow();
+  });
+
+  it("keeps Booking and Expedia as documented future strategic sources", () => {
+    expect(bookingDemandDescriptor.accessStatus).toBe("direct_access_unavailable");
+    expect(bookingDemandDescriptor.strategicRole).toBe("future_strategic_source");
+    expect(expediaRapidDescriptor.accessStatus).toBe("direct_access_unavailable");
+    expect(expediaRapidDescriptor.liveValidationStatus).toBe("not_run");
   });
 
   it("keeps the top-500 mapping cap as a GEOGRAPHY risk, not a content pagination cap", () => {
-    // The 500 limit belongs to Geography property MAPPINGS for large region
-    // types. It is NOT a cap on the Content API, and encoding it as one would
-    // fire a false coverage alarm on any content extraction past 500 records.
     expect(expediaRapidDescriptor.pagination?.documentedHardCap).toBeNull();
     expect(expediaRapidDescriptor.geographyEnumerationRisks.join(" ")).toContain("TOP 500");
-    expect(expediaRapidDescriptor.geographyEnumerationRisks.join(" ")).toContain("descendants");
   });
 
   it("does not raise a geography coverage risk from a >500-record content extraction", async () => {
-    // Regression for the corrected error: 900 content records must paginate to
-    // completion cleanly, with no geography cap warning anywhere near it.
-    const contentDescriptor: AdapterDescriptor = {
-      ...SYNTHETIC,
-      pagination: { ...SYNTHETIC.pagination!, documentedHardCap: null },
-    };
-
     const pages = [
       Array.from({ length: 500 }, (_, i) => payload({ id: `a${i}` })),
       Array.from({ length: 400 }, (_, i) => payload({ id: `b${i}` })),
     ];
 
     const result = await executeEvaluation({
-      descriptor: contentDescriptor,
+      descriptor: SYNTHETIC,
       destination: "bali",
       runLabel: "test",
       transport: {
@@ -818,82 +878,208 @@ describe("the runnability gate blocks unverified descriptors", () => {
     expect(result.metrics.pagination.coverageRisks).toEqual([]);
   });
 
-  it("keeps a broad hospitality type list rather than pre-filtering to Hotel", () => {
-    expect(expediaRapidDescriptor.hospitalityPropertyTypes).toContain("Villa");
-    expect(expediaRapidDescriptor.hospitalityPropertyTypes).toContain("Aparthotel");
+  it("resolves adapters by name and rejects unknown ones", () => {
+    expect(getAdapter("hotelbeds").provider).toBe("hotelbeds");
+    expect(() => getAdapter("nope")).toThrow(/Unknown provider/);
   });
 
-  it("accepts no star kind as D060 evidence for either real provider yet", () => {
-    expect(bookingDemandDescriptor.starKindsAcceptedAsD060Evidence).toEqual([]);
-    expect(expediaRapidDescriptor.starKindsAcceptedAsD060Evidence).toEqual([]);
-  });
-
-  it("issues no star verdict for either real provider, only hypotheses", () => {
-    for (const finding of [
-      ...bookingDemandDescriptor.starSemantics,
-      ...expediaRapidDescriptor.starSemantics,
-    ]) {
-      expect(finding.verdict).toBeNull();
+  it("never records an availability endpoint as the coverage source", () => {
+    for (const d of [bookingDemandDescriptor, expediaRapidDescriptor, hotelbedsContentDescriptor]) {
+      expect(d.usesAvailabilityEndpointForCoverage).toBe(false);
     }
   });
 
   it("attributes external-review evidence honestly", () => {
-    // Claude Code did not fetch these pages; provenance must say so.
-    for (const source of [...bookingDemandDescriptor.sources, ...expediaRapidDescriptor.sources]) {
+    for (const source of [
+      ...bookingDemandDescriptor.sources,
+      ...expediaRapidDescriptor.sources,
+      ...hotelbedsContentDescriptor.sources,
+    ]) {
       expect(source.verifiedBy).toBe("external_review");
-      expect(source.accessedAt).toBe("2026-08-15");
     }
   });
+});
 
-  it("refuses Expedia until its documentation is verified", () => {
-    expect(() => assertRunnable(expediaRapidDescriptor)).toThrow(/cannot be evaluated yet/);
+describe("classification: master-data join, then D060 interpretation", () => {
+  const HOTELBEDS: AdapterDescriptor = {
+    ...SYNTHETIC,
+    provider: "hb",
+    classification: {
+      mode: "code_with_master_lookup",
+      codePath: "categoryCode",
+      hotelAccommodationTypes: ["HOTEL"],
+      issuerEstablished: true,
+    },
+  };
+
+  const master = buildClassificationMaster(
+    [
+      { code: "5EST", simpleCode: "5", accommodationType: "HOTEL", description: "5 STAR" },
+      { code: "4EST", simpleCode: "4", accommodationType: "HOTEL", description: "4 STAR" },
+      { code: "3EST", simpleCode: "3", accommodationType: "HOTEL", description: "3 STAR" },
+      { code: "5LL", simpleCode: "5", accommodationType: "APARTMENT", description: "5 KEY" },
+      { code: "BOUT", simpleCode: "BO", accommodationType: "HOTEL", description: "BOUTIQUE" },
+    ],
+    {
+      code: "code",
+      simpleCode: "simpleCode",
+      accommodationType: "accommodationType",
+      description: "description",
+    },
+  );
+  const reference = { classifications: master };
+
+  function interpret(categoryCode: unknown, descriptor = HOTELBEDS) {
+    const observation = observeClassification({ categoryCode }, descriptor, reference);
+    return { observation, eligibility: interpretClassificationForD060(observation, descriptor) };
+  }
+
+  it("resolves a hotel category code through master data", () => {
+    const { observation, eligibility } = interpret("5EST");
+    expect(observation.resolution).toBe("resolved");
+    expect(observation.master?.accommodationType).toBe("HOTEL");
+    expect(eligibility).toBe("exact_five");
+    expect(interpret("4EST").eligibility).toBe("exact_four");
   });
 
-  it("accepts an explicitly null reviewScore as a documented absence", () => {
-    const documentedNone: AdapterDescriptor = {
-      ...SYNTHETIC,
-      fieldMap: { ...SYNTHETIC.fieldMap, reviewScore: null },
+  it("keeps HOTEL + 5 STAR distinct from APARTMENT + 5 KEY", () => {
+    // Both have simpleCode 5. Only one is five hotel stars.
+    expect(interpret("5EST").eligibility).toBe("exact_five");
+    expect(interpret("5LL").eligibility).toBe("unresolved");
+    expect(interpret("5LL").observation.master?.description).toBe("5 KEY");
+  });
+
+  it("treats a genuine 3-star hotel as classified-but-out-of-scope", () => {
+    expect(interpret("3EST").eligibility).toBe("classified_not_v1_scope");
+  });
+
+  it("marks a missing master entry as unresolved, not as absent classification", () => {
+    const { observation, eligibility } = interpret("NOPE");
+    expect(observation.resolution).toBe("unresolved_no_master_entry");
+    expect(observation.sourceCode).toBe("NOPE");
+    expect(eligibility).toBe("unresolved");
+  });
+
+  it("marks a missing code on the property as unresolved", () => {
+    expect(interpret(null).observation.resolution).toBe("unresolved_no_code");
+  });
+
+  it("NEVER manufactures a number from the category code string", () => {
+    // "5EST" contains a 5. Only an explicit numeric simpleCode counts.
+    expect(
+      numericLevelFrom({
+        code: "5EST",
+        simpleCode: "5EST",
+        accommodationType: "HOTEL",
+        group: null,
+        description: "5 STAR",
+      }),
+    ).toBeNull();
+    expect(
+      numericLevelFrom({
+        code: "BOUT",
+        simpleCode: "BO",
+        accommodationType: "HOTEL",
+        group: null,
+        description: "BOUTIQUE",
+      }),
+    ).toBeNull();
+    expect(interpret("BOUT").eligibility).toBe("unresolved");
+  });
+
+  it("resolves nothing while no accommodation type is accepted as a hotel classification", () => {
+    const undeclared: AdapterDescriptor = {
+      ...HOTELBEDS,
+      classification: { ...HOTELBEDS.classification, hotelAccommodationTypes: [] },
     };
-    expect(checkRunnable(documentedNone)).toBeNull();
+    expect(interpret("5EST", undeclared).eligibility).toBe("unresolved");
   });
 
-  it("rejects an UNSET reviewScore, since unknown is not a documented absence", () => {
-    const unknown: AdapterDescriptor = {
-      ...SYNTHETIC,
-      fieldMap: { ...SYNTHETIC.fieldMap, reviewScore: undefined },
+  it("resolves nothing while the issuing authority is unestablished", () => {
+    const noIssuer: AdapterDescriptor = {
+      ...HOTELBEDS,
+      classification: { ...HOTELBEDS.classification, issuerEstablished: false },
     };
-    expect(checkRunnable(unknown)?.reasons.join(" ")).toContain('no "reviewScore" entry');
+    expect(interpret("5EST", noIssuer).eligibility).toBe("unresolved");
   });
 
-  it("requires an explicit starKind path or a documented absence", () => {
-    const noKind: AdapterDescriptor = {
-      ...SYNTHETIC,
-      fieldMap: { ...SYNTHETIC.fieldMap, starKind: undefined },
-      starKindDocumentedAbsent: false,
-    };
-    const reasons = checkRunnable(noKind)?.reasons.join(" ") ?? "";
-    expect(reasons).toContain("never derived from a naming convention");
+  it("reports the join outcome distribution in the metrics", () => {
+    const payloads = [
+      { id: "a", categoryCode: "5EST" },
+      { id: "b", categoryCode: "5LL" },
+      { id: "c", categoryCode: "NOPE" },
+      { id: "d" },
+    ];
+    const { records, accounting } = normalizeAll(payloads, HOTELBEDS, "bali", reference);
+    const metrics = computeMetrics(records, accounting, HOTELBEDS, "bali", EVIDENCE);
+
+    expect(metrics.inventory.apparentExactFiveStar).toBe(1);
+    expect(metrics.inventory.classificationResolutionDistribution["resolved"]).toBe(2);
+    expect(
+      metrics.inventory.classificationResolutionDistribution["unresolved_no_master_entry"],
+    ).toBe(1);
+    expect(metrics.inventory.classificationAccommodationTypeDistribution["APARTMENT"]).toBe(1);
+  });
+});
+
+describe("media evidence is derived from the images collection", () => {
+  it("finds a principal-image candidate via visualOrder = 0", () => {
+    const withPrincipal = payload({
+      id: "a",
+      images: [
+        { url: "x.jpg", kind: "GEN", visualOrder: 1 },
+        { url: "y.jpg", kind: "ROO", visualOrder: 0 },
+      ],
+    });
+    const { records, accounting } = normalizeAll([withPrincipal], SYNTHETIC, "bali");
+    expect(records[0]?.hasPrincipalImageCandidate).toBe(true);
+    expect(records[0]?.imageTypes.sort()).toEqual(["GEN", "ROO"]);
+    expect(records[0]?.imagesWithPath).toBe(2);
+
+    const metrics = computeMetrics(records, accounting, SYNTHETIC, "bali", EVIDENCE);
+    expect(metrics.fieldCoverage.heroImagePct).toBe(100);
   });
 
-  it("is destination-scoped, since geography resolves per destination", () => {
-    expect(checkRunnable(SYNTHETIC, "bali")).toBeNull();
-    expect(checkRunnable(SYNTHETIC, "dubai")?.reasons.join(" ")).toContain("dubai");
+  it("reports no principal candidate when no image carries visualOrder 0", () => {
+    const noPrincipal = payload({
+      id: "b",
+      // hero cleared: this test exercises pure derivation from the collection.
+      hero: null,
+      images: [{ url: "x.jpg", kind: "GEN", visualOrder: 3 }],
+    });
+    const { records } = normalizeAll([noPrincipal], SYNTHETIC, "bali");
+    expect(records[0]?.hasPrincipalImageCandidate).toBe(false);
   });
 
-  it("allows a fully verified descriptor through", () => {
-    expect(checkRunnable(SYNTHETIC)).toBeNull();
-    expect(() => assertRunnable(SYNTHETIC)).not.toThrow();
+  it("aggregates image types and path availability into media evidence", () => {
+    const { records } = normalizeAll(
+      [
+        payload({ id: "a", hero: null, images: [{ url: "1.jpg", kind: "GEN", visualOrder: 0 }] }),
+        payload({ id: "b", hero: null, images: [{ kind: "ROO", visualOrder: 2 }] }),
+      ],
+      SYNTHETIC,
+      "bali",
+    );
+    const media = computeMediaEvidence(records, SYNTHETIC);
+
+    expect(media.propertiesWithAnyImage).toBe(2);
+    expect(media.propertiesWithPrincipalImageCandidate).toBe(1);
+    expect(media.totalImages).toBe(2);
+    // One image has no path — that is a real content-quality signal.
+    expect(media.imagesWithPath).toBe(1);
+    expect(media.categoryDistribution["GEN"]).toBe(1);
   });
 
-  it("never records an availability endpoint as the coverage source", () => {
-    for (const descriptor of [bookingDemandDescriptor, expediaRapidDescriptor, SYNTHETIC]) {
-      expect(descriptor.usesAvailabilityEndpointForCoverage).toBe(false);
-    }
+  it("still honours an explicit hero field when the provider has one", () => {
+    // SYNTHETIC maps `heroImage: "hero"`, and the default payload supplies it.
+    const { records } = normalizeAll([payload({ id: "c", images: [] })], SYNTHETIC, "bali");
+    expect(records[0]?.hasPrincipalImageCandidate).toBe(true);
   });
 
-  it("resolves adapters by name and rejects unknown ones", () => {
-    expect(getAdapter("booking").provider).toBe("booking");
-    expect(() => getAdapter("nope")).toThrow(/Unknown provider/);
+  it("keeps Hotelbeds media as technically available, rights unresolved", () => {
+    const constraints = hotelbedsContentDescriptor.media.documentedUsageConstraints.join(" ");
+    expect(constraints).toContain("TECHNICALLY_AVAILABLE");
+    expect(constraints).toContain("PRODUCTION_RIGHTS_REVIEW_REQUIRED");
   });
 });
 

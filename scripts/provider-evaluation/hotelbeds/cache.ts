@@ -27,25 +27,55 @@ export interface CachedResponse {
   requestSummary: string;
 }
 
+/** Everything that makes two requests genuinely the same request. */
+export interface CacheIdentity {
+  provider: string;
+  /** Environment/base URL: test and production are different worlds. */
+  baseUrl: string;
+  /** Non-secret credential fingerprint — never the key itself. */
+  accountFingerprint: string;
+  method: string;
+  url: string;
+  body?: unknown;
+}
+
 /**
  * Stable cache key for one request.
  *
- * Credentials are deliberately NOT part of the key: the signature changes every
- * second, so including it would make every entry a miss and defeat the cache.
+ * Includes the ACCOUNT fingerprint and base URL, because Hotelbeds responses can
+ * differ by account portfolio and by environment. Without them a future key
+ * would silently read another account's cached inventory and report it as its
+ * own — a wrong answer that looks exactly like a right one.
+ *
+ * The raw API key is never part of this: only its irreversible fingerprint. The
+ * per-request signature is excluded too, since it changes every second and would
+ * make every lookup a miss.
  */
-export function cacheKey(method: string, url: string, body?: unknown): string {
-  const payload = JSON.stringify({ method: method.toUpperCase(), url, body: body ?? null });
+export function cacheKey(identity: CacheIdentity): string {
+  const payload = JSON.stringify({
+    provider: identity.provider,
+    baseUrl: identity.baseUrl,
+    account: identity.accountFingerprint,
+    method: identity.method.toUpperCase(),
+    url: identity.url,
+    body: identity.body ?? null,
+  });
   return createHash("sha256").update(payload).digest("hex").slice(0, 32);
 }
 
-export function cacheFilePath(key: string, root?: string): string {
+/** Cache entries are additionally namespaced by account on disk, for clarity. */
+export function cacheFilePath(key: string, accountFingerprint: string, root?: string): string {
   return root
-    ? join(root, HOTELBEDS_CACHE_DIR, `${key}.json`)
-    : artifactPath(HOTELBEDS_CACHE_DIR, `${key}.json`);
+    ? join(root, HOTELBEDS_CACHE_DIR, accountFingerprint, `${key}.json`)
+    : artifactPath(HOTELBEDS_CACHE_DIR, accountFingerprint, `${key}.json`);
 }
 
-export function readCache(key: string, root?: string): CachedResponse | null {
-  const path = cacheFilePath(key, root);
+export function readCache(
+  key: string,
+  accountFingerprint: string,
+  root?: string,
+): CachedResponse | null {
+  const path = cacheFilePath(key, accountFingerprint, root);
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf8")) as CachedResponse;
@@ -56,8 +86,13 @@ export function readCache(key: string, root?: string): CachedResponse | null {
   }
 }
 
-export function writeCache(key: string, value: CachedResponse, root?: string): string {
-  const path = cacheFilePath(key, root);
+export function writeCache(
+  key: string,
+  accountFingerprint: string,
+  value: CachedResponse,
+  root?: string,
+): string {
+  const path = cacheFilePath(key, accountFingerprint, root);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   return path;

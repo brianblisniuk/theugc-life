@@ -129,6 +129,12 @@ export const expediaRapidDescriptor: AdapterDescriptor = {
     heroImage: "hero_image",
     activeStatus: null,
   },
+  imageFieldMap: {},
+  classification: {
+    mode: "inline_value_and_kind",
+    hotelAccommodationTypes: [],
+    issuerEstablished: false,
+  },
   starSemantics: [
     {
       provider: "expedia",
@@ -215,6 +221,7 @@ export const expediaRapidDescriptor: AdapterDescriptor = {
       "Storage, caching, redistribution and attribution terms are NOT established and must be reviewed before any image is persisted (D064).",
     ],
   },
+  capabilityBlockers: {},
   blockers: [
     "Bali and Dubai provider geography ids are unresolved, including the DESCENDANT region sets required to exceed the documented top-500 property-mapping cap for larger region types.",
     "Star hypotheses (UAE type=`star` candidate-suitable; Indonesia likely requires secondary verification) are documentary and unconfirmed against live data, so no stars_type value is yet accepted as D060 evidence.",

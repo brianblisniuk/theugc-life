@@ -138,10 +138,15 @@ export function createHotelbedsTransport(
 /**
  * Minimal authenticated diagnostic call.
  *
- * Used to answer two questions for the smallest possible quota cost:
- * are the credentials valid, and is the API reachable? It deliberately hits a
- * small types/reference endpoint rather than hotel content, and never touches
- * availability or booking.
+ * Answers two questions for the smallest possible quota cost: are the
+ * credentials valid, and is the API reachable? It hits a small types/reference
+ * endpoint rather than hotel content, and never touches availability or booking.
+ *
+ * **It deliberately BYPASSES the response cache.** A cached 200 from yesterday
+ * cannot prove today's credentials still work — a key can be revoked or rotated
+ * at any time — so reporting `valid` from a cached body would be asserting a
+ * current fact from stale evidence. The probe therefore costs exactly one
+ * provider request, and that is the correct price for a current answer.
  */
 export type CredentialVerdict = "valid" | "invalid" | "untested";
 
@@ -152,19 +157,17 @@ export async function probeCredentials(client: HotelbedsClient): Promise<{
   detail: string;
 }> {
   try {
-    const response = await client.request("/hotel-content-api/1.0/types/categories", {
-      fields: "all",
-      language: "ENG",
-      from: 1,
-      to: 1,
-    });
+    const response = await client.request(
+      "/hotel-content-api/1.0/types/categories",
+      { fields: "all", language: "ENG", from: 1, to: 1 },
+      // Never answer "are the credentials valid TODAY" from cache.
+      { bypassCache: true },
+    );
     return {
       credentials: "valid",
       reachable: true,
       status: response.status,
-      detail: response.fromCache
-        ? "Served from cache; no request consumed."
-        : "Authenticated request succeeded.",
+      detail: "Authenticated request succeeded (live, cache bypassed).",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

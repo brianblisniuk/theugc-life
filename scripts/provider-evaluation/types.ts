@@ -77,6 +77,88 @@ export interface StarObservation {
 export type StarEligibility =
   "exact_four" | "exact_five" | "classified_not_v1_scope" | "unresolved";
 
+/**
+ * Evaluation capabilities, assessed independently.
+ *
+ * The layered-source principle means a provider can be an excellent inventory,
+ * location and media source while its classification needs secondary
+ * verification. An all-or-nothing gate would refuse to measure any of that,
+ * which is precisely backwards: the bake-off exists to find out WHICH layers a
+ * source can carry.
+ */
+export type EvaluationCapability =
+  | "enumerate_inventory"
+  | "measure_location"
+  | "measure_media"
+  | "assess_classification"
+  | "resolve_d060_classification";
+
+export interface CapabilityAssessment {
+  capability: EvaluationCapability;
+  runnable: boolean;
+  /** Why not, when not. Empty when runnable. */
+  reasons: string[];
+}
+
+/**
+ * How a provider expresses a property's classification.
+ *
+ * `code_with_master_lookup` is the Hotelbeds shape: the hotels response carries
+ * a CODE and a separate master operation supplies its meaning. Modelling that
+ * explicitly is what stops us inventing a `category.simpleCode` path the hotels
+ * payload may never contain.
+ */
+export type ClassificationMode = "inline_value_and_kind" | "code_with_master_lookup" | "unknown";
+
+export interface ClassificationConfig {
+  mode: ClassificationMode;
+  /** For `code_with_master_lookup`: path to the code on the PROPERTY record. */
+  codePath?: string | null;
+  /**
+   * accommodationType values whose classification is a HOTEL star classification.
+   *
+   * Empty until established. `APARTMENT` with "5 KEY" is a real classification
+   * and is NOT five hotel stars, so it must never be counted as one.
+   */
+  hotelAccommodationTypes: string[];
+  /** Whether an issuing authority is established (D062 condition 7). */
+  issuerEstablished: boolean;
+}
+
+/** One classification master record (e.g. a Hotelbeds category). */
+export interface ClassificationMaster {
+  code: string;
+  simpleCode: string | null;
+  accommodationType: string | null;
+  group: string | null;
+  description: string | null;
+}
+
+/** Reference/master data joined into normalization. */
+export interface ReferenceData {
+  /** Classification master, keyed by code. */
+  classifications: Map<string, ClassificationMaster>;
+}
+
+export function emptyReferenceData(): ReferenceData {
+  return { classifications: new Map() };
+}
+
+/**
+ * The RAW classification observation, before any D060 judgement.
+ *
+ * Kept separate from `StarObservation` on purpose: what the source said and what
+ * D060 concludes are different layers, and collapsing them is how "simpleCode 5"
+ * silently becomes "five-star hotel".
+ */
+export interface RawClassificationObservation {
+  /** Code exactly as it appeared on the property record. */
+  sourceCode: string | null;
+  /** Master record, when the join succeeded. */
+  master: ClassificationMaster | null;
+  resolution: "resolved" | "unresolved_no_code" | "unresolved_no_master_entry" | "not_applicable";
+}
+
 /** Verdict on whether a provider's star field can serve as D060 evidence. */
 export type StarSuitability = "suitable" | "unsuitable" | "requires_secondary_verification";
 
@@ -142,8 +224,21 @@ export interface EvaluationRecord {
   /** A provider's generic/reservations contact. NOT our premium target contact. */
   providerContact: string | null;
   star: StarObservation;
+  /** Raw provider classification evidence; null when the provider uses stars inline. */
+  classification: RawClassificationObservation | null;
   photoCount: number;
-  hasHeroImage: boolean;
+  /**
+   * Derived, not read from a field path.
+   *
+   * Hotelbeds marks a principal image with `visualOrder = 0` inside the images
+   * collection; there is no "hero image" field to point at. Deriving it keeps
+   * the descriptor honest about what the provider actually supplies.
+   */
+  hasPrincipalImageCandidate: boolean;
+  /** Image `type` values observed on this property. */
+  imageTypes: string[];
+  /** Images carrying a usable path/URL. */
+  imagesWithPath: number;
   /** Provider's active/closed signal, verbatim, when it supplies one at all. */
   activeStatus: string | null;
 }
@@ -179,8 +274,29 @@ export interface ProviderFieldMap {
   /** Path to the guest-review score. Never read as a classification. */
   reviewScore?: string | null;
   photos?: string | null;
+  /**
+   * Path to a principal-image marker, when the provider HAS one.
+   *
+   * `null` when the principal image must instead be derived from the images
+   * collection (see `ProviderImageFieldMap`), which is the Hotelbeds case.
+   */
   heroImage?: string | null;
   activeStatus?: string | null;
+}
+
+/**
+ * How to read an entry INSIDE the images collection.
+ *
+ * Separate from `ProviderFieldMap` because these are paths within each image
+ * object, not on the property record.
+ */
+export interface ProviderImageFieldMap {
+  /** Path to the image path/URL within one image entry. */
+  path?: string | null;
+  /** Path to the image type/category within one image entry. */
+  type?: string | null;
+  /** Path to a visual-order value; 0 identifies a principal-image candidate. */
+  visualOrder?: string | null;
 }
 
 /** Counts describing what arrived vs what survived normalization. */
@@ -214,6 +330,10 @@ export interface ProviderMetrics {
     unresolvedStar: number;
     /** Distinct star values seen, so an unexpected scale is visible not silent. */
     starValueDistribution: Record<string, number>;
+    /** How classification-code joins resolved, so a failed join stays visible. */
+    classificationResolutionDistribution: Record<string, number>;
+    /** accommodationType distribution from resolved classification masters. */
+    classificationAccommodationTypeDistribution: Record<string, number>;
     propertyTypeDistribution: Record<string, number>;
     activeStatusDistribution: Record<string, number>;
     /**
@@ -266,8 +386,11 @@ export interface PaginationEvidence {
 /** Media evidence (brief §13 MEDIA). Slots are null until measured. */
 export interface MediaEvidence {
   propertiesWithAnyImage: number;
-  propertiesWithHeroImage: number;
+  /** Derived from the images collection, not read from a field path. */
+  propertiesWithPrincipalImageCandidate: number;
   totalImages: number;
+  /** Images carrying a usable path/URL. */
+  imagesWithPath: number;
   /** Image categories the provider supplied, with counts, when categorised. */
   categoryDistribution: Record<string, number>;
   /** Whether the provider supplied dimensions/sizes at all. */
@@ -299,6 +422,8 @@ export interface EvaluationRunResult {
   metrics: ProviderMetrics;
   media: MediaEvidence;
   operations: OperationsEvidence;
+  /** What this run was able to measure, dimension by dimension. */
+  capabilities: CapabilityAssessment[];
   /** Paths of gitignored artifacts written by this run. */
   artifacts: string[];
   /** Never a coverage claim — see D061 closure. */
@@ -423,6 +548,10 @@ export interface AdapterDescriptor {
     documentedHardCap: number | null;
   } | null;
   fieldMap: ProviderFieldMap;
+  /** How to read entries inside the images collection. */
+  imageFieldMap: ProviderImageFieldMap;
+  /** How the provider expresses classification, and what it means. */
+  classification: ClassificationConfig;
   /** Star semantics per destination, or one `global` entry. */
   starSemantics: StarSemanticsFinding[];
   /** Star `kind` values accepted as D060 evidence. Empty until established. */
@@ -448,6 +577,13 @@ export interface AdapterDescriptor {
   geographyEnumerationRisks: string[];
   operations: OperationsEvidence;
   media: { documentedUsageConstraints: string[] };
-  /** Why this descriptor cannot run yet, when it cannot. */
+  /**
+   * Blockers that stop EVERYTHING (egress, credentials, no endpoint).
+   *
+   * Anything that only stops one dimension belongs in `capabilityBlockers`, so
+   * an unresolved star issuer cannot veto measuring coordinates.
+   */
   blockers: string[];
+  /** Blockers scoped to a single capability. */
+  capabilityBlockers: Partial<Record<EvaluationCapability, string[]>>;
 }

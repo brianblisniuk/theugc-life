@@ -108,6 +108,12 @@ export const bookingDemandDescriptor: AdapterDescriptor = {
     heroImage: null,
     activeStatus: null,
   },
+  imageFieldMap: {},
+  classification: {
+    mode: "inline_value_and_kind",
+    hotelAccommodationTypes: [],
+    issuerEstablished: false,
+  },
   starSemantics: [
     {
       provider: "booking",
@@ -161,6 +167,7 @@ export const bookingDemandDescriptor: AdapterDescriptor = {
       "extras=['photos'] retrieves property photos/main-photo information; storage, caching and attribution terms are NOT established and must be reviewed before any image is persisted (D064).",
     ],
   },
+  capabilityBlockers: {},
   blockers: [
     "rating.stars_type: the complete allowed enum and the provenance semantics of each value are NOT established. `official` appears as a documented example and must not be treated as the whole enum, so no stars_type value is yet accepted as D060 evidence.",
     "Bali and Dubai provider geography ids are unresolved; they require a live Booking location lookup rather than documentation.",

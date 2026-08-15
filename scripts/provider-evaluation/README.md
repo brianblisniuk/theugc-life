@@ -19,8 +19,16 @@ geography ids) and neither has credentials. They therefore refuse to run. See
 ## Commands
 
 ```bash
-# Readiness: credential presence + descriptor runnability. Always safe to run.
+# Readiness: credential presence + per-capability runnability. Always safe.
 npm run eval:sources:status
+
+# Credential probe. Costs ONE provider request and bypasses the cache on
+# purpose: a cached 200 from yesterday cannot prove today's credential works.
+npm run eval:sources:probe
+
+# Geography discovery — fetches destination master data for a country and
+# writes candidate codes for review. NOT gated on classification.
+npm run eval:sources:geography -- --country ID
 
 # Prepare the Dubai pilot probe input from the local (gitignored) workbook.
 npm run eval:sources:pilot-probe
@@ -35,10 +43,28 @@ npx tsx scripts/provider-evaluation/run.ts --provider booking --destination bali
 exhaustive pagination → raw-count evidence → normalize → metrics → gitignored
 artifacts) lives in `execute.ts` and is tested end to end.
 
-`adapters/registry.ts` gates execution on the descriptor being complete: a
-static-content endpoint, a pagination method, field paths (including explicit
-`starValue`, `starKind` and `reviewScore`), star semantics, accepted star kinds
-and resolved provider geography. Credentials are checked before any request.
+`capabilities.ts` assesses each dimension independently — `enumerate_inventory`,
+`measure_location`, `measure_media`, `assess_classification`,
+`resolve_d060_classification` — and a run proceeds when **any** of them is
+measurable.
+
+That matters for the layered-source principle: a provider can be an excellent
+inventory, location and media source while its classification needs secondary
+verification, and refusing to measure the first three teaches us nothing.
+`resolve_d060_classification` remains strict, so nothing about D060 publication
+is weakened.
+
+## Quota safety
+
+The evaluation account allows **50 requests/day**. Three mechanisms protect it:
+
+- a **persistent ledger** (`.data/provider-evaluation/hotelbeds/`) counting
+  provider-reaching requests **across processes**, scoped by account fingerprint;
+- an in-process run budget (default 40, `--max-requests`) leaving ≥10 in reserve;
+- an **account-aware response cache**, so reruns cost nothing.
+
+Cache hits and egress denials never consume quota. Provider 4xx/5xx and
+provider-reaching retries do.
 
 This is the point of the design. Guessed field paths do not crash — they read
 `undefined` and report "coordinate coverage 0%, star coverage 0%" for a provider

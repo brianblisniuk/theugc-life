@@ -18,8 +18,15 @@
 import { checkCredentials, requireCredential } from "./credentials";
 import { RequestBudget } from "./hotelbeds/budget";
 import { HotelbedsClient } from "./hotelbeds/client";
-import { createHotelbedsTransport, probeCredentials } from "./hotelbeds/transport";
-import { ADAPTERS, assertRunnable, checkRunnable, getAdapter } from "./adapters/registry";
+import { QuotaLedger } from "./hotelbeds/quota-ledger";
+import { accountFingerprint } from "./hotelbeds/signature";
+import {
+  createHotelbedsTransport,
+  fetchDestinations,
+  probeCredentials,
+} from "./hotelbeds/transport";
+import { ADAPTERS, getAdapter } from "./adapters/registry";
+import { assessAllCapabilities, assertRunnableForAnyCapability } from "./capabilities";
 import { writeArtifact } from "./artifacts";
 import { loadLocalEnv } from "./env";
 import { executeEvaluation, type ProviderTransport } from "./execute";
@@ -74,17 +81,24 @@ function createHotelbedsClient(
   budget: RequestBudget,
   log: (message: string) => void,
   useCache: boolean,
-): HotelbedsClient {
+): { client: HotelbedsClient; ledger: QuotaLedger } {
   // Read at call time; never stored on the descriptor, never logged.
   const apiKey = requireCredential("HOTELBEDS_API_KEY");
   const secret = requireCredential("HOTELBEDS_SECRET");
-  return new HotelbedsClient({
-    baseUrl: descriptor.baseUrl ?? "",
-    credentials: { apiKey, secret },
-    budget,
-    useCache,
-    log,
-  });
+  // Scoped to a non-secret fingerprint so a different account gets its own
+  // allowance instead of inheriting this one's spend.
+  const ledger = new QuotaLedger(accountFingerprint(apiKey));
+  return {
+    client: new HotelbedsClient({
+      baseUrl: descriptor.baseUrl ?? "",
+      credentials: { apiKey, secret },
+      budget,
+      ledger,
+      useCache,
+      log,
+    }),
+    ledger,
+  };
 }
 
 /**
@@ -103,9 +117,8 @@ function createTransport(
 
   if (descriptor.provider === "hotelbeds") {
     const budget = createBudget(args);
-    return createHotelbedsTransport(
-      createHotelbedsClient(descriptor, budget, log, !args.has("no-cache")),
-    );
+    const { client } = createHotelbedsClient(descriptor, budget, log, !args.has("no-cache"));
+    return createHotelbedsTransport(client);
   }
 
   throw new Error(
@@ -127,8 +140,13 @@ async function runProvider(
   const destination = destinationArg as EvaluationDestination;
   const descriptor = getAdapter(providerArg);
 
-  // Throws with the full list of reasons when facts are still missing.
-  assertRunnable(descriptor, destination);
+  // Capability-scoped: proceeds when ANY dimension is measurable. An unresolved
+  // classification issuer no longer vetoes measuring inventory or coordinates.
+  const capabilities = assertRunnableForAnyCapability(descriptor, destination);
+  for (const c of capabilities) {
+    log(`  capability ${c.capability}: ${c.runnable ? "runnable" : "BLOCKED"}`);
+    for (const reason of c.reasons) log(`      - ${reason}`);
+  }
 
   const transport = createTransport(descriptor, args, (m) => log(m));
 
@@ -174,21 +192,28 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (args.has("discover-geography")) {
+    await runGeographyDiscovery(args, log);
+    return;
+  }
+
   if (args.has("status") || !args.has("provider")) {
     const status = ADAPTERS.map((descriptor) => {
       const credentials = checkCredentials(
         descriptor.provider,
         descriptor.requiredCredentialEnvVars,
       );
-      const problem = checkRunnable(descriptor);
+      const capabilities = assessAllCapabilities(descriptor);
       return {
         provider: descriptor.provider,
         displayName: descriptor.displayName,
         documentationStatus: descriptor.documentationStatus,
+        accessStatus: descriptor.accessStatus,
+        liveValidationStatus: descriptor.liveValidationStatus,
+        strategicRole: descriptor.strategicRole,
         credentials: credentials.variables,
         credentialsComplete: credentials.allPresent,
-        runnable: problem === null,
-        blockingReasons: problem?.reasons ?? [],
+        capabilities,
       };
     });
 
@@ -201,12 +226,16 @@ async function main(): Promise<void> {
     log("");
     for (const entry of status) {
       log(`${entry.displayName} (${entry.provider})`);
-      log(`  documentation: ${entry.documentationStatus}`);
+      log(
+        `  documentation: ${entry.documentationStatus} | access: ${entry.accessStatus} | live: ${entry.liveValidationStatus}`,
+      );
       for (const [name, state] of Object.entries(entry.credentials)) {
         log(`  credential ${name}: ${state}`);
       }
-      log(`  runnable: ${entry.runnable ? "yes" : "NO"}`);
-      for (const reason of entry.blockingReasons) log(`    - ${reason}`);
+      for (const c of entry.capabilities) {
+        log(`  ${c.capability}: ${c.runnable ? "runnable" : "BLOCKED"}`);
+        for (const reason of c.reasons) log(`      - ${reason}`);
+      }
       log("");
     }
     const written = writeArtifact("readiness.json", {
@@ -219,6 +248,61 @@ async function main(): Promise<void> {
   }
 
   await runProvider(String(args.get("provider")), String(args.get("destination") ?? ""), args, log);
+}
+
+/**
+ * Geography discovery.
+ *
+ * Fetches provider destination master data for a country and caches it, so
+ * candidate Bali/Dubai codes can be reviewed and promoted into the descriptor's
+ * geography.
+ *
+ * Deliberately NOT gated on classification or on geography already existing —
+ * requiring resolved geography before running the code that discovers geography
+ * is circular, and was one reason the previous gate could never be satisfied.
+ */
+async function runGeographyDiscovery(
+  args: Map<string, string | true>,
+  log: (...parts: unknown[]) => void,
+): Promise<void> {
+  const country = String(args.get("country") ?? "");
+  if (!country) {
+    throw new Error(
+      "--country is required, e.g. --discover-geography --country ID (Indonesia) or --country AE (UAE).\n" +
+        "Country codes come from provider master data; destination codes are NEVER hardcoded.",
+    );
+  }
+
+  const descriptor = getAdapter("hotelbeds");
+  for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
+
+  const budget = createBudget(args);
+  const { client, ledger } = createHotelbedsClient(
+    descriptor,
+    budget,
+    (m) => log(m),
+    !args.has("no-cache"),
+  );
+
+  const { destinations, total } = await fetchDestinations(client, country);
+
+  log(`Hotelbeds geography discovery — country ${country}`);
+  log(`  destinations returned: ${destinations.length}${total === null ? "" : ` of ${total}`}`);
+  log(`  requests reaching provider: ${budget.state.providerReached}`);
+  log(`  daily quota: ${ledger.summary().spentInWindow}/${ledger.summary().quota} spent`);
+
+  const written = writeArtifact(`hotelbeds-geography-${country}.json`, {
+    country,
+    total,
+    destinations,
+    note:
+      "CANDIDATES ONLY. A canonical destination is resolved by review, not by name matching. " +
+      "Bali may require a UNION of several codes; one famous town is not Bali.",
+  });
+  log(`  artifact (gitignored): ${written}`);
+  log("");
+  log("Next: review these candidates, then record the chosen codes as the descriptor's");
+  log("geography with the resolution method that produced them.");
 }
 
 /**
@@ -235,7 +319,9 @@ async function runProbe(
   for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
 
   const budget = createBudget(args);
-  const client = createHotelbedsClient(descriptor, budget, (m) => log(m), !args.has("no-cache"));
+  // The probe always bypasses the response cache (see probeCredentials): a
+  // cached 200 from yesterday cannot prove today's credentials still work.
+  const { client, ledger } = createHotelbedsClient(descriptor, budget, (m) => log(m), false);
 
   const result = await probeCredentials(client);
 
@@ -246,6 +332,10 @@ async function runProbe(
   log(`  local attempts:     ${budget.state.attempted} (cache hits ${budget.state.cacheHits})`);
   log(`  reached provider:   ${budget.state.providerReached}  <- what consumes the 50/day quota`);
   log(`  local budget left:  ${budget.remaining}`);
+  const quota = ledger.summary();
+  log(
+    `  DAILY quota:        ${quota.spentInWindow}/${quota.quota} spent in a conservative 24h rolling window (${quota.remainingInWindow} left)`,
+  );
 
   writeArtifact("hotelbeds-probe.json", {
     credentials: result.credentials,
@@ -253,6 +343,8 @@ async function runProbe(
     status: result.status,
     detail: result.detail,
     budget: budget.state,
+    dailyQuota: ledger.summary(),
+    accountFingerprint: client.accountFingerprint,
   });
 }
 

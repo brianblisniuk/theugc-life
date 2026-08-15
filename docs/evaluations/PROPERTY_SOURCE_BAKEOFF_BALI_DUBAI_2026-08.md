@@ -399,6 +399,98 @@ not enumerated a single candidate.
 
 ---
 
+## Correctness amendment (post-review of `6be3bf0`)
+
+Seven issues were found before any live run was attempted. Fixing them first is
+the point: a bake-off executed against a broken gate would have produced numbers
+nobody could trust, and would have spent an irreplaceable daily quota doing it.
+
+### 1. The runnability gate was all-or-nothing
+
+Hotelbeds deliberately has unresolved classification semantics — and the old gate
+required *everything* before *anything* could run, so the live evaluation could
+never have executed even with network access.
+
+Replaced with **capability-specific gates**: `enumerate_inventory`,
+`measure_location`, `measure_media`, `assess_classification`,
+`resolve_d060_classification`. A run proceeds when **any** dimension is
+measurable, and the result reports each independently.
+
+**D060 is not weakened.** `resolve_d060_classification` still requires an
+established issuing authority and accepted classification semantics; it simply no
+longer vetoes measuring coordinates.
+
+### 2. Geography discovery was circular
+
+The gate demanded resolved geography before the code that *discovers* geography
+could run. There is now a discovery phase —
+`npm run eval:sources:geography -- --country ID` — which fetches destination
+master data, caches it, and writes candidate codes for review. It is **not**
+gated on classification, and no destination code is hardcoded.
+
+### 3. The category mapping was a guessed path
+
+The descriptor pointed `starValue` at `category.simpleCode`, assuming the hotels
+response embeds a category object. The documented architecture says the hotels
+operation returns **codes**, with master operations supplying their meaning.
+
+Now modelled as `code_with_master_lookup`: `hotel.categoryCode` → category master
+→ `code` / `simpleCode` / `accommodationType` / `group` / `description`.
+
+### 4. Raw observation and D060 interpretation are now separate layers
+
+`RawClassificationObservation` records what the provider said and how the join
+resolved. `interpretClassificationForD060` decides what that means. So:
+
+| Source evidence | D060 |
+|---|---|
+| `5EST` · simpleCode 5 · **HOTEL** · "5 STAR" | `exact_five` |
+| `5LL` · simpleCode 5 · **APARTMENT** · "5 KEY" | `unresolved` — five keys are not five stars |
+| `3EST` · simpleCode 3 · HOTEL | `classified_not_v1_scope` |
+| code present, no master entry | `unresolved_no_master_entry` |
+
+**No numeric value is ever manufactured from a code string** — `5EST` does not
+become 5; only an explicit numeric `simpleCode` counts.
+
+### 5. The principal image is derived, not a field path
+
+`heroImage: null` would have reported 0% hero coverage forever. Image evidence is
+now derived from the images collection: count, `visualOrder = 0` principal
+candidate, type distribution, and path availability.
+
+### 6. The daily quota did not survive process restarts
+
+The in-process budget could be reset by simply running the command again —
+30 requests, exit, 40 more, and a 50/day account is at 70.
+
+A **persistent ledger** under `.data/provider-evaluation/hotelbeds/` now records
+every provider-reaching request across executions, scoped by account fingerprint.
+Cache hits and egress denials are **not** counted; successes, provider 4xx/5xx and
+provider-reaching retries **are**. The account exposes no authoritative reset
+timestamp, so a **conservative 24-hour rolling window** is used — it can only
+under-spend, never over-spend. A corrupt ledger **fails closed** rather than
+silently restoring the allowance.
+
+### 7. The cache was not account-aware
+
+Two Hotelbeds accounts can see different portfolios. Cache identity now includes
+provider, base URL and an **irreversible 12-char fingerprint** of the API key
+(never the key itself), so a different credential cannot silently read another
+account's inventory.
+
+### 8. The probe answered a current question from stale data
+
+A cached 200 from yesterday cannot prove today's credential works. The probe now
+**bypasses the cache** and costs exactly one request — the right price for a
+current answer.
+
+### 9. Preserved: the egress classification
+
+`EGRESS_BLOCKED` → credentials **UNTESTED**; provider 401/403 → **INVALID**;
+provider success → **VALID**. Unchanged, and now regression-tested.
+
+---
+
 ## What this block delivered
 
 - **Owner-supplied Hotelbeds credentials stored safely** in the gitignored
@@ -421,7 +513,9 @@ not enumerated a single candidate.
 - Hotelbeds and Nuitee descriptors; Booking and Expedia preserved as future
   strategic sources on a new `accessStatus` / `liveValidationStatus` /
   `strategicRole` triple.
-- **87 deterministic tests** across the two evaluation suites, all synthetic.
+- **102 deterministic tests** across the two evaluation suites, all synthetic —
+  including two separate ledger instances proving a second process cannot reset
+  the daily allowance, and a cache test proving two accounts never share entries.
 
 ## Exact next action
 

@@ -63,3 +63,18 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
   }
   return out;
 }
+
+/**
+ * Irreversible, non-secret fingerprint of a credential identity.
+ *
+ * Used to namespace the cache and the quota ledger so a different Hotelbeds
+ * account can never silently reuse another account's cached responses or
+ * inherit its spent allowance — provider content can legitimately differ by
+ * account portfolio.
+ *
+ * A SHA-256 truncated to 12 hex characters: enough to separate accounts, far too
+ * little to reverse, and safe to print.
+ */
+export function accountFingerprint(apiKey: string): string {
+  return createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
+}
