@@ -43,8 +43,11 @@ let cycleSeq = 0;
  * database enforces it anyway: one creator may hold only one open cycle per
  * hotel (D023).
  */
+let creatorSeq = 0;
+
 async function freshCreator(): Promise<string> {
-  const userId = `7a000000-0000-0000-0000-${String(cycleSeq).padStart(12, "0")}`;
+  creatorSeq += 1;
+  const userId = `7a000000-0000-0000-0000-${String(creatorSeq).padStart(12, "0")}`;
   await adminQuery("insert into auth.users (id, email) values ($1,$2)", [
     userId,
     `${userId}@t.local`,
@@ -116,6 +119,17 @@ async function cycle(spec: CycleSpec = {}): Promise<string> {
   if (spec.offerAt) await event("offer_received", spec.offerAt, { offer_type: "stay" });
   if (spec.negotiationAt) await event("negotiation_started", spec.negotiationAt);
   for (const at of spec.wonAt ?? []) await event("deal_won", at, { collaboration_type: "stay" });
+  // A won cycle also creates the collaboration record, exactly as
+  // progress_pipeline_deal does. `agreed_at` is the domain instant the
+  // collaboration-presence and collaboration-type aggregates are dated by.
+  if (spec.wonAt?.[0]) {
+    await adminQuery(
+      `insert into public.collaborations
+         (creator_id, hotel_id, pipeline_item_id, status, collaboration_type, agreed_at)
+       values ($1,$2,$3,'agreed','stay',$4)`,
+      [creatorId, hotel, itemId, spec.wonAt[0]],
+    );
+  }
   if (spec.lostAt) await event("deal_lost", spec.lostAt, { reason: "no_reply" });
   if (spec.closedAt) await event("creator_closed_pipeline", spec.closedAt, { reason: "timing" });
 
@@ -161,14 +175,13 @@ async function intel(hotel = HOTEL): Promise<IntelRow | null> {
 interface PublicRow {
   activity_level: string | null;
   confidence_level: string | null;
-  reply_rate: string | null;
-  has_confirmed_collaboration: boolean | null;
+  has_observed_collaboration: boolean | null;
   recency_band: string | null;
 }
 
 async function publicView(hotel = HOTEL): Promise<PublicRow | null> {
   const rows = await adminQuery<PublicRow>(
-    "select activity_level, confidence_level, reply_rate, has_confirmed_collaboration, recency_band from public.hotel_public_intelligence where hotel_id = $1",
+    "select activity_level, confidence_level, has_observed_collaboration, recency_band from public.hotel_public_intelligence where hotel_id = $1",
     [hotel],
   );
   return rows[0] ?? null;
@@ -961,7 +974,7 @@ d("AE/AF/AG/AH — the privacy boundary", () => {
     for (const role of ["anon", "authenticated"] as const) {
       const res = await queryAs<PublicRow>(
         { role, sub: role === "authenticated" ? USER : null },
-        "select activity_level, confidence_level, reply_rate, has_confirmed_collaboration, recency_band from public.hotel_public_intelligence",
+        "select activity_level, confidence_level, has_observed_collaboration, recency_band from public.hotel_public_intelligence",
       );
       expect(res.error).toBeNull();
       expect(res.rows).toHaveLength(1);
@@ -981,13 +994,20 @@ d("AE/AF/AG/AH — the privacy boundary", () => {
     expect(names).toEqual([
       "activity_level",
       "confidence_level",
-      "has_confirmed_collaboration",
+      "has_observed_collaboration",
       "hotel_id",
       "hotel_slug",
       "recency_band",
-      "reply_rate",
     ]);
-    for (const forbidden of ["creator_id", "pipeline_item_id", "pitch_count", "reply_count"]) {
+    for (const forbidden of [
+      "creator_id",
+      "pipeline_item_id",
+      "pitch_count",
+      "reply_count",
+      // Premium since 0026 — the public layer must not project them at all.
+      "reply_rate",
+      "median_reply_hours",
+    ]) {
       expect(names).not.toContain(forbidden);
     }
   });
@@ -1048,12 +1068,11 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     expect(view).toEqual({
       activity_level: null,
       confidence_level: "insufficient",
-      reply_rate: null,
-      has_confirmed_collaboration: null,
+      has_observed_collaboration: null,
       recency_band: null,
     });
     // The critical invariant: withheld is NULL, never a fabricated `false`.
-    expect(view.has_confirmed_collaboration).not.toBe(false);
+    expect(view.has_observed_collaboration).not.toBe(false);
   });
 
   it("a suppressed collaboration is NULL even when there genuinely is none", async () => {
@@ -1061,69 +1080,136 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     await recompute();
 
     const view = (await publicView())!;
-    expect(view.has_confirmed_collaboration).toBeNull();
-    expect(view.has_confirmed_collaboration).not.toBe(false);
+    expect(view.has_observed_collaboration).toBeNull();
+    expect(view.has_observed_collaboration).not.toBe(false);
   });
 
-  it("emerging adds activity and the collaboration boolean, but not rate or recency", async () => {
+  it("emerging needs THREE recent creators before it publishes activity", async () => {
     await pitchedCycles(5, { replies: 3 });
-    // Make one of them recent and won.
+    // One recent, won cycle: enough for `emerging`, not enough for a population.
     await cycle({ pitchAt: [daysAgo(3)], wonAt: [daysAgo(2)] });
     await recompute();
 
     const base = (await intel())!;
     expect(base.confidence_level).toBe("emerging");
+    // The base row knows the activity level…
+    expect(base.activity_level).not.toBeNull();
 
     const view = (await publicView())!;
     expect(view.confidence_level).toBe("emerging");
-    expect(view.activity_level).not.toBeNull();
-    expect(view.has_confirmed_collaboration).toBe(true);
-    expect(view.reply_rate).toBeNull();
+    // …and the projection withholds it: one creator is not a hotel's behaviour.
+    expect(view.activity_level).toBeNull();
     expect(view.recency_band).toBeNull();
+
+    // Three distinct recent creators, and the band appears.
+    for (const days of [4, 5, 6]) await cycle({ pitchAt: [daysAgo(days)] });
+    await recompute();
+    expect((await publicView())!.activity_level).not.toBeNull();
   });
 
-  it("emerging with no collaboration reports false, because the question was answered", async () => {
+  it("a withheld activity level is NULL, never 'low'", async () => {
+    await pitchedCycles(5, { replies: 3 });
+    await cycle({ pitchAt: [daysAgo(3)] });
+    await recompute();
+
+    const view = (await publicView())!;
+    expect(view.activity_level).toBeNull();
+    expect(view.activity_level).not.toBe("low");
+    expect(view.activity_level).not.toBe("emerging");
+  });
+
+  it("collaboration presence is positive-only: no collaborations reports NULL, never false", async () => {
     await pitchedCycles(6);
     await recompute();
 
     const view = (await publicView())!;
     expect(view.confidence_level).toBe("emerging");
-    expect(view.has_confirmed_collaboration).toBe(false);
+    // "We have not observed collaborations" is not "this hotel does not
+    // collaborate with creators", and `false` would assert the second.
+    expect(view.has_observed_collaboration).toBeNull();
+    expect(view.has_observed_collaboration).not.toBe(false);
   });
 
-  it("moderate adds a coarse recency band, still no exact rate", async () => {
+  it("collaboration presence needs THREE distinct collaborating creators", async () => {
+    await pitchedCycles(6);
+
+    // One creator, three collaborations — repetition is not diversity.
+    const busy = await freshCreator();
+    for (let i = 0; i < 3; i++) {
+      // `closed`, so one creator may legitimately hold three historical cycles
+      // with the same hotel (pipeline_items_single_active_cycle_uidx).
+      await cycle({
+        creator: busy,
+        status: "closed",
+        pitchAt: [daysAgo(40 + i)],
+        wonAt: [daysAgo(39 + i)],
+      });
+    }
+    await recompute();
+    expect((await publicView())!.has_observed_collaboration).toBeNull();
+
+    // A second collaborating creator: still short.
+    await cycle({ pitchAt: [daysAgo(30)], wonAt: [daysAgo(29)] });
+    await recompute();
+    expect((await publicView())!.has_observed_collaboration).toBeNull();
+
+    // A third, and the presence signal publishes.
+    await cycle({ pitchAt: [daysAgo(28)], wonAt: [daysAgo(27)] });
+    await recompute();
+    expect((await publicView())!.has_observed_collaboration).toBe(true);
+  });
+
+  it("moderate adds a coarse recency band once THREE creators support it", async () => {
     await pitchedCycles(15, { replies: 5 });
-    await cycle({ pitchAt: [daysAgo(2)] });
+    // Three distinct recent creators: the band describes a population, not one
+    // identifiable person's week (0026 contributor floor).
+    for (const days of [2, 4, 6]) await cycle({ pitchAt: [daysAgo(days)] });
     await recompute();
 
     const view = (await publicView())!;
     expect(view.confidence_level).toBe("moderate");
     expect(view.recency_band).toBe("past_month");
-    expect(view.reply_rate).toBeNull();
   });
 
-  it("strong finally exposes the reply rate", async () => {
+  it("two recent creators are not enough to publish a recency band", async () => {
+    await pitchedCycles(15, { replies: 5 });
+    for (const days of [2, 4]) await cycle({ pitchAt: [daysAgo(days)] });
+    await recompute();
+
+    const base = (await intel())!;
+    expect(base.confidence_level).toBe("moderate");
+    // The base row knows exactly when the last activity was…
+    expect(base.last_creator_activity_at).not.toBeNull();
+    // …and the projection still refuses to band it.
+    expect((await publicView())!.recency_band).toBeNull();
+  });
+
+  it("strong confidence STILL does not expose a reply rate publicly (D050)", async () => {
     await pitchedCycles(50, { replies: 25 });
     await recompute();
 
     const base = (await intel())!;
     expect(base.confidence_level).toBe("strong");
+    // The derived truth is computed and stored…
     expect(Number(base.reply_rate)).toBeCloseTo(0.5, 4);
 
+    // …and no public band discloses it. Before 0026, `strong` did.
     const view = (await publicView())!;
-    expect(Number(view.reply_rate)).toBeCloseTo(0.5, 4);
+    expect(view).not.toHaveProperty("reply_rate");
     expect(view.activity_level).toBeNull(); // all activity is >90 days old
     expect(view.recency_band).toBe("older");
   });
 
   it("the recency band is coarse, never a raw timestamp", async () => {
     await pitchedCycles(15);
-    await cycle({ pitchAt: [daysAgo(45)] });
+    for (const days of [45, 50, 55]) await cycle({ pitchAt: [daysAgo(days)] });
     await recompute();
 
     const view = (await publicView())!;
     expect(view.recency_band).toBe("past_quarter");
     expect(["past_month", "past_quarter", "older"]).toContain(view.recency_band);
+    // Never the underlying instant, in any form.
+    expect(JSON.stringify(view)).not.toMatch(/\d{4}-\d{2}-\d{2}|T\d{2}:/);
   });
 });
 
@@ -1187,13 +1273,6 @@ d("AN/AO/AP — derivation never edits its source", () => {
       wonAt: [daysAgo(15)],
       status: "won",
     });
-    await adminQuery(
-      `insert into public.collaborations (creator_id, hotel_id, pipeline_item_id, status, collaboration_type, agreed_at)
-       select pi.creator_id, pi.hotel_id, pi.id, 'agreed', 'stay', now() - interval '15 days'
-         from public.pipeline_items pi where pi.id = $1`,
-      [itemId],
-    );
-
     const snapshot = async () => ({
       events: await adminQuery(
         "select id, event_type, event_at, metadata, created_at from public.outreach_events order by id",

@@ -112,8 +112,7 @@ describe("F2 — intelligence query failure is not insufficient data", () => {
       signal: {
         activityLevel: "high",
         confidenceLevel: "strong",
-        replyRate: 0.63,
-        hasConfirmedCollaboration: true,
+        hasObservedCollaboration: true,
         recencyBand: "past_month",
       },
     };
@@ -126,8 +125,7 @@ describe("F2 — intelligence query failure is not insufficient data", () => {
       signal: {
         activityLevel: null,
         confidenceLevel: "emerging",
-        replyRate: null,
-        hasConfirmedCollaboration: null,
+        hasObservedCollaboration: null,
         recencyBand: null,
       },
     };

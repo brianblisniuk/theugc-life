@@ -268,45 +268,100 @@ d("public intelligence safety (PERMISSIONS.md §6, §13.11; PRD §12)", () => {
     expect(names).not.toContain("private_value_amount");
   });
 
-  it("low-confidence intelligence suppresses precise reply_rate in the view", async () => {
-    await adminQuery(
-      `insert into public.hotel_intelligence (hotel_id, reply_rate, confidence_level, collaboration_count)
-         values ($1, 0.9, 'insufficient', 0)
-       on conflict (hotel_id) do update set reply_rate = excluded.reply_rate,
-         confidence_level = excluded.confidence_level`,
-      [HOTEL.ibiza],
+  it("the public view does not project reply_rate at all (D050)", async () => {
+    // 0026 removed the column. This is stronger than suppression: there is no
+    // confidence band, and no privilege, that can produce it publicly.
+    const cols = await adminQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'hotel_public_intelligence'`,
     );
+    expect(cols.map((c) => c.column_name)).not.toContain("reply_rate");
+
     const res = await queryAs(
       { role: "anon" },
-      "select reply_rate from public.hotel_public_intelligence where hotel_id = $1",
-      [HOTEL.ibiza],
+      "select reply_rate from public.hotel_public_intelligence limit 1",
     );
-    expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
-    expect((res.rows[0] as { reply_rate: number | null }).reply_rate).toBeNull();
+    expect(res.error).not.toBeNull();
   });
 
-  it("strong-confidence intelligence reveals reply_rate in the view", async () => {
-    await adminQuery(
-      `insert into public.hotel_intelligence (hotel_id, reply_rate, confidence_level, collaboration_count)
-         values ($1, 0.63, 'strong', 2)
-       on conflict (hotel_id) do update set reply_rate = excluded.reply_rate,
-         confidence_level = excluded.confidence_level, collaboration_count = excluded.collaboration_count`,
-      [HOTEL.bali],
+  it("anon holds no privilege on the premium view whatsoever", async () => {
+    const [priv] = await adminQuery<{ ok: boolean }>(
+      "select has_table_privilege('anon','public.hotel_premium_intelligence','SELECT') as ok",
     );
+    expect(priv!.ok).toBe(false);
+
     const res = await queryAs(
       { role: "anon" },
-      `select reply_rate, has_confirmed_collaboration
-         from public.hotel_public_intelligence where hotel_id = $1`,
+      "select reply_rate from public.hotel_premium_intelligence limit 1",
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("collaboration presence is positive-only and needs 3 distinct creators", async () => {
+    // Two collaborating creators, high confidence: still withheld. `false`
+    // would assert that this hotel does not collaborate with creators, which
+    // too little observed evidence cannot prove.
+    await adminQuery(
+      `insert into public.hotel_intelligence
+         (hotel_id, confidence_level, collaboration_count, distinct_collaboration_creators_365d)
+       values ($1, 'strong', 9, 2)
+       on conflict (hotel_id) do update set
+         confidence_level = excluded.confidence_level,
+         collaboration_count = excluded.collaboration_count,
+         distinct_collaboration_creators_365d = excluded.distinct_collaboration_creators_365d`,
+      [HOTEL.bali],
+    );
+    let res = await queryAs<{ has_observed_collaboration: boolean | null }>(
+      { role: "anon" },
+      "select has_observed_collaboration from public.hotel_public_intelligence where hotel_id = $1",
       [HOTEL.bali],
     );
     expect(res.error).toBeNull();
-    const row = res.rows[0] as {
-      reply_rate: number | null;
-      has_confirmed_collaboration: boolean;
-    };
-    expect(Number(row.reply_rate)).toBeCloseTo(0.63);
-    expect(row.has_confirmed_collaboration).toBe(true);
+    expect(res.rows[0]!.has_observed_collaboration).toBeNull();
+    expect(res.rows[0]!.has_observed_collaboration).not.toBe(false);
+
+    // A third distinct collaborating creator, and the presence signal publishes.
+    await adminQuery(
+      "update public.hotel_intelligence set distinct_collaboration_creators_365d = 3 where hotel_id = $1",
+      [HOTEL.bali],
+    );
+    res = await queryAs<{ has_observed_collaboration: boolean | null }>(
+      { role: "anon" },
+      "select has_observed_collaboration from public.hotel_public_intelligence where hotel_id = $1",
+      [HOTEL.bali],
+    );
+    expect(res.rows[0]!.has_observed_collaboration).toBe(true);
+  });
+
+  it("public activity needs 3 distinct recent creators, and withholding is not 'low'", async () => {
+    await adminQuery(
+      `insert into public.hotel_intelligence
+         (hotel_id, confidence_level, activity_level, distinct_creators_90d)
+       values ($1, 'strong', 'high', 2)
+       on conflict (hotel_id) do update set
+         confidence_level = excluded.confidence_level,
+         activity_level = excluded.activity_level,
+         distinct_creators_90d = excluded.distinct_creators_90d`,
+      [HOTEL.ubud],
+    );
+    let res = await queryAs<{ activity_level: string | null }>(
+      { role: "anon" },
+      "select activity_level from public.hotel_public_intelligence where hotel_id = $1",
+      [HOTEL.ubud],
+    );
+    expect(res.rows[0]!.activity_level).toBeNull();
+    expect(res.rows[0]!.activity_level).not.toBe("low");
+
+    await adminQuery(
+      "update public.hotel_intelligence set distinct_creators_90d = 3 where hotel_id = $1",
+      [HOTEL.ubud],
+    );
+    res = await queryAs<{ activity_level: string | null }>(
+      { role: "anon" },
+      "select activity_level from public.hotel_public_intelligence where hotel_id = $1",
+      [HOTEL.ubud],
+    );
+    expect(res.rows[0]!.activity_level).toBe("high");
   });
 });
 

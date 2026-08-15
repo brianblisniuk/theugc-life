@@ -23,7 +23,11 @@ import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./
 import { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS } from "./columns";
 import { DISCOVER_MAX_PAGE_SIZE, type DiscoverQuery } from "./filters";
 import { isUuid } from "./ids";
-import type { IntelligenceResult } from "./intelligence";
+import type {
+  IntelligenceResult,
+  PremiumIntelligenceResult,
+  PremiumIntelligenceSignal,
+} from "./intelligence";
 
 export { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS, PREMIUM_CONTACT_FIELDS } from "./columns";
 export { isUuid } from "./ids";
@@ -102,15 +106,17 @@ export interface HotelContact {
 }
 
 /**
- * Coarse public intelligence (view `hotel_public_intelligence`). `null` means
+ * Coarse PUBLIC intelligence (view `hotel_public_intelligence`). `null` means
  * there is no intelligence row for the hotel — an insufficient-data state, not
  * a zero metric.
+ *
+ * Reply rate and reply timing are deliberately absent: since 0026 they are
+ * premium, and the public view does not project them at all (D050).
  */
 export interface HotelIntelligence {
   activityLevel: string | null;
   confidenceLevel: string | null;
-  replyRate: number | null;
-  hasConfirmedCollaboration: boolean | null;
+  hasObservedCollaboration: boolean | null;
   recencyBand: string | null;
 }
 
@@ -319,15 +325,17 @@ export async function getHotelContactsIfAuthorized(
  * hotel has no intelligence row — the caller must render an insufficient-data
  * state rather than zeroed metrics.
  */
-export async function getHotelIntelligence(hotelId: string): Promise<IntelligenceResult> {
+export async function getHotelIntelligence(
+  hotelId: string,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: HotelQueryClient,
+): Promise<IntelligenceResult> {
   // A malformed id has no intelligence row; that is a genuine absence.
   if (!isUuid(hotelId)) return { status: "none" };
-  const supabase = await createClient();
+  const supabase = injectedClient ?? (await createClient());
   const { data, error } = await supabase
     .from("hotel_public_intelligence")
-    .select(
-      "activity_level, confidence_level, reply_rate, has_confirmed_collaboration, recency_band",
-    )
+    .select("activity_level, confidence_level, has_observed_collaboration, recency_band")
     .eq("hotel_id", hotelId)
     .maybeSingle();
 
@@ -338,9 +346,50 @@ export async function getHotelIntelligence(hotelId: string): Promise<Intelligenc
   const signal: HotelIntelligence = {
     activityLevel: (row.activity_level as string | null) ?? null,
     confidenceLevel: (row.confidence_level as string | null) ?? null,
-    replyRate: toNumber(row.reply_rate),
-    hasConfirmedCollaboration: (row.has_confirmed_collaboration as boolean | null) ?? null,
+    hasObservedCollaboration: (row.has_observed_collaboration as boolean | null) ?? null,
     recencyBand: (row.recency_band as string | null) ?? null,
+  };
+  return { status: "ok", signal };
+}
+
+/**
+ * PREMIUM intelligence for a hotel (view `hotel_premium_intelligence`).
+ *
+ * Call this ONLY after the entitlement check has answered `allowed`. The view
+ * is entitlement-gated in the database as well, so an unentitled caller would
+ * receive zero rows anyway — but "zero rows" cannot distinguish *not entitled*
+ * from *no data yet*, and the product must never confuse locked with building.
+ * Resolving entitlement separately is what keeps those two states apart.
+ *
+ * Reads only the gated projection: never `hotel_intelligence`, never
+ * `outreach_events`, never `collaborations`.
+ */
+export async function getHotelPremiumIntelligence(
+  hotelId: string,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: HotelQueryClient,
+): Promise<PremiumIntelligenceResult> {
+  if (!isUuid(hotelId)) return { status: "none" };
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await supabase
+    .from("hotel_premium_intelligence")
+    .select(
+      "confidence_level, reply_rate, reply_time_band, recent_activity_band, collaboration_types, contributor_count",
+    )
+    .eq("hotel_id", hotelId)
+    .maybeSingle();
+
+  if (error) return { status: "error" };
+  if (!data) return { status: "none" };
+  const row = data as Record<string, unknown>;
+  const types = row.collaboration_types;
+  const signal: PremiumIntelligenceSignal = {
+    confidenceLevel: (row.confidence_level as string | null) ?? null,
+    replyRate: toNumber(row.reply_rate),
+    replyTimeBand: (row.reply_time_band as string | null) ?? null,
+    recentActivityBand: (row.recent_activity_band as string | null) ?? null,
+    collaborationTypes: Array.isArray(types) ? types.map((t) => String(t)) : null,
+    contributorCount: toNumber(row.contributor_count),
   };
   return { status: "ok", signal };
 }

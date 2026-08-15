@@ -10,9 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   INSUFFICIENT_INTELLIGENCE_COPY,
   activityLabel,
-  canShowReplyRate,
   recencyLabel,
-  replyRateLabel,
   shouldShowInsufficientData,
   type IntelligenceSignal,
 } from "@/lib/hotels/intelligence";
@@ -20,8 +18,7 @@ import {
 const empty: IntelligenceSignal = {
   activityLevel: null,
   confidenceLevel: null,
-  replyRate: null,
-  hasConfirmedCollaboration: null,
+  hasObservedCollaboration: null,
   recencyBand: null,
 };
 
@@ -54,7 +51,7 @@ describe("shouldShowInsufficientData", () => {
       shouldShowInsufficientData({
         ...empty,
         confidenceLevel: "moderate",
-        hasConfirmedCollaboration: true,
+        hasObservedCollaboration: true,
       }),
     ).toBe(false);
   });
@@ -66,23 +63,22 @@ describe("shouldShowInsufficientData", () => {
   });
 });
 
-describe("reply rate suppression (PRD §12.7)", () => {
-  it("hides a precise reply rate below strong confidence", () => {
-    expect(canShowReplyRate({ ...empty, confidenceLevel: "moderate", replyRate: 0.63 })).toBe(
-      false,
-    );
-    expect(replyRateLabel({ ...empty, confidenceLevel: "moderate", replyRate: 0.63 })).toBeNull();
+describe("the public layer carries no reply rate at all (D050)", () => {
+  it("the public signal shape has no reply-rate field", () => {
+    // 0026 moved reply rate to the premium projection. It is not suppressed
+    // here — it is absent, which is a stronger guarantee than a UI gate.
+    expect(empty).not.toHaveProperty("replyRate");
+    expect(Object.keys(empty).sort()).toEqual([
+      "activityLevel",
+      "confidenceLevel",
+      "hasObservedCollaboration",
+      "recencyBand",
+    ]);
   });
 
-  it("shows a precise reply rate only at strong confidence", () => {
-    const strong: IntelligenceSignal = { ...empty, confidenceLevel: "strong", replyRate: 0.63 };
-    expect(canShowReplyRate(strong)).toBe(true);
-    expect(replyRateLabel(strong)).toBe("63%");
-  });
-
-  it("never renders a reply rate for a missing signal", () => {
-    expect(canShowReplyRate(null)).toBe(false);
-    expect(replyRateLabel(null)).toBeNull();
+  it("no public copy mentions a rate the layer cannot produce", () => {
+    expect(INSUFFICIENT_INTELLIGENCE_COPY.title).not.toMatch(/reply rate/i);
+    expect(JSON.stringify(INSUFFICIENT_INTELLIGENCE_COPY)).not.toMatch(/%/);
   });
 });
 

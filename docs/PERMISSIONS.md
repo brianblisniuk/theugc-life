@@ -188,7 +188,8 @@ If a Destination Pass expires, do not revoke ownership/read access to creator's 
 
 ### What the browser can reach today
 
-**Only the safe coarse projection, `public.hotel_public_intelligence`.**
+**Two projections, and nothing else:** `public.hotel_public_intelligence`
+(everyone) and `public.hotel_premium_intelligence` (entitled callers only).
 
 Migration 0022 revoked all client access to the base aggregate tables:
 `hotel_intelligence` and `destination_intelligence` are readable by
@@ -198,52 +199,67 @@ own projection rather than a grant on these tables. Their RLS policies are
 retained as defence in depth, but no client role holds a privilege to reach them
 at all.
 
-The projection exposes exactly seven columns — `hotel_id`, `hotel_slug`,
-`activity_level`, `confidence_level`, `reply_rate`,
-`has_confirmed_collaboration`, `recency_band` — with no creator id, no pipeline
-id, no exact counts and no raw timestamps, and it applies progressive
-disclosure by confidence band (D044):
+The projection exposes exactly six columns — `hotel_id`, `hotel_slug`,
+`activity_level`, `confidence_level`, `has_observed_collaboration`,
+`recency_band` — with no creator id, no pipeline id, no counts of any kind
+(including the distinct-creator counts that gate it) and no raw timestamps, and
+it applies progressive disclosure by confidence band (D044):
 
 | Confidence | Disclosed |
 |---|---|
 | insufficient | confidence only |
-| emerging | + activity level, + collaboration boolean |
-| moderate | + coarse recency band |
-| strong | + reply rate |
+| emerging | + activity level (also needs 3 distinct creators / 90d) |
+| moderate | + coarse recency band (recent bands also need 3 distinct creators / 90d) |
+| strong | *(no additional public field — reply rate is premium since 0026)* |
+
+`has_observed_collaboration` is not confidence-gated at all: it requires **3
+distinct collaborating creators in 365 days**, and it is **positive-presence
+only** — `true` or NULL, never `false`. Too few observed outcomes cannot prove
+that a hotel does not collaborate with creators.
 
 A suppressed answer is `NULL`, never `false`. "We are not telling you" and "the
 answer is no" are different statements and are never collapsed.
 
-### Premium Intelligence — approved, not yet built (D050)
+### Premium Intelligence — implemented (D050, D058; migration 0026)
 
-The V1 contract has **two** browser-safe projections: **Public Intelligence**
-(everyone) and **Premium Intelligence** (entitled destination, or worldwide on
-Pro). See PRD §12.8.
+`public.hotel_premium_intelligence` is the second browser-safe projection.
 
-**Today only the public one exists**, and it is graduated by confidence rather
-than by plan — so reply rate currently reaches every browser role at `strong`
-confidence. Closing that gap is implementation work
-([`V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)),
-not a permissions change to make here.
+**Entitlement is enforced in the database**, inside the view, via
+`public.has_premium_hotel_access(hotel_id)` — Destination Pass within its
+destination hierarchy, Pro worldwide, admin/editor per §11. An unentitled caller
+receives zero rows regardless of what any UI does. `anon` holds **no privilege**
+on it at all: it could never be entitled, so the grant does not exist.
 
-Binding constraints on that implementation:
+Projected columns: `hotel_id`, `hotel_slug`, `confidence_level`, `reply_rate`,
+`reply_time_band`, `recent_activity_band`, `collaboration_types`,
+`contributor_count`. No creator identifier, no pipeline identifier, no raw
+outreach volume — no pitch count, reply count, event count or cycle denominator
+— and no raw timestamp: none of those exist in the view. `contributor_count` is
+the one deliberate count, and it is published only at >= 5 distinct creators.
+
+Standing constraints, all satisfied and all binding on any future change:
 
 - **Privacy is identical across plans.** Contributor anonymity, minimum
   observation thresholds, confidence thresholds, suppression rules and
   NULL-vs-zero semantics are the same for Free, Destination Pass and Pro.
-  Premium buys more of the safe aggregate, never weaker privacy.
-- **Premium Intelligence gets its own scoped projection**, with its own
-  suppression rules, entitlement-gated in the database.
-- It must **never** be implemented by granting a browser role access to
+  Premium buys more of the safe aggregate, never weaker privacy. Every premium
+  metric additionally requires a **distinct-creator floor**, which no payment
+  lowers (D058).
+- Premium is **never** implemented by granting a browser role access to
   `hotel_intelligence`, `destination_intelligence`, `outreach_events`,
   `collaborations`, or any creator-level or raw aggregate source. Those stay
-  `service_role`-only (D046, migration 0022). No subscription changes that.
-- Entitlement gating belongs in RLS/helpers, not in the UI — the existing
-  `has_premium_hotel_access` pattern is the model, not a new client-side check.
+  `service_role`-only (D046, migration 0022).
+- Entitlement gating lives in RLS/views/helpers, not in the UI.
+- **`reply_rate` left the public projection in 0026.** Before that it was
+  disclosed at `strong` confidence to every browser role.
 
-Hotel **discovery** is never entitlement-gated: there is one canonical inventory
-and every publishable hotel is discoverable worldwide (D049). Entitlements gate
-Premium Intelligence and actionable contacts, not the catalogue.
+Hotel **discovery** is never entitlement-gated: one canonical inventory, every
+publishable hotel discoverable worldwide (D049). Entitlements gate Premium
+Intelligence and actionable contacts, not the catalogue.
+
+**Locked, building and error are distinct** (D059). A failed entitlement check
+is an error, never a denial; an entitled viewer with insufficient evidence sees
+the building state, never a zero or a negative claim.
 
 No plan bypasses privacy thresholds.
 
@@ -323,6 +339,21 @@ Automated permission tests must cover:
     `access_entitlements_select` permits them to read every row.
 25. Admin and editor can still read every entitlement row through an explicit
     reconciliation query, and a regular creator still cannot.
+26. `anon` holds no privilege on `hotel_premium_intelligence`; a Free creator
+    holds the privilege but reads zero rows.
+27. A Destination Pass reads premium rows inside its destination hierarchy and
+    none outside it; an expired Pass reads none at all; Pro reads worldwide.
+28. The public projection returns identical values to anon, Free and Pro for the
+    same hotel — paying adds a projection, it never widens the public one.
+29. `reply_rate` is not a column of the public projection.
+30. Every premium metric is suppressed below its own publication thresholds —
+    reply metrics below either their qualifying-cycle floor or their
+    distinct-creator floor, recency and collaboration-type signals below their
+    distinct-creator floor — and suppression yields NULL rather than zero.
+31. The public projection exposes `activity_level` only with >= 3 distinct
+    creators in 90 days, and `has_observed_collaboration` only as `true` with
+    >= 3 distinct collaborating creators in 365 days; both are NULL otherwise,
+    for every plan.
 
 ## 14. Free-limit enforcement
 

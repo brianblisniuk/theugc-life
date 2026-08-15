@@ -16,7 +16,11 @@ export const BILLING_COPY = {
   errorTitle: "We couldn’t load your billing & access information.",
   errorBody: "Something went wrong on our side. Reload the page to try again.",
   freeTitle: "You’re on the Free plan",
-  freeBody: "Premium access — a Destination Pass or Pro — unlocks contacts and richer hotel data.",
+  // Never "premium hotels" or "richer hotel data": the catalogue is not the
+  // premium object (D049). What a plan unlocks is Premium Intelligence and
+  // actionable contacts.
+  freeBody:
+    "Every hotel is already discoverable. A Destination Pass or Creator Pro unlocks Premium Intelligence and verified contacts.",
 } as const;
 
 export type BillingAccessState =
