@@ -18,7 +18,7 @@ theugc.life is the operating system for travel UGC creators.
 
 It combines:
 
-1. A worldwide curated database of hotels and hospitality brands that work with creators.
+1. A worldwide, editorially maintained database of hotels and hospitality brands that work with creators. *Curated* here means "researched and provenance-backed", never "a selected subset" — a destination's inventory is complete, not capped (D055, D061).
 2. Verified and time-stamped hotel marketing/contact information.
 3. A creator-specific CRM for saving hotels, planning trips, pitching, following up, negotiating, and tracking collaborations.
 4. A proprietary intelligence layer derived from anonymized creator workflow events.
@@ -60,7 +60,9 @@ MVP is not:
 MVP must validate four hypotheses.
 
 ### H1 — Discovery value
-Creators will pay to access a curated, useful, fresh database of hotels and contacts.
+Creators will pay to access a complete, useful, fresh database of hotels and contacts.
+
+"Complete" is the operative word: for a supported destination it means every eligible property in that destination's coverage universe (D055, D061), not a curated selection.
 
 ### H2 — Workflow value
 Creators will manage part of their outreach inside theugc.life instead of immediately exporting contacts to spreadsheets, Notion, or another CRM.
@@ -334,7 +336,8 @@ This is a critical screen.
 
 - Hotel name.
 - Destination.
-- Category/star rating if known.
+- Category / star classification if known — the hospitality classification, never
+  a guest-review score (D060).
 - Website.
 - Instagram.
 - Map link.
@@ -625,6 +628,66 @@ The implementation must preserve these decisions:
 14. A destination's inventory is complete, not capped (D055). Exclusions are
     explicit and auditable; a missing contact, insufficient intelligence or
     absent photography are field states, never reasons to omit a property.
+15. Inventory coverage ≠ enrichment coverage (D061). "Do we have every eligible
+    property?" and "how much do we know about each one?" are different
+    questions, measured separately and never reported as one number. A
+    destination is not coverage complete while any candidate in its coverage
+    universe is still unresolved.
+16. Canonical property identity is owned by theugc.life (D063). An external
+    provider ID is a source identity attached to a hotel, never the hotel's
+    primary key.
+17. Star classification is a hospitality classification with provenance, never a
+    guest-review score (D060).
+
+### 8.1 Inventory scope, coverage and publishability (D060–D064)
+
+The full contract is
+[`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md).
+It is authoritative on everything below; this section states only what a reader
+of the PRD must not get wrong.
+
+**V1 inventory scope.** Every unique, in-scope, **physical hospitality property
+with a resolved canonical hotel star classification of 4 or 5 stars**, in each
+supported destination. Stars means the hospitality classification — never a
+Google, Booking, Expedia or TripAdvisor review score. Property type does not by
+itself admit or exclude: hotels, resorts, boutique hotels, aparthotels, lodges,
+residences and villa-style hospitality operations may all qualify. Corporate
+HQs, agencies and other non-property organizations are not hotels.
+
+**No cap.** A destination's inventory count is an **output** of its coverage
+universe, never an input chosen by packaging. 724 eligible properties means 724.
+Nothing may be described as "top 100", "selected", "curated" or "representative"
+inventory. The 30-property Dubai set is a **technical pilot**, never Dubai
+inventory.
+
+**Coverage closure.** A destination may be called *coverage complete* only when
+**zero** candidates from its coverage universe remain unresolved on a
+coverage-critical dimension — identity, duplicates, hospitality-property status,
+destination membership, active/closed status or star classification. Published
+hotel count, coordinate coverage, photo coverage and contact coverage are all
+irrelevant to that judgement. Reporting always carries both the resolved eligible
+count and the unresolved count, and completeness is never computed over a
+denominator that excludes unresolved records (D061).
+
+**Promotion into `hotels` is publication** (D062). There is no
+canonical-but-unpublished state in V1: a promoted property **is** a publishable
+property, and a candidate that fails the conditions below stays in staging/review
+rather than entering `hotels`.
+
+**Publishable requires** resolved identity, a supported destination, a physical
+hospitality property, not-known-closed, resolved scope status, a 4-or-5 star
+classification **with provenance**, canonical coordinates **with provenance**,
+and no unresolved identity conflict.
+
+**Publishable does NOT require** a photo, any contact, a target contact, a
+premium contact, Creator Network Intelligence, Hotel-Confirmed Intelligence or
+collaboration evidence. Those are enrichment work queues; a missing one never
+removes an eligible property from the destination.
+
+**Not decided:** which inventory provider, which geocoder, star-source authority
+hierarchy, match thresholds, media supplier priority, storage strategy, sync
+cadence, or any destination's property count. See
+[`PROPERTY_SOURCE_EVALUATION.md`](PROPERTY_SOURCE_EVALUATION.md).
 
 ---
 
@@ -2519,6 +2582,8 @@ Create and maintain:
   DESIGN_SYSTEM.md
   AI_RULES.md
   DECISIONS.md
+  PROPERTY_CONTENT_COVERAGE_CONTRACT.md
+  PROPERTY_SOURCE_EVALUATION.md
 ```
 
 This PRD is the master product source of truth.
@@ -2562,7 +2627,7 @@ The rest remain hypotheses to test with real usage:
 4. Launch Pro price conversion at USD 199 — **price fixed (D052)**; conversion still to be measured.
 5. Upgrade conversion Destination → Pro.
 6. Confidence thresholds for public intelligence.
-7. Which destinations to prioritize for marketing/data density despite worldwide database availability.
+7. ~~Which destinations to prioritize for marketing/data density despite worldwide database availability.~~ **The initial twenty are selected** (`INTELLIGENCE_ROADMAP.md` §11); which of them repays marketing spend fastest is still to be measured.
 8. Which intelligence fields materially increase conversion.
 9. Whether creator portfolio usage materially improves retention.
 10. When connected email becomes worth implementation complexity.

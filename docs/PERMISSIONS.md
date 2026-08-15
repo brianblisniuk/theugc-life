@@ -151,6 +151,16 @@ mechanism: both layers must hold independently (D046).
 ### Hotel basics
 Public where hotel is publishable.
 
+**Publishable** is defined by D062 and
+[`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
+§7: resolved identity, a supported destination, a physical hospitality property,
+not known closed, resolved scope, a 4- or 5-star hospitality classification and
+canonical coordinates — **both with provenance** — and no unresolved identity
+conflict. It is deliberately **not** conditioned on having a contact, a photo or
+any intelligence. Those are entitlement- or enrichment-shaped questions and are
+answered elsewhere; a hotel with no contact is still public inventory whose
+contact section is simply empty or locked.
+
 ### Contacts
 - Anonymous: deny
 - Free: deny

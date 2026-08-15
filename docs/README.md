@@ -19,6 +19,8 @@ Reason: implementation is repository-, migration-, test-, terminal- and git-cent
 - `DESIGN_SYSTEM.md` — UX/design implementation guardrails
 - `AI_RULES.md` — future AI/email safety and architecture rules
 - `DECISIONS.md` — accepted architecture/product decisions
+- `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` — inventory scope, destination coverage, publishability, star/media/identity provenance
+- `PROPERTY_SOURCE_EVALUATION.md` — specification for the inventory-source bake-off (no provider chosen)
 - `SPRINT_0_PROMPT.md` — first implementation prompt for Claude Code
 
 ## Precedence

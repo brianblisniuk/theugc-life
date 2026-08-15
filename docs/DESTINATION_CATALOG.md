@@ -136,8 +136,11 @@ The catalog grows deliberately as inventory/research expands.
 The owner has approved the first twenty product destinations. They are listed in
 [`INTELLIGENCE_ROADMAP.md`](INTELLIGENCE_ROADMAP.md) §11.
 
-**No coverage ingestion has started**, and the property inventory sources are
-unchosen (D055). Two constraints apply when they are created:
+**No coverage ingestion has started**, and the property inventory sources remain
+unchosen — the comparative evaluation that will choose them is specified in
+[`PROPERTY_SOURCE_EVALUATION.md`](PROPERTY_SOURCE_EVALUATION.md), and it runs
+against **Bali and Dubai** first. Two constraints apply when the nodes are
+created:
 
 - They are product **destinations**, not necessarily schema type `city`. Bali is
   the obvious case — an island containing areas a creator thinks of separately.
@@ -145,5 +148,11 @@ unchosen (D055). Two constraints apply when they are created:
   covers descendants (`_has_active_destination_access`, D051), so flattening a
   destination that should have children silently narrows what the Pass buys.
 
-Each destination is subject to D055: **all** in-scope properties in its coverage
-universe, with exclusions recorded and auditable.
+Each destination is subject to D055 and D061: **all** eligible properties in its
+coverage universe, with exclusions recorded and auditable. Eligibility is defined
+by D060 — a physical hospitality property with a resolved 4- or 5-star
+hospitality classification.
+
+**No destination has a hotel-count target.** The count is an output of its
+coverage run (`PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §15), so a number must
+never be assigned to a destination in advance, in this file or anywhere else.

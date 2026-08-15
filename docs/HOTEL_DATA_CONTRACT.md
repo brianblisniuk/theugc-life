@@ -6,6 +6,14 @@ Status: Approved canonical contract for hotel/contact research
 
 This document defines the format future hotel research should produce.
 
+> **This is the RESEARCH / STAGING contract, and it deliberately tolerates
+> incompleteness.** A research record may lack coordinates, stars, contacts and
+> photography and still be a valid research record. The stricter rule for a
+> **canonical publishable hotel** lives in
+> [`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
+> §7 (D062) and binds at the promotion boundary, not here. Nothing below is
+> relaxed by that contract, and nothing below authorises publication.
+
 The contract is designed from product requirements, not from any legacy spreadsheet. Existing messy files are one-time migration inputs and MUST adapt to this contract, never the reverse.
 
 ## 2. Canonical research unit
@@ -33,7 +41,8 @@ Strongly preferred:
 - `instagram_url`
 - `brand_name`
 - `hotel_type`
-- `star_rating`
+- `star_rating` — the **hospitality star classification**, never a guest-review
+  score (D060). See §3.1.
 
 Optional:
 - `parent_destination_name`
@@ -55,6 +64,29 @@ Use only:
 - `unknown`
 
 Do not invent new types during research. Unknown is acceptable.
+
+`hotel_type` is descriptive metadata. It is **not** the V1 eligibility gate —
+eligibility is "physical hospitality property + resolved 4/5-star
+classification" (D060). A `villa` or `residence` with a valid 4/5-star
+classification is in scope; a `hotel` without a resolved classification is not
+yet.
+
+### 3.1 star_rating is a hospitality classification
+
+`star_rating` records the property's **hotel/hospitality star classification**.
+
+It is never a Google review score, a Booking guest review score, an Expedia
+review score, a TripAdvisor rating, or any other user-review score. Both are
+"out of five"; only one of them is a classification an authority issued.
+
+- Never infer stars from review scores.
+- Never average conflicting classifications — 4 and 5 do not make 4.5.
+- Never fabricate a missing classification. Leave it null.
+- Unknown is a **review state**, not a below-scope exclusion (D060, D061).
+
+A classification supplied without supporting provenance may stay in research, but
+it cannot reach publication: star-classification provenance is a publishability
+condition (D062).
 
 ## 4. Contact fields
 
@@ -192,6 +224,16 @@ Preferred interchange format: UTF-8 CSV or XLSX with one `properties` sheet and 
 A third optional `evidence` sheet may be used:
 
 `source_property_id, claim_type, source_type, source_url, verification_status, observed_at, notes`
+
+## 9.1 Relationship to inventory coverage
+
+Research is one input to a destination's **coverage universe**, not the whole of
+it (`PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §4). A destination is complete when
+every eligible property in that universe is resolved — not when a research batch
+is finished.
+
+Research also never establishes that a property is *the only* property, and a
+research batch's size is never a destination's inventory target (D061).
 
 ## 10. Research quality rule
 

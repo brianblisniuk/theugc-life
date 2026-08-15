@@ -17,6 +17,15 @@ The promotion system must be:
 
 No source file writes directly to `hotels`, `hotel_contacts`, `organizations` or `editorial_evidence`.
 
+> **Promotion IS publication (D062).** For V1 there is no canonical-but-
+> unpublished state: a row in `hotels` is a row a creator can see, so
+> **promotion into `hotels` is the publication boundary** and the D062
+> publishability conditions are **promotion preconditions** — see §6.1.
+>
+> Sprint 1B's engine predates that gate and does not implement it. The gate is
+> work for the Property Content implementation block; nothing here retroactively
+> claims that already-promoted rows satisfy it.
+
 ## 2. Promotion unit
 
 The primary promotion unit is a **property bundle** identified by:
@@ -153,6 +162,45 @@ For `approve_create`:
 - `active_status` defaults to `unknown` unless canonical editorial evidence explicitly supports another existing approved state;
 - `editorial_verification_status` reflects evidence quality conservatively;
 - never invent missing values.
+
+### 6.1 Publishability gate — required by D054/D060/D062, NOT YET IMPLEMENTED
+
+Creating a canonical hotel **is** publishing it (D062). The gate therefore sits on
+promotion itself: a candidate must not be promoted into `hotels` unless all of
+the following are true (`PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §7):
+
+1. canonical property identity is resolved;
+2. it belongs to a supported canonical destination;
+3. it is a physical hospitality property;
+4. it is not known permanently closed/inactive;
+5. its V1 scope status is resolved;
+6. canonical star classification is exactly 4 or 5;
+7. star-classification provenance exists;
+8. canonical latitude exists;
+9. canonical longitude exists;
+10. coordinate/location provenance exists;
+11. no unresolved entity-resolution conflict remains.
+
+The gate must **not** require photography, any contact, a target contact, a
+premium contact, or any intelligence. Those are enrichment states (D061), and
+holding a hotel back for them would silently cap the destination (D055).
+
+A candidate failing the gate **stays in staging/review and is not promoted**. It
+is never deleted, and it is never given a fabricated coordinate or an invented
+star classification to make it pass. Do **not** introduce a `publication_status`
+column or an unpublished-canonical tier to work around the gate — the single
+boundary is the contract.
+
+The pipeline, stated once:
+
+```
+source → staging → audit/review → promotion preview → human review
+       → promotion/apply → canonical publishable hotel
+```
+
+**Historical rows are not grandfathered.** The canonical pilot was promoted
+before D054, D060 and D062 existed; the implementation block must audit, enrich
+and re-evaluate those rows against this gate rather than assume them compliant.
 
 Brand linking is NOT required for Sprint 1B. Preserve staged `brandName` in import lineage/evidence and leave `brand_id` null unless a future explicit brand-resolution rule is approved.
 

@@ -4,8 +4,9 @@ The operating system for travel UGC creators.
 
 **Core V1 is built, audited and closed.** The repository contains a working
 product, not a foundation: a canonical hotel/contact/evidence data architecture
-with a staging → review → promotion workflow, a 30-property Dubai canonical
-pilot in production, Discover and Hotel Detail, Save to Pipeline, the full
+with a staging → review → promotion workflow, a 30-property Dubai **technical
+pilot** in production (a pipeline proof, **not** Dubai inventory — D061),
+Discover and Hotel Detail, Save to Pipeline, the full
 outreach CRM (transitions, event ledger, negotiation, deal won, collaboration
 lifecycle), rebuildable hotel intelligence with a privacy-safe public
 projection, and an explicit database privilege contract that replay and
@@ -19,26 +20,42 @@ decision before it can ship, and the map ships only when **100% of publishable
 inventory has canonical coordinates** — see
 [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md).
 
-**The V1 commercial contract is fixed.** One canonical hotel inventory that
-everyone can discover worldwide, with two intelligence layers — Public for all,
-Premium for paid — and identical privacy on every plan. Creator Destination Pass
-is **$39 / 30 days / one destination**, covering *every* in-scope property in
-that destination with the Free workspace limits lifted inside it; Creator Pro is
-**$199/year worldwide**.
-See [`docs/PRD.md`](docs/PRD.md) §5 and §12.8. The code does not implement the
-Public/Premium split yet; the per-file scope is
+**The V1 commercial contract is fixed and implemented.** One canonical hotel
+inventory that everyone can discover worldwide, with two intelligence layers —
+Public for all, Premium for paid — and identical privacy on every plan. Creator
+Destination Pass is **$39 / 30 days / one destination**, covering *every*
+in-scope property in that destination with the Free workspace limits lifted
+inside it; Creator Pro is **$199/year worldwide**. The Public/Premium split
+shipped in migration `0026` (D057–D059); see [`docs/PRD.md`](docs/PRD.md) §5 and
+§12.8. Remaining per-file work is in
 [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
 
-| Question                                         | Where it is answered                                                                                                 |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| What is the product?                             | [`docs/PRD.md`](docs/PRD.md) §1                                                                                      |
-| What is already built?                           | [`docs/PRD.md`](docs/PRD.md) §30.0, [`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](docs/audits/CORE_V1_AUDIT_CLOSEOUT.md) |
-| What phase are we entering?                      | [`docs/PRD.md`](docs/PRD.md) §30.0 — **Sprint 3 = Product Experience**                                               |
-| What does A2 mean, and what is locked vs open?   | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md)                                                               |
-| What is explicitly out of Sprint 3A scope?       | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §23                                                           |
-| What does each plan actually include?            | [`docs/PRD.md`](docs/PRD.md) §5.3.1                                                                                  |
-| What still needs building to match the contract? | [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)                           |
-| Why is a decision the way it is?                 | [`docs/DECISIONS.md`](docs/DECISIONS.md)                                                                             |
+**The V1 property contract is fixed and NOT implemented.** Inventory is every
+physical hospitality property with a resolved **4- or 5-star hospitality
+classification** (never a guest-review score) in each supported destination, and
+a destination's count is an **output** of its coverage universe, never a cap.
+Promotion into `hotels` **is** publication: a hotel enters it with resolved
+identity, stars and coordinates — both with provenance — and **without** a photo,
+a contact or any intelligence. A destination is _coverage complete_ only when
+zero candidates in its universe remain unresolved. See
+[`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
+(D060–D064). No provider, geocoder or ingestion is chosen; the bake-off is
+specified in
+[`docs/PROPERTY_SOURCE_EVALUATION.md`](docs/PROPERTY_SOURCE_EVALUATION.md).
+
+| Question                                            | Where it is answered                                                                                                 |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| What is the product?                                | [`docs/PRD.md`](docs/PRD.md) §1                                                                                      |
+| What is already built?                              | [`docs/PRD.md`](docs/PRD.md) §30.0, [`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](docs/audits/CORE_V1_AUDIT_CLOSEOUT.md) |
+| What phase are we entering?                         | [`docs/PRD.md`](docs/PRD.md) §30.0 — **Sprint 3 = Product Experience**                                               |
+| What does A2 mean, and what is locked vs open?      | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md)                                                               |
+| What is explicitly out of Sprint 3A scope?          | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §23                                                           |
+| What does each plan actually include?               | [`docs/PRD.md`](docs/PRD.md) §5.3.1                                                                                  |
+| What still needs building to match the contract?    | [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)                           |
+| What counts as a hotel, and when is it publishable? | [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md)                           |
+| What does "all hotels in a destination" mean?       | [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md) §3–§4                     |
+| Which inventory provider do we use?                 | Undecided — [`docs/PROPERTY_SOURCE_EVALUATION.md`](docs/PROPERTY_SOURCE_EVALUATION.md)                               |
+| Why is a decision the way it is?                    | [`docs/DECISIONS.md`](docs/DECISIONS.md)                                                                             |
 
 > The product specification in [`docs/`](docs/) is the source of truth.
 > `docs/PRD.md` is the master; the other docs add implementation detail and must
@@ -225,10 +242,12 @@ be improvised: the hotel **media/photography** data and provenance contract, and
 publishable-inventory contract, not a best-effort one
 ([`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §21, D054).
 
-The V1 commercial contract is closed (D049–D053). What remains is
-implementation: the Public/Premium intelligence split, the $39 / 30-day pricing
-values, the Sun accent and Archivo — listed per file in
-[`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
-Until that lands, **reply rate is still visible to every browser role**, which
-contradicts the approved contract; no surface may claim otherwise in the
-meantime.
+The V1 commercial contract is closed (D049–D053) and the Public/Premium
+intelligence split is **implemented** — migration `0026` removed `reply_rate`
+from the public projection and added the entitlement-gated premium projection
+(D057–D059). What remains from that backlog is the Sun accent and Archivo.
+
+The V1 **property** contract is closed (D060–D064) and deliberately
+**unimplemented**: no provider, no geocoder, no media table, no coverage engine.
+The next block evaluates inventory sources against Bali and Dubai before anything
+is ingested.
