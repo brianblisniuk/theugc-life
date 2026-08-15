@@ -20,8 +20,10 @@
  * full list requires requesting the descendants that comprise the region. A
  * single large-region result is therefore NOT exhaustive, and treating one as a
  * destination universe would silently cap inventory — precisely the D055/D061
- * failure the coverage contract exists to prevent. This is encoded as
- * `documentedHardCap: 500`, so the paginator raises a COVERAGE RISK on reaching it.
+ * failure the coverage contract exists to prevent. It is recorded under
+ * `geographyEnumerationRisks` — NOT as a Content API pagination cap, because the
+ * two are different mechanisms and conflating them would raise a false coverage
+ * alarm on any content extraction past 500 records.
  *
  * ## What is still missing, and why it blocks a run
  *
@@ -41,6 +43,12 @@ export const expediaRapidDescriptor: AdapterDescriptor = {
   provider: "expedia",
   displayName: "Expedia Rapid (lodging content)",
   documentationStatus: "partially_verified",
+  // Documented thoroughly and commercially unreachable — two different
+  // facts, which is exactly why access is its own axis. Preserved as a
+  // future strategic source; not deleted, not waited on.
+  accessStatus: "direct_access_unavailable",
+  liveValidationStatus: "not_run",
+  strategicRole: "future_strategic_source",
   sources: [
     {
       url: "https://developers.expediagroup.com/rapid/lodging",
@@ -75,7 +83,7 @@ export const expediaRapidDescriptor: AdapterDescriptor = {
     {
       url: "https://developers.expediagroup.com/rapid/lodging/geography/about-geography-api",
       ...EXTERNAL_REVIEW,
-      note: "Region hierarchy plus property mappings. For high_level_region, province_state, country and continent, property mappings return up to the TOP 500 properties; the full list requires requesting descendants.",
+      note: "Region hierarchy plus property mappings. For high_level_region, province_state, country and continent, property MAPPINGS return up to the TOP 500 properties; the full list requires requesting descendants. This is a geography-enumeration limit, not a Content API pagination cap.",
     },
     {
       url: "https://developers.expediagroup.com/rapid/lodging/reference/signature-authentication",
@@ -92,9 +100,12 @@ export const expediaRapidDescriptor: AdapterDescriptor = {
     method: 'Link response header rel="next" until absent; Pagination-Total-Results for counts',
     pageSizeParam: null,
     maxPageSize: null,
-    // Geography property mappings cap at the top 500 for larger region types.
-    // Reaching it must raise a COVERAGE RISK, never be reported as a total.
-    documentedHardCap: 500,
+    // NO documented cap on the Content API itself. The top-500 limit belongs to
+    // Geography property MAPPINGS for large region types and is recorded under
+    // `geographyEnumerationRisks`. Encoding it here was wrong: it would fire a
+    // coverage warning on any content extraction past 500 records, which is a
+    // different mechanism entirely.
+    documentedHardCap: null,
   },
   fieldMap: {
     sourcePropertyId: "property_id",
@@ -183,6 +194,9 @@ export const expediaRapidDescriptor: AdapterDescriptor = {
     "Residence",
   ],
   geography: [],
+  geographyEnumerationRisks: [
+    "Geography API property MAPPINGS for high_level_region, province_state, country and continent return up to the TOP 500 properties. Enumerating such a region requires requesting the descendants that comprise it; a single large-region mapping result is NOT exhaustive. This constrains GEOGRAPHY ENUMERATION, not Content API pagination.",
+  ],
   operations: {
     paginationMethod: 'Link header rel="next" until absent; Pagination-Total-Results for counts',
     stablePropertyIds: null,

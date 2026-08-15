@@ -21,6 +21,7 @@
     "db:test:setup": "tsx scripts/apply-migrations.ts --bootstrap",
     "eval:sources:status": "tsx scripts/provider-evaluation/run.ts --status",
     "eval:sources:pilot-probe": "tsx scripts/provider-evaluation/pilot-probe.ts",
+    "eval:sources:probe": "tsx scripts/provider-evaluation/run.ts --probe",
     "import:inspect": "tsx scripts/import/inspect.ts",
     "import:stage": "tsx scripts/import/stage.ts",
     "import:dry-run": "tsx scripts/import/dry-run.ts",

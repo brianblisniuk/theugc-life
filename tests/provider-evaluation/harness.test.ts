@@ -72,6 +72,9 @@ const SYNTHETIC: AdapterDescriptor = {
   provider: "synthetic",
   displayName: "Synthetic test provider",
   documentationStatus: "verified",
+  accessStatus: "credentials_available",
+  liveValidationStatus: "not_run",
+  strategicRole: "active_evaluation",
   sources: [
     { url: "https://example.invalid/docs", accessedAt: "2026-08-15", verifiedBy: "claude_code" },
   ],
@@ -130,6 +133,7 @@ const SYNTHETIC: AdapterDescriptor = {
   starKindsAcceptedAsD060Evidence: ["official"],
   starKindDocumentedAbsent: false,
   hospitalityPropertyTypes: ["hotel", "resort", "villa"],
+  geographyEnumerationRisks: [],
   geography: [
     {
       destination: "bali",
@@ -624,13 +628,23 @@ describe("overlap analysis records evidence and invents no thresholds", () => {
     expect(withHeuristic.evidencePairs).toHaveLength(0);
   });
 
-  it("counts records with no evidence at all", () => {
-    const a = [record({ sourcePropertyId: "a1", name: "Alpha" })];
-    const b = [record({ provider: "b", sourcePropertyId: "b1", name: "Omega" })];
+  it("counts NO_TEXTUAL_EVIDENCE without calling it provider-only", () => {
+    // Two records that share nothing textual but sit 100m apart. They may well
+    // be the same hotel under a transliterated name — "no textual evidence" is
+    // not "no possible match".
+    const a = [record({ sourcePropertyId: "a1", name: "Alpha Hotel" })];
+    const b = [
+      record({ provider: "b", sourcePropertyId: "b1", name: "Fundouq Alfa", latitude: 25.2009 }),
+    ];
     const analysis = analyseOverlap("dubai", a, b, NO_HEURISTIC);
+
     expect(analysis.evidencePairs).toHaveLength(0);
-    expect(analysis.aWithNoEvidence).toBe(1);
-    expect(analysis.bWithNoEvidence).toBe(1);
+    expect(analysis.aWithNoTextualEvidence).toBe(1);
+    expect(analysis.bWithNoTextualEvidence).toBe(1);
+    // The claim is explicitly bounded.
+    expect(analysis.spatialCandidateGeneration).toBe("not_yet_assessed");
+    expect(analysis.notes.join(" ")).toContain("NOT the same as NO_POSSIBLE_MATCH");
+    expect(analysis.notes.join(" ")).toContain("never be reported as provider-unique inventory");
   });
 
   it("builds clean 1:1 pairs only when neither side is entangled", () => {
@@ -762,10 +776,46 @@ describe("the runnability gate blocks unverified descriptors", () => {
     expect(reasons).toContain("hypothes");
   });
 
-  it("records Expedia's documented top-500 mapping cap so it raises a coverage risk", () => {
-    // The single most dangerous documented fact: a large-region property mapping
-    // is capped, so a one-shot region query is NOT a destination universe.
-    expect(expediaRapidDescriptor.pagination?.documentedHardCap).toBe(500);
+  it("keeps the top-500 mapping cap as a GEOGRAPHY risk, not a content pagination cap", () => {
+    // The 500 limit belongs to Geography property MAPPINGS for large region
+    // types. It is NOT a cap on the Content API, and encoding it as one would
+    // fire a false coverage alarm on any content extraction past 500 records.
+    expect(expediaRapidDescriptor.pagination?.documentedHardCap).toBeNull();
+    expect(expediaRapidDescriptor.geographyEnumerationRisks.join(" ")).toContain("TOP 500");
+    expect(expediaRapidDescriptor.geographyEnumerationRisks.join(" ")).toContain("descendants");
+  });
+
+  it("does not raise a geography coverage risk from a >500-record content extraction", async () => {
+    // Regression for the corrected error: 900 content records must paginate to
+    // completion cleanly, with no geography cap warning anywhere near it.
+    const contentDescriptor: AdapterDescriptor = {
+      ...SYNTHETIC,
+      pagination: { ...SYNTHETIC.pagination!, documentedHardCap: null },
+    };
+
+    const pages = [
+      Array.from({ length: 500 }, (_, i) => payload({ id: `a${i}` })),
+      Array.from({ length: 400 }, (_, i) => payload({ id: `b${i}` })),
+    ];
+
+    const result = await executeEvaluation({
+      descriptor: contentDescriptor,
+      destination: "bali",
+      runLabel: "test",
+      transport: {
+        fetchPage: async (_entityId, cursor) => {
+          const index = cursor === null ? 0 : Number(cursor);
+          return {
+            records: pages[index] ?? [],
+            nextCursor: index + 1 < pages.length ? String(index + 1) : null,
+          };
+        },
+      },
+    });
+
+    expect(result.metrics.accounting.rawRecordsReturned).toBe(900);
+    expect(result.metrics.pagination.exhaustionProven).toBe(true);
+    expect(result.metrics.pagination.coverageRisks).toEqual([]);
   });
 
   it("keeps a broad hospitality type list rather than pre-filtering to Hotel", () => {

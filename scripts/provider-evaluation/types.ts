@@ -318,8 +318,24 @@ export interface OverlapAnalysis {
   oneToOneCandidatePairs: number;
   /** Records entangled in many-to-many candidate sets: review clusters. */
   ambiguityClusters: AmbiguityCluster[];
-  aWithNoEvidence: number;
-  bWithNoEvidence: number;
+  /**
+   * Records for which NO TEXTUAL evidence was observed.
+   *
+   * Deliberately NOT called "provider-only". Absence of an exact name, domain,
+   * brand or phone agreement is not proof that no counterpart exists: names get
+   * transliterated, chains share or omit domains, phones are missing and
+   * addresses are formatted differently. Calling these "source-only" would
+   * produce a falsely precise count of provider-unique inventory.
+   */
+  aWithNoTextualEvidence: number;
+  bWithNoTextualEvidence: number;
+  /**
+   * Whether spatial/address candidate generation has been attempted.
+   *
+   * `not_yet_assessed` until real data supports thresholds (D063). Until then no
+   * record may be classified as having NO POSSIBLE MATCH.
+   */
+  spatialCandidateGeneration: "not_yet_assessed" | "assessed";
   intraProviderDuplicateCandidates: Record<string, number>;
   /**
    * `null` unless a provisional heuristic was explicitly configured. A union
@@ -367,6 +383,26 @@ export interface AdapterDescriptor {
    * - `verified` — every fact the gate requires is documented and sourced.
    */
   documentationStatus: "unverified" | "partially_verified" | "verified";
+  /**
+   * Whether we can actually reach this provider commercially.
+   *
+   * Separate from documentation on purpose: Booking and Expedia are thoroughly
+   * documented and completely unreachable without partner onboarding, which is a
+   * different fact from "we have not read the docs".
+   */
+  accessStatus:
+    | "credentials_available"
+    | "direct_access_unavailable"
+    | "self_service_available_credential_not_supplied";
+  /**
+   * Whether anything was ever observed from the live API.
+   *
+   * The third axis that must never be collapsed into the other two: documented,
+   * observed live, and production-approved are three different claims.
+   */
+  liveValidationStatus: "not_run" | "validated" | "blocked";
+  /** Commercial posture, so a deprioritised source is not mistaken for a rejected one. */
+  strategicRole: "active_evaluation" | "future_strategic_source" | "secondary_candidate";
   sources: DocumentationSource[];
   /** Env var names only. Values are never read into this object. */
   requiredCredentialEnvVars: string[];
@@ -400,6 +436,16 @@ export interface AdapterDescriptor {
   /** Provider property types documented as physical hospitality properties. */
   hospitalityPropertyTypes: string[];
   geography: ProviderGeographyResolution[];
+  /**
+   * Risks in enumerating a destination's property set, kept SEPARATE from
+   * content pagination.
+   *
+   * These are different mechanisms and conflating them produces a false alarm:
+   * a capped region→property mapping is a geography-enumeration problem, while
+   * a content endpoint's paging is its own contract. A content extraction of
+   * 900 records must not raise a geography cap warning it never touched.
+   */
+  geographyEnumerationRisks: string[];
   operations: OperationsEvidence;
   media: { documentedUsageConstraints: string[] };
   /** Why this descriptor cannot run yet, when it cannot. */

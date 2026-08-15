@@ -293,6 +293,8 @@ export function analyseOverlap(
 
   const aWithEvidence = new Set(evidencePairs.map((p) => p.aId));
   const bWithEvidence = new Set(evidencePairs.map((p) => p.bId));
+  // NOTE: these are records with no TEXTUAL evidence. They are not
+  // "provider-only" and must never be reported as such — see the notes below.
   const aIds = new Set(aRecords.map((r) => r.sourcePropertyId));
   const bIds = new Set(bRecords.map((r) => r.sourcePropertyId));
 
@@ -301,6 +303,8 @@ export function analyseOverlap(
     "Coordinate distances are recorded in metres and are NOT bucketed by any default rule.",
     "A shared website domain is a weak signal on its own: a chain can share one domain across many physical properties.",
     "Records in an ambiguity cluster are unresolved, not matched — a 1:many candidate set is review work, not an overlap.",
+    "NO_TEXTUAL_EVIDENCE is NOT the same as NO_POSSIBLE_MATCH. A record with no exact name/domain/brand/phone agreement may still have a counterpart: names get transliterated, chains share or omit domains, phones are absent and addresses are formatted differently. These counts must never be reported as provider-unique inventory.",
+    "Coordinate-only and address-only candidate generation is NOT_YET_ASSESSED: it needs distance thresholds that no live evidence supports yet (D063).",
   ];
 
   if (heuristic.minimumAgreeingSignals === null) {
@@ -322,8 +326,11 @@ export function analyseOverlap(
     evidencePairs,
     oneToOneCandidatePairs: oneToOne.length,
     ambiguityClusters: clusters,
-    aWithNoEvidence: [...aIds].filter((id) => !aWithEvidence.has(id)).length,
-    bWithNoEvidence: [...bIds].filter((id) => !bWithEvidence.has(id)).length,
+    aWithNoTextualEvidence: [...aIds].filter((id) => !aWithEvidence.has(id)).length,
+    bWithNoTextualEvidence: [...bIds].filter((id) => !bWithEvidence.has(id)).length,
+    // Coordinate/address-only candidate generation needs thresholds that do not
+    // exist yet (D063), so it has NOT been attempted.
+    spatialCandidateGeneration: "not_yet_assessed",
     intraProviderDuplicateCandidates: {
       [providerA]: intraProviderDuplicateCandidates(aRecords),
       [providerB]: intraProviderDuplicateCandidates(bRecords),

@@ -35,6 +35,12 @@ export const bookingDemandDescriptor: AdapterDescriptor = {
   provider: "booking",
   displayName: "Booking.com Demand API v3.2",
   documentationStatus: "partially_verified",
+  // Documented thoroughly and commercially unreachable — two different
+  // facts, which is exactly why access is its own axis. Preserved as a
+  // future strategic source; not deleted, not waited on.
+  accessStatus: "direct_access_unavailable",
+  liveValidationStatus: "not_run",
+  strategicRole: "future_strategic_source",
   sources: [
     {
       url: "https://developers.booking.com/demand/docs/open-api/3.2/demand-api",
@@ -134,6 +140,9 @@ export const bookingDemandDescriptor: AdapterDescriptor = {
   // accommodation_type vocabulary not yet enumerated from documentation.
   hospitalityPropertyTypes: [],
   geography: [],
+  geographyEnumerationRisks: [
+    "Bali and Dubai destination ids are unresolved; /accommodations/details requires at least one of accommodations, airport, city, country or region, and those ids need a live Booking location lookup.",
+  ],
   operations: {
     paginationMethod: "page token from metadata.next_page; rows 10..1000 (multiples of 10)",
     stablePropertyIds: null,

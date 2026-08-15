@@ -16,6 +16,9 @@
  * imported by the application.
  */
 import { checkCredentials, requireCredential } from "./credentials";
+import { RequestBudget } from "./hotelbeds/budget";
+import { HotelbedsClient } from "./hotelbeds/client";
+import { createHotelbedsTransport, probeCredentials } from "./hotelbeds/transport";
 import { ADAPTERS, assertRunnable, checkRunnable, getAdapter } from "./adapters/registry";
 import { writeArtifact } from "./artifacts";
 import { loadLocalEnv } from "./env";
@@ -43,46 +46,79 @@ function parseArgs(argv: readonly string[]): Map<string, string | true> {
 }
 
 /**
- * Build the provider transport.
+ * Evaluation request budget.
  *
- * Reads credentials at call time (never storing or logging them) and issues the
- * documented static-content request. Each adapter's request/auth shape is filled
- * in as part of verifying its descriptor; until then a verified descriptor
- * without a transport is a loud error rather than a silent empty result.
+ * The Hotelbeds evaluation account allows 50 requests per DAY. The default
+ * ceiling here is 40, leaving at least 10 in reserve for diagnostics and
+ * recovery — spending the last request on a paginated page leaves no way to
+ * investigate what went wrong until the quota resets.
  */
-function createTransport(descriptor: AdapterDescriptor): ProviderTransport {
-  // Presence is enforced here so a missing credential fails before any request,
-  // rather than producing a 401 whose empty body looks like "no hotels here".
-  for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
+const DEFAULT_MAX_REQUESTS = 40;
+/** ~1.5 req/s, comfortably inside the dashboard's 8-per-4-seconds allowance. */
+const DEFAULT_MIN_INTERVAL_MS = 700;
 
-  const build = TRANSPORT_BUILDERS[descriptor.provider];
-  if (!build) {
-    throw new Error(
-      `Provider "${descriptor.provider}" has a verified descriptor but no transport implementation.\n` +
-        "Implement its authenticated request/page-extraction in TRANSPORT_BUILDERS, using the\n" +
-        "endpoint, auth scheme and pagination recorded in the descriptor.",
-    );
+function createBudget(args: Map<string, string | true>): RequestBudget {
+  const raw = args.get("max-requests");
+  const maxRequests = typeof raw === "string" ? Number(raw) : DEFAULT_MAX_REQUESTS;
+  if (!Number.isFinite(maxRequests) || maxRequests <= 0) {
+    throw new Error("--max-requests must be a positive number");
   }
-  return build(descriptor);
+  return new RequestBudget({
+    maxRequests,
+    minIntervalMs: DEFAULT_MIN_INTERVAL_MS,
+  });
+}
+
+function createHotelbedsClient(
+  descriptor: AdapterDescriptor,
+  budget: RequestBudget,
+  log: (message: string) => void,
+  useCache: boolean,
+): HotelbedsClient {
+  // Read at call time; never stored on the descriptor, never logged.
+  const apiKey = requireCredential("HOTELBEDS_API_KEY");
+  const secret = requireCredential("HOTELBEDS_SECRET");
+  return new HotelbedsClient({
+    baseUrl: descriptor.baseUrl ?? "",
+    credentials: { apiKey, secret },
+    budget,
+    useCache,
+    log,
+  });
 }
 
 /**
- * Provider-specific request/auth implementations.
+ * Build the provider transport.
  *
- * Deliberately empty: writing an authenticated request against an unverified
- * endpoint, auth scheme and pagination contract would be the same guessing the
- * runnability gate exists to prevent. Each entry is added together with its
- * descriptor's verification, and the shared pipeline downstream is already
- * complete and tested.
+ * Credential presence is enforced before any request, so a missing credential
+ * fails loudly rather than producing a 401 whose empty body looks like "this
+ * destination has no hotels".
  */
-const TRANSPORT_BUILDERS: Record<
-  string,
-  ((d: AdapterDescriptor) => ProviderTransport) | undefined
-> = {};
+function createTransport(
+  descriptor: AdapterDescriptor,
+  args: Map<string, string | true>,
+  log: (message: string) => void,
+): ProviderTransport {
+  for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
+
+  if (descriptor.provider === "hotelbeds") {
+    const budget = createBudget(args);
+    return createHotelbedsTransport(
+      createHotelbedsClient(descriptor, budget, log, !args.has("no-cache")),
+    );
+  }
+
+  throw new Error(
+    `Provider "${descriptor.provider}" has no transport implementation.\n` +
+      "Booking and Expedia are preserved as future strategic sources with direct access\n" +
+      "unavailable; implementing their transports is deliberately out of scope for now.",
+  );
+}
 
 async function runProvider(
   providerArg: string,
   destinationArg: string,
+  args: Map<string, string | true>,
   log: (...parts: unknown[]) => void,
 ): Promise<void> {
   if (!DESTINATIONS.includes(destinationArg as EvaluationDestination)) {
@@ -94,7 +130,7 @@ async function runProvider(
   // Throws with the full list of reasons when facts are still missing.
   assertRunnable(descriptor, destination);
 
-  const transport = createTransport(descriptor);
+  const transport = createTransport(descriptor, args, (m) => log(m));
 
   // Caller-supplied label keeps runs reproducible; the harness reads no clock.
   const runLabel = String(process.env.EVAL_RUN_LABEL ?? "run");
@@ -129,6 +165,13 @@ async function main(): Promise<void> {
 
   if (envResult.error) {
     log(`Warning: ${envResult.path} exists but could not be read (${envResult.error}).`);
+  }
+
+  // Probe first: `--probe` takes no --provider, so the status fallback below
+  // would otherwise swallow it.
+  if (args.has("probe")) {
+    await runProbe(args, log);
+    return;
   }
 
   if (args.has("status") || !args.has("provider")) {
@@ -175,7 +218,42 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runProvider(String(args.get("provider")), String(args.get("destination") ?? ""), log);
+  await runProvider(String(args.get("provider")), String(args.get("destination") ?? ""), args, log);
+}
+
+/**
+ * Minimal authenticated diagnostic against Hotelbeds.
+ *
+ * Answers only two questions — credentials valid, API reachable — for the
+ * smallest possible quota cost. Never touches availability or booking.
+ */
+async function runProbe(
+  args: Map<string, string | true>,
+  log: (...parts: unknown[]) => void,
+): Promise<void> {
+  const descriptor = getAdapter("hotelbeds");
+  for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
+
+  const budget = createBudget(args);
+  const client = createHotelbedsClient(descriptor, budget, (m) => log(m), !args.has("no-cache"));
+
+  const result = await probeCredentials(client);
+
+  log("Hotelbeds credential probe");
+  log(`  CREDENTIALS:        ${result.credentials.toUpperCase()}`);
+  log(`  EGRESS:             ${result.reachable ? "reachable" : "BLOCKED"}`);
+  log(`  detail:             ${result.detail}`);
+  log(`  local attempts:     ${budget.state.attempted} (cache hits ${budget.state.cacheHits})`);
+  log(`  reached provider:   ${budget.state.providerReached}  <- what consumes the 50/day quota`);
+  log(`  local budget left:  ${budget.remaining}`);
+
+  writeArtifact("hotelbeds-probe.json", {
+    credentials: result.credentials,
+    reachable: result.reachable,
+    status: result.status,
+    detail: result.detail,
+    budget: budget.state,
+  });
 }
 
 void main().catch((error: unknown) => {

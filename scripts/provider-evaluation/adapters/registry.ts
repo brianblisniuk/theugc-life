@@ -14,8 +14,15 @@
 import type { AdapterDescriptor, EvaluationDestination } from "../types";
 import { bookingDemandDescriptor } from "./booking";
 import { expediaRapidDescriptor } from "./expedia";
+import { hotelbedsContentDescriptor } from "./hotelbeds";
+import { nuiteeLiteApiDescriptor } from "./nuitee";
 
+// Hotelbeds first: it is the only provider with live credentials, so it is the
+// active evaluation target. The others are preserved with their own access and
+// strategic-role states rather than deleted.
 export const ADAPTERS: readonly AdapterDescriptor[] = [
+  hotelbedsContentDescriptor,
+  nuiteeLiteApiDescriptor,
   bookingDemandDescriptor,
   expediaRapidDescriptor,
 ];
