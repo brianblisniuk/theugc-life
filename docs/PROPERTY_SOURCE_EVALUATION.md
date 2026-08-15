@@ -8,6 +8,15 @@ Governing contract:
 [`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
 (D060–D064). Governing decisions: D054, D055.
 
+> **Run status (2026-08-15): ATTEMPTED, BLOCKED.** The first execution of this
+> specification produced no provider measurements and no recommendation — the
+> official documentation hosts and both providers' credentials were unavailable
+> in the execution environment. The harness, the runnability gate and the
+> blocker detail are in
+> [`evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
+> This specification is unchanged by that run; nothing in it was found
+> ambiguous.
+
 ---
 
 ## 1. Purpose
