@@ -1,10 +1,15 @@
 /**
- * What each confidence band actually renders (Sprint 2E, PRD §12.7, D044).
+ * What each confidence band renders in the PUBLIC layer (PRD §12.7/§12.8, D044,
+ * D050).
  *
  * The projection already suppresses values upstream; these pin what the panel
  * does with what survives — in particular that a withheld metric never becomes
  * a claim ("0%", "No collaboration"), and that a failed query never becomes
  * "not enough creator data".
+ *
+ * Reply rate and reply timing are NOT part of this layer any more: 0026 moved
+ * them to the premium projection, so no confidence band — not even `strong` —
+ * discloses them publicly. See tests/intelligence/premium-display.test.ts.
  */
 import { describe, expect, it } from "vitest";
 
@@ -12,10 +17,8 @@ import {
   INSUFFICIENT_INTELLIGENCE_COPY,
   INTELLIGENCE_ERROR_COPY,
   activityLabel,
-  canShowReplyRate,
   intelligencePanelState,
   recencyLabel,
-  replyRateLabel,
   type IntelligenceSignal,
 } from "@/lib/hotels/intelligence";
 
@@ -23,28 +26,24 @@ import {
 const AT_INSUFFICIENT: IntelligenceSignal = {
   activityLevel: null,
   confidenceLevel: "insufficient",
-  replyRate: null,
   hasConfirmedCollaboration: null,
   recencyBand: null,
 };
 const AT_EMERGING: IntelligenceSignal = {
   activityLevel: "low",
   confidenceLevel: "emerging",
-  replyRate: null,
   hasConfirmedCollaboration: true,
   recencyBand: null,
 };
 const AT_MODERATE: IntelligenceSignal = {
   activityLevel: "medium",
   confidenceLevel: "moderate",
-  replyRate: null,
   hasConfirmedCollaboration: false,
   recencyBand: "past_month",
 };
 const AT_STRONG: IntelligenceSignal = {
   activityLevel: "high",
   confidenceLevel: "strong",
-  replyRate: 0.42,
   hasConfirmedCollaboration: true,
   recencyBand: "past_quarter",
 };
@@ -55,11 +54,14 @@ describe("insufficient renders an absence, never a zero", () => {
     expect(INSUFFICIENT_INTELLIGENCE_COPY.title).toBe("Not enough creator data yet");
   });
 
-  it("renders no reply rate — not '0%'", () => {
-    expect(replyRateLabel(AT_INSUFFICIENT)).toBeNull();
-    expect(canShowReplyRate(AT_INSUFFICIENT)).toBe(false);
-    // Even if a rate somehow arrived, the band forbids showing it.
-    expect(replyRateLabel({ ...AT_INSUFFICIENT, replyRate: 0 })).toBeNull();
+  it("carries no reply rate at all — the public shape has no such field", () => {
+    expect(AT_INSUFFICIENT).not.toHaveProperty("replyRate");
+    expect(Object.keys(AT_INSUFFICIENT)).toEqual([
+      "activityLevel",
+      "confidenceLevel",
+      "hasConfirmedCollaboration",
+      "recencyBand",
+    ]);
   });
 
   it("renders no activity label — not 'Low'", () => {
@@ -81,8 +83,7 @@ describe("emerging shows coarse activity and a confirmed collaboration", () => {
     expect(activityLabel(AT_EMERGING.activityLevel)).toBe("Creator activity detected");
   });
 
-  it("still hides the reply rate and the recency band", () => {
-    expect(replyRateLabel(AT_EMERGING)).toBeNull();
+  it("still hides the recency band", () => {
     expect(recencyLabel(AT_EMERGING.recencyBand)).toBeNull();
   });
 
@@ -105,29 +106,21 @@ describe("moderate adds coarse recency", () => {
     expect(recencyLabel(AT_MODERATE.recencyBand)).not.toMatch(/\d{4}-\d{2}-\d{2}|T\d{2}:/);
   });
 
-  it("still hides the reply rate", () => {
-    expect(replyRateLabel(AT_MODERATE)).toBeNull();
-  });
-
   it("a genuine `false` collaboration answer still renders nothing", () => {
     expect(AT_MODERATE.hasConfirmedCollaboration).toBe(false);
     expect(Boolean(AT_MODERATE.hasConfirmedCollaboration)).toBe(false);
   });
 });
 
-describe("strong is the only band that shows a reply rate", () => {
-  it("renders the rate as a coarse percentage", () => {
-    expect(canShowReplyRate(AT_STRONG)).toBe(true);
-    expect(replyRateLabel(AT_STRONG)).toBe("42%");
-  });
-
-  it("no lower band ever does", () => {
-    for (const signal of [AT_INSUFFICIENT, AT_EMERGING, AT_MODERATE]) {
-      expect(canShowReplyRate({ ...signal, replyRate: 0.42 })).toBe(false);
+describe("no public band discloses a reply rate (D050)", () => {
+  it("not even `strong` — the field is gone from the public layer", () => {
+    for (const signal of [AT_INSUFFICIENT, AT_EMERGING, AT_MODERATE, AT_STRONG]) {
+      expect(signal).not.toHaveProperty("replyRate");
+      expect(JSON.stringify(signal)).not.toMatch(/reply/i);
     }
   });
 
-  it("shows every other permitted signal too", () => {
+  it("strong still shows every signal the public layer does carry", () => {
     expect(activityLabel(AT_STRONG.activityLevel)).toBe("High creator activity");
     expect(recencyLabel(AT_STRONG.recencyBand)).toBe("Creator activity in the past quarter");
   });

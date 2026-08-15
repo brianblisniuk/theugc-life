@@ -130,3 +130,20 @@ A reviewer may explicitly choose a destination during review. That decision is a
 Sprint 1B does not attempt to build a universal geographic database, geocode every address, infer neighborhoods, or pre-seed every travel destination in the world.
 
 The catalog grows deliberately as inventory/research expands.
+
+## Initial V1 destination set — recorded, not ingested
+
+The owner has approved the first twenty product destinations. They are listed in
+[`INTELLIGENCE_ROADMAP.md`](INTELLIGENCE_ROADMAP.md) §11.
+
+**No coverage ingestion has started**, and the property inventory sources are
+unchosen (D055). Two constraints apply when they are created:
+
+- They are product **destinations**, not necessarily schema type `city`. Bali is
+  the obvious case — an island containing areas a creator thinks of separately.
+- The hierarchy matters commercially, not only editorially: a Destination Pass
+  covers descendants (`_has_active_destination_access`, D051), so flattening a
+  destination that should have children silently narrows what the Pass buys.
+
+Each destination is subject to D055: **all** in-scope properties in its coverage
+universe, with exclusions recorded and auditable.

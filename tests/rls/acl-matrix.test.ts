@@ -67,6 +67,10 @@ const CONTRACT: Record<string, Expected> = {
   hotel_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
   destination_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
   hotel_public_intelligence: { anon: "S", authenticated: "S", serviceRole: "S" },
+  // Premium projection (0026). anon holds NOTHING: it could never be entitled,
+  // so the privilege should not exist at all — the in-view entitlement gate is
+  // the second layer, not the only one.
+  hotel_premium_intelligence: { anon: "", authenticated: "S", serviceRole: "S" },
 
   // Editorial / import / admin, gated by is_admin_or_editor().
   destination_aliases: { anon: "", authenticated: "SIUD", serviceRole: "all" },
@@ -149,6 +153,7 @@ const REQUIRED = [
   "hotel_intelligence",
   "destination_intelligence",
   "hotel_public_intelligence",
+  "hotel_premium_intelligence",
   "import_batches",
   "import_rows",
   "organizations",

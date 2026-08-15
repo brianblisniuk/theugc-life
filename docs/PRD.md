@@ -1552,19 +1552,73 @@ rate, response time, interaction recency and similar signals derive only from
 qualifying real creator workflow/outcome data, at every tier. Premium status
 does not change this.
 
-#### 12.8.4 Implementation status — the split is NOT built yet
+#### 12.8.4 Exact V1 metric contract (D058)
 
-The contract above is approved; the code does not yet implement it. Today there
-is one projection, `public.hotel_public_intelligence`, graduated by confidence
-rather than by plan — which means **reply rate is currently disclosed to
-anonymous visitors and Free creators at `strong` confidence** even though §12.8.2
-classifies it as premium.
+Implemented by migration `0026`. Analysis window is a trailing **365 days**,
+measured on `event_at`, never `created_at`. Every premium metric carries **two**
+floors — sample size and contributor diversity — and payment lowers neither.
 
-Closing that gap is the scope of the next technical PR, not of any product
-decision. The per-file backlog is
-[`V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
-Until it lands, no surface may claim that a paid plan reveals intelligence the
-free tier cannot see.
+| Metric | Layer | Sample floor | Contributor floor | Output |
+|---|---|---|---|---|
+| Creator activity level | Public | confidence >= `emerging` | — | coarse label |
+| Confirmed-collaboration boolean | Public | confidence >= `emerging` | — | true / NULL |
+| Coarse recency band | Public | confidence >= `moderate` | 3 distinct creators in 90d, for the RECENT bands | `past_month` / `past_quarter` / `older` |
+| **Reply rate** | Premium | 15 qualifying pitched cycles | 5 distinct creators | whole percent |
+| **Typical reply time** | Premium | 10 qualifying replied cycles | 5 distinct creators who received one | band |
+| **Recent creator activity** | Premium | — | 3 distinct creators in the band | `within_7_days` / `within_30_days` / `within_90_days` |
+| **Collaboration types observed** | Premium | — | 3 distinct creators **per type** | type list |
+| **Contributor sample** | Premium | — | 5 distinct creators | "Based on activity from N creators" |
+
+**Reply rate** counts qualifying outreach **cycles**, not raw events: a
+follow-up never becomes another denominator, and a creator's repeat cycle with
+the same hotel counts once each time. Autoresponders, out-of-office replies,
+delivery and bounce notifications, duplicate classification events and synthetic
+activity do not count — a qualifying `reply_received` represents an actual human
+hotel-side response.
+
+**Typical reply time** is the median from initial qualifying pitch to first
+qualifying reply in the same cycle, published as a band: Under 24h · 1–3 days ·
+3–7 days · 1–2 weeks · 2+ weeks. Never an hour count, never a reply count.
+
+Below any floor the value is **NULL** — never `0%`, never a negative claim. A
+measured zero above the floors *is* published, because "measured, and nobody
+replied" is a real finding while "we withheld it" is not.
+
+**Reply rate is no longer public.** §12.8 above once disclosed it at `strong`
+confidence to everyone; `0026` removed the column from the public projection.
+
+**No composite score.** There is no "Creator Friendly Score" and no 0–100 hotel
+reputation number in V1. A metric must remain interpretable on its own.
+
+#### 12.8.5 Locked, building and error (D059)
+
+Four states, three of which are damaging to confuse:
+
+- **available** — entitled, at least one metric cleared its floors;
+- **locked** — the capability exists, this viewer is not entitled;
+- **building** — entitled, but qualifying evidence is insufficient. Copy:
+  *"Creator intelligence is building — track your outreach here and help make
+  this hotel's insights more useful for the creator community."*
+- **error** — a lookup or query failed. Never rendered as "not entitled", "no
+  data" or "building".
+
+Unknown ≠ zero. Unknown ≠ negative. Insufficient evidence ≠ bad hotel. There is
+no "submit data" mechanic and no reward for contributing (D001, D002).
+
+#### 12.8.6 Provenance never mixes (D057)
+
+Three domains, permanently separate:
+
+- **Research / editorial** — what theugc.life verifies. A trust layer. Never
+  creates network metrics.
+- **Hotel-confirmed** — what an authorized hotel representative states.
+  *Future; not built.* Distinguishable internally as HOTEL CONFIRMED, never as
+  "verified by theugc.life".
+- **Creator Network** — derived only from qualifying creator workflow data.
+
+"The hotel says it accepts paid UGC" and "creators have actually received paid
+collaborations here" are different facts. A reply from a hotel **to
+theugc.life** is not a creator reply and never enters reply-rate data.
 
 ---
 

@@ -22,18 +22,25 @@ export const FREE_LIMITS = {
 } as const;
 
 /**
- * Pricing hypotheses (PRD §5.2, §5.3 / DECISIONS D004, D005).
+ * V1 commercial terms (PRD §5.2, §5.3 / DECISIONS D051, D052).
  * Amounts are in the smallest currency unit's whole-dollar value (USD).
- * These are launch hypotheses to be validated with cohort data.
+ *
+ * These are FIXED V1 terms, not hypotheses — what remains to be measured is
+ * conversion at these numbers, not the numbers themselves. They stay in typed
+ * config so no surface hardcodes them and so they can move without a code
+ * change to business logic.
  */
 export const PRICING = {
   destinationPass: {
-    // PRD §5.2: USD 29–39, 90-day access. Price must be configurable.
+    // D051: USD 39 / 30 days / one destination. The earlier 90-day figure
+    // (D024) was superseded — pitching one trip is a weeks-long task, and a
+    // quarter of idle access weakened the upgrade path to Pro.
     priceUsd: 39,
-    durationDays: 90,
+    durationDays: 30,
   },
   pro: {
-    // PRD §5.3 / D005: reference 299, launch 199, later 249.
+    // D052: USD 199/year is the fixed V1 launch price, worldwide.
+    // The 299 reference and 249 later prices remain future hypotheses (D005).
     referencePriceUsd: 299,
     launchPriceUsd: 199,
     laterPriceUsd: 249,

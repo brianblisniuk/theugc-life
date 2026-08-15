@@ -8,7 +8,9 @@ Produced during the pre-Sprint-3 product contract sync, after the owner approved
 D049–D056. Every item below is production code or test code that contradicts one
 of those decisions, or a gap the decisions created.
 
-**Nothing in this backlog was changed in the PR that created this file.**
+> **Status: §1, §2 and §6 are DONE** — delivered by the V1 Premium Intelligence
+> PR (migration `0026`, D057–D059). They are kept below, struck through, as the
+> record of what was corrected. §4, §5, §7 and §8 remain open for later blocks.
 
 Governing decisions: **D049** (one canonical inventory, no "premium hotels"),
 **D050** (Public + Premium Intelligence, identical privacy), **D051**
@@ -18,7 +20,7 @@ inventory complete, not capped), **D056** (Destination Pass workflow scope).
 
 ---
 
-## 1. Stale commercial copy and configuration
+## 1. Stale commercial copy and configuration — ✅ DONE
 
 | # | File | Current | Required |
 |---|---|---|---|
@@ -39,12 +41,22 @@ change is safe, but the next PR must confirm nothing else has begun consuming it
 
 ---
 
-## 2. The Public / Premium Intelligence split — the substantial work
+## 2. The Public / Premium Intelligence split — ✅ DONE
 
-D050 requires two projections. **One exists.** Today's single projection is
-graduated by *confidence*, not by *plan*, so **reply rate currently reaches
-anonymous visitors and Free creators** at `strong` confidence. That is the
-central gap.
+**Delivered.** Migration `0026` removed `reply_rate` from
+`hotel_public_intelligence` and added `hotel_premium_intelligence`, gated inside
+the view by `has_premium_hotel_access()`. `anon` holds no privilege on it. The
+exact metric contract is D058; the four-state UI contract is D059.
+
+Two items in §2.1 were implemented differently from the sketch below, both
+deliberately:
+
+- **2.1.4** — thresholds are two-dimensional. Every premium metric requires a
+  contributor floor as well as a sample floor, because volume and diversity fail
+  differently and only the second protects an individual creator.
+- The **public** recency band gained a contributor floor too (3 distinct
+  creators in 90 days for the recent bands). D050 requires the same privacy rule
+  for a metric on every plan, and 15 pitched cycles can belong to one creator.
 
 ### 2.1 Database
 
@@ -110,14 +122,14 @@ Migrations `0001`–`0025` are immutable. All of this lands in `0026+`.
 
 ---
 
-## 6. Entitlement scope and workflow limits (D056)
+## 6. Entitlement scope and workflow limits (D056) — ✅ VERIFIED
 
 | # | Location | Required |
 |---|---|---|
-| 6.1 | `save_hotel_to_pipeline` (migration `0019`) | Already exempts premium-covered hotels from the Free limits via `has_premium_hotel_access`. **Verify** this still matches D056 before relying on it — the exemption is the mechanism D056 depends on |
-| 6.2 | `transition_pipeline_item` (migration `0020`) | Same check for the engaged (`activePipelineItems`) limit |
-| 6.3 | *(new tests)* | Entitled-destination creator exceeds both Free limits inside the entitlement; the same creator is still limited outside it; an expired Pass returns them to Free limits while their history stays readable |
-| 6.4 | Copy | Nothing currently tells a Pass holder their limits lift inside the destination. Billing/pricing copy should say so once §1 is corrected |
+| 6.1 | `save_hotel_to_pipeline` (migration `0019`) | ✅ Verified — exempts premium-covered hotels via `_has_active_pro` / `_has_active_destination_access`, resolved per hotel through the destination hierarchy. Unchanged; no duplication added in the UI |
+| 6.2 | `transition_pipeline_item` (migration `0020`) | ✅ Verified — same mechanism for the engaged limit |
+| 6.3 | tests | ✅ Covered in `tests/pipeline/save-to-pipeline.test.ts` and `tests/pipeline/transitions.test.ts` (Pro not blocked; Pass covers the hierarchy; a Pass holder acting outside falls back to Free) |
+| 6.4 | Copy | ✅ The pricing page now states "Unlimited pipeline for that destination" |
 
 ## 7. Map coverage (D054)
 

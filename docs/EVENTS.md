@@ -208,13 +208,30 @@ Ask:
 ## 6. Eligibility rules for analytics
 
 ### Reply rate
-Denominator: eligible `pitch_sent` relationship cycles.
-Numerator: cycles with qualifying `reply_received`.
-A cycle counts at most once in the basic reply-rate numerator.
+
+Qualifying pitched **cycles** with at least one qualifying human reply, divided
+by qualifying pitched cycles, over a trailing **365 days** measured on
+`event_at` (D058). A follow-up never becomes another denominator; each
+relationship cycle counts once.
+
+Does not count: autoresponders, out-of-office messages, delivery notifications,
+bounce notifications, duplicate reply-classification events, or synthetic/test
+activity. A qualifying `reply_received` represents an actual human hotel-side
+response.
+
+**A reply from a hotel to theugc.life is not a creator reply** (D057) and never
+enters this metric.
+
+Published only at >= 15 qualifying pitched cycles AND >= 5 distinct creators,
+and only to entitled callers. Below either floor the value is NULL, never 0%.
 
 ### Reply time
 Elapsed time from the qualifying initial `pitch_sent` to first qualifying `reply_received` in same relationship cycle.
-Use median for display.
+Median internally, trailing 365 days, `event_at` only.
+
+Published as a **band** — Under 24h · 1–3 days · 3–7 days · 1–2 weeks · 2+ weeks
+— never an hour count and never a reply count (D058). Requires >= 10 qualifying
+replied cycles AND >= 5 distinct creators who received one, and is premium.
 
 ### Pitch-to-deal
 Eligible cycles with `deal_won` / eligible cycles with `pitch_sent`.

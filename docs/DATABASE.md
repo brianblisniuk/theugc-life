@@ -343,6 +343,24 @@ Derived/rebuildable.
 - pitch/reply/positive/negative/collaboration counts
 - `reply_rate numeric NULL`
 - `median_reply_hours numeric NULL`
+
+Added by migration `0026` for the premium layer (D058). All derived, all
+rebuildable, all server-only:
+
+- `pitched_cycles_365d`, `replied_cycles_365d integer`
+- `distinct_pitch_creators_365d`, `distinct_reply_creators_365d integer`
+- `reply_rate_365d`, `median_reply_hours_365d numeric NULL`
+- `distinct_creators_7d`, `distinct_creators_30d`, `distinct_creators_90d`,
+  `distinct_creators_365d integer` — contributor diversity per window
+- `collaboration_type_creators_365d jsonb` — type → distinct creators observed
+
+Two browser-safe projections read from this table; nothing else may:
+
+- `hotel_public_intelligence` — everyone. No reply rate since `0026`.
+- `hotel_premium_intelligence` — entitlement-gated inside the view by
+  `has_premium_hotel_access()`. `anon` holds no privilege on it.
+
+Neither projects an identifier, an exact count, or a raw timestamp.
 - `last_creator_activity_at timestamptz NULL`
 - `last_reply_at timestamptz NULL`
 - `last_collaboration_at timestamptz NULL`

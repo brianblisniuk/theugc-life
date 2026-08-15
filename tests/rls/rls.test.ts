@@ -268,25 +268,36 @@ d("public intelligence safety (PERMISSIONS.md §6, §13.11; PRD §12)", () => {
     expect(names).not.toContain("private_value_amount");
   });
 
-  it("low-confidence intelligence suppresses precise reply_rate in the view", async () => {
-    await adminQuery(
-      `insert into public.hotel_intelligence (hotel_id, reply_rate, confidence_level, collaboration_count)
-         values ($1, 0.9, 'insufficient', 0)
-       on conflict (hotel_id) do update set reply_rate = excluded.reply_rate,
-         confidence_level = excluded.confidence_level`,
-      [HOTEL.ibiza],
+  it("the public view does not project reply_rate at all (D050)", async () => {
+    // 0026 removed the column. This is stronger than suppression: there is no
+    // confidence band, and no privilege, that can produce it publicly.
+    const cols = await adminQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'hotel_public_intelligence'`,
     );
+    expect(cols.map((c) => c.column_name)).not.toContain("reply_rate");
+
     const res = await queryAs(
       { role: "anon" },
-      "select reply_rate from public.hotel_public_intelligence where hotel_id = $1",
-      [HOTEL.ibiza],
+      "select reply_rate from public.hotel_public_intelligence limit 1",
     );
-    expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
-    expect((res.rows[0] as { reply_rate: number | null }).reply_rate).toBeNull();
+    expect(res.error).not.toBeNull();
   });
 
-  it("strong-confidence intelligence reveals reply_rate in the view", async () => {
+  it("anon holds no privilege on the premium view whatsoever", async () => {
+    const [priv] = await adminQuery<{ ok: boolean }>(
+      "select has_table_privilege('anon','public.hotel_premium_intelligence','SELECT') as ok",
+    );
+    expect(priv!.ok).toBe(false);
+
+    const res = await queryAs(
+      { role: "anon" },
+      "select reply_rate from public.hotel_premium_intelligence limit 1",
+    );
+    expect(res.error).not.toBeNull();
+  });
+
+  it("the public view still answers the collaboration question at strong confidence", async () => {
     await adminQuery(
       `insert into public.hotel_intelligence (hotel_id, reply_rate, confidence_level, collaboration_count)
          values ($1, 0.63, 'strong', 2)
@@ -296,17 +307,14 @@ d("public intelligence safety (PERMISSIONS.md §6, §13.11; PRD §12)", () => {
     );
     const res = await queryAs(
       { role: "anon" },
-      `select reply_rate, has_confirmed_collaboration
+      `select has_confirmed_collaboration
          from public.hotel_public_intelligence where hotel_id = $1`,
       [HOTEL.bali],
     );
     expect(res.error).toBeNull();
-    const row = res.rows[0] as {
-      reply_rate: number | null;
-      has_confirmed_collaboration: boolean;
-    };
-    expect(Number(row.reply_rate)).toBeCloseTo(0.63);
-    expect(row.has_confirmed_collaboration).toBe(true);
+    expect(
+      (res.rows[0] as { has_confirmed_collaboration: boolean }).has_confirmed_collaboration,
+    ).toBe(true);
   });
 });
 

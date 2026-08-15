@@ -161,14 +161,13 @@ async function intel(hotel = HOTEL): Promise<IntelRow | null> {
 interface PublicRow {
   activity_level: string | null;
   confidence_level: string | null;
-  reply_rate: string | null;
   has_confirmed_collaboration: boolean | null;
   recency_band: string | null;
 }
 
 async function publicView(hotel = HOTEL): Promise<PublicRow | null> {
   const rows = await adminQuery<PublicRow>(
-    "select activity_level, confidence_level, reply_rate, has_confirmed_collaboration, recency_band from public.hotel_public_intelligence where hotel_id = $1",
+    "select activity_level, confidence_level, has_confirmed_collaboration, recency_band from public.hotel_public_intelligence where hotel_id = $1",
     [hotel],
   );
   return rows[0] ?? null;
@@ -961,7 +960,7 @@ d("AE/AF/AG/AH — the privacy boundary", () => {
     for (const role of ["anon", "authenticated"] as const) {
       const res = await queryAs<PublicRow>(
         { role, sub: role === "authenticated" ? USER : null },
-        "select activity_level, confidence_level, reply_rate, has_confirmed_collaboration, recency_band from public.hotel_public_intelligence",
+        "select activity_level, confidence_level, has_confirmed_collaboration, recency_band from public.hotel_public_intelligence",
       );
       expect(res.error).toBeNull();
       expect(res.rows).toHaveLength(1);
@@ -985,9 +984,16 @@ d("AE/AF/AG/AH — the privacy boundary", () => {
       "hotel_id",
       "hotel_slug",
       "recency_band",
-      "reply_rate",
     ]);
-    for (const forbidden of ["creator_id", "pipeline_item_id", "pitch_count", "reply_count"]) {
+    for (const forbidden of [
+      "creator_id",
+      "pipeline_item_id",
+      "pitch_count",
+      "reply_count",
+      // Premium since 0026 — the public layer must not project them at all.
+      "reply_rate",
+      "median_reply_hours",
+    ]) {
       expect(names).not.toContain(forbidden);
     }
   });
@@ -1048,7 +1054,6 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     expect(view).toEqual({
       activity_level: null,
       confidence_level: "insufficient",
-      reply_rate: null,
       has_confirmed_collaboration: null,
       recency_band: null,
     });
@@ -1065,7 +1070,7 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     expect(view.has_confirmed_collaboration).not.toBe(false);
   });
 
-  it("emerging adds activity and the collaboration boolean, but not rate or recency", async () => {
+  it("emerging adds activity and the collaboration boolean, but not recency", async () => {
     await pitchedCycles(5, { replies: 3 });
     // Make one of them recent and won.
     await cycle({ pitchAt: [daysAgo(3)], wonAt: [daysAgo(2)] });
@@ -1078,7 +1083,6 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     expect(view.confidence_level).toBe("emerging");
     expect(view.activity_level).not.toBeNull();
     expect(view.has_confirmed_collaboration).toBe(true);
-    expect(view.reply_rate).toBeNull();
     expect(view.recency_band).toBeNull();
   });
 
@@ -1091,39 +1095,57 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     expect(view.has_confirmed_collaboration).toBe(false);
   });
 
-  it("moderate adds a coarse recency band, still no exact rate", async () => {
+  it("moderate adds a coarse recency band once THREE creators support it", async () => {
     await pitchedCycles(15, { replies: 5 });
-    await cycle({ pitchAt: [daysAgo(2)] });
+    // Three distinct recent creators: the band describes a population, not one
+    // identifiable person's week (0026 contributor floor).
+    for (const days of [2, 4, 6]) await cycle({ pitchAt: [daysAgo(days)] });
     await recompute();
 
     const view = (await publicView())!;
     expect(view.confidence_level).toBe("moderate");
     expect(view.recency_band).toBe("past_month");
-    expect(view.reply_rate).toBeNull();
   });
 
-  it("strong finally exposes the reply rate", async () => {
+  it("two recent creators are not enough to publish a recency band", async () => {
+    await pitchedCycles(15, { replies: 5 });
+    for (const days of [2, 4]) await cycle({ pitchAt: [daysAgo(days)] });
+    await recompute();
+
+    const base = (await intel())!;
+    expect(base.confidence_level).toBe("moderate");
+    // The base row knows exactly when the last activity was…
+    expect(base.last_creator_activity_at).not.toBeNull();
+    // …and the projection still refuses to band it.
+    expect((await publicView())!.recency_band).toBeNull();
+  });
+
+  it("strong confidence STILL does not expose a reply rate publicly (D050)", async () => {
     await pitchedCycles(50, { replies: 25 });
     await recompute();
 
     const base = (await intel())!;
     expect(base.confidence_level).toBe("strong");
+    // The derived truth is computed and stored…
     expect(Number(base.reply_rate)).toBeCloseTo(0.5, 4);
 
+    // …and no public band discloses it. Before 0026, `strong` did.
     const view = (await publicView())!;
-    expect(Number(view.reply_rate)).toBeCloseTo(0.5, 4);
+    expect(view).not.toHaveProperty("reply_rate");
     expect(view.activity_level).toBeNull(); // all activity is >90 days old
     expect(view.recency_band).toBe("older");
   });
 
   it("the recency band is coarse, never a raw timestamp", async () => {
     await pitchedCycles(15);
-    await cycle({ pitchAt: [daysAgo(45)] });
+    for (const days of [45, 50, 55]) await cycle({ pitchAt: [daysAgo(days)] });
     await recompute();
 
     const view = (await publicView())!;
     expect(view.recency_band).toBe("past_quarter");
     expect(["past_month", "past_quarter", "older"]).toContain(view.recency_band);
+    // Never the underlying instant, in any form.
+    expect(JSON.stringify(view)).not.toMatch(/\d{4}-\d{2}-\d{2}|T\d{2}:/);
   });
 });
 

@@ -5,9 +5,11 @@
  *   1. identity/location  2. creator intelligence  3. premium contact
  *   4. the creator's private relationship
  *
- * Premium contacts are authorized BEFORE they are fetched: when the database
- * says the caller has no access, the contact query is never issued, so no
- * email/phone/LinkedIn value is loaded, rendered, or serialized.
+ * Premium contacts and Premium Intelligence are both authorized BEFORE they are
+ * fetched: when the database says the caller has no access, neither query is
+ * issued, so no protected value is loaded, rendered, or serialized. One
+ * entitlement answer drives both, so the two sections can never disagree about
+ * whether this creator has access.
  *
  * Internal import/provenance fields are never surfaced here.
  */
@@ -19,16 +21,21 @@ import type { Metadata } from "next";
 import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
 import { ContactCard } from "@/components/hotels/contact-card";
-import { IntelligencePanel } from "@/components/hotels/intelligence-panel";
+import {
+  IntelligencePanel,
+  PremiumIntelligencePanel,
+} from "@/components/hotels/intelligence-panel";
 import { LockedContactSection } from "@/components/hotels/locked-contact";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
+import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
 import {
   getHotelById,
   getHotelContactsIfAuthorized,
   getHotelIntelligence,
+  getHotelPremiumIntelligence,
 } from "@/lib/hotels/queries";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
 
@@ -81,6 +88,13 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
   const type = hotelTypeLabel(hotel.hotelType);
   const statusNote = ACTIVE_STATUS_LABEL[hotel.activeStatus];
   const contactState = contactSectionState({ access, contacts, failed: contactsFailed });
+
+  // Premium intelligence uses the SAME entitlement answer as contacts. It is
+  // only queried when that answer is an explicit `allowed`: a denial and a
+  // failed check both skip the query, so security stays fail-closed, and the
+  // panel can still tell "locked" apart from "we could not check".
+  const premium = access.status === "allowed" ? await getHotelPremiumIntelligence(hotel.id) : null;
+  const premiumState = premiumIntelligenceState({ access, result: premium });
 
   // Only a won cycle has a collaboration to show, so only a won cycle pays for
   // the query. Its own tri-state answer is what the panel renders.
@@ -144,9 +158,12 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
         )}
       </header>
 
-      {/* 2. Creator intelligence */}
+      {/* 2. Creator intelligence — public layer, then the premium layer */}
       <Section title="Creator intelligence">
-        <IntelligencePanel result={intelligence} />
+        <div className="space-y-4">
+          <IntelligencePanel result={intelligence} />
+          <PremiumIntelligencePanel state={premiumState} result={premium} />
+        </div>
       </Section>
 
       {/* 3. Premium contact */}

@@ -1002,3 +1002,168 @@ names the workflow surface it applies to. Nothing in D042 is superseded; the
 exemption is per-hotel and resolved through the destination hierarchy, which is
 what makes "inside the entitled destination" checkable in the database rather
 than in the UI.
+
+## D057 — Three intelligence provenance domains, permanently separated
+Status: Accepted
+
+The product holds three kinds of fact about a hotel. They may be shown near each
+other; they must **never be statistically mixed** or presented as though they
+mean the same thing.
+
+### A. Research / editorial intelligence
+What theugc.life researches or verifies itself: contact verification, target
+contact vs contact route, source and provenance, freshness, public evidence that
+a hotel has worked with creators, property and contact quality control.
+
+This is a **trust layer**. It may say "Direct marketing contact", "Verified 12
+days ago", "Creator collaboration evidence verified". It may **never** create
+Creator Network events or metrics.
+
+### B. Hotel-confirmed intelligence — *future, not built*
+What an authorized hotel representative explicitly supplies or confirms: whether
+the hotel currently considers creator proposals, its preferred outreach channel,
+the correct marketing/PR/partnerships contact, the collaboration types it says
+it considers, official photography, the date of confirmation.
+
+Internally this must be distinguishable as **HOTEL CONFIRMED**, not merely
+"verified by theugc.life" — with who confirmed it, when, from what source, and
+its freshness/review state. **Nothing of this is implemented.** The schema and
+the outreach system belong to the future Hotel Outreach / Property Content
+block; this decision fixes only the architecture.
+
+### C. Creator Network intelligence
+Derived **exclusively** from qualifying real creator workflow and outcome data:
+creator activity, reply rate, reply timing, collaboration outcomes,
+collaboration types observed.
+
+Research evidence and hotel declarations never create these. **"The hotel says it
+accepts paid UGC" and "creators have actually received paid collaborations here"
+are two different facts**, and the second is the one nobody else can scrape.
+
+Reason:
+Mixing them would destroy the only defensible asset the product has. A hotel
+that answers a survey enthusiastically and ignores every creator who pitches it
+must not out-rank a hotel that quietly replies to everyone. Editorial evidence
+is also easy to acquire and easy to game; the outcome graph is neither. Keeping
+the domains separate is what lets the product show all three honestly —
+"verified contact", "the hotel says it works with creators", "creators get
+replies here" — without any one of them borrowing the credibility of another.
+
+Consequence:
+`recompute_hotel_intelligence` reads `outreach_events` and `collaborations` and
+nothing else — not `editorial_evidence`, not `hotel_contacts`, not
+`verification_events` (D027 already forbids the first; this generalizes it). A
+reply from a hotel **to theugc.life** is not a creator reply and must never
+enter reply-rate data. When domain B ships, it gets its own storage and its own
+display language.
+
+## D058 — V1 Creator Network Intelligence: the exact Public/Premium contract
+Status: Accepted — implements D050; supersedes the D044 disclosure table for
+reply rate
+
+Two browser-safe projections. Both are aggregates; neither is a base table.
+
+### Public — everyone, including anonymous
+
+| Signal | Gate |
+|---|---|
+| Creator activity level | confidence >= `emerging` |
+| Confirmed-collaboration boolean | confidence >= `emerging` |
+| Coarse recency band (`past_month` / `past_quarter` / `older`) | confidence >= `moderate`; the two RECENT bands additionally require **3 distinct creators in 90 days** |
+| Confidence / data-availability state | always |
+
+Public **must not** expose: reply rate, typical reply time, exact or raw pitch
+counts, exact or raw reply counts, raw event timestamps, collaboration
+compensation, creator identities, creator-level data, or premium
+collaboration-pattern detail.
+
+**Discover list cards are public-only.** A premium field must never leak onto a
+list card because the viewer happens to be entitled.
+
+### Premium — Destination Pass inside its destination hierarchy, Pro worldwide, admin per PERMISSIONS.md §11
+
+Every metric carries **two** floors: sample size and contributor diversity.
+Analysis window is a trailing **365 days**, measured on `event_at`, never
+`created_at`.
+
+| Metric | Sample floor | Contributor floor | Output |
+|---|---|---|---|
+| Reply rate | 15 qualifying pitched cycles | 5 distinct creators | whole percent |
+| Typical reply time | 10 qualifying replied cycles | 5 distinct creators who received one | band |
+| Recent creator activity | — | 3 distinct creators in the band | `within_7_days` / `within_30_days` / `within_90_days` |
+| Collaboration types observed | — | 3 distinct creators **per type** | type list |
+| Contributor sample | — | 5 distinct creators | "Based on activity from N creators" |
+
+**Reply rate** answers "how often do creators who pitch this hotel receive a
+qualifying human reply?" over qualifying outreach **cycles**, not raw events. A
+follow-up never becomes another denominator; a creator's repeat cycle with the
+same hotel counts once each time. It does not count autoresponders,
+out-of-office replies, delivery or bounce notifications, duplicate
+classification events, or synthetic activity — a qualifying `reply_received`
+represents an actual human hotel-side response.
+
+**Typical reply time** is the median from initial qualifying pitch to first
+qualifying reply within the same cycle, published as one of: Under 24h · 1–3
+days · 3–7 days · 1–2 weeks · 2+ weeks. Never "83.6 hours", never "10 replies".
+
+**Reply rate leaves the public projection.** D044's table disclosed it at
+`strong` confidence to everyone; migration 0026 removes the column entirely.
+
+### Not in V1
+
+**No composite "Creator Friendly Score". No 0–100 hotel reputation score.** A
+metric must remain interpretable on its own.
+
+Reason:
+The floors are two-dimensional because volume and diversity fail differently. A
+hotel with fifty pitched cycles from three creators has a large sample and no
+population; publishing a reply rate for it describes those three people, and at
+that size a creator could recognise their own exchange in the number. Bands
+rather than point values exist for the same reason — a precise median over ten
+replies is reverse-engineerable, and precision the sample cannot carry is a lie
+told confidently.
+
+A composite score is rejected because it cannot be argued with. "62% reply rate"
+is checkable and improvable; "Creator Friendliness 71" is a verdict whose recipe
+becomes the product's real contract, and every hotel would optimise the recipe
+instead of their behaviour toward creators.
+
+Consequence:
+Migration 0026 implements this. Thresholds live in the projections, so changing
+one is a migration and a test change — never a UI edit. Payment lowers no
+threshold on any plan (D050).
+
+## D059 — Locked, building and error are three distinct product states
+Status: Accepted
+
+A premium intelligence surface has four outcomes, and three of them are easy to
+confuse and damaging to confuse:
+
+- **available** — entitled, and at least one metric cleared its floors;
+- **locked** — the capability exists; this viewer is not entitled. Show the
+  locked treatment, leak no protected value;
+- **building** — the viewer IS entitled, but qualifying network evidence is
+  insufficient;
+- **error** — an entitlement lookup, database query or loader failed. Never
+  reported as "not entitled", "no data" or "building".
+
+### The building state
+
+> **Creator intelligence is building**
+> Track your outreach here and help make this hotel's insights more useful for
+> the creator community.
+
+**Unknown ≠ zero. Unknown ≠ negative. Insufficient evidence ≠ bad hotel.**
+
+Intelligence accrues as a by-product of the creator's normal workflow. There is
+**no "submit data" or "submit report" mechanic**, and no economic reward, points,
+XP or gamification to manufacture contribution (D001, D002).
+
+Reason:
+Each confusion costs something different. Rendering `error` as `locked` tells a
+paying creator to buy what they already own. Rendering `error` as `building`
+tells them a hotel has no history when the product simply failed. Rendering
+`building` as an empty or broken panel makes a quiet hotel look like a bad one,
+which is a false claim about a business — and the same claim a "0% reply rate"
+would make. The distinction is enforced by resolving entitlement independently
+of the data load, so a failed check can never masquerade as a denial.

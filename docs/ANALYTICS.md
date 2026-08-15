@@ -78,7 +78,10 @@ Avoid firing excessive high-volume map events without sampling/debouncing.
 - `checkout_started`
 - `purchase_completed`
 - `contact_unlocked`
-- `premium_intelligence_viewed`
+- `premium_intelligence_viewed` — emitted ONLY when premium intelligence content
+  is actually rendered (the `available` state). A locked, building or error
+  panel does not emit it, so the event means "premium content was seen", not
+  "a premium surface existed".
 
 Properties:
 - plan context
