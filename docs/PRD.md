@@ -319,7 +319,7 @@ Hotel card must include at minimum:
 - Destination.
 - Category/type.
 - Creator activity label where available.
-- Last confirmed creator interaction label where safe.
+- Last observed creator interaction label where safe.
 - CTA: View hotel.
 
 Premium contact details must never appear directly on map cards.
@@ -349,13 +349,13 @@ Potential fields:
 - Creator Activity: High / Medium / Low / Emerging.
 - Reply rate.
 - Typical reply time.
-- Last confirmed creator interaction.
+- Last observed creator interaction.
 - Reported collaboration types.
 - Observation count/confidence where appropriate.
 
 High-value copy example:
 
-> Creator collaboration confirmed 9 days ago.
+> Creator collaboration observed 9 days ago.
 
 This copy may only be used when supported by qualifying collaboration events.
 
@@ -385,7 +385,7 @@ Examples:
 - Follow-up due.
 - Replied.
 - Negotiating.
-- Collaboration confirmed.
+- Collaboration observed.
 
 Private activity must never be visible to other creators.
 
@@ -1441,7 +1441,7 @@ Meaningful events may include:
 - collaboration_started
 - collaboration_completed
 
-### 12.3 “Confirmed active creator collaboration”
+### 12.3 “Observed active creator collaboration”
 
 May only be shown when supported by qualifying events such as:
 
@@ -1555,13 +1555,15 @@ does not change this.
 #### 12.8.4 Exact V1 metric contract (D058)
 
 Implemented by migration `0026`. Analysis window is a trailing **365 days**,
-measured on `event_at`, never `created_at`. Every premium metric carries **two**
-floors — sample size and contributor diversity — and payment lowers neither.
+measured on `event_at`, never `created_at`. Each metric has **metric-specific
+publication thresholds**: reply metrics require both qualifying-cycle volume and
+contributor diversity, while recency and collaboration-type signals rely on their
+approved distinct-creator population floor. Payment lowers none of them.
 
 | Metric | Layer | Sample floor | Contributor floor | Output |
 |---|---|---|---|---|
-| Creator activity level | Public | confidence >= `emerging` | — | coarse label |
-| Confirmed-collaboration boolean | Public | confidence >= `emerging` | — | true / NULL |
+| Creator activity level | Public | confidence >= `emerging` | 3 distinct creators in 90d | coarse label / NULL |
+| Observed-collaboration presence | Public | — | 3 distinct collaborating creators in 365d | true / NULL — never `false` |
 | Coarse recency band | Public | confidence >= `moderate` | 3 distinct creators in 90d, for the RECENT bands | `past_month` / `past_quarter` / `older` |
 | **Reply rate** | Premium | 15 qualifying pitched cycles | 5 distinct creators | whole percent |
 | **Typical reply time** | Premium | 10 qualifying replied cycles | 5 distinct creators who received one | band |
@@ -1580,9 +1582,15 @@ hotel-side response.
 qualifying reply in the same cycle, published as a band: Under 24h · 1–3 days ·
 3–7 days · 1–2 weeks · 2+ weeks. Never an hour count, never a reply count.
 
-Below any floor the value is **NULL** — never `0%`, never a negative claim. A
-measured zero above the floors *is* published, because "measured, and nobody
-replied" is a real finding while "we withheld it" is not.
+Below any threshold the value is **NULL** — never `0%`, never `low`, never
+`false`, never a negative claim. A measured zero above the thresholds *is*
+published, because "measured, and nobody replied" is a real finding while "we
+withheld it" is not.
+
+**Premium never exposes raw outreach volume** — no pitch counts, reply counts,
+event counts, cycle denominators or raw timestamps. The **contributor sample**
+is the deliberate exception: a threshold-protected distinct-creator count shown
+only at >= 5 creators, because it is what makes a percentage interpretable.
 
 **Reply rate is no longer public.** §12.8 above once disclosed it at `strong`
 confidence to everyone; `0026` removed the column from the public projection.
@@ -2378,7 +2386,9 @@ MVP cannot be considered ready until all of the following are true:
 - Pitch/reply/collaboration domain events are persisted.
 - Public intelligence does not expose creator_id.
 - Low-sample intelligence is gated.
-- “Confirmed collaboration” wording is only emitted from qualifying data.
+- “Observed collaboration” wording is only emitted from qualifying Creator
+  Network data, and only above the contributor floor. "Confirmed" is reserved
+  for hotel-confirmed intelligence and editorial verification (D057).
 
 ### Payments
 

@@ -199,18 +199,23 @@ own projection rather than a grant on these tables. Their RLS policies are
 retained as defence in depth, but no client role holds a privilege to reach them
 at all.
 
-The projection exposes exactly seven columns — `hotel_id`, `hotel_slug`,
-`activity_level`, `confidence_level`, `reply_rate`,
-`has_confirmed_collaboration`, `recency_band` — with no creator id, no pipeline
-id, no exact counts and no raw timestamps, and it applies progressive
-disclosure by confidence band (D044):
+The projection exposes exactly six columns — `hotel_id`, `hotel_slug`,
+`activity_level`, `confidence_level`, `has_observed_collaboration`,
+`recency_band` — with no creator id, no pipeline id, no counts of any kind
+(including the distinct-creator counts that gate it) and no raw timestamps, and
+it applies progressive disclosure by confidence band (D044):
 
 | Confidence | Disclosed |
 |---|---|
 | insufficient | confidence only |
-| emerging | + activity level, + collaboration boolean |
-| moderate | + coarse recency band |
-| strong | + reply rate |
+| emerging | + activity level (also needs 3 distinct creators / 90d) |
+| moderate | + coarse recency band (recent bands also need 3 distinct creators / 90d) |
+| strong | *(no additional public field — reply rate is premium since 0026)* |
+
+`has_observed_collaboration` is not confidence-gated at all: it requires **3
+distinct collaborating creators in 365 days**, and it is **positive-presence
+only** — `true` or NULL, never `false`. Too few observed outcomes cannot prove
+that a hotel does not collaborate with creators.
 
 A suppressed answer is `NULL`, never `false`. "We are not telling you" and "the
 answer is no" are different statements and are never collapsed.
@@ -227,8 +232,10 @@ on it at all: it could never be entitled, so the grant does not exist.
 
 Projected columns: `hotel_id`, `hotel_slug`, `confidence_level`, `reply_rate`,
 `reply_time_band`, `recent_activity_band`, `collaboration_types`,
-`contributor_count`. No creator identifier, no pipeline identifier, no exact
-pitch/reply count, no raw timestamp — none of those exist in the view.
+`contributor_count`. No creator identifier, no pipeline identifier, no raw
+outreach volume — no pitch count, reply count, event count or cycle denominator
+— and no raw timestamp: none of those exist in the view. `contributor_count` is
+the one deliberate count, and it is published only at >= 5 distinct creators.
 
 Standing constraints, all satisfied and all binding on any future change:
 
@@ -339,8 +346,14 @@ Automated permission tests must cover:
 28. The public projection returns identical values to anon, Free and Pro for the
     same hotel — paying adds a projection, it never widens the public one.
 29. `reply_rate` is not a column of the public projection.
-30. Every premium metric is suppressed below its sample floor AND below its
-    distinct-creator floor, and suppression yields NULL rather than zero.
+30. Every premium metric is suppressed below its own publication thresholds —
+    reply metrics below either their qualifying-cycle floor or their
+    distinct-creator floor, recency and collaboration-type signals below their
+    distinct-creator floor — and suppression yields NULL rather than zero.
+31. The public projection exposes `activity_level` only with >= 3 distinct
+    creators in 90 days, and `has_observed_collaboration` only as `true` with
+    >= 3 distinct collaborating creators in 365 days; both are NULL otherwise,
+    for every plan.
 
 ## 14. Free-limit enforcement
 

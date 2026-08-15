@@ -116,7 +116,7 @@ export interface HotelContact {
 export interface HotelIntelligence {
   activityLevel: string | null;
   confidenceLevel: string | null;
-  hasConfirmedCollaboration: boolean | null;
+  hasObservedCollaboration: boolean | null;
   recencyBand: string | null;
 }
 
@@ -335,7 +335,7 @@ export async function getHotelIntelligence(
   const supabase = injectedClient ?? (await createClient());
   const { data, error } = await supabase
     .from("hotel_public_intelligence")
-    .select("activity_level, confidence_level, has_confirmed_collaboration, recency_band")
+    .select("activity_level, confidence_level, has_observed_collaboration, recency_band")
     .eq("hotel_id", hotelId)
     .maybeSingle();
 
@@ -346,7 +346,7 @@ export async function getHotelIntelligence(
   const signal: HotelIntelligence = {
     activityLevel: (row.activity_level as string | null) ?? null,
     confidenceLevel: (row.confidence_level as string | null) ?? null,
-    hasConfirmedCollaboration: (row.has_confirmed_collaboration as boolean | null) ?? null,
+    hasObservedCollaboration: (row.has_observed_collaboration as boolean | null) ?? null,
     recencyBand: (row.recency_band as string | null) ?? null,
   };
   return { status: "ok", signal };

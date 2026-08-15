@@ -42,8 +42,9 @@ A future premium surface may visualize the creator-outreach funnel:
 > Contacted → Replied → Advanced → Collaboration agreed → Collaboration completed
 
 Expressed as **percentages and safe aggregates**. It must not expose raw pitch or
-reply counts (D058), and it must obey the same sample and contributor floors as
-every other premium metric.
+reply counts (D058), and each stage must carry publication thresholds at least as
+strict as the premium metric it most resembles — including a distinct-creator
+population floor.
 
 The graph is premium: locked for anonymous and Free viewers.
 

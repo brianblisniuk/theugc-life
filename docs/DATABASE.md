@@ -360,7 +360,10 @@ Two browser-safe projections read from this table; nothing else may:
 - `hotel_premium_intelligence` — entitlement-gated inside the view by
   `has_premium_hotel_access()`. `anon` holds no privilege on it.
 
-Neither projects an identifier, an exact count, or a raw timestamp.
+Neither projects an identifier, a raw outreach count (pitches, replies, events,
+cycle denominators) or a raw timestamp. The single count either projection
+publishes is the premium `contributor_count`, and only at >= 5 distinct
+creators.
 - `last_creator_activity_at timestamptz NULL`
 - `last_reply_at timestamptz NULL`
 - `last_collaboration_at timestamptz NULL`

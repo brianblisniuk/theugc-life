@@ -26,25 +26,25 @@ import {
 const AT_INSUFFICIENT: IntelligenceSignal = {
   activityLevel: null,
   confidenceLevel: "insufficient",
-  hasConfirmedCollaboration: null,
+  hasObservedCollaboration: null,
   recencyBand: null,
 };
 const AT_EMERGING: IntelligenceSignal = {
   activityLevel: "low",
   confidenceLevel: "emerging",
-  hasConfirmedCollaboration: true,
+  hasObservedCollaboration: true,
   recencyBand: null,
 };
 const AT_MODERATE: IntelligenceSignal = {
   activityLevel: "medium",
   confidenceLevel: "moderate",
-  hasConfirmedCollaboration: false,
+  hasObservedCollaboration: false,
   recencyBand: "past_month",
 };
 const AT_STRONG: IntelligenceSignal = {
   activityLevel: "high",
   confidenceLevel: "strong",
-  hasConfirmedCollaboration: true,
+  hasObservedCollaboration: true,
   recencyBand: "past_quarter",
 };
 
@@ -59,7 +59,7 @@ describe("insufficient renders an absence, never a zero", () => {
     expect(Object.keys(AT_INSUFFICIENT)).toEqual([
       "activityLevel",
       "confidenceLevel",
-      "hasConfirmedCollaboration",
+      "hasObservedCollaboration",
       "recencyBand",
     ]);
   });
@@ -69,15 +69,15 @@ describe("insufficient renders an absence, never a zero", () => {
   });
 
   it("a suppressed collaboration is NULL, and NULL renders nothing", () => {
-    expect(AT_INSUFFICIENT.hasConfirmedCollaboration).toBeNull();
+    expect(AT_INSUFFICIENT.hasObservedCollaboration).toBeNull();
     // The panel renders the collaboration row only for `true`, so both NULL and
     // false render nothing at all — it never states "No collaboration".
-    expect(Boolean(AT_INSUFFICIENT.hasConfirmedCollaboration)).toBe(false);
-    expect(AT_INSUFFICIENT.hasConfirmedCollaboration).not.toBe(false);
+    expect(Boolean(AT_INSUFFICIENT.hasObservedCollaboration)).toBe(false);
+    expect(AT_INSUFFICIENT.hasObservedCollaboration).not.toBe(false);
   });
 });
 
-describe("emerging shows coarse activity and a confirmed collaboration", () => {
+describe("emerging shows coarse activity and an observed collaboration", () => {
   it("renders a signal, not an absence", () => {
     expect(intelligencePanelState({ status: "ok", signal: AT_EMERGING })).toBe("signal");
     expect(activityLabel(AT_EMERGING.activityLevel)).toBe("Creator activity detected");
@@ -87,12 +87,12 @@ describe("emerging shows coarse activity and a confirmed collaboration", () => {
     expect(recencyLabel(AT_EMERGING.recencyBand)).toBeNull();
   });
 
-  it("a confirmed collaboration is stated without any count of people", () => {
-    expect(AT_EMERGING.hasConfirmedCollaboration).toBe(true);
+  it("an observed collaboration is stated without any count of people", () => {
+    expect(AT_EMERGING.hasObservedCollaboration).toBe(true);
     // Cycles are not creators; no label may imply a headcount.
     for (const label of [
       activityLabel(AT_EMERGING.activityLevel),
-      "Creator collaboration confirmed",
+      "Creator collaboration observed",
     ]) {
       expect(label).not.toMatch(/\d/);
     }
@@ -107,8 +107,8 @@ describe("moderate adds coarse recency", () => {
   });
 
   it("a genuine `false` collaboration answer still renders nothing", () => {
-    expect(AT_MODERATE.hasConfirmedCollaboration).toBe(false);
-    expect(Boolean(AT_MODERATE.hasConfirmedCollaboration)).toBe(false);
+    expect(AT_MODERATE.hasObservedCollaboration).toBe(false);
+    expect(Boolean(AT_MODERATE.hasObservedCollaboration)).toBe(false);
   });
 });
 

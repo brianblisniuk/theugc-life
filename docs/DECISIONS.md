@@ -406,7 +406,7 @@ correction, say) falls back to "same cycle, at or after the qualifying reply".
 Classification events are never counted as replies in their own right.
 
 **Collaboration count.** Distinct cycles with `deal_won`. This is the canonical
-confirmed-deal signal; editorial evidence and pipeline status alone are never
+observed-deal signal; editorial evidence and pipeline status alone are never
 used.
 
 **Reply rate.** `reply_count / pitch_count` when `pitch_count > 0`, otherwise
@@ -475,7 +475,7 @@ existing row's source events no longer qualify, the derived row is DELETED.
 | Confidence | Exposed by `hotel_public_intelligence` |
 |---|---|
 | insufficient | `confidence_level` only |
-| emerging | + `activity_level`, `has_confirmed_collaboration` |
+| emerging | + `activity_level`, collaboration presence *(both re-gated on contributor diversity by D058; the field is now `has_observed_collaboration`)* |
 | moderate | + `recency_band` (coarse) |
 | strong | + `reply_rate` |
 
@@ -1067,23 +1067,38 @@ Two browser-safe projections. Both are aggregates; neither is a base table.
 
 | Signal | Gate |
 |---|---|
-| Creator activity level | confidence >= `emerging` |
-| Confirmed-collaboration boolean | confidence >= `emerging` |
+| Creator activity level | confidence >= `emerging` **and 3 distinct creators in 90 days** |
+| Observed-collaboration presence (`has_observed_collaboration`) | **3 distinct collaborating creators in 365 days**; positive-presence only |
 | Coarse recency band (`past_month` / `past_quarter` / `older`) | confidence >= `moderate`; the two RECENT bands additionally require **3 distinct creators in 90 days** |
 | Confidence / data-availability state | always |
 
+**Suppressed is not negative.** Below any public floor the field is NULL. NULL
+means "not disclosed", never `low` and never `false`. `has_observed_collaboration`
+is therefore `true` or NULL and never `false`: the absence of three collaborating
+creators is the absence of a disclosable observation, not evidence that creators
+do not collaborate here. Payment changes none of these gates — the public
+projection is byte-identical for anonymous, Free, Destination Pass and Pro (D050).
+
+**"Observed", not "confirmed" (D057).** The public boolean is derived only from
+qualifying Creator Network collaboration outcomes — never from research
+evidence, hotel declarations, editorial evidence or hotel outreach. "Confirmed by
+hotel" language is reserved for the Hotel-Confirmed Intelligence domain, which
+does not exist in V1.
+
 Public **must not** expose: reply rate, typical reply time, exact or raw pitch
-counts, exact or raw reply counts, raw event timestamps, collaboration
-compensation, creator identities, creator-level data, or premium
-collaboration-pattern detail.
+counts, exact or raw reply counts, the distinct-creator counts backing any public
+gate, raw event timestamps, collaboration compensation, creator identities,
+creator-level data, or premium collaboration-pattern detail.
 
 **Discover list cards are public-only.** A premium field must never leak onto a
 list card because the viewer happens to be entitled.
 
 ### Premium — Destination Pass inside its destination hierarchy, Pro worldwide, admin per PERMISSIONS.md §11
 
-Every metric carries **two** floors: sample size and contributor diversity.
-Analysis window is a trailing **365 days**, measured on `event_at`, never
+Each metric has **metric-specific publication thresholds**. Reply metrics require
+both qualifying-cycle volume and contributor diversity; recency and
+collaboration-type signals rely on their approved distinct-creator population
+floor. Analysis window is a trailing **365 days**, measured on `event_at`, never
 `created_at`.
 
 | Metric | Sample floor | Contributor floor | Output |
@@ -1106,6 +1121,13 @@ represents an actual human hotel-side response.
 qualifying reply within the same cycle, published as one of: Under 24h · 1–3
 days · 3–7 days · 1–2 weeks · 2+ weeks. Never "83.6 hours", never "10 replies".
 
+**What premium never exposes is raw outreach volume**, not counting as such:
+pitch counts, reply counts, event counts, cycle denominators and raw event
+timestamps stay server-side. The **contributor sample** is the deliberate
+exception — a threshold-protected distinct-creator count published only at >= 5
+creators, because "based on activity from 7 creators" is what makes a percentage
+interpretable, and above that floor it identifies nobody.
+
 **Reply rate leaves the public projection.** D044's table disclosed it at
 `strong` confidence to everyone; migration 0026 removes the column entirely.
 
@@ -1115,7 +1137,7 @@ days · 3–7 days · 1–2 weeks · 2+ weeks. Never "83.6 hours", never "10 rep
 metric must remain interpretable on its own.
 
 Reason:
-The floors are two-dimensional because volume and diversity fail differently. A
+Reply metrics carry two floors because volume and diversity fail differently. A
 hotel with fifty pitched cycles from three creators has a large sample and no
 population; publishing a reply rate for it describes those three people, and at
 that size a creator could recognise their own exchange in the number. Bands

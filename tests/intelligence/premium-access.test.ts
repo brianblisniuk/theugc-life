@@ -9,8 +9,10 @@
  *     so what is tested is the privilege and the policy — not a UI branch that
  *     could be deleted.
  *
- *  2. DISCLOSURE. Every premium metric requires BOTH a sample-size floor and a
- *     distinct-creator floor. Payment moves neither. A metric one busy creator
+ *  2. DISCLOSURE. Each premium metric has its own publication thresholds: reply
+ *     metrics require both qualifying-cycle volume and contributor diversity,
+ *     while recency and collaboration-type signals rely on their distinct-creator
+ *     population floor. Payment moves none of them. A metric one busy creator
  *     could have produced alone is not published to anybody.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -286,7 +288,7 @@ d("premium intelligence — entitlement", () => {
   /* ---------------------------------------------------------------- */
 
   it("the PUBLIC layer is byte-identical for Free and for Pro", async () => {
-    const columns = "activity_level, confidence_level, has_confirmed_collaboration, recency_band";
+    const columns = "activity_level, confidence_level, has_observed_collaboration, recency_band";
     const asFree = await queryAs(
       { role: "authenticated", sub: U.free },
       `select ${columns} from public.hotel_public_intelligence where hotel_id = $1`,

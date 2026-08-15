@@ -18,7 +18,7 @@ import {
 const empty: IntelligenceSignal = {
   activityLevel: null,
   confidenceLevel: null,
-  hasConfirmedCollaboration: null,
+  hasObservedCollaboration: null,
   recencyBand: null,
 };
 
@@ -51,7 +51,7 @@ describe("shouldShowInsufficientData", () => {
       shouldShowInsufficientData({
         ...empty,
         confidenceLevel: "moderate",
-        hasConfirmedCollaboration: true,
+        hasObservedCollaboration: true,
       }),
     ).toBe(false);
   });
@@ -71,7 +71,7 @@ describe("the public layer carries no reply rate at all (D050)", () => {
     expect(Object.keys(empty).sort()).toEqual([
       "activityLevel",
       "confidenceLevel",
-      "hasConfirmedCollaboration",
+      "hasObservedCollaboration",
       "recencyBand",
     ]);
   });

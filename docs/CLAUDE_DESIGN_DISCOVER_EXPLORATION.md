@@ -172,7 +172,7 @@ The design must anticipate future real signals on a result card, when actually a
 
 - creator activity level;
 - confidence-aware intelligence;
-- confirmed collaboration signal;
+- observed collaboration signal;
 - contact availability / premium lock;
 - creator's own pipeline relationship state.
 

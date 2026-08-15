@@ -89,8 +89,8 @@ export function IntelligencePanel({ result }: { result: IntelligenceResult }) {
       {activity ? <p className="text-base font-semibold text-text">{activity}</p> : null}
       <dl className="space-y-1.5 text-sm">
         {recency ? <Metric label="Recency" value={recency} /> : null}
-        {signal?.hasConfirmedCollaboration ? (
-          <Metric label="Collaboration" value="Creator collaboration confirmed" />
+        {signal?.hasObservedCollaboration ? (
+          <Metric label="Collaboration" value="Creator collaboration observed" />
         ) : null}
       </dl>
     </div>

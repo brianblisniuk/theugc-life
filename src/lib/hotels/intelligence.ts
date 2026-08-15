@@ -14,7 +14,7 @@ import type { ContactAccessResult } from "./access";
 export interface IntelligenceSignal {
   activityLevel: string | null;
   confidenceLevel: string | null;
-  hasConfirmedCollaboration: boolean | null;
+  hasObservedCollaboration: boolean | null;
   recencyBand: string | null;
 }
 
@@ -66,7 +66,7 @@ export function shouldShowInsufficientData(signal: IntelligenceSignal | null): b
 
   const hasActivity = Boolean(signal.activityLevel);
   const hasRecency = Boolean(signal.recencyBand);
-  const hasCollab = signal.hasConfirmedCollaboration === true;
+  const hasCollab = signal.hasObservedCollaboration === true;
 
   return !hasActivity && !hasRecency && !hasCollab;
 }

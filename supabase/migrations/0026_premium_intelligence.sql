@@ -13,9 +13,9 @@
 -- Three things happen here:
 --
 --  1. The derived table gains 365-day windowed aggregates and, crucially,
---     DISTINCT-CREATOR counts. Every premium metric is gated on contributor
---     diversity, not only on sample size, because a metric supported by one
---     busy creator describes that creator and not the hotel.
+--     DISTINCT-CREATOR counts. Every BEHAVIOURAL signal — public and premium
+--     alike — is gated on contributor diversity, because a signal supported by
+--     one busy creator describes that creator and not the hotel.
 --
 --  2. `reply_rate` LEAVES the public projection. It is the most actionable
 --     behavioural signal the network produces, and D050 classifies it as
@@ -27,9 +27,19 @@
 --     as `hotel_contacts` already is.
 --
 -- PRIVACY INVARIANT (D050): premium buys MORE OF THE SAFE AGGREGATE, never
--- weaker privacy. No threshold below is lower than its public counterpart, no
--- raw count or raw timestamp is projected to any client role, and the base
--- tables remain unreachable by every browser role.
+-- weaker privacy. No threshold below is lower than its public counterpart, and
+-- the base tables remain unreachable by every browser role.
+--
+-- What "no counts" means precisely: no RAW OUTREACH COUNT reaches any client
+-- role — no pitch count, reply count, event count, cycle denominator, or raw
+-- timestamp. Premium DOES expose one count, deliberately: the distinct-creator
+-- sample (`contributor_count`), and only once it clears its own >= 5 floor, so
+-- the number can never be small enough to point at anyone.
+--
+-- Publication thresholds are METRIC-SPECIFIC, not a uniform pair. The reply
+-- metrics need both qualifying-cycle volume and contributor diversity; the
+-- recency, activity and collaboration signals rely on their approved
+-- distinct-creator population floor, which IS the relevant floor for them.
 --
 -- Additive; migrations 0001–0025 are unchanged.
 
@@ -56,6 +66,10 @@ alter table public.hotel_intelligence
   add column if not exists distinct_creators_30d integer not null default 0,
   add column if not exists distinct_creators_90d integer not null default 0,
   add column if not exists distinct_creators_365d integer not null default 0,
+  -- Distinct creators with an observed collaboration outcome in 365 days. This
+  -- is the floor for the PUBLIC collaboration-presence signal: "creators have
+  -- collaborated here" is a behavioural claim, and one creator cannot make it.
+  add column if not exists distinct_collaboration_creators_365d integer not null default 0,
   -- {"stay": 4, "paid": 2} — collaboration type → distinct creators observed.
   -- Stored with counts so the threshold lives in one place (the projection),
   -- and so a rebuild can change the threshold without re-deriving history.
@@ -63,6 +77,9 @@ alter table public.hotel_intelligence
 
 comment on column public.hotel_intelligence.reply_rate_365d is
   'Qualifying pitched cycles with at least one qualifying human reply / qualifying pitched cycles, over a trailing 365 days. A cycle counts once however many follow-ups it contains. NULL means no denominator; 0 means measured and unanswered.';
+
+comment on column public.hotel_intelligence.distinct_collaboration_creators_365d is
+  'Distinct creators with an OBSERVED collaboration outcome in the trailing 365 days. Creator Network provenance only (D057): derived from collaborations recorded through the creator workflow, never from research/editorial evidence, hotel declarations or hotel outreach.';
 
 comment on column public.hotel_intelligence.collaboration_type_creators_365d is
   'Collaboration type → number of DISTINCT creators who recorded that outcome in the trailing 365 days. Observed creator outcomes only — never what a hotel says it accepts.';
@@ -116,6 +133,7 @@ declare
   v_creators_30d integer := 0;
   v_creators_90d integer := 0;
   v_creators_365d integer := 0;
+  v_collab_creators_365 integer := 0;
   v_collab_types jsonb := '{}'::jsonb;
 begin
   if p_hotel_id is null then
@@ -283,6 +301,17 @@ begin
   -- window and is deliberately excluded rather than dated by row creation.
   -- Private financial columns are not read here and never will be (D050).
   -- -----------------------------------------------------------------------
+  -- Distinct creators with ANY observed collaboration in the window. Type is
+  -- not required here: presence is a different question from "which kinds".
+  -- Status is not filtered either — a cancelled collaboration was still agreed,
+  -- and D045 is explicit that cancellation is not a retraction of the deal.
+  select count(distinct c.creator_id)
+    into v_collab_creators_365
+    from public.collaborations c
+   where c.hotel_id = p_hotel_id
+     and c.agreed_at is not null
+     and c.agreed_at >= now() - interval '365 days';
+
   select coalesce(jsonb_object_agg(t.collaboration_type, t.creators), '{}'::jsonb)
     into v_collab_types
     from (
@@ -331,7 +360,8 @@ begin
     distinct_pitch_creators_365d, distinct_reply_creators_365d,
     reply_rate_365d, median_reply_hours_365d,
     distinct_creators_7d, distinct_creators_30d, distinct_creators_90d,
-    distinct_creators_365d, collaboration_type_creators_365d
+    distinct_creators_365d, distinct_collaboration_creators_365d,
+    collaboration_type_creators_365d
   )
   values (
     p_hotel_id,
@@ -345,6 +375,7 @@ begin
     v_reply_rate_365, v_median_365,
     coalesce(v_creators_7d, 0), coalesce(v_creators_30d, 0),
     coalesce(v_creators_90d, 0), coalesce(v_creators_365d, 0),
+    coalesce(v_collab_creators_365, 0),
     coalesce(v_collab_types, '{}'::jsonb)
   )
   on conflict (hotel_id) do update set
@@ -374,6 +405,7 @@ begin
     distinct_creators_30d = excluded.distinct_creators_30d,
     distinct_creators_90d = excluded.distinct_creators_90d,
     distinct_creators_365d = excluded.distinct_creators_365d,
+    distinct_collaboration_creators_365d = excluded.distinct_collaboration_creators_365d,
     collaboration_type_creators_365d = excluded.collaboration_type_creators_365d;
 
   return jsonb_build_object(
@@ -395,13 +427,23 @@ comment on function public.recompute_hotel_intelligence(uuid) is
 -- 0024/0025 left them: SELECT for anon, authenticated and service_role, and
 -- nothing else.
 --
--- Also tightened: the coarse recency band now additionally requires THREE
--- distinct contributing creators in the trailing 90 days. Confidence alone
--- counts pitched cycles, and fifteen cycles can belong to one creator — in
--- which case "creator activity in the past month" is a statement about one
--- identifiable person's week. D050 requires the same privacy rule for a metric
--- on every plan, so the public band gets the same contributor floor the
--- premium band has.
+-- Also tightened: EVERY public behavioural signal now requires contributor
+-- diversity, not only confidence.
+--
+-- Confidence counts pitched CYCLES, and fifteen cycles can belong to one
+-- creator. Under the old gates, one busy creator could produce
+-- "Activity: high", "creator collaboration", and "creator activity in the past
+-- month" — three behavioural statements about a hotel that were really three
+-- statements about one identifiable person's month, published to anonymous
+-- visitors. D050 requires the same privacy rule for a metric on every plan, so
+-- the public signals get the same contributor floors the premium ones have:
+--
+--   activity_level            confidence gate AND >= 3 distinct creators / 90d
+--   recency_band (recent)     confidence gate AND >= 3 distinct creators / 90d
+--   has_observed_collaboration              >= 3 distinct collaborating creators / 365d
+--
+-- Suppression is NULL in every case. A suppressed activity level is not `low`,
+-- and a suppressed collaboration answer is not `false`.
 -- ===========================================================================
 
 drop view if exists public.hotel_public_intelligence;
@@ -411,16 +453,28 @@ with (security_invoker = false) as
 select
   h.id as hotel_id,
   h.slug as hotel_slug,
+  -- Activity is a behavioural claim about a hotel, so it needs a population:
+  -- the confidence gate AND three distinct creators active in 90 days. Below
+  -- that the answer is NULL — withheld, NOT `low`.
   case
-    when hi.confidence_level in ('emerging', 'moderate', 'strong') then hi.activity_level
+    when hi.confidence_level in ('emerging', 'moderate', 'strong')
+     and hi.distinct_creators_90d >= 3
+      then hi.activity_level
     else null
   end as activity_level,
   hi.confidence_level,
+  -- POSITIVE PRESENCE ONLY, and only with three distinct collaborating
+  -- creators behind it. `true` means "creators have collaborated here";
+  -- there is no `false`, because too few observed outcomes cannot prove that a
+  -- hotel does not collaborate — it proves only that we have not seen it.
+  --
+  -- Named OBSERVED, never CONFIRMED: this is a Creator Network fact derived
+  -- from what creators recorded. "Confirmed" is reserved for hotel-confirmed
+  -- intelligence and editorial verification (D057).
   case
-    when hi.confidence_level in ('emerging', 'moderate', 'strong')
-      then (hi.collaboration_count > 0)
+    when hi.distinct_collaboration_creators_365d >= 3 then true
     else null
-  end as has_confirmed_collaboration,
+  end as has_observed_collaboration,
   case
     when hi.confidence_level not in ('moderate', 'strong') then null
     when hi.last_creator_activity_at is null then null
@@ -442,7 +496,7 @@ from public.hotels h
 join public.hotel_intelligence hi on hi.hotel_id = h.id;
 
 comment on view public.hotel_public_intelligence is
-  'PUBLIC Creator Network Intelligence. Everyone — anonymous, Free, Destination Pass, Pro — sees exactly this. No creator identifiers, no exact counts, no raw timestamps, no reply rate and no reply timing: those are premium (D050). Suppression yields NULL, never a fabricated false/zero.';
+  'PUBLIC Creator Network Intelligence. Everyone — anonymous, Free, Destination Pass, Pro — sees exactly this. No creator identifiers, no raw outreach counts, no raw timestamps, no reply rate and no reply timing: those are premium (D050). Every behavioural signal additionally requires contributor diversity. Suppression yields NULL, never a fabricated false/zero/low.';
 
 grant select on public.hotel_public_intelligence to anon, authenticated, service_role;
 
@@ -459,9 +513,11 @@ grant select on public.hotel_public_intelligence to anon, authenticated, service
 -- privilege simply should not exist — the row filter is the second layer, not
 -- the only one.
 --
--- Every metric carries TWO thresholds: sample size and contributor diversity.
--- Neither is lower than any public threshold, and payment does not move either
--- of them (D050).
+-- Publication thresholds are METRIC-SPECIFIC. The reply metrics require both
+-- qualifying-cycle volume and contributor diversity; recency, activity and
+-- collaboration-type signals rely on their approved distinct-creator population
+-- floor, which is the relevant privacy floor for them. No threshold is lower
+-- than its public counterpart, and payment moves none of them (D050).
 -- ===========================================================================
 
 create or replace view public.hotel_premium_intelligence
@@ -530,7 +586,7 @@ join public.hotel_intelligence hi on hi.hotel_id = h.id
 where public.has_premium_hotel_access(h.id);
 
 comment on view public.hotel_premium_intelligence is
-  'PREMIUM Creator Network Intelligence. Entitlement is enforced here, in the database, via has_premium_hotel_access() — Destination Pass inside its destination hierarchy, Pro worldwide, admin/editor per PERMISSIONS.md §11. Exposes no creator identity, no exact pitch/reply counts and no raw timestamps. Every metric requires both a sample-size and a distinct-creator threshold, and payment lowers neither (D050, D058).';
+  'PREMIUM Creator Network Intelligence. Entitlement is enforced here, in the database, via has_premium_hotel_access() — Destination Pass inside its destination hierarchy, Pro worldwide, admin/editor per PERMISSIONS.md §11. Exposes no creator identity, no raw outreach counts (pitches, replies, events, cycle denominators) and no raw timestamps. It DOES expose one deliberate count: the distinct-creator sample, and only above its own >= 5 floor. Thresholds are metric-specific and payment lowers none of them (D050, D058).';
 
 revoke all on public.hotel_premium_intelligence from public, anon;
 grant select on public.hotel_premium_intelligence to authenticated, service_role;

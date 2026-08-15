@@ -80,7 +80,10 @@ Metadata: collaboration type.
 Side effects:
 - pipeline `won`
 - create/update collaboration record.
-Qualifies for “confirmed creator collaboration” subject to privacy display rules.
+Qualifies as an OBSERVED creator collaboration, subject to privacy display
+rules. "Observed" is deliberate: this is a Creator Network fact recorded by a
+creator, not a hotel-confirmed one (D057). Public disclosure additionally
+requires 3 distinct collaborating creators (D058).
 
 ### deal_lost
 Trigger: relationship closes unsuccessfully.
@@ -242,7 +245,7 @@ Do not treat `followup_sent` as independent pitch denominator.
 ### Repeat partnerships
 Multiple relationship cycles between same creator/hotel can support future repeat-collaboration metrics.
 
-## 7. “Confirmed active creator collaboration”
+## 7. “Observed active creator collaboration”
 
 Public/premium copy may only derive from:
 - `deal_won`
