@@ -11,6 +11,12 @@ of those decisions, or a gap the decisions created.
 > **Status: §1, §2 and §6 are DONE** — delivered by the V1 Premium Intelligence
 > PR (migration `0026`, D057–D059). They are kept below, struck through, as the
 > record of what was corrected. §4, §5, §7 and §8 remain open for later blocks.
+>
+> **§7 and §8 now have a governing contract.** The Property Content & Destination
+> Coverage block (D060–D064,
+> [`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md))
+> decided *what* those items must satisfy. It changed no code, so every row below
+> is still open work.
 
 Governing decisions: **D049** (one canonical inventory, no "premium hotels"),
 **D050** (Public + Premium Intelligence, identical privacy), **D051**
@@ -135,7 +141,7 @@ Migrations `0001`–`0025` are immutable. All of this lands in `0026+`.
 
 | # | Location | Required |
 |---|---|---|
-| 7.1 | Promotion path (`scripts/import/promote.ts`, `CANONICAL_PROMOTION_SPEC.md`) | Coordinates become a **publishability precondition**: a candidate without valid canonical lat/long must be held back, not promoted. This is a promotion-gate change, not a schema change |
+| 7.1 | Promotion path (`scripts/import/promote.ts`, `CANONICAL_PROMOTION_SPEC.md`) | Coordinates become a **publishability precondition**: a candidate without valid canonical lat/long must be held back, not promoted. This is a promotion-gate change, not a schema change. **Widened by D062** — the gate covers all eleven publishability conditions, including 4/5-star classification and provenance for both stars and coordinates (`CANONICAL_PROMOTION_SPEC.md` §6.1) |
 | 7.2 | `src/app/(app)/app/discover/page.tsx:8` | Doc comment says the map is deferred because "the canonical dataset currently has no coordinates". Restate against D054: the map ships when coverage does, and coverage is a precondition |
 | 7.3 | Discover map (Sprint 3A) | The unmapped state is a defensive fallback only. Do not build product affordances around it (filters, counts, an "unmapped" tab) that would normalise it |
 | 7.4 | *(new)* coverage check | A publishable hotel without coordinates should be detectable — a validation/report step, so coverage can be audited rather than assumed |
@@ -147,7 +153,10 @@ Migrations `0001`–`0025` are immutable. All of this lands in `0026+`.
 |---|---|---|
 | 8.1 | Exclusion recording | Excluded properties need an explicit, auditable reason (duplicate / closed / HQ / non-property org / out of scope). The import pipeline records resolution decisions; confirm an exclusion reason is durable and reviewable |
 | 8.2 | Coverage measurement | Coverage is measured against a destination's universe, not a target count. There is no such measure today |
-| 8.3 | Copy | Nothing may describe a destination as "curated", "top N" or "selected hotels" |
+| 8.3 | Copy | Nothing may describe a destination as "curated", "top N", "selected hotels", "initial 50" or "representative inventory" (D061). The 30-property Dubai set is a **technical pilot**, never Dubai inventory |
+| 8.4 | `src/components/hotels/discover-filters.tsx:69-81`, `src/lib/hotels/filters.ts:19,34` | The Discover star filter offers a **3+** minimum. Under D060 no publishable hotel is below 4, so a 3+ option is either dead or misleading. Decide deliberately when Sprint 3A touches filters — this contract block changed no `src/` |
+| 8.5 | *(new)* Enrichment queues | D061 requires missingness to be **measurable** (`hotels_without_any_contact`, `hotels_without_photo`, …). None exists. They are work queues, never exclusion filters |
+| 8.6 | *(new)* Coverage runs | D061 requires an auditable per-destination, per-source coverage run producing the eligible inventory count as an **output**. Nothing exists today |
 
 Provider selection is **not** in scope — see §9.
 
@@ -155,16 +164,24 @@ Provider selection is **not** in scope — see §9.
 
 ## 9. Explicitly NOT in this backlog
 
-- Media/photography schema, sourcing or ingestion — still an open product
-  contract (VISUAL_DIRECTION.md §21A).
-- **Property inventory sources** for D055's coverage universe — the next
-  Property Content contract. Booking, Expedia, Google and any other provider are
-  explicitly unchosen.
-- **Geocoding provider** — unchosen (VISUAL_DIRECTION.md §21B). D054 fixes the
-  coverage target, not the supplier.
-- The **initial destination list** — not selected.
-- The exact **Premium Intelligence field projection and numeric thresholds** —
-  the next product-contract block.
+- Media/photography **implementation** — schema, sourcing and ingestion. The
+  *contract* is now closed (D064, VISUAL_DIRECTION.md §21A); no table, no
+  pipeline and no supplier choice exists.
+- **Property inventory sources** for D055's coverage universe — Booking, Expedia,
+  Google and every other provider remain explicitly unchosen. The comparative
+  evaluation that will choose them is specified in
+  [`PROPERTY_SOURCE_EVALUATION.md`](PROPERTY_SOURCE_EVALUATION.md) and runs
+  against Bali and Dubai.
+- **Geocoding provider** — still unchosen (VISUAL_DIRECTION.md §21B). D054 fixes
+  the coverage target, not the supplier.
+- ~~The **initial destination list** — not selected.~~ **Selected** — the initial
+  twenty are recorded in `INTELLIGENCE_ROADMAP.md` §11. Not ingested, and no
+  destination carries a hotel-count target (D061).
+- The exact **star-source authority hierarchy** and **entity-match thresholds** —
+  deferred to the source-evaluation block on purpose (D060, D063), because a
+  number invented before the evidence would read as a decision.
+- ~~The exact **Premium Intelligence field projection and numeric thresholds**.~~
+  **Closed by D058**, implemented in `0026`.
 - Payment-provider integration (Hotmart or otherwise) — a later concern (D051,
   Owner Decision 7). Fixing price/duration copy is not the same as building
   checkout.

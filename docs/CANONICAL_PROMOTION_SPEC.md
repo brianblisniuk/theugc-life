@@ -17,6 +17,12 @@ The promotion system must be:
 
 No source file writes directly to `hotels`, `hotel_contacts`, `organizations` or `editorial_evidence`.
 
+> **Promotion is not publication.** Since D062, a promoted canonical hotel is
+> additionally subject to a **publishability gate** — see §6.1. Sprint 1B's
+> engine predates that gate and does not implement it; the gate is work for the
+> Property Content implementation block, not a retroactive claim about what
+> already ran.
+
 ## 2. Promotion unit
 
 The primary promotion unit is a **property bundle** identified by:
@@ -153,6 +159,32 @@ For `approve_create`:
 - `active_status` defaults to `unknown` unless canonical editorial evidence explicitly supports another existing approved state;
 - `editorial_verification_status` reflects evidence quality conservatively;
 - never invent missing values.
+
+### 6.1 Publishability gate — required by D054/D060/D062, NOT YET IMPLEMENTED
+
+Creating a canonical hotel and publishing it are two different things. A future
+gate must hold a canonical candidate back from publishable inventory unless all
+of the following are true (`PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §7):
+
+1. canonical property identity is resolved;
+2. it belongs to a supported canonical destination;
+3. it is a physical hospitality property;
+4. it is not known permanently closed/inactive;
+5. its V1 scope status is resolved;
+6. canonical star classification is exactly 4 or 5;
+7. star-classification provenance exists;
+8. canonical latitude exists;
+9. canonical longitude exists;
+10. coordinate/location provenance exists;
+11. no unresolved entity-resolution conflict remains.
+
+The gate must **not** require photography, any contact, a target contact, a
+premium contact, or any intelligence. Those are enrichment states (D061), and
+holding a hotel back for them would silently cap the destination (D055).
+
+A candidate failing the gate stays in staging. It is never deleted, and it is
+never given a fabricated coordinate or an invented star classification to make it
+pass.
 
 Brand linking is NOT required for Sprint 1B. Preserve staged `brandName` in import lineage/evidence and leave `brand_id` null unless a future explicit brand-resolution rule is approved.
 

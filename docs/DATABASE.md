@@ -16,6 +16,12 @@ ID strategy: UUID primary keys. Public slugs are mutable identifiers and MUST NO
 8. Collaborations are first-class records.
 9. Private creator fields are owner-only by default.
 10. No primary creator-facing `reports` table exists.
+11. Canonical property identity is owned by theugc.life. An external provider's
+    property ID is a **source identity attached to** a hotel, never a hotel's
+    primary key (D063).
+12. Canonical values that a reader could challenge — star classification and
+    coordinates above all — carry provenance. A value without provenance is not
+    canonical (D060, D062).
 
 ## 2. PostgreSQL conventions
 
@@ -128,7 +134,10 @@ Hierarchy rule: an entitlement for a destination may cover descendants. Implemen
 - `website_url text`
 - `instagram_url text`
 - `hotel_type text`
-- `star_rating numeric NULL`
+- `star_rating numeric NULL` — **hospitality star classification**, never a
+  guest-review score (D060). V1 publishable inventory is exactly 4 or 5, and the
+  value requires provenance to be publishable (D062). The column is unchanged by
+  this contract; no migration was added.
 - `description_short text`
 - `active_status text NOT NULL DEFAULT 'unknown'`
 - `editorial_verified_at timestamptz NULL`
@@ -139,6 +148,18 @@ Active: `active`, `temporarily_closed`, `closed`, `unknown`.
 Verification: `verified`, `needs_review`, `stale`, `unverified`.
 
 Do not store a permanent boolean `creator_friendly`.
+
+**Conceptual future entities — contract only, none of these exists.** D063 and
+D064 define, without creating: `hotel_source_identities` (canonical hotel ↔
+provider property id/url/name/address/coordinates/stars/type, first and last
+seen, last synced, match method/confidence/status, provenance), a
+location-evidence concept retaining source coordinates and their resolution
+provenance while `hotels.latitude`/`longitude` stay the resolved canonical
+values, `hotel_media` (provenance- and rights-backed media as a child resource,
+with cover vs gallery role and official-vs-user-generated flagging), and an
+auditable destination coverage run. See
+[`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
+§11–§15. **No migration in this contract block.**
 
 ### hotel_contacts
 - `id uuid PK`

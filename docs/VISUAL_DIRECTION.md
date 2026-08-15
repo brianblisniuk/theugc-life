@@ -369,13 +369,28 @@ behaviour, not pixels — see §22.
 Both are open product/data contracts. Neither is resolved by this document, and
 neither may be improvised during Sprint 3A.
 
-### A. Hotel photography / media
+### A. Hotel photography / media — **contract now decided (D064)**
 
 A2's treatment of photography **and of the no-photo state** is approved. The
-production data model behind it does not exist: `hotels` has no media column, no
-media table exists, and no sourcing pipeline exists.
+production data model behind it still does not exist — `hotels` has no media
+column, no media table exists, and no sourcing pipeline exists — but the
+**contract** for it is now closed by D064 and
+[`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
+§14:
 
-Unresolved, and required before any production photography ships:
+- media is a **first-class, provenance- and rights-backed child resource** of a
+  canonical hotel (`hotel_media`), never a column and never a hotlinked provider
+  URL on the hotel record;
+- **cover vs gallery** is a role on the media record, and the frontend asks the
+  data layer for the *best eligible cover*, never for a named provider's image;
+- source priority is a **direction**, not a provider choice — Booking vs Expedia
+  precedence is explicitly not decided;
+- the gallery uses **property/hotel imagery**; guest-generated photos are not
+  deliberately selected as canonical editorial imagery;
+- **no-photo is a valid field state.** Photo coverage may legitimately be below
+  100%, because a missing photo never removes an eligible hotel (D055/D061).
+
+Still unresolved, and required before any production photography ships:
 
 - **Media representation** — column, side table, or external store; one image or
   many.
@@ -392,7 +407,9 @@ Unresolved, and required before any production photography ships:
 
 Until these are decided, Discover must render the designed no-photo state. Do
 not add an `image_url` column, a media table, or a hotlinked third-party image
-as an interim measure.
+as an interim measure. Note that the no-photo state is **not** a temporary
+condition awaiting full coverage — under D064 it is permanent product furniture,
+because photo coverage is never a publishability requirement.
 
 ### B. Geocoding / map coordinates
 

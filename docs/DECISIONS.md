@@ -1189,3 +1189,305 @@ tells them a hotel has no history when the product simply failed. Rendering
 which is a false claim about a business — and the same claim a "0% reply rate"
 would make. The distinction is enforced by resolving entitlement independently
 of the data load, so a failed check can never masquerade as a denial.
+
+## D060 — V1 inventory scope is 4/5-star hospitality classification, provenance-backed
+Status: Accepted — defines the property scope D055 measures completeness against
+
+**V1 inventory is every unique, in-scope, physical hospitality property with a
+resolved canonical hotel star classification of 4 or 5 stars, in each supported
+destination.**
+
+### Stars means hospitality classification
+
+"4-star" / "5-star" is the property's **hotel/hospitality star classification**.
+It is **never** a Google review score, a Booking guest review score, an Expedia
+review score, a TripAdvisor rating, or any other user-review or guest
+satisfaction score.
+
+A property with a 4.7 guest-review average and no hospitality classification has
+**no resolved star classification**. That is a review state, not a 4-star hotel
+and not an exclusion.
+
+### Property type does not decide eligibility
+
+Type alone neither admits nor excludes. Hotels, resorts, boutique hotels,
+aparthotels/hotel apartments, lodges, residences, villa-style hospitality
+operations and other physical hospitality property types may all qualify. The
+`hotel_type` taxonomy remains descriptive metadata, not the gate.
+
+Corporate/group headquarters, agencies and other non-property organizations
+remain excluded from hotel inventory (D029).
+
+### The classification must be justifiable
+
+`hotels.star_rating` as an unexplained number is not sufficient. The system must
+be able to answer *"why does theugc.life consider this a 4- or 5-star property?"*,
+so the model is **canonical star classification + source evidence/provenance**.
+
+- never infer stars from review scores;
+- never average conflicting classifications — 4 and 5 do not make 4.5;
+- never fabricate a missing classification;
+- unknown classification → REVIEW / not yet publishable;
+- a conflict that could mean out-of-scope → REVIEW;
+- retain source-specific observations after canonical resolution.
+
+The **authority hierarchy among sources is deliberately not chosen here**; it
+belongs to the source-evaluation block, which will have evidence for it.
+
+### Out-of-scope research is preserved
+
+Existing research on 1/2/3-star properties is not deleted. It stays valuable for
+future scope expansion, organization/contact research and historical provenance,
+and should become a durable `OUT_OF_V1_PRODUCT_SCOPE` classification with a
+reason such as `star_rating_below_v1_scope`.
+
+Reason:
+"All hotels in a destination" is unbuildable without a scope predicate, and the
+predicate has to be one that a reviewer can check and a hotel could contest.
+Classification is issued by someone and can be cited; a guest-review average is a
+popularity measurement that changes weekly and belongs to a different question
+entirely. The two are both "out of five", which is exactly why the prohibition
+has to be written down rather than assumed. Averaging conflicting classifications
+would invent a rating no authority ever issued, and defaulting an unknown one
+would publish a claim the product cannot defend.
+
+Consequence:
+Star eligibility becomes a hard publishability condition (D062), and star
+provenance becomes a required field rather than an optional nicety. The full
+contract is `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §2 and §8.
+
+## D061 — Destination inventory is an output; coverage completeness is not enrichment completeness
+Status: Accepted — operational clarification of D055, which is unchanged
+
+### The no-cap rule in operational terms
+
+There is no target hotel count per destination, no top-N, no curated subset, no
+representative sample, no package cap, no "enough hotels" threshold and no
+commercial maximum.
+
+If a destination's resolved coverage universe holds 724 eligible properties, the
+canonical inventory is 724. If it holds 79, it is 79.
+
+> **The inventory count is an OUTPUT of destination reality and the coverage
+> process. It is never an INPUT chosen by product packaging.**
+
+Wording such as "top 100", "selected hotels", "curated hotels", "initial 50" or
+"representative inventory" is prohibited for destination coverage, in product
+copy and internal reporting alike. The one exception is an explicitly named
+technical test fixture that is not coverage.
+
+**The 30-property Dubai set is a technical pilot only** and must never be
+described as complete Dubai inventory.
+
+### "All" is measurable
+
+The coverage universe is the union of approved inventory-source records, existing
+canonical/research inventory, and other approved authoritative inputs when
+adopted. Identity resolution, deduplication, scope filtering, active-status
+filtering and 4/5-star eligibility resolution then produce the canonical V1
+destination inventory.
+
+**A provider is not truth, and no single provider is assumed complete.**
+
+### Two different completeness problems
+
+- **Inventory/coverage completeness** — do we have every eligible property in the
+  universe? Measured against the universe, never a target count.
+- **Enrichment/field completeness** — how much do we know about each canonical
+  property? Coordinates, photography, website, Instagram, any contact, target
+  contact, contact verification, hotel-confirmed and Creator Network Intelligence.
+
+A missing optional field must never silently remove an eligible hotel from
+inventory. **Missing data is work to do, not a reason to pretend the hotel does
+not exist**, and missingness should be measurable as operational queues
+(`hotels_without_any_contact`, `hotels_without_photo`, …) rather than as
+exclusion filters.
+
+### Coverage runs and exclusion kinds
+
+A destination coverage run must be able to explain, per destination and per
+source: raw records seen, source identities, candidate properties, cross-source
+matches, duplicates, review candidates, new canonical candidates, closed/inactive
+exclusions, non-property exclusions, below-star-scope exclusions, unresolved-star
+candidates, and the canonical eligible inventory count.
+
+Exclusions must distinguish **final exclusions** (duplicate, permanently closed,
+HQ, agency, not a hospitality property) from **hold/review states** (star
+classification unresolved, identity unresolved).
+
+> **"Star classification unknown" is not the same fact as "confirmed 3-star
+> hotel."** The first may later enter inventory. The second is outside V1 scope.
+
+Reason:
+D055 already forbids caps, but a rule that lives only as a principle gets eroded
+by operational convenience — a sprint plan that says "start with the top 50" does
+not feel like a violation while it is being written. Naming the output/input
+distinction, and banning the specific vocabulary, makes the erosion visible.
+Separating coverage from enrichment matters for the opposite reason: they will
+never be complete at the same time, and reporting them as one number would make
+the product's own operators believe a destination was finished when only its
+coordinates were. Collapsing unknown into below-scope silently deletes eligible
+properties; collapsing below-scope into unknown silently pollutes inventory.
+
+Consequence:
+Coverage is measured as `resolved / universe`, enrichment is measured per field,
+and coordinate coverage at 100% (D054) is never reported as total data
+completeness. Full contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §3–§6, §9,
+§15.
+
+## D062 — The canonical publishability contract
+Status: Accepted — makes D054's coordinate precondition part of a complete rule
+
+A **research/staging property** may legitimately be incomplete; that is the
+normal state of the pipeline and `HOTEL_DATA_CONTRACT.md` continues to allow it.
+A **canonical publishable hotel** is a stricter thing, and the rule binds at the
+promotion boundary.
+
+A canonical hotel is publishable in V1 only when at minimum:
+
+1. canonical property identity is resolved;
+2. it belongs to a supported canonical destination;
+3. it is a physical hospitality property;
+4. it is not known permanently closed/inactive;
+5. its V1 scope status is resolved;
+6. canonical hotel star classification is exactly 4 or 5;
+7. star-classification provenance exists;
+8. canonical latitude exists;
+9. canonical longitude exists;
+10. coordinate/location provenance exists;
+11. no unresolved entity-resolution conflict prevents us from knowing what
+    property it is.
+
+Publication **must not** require photography, any contact, a target contact, a
+premium contact, Creator Network Intelligence, Hotel-Confirmed Intelligence, or
+creator-collaboration evidence.
+
+> **Contact completeness is not publishability. Photo completeness is not
+> publishability. Intelligence completeness is not publishability.**
+
+Reason:
+Every one of the seven non-requirements has been treated as a prerequisite at
+least once, and each time the effect is the same: the destination silently
+shrinks to the subset we happen to know most about, which is precisely the
+failure D055 exists to prevent. The eleven requirements are the opposite case —
+each is something without which the product cannot honestly say *what* the hotel
+is or *where* it is, and a creator cannot use a listing that fails them.
+Provenance appears twice on purpose: a value nobody can trace is not a canonical
+value, it is a number we would have to defend by assertion.
+
+Consequence:
+The promotion path gains a publishability gate covering stars and provenance as
+well as D054's coordinates. A candidate failing any of the eleven is held in
+staging, not published and not deleted. A candidate failing only the
+non-requirements is published with known enrichment work outstanding.
+
+## D063 — Source-agnostic canonical property identity
+Status: Accepted
+
+**theugc.life owns the canonical property identity. External providers supply
+source identities.**
+
+```
+canonical hotel
+  ├─ Booking source identity
+  ├─ Expedia source identity
+  ├─ official website identity
+  ├─ other approved provider identity
+  └─ future hotel-confirmed identity
+```
+
+**An external provider ID must never become the canonical hotel primary key.** A
+future `hotel_source_identities` concept holds the mapping, with source property
+id/url/name/address, source coordinates, star classification and type when
+supplied, first/last seen, last synced, match method, match confidence, match
+status and provenance.
+
+### Entity resolution is conservative
+
+Resolution uses several signals — normalized name, brand, official
+website/domain, address, coordinates, phone, destination, known provider
+mappings — and produces **MATCHED**, **REVIEW** or **NEW PROPERTY**.
+
+A false merge can corrupt contacts, photos, coordinates, intelligence and live
+creator workflows, and is therefore **strategically worse than temporarily
+retaining a duplicate candidate**. Never merge because the names look similar.
+Universal numeric match thresholds are not specified until real source data
+exists.
+
+### Coordinates from a source are observations
+
+External source coordinates are not automatically canonical truth. A future
+location-evidence concept retains source lat/long, source address, observed time
+and resolution provenance; `hotels.latitude`/`hotels.longitude` remain the
+resolved canonical values. Never fabricate coordinates, never use prototype
+positions, and send unresolved conflicts to review. D054's 100% map coverage of
+publishable inventory is unchanged.
+
+Reason:
+A canonical hotel outlives any provider relationship. Keying it on a provider
+would make the inventory unownable, make a multi-source coverage universe
+structurally impossible — one property would need one PK per source — and turn a
+provider change into a data migration of every creator's pipeline history. The
+conservatism about merging is asymmetric on purpose: a duplicate is visible and
+fixable, while a bad merge silently attributes one hotel's outreach history to
+another and the creator whose pipeline it corrupts has no way to see it happened.
+
+Consequence:
+Provider identity, provider coordinates and provider star claims are all
+*evidence attached to* a canonical hotel, never the hotel itself. Dropping a
+provider means dropping its source identities, not rebuilding inventory. Full
+contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §11–§13.
+
+## D064 — Hotel media is a first-class, provenance-backed child resource
+Status: Accepted — closes the media half of VISUAL_DIRECTION.md §21A
+
+Media is a child resource of a canonical hotel, not a column on the hotel and
+never a provider-specific photo URL wired into the hotel identity contract.
+
+A future `hotel_media` concept supports at least: hotel id, source/provider,
+source identity and media id, source url, asset/remote url, media type, category,
+cover vs gallery role, dimensions when known, sort order, provenance, usage/rights
+basis, attribution where required, source updated time, last verified time,
+status, and whether the asset is property/provider/official media or
+user-generated.
+
+### Product rules
+
+**The hotel gallery uses property/hotel imagery.** Guest-generated or
+user-generated photos are not deliberately selected as canonical editorial
+property imagery. Never ship Envato preview/watermarked exploration images, fake
+demo photography as production data, or an asset of unknown provenance
+represented as "official". Provider licensing and usage rules are source-specific
+and must be evaluated before production ingestion.
+
+### Source priority is a direction, not a provider choice
+
+Conceptually a cover candidate may later prefer hotel-supplied/hotel-confirmed
+official media, then approved structured provider property media, then approved
+official hotel/brand media, then another approved eligible source, then a
+first-class no-photo state. **Booking vs Expedia precedence is not hard-coded.**
+The frontend asks *"what is this hotel's best eligible cover?"*, never *"what is
+this hotel's Expedia image?"*.
+
+### No-photo is a valid field state
+
+D055 means a missing photo must not remove an eligible hotel, so **photo coverage
+may legitimately be below 100%** and the product needs a real no-photo state. It
+must not be confused with unmapped, unpublished or unknown identity. **Map
+coverage stays mandatory at 100% of published inventory; photography does not.**
+
+Reason:
+An image is a claim about a place, and a claim needs the same provenance as every
+other canonical fact (D025, D027) — an unattributed photograph is a rights
+liability and a truth liability at once. Modelling media as a child resource is
+what allows a hotel to have several images from several sources with different
+rights bases, and what allows the supplier question to be answered later without
+touching the hotel contract. Keeping provider precedence behind the data layer
+means swapping a provider is a data-layer change rather than a UI rewrite, and
+asking the data layer for "best eligible cover" is the only version of the
+question that survives that swap.
+
+Consequence:
+Discover continues to render the approved no-photo state, and no `image_url`
+column, media table or hotlinked third-party image is added as an interim
+measure. Full contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §14.

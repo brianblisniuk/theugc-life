@@ -161,6 +161,11 @@ official photography, and establish an ongoing relationship.
 This creates **hotel-confirmed intelligence** (D057 domain B) and editorial
 verification data.
 
+**Hotel outreach is enrichment, not a coverage prerequisite.** A hotel may be
+published before it has ever answered theugc.life, provided it satisfies the
+publishability conditions (D062). A missing hotel response never removes a
+legitimate eligible property.
+
 > **A reply from a hotel to theugc.life is NOT a creator reply.**
 
 It must never enter reply-rate or any other Creator Network metric. The two
@@ -197,11 +202,15 @@ Not now: no publishing system.
 
 ---
 
-## 11. Initial V1 destinations — RECORDED, NOT INGESTED
+## 11. Initial V1 destinations — SELECTED, NOT INGESTED
 
-The owner has approved the initial destination set. **This PR does not ingest
-any of it** — coverage ingestion belongs to the Property Content block, and the
-inventory sources are still unchosen (D055).
+The owner has approved the initial destination set. **Nothing has been ingested**
+— coverage ingestion belongs to the Property Content implementation block, and
+the inventory sources are still unchosen. What each destination's coverage must
+satisfy is now fixed by
+[`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
+(D060–D064); which sources supply it is specified for evaluation, not decided, in
+[`PROPERTY_SOURCE_EVALUATION.md`](PROPERTY_SOURCE_EVALUATION.md).
 
 1. Bali
 2. Dubai
@@ -232,4 +241,6 @@ break the destination hierarchy that Destination Pass entitlement depends on
 its descendants, which requires Bali to *have* descendants.
 
 See `DESTINATION_CATALOG.md` for the type vocabulary and the hierarchy rules,
-and D055 for the completeness contract that applies to each of them.
+and D055/D061 for the completeness contract that applies to each of them. **No
+destination has a hotel-count target**: the number is an output of its coverage
+run, never an input (D061).
