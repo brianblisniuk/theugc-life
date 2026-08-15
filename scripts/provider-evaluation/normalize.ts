@@ -1,22 +1,22 @@
 /**
- * Field-map driven normalization.
+ * Field-map driven normalization and D060 star classification.
  *
- * Provider payloads are read through the adapter descriptor's `fieldMap` rather
- * than through hand-written per-provider parsing. Two reasons:
+ * Provider payloads are read through the descriptor's `fieldMap` rather than
+ * hand-written per-provider parsing, so the reviewable artifact is a field map
+ * traceable to official documentation.
  *
- *  - the reviewable artifact becomes a field map traceable to official docs,
- *    instead of parsing logic whose assumptions are invisible;
- *  - an unverified field map is detectable, so the harness can refuse to run
- *    rather than emit confident numbers built on guessed paths.
- *
- * The star rules are enforced here, at the point of normalization, because that
- * is the only place where a review score and a classification are both in scope
- * and could be confused (D060).
+ * There is deliberately NO path inference anywhere in this module. An earlier
+ * version derived the star-qualifier path from the value path by appending
+ * `_type`; that is a guessed field path wearing a convention as a disguise, and
+ * it is gone. If a provider supplies no qualifier, the descriptor must say so
+ * explicitly (`starKindDocumentedAbsent`).
  */
 import type {
   AdapterDescriptor,
   EvaluationDestination,
   EvaluationRecord,
+  RecordAccounting,
+  StarEligibility,
   StarObservation,
 } from "./types";
 
@@ -53,51 +53,78 @@ function asCount(value: unknown): number {
 }
 
 /**
- * Build the star observation.
+ * Build the star observation from EXPLICIT mapped paths only.
  *
  * `reviewScore` is read into its own field and never falls back into `value`.
- * If a provider supplies only a review score, the classification stays null —
- * that property is star-UNRESOLVED, which under D060/D061 is a review state and
+ * A provider supplying only a review score leaves the classification null, which
+ * makes the property star-UNRESOLVED — a review state under D060/D061, and
  * explicitly not the same fact as "below scope".
  */
 export function buildStarObservation(
   payload: unknown,
   descriptor: AdapterDescriptor,
 ): StarObservation {
-  const starPath = descriptor.fieldMap.star ?? null;
-  const value = starPath ? asNumber(readPath(payload, starPath)) : null;
+  const { starValue, starKind, reviewScore } = descriptor.fieldMap;
 
-  const kindPath = descriptor.starSemantics?.fieldName
-    ? `${descriptor.starSemantics.fieldName}_type`
-    : null;
-  // The descriptor may map the kind explicitly; fall back to the convention only
-  // when it does, never inventing a path of our own.
-  const explicitKindPath = (descriptor.fieldMap as Record<string, string | null | undefined>)[
-    "starKind"
-  ];
-  const kind = asString(readPath(payload, explicitKindPath ?? kindPath));
-
-  const reviewPath = (descriptor.fieldMap as Record<string, string | null | undefined>)[
-    "reviewScore"
-  ];
-  const reviewScore = reviewPath ? asNumber(readPath(payload, reviewPath)) : null;
-
-  return { value, kind, reviewScore };
+  return {
+    value: starValue ? asNumber(readPath(payload, starValue)) : null,
+    // No inference. An unmapped qualifier is null, full stop.
+    kind: starKind ? asString(readPath(payload, starKind)) : null,
+    reviewScore: reviewScore ? asNumber(readPath(payload, reviewScore)) : null,
+  };
 }
 
 /**
- * Is this star observation usable as D060 evidence?
+ * Is this observation usable as D060 EVIDENCE?
  *
- * Requires BOTH a value in {4,5}-capable range AND a `kind` the descriptor has
- * explicitly accepted from official documentation. A star field with an
- * unrecognised or absent kind is not evidence, however plausible its number —
- * that is precisely the "a field called stars is not automatically stars" rule.
+ * Separate from whether it resolves eligibility. Evidence quality and
+ * eligibility are two questions, and collapsing them is how a 4.5-star property
+ * quietly becomes a 4-star one.
+ *
+ * Requires an accepted qualifier value — unless the provider is documented to
+ * supply no qualifier at all, in which case the value alone may serve. That
+ * exemption is gated on an explicit descriptor flag so an unmapped path can
+ * never masquerade as a documented absence.
  */
 export function isD060Evidence(star: StarObservation, descriptor: AdapterDescriptor): boolean {
   if (star.value === null) return false;
+
+  if (descriptor.starKindDocumentedAbsent) return true;
+
   if (descriptor.starKindsAcceptedAsD060Evidence.length === 0) return false;
   if (star.kind === null) return false;
   return descriptor.starKindsAcceptedAsD060Evidence.includes(star.kind);
+}
+
+/**
+ * Classify an observation against D060's EXACT 4-or-5 requirement.
+ *
+ * Half-star classifications are real in several markets and Expedia's content
+ * documentation supports values such as 3.5 and 4.5. A 4.5-star property has a
+ * genuine classification that is not exactly 4 and not exactly 5, so it is
+ * `classified_not_v1_scope` — never rounded into an eligible bucket.
+ *
+ * Anything outside the documented 1–5 range is `unresolved` rather than clamped:
+ * an unexpected scale means we are misreading the field, and coercing it would
+ * hide that.
+ */
+export function classifyStarEligibility(
+  star: StarObservation,
+  descriptor: AdapterDescriptor,
+): StarEligibility {
+  if (!isD060Evidence(star, descriptor)) return "unresolved";
+
+  const value = star.value;
+  if (value === null) return "unresolved";
+
+  // Out-of-range or non-finite: we do not understand this scale. Say so.
+  if (!Number.isFinite(value) || value <= 0 || value > 5) return "unresolved";
+
+  if (value === 5) return "exact_five";
+  if (value === 4) return "exact_four";
+
+  // A real classification that is not exactly 4 or 5: 3, 3.5, 4.5, 1, 2 …
+  return "classified_not_v1_scope";
 }
 
 export function normalizeRecord(
@@ -107,42 +134,77 @@ export function normalizeRecord(
 ): EvaluationRecord | null {
   const sourcePropertyId = asString(readPath(payload, descriptor.fieldMap.sourcePropertyId));
   // A record with no provider id cannot be counted, deduplicated or matched.
+  // The caller records the rejection rather than losing it (see normalizeAll).
   if (!sourcePropertyId) return null;
 
-  const photosPath = descriptor.fieldMap.photos ?? null;
-  const heroPath = descriptor.fieldMap.heroImage ?? null;
+  const { fieldMap } = descriptor;
 
   return {
     provider: descriptor.provider,
     destination,
     sourcePropertyId,
-    name: asString(readPath(payload, descriptor.fieldMap.name)),
-    propertyType: asString(readPath(payload, descriptor.fieldMap.propertyType)),
-    address: asString(readPath(payload, descriptor.fieldMap.address)),
-    latitude: asNumber(readPath(payload, descriptor.fieldMap.latitude)),
-    longitude: asNumber(readPath(payload, descriptor.fieldMap.longitude)),
-    brand: asString(readPath(payload, descriptor.fieldMap.brand)),
-    chain: asString(readPath(payload, descriptor.fieldMap.chain)),
-    websiteUrl: asString(readPath(payload, descriptor.fieldMap.websiteUrl)),
-    providerContact: asString(readPath(payload, descriptor.fieldMap.providerContact)),
+    name: asString(readPath(payload, fieldMap.name)),
+    propertyType: asString(readPath(payload, fieldMap.propertyType)),
+    address: asString(readPath(payload, fieldMap.address)),
+    latitude: asNumber(readPath(payload, fieldMap.latitude)),
+    longitude: asNumber(readPath(payload, fieldMap.longitude)),
+    brand: asString(readPath(payload, fieldMap.brand)),
+    chain: asString(readPath(payload, fieldMap.chain)),
+    websiteUrl: asString(readPath(payload, fieldMap.websiteUrl)),
+    phone: asString(readPath(payload, fieldMap.phone)),
+    providerContact: asString(readPath(payload, fieldMap.providerContact)),
     star: buildStarObservation(payload, descriptor),
-    photoCount: photosPath ? asCount(readPath(payload, photosPath)) : 0,
-    hasHeroImage: heroPath ? readPath(payload, heroPath) !== null : false,
-    activeStatus: asString(readPath(payload, descriptor.fieldMap.activeStatus)),
+    photoCount: fieldMap.photos ? asCount(readPath(payload, fieldMap.photos)) : 0,
+    hasHeroImage: fieldMap.heroImage ? readPath(payload, fieldMap.heroImage) !== null : false,
+    activeStatus: asString(readPath(payload, fieldMap.activeStatus)),
   };
 }
 
+export interface NormalizationOutcome {
+  records: EvaluationRecord[];
+  accounting: RecordAccounting;
+}
+
+/**
+ * Normalize a raw payload set, PRESERVING the accounting.
+ *
+ * The raw count never disappears into the normalized count. A provider
+ * returning identity-less records is telling us something about its data
+ * quality, and that signal has to survive to the metrics denominator — otherwise
+ * "1000 records" silently becomes "the 940 we could read".
+ */
 export function normalizeAll(
   payloads: readonly unknown[],
   descriptor: AdapterDescriptor,
   destination: EvaluationDestination,
-): EvaluationRecord[] {
-  const out: EvaluationRecord[] = [];
+): NormalizationOutcome {
+  const records: EvaluationRecord[] = [];
+  let missingId = 0;
+
   for (const payload of payloads) {
     const record = normalizeRecord(payload, descriptor, destination);
-    if (record) out.push(record);
+    if (record) {
+      records.push(record);
+    } else {
+      missingId += 1;
+    }
   }
-  return out;
+
+  const uniqueIds = new Set(records.map((r) => r.sourcePropertyId));
+
+  return {
+    records,
+    accounting: {
+      rawRecordsReturned: payloads.length,
+      normalizedRecords: records.length,
+      recordsMissingSourcePropertyId: missingId,
+      // Reserved for future normalization failures beyond a missing id; kept
+      // explicit so a new reject reason cannot be folded into the id count.
+      otherNormalizationRejects: payloads.length - records.length - missingId,
+      uniqueSourcePropertyIds: uniqueIds.size,
+      duplicateIdRecords: records.length - uniqueIds.size,
+    },
+  };
 }
 
 /** Coordinates that are present, in range, and not the null island. */

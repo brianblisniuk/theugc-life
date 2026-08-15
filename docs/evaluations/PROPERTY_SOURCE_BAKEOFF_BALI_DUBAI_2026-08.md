@@ -7,16 +7,13 @@ Specification: [`PROPERTY_SOURCE_EVALUATION.md`](../PROPERTY_SOURCE_EVALUATION.m
 > ## STATUS: BLOCKED ON LIVE PROVIDER ACCESS
 >
 > **No provider was measured. No provider is recommended. No star verdict is
-> issued.**
+> issued. The bake-off is NOT complete.**
 >
-> Both provider credentials and — decisively — the official documentation
-> required to make any capability claim were unavailable in the environment this
-> block ran in. Under §3 of the brief (official sources only) and §18 (no winner
-> without live evidence), the honest output is an evaluation-readiness
-> deliverable, not a bake-off.
->
-> This document therefore contains an **empty section A and an empty section B**.
-> That is the finding, stated plainly rather than padded.
+> Official provider documentation **has** now been established — independently
+> verified during external review on 2026-08-15 — so Section A is populated.
+> Section B remains empty: no provider API was called, because credentials are
+> unavailable and the provider hosts are unreachable from the Claude Code
+> execution environment.
 
 ---
 
@@ -26,44 +23,142 @@ Four sections, never mixed:
 
 | | Meaning |
 |---|---|
-| **A. VERIFIED FROM OFFICIAL DOCUMENTATION** | Read from the provider's own developer site, with URL and access date |
+| **A. VERIFIED FROM OFFICIAL DOCUMENTATION** | Established from the provider's own developer site, with URL and access date |
 | **B. MEASURED FROM LIVE API** | Produced by running the harness against the provider |
 | **C. INFERENCE / RECOMMENDATION** | Our reasoning, clearly marked as reasoning |
 | **D. BLOCKED / UNKNOWN** | What could not be established, and exactly why |
+
+### Provenance of Section A
+
+Every fact in Section A was **independently verified during external review on
+2026-08-15 from official provider documentation**. Claude Code did **not** fetch
+those pages: all three official documentation domains were blocked by this
+environment's egress proxy (HTTP 403 on CONNECT), verified twice roughly two
+hours apart, and the proxy recorded each denial as a policy denial rather than a
+transient failure.
+
+Each source is carried in the adapter descriptors with
+`verifiedBy: "external_review"`, and a test asserts that attribution so it cannot
+drift into an implied first-hand claim.
 
 ---
 
 ## A. VERIFIED FROM OFFICIAL DOCUMENTATION
 
-**EMPTY.**
+### A.1 Booking.com Demand API v3.2
 
-Nothing in this report is sourced from provider documentation, because none was
-reachable. Every official documentation domain required by brief §3 was blocked
-by this environment's network egress proxy, which answered **HTTP 403 to
-CONNECT**:
+Sources (all external review, 2026-08-15):
+`developers.booking.com/demand/docs/open-api/3.2/demand-api` ·
+`.../accommodations/look-accommodation-details` ·
+`.../migration-guide/v3.2/accommodations/details` ·
+`.../migration-guide/v3.2/accommodations/intro` ·
+`.../development-guide/pagination` · `developers.booking.com/demand/docs`
 
-| Host | Purpose | Result |
-|---|---|---|
-| `developers.booking.com` | Booking capability claims (brief §3) | 403 CONNECT — blocked |
-| `developers.expediagroup.com` | Expedia capability claims (brief §3) | 403 CONNECT — blocked |
-| `developers.google.com` | Google Places terms/policies (brief §3, §19) | 403 CONNECT — blocked |
-| `demandapi.booking.com` | Booking API host | 403 CONNECT — blocked |
-| `api.ean.com` | Expedia Rapid API host | 403 CONNECT — blocked |
+| Fact | Value |
+|---|---|
+| Base URL (production) | `https://demandapi.booking.com/3.2` |
+| Base URL (sandbox) | `https://demandapi-sandbox.booking.com/3.2` |
+| Authentication | Bearer token + `X-Affiliate-Id` |
+| Integration model | "Content only" is explicitly supported |
+| **Static content endpoint** | `POST /accommodations/details` — availability and pricing are separate endpoints |
+| Required scope param | At least one of `accommodations`, `airport`, `city`, `country`, `region` |
+| Pagination | `page` token from `metadata.next_page`; `rows` a multiple of 10, 10..1000 for details |
+| Result count | `metadata` includes `next_page` and may include `total_results` |
+| Change detection | `/accommodations/details/changes`; v3.2 closure statuses expanded to temporary, permanent, fraud |
+| Photos | `extras=["photos"]` retrieves photo / main-photo information |
 
-Verified by `curl` and by the fetch tool, twice, roughly two hours apart
-(12:52 UTC and 15:31 UTC on 2026-08-15). The proxy's own diagnostic endpoint
-recorded each denial as `connect_rejected — gateway answered 403 to CONNECT
-(policy denial or upstream failure)`. These are policy denials, not transient
-failures.
+Documented response fields: `id`, `name`, `accommodation_type`, `brands`,
+`contacts`, `location.address`, `location.coordinates.latitude`,
+`location.coordinates.longitude`, `rating.review_score`, `rating.stars`,
+`rating.stars_type`, `url`.
 
-**Why this section was not filled in from knowledge.** Both APIs are widely
-documented and a plausible-looking field map could have been written from
-recollection. It would have been wrong in the worst available way: guessed field
-paths do not crash, they read `undefined`, and the harness would have reported
-"coordinate coverage 0%, star coverage 0%" for providers that supply both. That
-output is indistinguishable from a measurement and would have been used to choose
-a provider. Brief §3 restricts capability claims to official sources precisely to
-prevent this, and §17 forbids turning missing access into guessed data.
+**Star semantics: NOT established.** `official` appears as a documented
+`stars_type` example. The **complete enum and the provenance meaning of each
+value are unresolved**, so no `stars_type` value is accepted as D060 evidence —
+inferring an enum from one example is the precise move D060 forbids.
+
+### A.2 Expedia Rapid (lodging content)
+
+Sources (all external review, 2026-08-15):
+`developers.expediagroup.com/rapid/lodging` ·
+`.../content/about-content-api` · `.../content/content-pagination` ·
+`.../content/content-filtering` · `.../content/content-reference-lists` ·
+`.../content/star-ratings` · `.../geography/about-geography-api` ·
+`.../reference/signature-authentication`
+
+| Fact | Value |
+|---|---|
+| **Static content endpoint** | `GET https://api.ean.com/v3/properties/content` (e.g. `language=en-US`, `supply_source=expedia`) |
+| Authentication | `Authorization: EAN APIKey=…,Signature=SHA512(apiKey + sharedSecret + unixTimestamp),timestamp=…` |
+| Pagination | Follow the `Link` response header `rel="next"` until absent; `Pagination-Total-Results` gives a result count |
+| Preferred source | Content API is recommended over Content File APIs for expanded global inventory; the Property Catalog File covers the primary active-property list, but Content File APIs have limited expanded-global-inventory support |
+| Incremental sync | `date_updated_start` / `date_added_start` filters; an inactive-property endpoint exists |
+| Refresh cadence | Static content requires **daily** refreshes |
+| Content sections | `property_id`, `name`, `address`, `location`, `category`, `chain`, `brand`, `phone`, `ratings`, `images`, … |
+| Images | `images[]` with `caption`, `hero_image`, `category`, and links at multiple sizes |
+| Property categories | Hotel, Resort, Villa, Lodge, Apartment, Aparthotel, Residence and many others |
+| Geography | Region hierarchy plus property mappings |
+
+#### ⚠️ A.2.1 The documented coverage cap — the single most important fact in this section
+
+> For larger geography types (`high_level_region`, `province_state`, `country`,
+> `continent`), property mappings return **up to the top 500 properties**. To
+> obtain the full list, request properties from the **descendants** comprising
+> that region.
+
+A single large-region `property_ids` result therefore **must not be treated as
+exhaustive**. Doing so would silently cap a destination's inventory — exactly the
+D055/D061 failure the coverage contract exists to prevent, and invisible in the
+output because 500 looks like a number rather than a ceiling.
+
+This is encoded as `documentedHardCap: 500` in the Expedia descriptor, so the
+paginator raises a **COVERAGE RISK** rather than reporting a total on reaching it.
+
+#### A.2.2 Star ratings
+
+- `ratings.property.type` **distinguishes official local-authority ratings from
+  Expedia Group assigned ratings**, in regions where local authorities designate
+  official ratings.
+- Documented such regions include **France, Italy, Turkey, United Arab Emirates,
+  Israel**.
+- In those regions, `type=star` means the rating came from the property's **local
+  star-rating authority**. `alternate` is **not** that official signal.
+- For properties in **other** regions, the documentation states the returned
+  rating is **Expedia-assigned regardless of type**, and an official rating is
+  unavailable through that mechanism.
+- `descriptions.national_ratings` describes the **source** of the star rating
+  (for example a regional or national tourism agency).
+- **Half-star values such as 3.5 and 4.5 are supported.**
+
+That last point is a correctness fact, not a footnote: D060 requires *exactly* 4
+or 5, so a 4.5-star property is a genuine classification that is **not** eligible,
+and rounding it into the 4-star bucket would manufacture eligibility. The harness
+now classifies exact-4 / exact-5 / classified-not-V1-scope / unresolved
+separately (§ "What this block delivered").
+
+### A.3 Google Places
+
+Sources (all external review, 2026-08-15):
+`developers.google.com/maps/documentation/places/web-service/policies` ·
+`.../place-id` · `.../place-photos`
+
+| Fact | Value |
+|---|---|
+| Caching | Places content generally **must not** be prefetched, cached or stored beyond stated exceptions |
+| Place IDs | **Exempt** from the caching restriction and may be stored; Google recommends refreshing stored IDs older than **12 months** |
+| Attribution | Places content displayed without a Google Map carries Google attribution/logo requirements; map display has its own Maps attribution rules |
+| Photos | Photo resource names **must not** be cached and can expire |
+| Photo authorship | Author attribution must be displayed where returned |
+
+**Contract consequence:** Google Places is a **QA / identity cross-check /
+Place-ID mapping candidate only**. It is **not** an appropriate canonical
+persistent inventory or media backbone under our architecture — the caching
+restriction is incompatible with storing property content and imagery as
+canonical data, and photo resource names cannot be persisted at all. Place IDs
+are the one field we could durably retain.
+
+And, from our own contract rather than Google's: **a Google user rating is never
+D060 star evidence.** It is a guest-satisfaction score.
 
 ---
 
@@ -118,115 +213,124 @@ Everything below is reasoning, not evidence.
 
 ### C.1 No source-strategy recommendation is defensible
 
-Brief §18 is explicit, and it binds here: with neither provider run, **no
-provider winner exists**. Not "Booking pending confirmation", not "Expedia
-likely" — nothing. A recommendation formed now would be a preference dressed as a
-finding, and it would be quoted later as the outcome of a bake-off that never
-happened.
+With neither provider run, **no provider winner exists**. Not "Booking pending
+confirmation", not "Expedia likely" — nothing. A recommendation formed now would
+be a preference dressed as a finding, and it would be quoted later as the outcome
+of a bake-off that never happened.
 
-### C.2 What the environment blocker actually means
+Documentation now establishes what each provider *claims* to offer. It does not
+establish what either actually returns for Bali or Dubai, which is the entire
+question.
 
-This is not simply "we lacked API keys". Keys alone would not have been enough:
-without official documentation, the harness could not have been pointed at the
-right endpoint, paginated correctly, or read a single field with confidence.
+### C.2 Expedia star strategy — an evidence-backed HYPOTHESIS, not a verdict
 
-The two blockers are therefore ordered, not parallel:
+Recorded in the descriptor as `hypothesis`, with `verdict: null`:
 
-1. **Documentation access** — without it, no adapter can be written at all.
-2. **Credentials** — without them, a written adapter cannot be executed.
+| Destination | Hypothesis | Basis |
+|---|---|---|
+| **Dubai (UAE)** | `ratings.property.type=star` is a **candidate for SUITABLE** D060 evidence, subject to live validation and a provenance-storage review. `alternate` is **not** sufficient as official-local-authority evidence. | UAE is documented among the regions where local authorities designate official ratings |
+| **Bali (Indonesia)** | An Expedia-assigned rating alone is **likely NOT sufficient** to resolve D060 classification; **REQUIRES SECONDARY VERIFICATION** rather than being used alone for publication. | Indonesia is not among the documented official-rating regions, and the documentation says ratings there are Expedia-assigned regardless of type |
 
-Fixing (2) without (1) unblocks nothing.
+This is exactly the destination-specific outcome the coverage contract
+anticipated: one provider, two markets, two different answers. Forcing a global
+verdict would hide the thing most worth knowing.
 
-### C.3 Why the harness ships anyway
+**It remains a hypothesis.** Two things must be settled before it becomes a
+verdict: live confirmation of the actual `type` distribution in each market, and
+whether the rating's provenance can be **stored and cited** — publishability
+condition 7 (D062), which documentation alone does not answer.
 
-Everything that does **not** depend on provider schemas is built and tested:
-exhaustive pagination with honest exhaustion proof, field-map-driven
-normalization, the star/review-score separation, the metric suite, cross-source
-overlap analysis, secret redaction, gitignored artifacts, and the Dubai probe
-input builder. 35 deterministic tests over hand-written synthetic fixtures.
+`descriptions.national_ratings` is the most promising lead for that provenance
+and should be evaluated live in both destinations.
 
-When access exists, the remaining work is filling in two descriptors from
-official documentation and running one command — not building an evaluation.
+### C.3 Booking star strategy — no hypothesis is warranted
 
-### C.4 The star question is the one to protect
+`official` is one documented `stars_type` example. The complete enum and each
+value's provenance meaning are unknown. Forming even a hypothesis from a single
+example would be inferring an enum, so the descriptor accepts **no** `stars_type`
+value as D060 evidence and states the gap as a blocker.
 
-D060's hard part is not measuring how *often* a star field is populated; it is
-establishing what that field *means*. The harness enforces this structurally:
-`starKindsAcceptedAsD060Evidence` starts empty, so **every** star value is
-treated as unresolved until a qualifier value is explicitly accepted from
-documentation. A star field with an unrecognised kind counts as `unknownStar`,
-never as a lower band — because under D061 "classification unknown" and
-"confirmed 3-star" are different facts, and collapsing them silently deletes
-eligible properties.
+### C.4 Google is settled enough to act on
 
-The verdict is allowed to be per-destination. If a provider carries
-authority-issued classifications in the UAE and its own normalisation in
-Indonesia, that is two findings, and forcing one global verdict would hide
-exactly the thing worth knowing.
+Documentation is sufficient here, and the conclusion is negative in a useful way:
+Google Places **cannot** be a canonical persistent inventory or media backbone
+under our architecture. Content caching is restricted, and photo resource names
+must not be cached at all. Place IDs are the exception and may be stored, which
+makes Google a viable **identity cross-check and location-QA** aid — and nothing
+more. That is a product constraint, recorded rather than engineered around.
 
----
+### C.5 The environment blocker, restated after the amendment
+
+External review has now supplied the documentation, so the ordering has changed:
+
+1. ~~Documentation access~~ — **resolved by external review** for the facts above.
+2. **Credentials** — still absent; nothing can be executed.
+3. **Provider API egress** from the Claude Code environment — still blocked.
+
+Descriptor completion is no longer blocked on documentation *in general*, but two
+specific documentary gaps remain (Booking's `stars_type` enum) and two require
+live API access rather than docs (Bali/Dubai geography ids, and Expedia's
+descendant region sets).
 
 ## D. BLOCKED / UNKNOWN
 
-### D.1 Booking.com Demand API — NOT EVALUATED
+### D.1 Booking.com Demand API — DOCUMENTED, NOT EVALUATED
 
 Descriptor: `scripts/provider-evaluation/adapters/booking.ts`, status
-`unverified`, all fields empty, blockers recorded in the file. It carries a
-numbered checklist for completion from official documentation.
+**`partially_verified`**. Endpoint, authentication, pagination and response field
+paths are now recorded from official documentation (§A.1). It remains **not
+runnable**.
 
-Blocked on: `developers.booking.com` (403), `demandapi.booking.com` (403),
-`BOOKING_DEMAND_API_TOKEN` (NOT AVAILABLE), `BOOKING_AFFILIATE_ID` (NOT AVAILABLE).
+Outstanding:
 
-Unanswered, and required: the static property-content enumeration path (brief §4A
-is emphatic that an availability/search endpoint must not define a coverage
-universe); pagination and any documented hard cap; the star value field, its
-qualifier field, that qualifier's allowed values and their meanings; whether
-per-value provenance can be stored and cited; photo metadata and storage terms.
+- **`rating.stars_type` enum and provenance semantics — UNRESOLVED.** `official`
+  is a documented example, not the enum. No value is accepted as D060 evidence.
+- **Bali and Dubai geography ids — UNRESOLVED.** These need a live Booking
+  location lookup; documentation does not supply them.
+- **Field paths unexercised.** Documented, but never run against a live payload.
+- **Credentials NOT AVAILABLE**; `demandapi.booking.com` unreachable from this
+  environment.
 
-### D.2 Expedia Rapid — NOT EVALUATED
+### D.2 Expedia Rapid — DOCUMENTED, NOT EVALUATED
 
 Descriptor: `scripts/provider-evaluation/adapters/expedia.ts`, status
-`unverified`, same structure and checklist.
+**`partially_verified`**. Endpoint, signature authentication, `Link`-header
+pagination, incremental filters, category list, image structure and the
+ratings-type semantics are recorded (§A.2), including the **top-500 property
+mapping cap** as `documentedHardCap: 500`. It remains **not runnable**.
 
-Blocked on: `developers.expediagroup.com` (403), `api.ean.com` (403),
-`EXPEDIA_RAPID_API_KEY` (NOT AVAILABLE), `EXPEDIA_RAPID_SHARED_SECRET` (NOT
-AVAILABLE).
+Outstanding:
 
-Unanswered, and required: the content/catalog and geography endpoints; chunking
-or pagination for large content payloads; the property rating field and — the
-decisive question — how the provider distinguishes a rating originating from a
-local star authority from one it assigns itself, **measured separately in Bali
-and Dubai**; image metadata, hero indication, and content usage constraints.
+- **Bali and Dubai geography ids — UNRESOLVED**, including the **descendant
+  region sets** required to exceed the top-500 cap. This is the difference
+  between a destination universe and a truncated list.
+- **Star hypotheses unconfirmed** against live data (§C.2).
+- **Star provenance storage — UNRESOLVED**; publishability condition 7 (D062).
+- **Credentials NOT AVAILABLE**; `api.ean.com` unreachable from this environment.
 
 ### D.3 Provider geography for Bali and Dubai — NOT RESOLVED
 
-Brief §9 forbids assuming `Bali = city` and forbids querying a handful of
-well-known towns and calling the union "Bali". Resolving this requires each
-provider's geography documentation, which was unreachable.
+Unchanged, and now the sharpest remaining gap. Brief §9 forbids assuming
+`Bali = city` and forbids querying a handful of well-known towns and calling the
+union "Bali". Both providers require **live** geography lookups; documentation
+establishes the mechanism, not the ids.
 
-`AdapterDescriptor.geography` records the resolution explicitly — entity kind,
-entity ids, method, whether a union is required, and caveats — and the
-runnability gate refuses to run while it is empty. **No geography was assumed.**
+For Expedia this is compounded by the top-500 cap: resolving Bali means resolving
+its descendant regions too, or the extraction is capped by construction.
 
-### D.4 Google Places — POLICY ASSESSMENT NOT PERFORMED
+`AdapterDescriptor.geography` records entity kind, ids, method, union requirement
+and caveats, and the gate refuses to run while it is empty. **No geography was
+assumed.**
 
-`developers.google.com` was blocked, so no persistent-storage rule, Place ID
-retention rule, photo attribution requirement or display constraint was read, and
-none is asserted here.
+### D.4 Google Places — ASSESSED, NOT A CANDIDATE BACKBONE
 
-Two things are nonetheless settled by our own contract and need no external
-source:
+Now documented (§A.3) and resolved as a product constraint rather than an open
+question: **not** an appropriate canonical persistent inventory or media
+backbone. Usable as identity cross-check / Place-ID mapping / location QA, with
+Place IDs the only durably storable field (refresh recommended after 12 months).
 
-- **A Google user rating is never D060 star evidence.** It is a guest-satisfaction
-  score. The prohibition is D060/§2.1 and does not depend on Google's terms.
-- **Google is not a candidate inventory backbone in this bake-off.** Its potential
-  role is identity cross-check, Place ID mapping and location QA (brief §5).
-
-Whether any Google-derived field may be *persisted* in our source-identity
-architecture is **UNKNOWN and unresolved**, and must be read from the official
-terms before any such field is stored. If those terms turn out to be incompatible
-with persistent canonical storage, that is recorded as a product constraint, not
-engineered around.
+Still open: whether we will adopt it for QA at all, and the attribution
+obligations that would follow if Places content is ever displayed.
 
 ### D.5 Dubai 30-property probe — INPUT AVAILABLE, EXECUTION BLOCKED
 
@@ -280,24 +384,40 @@ a decision.
 
 ## What this block delivered
 
-- A complete, tested, provider-agnostic evaluation harness
-  (`scripts/provider-evaluation/`, 35 tests).
-- A **runnability gate** that refuses to execute an unverified descriptor, so
-  this evaluation cannot later be completed carelessly and produce numbers that
-  look measured.
-- Two provider descriptors, honestly empty, each with a completion checklist.
+- A **complete, tested execution pipeline** — auth → exhaustive pagination →
+  raw-count evidence → normalize → metrics → gitignored artifacts → aggregate
+  result (`execute.ts`), exercised end to end by synthetic tests. It refuses to
+  run only for missing facts or missing credentials, never because extraction was
+  left unimplemented.
+- A **runnability gate** that refuses an incomplete descriptor, naming exactly
+  what is missing.
+- **D060 exact-star classification**: exact-4 / exact-5 /
+  classified-not-V1-scope / unresolved. A 4.5 never becomes a 4, an unexpected
+  scale is never coerced, and an unusable kind is unresolved rather than demoted.
+- **Raw-vs-normalized accounting** preserved end to end, so identity-less
+  provider records are visible source-quality evidence rather than a silently
+  smaller denominator.
+- **Overlap analysis with no invented thresholds** — an evidence matrix with raw
+  coordinate distances, many-to-many ambiguity clusters, and a union that is
+  simply not estimated unless a labelled PROVISIONAL heuristic is configured.
+- Two descriptors carrying the official-documentation facts of §A, with
+  `verifiedBy: "external_review"` attribution asserted by test.
 - The Dubai probe input builder, plus one measured finding (0/30 coordinates).
-- Gitignored artifact handling and secret redaction, both tested.
-- This report.
+- Gitignored artifact handling, secret redaction, and `.env.local` loading via
+  Node's built-in `process.loadEnvFile` (no new dependency).
+- **64 deterministic tests** over hand-written synthetic fixtures.
 
 ## Exact next action
 
-**Unblock network egress to the official documentation hosts** —
-`developers.booking.com`, `developers.expediagroup.com`, `developers.google.com`
-— then complete the two descriptors from those docs. Credentials are required
-only for the run that follows.
+1. **Obtain provider credentials** (Booking token + affiliate id; Expedia API key
+   + shared secret) and **unblock egress** to `demandapi.booking.com` and
+   `api.ean.com` from whatever environment runs the bake-off.
+2. **Resolve Bali and Dubai geography** live in both providers — for Expedia,
+   including the descendant region sets needed to exceed the top-500 cap.
+3. **Establish Booking's `stars_type` enum** and each value's provenance meaning.
+4. Implement the two `TRANSPORT_BUILDERS` entries against the now-documented
+   endpoints, flip each descriptor to `verified`, and run.
 
-Nothing else in this block can proceed first, and the Coverage Engine must not
-start until it has: a source strategy chosen on evidence, a star-suitability
-verdict per provider per destination, and resolved provider geography for Bali
-and Dubai.
+The Coverage Engine must not start until this block has produced: a source
+strategy chosen on evidence, a star-suitability **verdict** per provider per
+destination, and resolved provider geography for both destinations.

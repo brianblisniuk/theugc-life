@@ -131,6 +131,7 @@ export async function paginateAll<T>(
       totalRecords: records.length,
       method: options.method,
       documentedHardCap: options.documentedHardCap ?? null,
+      reportedTotal,
       exhaustionProven,
       coverageRisks,
     },

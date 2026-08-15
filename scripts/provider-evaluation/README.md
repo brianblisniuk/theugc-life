@@ -10,7 +10,10 @@ anything, and is not imported by the application.**
 
 ## Current status
 
-Both provider adapters are **UNVERIFIED** and therefore refuse to run. See
+Both provider adapters are **PARTIALLY VERIFIED** — their endpoints, auth,
+pagination and field paths are recorded from official documentation, but each
+still has named gaps (Booking's `stars_type` enum; both providers' Bali/Dubai
+geography ids) and neither has credentials. They therefore refuse to run. See
 [`docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](../../docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
 
 ## Commands
@@ -28,9 +31,14 @@ npx tsx scripts/provider-evaluation/run.ts --provider booking --destination bali
 
 ## Why a provider run refuses
 
-`adapters/registry.ts` gates execution on the descriptor being verified against
-official documentation: a static-content endpoint, a pagination method, field
-paths, star semantics, accepted star kinds and resolved provider geography.
+**Not** because extraction is unimplemented — the full pipeline (auth →
+exhaustive pagination → raw-count evidence → normalize → metrics → gitignored
+artifacts) lives in `execute.ts` and is tested end to end.
+
+`adapters/registry.ts` gates execution on the descriptor being complete: a
+static-content endpoint, a pagination method, field paths (including explicit
+`starValue`, `starKind` and `reviewScore`), star semantics, accepted star kinds
+and resolved provider geography. Credentials are checked before any request.
 
 This is the point of the design. Guessed field paths do not crash — they read
 `undefined` and report "coordinate coverage 0%, star coverage 0%" for a provider
@@ -56,8 +64,13 @@ Two rules that are easy to break:
 
 ## Credentials
 
-Set these in `.env.local` (gitignored). Names only ever appear in output;
-values are redacted everywhere (`redact.ts`).
+Put these in **`.env.local`** (gitignored) — the CLI loads it automatically via
+Node's built-in `process.loadEnvFile`, so no dependency is involved. Exported
+environment variables take precedence over the file, so an explicit
+`EXPEDIA_RAPID_API_KEY=… npx tsx …` still wins.
+
+Names only ever appear in output; values are redacted everywhere (`redact.ts`)
+and are never printed, logged or written to an artifact.
 
 | Provider | Variables                                              |
 | -------- | ------------------------------------------------------ |

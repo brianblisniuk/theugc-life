@@ -1,18 +1,17 @@
 /**
  * Adapter registry and the runnability gate.
  *
- * `assertRunnable` is the integrity mechanism of this whole harness. A provider
- * descriptor may only execute once its field map and star semantics have been
- * filled in FROM OFFICIAL DOCUMENTATION. Until then the harness refuses to run
- * that provider rather than producing metrics from guessed field paths.
+ * `assertRunnable` is the integrity mechanism of this harness. A provider
+ * descriptor may only execute once the facts the pipeline actually reads have
+ * been established FROM OFFICIAL DOCUMENTATION.
  *
- * This matters more than it looks. Guessed paths do not crash — they silently
- * read `undefined`, and the harness would cheerfully report "coordinate coverage
- * 0%, star coverage 0%" for a provider that supplies both. That output is
- * indistinguishable from a measured result, and it would be used to choose a
+ * This matters more than it looks. Guessed paths do not crash — they read
+ * `undefined`, and the harness would cheerfully report "coordinate coverage 0%,
+ * star coverage 0%" for a provider that supplies both. That output is
+ * indistinguishable from a measurement, and it would be used to choose a
  * provider.
  */
-import type { AdapterDescriptor } from "../types";
+import type { AdapterDescriptor, EvaluationDestination } from "../types";
 import { bookingDemandDescriptor } from "./booking";
 import { expediaRapidDescriptor } from "./expedia";
 
@@ -39,16 +38,28 @@ export interface RunnabilityProblem {
   reasons: string[];
 }
 
-export function checkRunnable(descriptor: AdapterDescriptor): RunnabilityProblem | null {
+/**
+ * Check whether a descriptor may run, optionally for a specific destination.
+ *
+ * Destination-scoped because geography is resolved per destination: a descriptor
+ * can legitimately be ready for Dubai and not for Bali.
+ */
+export function checkRunnable(
+  descriptor: AdapterDescriptor,
+  destination?: EvaluationDestination,
+): RunnabilityProblem | null {
   const reasons: string[] = [];
 
   if (descriptor.documentationStatus !== "verified") {
     reasons.push(
-      "Adapter descriptor is UNVERIFIED: its endpoints, pagination and field map have not been confirmed against the provider's official documentation.",
+      `Adapter descriptor is ${descriptor.documentationStatus.toUpperCase()}: not every fact the pipeline reads has been confirmed against official documentation.`,
     );
   }
   if (descriptor.sources.length === 0) {
     reasons.push("No official documentation sources recorded.");
+  }
+  if (!descriptor.baseUrl) {
+    reasons.push("No API base URL recorded.");
   }
   if (!descriptor.staticContentEndpoint) {
     reasons.push(
@@ -58,23 +69,52 @@ export function checkRunnable(descriptor: AdapterDescriptor): RunnabilityProblem
   if (!descriptor.pagination) {
     reasons.push("No pagination method recorded; exhaustion could not be proven.");
   }
+
   for (const key of REQUIRED_FIELD_MAP_KEYS) {
     if (!descriptor.fieldMap[key]) {
       reasons.push(`Field map is missing a verified path for "${key}".`);
     }
   }
-  if (!descriptor.starSemantics) {
+
+  // Star paths are required explicitly. `starValue` must be mapped, and the
+  // qualifier must either be mapped or documented as absent — never inferred
+  // from a naming convention.
+  if (!descriptor.fieldMap.starValue) {
+    reasons.push('Field map is missing a verified path for "starValue" (D060).');
+  }
+  if (!descriptor.fieldMap.starKind && !descriptor.starKindDocumentedAbsent) {
+    reasons.push(
+      'Field map has no "starKind" path and the provider is not documented as supplying none. ' +
+        "A star qualifier must be mapped explicitly or its absence documented; it is never derived from a naming convention.",
+    );
+  }
+  // `null` means "documented as not supplied" and is acceptable; `undefined`
+  // means "nobody has established this yet" and is not. Conflating them would
+  // let an unknown quietly pass as a finding.
+  if (descriptor.fieldMap.reviewScore === undefined) {
+    reasons.push(
+      'Field map has no "reviewScore" entry. Map it so the harness can prove a guest-review score is never read as a classification, or set it explicitly to null if the provider is documented to supply none.',
+    );
+  }
+
+  if (descriptor.starSemantics.length === 0) {
     reasons.push("Star semantics have not been established (D060).");
   }
-  if (descriptor.starKindsAcceptedAsD060Evidence.length === 0) {
+  if (
+    descriptor.starKindsAcceptedAsD060Evidence.length === 0 &&
+    !descriptor.starKindDocumentedAbsent
+  ) {
     reasons.push(
       "No star `kind` values have been accepted as D060 evidence. A field named `stars` is not automatically a hospitality classification.",
     );
   }
+
   if (descriptor.geography.length === 0) {
     reasons.push(
       "Provider geography for Bali/Dubai has not been resolved. A destination must be resolved, never assumed.",
     );
+  } else if (destination && !descriptor.geography.some((g) => g.destination === destination)) {
+    reasons.push(`Provider geography for "${destination}" has not been resolved.`);
   }
 
   reasons.push(...descriptor.blockers);
@@ -82,13 +122,16 @@ export function checkRunnable(descriptor: AdapterDescriptor): RunnabilityProblem
   return reasons.length > 0 ? { provider: descriptor.provider, reasons } : null;
 }
 
-export function assertRunnable(descriptor: AdapterDescriptor): void {
-  const problem = checkRunnable(descriptor);
+export function assertRunnable(
+  descriptor: AdapterDescriptor,
+  destination?: EvaluationDestination,
+): void {
+  const problem = checkRunnable(descriptor, destination);
   if (problem) {
     throw new Error(
       `Provider "${problem.provider}" cannot be evaluated yet:\n` +
         problem.reasons.map((r) => `  - ${r}`).join("\n") +
-        "\n\nThis is deliberate. Fill the descriptor in from official documentation first;\n" +
+        "\n\nThis is deliberate. Establish the missing facts from official documentation first;\n" +
         "running with an unverified field map would produce numbers that look measured.",
     );
   }

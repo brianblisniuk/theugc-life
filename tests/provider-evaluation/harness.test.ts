@@ -11,6 +11,8 @@
  * classification, a leaked credential — rather than the ones that would crash.
  */
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -25,9 +27,12 @@ import {
   getAdapter,
 } from "../../scripts/provider-evaluation/adapters/registry";
 import { checkCredentials } from "../../scripts/provider-evaluation/credentials";
+import { LOCAL_ENV_FILE, loadLocalEnv } from "../../scripts/provider-evaluation/env";
+import { executeEvaluation } from "../../scripts/provider-evaluation/execute";
 import { computeMetrics } from "../../scripts/provider-evaluation/metrics";
 import {
   buildStarObservation,
+  classifyStarEligibility,
   hasValidCoordinates,
   isD060Evidence,
   normalizeAll,
@@ -35,10 +40,12 @@ import {
 } from "../../scripts/provider-evaluation/normalize";
 import {
   analyseOverlap,
-  classifyPair,
+  buildClusters,
+  hasAnyEvidence,
+  NO_HEURISTIC,
   normalizeDomain,
   normalizeName,
-  scorePair,
+  observePair,
 } from "../../scripts/provider-evaluation/overlap";
 import { paginateAll } from "../../scripts/provider-evaluation/paginate";
 import { buildProbeEntries } from "../../scripts/provider-evaluation/pilot-probe";
@@ -65,8 +72,11 @@ const SYNTHETIC: AdapterDescriptor = {
   provider: "synthetic",
   displayName: "Synthetic test provider",
   documentationStatus: "verified",
-  sources: [{ url: "https://example.invalid/docs", accessedAt: "2026-08-15" }],
+  sources: [
+    { url: "https://example.invalid/docs", accessedAt: "2026-08-15", verifiedBy: "claude_code" },
+  ],
   requiredCredentialEnvVars: ["SYNTHETIC_API_KEY"],
+  baseUrl: "https://example.invalid",
   staticContentEndpoint: "/static/properties",
   usesAvailabilityEndpointForCoverage: false,
   pagination: {
@@ -85,30 +95,41 @@ const SYNTHETIC: AdapterDescriptor = {
     brand: "brand.name",
     chain: "chain.name",
     websiteUrl: "urls.website",
+    phone: "contact.phone",
     providerContact: "contact.email",
-    star: "rating.stars",
+    starValue: "rating.stars",
     starKind: "rating.stars_kind",
     reviewScore: "rating.guest_score",
     photos: "images",
     heroImage: "hero",
     activeStatus: "status",
-  } as AdapterDescriptor["fieldMap"],
-  starSemantics: {
-    provider: "synthetic",
-    destination: "global",
-    fieldName: "rating.stars",
-    documentedSemantics: "Hospitality classification where kind=official.",
-    isHospitalityClassification: true,
-    issuer: "National tourism authority",
-    origin: "official_authority",
-    scale: "1-5 integers",
-    refreshBehaviour: "monthly",
-    provenanceAvailableToUs: true,
-    observedConflicts: [],
-    verdict: "suitable",
-    sources: [{ url: "https://example.invalid/docs/stars", accessedAt: "2026-08-15" }],
   },
+  starSemantics: [
+    {
+      provider: "synthetic",
+      destination: "global",
+      fieldName: "rating.stars",
+      documentedSemantics: "Hospitality classification where kind=official.",
+      isHospitalityClassification: true,
+      issuer: "National tourism authority",
+      origin: "official_authority",
+      scale: "1-5 including halves",
+      refreshBehaviour: "monthly",
+      provenanceAvailableToUs: true,
+      observedConflicts: [],
+      verdict: "suitable",
+      sources: [
+        {
+          url: "https://example.invalid/docs/stars",
+          accessedAt: "2026-08-15",
+          verifiedBy: "claude_code",
+        },
+      ],
+    },
+  ],
   starKindsAcceptedAsD060Evidence: ["official"],
+  starKindDocumentedAbsent: false,
+  hospitalityPropertyTypes: ["hotel", "resort", "villa"],
   geography: [
     {
       destination: "bali",
@@ -119,6 +140,17 @@ const SYNTHETIC: AdapterDescriptor = {
       caveats: [],
     },
   ],
+  operations: {
+    paginationMethod: "cursor",
+    stablePropertyIds: true,
+    updateMechanism: "delta endpoint",
+    closedOrInactiveSupport: "status field",
+    documentedRefreshCadence: "daily",
+    documentedRateLimits: "10 rps",
+    credentialLevelRequired: "api key",
+    sandboxVsProductionNotes: null,
+  },
+  media: { documentedUsageConstraints: ["synthetic: none"] },
   blockers: [],
 };
 
@@ -131,7 +163,7 @@ function payload(over: Record<string, unknown> = {}): Record<string, unknown> {
     brand: { name: "TestBrand" },
     chain: { name: "TestChain" },
     urls: { website: "https://test-property.example" },
-    contact: { email: "reservations@test-property.example" },
+    contact: { email: "reservations@test-property.example", phone: "+971 4 123 4567" },
     rating: { stars: 5, stars_kind: "official", guest_score: 9.1 },
     images: ["a.jpg", "b.jpg", "c.jpg"],
     hero: "a.jpg",
@@ -146,6 +178,7 @@ const EVIDENCE: PaginationEvidence = {
   totalRecords: 1,
   method: "cursor",
   documentedHardCap: null,
+  reportedTotal: null,
   exhaustionProven: true,
   coverageRisks: [],
 };
@@ -216,7 +249,7 @@ describe("pagination is exhaustive, and says so honestly", () => {
 });
 
 describe("normalization keeps stars and review scores apart", () => {
-  it("reads a star classification and its kind", () => {
+  it("reads a star classification and its explicitly mapped kind", () => {
     const star = buildStarObservation(payload(), SYNTHETIC);
     expect(star.value).toBe(5);
     expect(star.kind).toBe("official");
@@ -230,6 +263,32 @@ describe("normalization keeps stars and review scores apart", () => {
     expect(star.value).toBeNull();
     expect(star.reviewScore).toBe(4.7);
     expect(isD060Evidence(star, SYNTHETIC)).toBe(false);
+  });
+
+  it("NEVER invents a star-kind path from a naming convention", () => {
+    // The descriptor is otherwise verified but maps no starKind. An earlier
+    // version derived `${fieldName}_type`; that guessed path is gone, so the
+    // qualifier must read as null even though `rating.stars_kind` exists in the
+    // payload and would have been found by the old convention.
+    const noKindPath: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, starKind: undefined },
+    };
+    const star = buildStarObservation(payload(), noKindPath);
+    expect(star.kind).toBeNull();
+    expect(isD060Evidence(star, noKindPath)).toBe(false);
+  });
+
+  it("accepts a value without a kind ONLY when absence is documented", () => {
+    const documentedAbsent: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, starKind: null },
+      starKindDocumentedAbsent: true,
+      starKindsAcceptedAsD060Evidence: [],
+    };
+    const star = buildStarObservation(payload(), documentedAbsent);
+    expect(star.kind).toBeNull();
+    expect(isD060Evidence(star, documentedAbsent)).toBe(true);
   });
 
   it("rejects a star value whose kind is not accepted evidence", () => {
@@ -247,28 +306,23 @@ describe("normalization keeps stars and review scores apart", () => {
     expect(isD060Evidence(star, noKinds)).toBe(false);
   });
 
-  it("drops records with no provider id, since they cannot be counted or matched", () => {
-    const records = normalizeAll([payload(), payload({ id: null })], SYNTHETIC, "bali");
-    expect(records).toHaveLength(1);
-  });
-
   it("reads missing paths as null rather than throwing", () => {
     expect(readPath(payload(), "nope.not.here")).toBeNull();
     expect(readPath(null, "a.b")).toBeNull();
   });
 
   it("treats 0,0 and out-of-range coordinates as invalid", () => {
-    const [ok] = normalizeAll([payload()], SYNTHETIC, "bali");
-    const [nullIsland] = normalizeAll(
+    const ok = normalizeAll([payload()], SYNTHETIC, "bali").records[0];
+    const nullIsland = normalizeAll(
       [payload({ id: "p2", location: { lat: 0, lon: 0 } })],
       SYNTHETIC,
       "bali",
-    );
-    const [outOfRange] = normalizeAll(
+    ).records[0];
+    const outOfRange = normalizeAll(
       [payload({ id: "p3", location: { lat: 99, lon: 200 } })],
       SYNTHETIC,
       "bali",
-    );
+    ).records[0];
 
     expect(ok && hasValidCoordinates(ok)).toBe(true);
     expect(nullIsland && hasValidCoordinates(nullIsland)).toBe(false);
@@ -276,34 +330,98 @@ describe("normalization keeps stars and review scores apart", () => {
   });
 });
 
-describe("metrics", () => {
-  it("counts an unusable star kind as unknown, never as a lower band", () => {
-    // The distinction D061 insists on: "classification unknown" is a review
-    // state; "confirmed 3-star" is out of scope. Collapsing them deletes hotels.
-    const records = normalizeAll(
+describe("D060 requires EXACTLY 4 or 5", () => {
+  function eligibilityOf(stars: number | null): string {
+    const rating = stars === null ? { stars_kind: "official" } : { stars, stars_kind: "official" };
+    return classifyStarEligibility(buildStarObservation(payload({ rating }), SYNTHETIC), SYNTHETIC);
+  }
+
+  it("resolves exact 4 and exact 5", () => {
+    expect(eligibilityOf(4)).toBe("exact_four");
+    expect(eligibilityOf(5)).toBe("exact_five");
+  });
+
+  it("does NOT round a half-star into an eligible band", () => {
+    // Expedia's content documentation supports 3.5 and 4.5. A 4.5-star property
+    // has a real classification that is neither exactly 4 nor exactly 5.
+    expect(eligibilityOf(4.5)).toBe("classified_not_v1_scope");
+    expect(eligibilityOf(3.5)).toBe("classified_not_v1_scope");
+  });
+
+  it("treats a genuine 3-star as classified-but-out-of-scope, not unresolved", () => {
+    expect(eligibilityOf(3)).toBe("classified_not_v1_scope");
+  });
+
+  it("treats a missing value as unresolved, never as out of scope", () => {
+    // D061: "classification unknown" and "confirmed 3-star" are different facts.
+    expect(eligibilityOf(null)).toBe("unresolved");
+  });
+
+  it("does not coerce an unexpected scale", () => {
+    // A 10-point scale means we are misreading the field. Say so; do not clamp.
+    expect(eligibilityOf(9)).toBe("unresolved");
+    expect(eligibilityOf(0)).toBe("unresolved");
+    expect(eligibilityOf(-1)).toBe("unresolved");
+  });
+
+  it("counts half-stars separately from both eligible and unresolved buckets", () => {
+    const { records, accounting } = normalizeAll(
       [
         payload({ id: "a", rating: { stars: 5, stars_kind: "official" } }),
         payload({ id: "b", rating: { stars: 4, stars_kind: "official" } }),
-        payload({ id: "c", rating: { stars: 3, stars_kind: "official" } }),
-        payload({ id: "d", rating: { stars: 5, stars_kind: "guessed" } }),
-        payload({ id: "e", rating: { guest_score: 9.9 } }),
+        payload({ id: "c", rating: { stars: 4.5, stars_kind: "official" } }),
+        payload({ id: "d", rating: { stars: 3.5, stars_kind: "official" } }),
+        payload({ id: "e", rating: { stars: 5, stars_kind: "guessed" } }),
+        payload({ id: "f", rating: { guest_score: 9.9 } }),
       ],
       SYNTHETIC,
       "bali",
     );
 
-    const metrics = computeMetrics(records, SYNTHETIC, "bali", EVIDENCE);
+    const metrics = computeMetrics(records, accounting, SYNTHETIC, "bali", EVIDENCE);
 
-    expect(metrics.inventory.apparentFiveStar).toBe(1);
-    expect(metrics.inventory.apparentFourStar).toBe(1);
-    expect(metrics.inventory.apparentLowerStar).toBe(1);
-    expect(metrics.inventory.unknownStar).toBe(2);
-    expect(metrics.fieldCoverage.starFieldPct).toBe(80);
-    expect(metrics.fieldCoverage.starSuitableForD060Pct).toBe(60);
+    expect(metrics.inventory.apparentExactFiveStar).toBe(1);
+    expect(metrics.inventory.apparentExactFourStar).toBe(1);
+    expect(metrics.inventory.classifiedNotV1Scope).toBe(2); // 4.5 and 3.5
+    expect(metrics.inventory.unresolvedStar).toBe(2); // unusable kind, no value
+    // The raw value distribution keeps an unexpected scale visible.
+    expect(metrics.inventory.starValueDistribution["4.5"]).toBe(1);
+  });
+});
+
+describe("metrics preserve the raw-vs-normalized accounting", () => {
+  it("never reports the surviving count as the raw count", () => {
+    // Two of five provider records have no id. That is source-quality evidence
+    // and must not vanish before the denominator is explained.
+    const payloads = [
+      payload({ id: "a" }),
+      payload({ id: null }),
+      payload({ id: "b" }),
+      payload({ id: undefined }),
+      payload({ id: "c" }),
+    ];
+    const { records, accounting } = normalizeAll(payloads, SYNTHETIC, "bali");
+
+    expect(accounting.rawRecordsReturned).toBe(5);
+    expect(accounting.normalizedRecords).toBe(3);
+    expect(accounting.recordsMissingSourcePropertyId).toBe(2);
+    expect(accounting.otherNormalizationRejects).toBe(0);
+
+    const metrics = computeMetrics(records, accounting, SYNTHETIC, "bali", EVIDENCE);
+    expect(metrics.accounting.rawRecordsReturned).toBe(5);
+    expect(metrics.accounting.normalizedRecords).toBe(3);
+  });
+
+  it("reports duplicate provider ids rather than hiding them", () => {
+    const { records, accounting } = normalizeAll([payload(), payload()], SYNTHETIC, "bali");
+    expect(accounting.rawRecordsReturned).toBe(2);
+    expect(accounting.uniqueSourcePropertyIds).toBe(1);
+    expect(accounting.duplicateIdRecords).toBe(1);
+    expect(records).toHaveLength(2);
   });
 
   it("computes field coverage and photo statistics", () => {
-    const records = normalizeAll(
+    const { records, accounting } = normalizeAll(
       [
         payload({ id: "a", images: ["1.jpg"] }),
         payload({ id: "b", images: ["1.jpg", "2.jpg", "3.jpg"] }),
@@ -313,26 +431,36 @@ describe("metrics", () => {
       "bali",
     );
 
-    const metrics = computeMetrics(records, SYNTHETIC, "bali", EVIDENCE);
+    const metrics = computeMetrics(records, accounting, SYNTHETIC, "bali", EVIDENCE);
 
-    expect(metrics.inventory.totalRawRecords).toBe(3);
     expect(metrics.fieldCoverage.photoPct).toBeCloseTo(66.67, 1);
     expect(metrics.fieldCoverage.medianPhotosPerProperty).toBe(1);
     expect(metrics.fieldCoverage.averagePhotosPerProperty).toBeCloseTo(1.33, 1);
     expect(metrics.fieldCoverage.websitePct).toBeCloseTo(66.67, 1);
     expect(metrics.fieldCoverage.validCoordinatesPct).toBe(100);
+    expect(metrics.fieldCoverage.phonePct).toBe(100);
   });
 
-  it("reports duplicate provider ids rather than hiding them", () => {
-    const records = normalizeAll([payload(), payload()], SYNTHETIC, "bali");
-    const metrics = computeMetrics(records, SYNTHETIC, "bali", EVIDENCE);
-    expect(metrics.inventory.totalRawRecords).toBe(2);
-    expect(metrics.inventory.uniqueSourcePropertyIds).toBe(1);
-    expect(metrics.inventory.duplicateIdRecords).toBe(1);
+  it("returns null hospitality count when the type mapping is unestablished", () => {
+    const noTypes = { ...SYNTHETIC, hospitalityPropertyTypes: [] };
+    const { records, accounting } = normalizeAll([payload()], noTypes, "bali");
+    const metrics = computeMetrics(records, accounting, noTypes, "bali", EVIDENCE);
+    // Guessing which provider categories are "hospitality" would prejudge D060.
+    expect(metrics.inventory.apparentPhysicalHospitalityProperties).toBeNull();
+  });
+
+  it("counts hospitality properties once the type mapping is documented", () => {
+    const { records, accounting } = normalizeAll(
+      [payload({ id: "a", type: "hotel" }), payload({ id: "b", type: "office" })],
+      SYNTHETIC,
+      "bali",
+    );
+    const metrics = computeMetrics(records, accounting, SYNTHETIC, "bali", EVIDENCE);
+    expect(metrics.inventory.apparentPhysicalHospitalityProperties).toBe(1);
   });
 });
 
-describe("overlap analysis is conservative", () => {
+describe("overlap analysis records evidence and invents no thresholds", () => {
   function record(over: Partial<EvaluationRecord>): EvaluationRecord {
     return {
       provider: "a",
@@ -346,6 +474,7 @@ describe("overlap analysis is conservative", () => {
       brand: null,
       chain: null,
       websiteUrl: null,
+      phone: null,
       providerContact: null,
       star: { value: 5, kind: "official", reviewScore: null },
       photoCount: 0,
@@ -355,62 +484,172 @@ describe("overlap analysis is conservative", () => {
     };
   }
 
-  it("does not merge on name similarity alone", () => {
-    const verdict = classifyPair(
-      scorePair(
-        record({ latitude: null, longitude: null }),
-        record({ provider: "b", latitude: null, longitude: null }),
-      ),
+  it("records raw coordinate distance instead of bucketing it", () => {
+    const evidence = observePair(
+      record({}),
+      record({ provider: "b", latitude: 25.201, longitude: 55.27 }),
     );
-    expect(verdict).toBe("ambiguous");
+    expect(evidence.bothCoordinatesPresent).toBe(true);
+    expect(evidence.coordinateDistanceMetres).toBeGreaterThan(0);
+    expect(evidence.coordinateDistanceMetres).toBeLessThan(200);
+    // No verdict field exists on the evidence at all.
+    expect(Object.keys(evidence)).not.toContain("verdict");
   });
 
-  it("accepts a pair only when two independent signals agree", () => {
-    const a = record({ websiteUrl: "https://www.hotel-one.example/rooms" });
-    const b = record({ provider: "b", websiteUrl: "https://hotel-one.example" });
-    expect(classifyPair(scorePair(a, b))).toBe("high_confidence");
+  it("reports null distance when coordinates are missing", () => {
+    const evidence = observePair(
+      record({ latitude: null, longitude: null }),
+      record({ provider: "b" }),
+    );
+    expect(evidence.bothCoordinatesPresent).toBe(false);
+    expect(evidence.coordinateDistanceMetres).toBeNull();
+    // Name still agrees, so the pair is still worth a human's attention.
+    expect(hasAnyEvidence(evidence)).toBe(true);
   });
 
-  it("lets a coordinate contradiction veto a name+domain match", () => {
-    // Same brand name and domain, 100km apart: two different properties, and a
-    // merge here would weld one hotel's history onto another.
-    const a = record({ websiteUrl: "https://chain.example" });
-    const b = record({
-      provider: "b",
-      websiteUrl: "https://chain.example",
-      latitude: 26.1,
-      longitude: 56.2,
-    });
-    expect(classifyPair(scorePair(a, b))).toBe("no_match");
+  it("declines to estimate a union without a configured heuristic", () => {
+    const analysis = analyseOverlap(
+      "dubai",
+      [record({ sourcePropertyId: "a1" })],
+      [record({ provider: "b", sourcePropertyId: "b1" })],
+    );
+    expect(analysis.estimatedUnionBeforeResolution).toBeNull();
+    expect(analysis.notes.join(" ")).toContain("falsely precise");
   });
 
-  it("counts provider-only records and a union that assumes nothing", () => {
+  it("estimates a union only when a PROVISIONAL heuristic is supplied, and labels it", () => {
+    const analysis = analyseOverlap(
+      "dubai",
+      [record({ sourcePropertyId: "a1" })],
+      [record({ provider: "b", sourcePropertyId: "b1" })],
+      {
+        coordinatesAgreeWithinMetres: 150,
+        coordinatesContradictBeyondMetres: 2000,
+        minimumAgreeingSignals: 2,
+      },
+    );
+    expect(analysis.estimatedUnionBeforeResolution).toBe(1);
+    expect(analysis.notes.join(" ")).toContain("PROVISIONAL EVALUATION HEURISTIC");
+    expect(analysis.notes.join(" ")).toContain("NOT canonical matching policy");
+  });
+
+  it("treats one A matching two B records as an ambiguity cluster, not one overlap", () => {
+    const a = [record({ sourcePropertyId: "a1", name: "Grand Hotel" })];
+    const b = [
+      record({ provider: "b", sourcePropertyId: "b1", name: "Grand Hotel" }),
+      record({ provider: "b", sourcePropertyId: "b2", name: "Grand Hotel" }),
+    ];
+
+    const analysis = analyseOverlap("dubai", a, b, NO_HEURISTIC);
+
+    expect(analysis.oneToOneCandidatePairs).toBe(0);
+    expect(analysis.ambiguityClusters).toHaveLength(1);
+    expect(analysis.ambiguityClusters[0]?.aIds).toEqual(["a1"]);
+    expect(analysis.ambiguityClusters[0]?.bIds.sort()).toEqual(["b1", "b2"]);
+  });
+
+  it("treats two A records matching one B as an ambiguity cluster", () => {
     const a = [
-      record({ sourcePropertyId: "a1", websiteUrl: "https://one.example" }),
-      record({ sourcePropertyId: "a2", name: "Solo A", latitude: 25.4, longitude: 55.5 }),
+      record({ sourcePropertyId: "a1", name: "Grand Hotel" }),
+      record({ sourcePropertyId: "a2", name: "Grand Hotel" }),
+    ];
+    const b = [record({ provider: "b", sourcePropertyId: "b1", name: "Grand Hotel" })];
+
+    const analysis = analyseOverlap("dubai", a, b, NO_HEURISTIC);
+
+    expect(analysis.oneToOneCandidatePairs).toBe(0);
+    expect(analysis.ambiguityClusters).toHaveLength(1);
+    expect(analysis.ambiguityClusters[0]?.aIds.sort()).toEqual(["a1", "a2"]);
+  });
+
+  it("does not collapse a shared chain domain across distinct physical properties", () => {
+    // Three properties of one chain share a domain. That is one weak signal
+    // linking six records, not three clean overlaps.
+    const a = [
+      record({ sourcePropertyId: "a1", name: "Chain Marina", websiteUrl: "https://chain.example" }),
+      record({
+        sourcePropertyId: "a2",
+        name: "Chain Downtown",
+        websiteUrl: "https://chain.example",
+      }),
     ];
     const b = [
       record({
         provider: "b",
         sourcePropertyId: "b1",
-        websiteUrl: "https://one.example",
+        name: "Chain Marina Hotel",
+        websiteUrl: "https://chain.example",
       }),
       record({
         provider: "b",
         sourcePropertyId: "b2",
-        name: "Solo B",
-        latitude: 25.9,
-        longitude: 55.9,
+        name: "Chain Downtown Hotel",
+        websiteUrl: "https://chain.example",
       }),
     ];
 
-    const analysis = analyseOverlap("dubai", a, b);
+    const analysis = analyseOverlap("dubai", a, b, NO_HEURISTIC);
 
-    expect(analysis.highConfidenceOverlap).toBe(1);
-    expect(analysis.aOnly).toBe(1);
-    expect(analysis.bOnly).toBe(1);
-    // 2 + 2 - 1 matched = 3 distinct candidates before human resolution.
-    expect(analysis.estimatedUnionBeforeResolution).toBe(3);
+    expect(analysis.oneToOneCandidatePairs).toBe(0);
+    expect(analysis.ambiguityClusters).toHaveLength(1);
+    expect(analysis.ambiguityClusters[0]?.aIds).toHaveLength(2);
+    expect(analysis.ambiguityClusters[0]?.bIds).toHaveLength(2);
+  });
+
+  it("keeps identical names at different coordinates as evidence with the distance recorded", () => {
+    // Two genuinely different "Beach Resort" properties 100km apart. With no
+    // heuristic configured nothing is vetoed — the distance is the evidence, and
+    // a human decides.
+    const a = [record({ sourcePropertyId: "a1", name: "Beach Resort" })];
+    const b = [
+      record({
+        provider: "b",
+        sourcePropertyId: "b1",
+        name: "Beach Resort",
+        latitude: 26.1,
+        longitude: 56.2,
+      }),
+    ];
+
+    const analysis = analyseOverlap("dubai", a, b, NO_HEURISTIC);
+    expect(analysis.evidencePairs).toHaveLength(1);
+    expect(analysis.evidencePairs[0]?.coordinateDistanceMetres).toBeGreaterThan(100_000);
+
+    // With a provisional heuristic that defines a contradiction, it is vetoed.
+    const withHeuristic = analyseOverlap("dubai", a, b, {
+      coordinatesAgreeWithinMetres: 150,
+      coordinatesContradictBeyondMetres: 2000,
+      minimumAgreeingSignals: 2,
+    });
+    expect(withHeuristic.evidencePairs).toHaveLength(0);
+  });
+
+  it("counts records with no evidence at all", () => {
+    const a = [record({ sourcePropertyId: "a1", name: "Alpha" })];
+    const b = [record({ provider: "b", sourcePropertyId: "b1", name: "Omega" })];
+    const analysis = analyseOverlap("dubai", a, b, NO_HEURISTIC);
+    expect(analysis.evidencePairs).toHaveLength(0);
+    expect(analysis.aWithNoEvidence).toBe(1);
+    expect(analysis.bWithNoEvidence).toBe(1);
+  });
+
+  it("builds clean 1:1 pairs only when neither side is entangled", () => {
+    const pairs = [
+      { aId: "a1", bId: "b1" },
+      { aId: "a2", bId: "b2" },
+    ].map((p) => ({
+      ...p,
+      exactNormalizedNameAgrees: true,
+      websiteDomainAgrees: false,
+      brandAgrees: false,
+      phoneAgrees: false,
+      addressEvidenceAvailable: false,
+      bothCoordinatesPresent: false,
+      coordinateDistanceMetres: null,
+    }));
+    const { oneToOne, clusters } = buildClusters(pairs);
+    expect(oneToOne).toHaveLength(2);
+    expect(clusters).toHaveLength(0);
   });
 
   it("normalizes names and domains for comparison only", () => {
@@ -420,22 +659,175 @@ describe("overlap analysis is conservative", () => {
   });
 });
 
+describe("the execution pipeline runs end to end", () => {
+  it("paginates, accounts, normalizes and computes metrics", async () => {
+    // Three pages of synthetic provider payloads, including one identity-less
+    // record, exercised through the real pipeline.
+    const pages: unknown[][] = [
+      [payload({ id: "p1", rating: { stars: 5, stars_kind: "official" } })],
+      [payload({ id: "p2", rating: { stars: 4, stars_kind: "official" } }), payload({ id: null })],
+      [payload({ id: "p3", rating: { stars: 4.5, stars_kind: "official" } })],
+    ];
+
+    const result = await executeEvaluation({
+      descriptor: SYNTHETIC,
+      destination: "bali",
+      runLabel: "test",
+      transport: {
+        fetchPage: async (_entityId, cursor) => {
+          const index = cursor === null ? 0 : Number(cursor);
+          return {
+            records: pages[index] ?? [],
+            nextCursor: index + 1 < pages.length ? String(index + 1) : null,
+          };
+        },
+      },
+    });
+
+    expect(result.metrics.pagination.pages).toBe(3);
+    expect(result.metrics.pagination.exhaustionProven).toBe(true);
+    expect(result.metrics.accounting.rawRecordsReturned).toBe(4);
+    expect(result.metrics.accounting.normalizedRecords).toBe(3);
+    expect(result.metrics.accounting.recordsMissingSourcePropertyId).toBe(1);
+    expect(result.metrics.inventory.apparentExactFiveStar).toBe(1);
+    expect(result.metrics.inventory.apparentExactFourStar).toBe(1);
+    expect(result.metrics.inventory.classifiedNotV1Scope).toBe(1);
+    expect(result.media.propertiesWithAnyImage).toBe(3);
+    expect(result.operations.paginationMethod).toBe("cursor");
+    expect(result.coverageDisclaimer).toContain("NOT a coverage claim");
+    // Artifacts are written under the gitignored root.
+    expect(result.artifacts.every((p) => p.includes("provider-evaluation"))).toBe(true);
+  });
+
+  it("unions several provider entities for one destination and flags the union", async () => {
+    const multi: AdapterDescriptor = {
+      ...SYNTHETIC,
+      geography: [
+        {
+          destination: "bali",
+          providerEntityIds: ["r-ubud", "r-canggu"],
+          providerEntityKind: "region",
+          resolutionMethod: "synthetic fixture",
+          requiresUnion: true,
+          caveats: ["synthetic caveat"],
+        },
+      ],
+    };
+
+    const result = await executeEvaluation({
+      descriptor: multi,
+      destination: "bali",
+      runLabel: "test",
+      transport: {
+        fetchPage: async (entityId) => ({
+          records: [payload({ id: `${entityId}-1` })],
+          nextCursor: null,
+        }),
+      },
+    });
+
+    expect(result.metrics.accounting.rawRecordsReturned).toBe(2);
+    // A destination assembled from several entities cannot claim exhaustion
+    // silently; the union and its caveats are recorded as coverage risks.
+    expect(result.metrics.pagination.exhaustionProven).toBe(false);
+    expect(result.metrics.pagination.coverageRisks.join(" ")).toContain("required a union");
+    expect(result.metrics.pagination.coverageRisks.join(" ")).toContain("synthetic caveat");
+  });
+
+  it("refuses to run a destination whose geography is unresolved", async () => {
+    await expect(
+      executeEvaluation({
+        descriptor: SYNTHETIC,
+        destination: "dubai", // synthetic descriptor resolves bali only
+        runLabel: "test",
+        transport: { fetchPage: async () => ({ records: [], nextCursor: null }) },
+      }),
+    ).rejects.toThrow(/no resolved geography/);
+  });
+});
+
 describe("the runnability gate blocks unverified descriptors", () => {
-  it("refuses Booking until its documentation is verified", () => {
+  it("refuses Booking while its stars_type enum is unestablished", () => {
     const problem = checkRunnable(bookingDemandDescriptor);
     expect(problem).not.toBeNull();
-    expect(problem?.reasons.join(" ")).toContain("UNVERIFIED");
+    expect(problem?.reasons.join(" ")).toContain("PARTIALLY_VERIFIED");
+    // The specific reason matters: a single documented example is not an enum.
+    expect(problem?.reasons.join(" ")).toContain("stars_type");
     expect(() => assertRunnable(bookingDemandDescriptor)).toThrow(/cannot be evaluated yet/);
+  });
+
+  it("refuses Expedia while its geography and star hypotheses are unconfirmed", () => {
+    const reasons = checkRunnable(expediaRapidDescriptor)?.reasons.join(" ") ?? "";
+    expect(reasons).toContain("geography");
+    expect(reasons).toContain("hypothes");
+  });
+
+  it("records Expedia's documented top-500 mapping cap so it raises a coverage risk", () => {
+    // The single most dangerous documented fact: a large-region property mapping
+    // is capped, so a one-shot region query is NOT a destination universe.
+    expect(expediaRapidDescriptor.pagination?.documentedHardCap).toBe(500);
+  });
+
+  it("keeps a broad hospitality type list rather than pre-filtering to Hotel", () => {
+    expect(expediaRapidDescriptor.hospitalityPropertyTypes).toContain("Villa");
+    expect(expediaRapidDescriptor.hospitalityPropertyTypes).toContain("Aparthotel");
+  });
+
+  it("accepts no star kind as D060 evidence for either real provider yet", () => {
+    expect(bookingDemandDescriptor.starKindsAcceptedAsD060Evidence).toEqual([]);
+    expect(expediaRapidDescriptor.starKindsAcceptedAsD060Evidence).toEqual([]);
+  });
+
+  it("issues no star verdict for either real provider, only hypotheses", () => {
+    for (const finding of [
+      ...bookingDemandDescriptor.starSemantics,
+      ...expediaRapidDescriptor.starSemantics,
+    ]) {
+      expect(finding.verdict).toBeNull();
+    }
+  });
+
+  it("attributes external-review evidence honestly", () => {
+    // Claude Code did not fetch these pages; provenance must say so.
+    for (const source of [...bookingDemandDescriptor.sources, ...expediaRapidDescriptor.sources]) {
+      expect(source.verifiedBy).toBe("external_review");
+      expect(source.accessedAt).toBe("2026-08-15");
+    }
   });
 
   it("refuses Expedia until its documentation is verified", () => {
     expect(() => assertRunnable(expediaRapidDescriptor)).toThrow(/cannot be evaluated yet/);
   });
 
-  it("names the missing star semantics explicitly, not just 'incomplete'", () => {
-    const reasons = checkRunnable(expediaRapidDescriptor)?.reasons.join(" ") ?? "";
-    expect(reasons).toContain("Star semantics have not been established");
-    expect(reasons).toContain("not automatically a hospitality classification");
+  it("accepts an explicitly null reviewScore as a documented absence", () => {
+    const documentedNone: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, reviewScore: null },
+    };
+    expect(checkRunnable(documentedNone)).toBeNull();
+  });
+
+  it("rejects an UNSET reviewScore, since unknown is not a documented absence", () => {
+    const unknown: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, reviewScore: undefined },
+    };
+    expect(checkRunnable(unknown)?.reasons.join(" ")).toContain('no "reviewScore" entry');
+  });
+
+  it("requires an explicit starKind path or a documented absence", () => {
+    const noKind: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, starKind: undefined },
+      starKindDocumentedAbsent: false,
+    };
+    const reasons = checkRunnable(noKind)?.reasons.join(" ") ?? "";
+    expect(reasons).toContain("never derived from a naming convention");
+  });
+
+  it("is destination-scoped, since geography resolves per destination", () => {
+    expect(checkRunnable(SYNTHETIC, "bali")).toBeNull();
+    expect(checkRunnable(SYNTHETIC, "dubai")?.reasons.join(" ")).toContain("dubai");
   });
 
   it("allows a fully verified descriptor through", () => {
@@ -553,5 +945,32 @@ describe("raw provider data cannot reach the repository", () => {
     const workbook = "data/imports/raw/theugc-life_Sprint1C_Dubai_Pilot_30.xlsx";
     const result = spawnSync("git", ["check-ignore", workbook], { encoding: "utf8" });
     expect(result.status).toBe(0);
+  });
+});
+
+describe("local env loading", () => {
+  it("reports when no local env file exists rather than silently doing nothing", () => {
+    const result = loadLocalEnv(mkdtempSync(join(tmpdir(), "eval-env-")));
+    expect(result.loaded).toBe(false);
+    expect(result.path).toContain(LOCAL_ENV_FILE);
+  });
+
+  it("loads variables from .env.local without overriding an exported value", () => {
+    const dir = mkdtempSync(join(tmpdir(), "eval-env-"));
+    writeFileSync(
+      join(dir, LOCAL_ENV_FILE),
+      "EVAL_TEST_FROM_FILE=file-value\nEVAL_TEST_ALREADY_SET=file-value\n",
+    );
+    process.env.EVAL_TEST_ALREADY_SET = "exported-value";
+
+    const result = loadLocalEnv(dir);
+
+    expect(result.loaded).toBe(true);
+    expect(process.env.EVAL_TEST_FROM_FILE).toBe("file-value");
+    // An explicitly exported value must win over a stale file.
+    expect(process.env.EVAL_TEST_ALREADY_SET).toBe("exported-value");
+
+    delete process.env.EVAL_TEST_FROM_FILE;
+    delete process.env.EVAL_TEST_ALREADY_SET;
   });
 });

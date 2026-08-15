@@ -1,18 +1,21 @@
 /**
  * Metric computation (brief §13, evaluation spec §4).
  *
- * Every percentage here is over the provider's returned record set for one
- * destination. None of it is a coverage-completeness claim: under D061 a
- * destination is complete only when zero coverage-critical candidates remain
- * unresolved, which no bake-off can establish.
+ * Every percentage here is over the provider's NORMALIZED records for one
+ * destination, while the raw/normalized accounting travels alongside so the
+ * denominator is always explainable. None of it is a coverage-completeness
+ * claim: under D061 a destination is complete only when zero coverage-critical
+ * candidates remain unresolved, which no bake-off can establish.
  */
-import { hasValidCoordinates, isD060Evidence } from "./normalize";
+import { classifyStarEligibility, hasValidCoordinates, isD060Evidence } from "./normalize";
 import type {
   AdapterDescriptor,
   EvaluationDestination,
   EvaluationRecord,
+  MediaEvidence,
   PaginationEvidence,
   ProviderMetrics,
+  RecordAccounting,
 } from "./types";
 
 function pct(count: number, total: number): number {
@@ -37,53 +40,78 @@ function distribution(values: (string | null)[]): Record<string, number> {
   return out;
 }
 
+/**
+ * Count physical hospitality properties, or return null.
+ *
+ * Null when the descriptor has not documented which provider property types are
+ * physical hospitality properties. D060 §2.2 makes type a real dimension —
+ * villas, aparthotels, lodges and residences can all qualify — so guessing which
+ * categories count would prejudge eligibility in exactly the direction the
+ * contract warns about.
+ */
+function countHospitality(
+  records: readonly EvaluationRecord[],
+  descriptor: AdapterDescriptor,
+): number | null {
+  if (descriptor.hospitalityPropertyTypes.length === 0) return null;
+  const accepted = new Set(descriptor.hospitalityPropertyTypes.map((t) => t.toLowerCase()));
+  return records.filter((r) => r.propertyType && accepted.has(r.propertyType.toLowerCase())).length;
+}
+
 export function computeMetrics(
   records: readonly EvaluationRecord[],
+  accounting: RecordAccounting,
   descriptor: AdapterDescriptor,
   destination: EvaluationDestination,
   pagination: PaginationEvidence,
 ): ProviderMetrics {
   const total = records.length;
-  const uniqueIds = new Set(records.map((r) => r.sourcePropertyId));
-
   const photoCounts = records.map((r) => r.photoCount);
 
-  // Star buckets. "Unknown" deliberately includes every record whose star field
-  // is absent OR whose kind is not accepted evidence — an unrecognised kind is
-  // an unresolved classification, never a demotion to a lower band (D061).
-  let four = 0;
-  let five = 0;
-  let lower = 0;
-  let unknown = 0;
-  let suitable = 0;
+  let exactFour = 0;
+  let exactFive = 0;
+  let classifiedNotV1 = 0;
+  let unresolved = 0;
+  let usableEvidence = 0;
+
+  const starValueDistribution: Record<string, number> = {};
 
   for (const record of records) {
-    const usable = isD060Evidence(record.star, descriptor);
-    if (usable) suitable += 1;
+    if (isD060Evidence(record.star, descriptor)) usableEvidence += 1;
 
-    if (!usable || record.star.value === null) {
-      unknown += 1;
-      continue;
+    // Record the raw value distribution so an unexpected scale is visible rather
+    // than silently absorbed into "unresolved".
+    const key = record.star.value === null ? "(none)" : String(record.star.value);
+    starValueDistribution[key] = (starValueDistribution[key] ?? 0) + 1;
+
+    switch (classifyStarEligibility(record.star, descriptor)) {
+      case "exact_five":
+        exactFive += 1;
+        break;
+      case "exact_four":
+        exactFour += 1;
+        break;
+      case "classified_not_v1_scope":
+        classifiedNotV1 += 1;
+        break;
+      default:
+        unresolved += 1;
     }
-    const value = record.star.value;
-    if (value >= 5) five += 1;
-    else if (value >= 4) four += 1;
-    else lower += 1;
   }
 
   return {
     provider: descriptor.provider,
     destination,
+    accounting,
     inventory: {
-      totalRawRecords: total,
-      uniqueSourcePropertyIds: uniqueIds.size,
-      duplicateIdRecords: total - uniqueIds.size,
-      apparentFourStar: four,
-      apparentFiveStar: five,
-      apparentLowerStar: lower,
-      unknownStar: unknown,
+      apparentExactFourStar: exactFour,
+      apparentExactFiveStar: exactFive,
+      classifiedNotV1Scope: classifiedNotV1,
+      unresolvedStar: unresolved,
+      starValueDistribution,
       propertyTypeDistribution: distribution(records.map((r) => r.propertyType)),
       activeStatusDistribution: distribution(records.map((r) => r.activeStatus)),
+      apparentPhysicalHospitalityProperties: countHospitality(records, descriptor),
     },
     fieldCoverage: {
       coordinatesPct: pct(
@@ -93,10 +121,11 @@ export function computeMetrics(
       validCoordinatesPct: pct(records.filter(hasValidCoordinates).length, total),
       addressPct: pct(records.filter((r) => r.address !== null).length, total),
       starFieldPct: pct(records.filter((r) => r.star.value !== null).length, total),
-      starSuitableForD060Pct: pct(suitable, total),
+      starUsableAsD060EvidencePct: pct(usableEvidence, total),
       brandPct: pct(records.filter((r) => r.brand !== null).length, total),
       chainPct: pct(records.filter((r) => r.chain !== null).length, total),
       websitePct: pct(records.filter((r) => r.websiteUrl !== null).length, total),
+      phonePct: pct(records.filter((r) => r.phone !== null).length, total),
       providerContactPct: pct(records.filter((r) => r.providerContact !== null).length, total),
       photoPct: pct(records.filter((r) => r.photoCount > 0).length, total),
       heroImagePct: pct(records.filter((r) => r.hasHeroImage).length, total),
@@ -105,5 +134,30 @@ export function computeMetrics(
       medianPhotosPerProperty: median(photoCounts),
     },
     pagination,
+  };
+}
+
+/**
+ * Media evidence (brief §13 MEDIA).
+ *
+ * Counts come from the run; category, dimension and provenance detail come from
+ * the descriptor, because whether a provider *supplies* image metadata is a
+ * documentary fact and whether we may *store* the asset is a licensing one.
+ */
+export function computeMediaEvidence(
+  records: readonly EvaluationRecord[],
+  descriptor: AdapterDescriptor,
+  categoryDistribution: Record<string, number> = {},
+  dimensionsSupplied: boolean | null = null,
+  provenanceMetadataAvailable: boolean | null = null,
+): MediaEvidence {
+  return {
+    propertiesWithAnyImage: records.filter((r) => r.photoCount > 0).length,
+    propertiesWithHeroImage: records.filter((r) => r.hasHeroImage).length,
+    totalImages: records.reduce((sum, r) => sum + r.photoCount, 0),
+    categoryDistribution,
+    dimensionsSupplied,
+    provenanceMetadataAvailable,
+    documentedUsageConstraints: descriptor.media.documentedUsageConstraints,
   };
 }
