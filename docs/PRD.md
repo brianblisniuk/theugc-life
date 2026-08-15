@@ -630,7 +630,9 @@ The implementation must preserve these decisions:
     absent photography are field states, never reasons to omit a property.
 15. Inventory coverage ≠ enrichment coverage (D061). "Do we have every eligible
     property?" and "how much do we know about each one?" are different
-    questions, measured separately and never reported as one number.
+    questions, measured separately and never reported as one number. A
+    destination is not coverage complete while any candidate in its coverage
+    universe is still unresolved.
 16. Canonical property identity is owned by theugc.life (D063). An external
     provider ID is a source identity attached to a hotel, never the hotel's
     primary key.
@@ -657,6 +659,20 @@ universe, never an input chosen by packaging. 724 eligible properties means 724.
 Nothing may be described as "top 100", "selected", "curated" or "representative"
 inventory. The 30-property Dubai set is a **technical pilot**, never Dubai
 inventory.
+
+**Coverage closure.** A destination may be called *coverage complete* only when
+**zero** candidates from its coverage universe remain unresolved on a
+coverage-critical dimension — identity, duplicates, hospitality-property status,
+destination membership, active/closed status or star classification. Published
+hotel count, coordinate coverage, photo coverage and contact coverage are all
+irrelevant to that judgement. Reporting always carries both the resolved eligible
+count and the unresolved count, and completeness is never computed over a
+denominator that excludes unresolved records (D061).
+
+**Promotion into `hotels` is publication** (D062). There is no
+canonical-but-unpublished state in V1: a promoted property **is** a publishable
+property, and a candidate that fails the conditions below stays in staging/review
+rather than entering `hotels`.
 
 **Publishable requires** resolved identity, a supported destination, a physical
 hospitality property, not-known-closed, resolved scope status, a 4-or-5 star

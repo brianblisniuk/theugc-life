@@ -33,9 +33,11 @@ shipped in migration `0026` (D057–D059); see [`docs/PRD.md`](docs/PRD.md) §5 
 **The V1 property contract is fixed and NOT implemented.** Inventory is every
 physical hospitality property with a resolved **4- or 5-star hospitality
 classification** (never a guest-review score) in each supported destination, and
-a destination's count is an **output** of its coverage universe, never a cap. A
-hotel is publishable with resolved identity, stars and coordinates — both with
-provenance — and **without** a photo, a contact or any intelligence. See
+a destination's count is an **output** of its coverage universe, never a cap.
+Promotion into `hotels` **is** publication: a hotel enters it with resolved
+identity, stars and coordinates — both with provenance — and **without** a photo,
+a contact or any intelligence. A destination is _coverage complete_ only when
+zero candidates in its universe remain unresolved. See
 [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
 (D060–D064). No provider, geocoder or ingestion is chosen; the bake-off is
 specified in

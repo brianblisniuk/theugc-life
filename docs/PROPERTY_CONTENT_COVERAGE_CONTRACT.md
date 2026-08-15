@@ -25,6 +25,8 @@ it must pass through first.
 - the difference between *coverage* completeness and *enrichment* completeness;
 - what a canonical hotel must have before it may be published;
 - what it explicitly need **not** have;
+- where the publication boundary sits (promotion into `hotels`);
+- when a destination may be called **coverage complete**;
 - how star classification is resolved and justified;
 - how external provider identities relate to canonical property identity;
 - how media is modelled and attributed;
@@ -186,8 +188,11 @@ These are two different problems and must stay first-class and separate.
 
 > *"Do we have every eligible property in the destination coverage universe?"*
 
-This is the D055 completeness problem. It is measured against the universe, never
-against a target count.
+This is the D055 completeness problem. It is measured against the **universe**,
+never against a target count and never against the subset already known to
+qualify. It cannot be answered "yes" while any candidate in that universe is
+still unresolved on a coverage-critical dimension — see **§15.1**, which is the
+operative rule.
 
 ### B. Enrichment / field completeness
 
@@ -250,11 +255,43 @@ Two states that this contract makes explicit and that must not be conflated:
 |---|---|---|
 | May be incomplete | **Yes — legitimately** | Only in the enrichment fields of §7.2 |
 | Visible to creators | No | Yes |
+| Lives in | staging / review tables | `hotels` |
 | Governed by | [`HOTEL_DATA_CONTRACT.md`](HOTEL_DATA_CONTRACT.md) | This section |
 
 Research and staging records may lack almost everything. That is the normal state
 of the pipeline before promotion, and `HOTEL_DATA_CONTRACT.md` continues to allow
-it. The strict contract binds at the **promotion boundary**.
+it.
+
+### 7.0 Promotion IS publication in V1
+
+> **Promotion into the canonical `hotels` inventory is the publication
+> boundary.** For V1 there is no canonical-but-unpublished state:
+>
+> **PROMOTED PROPERTY = CANONICAL PUBLISHABLE PROPERTY**, and **D062 is a
+> promotion precondition**.
+
+```
+source → staging → audit/review → promotion preview → human review
+       → promotion/apply → canonical publishable hotel
+```
+
+A candidate that fails any condition in §7.1 **is not promoted**. It stays in
+staging/review, where it is enriched, resolved or finally excluded. It is not
+deleted, and it is never given a fabricated coordinate or an invented star
+classification in order to pass.
+
+**No `publication_status` column, no unpublished-canonical tier and no
+draft-hotel state is introduced by this contract.** One boundary is easier to
+verify than two, and a second state would immediately raise questions this block
+has no need to answer — who sees it, what RLS applies, whether creators can save
+it, whether it counts toward coverage. A future product decision may create such
+a layer if a concrete need appears; until then, a row in `hotels` is a row a
+creator can see.
+
+**Historical rows are not retroactively compliant.** The canonical pilot was
+promoted before D054, D060 and D062 existed. Those rows are not claimed to
+satisfy §7.1, and the implementation block must audit, enrich and re-evaluate
+them against it.
 
 ### 7.1 Publication requires, at minimum
 
@@ -599,9 +636,13 @@ explain:
 - non-property exclusions;
 - below-V1-star-scope exclusions;
 - unresolved-star candidates;
+- **coverage-critical unresolved candidate count** (§15.1);
+- **closure status** — complete or incomplete;
 - **canonical eligible V1 inventory count**.
 
-**The final number is not preselected.** It is what the run resolved.
+**The final number is not preselected.** It is what the run resolved. And it is
+only an inventory *claim* once the run has closed (§15.1) — before that it is a
+progress reading.
 
 > Example, to explain semantics only: *if* resolution produces 724 eligible Bali
 > properties, the coverage target is 724 — not 100, not 200, not "as many as
@@ -610,14 +651,90 @@ explain:
 That number is an illustration. It is **not** a destination target and must never
 be stored, quoted or planned against as one.
 
-### 15.1 Destination metrics
+### 15.1 Coverage closure — a destination is not complete while candidates are unresolved
 
-**Inventory completeness**
+This is the rule that makes §3's promise checkable, and it is the one most easily
+lost to a convenient denominator.
+
+> **A destination MUST NOT be declared "coverage complete", "100% inventory
+> complete", "complete inventory" or any equivalent while ANY candidate from its
+> defined coverage universe remains unresolved on a coverage-critical eligibility
+> dimension.**
+
+**Coverage-critical unresolved states** — at minimum:
+
+- canonical identity unresolved;
+- duplicate / entity resolution unresolved;
+- physical-hospitality-property status unresolved;
+- destination membership unresolved;
+- active / permanently-closed status unresolved;
+- star classification unresolved;
+- any other state required to determine whether the candidate belongs in V1
+  inventory.
+
+Every candidate in the defined coverage universe must eventually resolve to
+exactly one of:
+
+- **A. CANONICAL ELIGIBLE V1 PROPERTY**
+- **B. DUPLICATE / MATCHED** to an existing canonical property
+- **C. FINAL EXCLUSION / OUT OF V1 SCOPE**, with an explicit durable reason
+
+Hold and review states are legitimate **during** processing (§9). They are not
+legitimate at closure.
 
 ```
-eligible canonical properties resolved
-/ eligible properties in defined coverage universe
+COVERAGE COMPLETE  requires  coverage_critical_unresolved_count = 0
 ```
+
+A destination with unresolved candidates is **COVERAGE INCOMPLETE**, regardless
+of:
+
+- how many hotels are already published;
+- coordinate coverage of published hotels;
+- photo coverage;
+- contact coverage;
+- any count that looks large enough.
+
+Why this needs stating: with 700 resolved-eligible properties and 24 candidates
+still unresolved, a metric whose denominator holds only *known eligible*
+properties reads **700/700 = 100%** — while some of those 24 may themselves be
+eligible 4/5-star properties. The destination would be declared complete by
+arithmetic that defined the missing hotels out of existence. That is precisely
+the failure D055 and §3 exist to prevent, and it is invisible to the buyer.
+
+### 15.2 Inventory-completeness semantics
+
+> **A destination's inventory is complete only after the full defined source
+> universe has been processed and every candidate's V1 eligibility has been
+> resolved.** The final eligible inventory count is then the number of unique
+> canonical properties resolved as eligible.
+
+Two numbers, never one:
+
+1. **resolved eligible inventory count** — the answer to "how many hotels";
+2. **coverage-critical unresolved candidate count / closure status** — the answer
+   to "are we finished".
+
+A progress metric may be retained:
+
+```
+resolved_coverage_candidates / total_coverage_candidates
+```
+
+but **process resolution is not the eligible inventory count**, and neither one
+substitutes for the other. A run at 96% processed has no inventory claim to make
+yet.
+
+**Do not construct a mathematically convenient denominator that excludes
+unresolved records.** Any completeness fraction must be taken over the *defined
+coverage universe*, not over the subset already known to qualify.
+
+The product promise is not *"we resolved some known eligible hotels."* It is:
+
+> **"We resolved the complete coverage universe and retained every property that
+> qualifies."**
+
+### 15.3 Field / enrichment metrics
 
 **Field / enrichment coverage** — measured separately, per field:
 
@@ -713,8 +830,16 @@ The implementation block that follows this contract may not:
 
 - choose a provider by writing one into code without the evaluation of §15;
 - cap, sample or "phase" a destination's inventory;
-- publish a hotel that fails §7.1;
+- publish (i.e. promote into `hotels`) a hotel that fails §7.1;
 - withhold a hotel that only fails §7.2;
+- introduce a canonical-but-unpublished state without an explicit product
+  decision (§7.0);
+- declare a destination coverage complete while coverage-critical candidates
+  remain unresolved (§15.1);
+- compute inventory completeness over a denominator that excludes unresolved
+  candidates (§15.2);
+- treat a single-destination or two-destination source result as evidence of
+  completeness elsewhere (§4, `PROPERTY_SOURCE_EVALUATION.md` §5);
 - store a star classification without provenance;
 - average conflicting star classifications;
 - infer stars from review scores;

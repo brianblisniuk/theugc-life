@@ -1303,6 +1303,41 @@ not exist**, and missingness should be measurable as operational queues
 (`hotels_without_any_contact`, `hotels_without_photo`, …) rather than as
 exclusion filters.
 
+### Coverage closure
+
+**A destination must not be declared "coverage complete", "100% inventory
+complete" or any equivalent while ANY candidate from its defined coverage
+universe remains unresolved on a coverage-critical eligibility dimension.**
+
+Coverage-critical unresolved states include at minimum: canonical identity
+unresolved, duplicate/entity resolution unresolved, physical-hospitality-property
+status unresolved, destination membership unresolved, active/permanently-closed
+status unresolved, star classification unresolved, and any other state required
+to decide whether the candidate belongs in V1 inventory.
+
+Every candidate must eventually resolve to exactly one of: **(A)** canonical
+eligible V1 property, **(B)** duplicate/matched to a canonical property, or
+**(C)** final exclusion / out of V1 scope with an explicit durable reason. Hold
+and review states are legitimate during processing, not at closure.
+
+```
+COVERAGE COMPLETE  requires  coverage_critical_unresolved_count = 0
+```
+
+A destination with unresolved candidates is **coverage incomplete** regardless of
+how many hotels are already published, or of coordinate, photo or contact
+coverage among them.
+
+Inventory completeness is therefore measured **only after the full defined source
+universe has been processed and every candidate's eligibility resolved**; the
+eligible inventory count is the number of unique canonical properties resolved as
+eligible. A progress metric (`resolved_coverage_candidates /
+total_coverage_candidates`) may be retained, but **process resolution is not the
+eligible inventory count**. Coverage reporting always carries both the resolved
+eligible count and the unresolved coverage-critical count / closure status.
+
+**Do not construct a denominator that excludes unresolved records.**
+
 ### Coverage runs and exclusion kinds
 
 A destination coverage run must be able to explain, per destination and per
@@ -1329,19 +1364,52 @@ the product's own operators believe a destination was finished when only its
 coordinates were. Collapsing unknown into below-scope silently deletes eligible
 properties; collapsing below-scope into unknown silently pollutes inventory.
 
+The closure rule exists because the obvious metric is wrong in a way nobody
+notices. With 700 resolved-eligible properties and 24 candidates still
+unresolved, a fraction whose denominator holds only *known eligible* properties
+reads 700/700 = 100% — while some of those 24 may themselves be eligible 4/5-star
+hotels. The destination would be certified complete by arithmetic that defined
+the missing hotels out of existence, and the creator who bought that destination
+is the one person who cannot detect it. "We resolved some known eligible hotels"
+is not the promise; "we resolved the complete coverage universe and retained
+every property that qualifies" is.
+
 Consequence:
-Coverage is measured as `resolved / universe`, enrichment is measured per field,
-and coordinate coverage at 100% (D054) is never reported as total data
-completeness. Full contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §3–§6, §9,
-§15.
+Coverage is measured over the **defined coverage universe**, never over the
+already-qualifying subset; a destination reports both its resolved eligible count
+and its unresolved coverage-critical count; enrichment is measured per field; and
+coordinate coverage at 100% (D054) is never reported as total data completeness.
+Full contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §3–§6, §9, §15.
 
 ## D062 — The canonical publishability contract
 Status: Accepted — makes D054's coordinate precondition part of a complete rule
 
 A **research/staging property** may legitimately be incomplete; that is the
 normal state of the pipeline and `HOTEL_DATA_CONTRACT.md` continues to allow it.
-A **canonical publishable hotel** is a stricter thing, and the rule binds at the
-promotion boundary.
+A **canonical publishable hotel** is a stricter thing.
+
+### Promotion into `hotels` IS the publication boundary
+
+For V1 there is no canonical-but-unpublished state:
+
+> **PROMOTED PROPERTY = CANONICAL PUBLISHABLE PROPERTY.**
+> **D062 is a promotion precondition.**
+
+```
+source → staging → audit/review → promotion preview → human review
+       → promotion/apply → canonical publishable hotel
+```
+
+A candidate that fails any condition below is **not promoted**. It stays in
+staging/review to be enriched, resolved or finally excluded — never deleted, and
+never given a fabricated coordinate or an invented star classification to make it
+pass. **No `publication_status` column, unpublished-canonical tier or draft-hotel
+state is introduced.** A future product decision may create such a layer if a
+concrete need appears.
+
+**Existing canonical pilot rows are not retroactively claimed compliant.** They
+were promoted before D054, D060 and D062 existed; the implementation block must
+audit, enrich and re-evaluate them.
 
 A canonical hotel is publishable in V1 only when at minimum:
 
@@ -1375,11 +1443,19 @@ is or *where* it is, and a creator cannot use a listing that fails them.
 Provenance appears twice on purpose: a value nobody can trace is not a canonical
 value, it is a number we would have to defend by assertion.
 
+One boundary is chosen over two deliberately. A second state would immediately
+raise questions this block has no reason to answer — who sees it, what RLS
+applies, whether a creator can save it, whether it counts toward coverage — and
+each unanswered one is a place where an unpublishable hotel leaks into a surface.
+A row in `hotels` is a row a creator can see, and that is easier to verify than
+any status column.
+
 Consequence:
 The promotion path gains a publishability gate covering stars and provenance as
 well as D054's coordinates. A candidate failing any of the eleven is held in
-staging, not published and not deleted. A candidate failing only the
-non-requirements is published with known enrichment work outstanding.
+staging, not promoted, not published and not deleted. A candidate failing only
+the non-requirements is promoted and published with known enrichment work
+outstanding.
 
 ## D063 — Source-agnostic canonical property identity
 Status: Accepted

@@ -81,7 +81,8 @@ For each candidate source, per evaluation destination:
 ### 4.2 Field completeness
 
 - coordinate coverage;
-- star-classification coverage;
+- star-classification coverage — **coverage of the field is not the same as
+  suitability of the field**; see §8;
 - address coverage;
 - official website coverage;
 - photo coverage;
@@ -112,15 +113,56 @@ evaluation exists precisely to be argued with later.
 
 ---
 
-## 5. Permitted conclusions
+## 5. Permitted conclusions — and their limits
 
-The bake-off may legitimately conclude any of:
+Bali and Dubai are the **initial source-strategy bake-off**. Two destinations
+cannot establish that a provider is complete for twenty.
 
-- **one provider is primary** — sufficient alone for V1 destinations;
-- **one is primary and another secondary** — a fallback or gap-filler;
-- **a union of providers is necessary** — the coverage universe genuinely
-  requires more than one source, which the source-identity architecture
-  (coverage contract §11) already supports.
+### 5.1 What this bake-off may establish
+
+- which provider should be **integrated first**;
+- which provider is **operationally primary**;
+- which providers appear **complementary**;
+- adapter architecture;
+- initial source-precedence proposals;
+- star-field semantics (§8);
+- entity-resolution behaviour;
+- media and content feasibility.
+
+### 5.2 What it may NOT establish
+
+> **It cannot establish that one provider is complete for all twenty V1
+> destinations.**
+
+For initial implementation the permitted conclusions are:
+
+- **PRIMARY SOURCE**
+- **PRIMARY + SECONDARY SOURCE**
+- **MULTI-SOURCE / UNION STRATEGY**
+
+with one meaning fixed:
+
+> **PRIMARY means operationally preferred — integrated first, queried first. It
+> does NOT mean "assumed complete everywhere."**
+
+### 5.3 Completeness is proven per destination
+
+- **Every supported destination executes its own coverage run** against the
+  approved source strategy. A destination inherits the strategy, never the
+  completeness verdict.
+- **If multiple inventory sources are approved, a destination's coverage universe
+  must consider their UNION** before any completeness claim is made (coverage
+  contract §4, §15.1).
+- **A source that contributed no unique eligible properties in Bali or Dubai may
+  still contribute unique properties elsewhere.** Two destinations are two data
+  points about hospitality markets that differ by country, regulator, brand mix
+  and long-tail structure; a provider strong in the Gulf may be thin in
+  Southeast Asia, and neither result generalises.
+- The system must therefore support **destination-level evidence rather than
+  global assumption**, and must not require the same provider mix for every
+  destination if later evidence shows otherwise.
+
+> **The invariant is complete coverage, not provider uniformity.**
 
 **Do not pre-decide the answer.** A conclusion reached before the metrics exist
 is the thing this document is designed to prevent.
@@ -160,14 +202,60 @@ Marketing / PR / Partnerships contact the product sells.
 
 ---
 
-## 8. Output of this block
+## 8. Star semantics and provenance — required per provider
+
+Measuring how *often* a provider populates something star-shaped says nothing
+about whether that value satisfies D060. A field named `rating`,
+`property_rating`, `category` or `stars` **must not be assumed** to be a
+hospitality star classification.
+
+For **every candidate provider**, for the field that appears to represent stars,
+determine and record:
+
+- exact provider field name;
+- documented semantics — what the provider says the field is;
+- **whether it represents a hotel/hospitality classification or something else**;
+- issuer / origin when known;
+- whether it is official / local-authority sourced, property-supplied,
+  provider-normalized, inferred by the provider, or unclear;
+- scale and allowed values (integers? halves? a 0–5 float? a lettered category?);
+- refresh and update behaviour;
+- what provenance is available **to us**, and whether it can be stored and cited
+  (coverage contract §7.1 condition 7);
+- conflicts observed against other sources on the same property.
+
+### 8.1 The verdict is explicit
+
+Each provider's star field must be recorded as one of:
+
+- **SUITABLE** as evidence for the hospitality star-classification contract;
+- **UNSUITABLE**;
+- **REQUIRES SECONDARY VERIFICATION** — usable only alongside another source.
+
+A field that cannot be shown suitable is not usable to publish a hotel, because
+a 4/5-star classification without defensible provenance fails condition 7 of the
+publishability contract.
+
+**Guest and user review scores remain prohibited** as star evidence in every
+case, however the provider labels them (coverage contract §2.1). A 0–5 float that
+moves when guests write reviews is a satisfaction measurement, not a
+classification, and no amount of field naming changes that.
+
+**Do not choose the final authority hierarchy here.** This evidence is what the
+later hierarchy decision (D060) will be made from.
+
+---
+
+## 9. Output of this block
 
 1. a per-source, per-destination metric table for Bali and Dubai;
 2. an explicit recommendation — primary / secondary / union — with reasoning
    traceable to those metrics;
 3. the open items the evaluation resolved, and those it did not;
-4. a proposed star-source authority hierarchy, now that real source behaviour is
-   known (coverage contract §8);
+4. **per-provider star semantics and provenance findings (§8)**, each with an
+   explicit SUITABLE / UNSUITABLE / REQUIRES-SECONDARY-VERIFICATION verdict, and
+   a proposed star-source authority hierarchy built from them (coverage contract
+   §8);
 5. a proposed entity-resolution threshold policy, for the same reason (coverage
    contract §12.2);
 6. licensing and usage constraints that require a decision before any production
@@ -176,3 +264,7 @@ Marketing / PR / Partnerships contact the product sells.
 Items 4 and 5 are deliberately deferred to this block rather than guessed in the
 coverage contract. They are the two places where an invented number would have
 looked like a decision.
+
+Item 2 must state its **scope honestly**: it is a recommendation for the initial
+source strategy, not a completeness verdict for the twenty destinations (§5.2).
+Each destination still has to prove its own coverage.
