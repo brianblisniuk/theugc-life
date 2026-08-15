@@ -123,68 +123,120 @@ Reserved conceptually only. Not implemented in MVP.
 ## 5. Commercial Plans
 
 ### 5.1 Free
-Purpose: product discovery and activation.
+Purpose: demonstrate that the opportunity and the proprietary data asset exist.
 
-Initial limits:
+Free creators may:
 
-- Browse world map and hotel basics.
-- View safe public intelligence.
-- Create creator profile.
-- Save up to 10 hotels.
-- Up to 5 active pipeline items.
-- 1 active trip.
-- No premium hotel contacts.
-- No detailed premium intelligence.
-- No AI outreach.
+- Discover **all publishable hotels worldwide** (D049 — there is no gated hotel inventory).
+- View hotel basic/public information.
+- View the approved **Public Intelligence** layer where confidence and privacy thresholds allow (§12.8).
+- Use the limited creator workspace under the configured Free limits: save up to 10 hotels, 5 active pipeline items, 1 active trip.
+- Maintain a basic creator profile.
+
+Free does **not** receive:
+
+- Premium hotel contacts.
+- **Premium Intelligence** (§12.8).
+- AI outreach.
+
+**Discoverable ≠ fully unlocked.** A Free creator can open any hotel, understand
+that creator activity exists there, and see plainly that richer intelligence and
+actionable contacts are locked. Nothing is hidden from the catalogue to create
+scarcity.
 
 Free limits must be configuration-driven, not hardcoded in UI business logic.
 
 ### 5.2 Creator Destination Pass
 Working commercial name: **Creator Destination Pass**.
 
-Initial pricing hypothesis:
+**V1 commercial contract (D051):**
 
-- USD 29–39.
-- 90-day access.
-- Price must be configurable.
+- **USD 39.**
+- **30 days.**
+- **One destination.**
+- Price and duration must remain configurable.
 
-Includes inside purchased destination:
+Job to be done: *"I'm going to Bali and I want to get collaborations."* This is
+the low-friction paid acquisition product, bought by a creator with a trip
+already in view.
 
-- All premium hotel records.
-- Hotel contacts.
-- Premium creator intelligence.
-- CRM/pipeline functionality for destination hotels.
+Includes inside the entitled destination (and its valid descendant
+destinations), per **D056**:
+
+- **Premium Intelligence** (§12.8).
+- Premium/actionable hotel contacts.
+- The **full approved pipeline/workflow**: all pipeline states and transitions,
+  the follow-up/outreach lifecycle, and the collaboration lifecycle.
+- **Relationships in the entitled destination are not constrained by the Free
+  saved/open/engaged workspace limits** (§5.1, D042). A creator pitching a
+  destination works through far more than five hotels.
 - Trips.
 - Creator profile and portfolio.
 
-Outside purchased destination:
+**The destination has no property cap** (D055). A Pass covers *all* in-scope
+properties in that destination's coverage universe — not a curated subset.
 
-- Public/basic hotel data remains visible.
-- Premium contact/intelligence remains locked.
+Outside the entitled destination the creator falls back to the Free experience:
+
+- **Hotel discovery remains worldwide** (D049) — a Pass never restricts what can
+  be found.
+- Public Intelligence remains visible.
+- Premium Intelligence and premium contacts remain locked.
+- Normal Free-tier workspace capabilities and limits apply.
 - User is offered another Destination Pass or Creator Pro.
+
+**A paid Pass never removes a right the account would have had as Free.** Paying
+is strictly additive.
+
+On expiry:
+
+- Premium Intelligence for that destination locks again.
+- Premium contacts lock again.
+- **Creator-owned historical pipeline, outreach and collaboration data does not
+  disappear** and remains readable (§11.10, PERMISSIONS.md §8).
 
 Important: “CDP” may be used internally, but public marketing should prefer the full name because CDP commonly means Customer Data Platform.
 
 ### 5.3 Creator Pro
-Initial pricing strategy:
+**V1 launch price: USD 199/year, worldwide (D052).**
 
-- Original reference price: USD 299/year.
-- Launch price: USD 199/year.
-- Later discounted price: USD 249/year.
-- Pricing must be editable without code deployment.
+The USD 299 reference and USD 249 later prices remain future pricing
+hypotheses, not commitments. Pricing must be editable without code deployment.
 
-Includes:
+Job to be done: *"I'm a travel creator and I want theugc.life to be my operating
+system."*
 
-- Worldwide premium database.
-- All hotel contacts.
-- All premium intelligence.
-- Full CRM.
+Includes, worldwide:
+
+- **Premium Intelligence** (§12.8).
+- All premium/actionable hotel contacts.
+- Full CRM/workflow scope, unconstrained by the Free workspace limits (D056).
 - Trips.
 - Creator portfolio/profile.
-- Future AI outreach access according to product policy.
-- Future community access according to product policy.
+
+Future AI outreach and community capabilities may become Pro benefits when they
+are genuinely built and separately approved.
 
 Do not promise “all future features forever”.
+
+### 5.3.1 Plan matrix (product semantics, not literal UI copy)
+
+| | Free | Destination Pass — $39 / 30 days / 1 destination | Creator Pro — $199/year |
+|---|---|---|---|
+| Worldwide hotel discovery | Yes | Yes | Yes |
+| Hotel basics | Yes | Yes | Yes |
+| Public Intelligence | Yes | Yes | Yes |
+| **Premium Intelligence** | No | Entitled destination | Worldwide |
+| **Premium contacts** | No | Entitled destination | Worldwide |
+| CRM / workspace | Limited by Free limits | **Unlimited inside the entitled destination**; Free limits elsewhere | Full, worldwide |
+| Trips | 1 active | Approved scope | Yes |
+| Creator profile / portfolio | Basic | Yes | Yes |
+
+The hotel is never the premium object (D049). What is sold is richer
+intelligence, actionable contacts, and the capacity to act on the opportunity.
+
+Destinations are **not capped** (D055): a Pass covers every in-scope property in
+that destination's coverage universe, however many that turns out to be.
 
 ### 5.4 Referral Program
 Economic incentives are permitted only for customer acquisition/referral.
@@ -240,6 +292,13 @@ MVP recommendation logic may be rules-based. Do not claim AI matching unless act
 ## 7.2 Discover
 
 Purpose: hotel discovery and initial wow factor.
+
+**Map coverage is 100% of publishable inventory (D054).** Every hotel Discover
+lists has canonical coordinates and appears on the map; coordinates are a
+publishability precondition, not later enrichment. The unmapped state in the UI
+is a defensive fallback for bad data escaping validation, not a planned
+condition. Coordinates are never fabricated — an unlocated hotel is held back
+from publication.
 
 Must include:
 
@@ -561,6 +620,11 @@ The implementation must preserve these decisions:
 10. Raw structured events are retained so future scores can be recalculated.
 11. There is no primary “reports” table exposed to creators.
 12. CRM behavior creates intelligence as a side effect.
+13. Canonical coordinates are a publishability precondition, not enrichment
+    (D054). Publishable inventory is 100% mapped.
+14. A destination's inventory is complete, not capped (D055). Exclusions are
+    explicit and auditable; a missing contact, insufficient intelligence or
+    absent photography are field states, never reasons to omit a property.
 
 ---
 
@@ -1126,11 +1190,16 @@ Cannot access premium hotel contacts.
 
 ### 10.3 Destination Pass
 
-Can access premium hotels/contacts/intelligence where hotel belongs to entitled destination or valid descendant destination according to access rules.
+Can access **Premium Intelligence** and premium/actionable contacts where the
+hotel belongs to an entitled destination or a valid descendant destination
+according to access rules. Hotel discovery itself is never entitlement-gated
+(D049).
 
 ### 10.4 Creator Pro
 
-Can access worldwide premium hotels, contacts, intelligence, CRM, trips, portfolio, and approved Pro features.
+Can access worldwide **Premium Intelligence**, premium/actionable contacts, CRM,
+trips, portfolio, and approved Pro features. Hotel discovery itself is never
+entitlement-gated (D049).
 
 ### 10.5 Private creator data
 
@@ -1427,20 +1496,75 @@ Exact dates may be replaced with coarser labels if re-identification risk is mat
 
 ### 12.8 Public vs Premium Intelligence
 
-Public intelligence may include:
+**Approved V1 contract (D050).** There are exactly **two** deliberately designed,
+browser-safe intelligence projections. Both are aggregates. Neither is a base
+table.
 
-- activity level
-- broad recency
-- broad collaboration types
+#### 12.8.1 Public Intelligence
 
-Premium intelligence may include, when confidence permits:
+Purpose: show that theugc.life has proprietary creator-network knowledge, and
+make Discover useful before payment.
 
-- reply rate
-- typical reply time
-- richer recency
-- detailed collaboration signals
+Available to everyone, including anonymous visitors and Free creators, where
+confidence and privacy thresholds allow:
 
-Exact split is configuration/product policy, not hardcoded into database schema.
+- creator activity level;
+- a broad creator-activity / freshness signal;
+- a safe collaboration-presence signal where supported;
+- confidence / data-availability state where useful.
+
+#### 12.8.2 Premium Intelligence
+
+Purpose: help a paying creator evaluate whether and how to pursue an
+opportunity.
+
+Available inside an entitled destination (Destination Pass) or worldwide (Pro).
+May include, where derivable from real qualifying data:
+
+- reply rate;
+- typical reply-time range;
+- richer recency of qualifying creator activity;
+- collaboration types observed;
+- stronger, detail-oriented network signals;
+- data-strength / confidence context.
+
+The exact field projection is designed in the implementation PR. **Do not invent
+fields that are not derivable from real creator workflow data.**
+
+#### 12.8.3 Privacy does not change by plan — non-negotiable
+
+Free, Destination Pass and Pro obey **the same** contributor anonymity, minimum
+observation thresholds, confidence thresholds, suppression rules, NULL-vs-zero
+semantics, and protection of raw creator events. Premium buys more of the safe
+aggregate; it never buys weaker privacy, and no price exposes a contributor.
+
+A Pro subscription must never expose raw creator workflow data or base
+intelligence tables. Premium Intelligence must **never** be implemented by
+granting a browser role access to `hotel_intelligence`,
+`destination_intelligence`, `outreach_events`, `collaborations`, or any
+creator-level or raw aggregate source. Those remain trusted/server-only
+(PERMISSIONS.md §9, D046, migration 0022). Premium Intelligence gets its own
+scoped projection with its own suppression rules, entitlement-gated in the
+database rather than in the UI.
+
+Editorial/research evidence never manufactures network metrics (D027). Reply
+rate, response time, interaction recency and similar signals derive only from
+qualifying real creator workflow/outcome data, at every tier. Premium status
+does not change this.
+
+#### 12.8.4 Implementation status — the split is NOT built yet
+
+The contract above is approved; the code does not yet implement it. Today there
+is one projection, `public.hotel_public_intelligence`, graduated by confidence
+rather than by plan — which means **reply rate is currently disclosed to
+anonymous visitors and Free creators at `strong` confidence** even though §12.8.2
+classifies it as premium.
+
+Closing that gap is the scope of the next technical PR, not of any product
+decision. The per-file backlog is
+[`V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](V1_CONTRACT_IMPLEMENTATION_BACKLOG.md).
+Until it lands, no surface may claim that a paid plan reveals intelligence the
+free tier cannot see.
 
 ---
 
@@ -1962,6 +2086,65 @@ Goal: the creator feels they are maintaining their CRM, not completing surveys.
 
 ## 30. MVP Sprint Plan
 
+> **Read §30.0 first.** The original plan below was written before implementation
+> began, and the work did not land under those exact labels. §30.0 states what is
+> actually built, where each original sprint's deliverables ended up, and what
+> "Sprint 3" means from here. The original plan is preserved unedited as the
+> historical record; where the two disagree, §30.0 describes reality.
+
+### 30.0 As-built roadmap — current state and next phase
+
+#### Delivered (Core V1 — audited and closed)
+
+| Phase | Delivered |
+|---|---|
+| Sprint 0 / 0.1 | Repository, Next.js App Router, strict TypeScript, Tailwind, Supabase schema + RLS, auth, migrations, logging, analytics foundation, CI |
+| Sprint 1A | Seed-import foundation: canonical contract, staging, validation, conservative entity resolution, dry-run reports |
+| Sprint 1B | Destination catalog, review manifests, canonical promotion engine |
+| Sprint 1C | 30-property Dubai canonical pilot promoted to production |
+| Sprint 2A | Discover (search/filter/pagination) + Hotel Detail, entitlement-gated contacts |
+| Sprint 2B | Save to Pipeline (transactional, limit-safe) |
+| Sprint 2C | Pipeline transitions + trusted outreach event ledger |
+| Sprint 2D | Negotiation → deal won → collaboration |
+| Sprint 2E | Rebuildable hotel intelligence aggregation + privacy-safe public projection |
+| Sprint 2F | Collaboration lifecycle + won-cycle closure |
+| Sprint 2G | Pre-Sprint-3 core hardening: explicit ACL contract, session role resolution, pipeline pagination |
+
+**The original "Sprint 3 — Data Flywheel" was delivered under Sprints 2C–2F.**
+Outreach events, the collaboration entity, progressive event forms, intelligence
+aggregation, the confidence system and the safe public intelligence view all
+exist and are in production. Destination intelligence UI and the contact-signal
+workflow from that original list remain unbuilt and are tracked as open scope,
+not as a pending sprint.
+
+Core V1 is audited and closed — see
+[`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](audits/CORE_V1_AUDIT_CLOSEOUT.md) and
+[`docs/audits/PRE_SPRINT3_CORE_AUDIT.md`](audits/PRE_SPRINT3_CORE_AUDIT.md).
+
+#### Current phase
+
+**Visual Direction Gate — PASSED.** Visual Direction V1 is
+**A2 — Sunlit Creator OS** (D047), with **Sun `#FFE01B`** as the approved primary
+accent (D048). See [`docs/VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md).
+
+#### Next phase — the single meaning of "Sprint 3"
+
+**Sprint 3 = Product Experience.** From this point forward the label refers only
+to the implementation of Visual Direction V1 across the product surfaces. It
+does not refer to the data flywheel, which is already built.
+
+- **Sprint 3A** — Discover + map, implemented against A2.
+- Later Sprint 3 sub-phases — Hotel Detail, Pipeline, Home, applied
+  progressively as the visual language proves itself on real surfaces.
+
+Sprint 3A has explicit prerequisites and explicit out-of-scope items recorded in
+[`docs/VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md) §21–§23. Sprints 4–7 and the
+marketplace keep their original numbering and meaning below.
+
+---
+
+### Original MVP sprint plan (historical — written pre-implementation)
+
 ### Sprint 0 — Foundation
 
 Deliverables:
@@ -2298,12 +2481,21 @@ More detailed implementation docs may expand it but must not contradict it.
 
 ## 36. Open Items Requiring Validation, Not Immediate Product Debate
 
-These remain hypotheses to test with real usage:
+Items 1, 2 and 4 are **now fixed for V1** and are no longer open: Destination
+Pass is USD 39 / 30 days (D051) and Pro launches at USD 199/year (D052). They
+remain listed because the *conversion behaviour* at those numbers is still the
+thing to measure — the price is decided, its performance is not.
 
-1. Exact Destination Pass price: USD 29 vs 39.
-2. Exact Destination Pass duration: initial recommendation 90 days.
+Item 8 is likewise no longer an open question about *whether* a premium
+intelligence layer exists: D050 fixes the two-layer contract. What remains to
+test is which premium fields actually move conversion.
+
+The rest remain hypotheses to test with real usage:
+
+1. ~~Exact Destination Pass price: USD 29 vs 39.~~ **Fixed: USD 39 (D051).** Measure conversion at that price.
+2. ~~Exact Destination Pass duration: initial recommendation 90 days.~~ **Fixed: 30 days (D051).** Measure renewal/upgrade behaviour.
 3. Free saved/pipeline limits.
-4. Launch Pro price conversion at USD 199.
+4. Launch Pro price conversion at USD 199 — **price fixed (D052)**; conversion still to be measured.
 5. Upgrade conversion Destination → Pro.
 6. Confidence thresholds for public intelligence.
 7. Which destinations to prioritize for marketing/data density despite worldwide database availability.

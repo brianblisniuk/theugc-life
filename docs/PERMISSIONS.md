@@ -168,7 +168,16 @@ Private historical workspace survives entitlement expiry.
 May use configured free limits. Limits are application/business rules in addition to RLS ownership.
 
 ### Destination
-Full approved CRM behavior for entitled destination hotels. Existing historical pipeline remains readable after pass expiry; premium contact/intelligence access is removed.
+Full approved CRM behavior for entitled destination hotels (D056): all pipeline
+states and transitions, the follow-up/outreach lifecycle, and the collaboration
+lifecycle. **Relationships with hotels inside the entitled destination — and its
+valid descendant destinations — are exempt from the Free saved/open/engaged
+limits** (D042). Outside the entitlement, normal Free-tier capabilities and
+limits apply, and a paid Pass never removes a right the account would have had
+as Free.
+
+Existing historical pipeline remains readable after pass expiry; premium contact
+and Premium Intelligence access is removed.
 
 ### Pro
 Worldwide.
@@ -177,15 +186,17 @@ If a Destination Pass expires, do not revoke ownership/read access to creator's 
 
 ## 9. Intelligence access
 
-### What the browser can reach
+### What the browser can reach today
 
 **Only the safe coarse projection, `public.hotel_public_intelligence`.**
 
 Migration 0022 revoked all client access to the base aggregate tables:
 `hotel_intelligence` and `destination_intelligence` are readable by
-`service_role` only. No plan changes that — not Pro, not a Destination Pass.
-Their RLS policies are retained as defence in depth, but no client role holds a
-privilege to reach them at all.
+`service_role` only. **No plan will ever change that** — not Pro, not a
+Destination Pass, and not the future Premium Intelligence layer, which gets its
+own projection rather than a grant on these tables. Their RLS policies are
+retained as defence in depth, but no client role holds a privilege to reach them
+at all.
 
 The projection exposes exactly seven columns — `hotel_id`, `hotel_slug`,
 `activity_level`, `confidence_level`, `reply_rate`,
@@ -203,13 +214,36 @@ disclosure by confidence band (D044):
 A suppressed answer is `NULL`, never `false`. "We are not telling you" and "the
 answer is no" are different statements and are never collapsed.
 
-### Premium
+### Premium Intelligence — approved, not yet built (D050)
 
-Premium entitlements (Pro, Destination Pass) gate **contacts** (§7), not
-detailed intelligence. No surface returns detailed or per-creator intelligence
-to any browser role, and nothing in V1 is planned to. If a richer premium
-intelligence surface is ever introduced it must be a new, deliberately designed
-projection with its own suppression rules — not a grant on the base tables.
+The V1 contract has **two** browser-safe projections: **Public Intelligence**
+(everyone) and **Premium Intelligence** (entitled destination, or worldwide on
+Pro). See PRD §12.8.
+
+**Today only the public one exists**, and it is graduated by confidence rather
+than by plan — so reply rate currently reaches every browser role at `strong`
+confidence. Closing that gap is implementation work
+([`V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)),
+not a permissions change to make here.
+
+Binding constraints on that implementation:
+
+- **Privacy is identical across plans.** Contributor anonymity, minimum
+  observation thresholds, confidence thresholds, suppression rules and
+  NULL-vs-zero semantics are the same for Free, Destination Pass and Pro.
+  Premium buys more of the safe aggregate, never weaker privacy.
+- **Premium Intelligence gets its own scoped projection**, with its own
+  suppression rules, entitlement-gated in the database.
+- It must **never** be implemented by granting a browser role access to
+  `hotel_intelligence`, `destination_intelligence`, `outreach_events`,
+  `collaborations`, or any creator-level or raw aggregate source. Those stay
+  `service_role`-only (D046, migration 0022). No subscription changes that.
+- Entitlement gating belongs in RLS/helpers, not in the UI — the existing
+  `has_premium_hotel_access` pattern is the model, not a new client-side check.
+
+Hotel **discovery** is never entitlement-gated: there is one canonical inventory
+and every publishable hotel is discoverable worldwide (D049). Entitlements gate
+Premium Intelligence and actionable contacts, not the catalogue.
 
 No plan bypasses privacy thresholds.
 

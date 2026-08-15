@@ -1,5 +1,24 @@
 # Claude Design Brief — Discover Visual Direction Gate
 
+> ## STATUS: COMPLETED / HISTORICAL
+>
+> This brief has been executed. The exploration it commissioned is finished and
+> the Visual Direction Gate has **passed**.
+>
+> **Outcome: A2 — Sunlit Creator OS = Visual Direction V1** (D047), with **Sun
+> `#FFE01B`** as the approved primary accent (D048).
+>
+> A2 is a synthesis of the three directions below — roughly 70% A, 20% B, 10% C —
+> not Direction A alone.
+>
+> **Do not execute this brief again.** Nothing here is an open task. For what is
+> actually approved, and for the Sprint 3A prerequisites and out-of-scope list,
+> read [`VISUAL_DIRECTION.md`](VISUAL_DIRECTION.md) — it supersedes this document
+> wherever the two differ.
+>
+> This file is retained as the historical record of what was asked for, what the
+> alternatives were, and which constraints the winning direction had to satisfy.
+
 ## Objective
 
 Design three deliberately different high-fidelity visual explorations for the authenticated Discover experience of theugc.life before Sprint 3A implementation.
@@ -348,6 +367,9 @@ Do not declare a winner solely on your own score.
 
 ## What not to do after exploration
 
+*(Historical — these were the constraints on the exploration itself. Sprint 3A
+implementation is governed by `VISUAL_DIRECTION.md` §20–§23.)*
+
 Do not modify production code.
 
 Do not create a design system implementation.
@@ -363,3 +385,6 @@ Do not redesign Hotel Detail or Pipeline yet.
 STOP after the three exploration packages and rationale.
 
 External review will select/combine the direction before Sprint 3A begins.
+
+*(This happened. The review combined the directions into A2 — see the status
+banner at the top of this file.)*

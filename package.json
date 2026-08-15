@@ -2,7 +2,7 @@
   "name": "theugc-life",
   "version": "0.0.0",
   "private": true,
-  "description": "theugc.life — the operating system for travel UGC creators (Sprint 0 foundation).",
+  "description": "theugc.life — the operating system for travel UGC creators.",
   "engines": {
     "node": ">=20.0.0"
   },
