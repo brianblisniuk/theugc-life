@@ -19,6 +19,17 @@ Specification: [`PROPERTY_SOURCE_EVALUATION.md`](../PROPERTY_SOURCE_EVALUATION.m
 > `x-deny-reason: host_not_allowed`. **Zero Hotelbeds requests reached the
 > provider, so zero of the 50/day quota was consumed** and the credentials remain
 > **UNTESTED** — not invalid.
+>
+> The most recent block was split in two. **Phase A — seven correctness fixes
+> requiring zero provider requests — is COMPLETE.** **Phase B — the live probe,
+> category master and Indonesia/UAE destination masters — is NOT RUN**, because
+> the host is still denied. The allowlist change is an environment setting made
+> outside the sandbox; nothing inside it can grant the sandbox its own egress.
+>
+> Phase A was worth doing first regardless. One of its fixes was the difference
+> between allowlisting the host working and doing nothing at all: the descriptor
+> hardcoded an "EGRESS BLOCKED" blocker, so every capability would have stayed
+> blocked by a stale string even after the network opened.
 
 ---
 
@@ -256,6 +267,30 @@ have slandered a working credential and mis-stated the remaining quota. The
 client now detects the proxy denial explicitly and reports three distinct
 outcomes — `valid`, `invalid`, `untested` — with a regression test for each.
 
+### B.1a Phase B live discovery — NOT RUN
+
+The four Phase B steps, in the order they were to run and with the result of
+each. None was attempted beyond the single egress check.
+
+| # | Step | Result | Quota |
+|---|---|---|---|
+| 1 | Credential probe (`--probe`) | **NOT RUN — EGRESS BLOCKED** | 0 |
+| 2 | Category master (`--category-master`) | **NOT RUN** | 0 |
+| 3 | Indonesia (`ID`) destination master, paginated to exhaustion | **NOT RUN** | 0 |
+| 4 | UAE (`AE`) destination master, paginated to exhaustion | **NOT RUN** | 0 |
+
+**Total Hotelbeds quota consumed: 0 of 50.** Confirmed provider-reaching
+requests: 0. Possibly-consumed (ambiguous) requests: 0.
+
+Reachability was checked **once**. A second identical `host_not_allowed`
+response carries no information, and repeat probing of a policy denial is not
+diagnosis.
+
+`/hotels` extraction for Bali or Dubai was **not** part of Phase B and remains
+correctly out of scope: the destination masters have to be reviewed first,
+because an incorrect Bali geography mapping makes a perfectly exhaustive API
+extraction systematically incomplete.
+
 ### B.2 Everything else, still not run
 
 | Metric group | Hotelbeds | Booking | Expedia | Nuitee |
@@ -369,7 +404,10 @@ Everything downstream is consequently unresolved:
 - **Coordinate coverage — UNMEASURED** for both destinations.
 - **Image coverage, principal-image availability, images per property —
   UNMEASURED.**
-- **Field paths documented but unexercised** against a live payload.
+- **Field paths documented but unexercised** against a live payload. In
+  particular `classification.codePath = "categoryCode"` is **DOCUMENTED /
+  EXPECTED, not CONFIRMED** — the first raw payload settles it, and until then
+  the harness refuses to turn a possible path mismatch into a reported 0%.
 - **Pagination exhaustion — UNPROVEN**; nothing was paginated.
 
 ### D.2 Dubai pilot-30 comparison — INPUT READY, COMPARISON BLOCKED
@@ -491,6 +529,124 @@ provider success → **VALID**. Unchanged, and now regression-tested.
 
 ---
 
+## Correctness amendment II — Phase A (post-review of `21345fc`)
+
+Seven further issues, all fixed **without a single provider request**. Three were
+blockers in the strict sense: with them in place, opening the network would not
+have produced a correct run.
+
+### A.1 The egress block was a permanent descriptor fact — CRITICAL
+
+`capabilities.ts` folded `descriptor.blockers` into *every* capability, and the
+Hotelbeds descriptor carried a hardcoded `"EGRESS BLOCKED"` string. Allowlisting
+the host would have changed nothing: the stale string would still have blocked
+every capability, and `liveValidationStatus: "blocked"` would have hardened a
+temporary network condition into a permanent property of the provider.
+
+Static facts and runtime observations are now separate kinds:
+
+| Kind | Examples | Changes between runs? |
+|---|---|---|
+| **Descriptor fact** | endpoint, field semantics, classification issuer, geography | No |
+| **`RuntimeObservation`** | egress, credential acceptance, live validation | Yes, every run |
+
+A runtime observation starts at `egress: "unknown"` / `credentials: "untested"`,
+and **`unknown` does not block** — the probe is what decides, so it has to be
+allowed to run. Only a *currently observed* block blocks, and its reason says so
+in words: "this is a runtime observation, not a provider fact — re-probe after
+the host is allowlisted."
+
+A regression test asserts the exact scenario: same descriptor, same run, only the
+observation flipped to `reachable` — inventory, location and media become
+runnable while `resolve_d060_classification` stays blocked on the unestablished
+issuer. D060 is not weakened by any of this.
+
+### A.2 Geography discovery was not exhaustive — CRITICAL
+
+`fetchDestinations()` made **one** `from=1&to=1000` request and returned. Under
+D061 that cannot silently mean "all destinations": a country with 1001 would lose
+one and nothing in the output would say so.
+
+It now uses the shared paginator, so exhaustion evidence, cursor-loop detection,
+provider-total disagreement and budget interruption are handled identically to
+every other enumeration rather than by a weaker parallel implementation. The walk
+continues while the provider fills pages **or** its own reported total says there
+is more; a full page is never assumed to be the end. Pagination evidence is
+persisted with the candidates, and a budget or quota interruption marks the
+result **INCOMPLETE** instead of returning a partial list as if it were whole.
+
+### A.3 The category master was never wired into a live run — CRITICAL
+
+`runProvider()` built no reference data and passed none to `executeEvaluation`,
+so **every** category code would have resolved to `unresolved_no_master_entry`. A
+provider supplying perfectly good classification evidence would have measured as
+supplying none — and that number would have been used to judge it.
+
+`fetchHotelbedsCategoryMaster()` now fetches the master — budget-guarded, cached,
+raw persistence gitignored, duplicate codes surfaced rather than silently
+overwritten — and a live run fetches it **first**, then hands the resulting
+`ReferenceData` to the pipeline. It is available on its own as
+`npm run eval:sources:categories`. A master that cannot be proven exhaustive is
+reported as a coverage risk, because in that state an `unresolved` result may be
+**our** gap rather than the provider's. Tested both ways: without the master the
+codes are unresolved; with it they resolve.
+
+### A.4 The property category field is DOCUMENTED, not CONFIRMED
+
+`classification.codePath = "categoryCode"` is retained as the documented and
+expected path and is explicitly **UNCONFIRMED** until a real payload settles it.
+
+The failure this guards against is silent: a wrong path does not crash. It reads
+`undefined`, normalizes cleanly, and reports **0% classification coverage** for a
+provider that populates the field on every property — output indistinguishable
+from a genuine finding.
+
+So `field-verification.ts` checks every mapped path, including `codePath`,
+against the actual payload **before any aggregate is computed**. A mapped path
+resolving on zero sampled records raises `FIELD_MAP_MISMATCH`, writes the
+verification artifact and stops the run. A path mismatch is our bug; it is never
+published as the provider's zero.
+
+### A.5 Ambiguous network failures now protect the allowance honestly
+
+Four outcomes, three different answers:
+
+| Outcome | Quota |
+|---|---|
+| Cache hit | not counted — no request was made |
+| Explicit local egress denial (`x-deny-reason`) | not counted — it never left the sandbox |
+| Any provider response, including 4xx/5xx and retries | counted |
+| Network failure *after* the request was attempted | **counted as possibly consumed** |
+
+The last row is the honest one. When a connection dies without a response we
+cannot prove Hotelbeds did not receive and count it, so it is recorded as
+`provider_reach_unknown` and reported separately from
+`provider_reached_confirmed`. The summary carries both — `confirmed`,
+`possiblyConsumed`, and a `remaining` that assumes the ambiguous ones were
+charged. Under a 50/day allowance that asymmetry is the correct one: it can
+under-spend, never over-spend.
+
+### A.6 Two processes could both issue request 50
+
+A cross-process lock now lives beside the ledger under the gitignored data
+directory, created with an exclusive-create flag so a race loses cleanly rather
+than overwriting. A second process refuses with a message naming the holder
+instead of proceeding. A lock older than the staleness threshold is reclaimed —
+deliberately, and the reclamation is **reported**, never silent.
+
+Without it the ledger was necessary but not sufficient: two processes both
+reading 49/50 would both have believed they had the last request.
+
+### A.7 The daily-quota error misreported the limit
+
+`new DailyQuotaExhaustedError(spent, spent + ledger.remaining())` collapses to
+`spent` exactly when it fires — remaining is 0 at that moment — so a 50-request
+account exhausted at 50 would report a limit of 50 only by coincidence, and any
+other ledger state would print a fabricated number. The configured quota is now
+passed directly and exposed as an explicit getter, so no caller reconstructs it.
+
+---
+
 ## What this block delivered
 
 - **Owner-supplied Hotelbeds credentials stored safely** in the gitignored
@@ -513,20 +669,44 @@ provider success → **VALID**. Unchanged, and now regression-tested.
 - Hotelbeds and Nuitee descriptors; Booking and Expedia preserved as future
   strategic sources on a new `accessStatus` / `liveValidationStatus` /
   `strategicRole` triple.
-- **102 deterministic tests** across the two evaluation suites, all synthetic —
+- **Egress modelled as a runtime observation**, so a blocked run recovers the
+  moment the network does — with no descriptor edit and no stale string left
+  blocking every capability.
+- **Exhaustive master-data enumeration** for destinations and categories, with
+  persisted pagination evidence and an explicit INCOMPLETE state.
+- **The category master wired into the live run**, so provider codes resolve to
+  meaning instead of measuring as absent.
+- **Field-map verification that stops the run** rather than publishing a
+  fabricated 0% for a path that was wrong on our side.
+- **Ambiguous-failure quota accounting** and a **cross-process lock**, closing the
+  two remaining ways to overspend a 50/day allowance.
+- **127 deterministic tests** across the two evaluation suites, all synthetic —
   including two separate ledger instances proving a second process cannot reset
-  the daily allowance, and a cache test proving two accounts never share entries.
+  the daily allowance, a cache test proving two accounts never share entries, and
+  the regression test proving an allowlisted host actually unblocks the run.
 
 ## Exact next action
 
 **Allowlist `api.test.hotelbeds.com` in the environment's network egress
-settings** (`photos.hotelbeds.com` too if image metadata is to be fetched). Then:
+settings.** This is a setting on the Claude Code environment, changed from the
+environment's configuration outside the sandbox; a process inside the sandbox
+cannot grant itself egress, and the proxy exposes no self-service allowlist.
+Add `photos.hotelbeds.com` too if image metadata is to be fetched.
+
+Then, in order, staying inside the 50/day allowance:
 
 1. `npm run eval:sources:probe` — one request, confirms CREDENTIALS_VALID.
-2. Resolve Bali and Dubai destination codes from destination master data,
-   unioning Bali's codes as needed.
-3. Run each destination with `--max-requests` inside the 50/day allowance,
-   paginating to exhaustion; cached responses make reruns free.
-4. Record the category/accommodationType distribution before any star verdict.
+2. `npm run eval:sources:categories` — the category master, paginated to
+   exhaustion.
+3. `npm run eval:sources:geography -- --country ID` — Indonesia destination
+   master, candidates only.
+4. `npm run eval:sources:geography -- --country AE` — UAE destination master,
+   candidates only.
+5. **Stop.** Review the candidates and resolve Bali's destination code(s) — a
+   union, if that is what the data says — before any `/hotels` extraction. An
+   incorrect Bali geography mapping makes a perfectly exhaustive API extraction
+   systematically incomplete, and no amount of downstream rigour recovers it.
+6. Only then run each destination, recording the category/accommodationType
+   distribution before any star verdict.
 
 The bake-off is not complete and the Coverage Engine must not start.

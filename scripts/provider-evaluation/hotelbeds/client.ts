@@ -117,7 +117,9 @@ export class HotelbedsClient {
       const spent = this.options.ledger.spent();
       if (this.options.ledger.remaining() <= 0) {
         this.options.budget.stop("blocked_by_daily_quota");
-        throw new DailyQuotaExhaustedError(spent, spent + this.options.ledger.remaining());
+        // Pass the CONFIGURED quota, not a reconstruction: when remaining is 0,
+        // `spent + remaining` collapses to `spent` and misreports the limit.
+        throw new DailyQuotaExhaustedError(spent, this.options.ledger.quota);
       }
 
       // Throws when the local run budget is spent — before any network activity.
@@ -130,9 +132,13 @@ export class HotelbedsClient {
       try {
         response = await this.fetchImpl(url, { method: "GET", headers });
       } catch (error) {
-        // A network/egress failure is not a provider rejection. It still cost an
-        // attempt, so it is recorded, but it is not retried blindly forever.
+        // AMBIGUOUS: the request left this process and we never saw a response.
+        // Hotelbeds may have received and counted it before the connection died,
+        // and we cannot prove otherwise. Under a 50/day allowance the safe
+        // assumption is that it was charged — recorded as `provider_reach_unknown`
+        // so the report can say "possibly consumed" without claiming certainty.
         this.options.budget.recordFailure();
+        this.options.ledger.record(null, attempt > 1, "provider_reach_unknown");
         lastError = error;
         if (attempt >= MAX_ATTEMPTS_PER_REQUEST) break;
         continue;
@@ -152,7 +158,7 @@ export class HotelbedsClient {
       // consumed provider quota — record it durably BEFORE anything can throw,
       // or a crash would lose the fact that the allowance was spent.
       this.options.budget.recordProviderReached();
-      this.options.ledger.record(response.status, attempt > 1);
+      this.options.ledger.record(response.status, attempt > 1, "provider_reached_confirmed");
 
       const terminal = terminalReasonFor(response.status);
       if (terminal === "authentication_failed") {

@@ -18,13 +18,15 @@
 import { checkCredentials, requireCredential } from "./credentials";
 import { RequestBudget } from "./hotelbeds/budget";
 import { HotelbedsClient } from "./hotelbeds/client";
-import { QuotaLedger } from "./hotelbeds/quota-ledger";
+import { EvaluationLock, QuotaLedger } from "./hotelbeds/quota-ledger";
 import { accountFingerprint } from "./hotelbeds/signature";
 import {
   createHotelbedsTransport,
   fetchDestinations,
+  fetchHotelbedsCategoryMaster,
   probeCredentials,
 } from "./hotelbeds/transport";
+import type { ReferenceData, RuntimeObservation } from "./types";
 import { ADAPTERS, getAdapter } from "./adapters/registry";
 import { assessAllCapabilities, assertRunnableForAnyCapability } from "./capabilities";
 import { writeArtifact } from "./artifacts";
@@ -81,14 +83,23 @@ function createHotelbedsClient(
   budget: RequestBudget,
   log: (message: string) => void,
   useCache: boolean,
-): { client: HotelbedsClient; ledger: QuotaLedger } {
+): { client: HotelbedsClient; ledger: QuotaLedger; lock: EvaluationLock } {
   // Read at call time; never stored on the descriptor, never logged.
   const apiKey = requireCredential("HOTELBEDS_API_KEY");
   const secret = requireCredential("HOTELBEDS_SECRET");
   // Scoped to a non-secret fingerprint so a different account gets its own
   // allowance instead of inheriting this one's spend.
-  const ledger = new QuotaLedger(accountFingerprint(apiKey));
+  const fingerprint = accountFingerprint(apiKey);
+  const ledger = new QuotaLedger(fingerprint);
+  // One live Hotelbeds evaluation at a time: two processes both reading 49/50
+  // would both issue request 50.
+  const lock = new EvaluationLock(fingerprint);
+  const { reclaimedStaleLock } = lock.acquire();
+  if (reclaimedStaleLock) {
+    log("Reclaimed a stale Hotelbeds evaluation lock (older than the staleness threshold).");
+  }
   return {
+    lock,
     client: new HotelbedsClient({
       baseUrl: descriptor.baseUrl ?? "",
       credentials: { apiKey, secret },
@@ -102,30 +113,98 @@ function createHotelbedsClient(
 }
 
 /**
- * Build the provider transport.
+ * One prepared provider run: transport, the reference data it needs to make
+ * sense of the codes it will receive, and the lock that must be released.
+ */
+interface ProviderSession {
+  transport: ProviderTransport;
+  reference: ReferenceData;
+  runtime: RuntimeObservation;
+  /** Notes worth printing about how the session was prepared. */
+  notes: string[];
+  release: () => void;
+}
+
+/**
+ * Build the provider transport AND the reference data it depends on.
  *
  * Credential presence is enforced before any request, so a missing credential
  * fails loudly rather than producing a 401 whose empty body looks like "this
  * destination has no hotels".
+ *
+ * The master fetch is not optional plumbing. Hotelbeds' hotels operation returns
+ * category CODES; without the master every one of them normalizes to
+ * `unresolved_no_master_entry`, and the run would report that a provider
+ * supplying perfectly good classification evidence supplied none. It shares this
+ * run's budget, ledger and lock, and the on-disk cache makes it free after the
+ * first fetch.
  */
-function createTransport(
+async function createProviderSession(
   descriptor: AdapterDescriptor,
   args: Map<string, string | true>,
   log: (message: string) => void,
-): ProviderTransport {
+): Promise<ProviderSession> {
   for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
 
-  if (descriptor.provider === "hotelbeds") {
-    const budget = createBudget(args);
-    const { client } = createHotelbedsClient(descriptor, budget, log, !args.has("no-cache"));
-    return createHotelbedsTransport(client);
+  if (descriptor.provider !== "hotelbeds") {
+    throw new Error(
+      `Provider "${descriptor.provider}" has no transport implementation.\n` +
+        "Booking and Expedia are preserved as future strategic sources with direct access\n" +
+        "unavailable; implementing their transports is deliberately out of scope for now.",
+    );
   }
 
-  throw new Error(
-    `Provider "${descriptor.provider}" has no transport implementation.\n` +
-      "Booking and Expedia are preserved as future strategic sources with direct access\n" +
-      "unavailable; implementing their transports is deliberately out of scope for now.",
-  );
+  const budget = createBudget(args);
+  const { client, lock } = createHotelbedsClient(descriptor, budget, log, !args.has("no-cache"));
+  const notes: string[] = [];
+
+  try {
+    const master = await fetchHotelbedsCategoryMaster(client);
+    notes.push(
+      `category master: ${master.uniqueCodes} unique codes from ${master.rawCount} records, exhaustion proven: ${master.evidence.exhaustionProven}`,
+    );
+    if (master.duplicateCodes.length > 0) {
+      notes.push(`category master DUPLICATE codes: ${master.duplicateCodes.join(", ")}`);
+    }
+    if (!master.evidence.exhaustionProven) {
+      // An incomplete master turns real classifications into "unresolved", which
+      // reads as a provider weakness. Say so instead of letting it look like one.
+      notes.push(
+        "COVERAGE RISK: the category master was NOT proven exhaustive, so some " +
+          "`unresolved_no_master_entry` results may be OUR gap, not the provider's.",
+      );
+    }
+
+    // The master fetch is the evidence — but only if it actually went out. A run
+    // served entirely from cache proves nothing about the network or the
+    // credential TODAY, so it stays `unknown` rather than claiming reachability
+    // from a stored response.
+    const reachedProvider = budget.state.providerReached > 0;
+    const runtime: RuntimeObservation = reachedProvider
+      ? {
+          egress: "reachable",
+          credentials: "valid",
+          detail: "Observed while fetching the category master for this run.",
+        }
+      : {
+          egress: "unknown",
+          credentials: "untested",
+          detail: "Category master served from cache; no request left this process.",
+        };
+
+    return {
+      transport: createHotelbedsTransport(client),
+      reference: { classifications: master.classifications },
+      runtime,
+      notes,
+      release: () => lock.release(),
+    };
+  } catch (error) {
+    // Nothing downstream can run, so do not hold the single-run lock while the
+    // caller unwinds.
+    lock.release();
+    throw error;
+  }
 }
 
 async function runProvider(
@@ -148,18 +227,26 @@ async function runProvider(
     for (const reason of c.reasons) log(`      - ${reason}`);
   }
 
-  const transport = createTransport(descriptor, args, (m) => log(m));
+  const session = await createProviderSession(descriptor, args, (m) => log(m));
+  for (const note of session.notes) log(`  ${note}`);
 
   // Caller-supplied label keeps runs reproducible; the harness reads no clock.
   const runLabel = String(process.env.EVAL_RUN_LABEL ?? "run");
 
-  const result = await executeEvaluation({
-    descriptor,
-    destination,
-    transport,
-    runLabel,
-    retainRawPayloads: true,
-  });
+  let result;
+  try {
+    result = await executeEvaluation({
+      descriptor,
+      destination,
+      transport: session.transport,
+      runLabel,
+      retainRawPayloads: true,
+      reference: session.reference,
+      runtime: session.runtime,
+    });
+  } finally {
+    session.release();
+  }
 
   log(`${descriptor.displayName} × ${destination} — evaluation complete.`);
   log(`  raw records returned:      ${result.metrics.accounting.rawRecordsReturned}`);
@@ -189,6 +276,11 @@ async function main(): Promise<void> {
   // would otherwise swallow it.
   if (args.has("probe")) {
     await runProbe(args, log);
+    return;
+  }
+
+  if (args.has("category-master")) {
+    await runCategoryMaster(args, log);
     return;
   }
 
@@ -251,6 +343,61 @@ async function main(): Promise<void> {
 }
 
 /**
+ * Fetch and cache the Hotelbeds categories master.
+ *
+ * Without this, every hotel category code normalizes to
+ * `unresolved_no_master_entry` and a provider supplying perfectly good
+ * classification evidence looks like it supplied none.
+ */
+async function runCategoryMaster(
+  args: Map<string, string | true>,
+  log: (...parts: unknown[]) => void,
+): Promise<void> {
+  const descriptor = getAdapter("hotelbeds");
+  for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
+
+  const budget = createBudget(args);
+  const { client, ledger, lock } = createHotelbedsClient(
+    descriptor,
+    budget,
+    (m) => log(m),
+    !args.has("no-cache"),
+  );
+
+  let master;
+  try {
+    master = await fetchHotelbedsCategoryMaster(client);
+  } finally {
+    lock.release();
+  }
+
+  log("Hotelbeds categories master");
+  log(`  raw records:    ${master.rawCount}`);
+  log(`  unique codes:   ${master.uniqueCodes}`);
+  log(`  duplicate codes:${master.duplicateCodes.length}`);
+  log(`  exhaustion proven: ${master.evidence.exhaustionProven}`);
+  for (const risk of master.evidence.coverageRisks) log(`  COVERAGE RISK: ${risk}`);
+
+  const q = ledger.summary();
+  log(
+    `  daily quota: ${q.confirmedInWindow} confirmed + ${q.possiblyConsumedInWindow} ambiguous, ${q.remainingInWindow}/${q.quota} safe remaining`,
+  );
+
+  const written = writeArtifact("hotelbeds-category-master.json", {
+    rawCount: master.rawCount,
+    uniqueCodes: master.uniqueCodes,
+    duplicateCodes: master.duplicateCodes,
+    exhaustionProven: master.evidence.exhaustionProven,
+    coverageRisks: master.evidence.coverageRisks,
+    classifications: [...master.classifications.values()],
+  });
+  log(`  artifact (gitignored): ${written}`);
+  log("");
+  log("NOTE: a successful join does NOT make these D060 truth. Observation and");
+  log("interpretation stay separate; the issuing authority is still unestablished.");
+}
+
+/**
  * Geography discovery.
  *
  * Fetches provider destination master data for a country and caches it, so
@@ -277,23 +424,41 @@ async function runGeographyDiscovery(
   for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
 
   const budget = createBudget(args);
-  const { client, ledger } = createHotelbedsClient(
+  const { client, ledger, lock } = createHotelbedsClient(
     descriptor,
     budget,
     (m) => log(m),
     !args.has("no-cache"),
   );
 
-  const { destinations, total } = await fetchDestinations(client, country);
+  let discovery;
+  try {
+    discovery = await fetchDestinations(client, country);
+  } finally {
+    lock.release();
+  }
+  const { destinations, total, evidence, interrupted } = discovery;
 
   log(`Hotelbeds geography discovery — country ${country}`);
   log(`  destinations returned: ${destinations.length}${total === null ? "" : ` of ${total}`}`);
-  log(`  requests reaching provider: ${budget.state.providerReached}`);
-  log(`  daily quota: ${ledger.summary().spentInWindow}/${ledger.summary().quota} spent`);
+  log(`  requests/pages: ${evidence.requests}/${evidence.pages}`);
+  log(`  exhaustion proven: ${evidence.exhaustionProven}`);
+  if (interrupted) {
+    log("  GEOGRAPHY DISCOVERY INCOMPLETE — enumeration did not demonstrate exhaustion.");
+  }
+  for (const risk of evidence.coverageRisks) log(`  COVERAGE RISK: ${risk}`);
+  const q = ledger.summary();
+  log(
+    `  daily quota: ${q.confirmedInWindow} confirmed + ${q.possiblyConsumedInWindow} ambiguous, ${q.remainingInWindow}/${q.quota} safe remaining`,
+  );
 
   const written = writeArtifact(`hotelbeds-geography-${country}.json`, {
     country,
     total,
+    returned: destinations.length,
+    exhaustionProven: evidence.exhaustionProven,
+    incomplete: interrupted,
+    coverageRisks: evidence.coverageRisks,
     destinations,
     note:
       "CANDIDATES ONLY. A canonical destination is resolved by review, not by name matching. " +
@@ -321,9 +486,14 @@ async function runProbe(
   const budget = createBudget(args);
   // The probe always bypasses the response cache (see probeCredentials): a
   // cached 200 from yesterday cannot prove today's credentials still work.
-  const { client, ledger } = createHotelbedsClient(descriptor, budget, (m) => log(m), false);
+  const { client, ledger, lock } = createHotelbedsClient(descriptor, budget, (m) => log(m), false);
 
-  const result = await probeCredentials(client);
+  let result;
+  try {
+    result = await probeCredentials(client);
+  } finally {
+    lock.release();
+  }
 
   log("Hotelbeds credential probe");
   log(`  CREDENTIALS:        ${result.credentials.toUpperCase()}`);
@@ -333,9 +503,29 @@ async function runProbe(
   log(`  reached provider:   ${budget.state.providerReached}  <- what consumes the 50/day quota`);
   log(`  local budget left:  ${budget.remaining}`);
   const quota = ledger.summary();
-  log(
-    `  DAILY quota:        ${quota.spentInWindow}/${quota.quota} spent in a conservative 24h rolling window (${quota.remainingInWindow} left)`,
-  );
+  log(`  DAILY quota (conservative 24h rolling window):`);
+  log(`    confirmed reached provider:   ${quota.confirmedInWindow}`);
+  log(`    possibly consumed (ambiguous): ${quota.possiblyConsumedInWindow}`);
+  log(`    safe remaining:                ${quota.remainingInWindow} of ${quota.quota}`);
+
+  // Re-assess against what was just OBSERVED. The descriptor did not change; if
+  // the verdicts below differ from `--status`, that difference is the runtime.
+  const runtime: RuntimeObservation = {
+    egress: result.reachable ? "reachable" : "blocked",
+    credentials:
+      result.credentials === "valid"
+        ? "valid"
+        : result.credentials === "invalid"
+          ? "invalid"
+          : "untested",
+    detail: result.detail,
+  };
+  const observed = assessAllCapabilities(descriptor, undefined, runtime);
+  log("  capabilities under the OBSERVED runtime:");
+  for (const c of observed) {
+    log(`    ${c.capability}: ${c.runnable ? "runnable" : "BLOCKED"}`);
+    for (const reason of c.reasons) log(`        - ${reason}`);
+  }
 
   writeArtifact("hotelbeds-probe.json", {
     credentials: result.credentials,
@@ -345,6 +535,8 @@ async function runProbe(
     budget: budget.state,
     dailyQuota: ledger.summary(),
     accountFingerprint: client.accountFingerprint,
+    runtime,
+    capabilities: observed,
   });
 }
 

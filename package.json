@@ -23,6 +23,7 @@
     "eval:sources:pilot-probe": "tsx scripts/provider-evaluation/pilot-probe.ts",
     "eval:sources:probe": "tsx scripts/provider-evaluation/run.ts --probe",
     "eval:sources:geography": "tsx scripts/provider-evaluation/run.ts --discover-geography",
+    "eval:sources:categories": "tsx scripts/provider-evaluation/run.ts --category-master",
     "import:inspect": "tsx scripts/import/inspect.ts",
     "import:stage": "tsx scripts/import/stage.ts",
     "import:dry-run": "tsx scripts/import/dry-run.ts",

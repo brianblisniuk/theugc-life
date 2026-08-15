@@ -22,6 +22,7 @@ import { ARTIFACT_ROOT } from "../../scripts/provider-evaluation/artifacts";
 import { bookingDemandDescriptor } from "../../scripts/provider-evaluation/adapters/booking";
 import { expediaRapidDescriptor } from "../../scripts/provider-evaluation/adapters/expedia";
 import { getAdapter } from "../../scripts/provider-evaluation/adapters/registry";
+import { verifyFieldMap } from "../../scripts/provider-evaluation/field-verification";
 import { hotelbedsContentDescriptor } from "../../scripts/provider-evaluation/adapters/hotelbeds";
 import {
   assessAllCapabilities,
@@ -776,6 +777,104 @@ describe("the execution pipeline runs end to end", () => {
       }),
     ).rejects.toThrow(/no resolved geography/);
   });
+
+  it("joins category codes through the reference data it is given", async () => {
+    // A code-based provider: the property record carries `categoryCode` and
+    // nothing else. Without the master, the code means nothing.
+    const coded: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, starValue: null, starKind: null },
+      classification: {
+        mode: "code_with_master_lookup",
+        codePath: "categoryCode",
+        hotelAccommodationTypes: ["HOTEL"],
+        issuerEstablished: true,
+      },
+    };
+    const transport = {
+      fetchPage: async () => ({
+        records: [
+          payload({ id: "h1", categoryCode: "5EST", rating: {}, hero: null }),
+          payload({ id: "h2", categoryCode: "4EST", rating: {}, hero: null }),
+        ],
+        nextCursor: null,
+      }),
+    };
+
+    // THE BUG: the live run built a category master and then never passed it in.
+    // Every code fell through to `unresolved_no_master_entry`, so a provider
+    // supplying good classification evidence measured as supplying none.
+    const withoutMaster = await executeEvaluation({
+      descriptor: coded,
+      destination: "bali",
+      runLabel: "test",
+      transport,
+    });
+    expect(withoutMaster.metrics.inventory.unresolvedStar).toBe(2);
+    expect(withoutMaster.metrics.inventory.apparentExactFiveStar).toBe(0);
+
+    const withMaster = await executeEvaluation({
+      descriptor: coded,
+      destination: "bali",
+      runLabel: "test",
+      transport,
+      reference: {
+        classifications: new Map([
+          [
+            "5EST",
+            {
+              code: "5EST",
+              simpleCode: "5",
+              accommodationType: "HOTEL",
+              group: null,
+              description: "5 STAR",
+            },
+          ],
+          [
+            "4EST",
+            {
+              code: "4EST",
+              simpleCode: "4",
+              accommodationType: "HOTEL",
+              group: null,
+              description: "4 STAR",
+            },
+          ],
+        ]),
+      },
+    });
+    expect(withMaster.metrics.inventory.apparentExactFiveStar).toBe(1);
+    expect(withMaster.metrics.inventory.apparentExactFourStar).toBe(1);
+    expect(withMaster.metrics.inventory.unresolvedStar).toBe(0);
+  });
+
+  it("reports capabilities against the runtime it observed, not a static guess", async () => {
+    const transport = {
+      fetchPage: async () => ({ records: [payload()], nextCursor: null }),
+    };
+    const byName = (r: Awaited<ReturnType<typeof executeEvaluation>>) =>
+      Object.fromEntries(r.capabilities.map((c) => [c.capability, c]));
+
+    const reachable = await executeEvaluation({
+      descriptor: SYNTHETIC,
+      destination: "bali",
+      runLabel: "test",
+      transport,
+      runtime: { egress: "reachable", credentials: "valid" },
+    });
+    expect(byName(reachable)["enumerate_inventory"]?.runnable).toBe(true);
+
+    // Same descriptor, same records — only the observation differs.
+    const blocked = await executeEvaluation({
+      descriptor: SYNTHETIC,
+      destination: "bali",
+      runLabel: "test",
+      transport,
+      runtime: { egress: "blocked", credentials: "untested", detail: "host_not_allowed" },
+    });
+    expect(byName(blocked)["enumerate_inventory"]?.runnable).toBe(false);
+    expect(byName(blocked)["enumerate_inventory"]?.reasons.join(" ")).toContain("host_not_allowed");
+  });
 });
 
 describe("capability-specific gates", () => {
@@ -1208,5 +1307,157 @@ describe("local env loading", () => {
 
     delete process.env.EVAL_TEST_FROM_FILE;
     delete process.env.EVAL_TEST_ALREADY_SET;
+  });
+});
+
+describe("egress is a RUNTIME observation, never a permanent descriptor fact", () => {
+  /** Hotelbeds with the facts inventory/location/media actually need. */
+  function readyHotelbeds(): AdapterDescriptor {
+    return {
+      ...hotelbedsContentDescriptor,
+      geography: [
+        {
+          destination: "bali",
+          providerEntityIds: ["D1"],
+          providerEntityKind: "destination",
+          resolutionMethod: "test fixture",
+          requiresUnion: false,
+          caveats: [],
+        },
+      ],
+    };
+  }
+
+  it("carries NO hardcoded egress blocker in the descriptor", () => {
+    // The bug: a previous run's network failure was baked into `blockers`, so
+    // allowlisting the host would leave every capability blocked by a stale
+    // string that no probe could ever clear.
+    expect(hotelbedsContentDescriptor.blockers.join(" ")).not.toContain("EGRESS");
+  });
+
+  it("blocks every capability while egress is CURRENTLY observed blocked", () => {
+    const blocked = assessAllCapabilities(readyHotelbeds(), "bali", {
+      egress: "blocked",
+      credentials: "untested",
+      detail: "host_not_allowed",
+    });
+    for (const c of blocked) expect(c.runnable).toBe(false);
+    expect(blocked[0]?.reasons.join(" ")).toContain("runtime observation, not a provider fact");
+  });
+
+  it("REGRESSION: once the network is reachable, inventory/location/media proceed", () => {
+    // Same descriptor, same run — only the runtime observation changed. This is
+    // the exact scenario that was permanently blocked before.
+    const reachable = Object.fromEntries(
+      assessAllCapabilities(readyHotelbeds(), "bali", {
+        egress: "reachable",
+        credentials: "valid",
+      }).map((c) => [c.capability, c]),
+    );
+
+    expect(reachable["enumerate_inventory"]?.runnable).toBe(true);
+    expect(reachable["measure_location"]?.runnable).toBe(true);
+    expect(reachable["measure_media"]?.runnable).toBe(true);
+    // D060 stays strict — the issuer is still unestablished.
+    expect(reachable["resolve_d060_classification"]?.runnable).toBe(false);
+  });
+
+  it("does not pre-emptively block when egress is simply unknown", () => {
+    // The probe has to be allowed to run in order to establish the state.
+    const unknown = assessCapability(readyHotelbeds(), "enumerate_inventory", "bali");
+    expect(unknown.runnable).toBe(true);
+  });
+
+  it("blocks when the provider rejected the credentials", () => {
+    const rejected = assessCapability(readyHotelbeds(), "enumerate_inventory", "bali", {
+      egress: "reachable",
+      credentials: "invalid",
+    });
+    expect(rejected.runnable).toBe(false);
+    expect(rejected.reasons.join(" ")).toContain("REJECTED");
+  });
+});
+
+describe("field-map verification against a live payload", () => {
+  const PAYLOAD = {
+    id: "p1",
+    name: "Test",
+    location: { lat: -8.5, lon: 115.2, address: "1 Test St" },
+    images: [{ url: "a.jpg" }],
+  };
+
+  it("flags a mapped path that resolves on NO sampled record", () => {
+    // A wrong path does not crash — it reports 0% coverage for a field the
+    // provider populates, which is indistinguishable from a measurement.
+    const wrong: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, latitude: "coordinates.latitude" },
+    };
+    const report = verifyFieldMap([PAYLOAD, PAYLOAD], wrong);
+
+    expect(report.hasMismatch).toBe(true);
+    expect(report.mismatches.map((m) => m.field)).toContain("latitude");
+  });
+
+  it("passes when every mapped path resolves", () => {
+    const report = verifyFieldMap([PAYLOAD], {
+      ...SYNTHETIC,
+      fieldMap: {
+        sourcePropertyId: "id",
+        name: "name",
+        latitude: "location.lat",
+        longitude: "location.lon",
+        address: "location.address",
+        photos: "images",
+        reviewScore: null,
+      },
+      classification: { ...SYNTHETIC.classification, codePath: null },
+    });
+    expect(report.hasMismatch).toBe(false);
+  });
+
+  it("distinguishes not_mapped from absent_in_sample", () => {
+    const report = verifyFieldMap([PAYLOAD], {
+      ...SYNTHETIC,
+      fieldMap: { sourcePropertyId: "id", name: "name", phone: "nope.here", reviewScore: null },
+      classification: { ...SYNTHETIC.classification, codePath: null },
+    });
+    const byField = Object.fromEntries(report.fields.map((f) => [f.field, f]));
+    expect(byField["latitude"]?.verdict).toBe("not_mapped");
+    expect(byField["phone"]?.verdict).toBe("absent_in_sample");
+  });
+
+  it("stops the run rather than publishing a fabricated 0%", async () => {
+    const wrong: AdapterDescriptor = {
+      ...SYNTHETIC,
+      fieldMap: { ...SYNTHETIC.fieldMap, latitude: "totally.wrong.path" },
+    };
+
+    await expect(
+      executeEvaluation({
+        descriptor: wrong,
+        destination: "bali",
+        runLabel: "test",
+        transport: {
+          fetchPage: async () => ({ records: [payload({ id: "a" })], nextCursor: null }),
+        },
+      }),
+    ).rejects.toThrow(/FIELD_MAP_MISMATCH/);
+  });
+
+  it("verifies the classification code path too", () => {
+    // The one Hotelbeds path that was previously assumed rather than observed.
+    const report = verifyFieldMap([{ id: "x" }], {
+      ...SYNTHETIC,
+      fieldMap: { sourcePropertyId: "id", reviewScore: null },
+      classification: {
+        mode: "code_with_master_lookup",
+        codePath: "categoryCode",
+        hotelAccommodationTypes: [],
+        issuerEstablished: false,
+      },
+    });
+    const entry = report.fields.find((f) => f.field === "classification.codePath");
+    expect(entry?.verdict).toBe("absent_in_sample");
   });
 });

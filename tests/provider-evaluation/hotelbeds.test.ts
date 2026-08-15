@@ -28,6 +28,8 @@ import { cacheKey } from "../../scripts/provider-evaluation/hotelbeds/cache";
 import { HotelbedsClient } from "../../scripts/provider-evaluation/hotelbeds/client";
 import {
   DailyQuotaExhaustedError,
+  EvaluationLock,
+  EvaluationLockedError,
   QuotaLedger,
 } from "../../scripts/provider-evaluation/hotelbeds/quota-ledger";
 import {
@@ -38,6 +40,8 @@ import {
 } from "../../scripts/provider-evaluation/hotelbeds/signature";
 import {
   createHotelbedsTransport,
+  fetchDestinations,
+  fetchHotelbedsCategoryMaster,
   probeCredentials,
 } from "../../scripts/provider-evaluation/hotelbeds/transport";
 
@@ -515,5 +519,220 @@ describe("credential probe", () => {
     const result = await probeCredentials(client);
     expect(result.credentials).toBe("invalid");
     expect(result.reachable).toBe(true);
+  });
+});
+
+describe("ambiguous network failures protect the allowance honestly", () => {
+  it("counts a mid-flight failure as POSSIBLY consumed, not confirmed", async () => {
+    // The request left this process and no response came back. Hotelbeds may
+    // have received and charged it; we cannot prove otherwise.
+    const { client, ledger } = makeClient({
+      budget: testBudget(1),
+      fetchImpl: async () => {
+        throw new TypeError("terminated");
+      },
+    });
+
+    await expect(client.request("/hotels", { d: "A" })).rejects.toThrow();
+
+    const summary = ledger.summary();
+    expect(summary.possiblyConsumedInWindow).toBe(1);
+    expect(summary.confirmedInWindow).toBe(0);
+    // The guard is conservative even though the report is honest.
+    expect(summary.spentInWindow).toBe(1);
+    expect(summary.remainingInWindow).toBe(49);
+  });
+
+  it("keeps an explicit egress denial OUT of the quota entirely", async () => {
+    const { client, ledger } = makeClient({
+      fetchImpl: async () =>
+        new Response("blocked", { status: 403, headers: { "x-deny-reason": "host_not_allowed" } }),
+    });
+
+    await expect(client.request("/hotels")).rejects.toBeInstanceOf(EgressBlockedError);
+
+    const summary = ledger.summary();
+    expect(summary.spentInWindow).toBe(0);
+    expect(summary.possiblyConsumedInWindow).toBe(0);
+  });
+
+  it("reports the CONFIGURED quota when exhausted, not a reconstruction", async () => {
+    const root = tempRoot();
+    const ledger = new QuotaLedger("acct", { root, quota: 7, now: () => 1_000 });
+    for (let i = 0; i < 7; i += 1) ledger.record(200);
+
+    const { client } = makeClient({ root, ledger, fetchImpl: async () => jsonResponse({}) });
+
+    // `spent + remaining` collapses to `spent` at zero; the message must still
+    // name the real limit.
+    await expect(client.request("/hotels")).rejects.toMatchObject({ spent: 7, quota: 7 });
+  });
+});
+
+describe("cross-process evaluation lock", () => {
+  it("refuses a second concurrent evaluation on the same account", () => {
+    const root = tempRoot();
+    const first = new EvaluationLock("acct", { root, now: () => 1_000 });
+    first.acquire(111);
+
+    // A second process must not proceed: both reading 49/50 would both issue 50.
+    const second = new EvaluationLock("acct", { root, now: () => 1_000 });
+    expect(() => second.acquire(222)).toThrow(EvaluationLockedError);
+  });
+
+  it("allows a fresh acquisition after release", () => {
+    const root = tempRoot();
+    const first = new EvaluationLock("acct", { root, now: () => 1_000 });
+    first.acquire(111);
+    first.release();
+
+    const second = new EvaluationLock("acct", { root, now: () => 1_000 });
+    expect(() => second.acquire(222)).not.toThrow();
+  });
+
+  it("reclaims a stale lock deliberately, and says so", () => {
+    const root = tempRoot();
+    new EvaluationLock("acct", { root, now: () => 0 }).acquire(111);
+
+    // 16 minutes later the owner is presumed crashed.
+    const later = new EvaluationLock("acct", { root, now: () => 16 * 60_000 });
+    const result = later.acquire(222);
+    expect(result.reclaimedStaleLock).toBe(true);
+  });
+
+  it("does NOT steal a lock that is still fresh", () => {
+    const root = tempRoot();
+    new EvaluationLock("acct", { root, now: () => 0 }).acquire(111);
+    const soon = new EvaluationLock("acct", { root, now: () => 60_000 });
+    expect(() => soon.acquire(222)).toThrow(EvaluationLockedError);
+  });
+});
+
+describe("exhaustive master-data pagination", () => {
+  function pagedClient(
+    pages: { rows: unknown[]; total: number | null }[],
+    key: string,
+    budget?: RequestBudget,
+  ) {
+    let index = 0;
+    return makeClient({
+      budget,
+      fetchImpl: async () => {
+        // Out of fixtures: an empty page that asserts NO total, so it cannot
+        // clobber the provider total the earlier pages reported.
+        const page = pages[index] ?? { rows: [], total: null };
+        index += 1;
+        return jsonResponse({
+          [key]: page.rows,
+          ...(page.total === null ? {} : { total: page.total }),
+        });
+      },
+    });
+  }
+
+  function destinations(n: number, offset = 0): unknown[] {
+    return Array.from({ length: n }, (_, i) => ({
+      code: `D${offset + i}`,
+      name: { content: `Dest ${offset + i}` },
+      countryCode: "ID",
+    }));
+  }
+
+  it("A: a single short page is exhaustive", async () => {
+    const { client } = pagedClient([{ rows: destinations(12), total: 12 }], "destinations");
+    const result = await fetchDestinations(client, "ID", 1000);
+    expect(result.destinations).toHaveLength(12);
+    expect(result.evidence.exhaustionProven).toBe(true);
+    expect(result.interrupted).toBe(false);
+  });
+
+  it("B: a FULL page with a larger provider total fetches the next page", async () => {
+    // The exact bug the single-request version had: 1000 returned, 1500 exist.
+    const { client } = pagedClient(
+      [
+        { rows: destinations(1000), total: 1500 },
+        { rows: destinations(500, 1000), total: 1500 },
+      ],
+      "destinations",
+    );
+    const result = await fetchDestinations(client, "ID", 1000);
+    expect(result.destinations).toHaveLength(1500);
+    expect(result.evidence.pages).toBe(2);
+    expect(result.evidence.exhaustionProven).toBe(true);
+  });
+
+  it("C: walks several pages to exhaustion", async () => {
+    const { client } = pagedClient(
+      [
+        { rows: destinations(10), total: 25 },
+        { rows: destinations(10, 10), total: 25 },
+        { rows: destinations(5, 20), total: 25 },
+      ],
+      "destinations",
+    );
+    const result = await fetchDestinations(client, "ID", 10);
+    expect(result.destinations).toHaveLength(25);
+    expect(result.evidence.exhaustionProven).toBe(true);
+  });
+
+  it("D: a provider-total disagreement means exhaustion is NOT proven", async () => {
+    const { client } = pagedClient([{ rows: destinations(5), total: 900 }], "destinations");
+    const result = await fetchDestinations(client, "ID", 1000);
+    expect(result.evidence.exhaustionProven).toBe(false);
+    expect(result.interrupted).toBe(true);
+    expect(result.evidence.coverageRisks.join(" ")).toContain("reported a total of 900");
+  });
+
+  it("E: a budget interruption stops the walk rather than reporting a partial total", async () => {
+    const { client } = pagedClient(
+      [
+        { rows: destinations(10), total: 100 },
+        { rows: destinations(10, 10), total: 100 },
+      ],
+      "destinations",
+      // Only one request is affordable, so the walk cannot reach 100.
+      testBudget(1),
+    );
+    await expect(fetchDestinations(client, "ID", 10)).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+
+  it("fetches the categories master and reports duplicates", async () => {
+    const { client } = pagedClient(
+      [
+        {
+          rows: [
+            {
+              code: "5EST",
+              simpleCode: "5",
+              accommodationType: "HOTEL",
+              description: { content: "5 STAR" },
+            },
+            {
+              code: "5LL",
+              simpleCode: "5",
+              accommodationType: "APARTMENT",
+              description: { content: "5 KEY" },
+            },
+            {
+              code: "5EST",
+              simpleCode: "5",
+              accommodationType: "HOTEL",
+              description: { content: "5 STAR" },
+            },
+          ],
+          total: 3,
+        },
+      ],
+      "categories",
+    );
+
+    const master = await fetchHotelbedsCategoryMaster(client);
+    expect(master.rawCount).toBe(3);
+    expect(master.uniqueCodes).toBe(2);
+    expect(master.duplicateCodes).toEqual(["5EST"]);
+    expect(master.evidence.exhaustionProven).toBe(true);
+    // The join preserves the distinction that matters.
+    expect(master.classifications.get("5EST")?.accommodationType).toBe("HOTEL");
+    expect(master.classifications.get("5LL")?.description).toBe("5 KEY");
   });
 });

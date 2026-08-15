@@ -1,8 +1,11 @@
 /**
  * HBX Group / Hotelbeds Hotel Content API — adapter descriptor.
  *
- * STATUS: documentation `partially_verified` · access `credentials_available` ·
- * live validation `blocked`.
+ * STATUS: documentation `partially_verified` · access `credentials_available`.
+ *
+ * Egress and credential state are RUNTIME observations, established by the probe
+ * on each run — not static descriptor facts. `liveValidationStatus` records the
+ * last outcome for reporting; it never gates a future run.
  *
  * ## Provenance
  *
@@ -192,10 +195,13 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
       "TECHNICALLY_AVAILABLE / PRODUCTION_RIGHTS_REVIEW_REQUIRED: redistribution and storage rights are governed by the commercial contract and are NOT established by developer documentation (D064).",
     ],
   },
-  // GLOBAL blockers only: things that stop every dimension.
-  blockers: [
-    "EGRESS BLOCKED: api.test.hotelbeds.com is unreachable from the Claude Code environment (egress proxy returned HTTP 403 on CONNECT). No live request has been made and no quota consumed.",
-  ],
+  // STATIC provider facts only.
+  //
+  // Egress state deliberately does NOT live here. It is a runtime observation
+  // (see `RuntimeObservation`): baking a previous run's network failure into the
+  // descriptor would leave every capability blocked by a stale string even after
+  // the host is allowlisted.
+  blockers: [],
   // Dimension-scoped blockers. Crucially, the unresolved classification issuer
   // does NOT appear under inventory/location/media — those are measurable as
   // soon as egress and geography exist.

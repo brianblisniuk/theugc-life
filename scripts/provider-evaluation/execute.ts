@@ -14,6 +14,7 @@
  */
 import { writeArtifact } from "./artifacts";
 import { assessAllCapabilities } from "./capabilities";
+import { FieldMapMismatchError, verifyFieldMap } from "./field-verification";
 import { computeMediaEvidence, computeMetrics } from "./metrics";
 import { normalizeAll } from "./normalize";
 import { paginateAll, type PageResult } from "./paginate";
@@ -23,6 +24,7 @@ import type {
   EvaluationRunResult,
   ProviderGeographyResolution,
   ReferenceData,
+  RuntimeObservation,
 } from "./types";
 import { emptyReferenceData } from "./types";
 
@@ -59,6 +61,17 @@ export interface ExecuteOptions {
   maxRequestsPerEntity?: number;
   /** Master/reference data for code→meaning joins (e.g. Hotelbeds categories). */
   reference?: ReferenceData;
+  /**
+   * What was actually observed about the network and credentials during this
+   * run. Reported capabilities are assessed against it, so the result says what
+   * was true when it ran rather than what a static descriptor guessed.
+   */
+  runtime?: RuntimeObservation;
+  /**
+   * Throw on a field-map mismatch instead of computing aggregates. Default true:
+   * a wrong path silently reports 0% coverage, which looks like a measurement.
+   */
+  failOnFieldMapMismatch?: boolean;
 }
 
 function geographyFor(
@@ -143,6 +156,18 @@ export async function executeEvaluation(options: ExecuteOptions): Promise<Evalua
     coverageRisks,
   };
 
+  // Verify the descriptor's paths against the ACTUAL payload before any
+  // aggregate is computed. A mapped path that resolves nowhere means the
+  // descriptor is wrong, and reporting its 0% would be reporting fiction.
+  const verification = verifyFieldMap(rawPayloads.slice(0, 50), descriptor);
+  if (verification.hasMismatch && options.failOnFieldMapMismatch !== false) {
+    writeArtifact(
+      `field-verification/${descriptor.provider}-${destination}-${runLabel}.json`,
+      verification,
+    );
+    throw new FieldMapMismatchError(verification);
+  }
+
   const reference = options.reference ?? emptyReferenceData();
   const { records, accounting } = normalizeAll(rawPayloads, descriptor, destination, reference);
   const metrics = computeMetrics(records, accounting, descriptor, destination, pagination);
@@ -157,7 +182,12 @@ export async function executeEvaluation(options: ExecuteOptions): Promise<Evalua
   }
   artifacts.push(writeArtifact(`normalized/${slug}.json`, records));
   artifacts.push(
-    writeArtifact(`metrics/${slug}.json`, { metrics, media, operations: descriptor.operations }),
+    writeArtifact(`metrics/${slug}.json`, {
+      metrics,
+      media,
+      operations: descriptor.operations,
+      fieldVerification: verification,
+    }),
   );
 
   return {
@@ -167,7 +197,7 @@ export async function executeEvaluation(options: ExecuteOptions): Promise<Evalua
     metrics,
     media,
     operations: descriptor.operations,
-    capabilities: assessAllCapabilities(descriptor, destination),
+    capabilities: assessAllCapabilities(descriptor, destination, options.runtime),
     artifacts,
     coverageDisclaimer:
       "These are provider metrics, NOT a coverage claim. Under D061 a destination is coverage complete only when zero coverage-critical candidates remain unresolved, which this run does not establish.",

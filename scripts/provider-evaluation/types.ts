@@ -93,6 +93,32 @@ export type EvaluationCapability =
   | "assess_classification"
   | "resolve_d060_classification";
 
+/**
+ * Runtime observations — what is true RIGHT NOW, not what a descriptor recorded.
+ *
+ * The distinction matters because a historical observation was being used as a
+ * permanent fact: "EGRESS BLOCKED" sat in the descriptor's static blockers, so
+ * allowlisting the host would have left every capability blocked by a stale
+ * string from a previous run.
+ *
+ * Static descriptor facts answer "what do we know about this provider?"
+ * (endpoint, field semantics, issuer, geography). Runtime observations answer
+ * "what happened when we last tried?" (egress, credentials, quota). Only the
+ * first belongs in a descriptor.
+ */
+export interface RuntimeObservation {
+  /** `unknown` until something actually tried. Never defaulted to blocked. */
+  egress: "unknown" | "reachable" | "blocked";
+  credentials: "untested" | "valid" | "invalid";
+  /** When this observation was made, for staleness judgement by a human. */
+  observedAt?: string;
+  detail?: string;
+}
+
+export function unknownRuntime(): RuntimeObservation {
+  return { egress: "unknown", credentials: "untested" };
+}
+
 export interface CapabilityAssessment {
   capability: EvaluationCapability;
   runnable: boolean;

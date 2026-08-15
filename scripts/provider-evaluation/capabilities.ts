@@ -20,7 +20,9 @@ import type {
   CapabilityAssessment,
   EvaluationCapability,
   EvaluationDestination,
+  RuntimeObservation,
 } from "./types";
+import { unknownRuntime } from "./types";
 
 export const ALL_CAPABILITIES: readonly EvaluationCapability[] = [
   "enumerate_inventory",
@@ -30,12 +32,31 @@ export const ALL_CAPABILITIES: readonly EvaluationCapability[] = [
   "resolve_d060_classification",
 ];
 
-/** Blockers that stop every dimension: no endpoint, no credentials, no network. */
+/**
+ * Blockers that stop every dimension.
+ *
+ * Static descriptor facts only, plus the CURRENT runtime observation. A previous
+ * run's egress failure is not a provider fact and must never be baked into the
+ * descriptor — otherwise allowlisting the host leaves everything blocked by a
+ * stale string.
+ */
 function globalReasons(
   descriptor: AdapterDescriptor,
   destination?: EvaluationDestination,
+  runtime: RuntimeObservation = unknownRuntime(),
 ): string[] {
   const reasons: string[] = [];
+
+  // Only a CURRENTLY observed block counts. `unknown` does not pre-emptively
+  // block: the probe is what decides, and it must be allowed to run.
+  if (runtime.egress === "blocked") {
+    reasons.push(
+      `EGRESS currently BLOCKED${runtime.detail ? ` (${runtime.detail})` : ""}. This is a runtime observation, not a provider fact — re-probe after the host is allowlisted.`,
+    );
+  }
+  if (runtime.credentials === "invalid") {
+    reasons.push("Credentials were REJECTED by the provider on the last probe.");
+  }
 
   if (!descriptor.baseUrl) reasons.push("No API base URL recorded.");
   if (!descriptor.staticContentEndpoint) {
@@ -69,8 +90,12 @@ export function assessCapability(
   descriptor: AdapterDescriptor,
   capability: EvaluationCapability,
   destination?: EvaluationDestination,
+  runtime: RuntimeObservation = unknownRuntime(),
 ): CapabilityAssessment {
-  const reasons = [...globalReasons(descriptor, destination), ...scoped(descriptor, capability)];
+  const reasons = [
+    ...globalReasons(descriptor, destination, runtime),
+    ...scoped(descriptor, capability),
+  ];
 
   switch (capability) {
     case "enumerate_inventory":
@@ -109,7 +134,7 @@ export function assessCapability(
 
     case "resolve_d060_classification": {
       // The strict one. Unchanged in strictness — only in blast radius.
-      const inherited = assessCapability(descriptor, "assess_classification", destination);
+      const inherited = assessCapability(descriptor, "assess_classification", destination, runtime);
       reasons.push(...inherited.reasons.filter((r) => !reasons.includes(r)));
 
       if (!descriptor.classification.issuerEstablished) {
@@ -144,8 +169,9 @@ export function assessCapability(
 export function assessAllCapabilities(
   descriptor: AdapterDescriptor,
   destination?: EvaluationDestination,
+  runtime: RuntimeObservation = unknownRuntime(),
 ): CapabilityAssessment[] {
-  return ALL_CAPABILITIES.map((c) => assessCapability(descriptor, c, destination));
+  return ALL_CAPABILITIES.map((c) => assessCapability(descriptor, c, destination, runtime));
 }
 
 /**
@@ -162,8 +188,9 @@ export function canRunAnything(assessments: readonly CapabilityAssessment[]): bo
 export function assertRunnableForAnyCapability(
   descriptor: AdapterDescriptor,
   destination?: EvaluationDestination,
+  runtime: RuntimeObservation = unknownRuntime(),
 ): CapabilityAssessment[] {
-  const assessments = assessAllCapabilities(descriptor, destination);
+  const assessments = assessAllCapabilities(descriptor, destination, runtime);
   if (canRunAnything(assessments)) return assessments;
 
   const detail = assessments
