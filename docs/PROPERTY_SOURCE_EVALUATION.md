@@ -1,12 +1,48 @@
 # theugc.life — PROPERTY_SOURCE_EVALUATION.md
 
-Version: 1.0
-Status: **Specification for the NEXT block.** Nothing here has been run, and no
-provider has been chosen.
+Version: 1.1
+Status: **Specification. EXECUTED for HBX/Hotelbeds; still open for a second
+source.**
 
 Governing contract:
 [`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
 (D060–D064). Governing decisions: D054, D055.
+
+> ## CURRENT RUN STATUS (2026-08-16)
+>
+> **HBX / Hotelbeds source evaluation: COMPLETE BY DIMENSION.**
+>
+> | | |
+> |---|---|
+> | Hotelbeds credentials | **VALID** |
+> | Live extraction | **Bali `BAI` 3,275 records · Dubai `DXB` 835 records** |
+> | Provider totals | **matched exactly on both** |
+> | Inventory source | **APPROVED — Source A** |
+> | Location source | **APPROVED** |
+> | Media source | **APPROVED FOR TECHNICAL INTEGRATION** — production/commercial rights review pending |
+> | Contact enrichment | **USEFUL / PARTIALLY SUITABLE** |
+> | Canonical D060 classification | **NOT APPROVED — REQUIRES SECONDARY VERIFICATION** |
+> | Multi-source coverage comparison | **PENDING SECOND SOURCE** |
+> | Canonical promotion into `hotels` | **NONE** |
+> | Coverage Engine | **NOT STARTED** |
+> | Bali / Dubai destination coverage | **NOT COMPLETE** |
+>
+> Evidence, metrics and method:
+> [`evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
+>
+> A second source remains wanted — for unique inventory contribution, blind-spot
+> discovery, cross-source overlap and stronger coverage-universe evidence. That
+> is a **separate question** from whether Hotelbeds itself has demonstrated
+> suitability, which it has, per dimension.
+>
+> ### Superseded run status — historical
+>
+> **(2026-08-15) ATTEMPTED, BLOCKED.** The first execution of this specification
+> produced no provider measurements and no recommendation: the official
+> documentation hosts and both Booking and Expedia credentials were unavailable
+> in the execution environment. That state no longer holds and is retained only
+> as history. The specification was unchanged by that run; nothing in it was
+> found ambiguous.
 
 ---
 
@@ -17,9 +53,12 @@ sources can supply the **coverage universe** defined in the coverage contract
 §4 — and at what cost in entity-resolution burden, provenance quality and usage
 constraints.
 
-**No provider winner is chosen in this document.** Booking, Expedia, Google and
-every other candidate are explicitly unchosen. The purpose of the evaluation is
-to make the choice defensible rather than intuitive.
+**No single global provider winner is chosen in this document**, and none is
+needed. Sources are approved BY DIMENSION: a provider can be an approved
+inventory, location and media source while its classification requires secondary
+verification. Booking, Expedia, Google and every other candidate remain
+unevaluated live. The purpose is to make each decision defensible rather than
+intuitive.
 
 The output is a comparison, not a procurement. Contracts, pricing and licensing
 negotiation are a separate concern (coverage contract §16).

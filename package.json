@@ -2,7 +2,7 @@
   "name": "theugc-life",
   "version": "0.0.0",
   "private": true,
-  "description": "theugc.life — the operating system for travel UGC creators.",
+  "description": "theugc.life \u2014 the operating system for travel UGC creators.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -19,6 +19,11 @@
     "test:watch": "vitest",
     "db:migrate": "tsx scripts/apply-migrations.ts",
     "db:test:setup": "tsx scripts/apply-migrations.ts --bootstrap",
+    "eval:sources:status": "tsx scripts/provider-evaluation/run.ts --status",
+    "eval:sources:pilot-probe": "tsx scripts/provider-evaluation/pilot-probe.ts",
+    "eval:sources:probe": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --probe",
+    "eval:sources:geography": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --discover-geography",
+    "eval:sources:categories": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --category-master",
     "import:inspect": "tsx scripts/import/inspect.ts",
     "import:stage": "tsx scripts/import/stage.ts",
     "import:dry-run": "tsx scripts/import/dry-run.ts",
@@ -29,7 +34,10 @@
     "import:promote": "tsx scripts/import/promote.ts",
     "destination:list": "tsx scripts/import/destination/list.ts",
     "destination:upsert": "tsx scripts/import/destination/upsert.ts",
-    "destination:alias": "tsx scripts/import/destination/alias.ts"
+    "destination:alias": "tsx scripts/import/destination/alias.ts",
+    "eval:sources:accommodation-types": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --accommodation-types",
+    "eval:sources:extract": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --provider hotelbeds",
+    "eval:sources:pilot-compare": "tsx scripts/provider-evaluation/run.ts --pilot-compare"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

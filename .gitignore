@@ -48,3 +48,6 @@ yarn-error.log*
 
 # vitest / tooling
 *.tsbuildinfo
+
+# provider evaluation artifacts (raw provider responses + derived extracts)
+/.data/
