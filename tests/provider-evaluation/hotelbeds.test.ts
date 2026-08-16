@@ -40,7 +40,10 @@ import {
   signRequest,
 } from "../../scripts/provider-evaluation/hotelbeds/signature";
 import { analyseDestination } from "../../scripts/provider-evaluation/hotelbeds/destination-report";
-import { comparePilotAgainstProvider } from "../../scripts/provider-evaluation/hotelbeds/pilot-comparison";
+import {
+  comparePilotAgainstProvider,
+  type ProviderRecordLike,
+} from "../../scripts/provider-evaluation/hotelbeds/pilot-comparison";
 import { hotelbedsContentDescriptor } from "../../scripts/provider-evaluation/adapters/hotelbeds";
 import {
   createHotelbedsTransport,
@@ -919,10 +922,11 @@ describe("per-destination source analysis", () => {
     expect(analysis.identity.nonFaxPhonePresent).toBe(0);
   });
 
-  it("reports the documented visualOrder=0 rule and the selectable principal apart", () => {
-    // Live visualOrder values are large ranks, so the documented rule finds
-    // nothing. Reporting only that would say "no principal images available"
-    // about a provider supplying a complete ordering on every image.
+  it("never lets a locally-chosen image count as the provider's principal", () => {
+    // Live visualOrder values are large ranks, so the DOCUMENTED provider rule
+    // finds nothing here. A deterministic local pick is still available — but
+    // "we can select one image" is not "the provider says this one is main",
+    // and only the second may be cited as hero coverage.
     const analysis = analyseDestination(
       "dubai",
       ["DXB"],
@@ -931,8 +935,25 @@ describe("per-destination source analysis", () => {
       master,
       pagination,
     );
-    expect(analysis.media.propertiesWithDocumentedVisualOrderZero).toBe(0);
-    expect(analysis.media.propertiesWithDeterministicPrincipal).toBe(1);
+    expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(0);
+    expect(analysis.media.documentedPrincipalSemanticsContradicted).toBe(true);
+    expect(analysis.media.propertiesWithDeterministicRepresentativeCandidate).toBe(1);
+    expect(analysis.media.representativeCandidateSelectionOrigin).toBe(
+      "local_deterministic_fallback",
+    );
+  });
+
+  it("counts the provider-designated principal when the documented marker IS present", () => {
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel({ images: [{ imageTypeCode: "GEN", path: "a.jpg", visualOrder: 0 }] })],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(1);
+    expect(analysis.media.documentedPrincipalSemanticsContradicted).toBe(false);
   });
 
   it("reports median and average image counts separately", () => {
@@ -955,6 +976,104 @@ describe("per-destination source analysis", () => {
     // which is why the brief asks for both.
     expect(analysis.media.medianImages).toBe(1);
     expect(analysis.media.averageImages).toBeCloseTo(33.67, 1);
+  });
+});
+
+describe("pilot comparison counts INDEPENDENT dimensions", () => {
+  // The bug this suite exists to prevent: `exactNormalizedNameAgrees` and
+  // `allPilotNameTokensPresent` were counted as two signals. An exact name match
+  // satisfies token containment BY CONSTRUCTION, so one identity dimension
+  // promoted candidates to strong_multi_signal with no corroboration at all.
+  const pilot = {
+    sourcePropertyId: "p1",
+    name: "Burj Test Hotel",
+    address: "1 Sheikh Street",
+    latitude: null,
+    longitude: null,
+    websiteUrl: "https://burjtest.example",
+  };
+
+  function record(over: Partial<ProviderRecordLike> = {}): ProviderRecordLike {
+    return {
+      id: "h1",
+      name: "Burj Test Hotel",
+      address: "somewhere else entirely",
+      websiteUrl: null,
+      phone: "+97141234567",
+      chain: "TEST",
+      latitude: 25.1,
+      longitude: 55.2,
+      ...over,
+    };
+  }
+
+  it("A. an exact name match is ONE identity dimension", () => {
+    const result = comparePilotAgainstProvider([pilot], [record()]);
+    const candidate = result.findings[0]?.candidates[0];
+    expect(candidate?.nameEvidence).toBe("exact");
+    expect(candidate?.agreeingDimensions).toBe(1);
+    expect(result.outcomes.plausible_single_signal).toBe(1);
+    expect(result.outcomes.strong_multi_signal).toBe(0);
+  });
+
+  it("B. exact name + token containment is still ONE dimension, not two", () => {
+    // Every significant pilot token is present in the identical name, so the old
+    // implementation scored this pair twice off a single agreement.
+    const result = comparePilotAgainstProvider([pilot], [record({ name: "Burj Test Hotel" })]);
+    const candidate = result.findings[0]?.candidates[0];
+    expect(candidate?.nameEvidence).toBe("exact");
+    expect(candidate?.agreeingDimensions).toBe(1);
+    expect(result.outcomes.strong_multi_signal).toBe(0);
+  });
+
+  it("C. exact name + same website domain IS multi-signal", () => {
+    const result = comparePilotAgainstProvider(
+      [pilot],
+      [record({ websiteUrl: "https://www.burjtest.example/rooms?utm=x" })],
+    );
+    const candidate = result.findings[0]?.candidates[0];
+    expect(candidate?.domain).toBe("agrees");
+    expect(candidate?.agreeingDimensions).toBe(2);
+    expect(result.outcomes.strong_multi_signal).toBe(1);
+  });
+
+  it("D. exact name + normalized address agreement IS multi-signal", () => {
+    const result = comparePilotAgainstProvider(
+      [pilot],
+      [record({ address: "1  Sheikh   Street" })],
+    );
+    const candidate = result.findings[0]?.candidates[0];
+    expect(candidate?.address).toBe("agrees");
+    expect(candidate?.agreeingDimensions).toBe(2);
+    expect(result.outcomes.strong_multi_signal).toBe(1);
+  });
+
+  it("E. several candidates stay ambiguous unless independent evidence separates them", () => {
+    const result = comparePilotAgainstProvider(
+      [pilot],
+      [record({ id: "h1" }), record({ id: "h2" })],
+    );
+    expect(result.outcomes.ambiguous_multiple_candidates).toBe(1);
+    expect(result.outcomes.strong_multi_signal).toBe(0);
+
+    // Give exactly one of them a second INDEPENDENT dimension and it separates.
+    const separated = comparePilotAgainstProvider(
+      [pilot],
+      [record({ id: "h1", websiteUrl: "https://burjtest.example" }), record({ id: "h2" })],
+    );
+    expect(separated.outcomes.strong_multi_signal).toBe(1);
+    expect(separated.findings[0]?.candidates[0]?.providerId).toBe("h1");
+  });
+
+  it("reports an unusable dimension as unavailable, never as disagreement", () => {
+    // The pilot supplies no phone column. "We could not compare" is not
+    // evidence against a match, and scoring it as a non-match would make every
+    // candidate look weaker than the evidence warrants.
+    const result = comparePilotAgainstProvider([pilot], [record()]);
+    expect(result.findings[0]?.candidates[0]?.phone).toBe("unavailable");
+    expect(result.dimensionAvailability.phone).toContain("UNAVAILABLE");
+    // Provider has no website here, so that dimension is unavailable too.
+    expect(result.findings[0]?.candidates[0]?.domain).toBe("unavailable");
   });
 });
 

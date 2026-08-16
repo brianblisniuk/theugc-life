@@ -260,7 +260,20 @@ export interface EvaluationRecord {
    * collection; there is no "hero image" field to point at. Deriving it keeps
    * the descriptor honest about what the provider actually supplies.
    */
-  hasPrincipalImageCandidate: boolean;
+  /**
+   * The PROVIDER-DESIGNATED principal image, per documented semantics only.
+   *
+   * Never satisfied by a locally-chosen fallback: "we can pick one image
+   * deterministically" and "the provider says this is the main image" are
+   * different claims, and only the second belongs in hero-image coverage.
+   */
+  hasProviderDesignatedPrincipal: boolean;
+  /**
+   * A locally-selected representative image, `selection_origin =
+   * local_deterministic_fallback`. Engineering/UI convenience, NOT provider
+   * semantic truth — it must never be reported as principal, main or hero.
+   */
+  hasDeterministicRepresentativeCandidate: boolean;
   /** Image `type` values observed on this property. */
   imageTypes: string[];
   /** Images carrying a usable path/URL. */
@@ -332,12 +345,16 @@ export interface ProviderImageFieldMap {
    * silent: every property reports "no principal image" and the provider looks
    * weak at media when it is not.
    *
-   * `deterministic_visual_order_extremum` makes the weaker, evidence-backed
-   * claim instead: a principal image can be SELECTED deterministically because
-   * the ordering has a unique extreme value. It deliberately does not assert
-   * which end of the range the provider considers best.
+   * `deterministic_representative_fallback` additionally derives a LOCAL
+   * fallback: the unique extremum of the ordering. That proves only "one image
+   * can be selected deterministically" — it does NOT establish that the image
+   * is the provider's principal one. The provider has not documented whether
+   * maximum, minimum, array order or some other transformation is intended, so
+   * the fallback is reported separately, tagged
+   * `selection_origin = local_deterministic_fallback`, and never counted as
+   * hero-image coverage.
    */
-  principalSelector?: "visual_order_zero" | "deterministic_visual_order_extremum";
+  principalSelector?: "visual_order_zero" | "deterministic_representative_fallback";
 }
 
 /** Counts describing what arrived vs what survived normalization. */
@@ -444,7 +461,13 @@ export interface PaginationEvidence {
 export interface MediaEvidence {
   propertiesWithAnyImage: number;
   /** Derived from the images collection, not read from a field path. */
-  propertiesWithPrincipalImageCandidate: number;
+  propertiesWithProviderDesignatedPrincipal: number;
+  /**
+   * True when live data contradicts the provider's documented principal-image
+   * rule. Recorded so a low count above reads as "documentation is wrong"
+   * rather than "this provider ships no main images".
+   */
+  documentedPrincipalSemanticsContradicted: boolean;
   totalImages: number;
   /** Images carrying a usable path/URL. */
   imagesWithPath: number;

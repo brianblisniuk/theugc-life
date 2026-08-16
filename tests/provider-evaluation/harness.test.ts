@@ -500,7 +500,8 @@ describe("overlap analysis records evidence and invents no thresholds", () => {
       star: { value: 5, kind: "official", reviewScore: null },
       classification: null,
       photoCount: 0,
-      hasPrincipalImageCandidate: false,
+      hasProviderDesignatedPrincipal: false,
+      hasDeterministicRepresentativeCandidate: false,
       imageTypes: [],
       imagesWithPath: 0,
       activeStatus: null,
@@ -1132,7 +1133,7 @@ describe("media evidence is derived from the images collection", () => {
       ],
     });
     const { records, accounting } = normalizeAll([withPrincipal], SYNTHETIC, "bali");
-    expect(records[0]?.hasPrincipalImageCandidate).toBe(true);
+    expect(records[0]?.hasProviderDesignatedPrincipal).toBe(true);
     expect(records[0]?.imageTypes.sort()).toEqual(["GEN", "ROO"]);
     expect(records[0]?.imagesWithPath).toBe(2);
 
@@ -1148,7 +1149,7 @@ describe("media evidence is derived from the images collection", () => {
       images: [{ url: "x.jpg", kind: "GEN", visualOrder: 3 }],
     });
     const { records } = normalizeAll([noPrincipal], SYNTHETIC, "bali");
-    expect(records[0]?.hasPrincipalImageCandidate).toBe(false);
+    expect(records[0]?.hasProviderDesignatedPrincipal).toBe(false);
   });
 
   it("aggregates image types and path availability into media evidence", () => {
@@ -1163,7 +1164,7 @@ describe("media evidence is derived from the images collection", () => {
     const media = computeMediaEvidence(records, SYNTHETIC);
 
     expect(media.propertiesWithAnyImage).toBe(2);
-    expect(media.propertiesWithPrincipalImageCandidate).toBe(1);
+    expect(media.propertiesWithProviderDesignatedPrincipal).toBe(1);
     expect(media.totalImages).toBe(2);
     // One image has no path — that is a real content-quality signal.
     expect(media.imagesWithPath).toBe(1);
@@ -1173,7 +1174,7 @@ describe("media evidence is derived from the images collection", () => {
   it("still honours an explicit hero field when the provider has one", () => {
     // SYNTHETIC maps `heroImage: "hero"`, and the default payload supplies it.
     const { records } = normalizeAll([payload({ id: "c", images: [] })], SYNTHETIC, "bali");
-    expect(records[0]?.hasPrincipalImageCandidate).toBe(true);
+    expect(records[0]?.hasProviderDesignatedPrincipal).toBe(true);
   });
 
   it("keeps Hotelbeds media as technically available, rights unresolved", () => {

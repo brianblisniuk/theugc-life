@@ -137,18 +137,27 @@ export function classifyStarEligibility(
  * `heroImage` path at the property record would read `undefined` forever and
  * report 0% hero coverage for a provider that actually supplies one.
  *
- * Which image is principal is a per-provider question, and the documented answer
- * is not always the true one — Hotelbeds documents `visualOrder = 0` while live
- * payloads carry large ordering ranks and no zero at all. `principalSelector`
- * exists so that gap is a configuration choice with a stated basis, rather than
- * a silent 0% that looks like a measurement.
+ * **Two different claims, kept apart.**
+ *
+ * `hasProviderDesignatedPrincipal` is the provider's own semantic, per its
+ * documentation. It is the only one that may be reported as hero-image
+ * coverage.
+ *
+ * `hasDeterministicRepresentativeCandidate` says a single image can be SELECTED
+ * without ambiguity. That is an engineering convenience with
+ * `selection_origin = local_deterministic_fallback` — it does not establish that
+ * the image is the one the provider considers principal, because the provider
+ * has not documented whether maximum, minimum, array order or some other
+ * transformation is intended. Calling it "principal" would manufacture provider
+ * semantics we do not have.
  */
 export function deriveImageEvidence(
   payload: unknown,
   descriptor: AdapterDescriptor,
 ): {
   photoCount: number;
-  hasPrincipalImageCandidate: boolean;
+  hasProviderDesignatedPrincipal: boolean;
+  hasDeterministicRepresentativeCandidate: boolean;
   imageTypes: string[];
   imagesWithPath: number;
 } {
@@ -173,28 +182,28 @@ export function deriveImageEvidence(
     }
   }
 
-  // The documented rule, tried first whatever the selector says: an explicit
-  // zero is unambiguous evidence when it is actually present.
-  let principal = visualOrders.includes(0);
+  // The PROVIDER-DESIGNATED principal, per documented semantics.
+  let providerDesignated = visualOrders.includes(0);
 
-  if (!principal && selector === "deterministic_visual_order_extremum" && visualOrders.length > 0) {
-    // The weaker, evidence-backed claim: a principal image can be SELECTED
-    // deterministically because one image ranks uniquely at the extreme. This
-    // says nothing about which end the provider considers best — ties simply do
-    // not qualify, because a tie is exactly the case where no single image can
-    // be picked without inventing a rule.
-    const max = Math.max(...visualOrders);
-    principal = visualOrders.filter((v) => v === max).length === 1;
+  // A provider WITH an explicit hero field still wins, when it has one — that is
+  // also a provider designation, not a local guess.
+  if (!providerDesignated && descriptor.fieldMap.heroImage) {
+    providerDesignated = readPath(payload, descriptor.fieldMap.heroImage) !== null;
   }
 
-  // A provider WITH an explicit hero field still wins, when it has one.
-  if (!principal && descriptor.fieldMap.heroImage) {
-    principal = readPath(payload, descriptor.fieldMap.heroImage) !== null;
+  // LOCAL FALLBACK, opt-in only. A unique extremum means one image can be picked
+  // deterministically; ties do not qualify, because a tie is exactly the case
+  // where no single image can be chosen without inventing a rule.
+  let representative = false;
+  if (selector === "deterministic_representative_fallback" && visualOrders.length > 0) {
+    const max = Math.max(...visualOrders);
+    representative = visualOrders.filter((v) => v === max).length === 1;
   }
 
   return {
     photoCount: images.length,
-    hasPrincipalImageCandidate: principal,
+    hasProviderDesignatedPrincipal: providerDesignated,
+    hasDeterministicRepresentativeCandidate: representative,
     imageTypes: [...types],
     imagesWithPath: withPath,
   };

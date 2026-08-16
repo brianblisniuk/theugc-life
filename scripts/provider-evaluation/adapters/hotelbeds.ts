@@ -151,16 +151,23 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
     path: "path",
     type: "imageTypeCode",
     visualOrder: "visualOrder",
-    // DOCUMENTED SEMANTICS CONTRADICTED BY LIVE DATA, 2026-08-16. The docs say
-    // `visualOrder = 0` marks the principal image; live values are large ranks
-    // (813, 805, 804 …) and 0 essentially never appears. Keeping the documented
-    // rule would have reported ~0% principal-image availability for a provider
-    // that supplies a complete ordering on every image.
+    // DOCUMENTED SEMANTICS CONTRADICTED BY LIVE DATA, 2026-08-16. HBX documents
+    // `visualOrder = 0` as the provider-designated principal image; live values
+    // are large ordering ranks (813, 805, 804 …) and 0 appears on ~3% of
+    // properties.
     //
-    // We do NOT assert which end of the range is "best" — that is not
-    // established. We assert only what the data supports: a principal image can
-    // be selected DETERMINISTICALLY when the ordering has a unique extremum.
-    principalSelector: "deterministic_visual_order_extremum",
+    // The documented rule is KEPT as the principal metric anyway, because it is
+    // the only provider-designated one that exists. A locally-chosen image —
+    // even a deterministically-chosen one — is not the provider's principal
+    // image, and reporting it as such would manufacture a provider semantic we
+    // do not have: HBX has not documented whether maximum, minimum or array
+    // order is intended.
+    //
+    // The low count is therefore reported as "documentation contradicted", NOT
+    // as "this provider ships no main images". Deterministic fallback selection
+    // is an integration concern, not a source-evaluation finding, so it is left
+    // switched off here.
+    principalSelector: "visual_order_zero",
   },
   classification: {
     // The documented architecture: the hotels operation returns CODES, and the

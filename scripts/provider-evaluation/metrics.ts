@@ -149,7 +149,8 @@ export function computeMetrics(
       phonePct: pct(records.filter((r) => r.phone !== null).length, total),
       providerContactPct: pct(records.filter((r) => r.providerContact !== null).length, total),
       photoPct: pct(records.filter((r) => r.photoCount > 0).length, total),
-      heroImagePct: pct(records.filter((r) => r.hasPrincipalImageCandidate).length, total),
+      // PROVIDER-DESIGNATED only. A locally-selected fallback is not a hero image.
+      heroImagePct: pct(records.filter((r) => r.hasProviderDesignatedPrincipal).length, total),
       averagePhotosPerProperty:
         total === 0 ? 0 : Math.round((photoCounts.reduce((a, b) => a + b, 0) / total) * 100) / 100,
       medianPhotosPerProperty: median(photoCounts),
@@ -174,8 +175,15 @@ export function computeMediaEvidence(
 ): MediaEvidence {
   return {
     propertiesWithAnyImage: records.filter((r) => r.photoCount > 0).length,
-    propertiesWithPrincipalImageCandidate: records.filter((r) => r.hasPrincipalImageCandidate)
-      .length,
+    propertiesWithProviderDesignatedPrincipal: records.filter(
+      (r) => r.hasProviderDesignatedPrincipal,
+    ).length,
+    // Live data contradicts the documented rule when properties HAVE images and
+    // ordering but essentially none carries the documented marker.
+    documentedPrincipalSemanticsContradicted:
+      records.some((r) => r.photoCount > 0) &&
+      records.filter((r) => r.hasProviderDesignatedPrincipal).length * 10 <
+        records.filter((r) => r.photoCount > 0).length,
     totalImages: records.reduce((sum, r) => sum + r.photoCount, 0),
     imagesWithPath: records.reduce((sum, r) => sum + r.imagesWithPath, 0),
     categoryDistribution:

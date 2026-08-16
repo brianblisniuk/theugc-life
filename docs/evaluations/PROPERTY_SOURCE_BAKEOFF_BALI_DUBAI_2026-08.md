@@ -21,7 +21,8 @@ lives under [Chronological attempt history](#chronological-attempt-history).**
 | Geography mapping | **BAI = Bali, DXB = Dubai**, approved by external review for this bake-off |
 | D060 canonical stars from Hotelbeds | **REQUIRES SECONDARY VERIFICATION** — locked by external review |
 | Promotion into `hotels` | **NONE.** No Supabase, no canonical write, no Coverage Engine |
-| Bake-off complete? | **NO** |
+| **HBX/Hotelbeds source evaluation** | **COMPLETE BY DIMENSION** (verdicts below) |
+| Multi-source coverage comparison | **PENDING SECOND SOURCE** |
 | Bali or Dubai coverage complete? | **NO.** D061 closure is untouched |
 
 **What "geography approved" does and does not mean.** It means *provider
@@ -189,8 +190,9 @@ nothing here — but it will matter the first time it doesn't.
 | **Average images / property** | **41.93** | **81.42** |
 | **Median images / property** | **28** | **44** |
 | Images with a usable path | 137,328 (100%) | 67,982 (100%) |
-| Principal image deterministically selectable | 2,623 | 740 |
-| Properties matching the DOCUMENTED `visualOrder = 0` rule | **103 (3.1%)** | **20 (2.4%)** |
+| **PROVIDER-DESIGNATED principal** (`visualOrder = 0`) | **103 (3.9% of imaged)** | **20 (2.7% of imaged)** |
+| Documented principal semantics contradicted | **true** | **true** |
+| Local deterministic representative candidate | 2,623 | 740 |
 
 Top image types — Bali: `HAB` 69,651 · `GEN` 26,746 · `RES` 10,271 · `DEP`
 8,388 · `COM` 7,736 · `PIS` 6,930. Dubai: `HAB` 35,302 · `RES` 8,807 · `GEN`
@@ -199,19 +201,52 @@ Top image types — Bali: `HAB` 69,651 · `GEN` 26,746 · `RES` 10,271 · `DEP`
 Mean and median are far apart because a long tail of image-rich properties drags
 the mean up. Both are reported; the mean alone would overstate a typical listing.
 
-**No image binary was downloaded.** Media rights remain
-TECHNICALLY_AVAILABLE / PRODUCTION_RIGHTS_REVIEW_REQUIRED (D064).
+### Principal image: what we may and may not claim
+
+HBX documents `visualOrder = 0` as the **provider-designated** principal image.
+Live data contradicts that for most properties — values are large ordering ranks
+and zero appears on a few percent. The documented rule is nonetheless **kept as
+the principal metric**, because it is the only provider-designated one that
+exists, and its low count is reported as *documentation contradicted*, never as
+"this provider ships no main images".
+
+A locally-chosen image is **not** a principal image. A unique extremum in the
+ordering proves only that *one image can be selected deterministically*; it does
+not establish that the provider considers it the main one, because HBX has not
+documented whether maximum, minimum, array order or another transformation is
+intended. That figure is therefore reported separately, tagged
+`selection_origin = local_deterministic_fallback`, excluded from hero-image
+coverage, and never called principal, main, hero or provider-preferred. It is an
+integration convenience, not a source finding.
+
+### Media rights
+
+**No image binary was downloaded.**
+
+**TECHNICAL STORAGE / DISPLAY INTENT: SUPPORTED BY OFFICIAL INTEGRATION
+DOCUMENTATION.** HBX recommends storing Content API data in the integrator's own
+database, its certification guidance requires that storage, certification
+explicitly evaluates whether hotel images are displayed correctly, and the
+official image documentation explains how to construct display URLs. Storage and
+display are plainly the intended integration model.
+
+**PRODUCTION / COMMERCIAL RIGHTS: FINAL CONTRACT AND CERTIFICATION REVIEW STILL
+REQUIRED.** None of the above is an unrestricted redistribution licence, and
+nothing here should be read as one (D064).
 
 ## 7. Dubai 30-property pilot × live DXB — NON-CANONICAL
 
+**These figures were corrected after external review found a double-counting bug.
+See §7a.**
+
 | Outcome | Count |
 |---|---|
-| Strong multi-signal candidate | **22** |
-| Plausible single-signal candidate | 2 |
-| Ambiguous — multiple candidates | 2 |
-| No textual evidence | 4 |
+| Strong multi-signal candidate (**≥2 independent dimensions**) | **11** |
+| Plausible single-signal candidate | 6 |
+| Ambiguous — multiple candidates, nothing independent separating them | 10 |
+| No textual evidence | 3 |
 | Not yet assessable | 0 |
-| **COORDINATE ENRICHMENT AVAILABLE** | **26 of 30** |
+| **COORDINATE ENRICHMENT AVAILABLE** | **27 of 30** |
 
 **Nothing was resolved and no match threshold was invented** (D063).
 
@@ -220,8 +255,46 @@ be coordinate *agreement* — there is nothing to agree with. It is
 **COORDINATE ENRICHMENT AVAILABLE**, and it stays that way until identity is
 resolved by a process that is allowed to resolve identity.
 
-"No textual evidence" on 4 entries means our signals did not agree. It does not
+"No textual evidence" on 3 entries means our signals did not agree. It does not
 mean Hotelbeds lacks the property: names transliterate, rebrand and abbreviate.
+
+### 7a. Correction: independent dimensions, not repeated signals
+
+The first version counted `exactNormalizedNameAgrees` and
+`allPilotNameTokensPresent` as two separate positive signals. **They are not
+independent**: an exact normalized name match makes token containment true by
+construction. A single name agreement therefore produced two "signals" and
+promoted candidates to `strong_multi_signal` with no corroborating evidence at
+all.
+
+The effect was not marginal:
+
+| Outcome | Before (inflated) | **Corrected** |
+|---|---|---|
+| Strong multi-signal | 22 | **11** |
+| Plausible single-signal | 2 | **6** |
+| Ambiguous | 2 | **10** |
+| No textual evidence | 4 | **3** |
+| Coordinate enrichment available | 26 | **27** |
+
+**Half the "strong" matches were one name agreement counted twice.**
+
+Evidence is now grouped into dimensions that can fail independently:
+
+| Dimension | State | Availability here |
+|---|---|---|
+| **NAME** | `exact` \| `token_containment` \| `none` — strengths within ONE dimension | pilot supplies 30/30 |
+| **DOMAIN** | website host agreement | pilot supplies 30/30; provider website coverage is partial (61.4%) |
+| **ADDRESS** | normalized address agreement | pilot supplies 30/30; compared by **exact normalized equality only** |
+| **PHONE** | — | **UNAVAILABLE**: the pilot artifact carries no phone column |
+
+`strong_multi_signal` now requires **two or more independent dimensions in
+agreement**. An exact name match alone is one dimension.
+
+Two deliberate conservatisms: address agreement is exact normalized equality,
+because anything looser needs a similarity threshold we have no basis to invent;
+and an unusable dimension is reported `unavailable` rather than `differs`, since
+"we could not compare" is not evidence against a match.
 
 ## 8. Field-map findings
 
@@ -243,25 +316,46 @@ Everything else — `code`, `name.content`, `categoryCode`, `destinationCode`,
 `classification.codePath = "categoryCode"` is now **CONFIRMED** against live
 payloads for both destinations.
 
-## 9. Source-strategy verdicts — by dimension, not one winner
+## 9. Source-strategy verdicts — LOCKED BY EXTERNAL REVIEW
 
-A source is not one thing. These are separate findings because a provider can be
-excellent at three of them and unusable for a fourth.
+A source is not one thing. These are separate decisions because a provider can
+be approved for three dimensions and rejected for a fourth.
 
-| Dimension | Verdict | Evidence |
+| Dimension | Decision | Evidence |
 |---|---|---|
-| **Inventory source** | **SUITABLE** | 3,275 Bali and 835 Dubai records, exhaustive walks, provider totals matched exactly, zero duplicate ids, zero missing ids, zero geography contradictions. |
-| **Location source** | **SUITABLE** | 99.91% valid coordinates in Bali, 100% in Dubai, 100% addresses, no `0,0`, one out-of-range value. Directly addresses the pilot's 0/30 coordinate gap. |
-| **Media source** | **SUITABLE — subject to rights review** | 80–89% of properties carry images, median 28–44 per property, 100% usable paths, principal image deterministically selectable on ~99% of properties that have any. Rights are **not** established by developer documentation (D064). |
-| **Contact source** | **PARTIALLY SUITABLE** | Strong in Dubai (97.2% phone, 82.6% email, 61.4% website); materially weaker in Bali (87.1% phone, 58.5% email, **36.7% website**). Usable as enrichment, not as a sole contact authority — and the fax/phone distinction must be preserved. |
-| **Canonical D060 classification source** | **REQUIRES SECONDARY VERIFICATION** | Locked by external review and independently supported by the live data: no issuing authority, `simpleCode` conflates keys with stars, and STAR-labelled categories appear on apartments and aparthotels. |
+| **Inventory source** | **APPROVED — SOURCE A** | 3,275 Bali and 835 Dubai records, walks completed, provider totals matched exactly, zero duplicate ids, zero missing ids, zero geography contradictions. |
+| **Location source** | **APPROVED** | 99.91% valid coordinates in Bali, 100% in Dubai, 100% addresses, no `0,0`, one out-of-range value. Directly addresses the pilot's 0/30 coordinate gap. |
+| **Media source** | **APPROVED FOR TECHNICAL INTEGRATION** — production/commercial rights review pending | 80–89% of properties carry images, median 28–44 each, 100% usable paths. Storage and display are the documented integration model; the commercial licence is a separate question (D064). |
+| **Contact enrichment source** | **USEFUL / PARTIALLY SUITABLE** | Strong in Dubai (97.2% phone, 82.6% email, 61.4% website); materially weaker in Bali (87.1% phone, 58.5% email, **36.7% website**). Enrichment, not a sole contact authority — and the fax/phone distinction must be preserved. |
+| **Canonical D060 classification source** | **NOT APPROVED — REQUIRES SECONDARY VERIFICATION** | No issuing authority; `simpleCode` conflates keys with stars; STAR-labelled categories appear on apartments and aparthotels. |
 
-**Hotelbeds being unable to establish canonical star provenance does not make it
-a weak source.** It is a strong inventory, location and media source that cannot
-close D060 alone — which is exactly what the layered-source principle predicts,
-and it is strategically useful on that basis.
+### This evaluation is COMPLETE BY DIMENSION
+
+**A second provider was never required to establish whether Hotelbeds is
+suitable.** Suitability is a property of the source and the evidence measured
+against it, and that evidence is in hand.
+
+**No global "winner" is declared**, because that is not the shape of the
+decision. Hotelbeds is an approved inventory, location and media source that
+cannot close D060 alone — exactly what the layered-source principle predicts,
+and strategically useful on that basis.
+
+### Separately pending: MULTI-SOURCE COVERAGE COMPARISON
+
+A second source is still wanted, for questions this evaluation cannot answer
+about **any** single provider:
+
+- what unique inventory a second source contributes;
+- blind-spot discovery — properties no measured source knows;
+- cross-source overlap and the entity-resolution burden it implies (D063);
+- stronger evidence for the coverage universe itself (D061).
+
+That work is **PENDING SECOND SOURCE**. It does not reopen the dimension
+verdicts above, and neither it nor those verdicts make Bali or Dubai coverage
+complete.
 
 ---
+
 # VERIFIED FROM OFFICIAL DOCUMENTATION
 
 ### Source 1 — HBX Group / Hotelbeds Hotel Content API — ACTIVE EVALUATION TARGET
@@ -476,29 +570,34 @@ proves they don't. It is recorded as a caveat rather than resolved by assumption
 ### Booking, Expedia, Nuitee — NO LIVE ACCESS
 
 Booking and Expedia: documented, `direct_access_unavailable`, `not_run`. Nuitee:
-no documentation established, credential not supplied. **No cross-source overlap
-analysis is possible with one live source**, so the bake-off cannot conclude.
+no documentation established, credential not supplied.
+
+Cross-source overlap analysis needs a second live source, so the **multi-source
+coverage comparison is PENDING**. That is a separate question from Hotelbeds'
+own suitability, which is settled per dimension above.
 
 ---
 
 # EXACT NEXT ACTION
 
-**Stopped for external review.** Nothing further should run until these are
-decided:
+**Stopped for external review.** The Hotelbeds source evaluation is complete by
+dimension; what remains is deliberately outside it.
 
-1. **Is a single-source bake-off enough to conclude?** Hotelbeds is measured;
-   nothing else is. A "winner" declared against no competitor is not a
-   comparison, and cross-source overlap (D063) needs a second live source.
-2. **Secondary verification path for D060.** The provider-apparent
+1. **Secondary verification path for D060.** The provider-apparent
    `Hotel × 5 STARS` pairing is observable and its issuer is not. Deciding where
-   canonical star provenance comes from is the gating question for V1 inventory.
-3. **Media rights review** before any image work (D064).
-4. **Whether coordinate enrichment proceeds** for the 26 pilot properties with a
-   plausible Hotelbeds record — which requires an identity-resolution decision
-   first, not a threshold invented here.
+   canonical star provenance comes from is the gating question for V1 inventory,
+   and Hotelbeds cannot answer it.
+2. **Media production-rights / certification review** before any image work.
+   Technical storage and display intent is documented; the commercial licence is
+   not, and no image binary has been downloaded (D064).
+3. **Second source for the multi-source coverage comparison** — unique
+   contribution, blind spots, overlap, review burden.
+4. **Identity resolution** before any coordinate enrichment. 27 of 30 pilot
+   entries have a Hotelbeds candidate carrying valid coordinates, but 10 remain
+   ambiguous and resolving them needs a decision, not a threshold invented here.
 
-**The bake-off is not complete. The Coverage Engine must not start. Nothing has
-been promoted into `hotels`.**
+**Bali and Dubai are NOT coverage complete. The Coverage Engine must not start.
+Nothing has been promoted into `hotels`.**
 
 ---
 

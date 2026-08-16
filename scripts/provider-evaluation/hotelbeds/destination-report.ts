@@ -102,8 +102,29 @@ export interface DestinationAnalysis {
   };
   media: {
     propertiesWithAnyImage: number;
-    propertiesWithDeterministicPrincipal: number;
-    propertiesWithDocumentedVisualOrderZero: number;
+    /**
+     * The PROVIDER-DESIGNATED principal image, per documented semantics
+     * (`visualOrder === 0`). The only figure that may be cited as hero-image
+     * coverage.
+     */
+    propertiesWithProviderDesignatedPrincipal: number;
+    /**
+     * True when the documented rule is contradicted by live data — recorded so a
+     * low count above reads as "the documentation is wrong", not "this provider
+     * ships no main images".
+     */
+    documentedPrincipalSemanticsContradicted: boolean;
+    /**
+     * A LOCAL fallback: one image can be selected deterministically because the
+     * ordering has a unique extremum. `selection_origin =
+     * local_deterministic_fallback`.
+     *
+     * This is an engineering/UI convenience and **not provider semantic truth**.
+     * It must never be reported as principal, main, hero or provider-preferred,
+     * and it is excluded from hero-image coverage.
+     */
+    propertiesWithDeterministicRepresentativeCandidate: number;
+    representativeCandidateSelectionOrigin: "local_deterministic_fallback";
     totalImages: number;
     averageImages: number;
     medianImages: number;
@@ -355,7 +376,7 @@ export function analyseDestination(
   // ---- media ---------------------------------------------------------------
   const imageCounts: number[] = [];
   let withAnyImage = 0;
-  let deterministicPrincipal = 0;
+  let representativeCandidate = 0;
   let documentedZero = 0;
   let imagesWithPath = 0;
   const imageTypes: string[] = [];
@@ -381,7 +402,7 @@ export function analyseDestination(
     if (orders.includes(0)) documentedZero += 1;
     if (orders.length > 0) {
       const max = Math.max(...orders);
-      if (orders.filter((v) => v === max).length === 1) deterministicPrincipal += 1;
+      if (orders.filter((v) => v === max).length === 1) representativeCandidate += 1;
     }
   }
 
@@ -435,11 +456,11 @@ export function analyseDestination(
       "Counted per IMAGE, not per property.",
     ),
     classifyField(
-      "image visualOrder === 0 (DOCUMENTED principal rule)",
+      "image visualOrder === 0 (PROVIDER-DESIGNATED principal)",
       imageFieldMap.visualOrder ? `images[].${imageFieldMap.visualOrder}` : null,
       documentedZero,
       rows,
-      "The documented rule. Live visualOrder values are large ranks, so a zero result here contradicts the documentation rather than showing missing data.",
+      "The PROVIDER-DESIGNATED rule. Live visualOrder values are large ranks, so a low result here contradicts the documentation rather than showing missing data — and a locally-selected fallback is NOT a substitute for it.",
     ),
     classifyField(
       "activeStatus",
@@ -514,8 +535,11 @@ export function analyseDestination(
     },
     media: {
       propertiesWithAnyImage: withAnyImage,
-      propertiesWithDeterministicPrincipal: deterministicPrincipal,
-      propertiesWithDocumentedVisualOrderZero: documentedZero,
+      propertiesWithProviderDesignatedPrincipal: documentedZero,
+      documentedPrincipalSemanticsContradicted:
+        withAnyImage > 0 && documentedZero * 10 < withAnyImage,
+      propertiesWithDeterministicRepresentativeCandidate: representativeCandidate,
+      representativeCandidateSelectionOrigin: "local_deterministic_fallback",
       totalImages,
       averageImages: rows.length === 0 ? 0 : Number((totalImages / rows.length).toFixed(2)),
       medianImages: median(imageCounts),

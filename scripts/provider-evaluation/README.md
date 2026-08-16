@@ -19,9 +19,12 @@ have been extracted**: Bali (`BAI`) 3,275 properties and Dubai (`DXB`) 835, each
 paginated to exhaustion against the provider's own total, for **11 of the 50
 daily requests**. Geography is mapped (`BAI`, `DXB`) by external review.
 
-**Hotelbeds does not resolve canonical D060 stars** — that is locked as
-REQUIRES_SECONDARY_VERIFICATION, and category data is reported as provider
-classification evidence only. Nothing has been promoted into `hotels`. See
+**Source evaluation is COMPLETE BY DIMENSION**: inventory APPROVED (Source A),
+location APPROVED, media APPROVED for technical integration pending a
+production-rights review, contact PARTIALLY SUITABLE, and canonical D060
+classification **NOT APPROVED — REQUIRES SECONDARY VERIFICATION**. A multi-source
+coverage comparison is pending a second source; that is a separate question from
+Hotelbeds' own suitability. Nothing has been promoted into `hotels`. See
 [`docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](../../docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
 
 ## Commands
@@ -122,9 +125,17 @@ have been silent:
 - `activeStatus -> status` was a **FIELD_MAP_MISMATCH** — the hotels response has
   no lifecycle field at all. Now unmapped, with the reason recorded.
 - the documented principal-image rule `visualOrder === 0` matches ~3% of
-  properties; live values are large ordering ranks. `principalSelector` now makes
-  the weaker, evidence-backed claim (a unique extremum can be selected
-  deterministically) and both numbers are reported.
+  properties; live values are large ordering ranks. The documented rule is kept
+  as the **provider-designated** principal metric anyway — it is the only
+  provider-designated one there is — and its low count is reported as
+  _documentation contradicted_, never as "this provider ships no main images".
+
+A locally-chosen image is **not** a principal image. `principalSelector:
+"deterministic_representative_fallback"` derives one for integration
+convenience, tagged `selection_origin = local_deterministic_fallback` and
+excluded from hero-image coverage; it must never be called principal, main, hero
+or provider-preferred, because HBX has not documented whether maximum, minimum
+or array order is intended. It is switched OFF for Hotelbeds source evaluation.
 
 The per-destination analysis classifies every empty field as
 `field_not_populated` (the key exists, the provider leaves it blank) or
