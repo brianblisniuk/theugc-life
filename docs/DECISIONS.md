@@ -1567,3 +1567,64 @@ Consequence:
 Discover continues to render the approved no-photo state, and no `image_url`
 column, media table or hotlinked third-party image is added as an interim
 measure. Full contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §14.
+
+## D065 — Provider source data is isolated, bounded and never canonical by default
+Status: Accepted — implemented by migration `0027`
+
+The property-content source infrastructure (`source_runs`,
+`source_property_identities`, `source_property_observations`,
+`source_match_candidates`, `hotel_source_identities`,
+`source_property_reviews`) carries three boundaries that are decisions rather
+than schema details, because a later block could plausibly relax any of them by
+accident.
+
+### 1. Evaluation-environment data can never become canonical evidence
+
+`source_environment` (`evaluation` | `production`) participates in the source
+identity's unique key, and `hotel_source_identities` CHECKs
+`source_environment = 'production'`. An evaluation record therefore cannot be
+linked to a canonical hotel **at all** — not by a bug, not by a careless
+script, not by a reviewer.
+
+The Hotelbeds *test* environment holds 3,275 Bali and 835 Dubai records that are
+perfectly good evidence and are not production inventory. Distinguishing them by
+convention would work until the first ingestion script that forgot.
+
+### 2. Raw provider payloads do not live in Postgres
+
+An observation stores typed, queryable columns plus a `source_payload_digest`
+(sha256) and a nullable, opaque `source_payload_uri`. `source_attributes jsonb`
+exists for unmodelled provider fields and is bounded to 8 KB **by trigger**,
+because a documented rule with no mechanism is one the first convenient script
+breaks.
+
+**No object-storage product is chosen and none is required.** Every constraint,
+index and query works with `source_payload_uri` NULL, so the storage decision
+stays open without blocking ingestion.
+
+### 3. Source facts are observations, and invalid ones are kept
+
+Source coordinates carry **no range constraint**. The Bali evaluation returned
+one out-of-range coordinate; a CHECK would have made that row unstorable and
+forced the ingestion to drop, null or crash on it. `source_latitude` is an
+observation, `source_coordinates_plausible` is the audit verdict, and
+`hotels.latitude` remains the resolved canonical value (D063).
+
+Likewise `source_classification_simple_code` is **text**, not numeric: Hotelbeds
+`simpleCode 5` covers 5 STARS, 5 KEYS, aparthotel and hostel alike, and a
+numeric column invites `where simple_code >= 4` — the one query that must never
+produce inventory (D060).
+
+Reason:
+Each of these protects against a failure that is invisible in the output. Test
+data reaching creators, a payload column quietly costing storage forever, a
+range check silently deleting the bad values most worth auditing, and a numeric
+cast turning a category code into a star rating are all mistakes that look like
+working systems.
+
+Consequence:
+Provider ingestion, the D062 promotion gate, Coverage Engine and `hotel_media`
+all build on these tables without relaxing the boundaries. A future block that
+needs evaluation data promoted, or payloads in Postgres, is making a new product
+decision and should say so. Full model in
+`PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md`.

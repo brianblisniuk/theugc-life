@@ -185,6 +185,102 @@ Source types: editorial, public_source, creator_signal, hotel_claim.
 
 Never expose this table through unrestricted public selects.
 
+## 5a. Property-content source infrastructure (migration 0027)
+
+Provider-sourced property data enters the controlled pipeline through these six
+tables. All are editorial/operational internals: `service_role` + admin/editor
+through RLS, **no anon grant**. Full model and rationale:
+[`PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md`](PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md).
+
+The rule that shapes all six: **a provider ID is a source identity, never
+canonical identity** (D063). `hotels` gains no provider column — there is no
+`hotelbeds_id`, `booking_id` or `expedia_id` anywhere in the canonical schema,
+and a test asserts it.
+
+### source_runs
+One execution of one source. Not `import_batches`: a batch is keyed on a parsed
+file; a run has no file and needs exhaustion/coverage/quota evidence instead.
+- `id uuid PK`
+- `source text NOT NULL` — provider namespace, free text (a new provider must
+  not require a migration)
+- `source_environment text NOT NULL` — `evaluation` | `production`. **The
+  isolation axis.**
+- `destination_id uuid NULL FK destinations(id)`
+- `provider_geography jsonb`, `run_mode text`, `run_status text`
+- `raw_records_seen`, `unique_source_property_ids integer`
+- `provider_reported_total integer NULL` — NULL means the provider said nothing;
+  never defaulted to 0
+- `pagination_walk_completed boolean`, `extraction_exhaustion_proven boolean` —
+  separate, because they fail for different reasons
+- `coverage_risks text[]`, `request_count`, `cache_hit_count`
+- timestamps, `created_by`
+
+CHECKs: a run cannot claim exhaustion it never walked, and cannot be `running`
+with a completion time or finished without one.
+
+### source_property_identities
+Durable `(source, source_environment, source_property_id)`, independent of any
+canonical hotel. Not `import_rows`: an import row is immutable and dies with its
+batch; a source identity must outlive every run.
+- `id uuid PK` — our surrogate, never the provider's id
+- `source`, `source_environment`, `source_property_id text NOT NULL`
+- `first_seen_at`/`last_seen_at`, `first_seen_run_id`/`last_seen_run_id`
+- `resolution_state text` — `unresolved` | `resolved_eligible` |
+  `duplicate_matched` | `final_exclusion` (D061 §15.1 A/B/C plus the hold state)
+- `resolution_reason text NULL` — required for a final exclusion; the vocabulary
+  deliberately has **no** value for "star unresolved" or "identity unresolved",
+  which are hold states that keep a candidate inside the coverage-critical count
+
+UNIQUE `(source, source_environment, source_property_id)`.
+
+### source_property_observations
+One snapshot per `(run, identity)`. Nothing is overwritten, so a future
+canonical star or coordinate can cite which observation supported it.
+- typed source fields: name, destination/zone code, address, postal code, city,
+  coordinates, website, email, phone (+ `source_phone_type`, so a fax is never
+  reported as a contact phone), brand/chain codes, property type code + label
+- provider classification: code, label, group, `source_classification_simple_code
+  text` — **TEXT deliberately**, because `simpleCode 5` covers 5 STARS, 5 KEYS,
+  aparthotel and hostel alike, and a numeric column invites `>= 4`
+- `source_classification_evidence_kind` defaults to
+  `provider_classification_evidence`
+- `source_lifecycle_status text NULL` — only when the provider supplies one
+- `source_image_count`, `source_provider_designated_principal_image` — media
+  **availability summary only**; no image rows (D064 storage strategy is open)
+- `source_attributes jsonb` — bounded to 8 KB by trigger
+- `source_payload_digest`, `source_payload_uri` — raw-payload boundary
+
+**No range CHECK on source coordinates.** Invalid provider values are evidence
+to audit, not rows to erase; `source_coordinates_plausible` records the verdict.
+`hotels.latitude`/`hotels.longitude` remain the resolved canonical values.
+
+UNIQUE `(source_run_id, source_property_identity_id)` — one run observes a
+property at most once.
+
+### source_match_candidates
+Entity-resolution evidence. Not `import_match_candidates`: that requires a NOT
+NULL `score`, and D063 §12.2 refuses to invent a confidence number.
+- `name_evidence` — `exact` | `token_containment` | `none`: **one dimension with
+  two strengths**, never two signals
+- `domain_evidence`, `address_evidence`, `phone_evidence`, `brand_evidence` —
+  `agrees` | `differs` | `unavailable`. `unavailable` is not `differs`.
+- `coordinate_distance_metres numeric NULL` — raw, no threshold stored
+- `agreeing_dimensions integer` — independent dimensions only; a name alone is 1
+- `candidate_hotel_id NULL` = an explicit NEW PROPERTY assertion
+
+### hotel_source_identities
+The D063 §11.1 link: canonical hotel ↔ source identity.
+- partial UNIQUE on `(source_property_identity_id) WHERE link_status='active'` —
+  one active source identity maps to at most one canonical hotel
+- CHECK `source_environment = 'production'` — **evaluation data can never become
+  canonical evidence**
+- a canonical hotel may hold many source identities, by design
+
+### source_property_reviews
+Durable decision per identity, UNIQUE on the identity. Uses the **same decision
+vocabulary** as `import_property_reviews` (`approve_create` | `approve_match` |
+`reject` | `defer`), because both pipelines converge on one D062 gate.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -210,6 +306,12 @@ Signals: email_worked, email_bounced, person_changed, wrong_department, auto_rep
 - `created_at timestamptz`
 
 Polymorphic entity references require application validation. Do not cascade-delete verification history.
+
+### editorial_evidence
+Provenance for a research claim. Migration `0027` adds one nullable column:
+- `source_run_id uuid NULL FK source_runs(id)` — so a provider claim and a
+  file-research claim are auditable in the same place. `import_batch_id` and
+  `import_row_id` are unchanged.
 
 ### admin_flags
 - `id uuid PK`
@@ -457,5 +559,9 @@ At minimum:
 8. intelligence
 9. milestones/share/referrals/claims
 10. RLS policies/views/functions
+11. import/editorial infrastructure (0014-0016)
+12. explicit privilege contract (0024) — every later migration must state its
+    own grants, because `alter default privileges` gives new tables none
+13. property-content source infrastructure (0027)
 
 Every migration must be reproducible from an empty database.

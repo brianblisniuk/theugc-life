@@ -85,6 +85,17 @@ const CONTRACT: Record<string, Expected> = {
   organization_contacts: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   organizations: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   admin_flags: { anon: "", authenticated: "SIU", serviceRole: "all" },
+
+  // Property-content infrastructure (0027). Same shape as the import tables:
+  // a capability grant to `authenticated` that is_admin_or_editor() reduces to
+  // zero rows, and no anon privilege at all — these are provider/editorial
+  // internals and must not be publicly enumerable.
+  source_runs: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  source_property_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  source_property_observations: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  source_match_candidates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  hotel_source_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   hotel_claims: { anon: "", authenticated: "SU", serviceRole: "all" },
   contact_signals: { anon: "", authenticated: "SI", serviceRole: "all" },
   verification_events: { anon: "", authenticated: "SI", serviceRole: "all" },

@@ -449,9 +449,20 @@ canonical hotel outlives any provider relationship; a hotel keyed on a provider
 is a hotel the product does not own. It also makes multi-source coverage (§4)
 structurally impossible, since a property would need one PK per source.
 
-### 11.1 Conceptual future entity: `hotel_source_identities`
+### 11.1 `hotel_source_identities` — IMPLEMENTED (migration 0027)
 
-Fields / semantics, defined as contract only — **do not create this table**:
+> **Status update.** This entity was contract-only when written. Migration
+> `0027` implements it, together with the source runs, identities, observations
+> and resolution candidates it depends on. The semantics below are unchanged;
+> see [`PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md`](PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md).
+>
+> Two invariants are now enforced by the database rather than by convention: one
+> **active** source identity maps to at most one canonical hotel, and a canonical
+> hotel may hold many source identities. A third was added by implementation:
+> only `production`-environment identities may be linked at all, so
+> evaluation/test provider data cannot become canonical evidence.
+
+Fields / semantics:
 
 - `hotel_id` — canonical property
 - `source` / provider
@@ -521,6 +532,18 @@ truth**. A future location-evidence concept should be able to retain:
 - observed / verified time
 - resolution status / provenance
 
+> **Status update (migration 0027).** The *source* half exists:
+> `source_property_observations` retains source latitude, longitude, address and
+> observed time, with run provenance one join away. Source coordinates carry **no
+> range constraint** — an invalid provider value is evidence to audit, not a row
+> to erase — and `source_coordinates_plausible` records the verdict.
+>
+> The *canonical resolution* half is deliberately still future: a
+> `hotel_location_resolutions` table would FK
+> `source_property_observations(id)`, which is why observations are
+> `ON DELETE RESTRICT` and never mutated. Nothing about `hotels.latitude` /
+> `hotels.longitude` changes.
+
 `hotels.latitude` / `hotels.longitude` remain the **resolved canonical
 coordinates**.
 
@@ -550,7 +573,19 @@ provider-specific photo URL wired into the hotel record.
 
 ### 14.1 Conceptual future resource: `hotel_media`
 
-Contract only — **do not create this table**. It should support at least:
+Contract only — **still not created**. Migration `0027` deliberately stops
+short: it retains a media *availability summary* per source observation
+(`source_image_count`, `source_provider_designated_principal_image`) and no image
+rows, no URLs and no binaries. One evaluation property returned 118 images and
+one destination totalled 137,328; ingesting that before the production/
+commercial rights review and the storage strategy are settled would be a
+permanent cost for data no query needs yet.
+
+When `hotel_media` is built it attaches to `hotels`, to
+`hotel_source_identities.id` and to `source_property_observations.id` — all
+three exist, so it is an addition rather than a rebuild.
+
+It should support at least:
 
 - `hotel_id`
 - source / provider
