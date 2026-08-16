@@ -190,9 +190,10 @@ nothing here — but it will matter the first time it doesn't.
 | **Average images / property** | **41.93** | **81.42** |
 | **Median images / property** | **28** | **44** |
 | Images with a usable path | 137,328 (100%) | 67,982 (100%) |
-| **PROVIDER-DESIGNATED principal** (`visualOrder = 0`) | **103 (3.9% of imaged)** | **20 (2.7% of imaged)** |
-| Documented principal semantics contradicted | **true** | **true** |
-| Local deterministic representative candidate | 2,623 | 740 |
+| **PROVIDER-DESIGNATED principal** (`visualOrder = 0`) | **103** (3.92% of imaged) | **20** (2.70% of imaged) |
+| Imaged properties without that designation — a documented valid state | 2,525 | 722 |
+| `principalDesignationSemantics` | **verified** | **verified** |
+| Local deterministic representative candidate (fallback, not principal) | 2,623 | 740 |
 
 Top image types — Bali: `HAB` 69,651 · `GEN` 26,746 · `RES` 10,271 · `DEP`
 8,388 · `COM` 7,736 · `PIS` 6,930. Dubai: `HAB` 35,302 · `RES` 8,807 · `GEN`
@@ -201,23 +202,34 @@ Top image types — Bali: `HAB` 69,651 · `GEN` 26,746 · `RES` 10,271 · `DEP`
 Mean and median are far apart because a long tail of image-rich properties drags
 the mean up. Both are reported; the mean alone would overstate a typical listing.
 
-### Principal image: what we may and may not claim
+### Principal image: the documentation is VERIFIED
 
-HBX documents `visualOrder = 0` as the **provider-designated** principal image.
-Live data contradicts that for most properties — values are large ordering ranks
-and zero appears on a few percent. The documented rule is nonetheless **kept as
-the principal metric**, because it is the only provider-designated one that
-exists, and its low count is reported as *documentation contradicted*, never as
-"this provider ships no main images".
+HBX documents `visualOrder = 0` as the hotel's main/principal image, **and
+explicitly states that it is possible to find hotels without that number** — its
+own examples show non-zero values such as 903, 38 and 2.
+
+So the live counts are exactly what the documentation predicts:
+
+- **Bali: 103** properties carry a provider-designated principal image;
+- **Dubai: 20** do.
+
+The remaining imaged properties (2,525 and 722) are in a **documented, allowed
+state**. That is not a contradiction of the documentation, not a defect, and not
+evidence that the provider lacks images — and it is **not reinterpreted here**.
+
+An earlier revision of this report claimed the documented semantics were
+contradicted, on the strength of an invented 10% threshold in the code. Both are
+gone. `principalDesignationSemantics` is a constant `verified`, so **no
+proportion of missing designations can flip it**, and no replacement percentage
+was introduced.
 
 A locally-chosen image is **not** a principal image. A unique extremum in the
-ordering proves only that *one image can be selected deterministically*; it does
-not establish that the provider considers it the main one, because HBX has not
-documented whether maximum, minimum, array order or another transformation is
-intended. That figure is therefore reported separately, tagged
+ordering proves only that one image can be selected deterministically; HBX has
+not documented whether the maximum, the minimum non-zero value or the first
+array entry is intended, so we infer none of them. Any such selection is tagged
 `selection_origin = local_deterministic_fallback`, excluded from hero-image
-coverage, and never called principal, main, hero or provider-preferred. It is an
-integration convenience, not a source finding.
+coverage, never called principal, main, hero or provider-preferred, and switched
+**off** for this source evaluation.
 
 ### Media rights
 

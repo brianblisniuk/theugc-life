@@ -119,23 +119,31 @@ the provider's zero.
 `classification.codePath` is verified the same way, and live payloads have now
 **confirmed** it as `categoryCode` for both destinations.
 
-Two documented facts did NOT survive contact with the live data, and both would
-have been silent:
+One documented fact did NOT survive contact with the live data, and it would
+have been silent: `activeStatus -> status` was a **FIELD_MAP_MISMATCH** — the
+hotels response has no lifecycle field at all. Now unmapped, with the reason
+recorded.
 
-- `activeStatus -> status` was a **FIELD_MAP_MISMATCH** — the hotels response has
-  no lifecycle field at all. Now unmapped, with the reason recorded.
-- the documented principal-image rule `visualOrder === 0` matches ~3% of
-  properties; live values are large ordering ranks. The documented rule is kept
-  as the **provider-designated** principal metric anyway — it is the only
-  provider-designated one there is — and its low count is reported as
-  _documentation contradicted_, never as "this provider ships no main images".
+### Principal images: the documentation is verified, not contradicted
+
+HBX documents `visualOrder = 0` as the hotel's main/principal image **and
+explicitly notes that some hotels may not carry that number**. Live results
+(Bali 103, Dubai 20) are therefore a measurement of how many properties HBX
+designates a principal image for — not a contradiction, and not evidence of
+missing images. The absence is not reinterpreted.
+
+There is deliberately **no threshold** anywhere deciding whether the
+documentation "holds": `principalDesignationSemantics` is a constant, so no
+proportion of missing designations can flip it. An earlier version carried an
+invented 10% cutoff; it is gone and was not replaced.
 
 A locally-chosen image is **not** a principal image. `principalSelector:
-"deterministic_representative_fallback"` derives one for integration
+"deterministic_representative_fallback"` can derive one for integration
 convenience, tagged `selection_origin = local_deterministic_fallback` and
-excluded from hero-image coverage; it must never be called principal, main, hero
-or provider-preferred, because HBX has not documented whether maximum, minimum
-or array order is intended. It is switched OFF for Hotelbeds source evaluation.
+excluded from hero-image coverage; it must never be called principal, main,
+hero or provider-preferred, because HBX has not documented whether maximum,
+minimum non-zero or first array entry is intended. It is switched **off** for
+Hotelbeds source evaluation.
 
 The per-destination analysis classifies every empty field as
 `field_not_populated` (the key exists, the provider leaves it blank) or

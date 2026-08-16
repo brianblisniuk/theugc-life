@@ -313,7 +313,7 @@ async function runProvider(
     `  location: coords valid ${loc.coordinatesValid}/${inv.rawRecords} · address ${loc.addressPresent} · postal ${loc.postalCodePresent}`,
   );
   log(
-    `  media: ≥1 image ${med.propertiesWithAnyImage} · PROVIDER-DESIGNATED principal ${med.propertiesWithProviderDesignatedPrincipal} (documented semantics contradicted: ${med.documentedPrincipalSemanticsContradicted}) · local fallback candidate ${med.propertiesWithDeterministicRepresentativeCandidate} · avg ${med.averageImages} · median ${med.medianImages}`,
+    `  media: ≥1 image ${med.propertiesWithAnyImage} · PROVIDER-DESIGNATED principal ${med.propertiesWithProviderDesignatedPrincipal} (${med.providerDesignatedPrincipalCoveragePct}% of imaged; ${med.imagedPropertiesWithoutProviderDesignatedPrincipal} imaged without one — a documented valid state) · local fallback candidate ${med.propertiesWithDeterministicRepresentativeCandidate} · avg ${med.averageImages} · median ${med.medianImages}`,
   );
 
   for (const finding of analysis.fieldFindings) {

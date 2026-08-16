@@ -103,17 +103,23 @@ export interface DestinationAnalysis {
   media: {
     propertiesWithAnyImage: number;
     /**
-     * The PROVIDER-DESIGNATED principal image, per documented semantics
-     * (`visualOrder === 0`). The only figure that may be cited as hero-image
-     * coverage.
+     * The PROVIDER-DESIGNATED principal image (`visualOrder === 0`). The only
+     * figure that may be cited as hero-image coverage.
      */
     propertiesWithProviderDesignatedPrincipal: number;
+    /** Share of IMAGED properties carrying that designation. A figure, not a verdict. */
+    providerDesignatedPrincipalCoveragePct: number;
     /**
-     * True when the documented rule is contradicted by live data — recorded so a
-     * low count above reads as "the documentation is wrong", not "this provider
-     * ships no main images".
+     * Properties with images but no `visualOrder = 0`.
+     *
+     * A DOCUMENTED, VALID STATE. HBX documents the designation and explicitly
+     * notes that some hotels may not carry it, so this is neither a
+     * documentation contradiction nor evidence that the provider lacks images.
+     * It is not reinterpreted here.
      */
-    documentedPrincipalSemanticsContradicted: boolean;
+    imagedPropertiesWithoutProviderDesignatedPrincipal: number;
+    /** Always `verified`: the documented rule holds, including its stated exception. */
+    principalDesignationSemantics: "verified";
     /**
      * A LOCAL fallback: one image can be selected deterministically because the
      * ordering has a unique extremum. `selection_origin =
@@ -121,7 +127,8 @@ export interface DestinationAnalysis {
      *
      * This is an engineering/UI convenience and **not provider semantic truth**.
      * It must never be reported as principal, main, hero or provider-preferred,
-     * and it is excluded from hero-image coverage.
+     * and it is excluded from hero-image coverage. We do NOT infer whether the
+     * maximum, the minimum non-zero value or the first array entry is "best".
      */
     propertiesWithDeterministicRepresentativeCandidate: number;
     representativeCandidateSelectionOrigin: "local_deterministic_fallback";
@@ -460,7 +467,7 @@ export function analyseDestination(
       imageFieldMap.visualOrder ? `images[].${imageFieldMap.visualOrder}` : null,
       documentedZero,
       rows,
-      "The PROVIDER-DESIGNATED rule. Live visualOrder values are large ranks, so a low result here contradicts the documentation rather than showing missing data — and a locally-selected fallback is NOT a substitute for it.",
+      "The PROVIDER-DESIGNATED principal. HBX documents this designation and explicitly notes that some hotels may not carry it, so properties without one are in a documented valid state — not a contradiction, and not evidence of missing images. A locally-selected fallback is never a substitute for it.",
     ),
     classifyField(
       "activeStatus",
@@ -536,8 +543,10 @@ export function analyseDestination(
     media: {
       propertiesWithAnyImage: withAnyImage,
       propertiesWithProviderDesignatedPrincipal: documentedZero,
-      documentedPrincipalSemanticsContradicted:
-        withAnyImage > 0 && documentedZero * 10 < withAnyImage,
+      providerDesignatedPrincipalCoveragePct:
+        withAnyImage === 0 ? 0 : Number(((documentedZero / withAnyImage) * 100).toFixed(2)),
+      imagedPropertiesWithoutProviderDesignatedPrincipal: withAnyImage - documentedZero,
+      principalDesignationSemantics: "verified",
       propertiesWithDeterministicRepresentativeCandidate: representativeCandidate,
       representativeCandidateSelectionOrigin: "local_deterministic_fallback",
       totalImages,

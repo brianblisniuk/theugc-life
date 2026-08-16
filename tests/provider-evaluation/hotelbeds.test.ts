@@ -40,6 +40,7 @@ import {
   signRequest,
 } from "../../scripts/provider-evaluation/hotelbeds/signature";
 import { analyseDestination } from "../../scripts/provider-evaluation/hotelbeds/destination-report";
+import { deriveImageEvidence } from "../../scripts/provider-evaluation/normalize";
 import {
   comparePilotAgainstProvider,
   type ProviderRecordLike,
@@ -922,28 +923,7 @@ describe("per-destination source analysis", () => {
     expect(analysis.identity.nonFaxPhonePresent).toBe(0);
   });
 
-  it("never lets a locally-chosen image count as the provider's principal", () => {
-    // Live visualOrder values are large ranks, so the DOCUMENTED provider rule
-    // finds nothing here. A deterministic local pick is still available — but
-    // "we can select one image" is not "the provider says this one is main",
-    // and only the second may be cited as hero coverage.
-    const analysis = analyseDestination(
-      "dubai",
-      ["DXB"],
-      [hotel()],
-      descriptor,
-      master,
-      pagination,
-    );
-    expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(0);
-    expect(analysis.media.documentedPrincipalSemanticsContradicted).toBe(true);
-    expect(analysis.media.propertiesWithDeterministicRepresentativeCandidate).toBe(1);
-    expect(analysis.media.representativeCandidateSelectionOrigin).toBe(
-      "local_deterministic_fallback",
-    );
-  });
-
-  it("counts the provider-designated principal when the documented marker IS present", () => {
+  it("A. visualOrder = 0 is the PROVIDER-DESIGNATED principal", () => {
     const analysis = analyseDestination(
       "dubai",
       ["DXB"],
@@ -953,7 +933,84 @@ describe("per-destination source analysis", () => {
       pagination,
     );
     expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(1);
-    expect(analysis.media.documentedPrincipalSemanticsContradicted).toBe(false);
+    expect(analysis.media.providerDesignatedPrincipalCoveragePct).toBe(100);
+    expect(analysis.media.imagedPropertiesWithoutProviderDesignatedPrincipal).toBe(0);
+  });
+
+  it("B. images without visualOrder = 0 is a DOCUMENTED VALID state", () => {
+    // HBX documents the designation AND states that some hotels may not carry
+    // it. Absence is therefore an allowed provider state — not a failure, and
+    // emphatically not evidence that the provider has no images.
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel()],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.media.propertiesWithAnyImage).toBe(1);
+    expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(0);
+    expect(analysis.media.imagedPropertiesWithoutProviderDesignatedPrincipal).toBe(1);
+    expect(analysis.media.principalDesignationSemantics).toBe("verified");
+  });
+
+  it("C. a LOW share of designated principals is not a contradiction", () => {
+    // One designated principal in twenty imaged properties — 5%. An earlier
+    // version declared the documentation contradicted below an invented 10%
+    // cutoff. The semantics are verified either way; only the number changes.
+    const rows = [
+      hotel({ code: 1, images: [{ path: "a.jpg", visualOrder: 0 }] }),
+      ...Array.from({ length: 19 }, (_, i) =>
+        hotel({ code: 100 + i, images: [{ path: `${i}.jpg`, visualOrder: 900 - i }] }),
+      ),
+    ];
+    const analysis = analyseDestination("dubai", ["DXB"], rows, descriptor, master, pagination);
+    expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(1);
+    expect(analysis.media.providerDesignatedPrincipalCoveragePct).toBe(5);
+    expect(analysis.media.principalDesignationSemantics).toBe("verified");
+  });
+
+  it("D. a local fallback is never reported as principal or hero", () => {
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel()],
+      descriptor,
+      master,
+      pagination,
+    );
+    // A deterministic local pick is available, and it is NOT the provider's
+    // principal. The two counts must never be conflated.
+    expect(analysis.media.propertiesWithDeterministicRepresentativeCandidate).toBe(1);
+    expect(analysis.media.propertiesWithProviderDesignatedPrincipal).toBe(0);
+    expect(analysis.media.representativeCandidateSelectionOrigin).toBe(
+      "local_deterministic_fallback",
+    );
+    // And hero coverage reads the provider designation alone: with the shipped
+    // Hotelbeds descriptor the fallback selector is switched off entirely.
+    expect(descriptor.imageFieldMap.principalSelector).toBe("visual_order_zero");
+    expect(deriveImageEvidence(hotel(), descriptor).hasProviderDesignatedPrincipal).toBe(false);
+    expect(deriveImageEvidence(hotel(), descriptor).hasDeterministicRepresentativeCandidate).toBe(
+      false,
+    );
+  });
+
+  it("E. no percentage threshold decides whether the documentation holds", () => {
+    // The shape of the model is the guarantee: `principalDesignationSemantics`
+    // is a constant, so no proportion of missing designations can flip it.
+    const none = analyseDestination("dubai", ["DXB"], [hotel()], descriptor, master, pagination);
+    const all = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel({ images: [{ path: "a.jpg", visualOrder: 0 }] })],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(none.media.principalDesignationSemantics).toBe("verified");
+    expect(all.media.principalDesignationSemantics).toBe("verified");
+    expect(Object.keys(none.media)).not.toContain("documentedPrincipalSemanticsContradicted");
   });
 
   it("reports median and average image counts separately", () => {

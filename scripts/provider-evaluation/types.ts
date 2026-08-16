@@ -346,11 +346,11 @@ export interface ProviderImageFieldMap {
    * weak at media when it is not.
    *
    * `deterministic_representative_fallback` additionally derives a LOCAL
-   * fallback: the unique extremum of the ordering. That proves only "one image
-   * can be selected deterministically" — it does NOT establish that the image
-   * is the provider's principal one. The provider has not documented whether
-   * maximum, minimum, array order or some other transformation is intended, so
-   * the fallback is reported separately, tagged
+   * fallback for properties the provider did not designate one for. It proves
+   * only "one image can be selected deterministically" — never that the image
+   * is the provider's principal one, since the provider has not documented
+   * whether maximum, minimum, array order or another transformation is
+   * intended. It is reported separately, tagged
    * `selection_origin = local_deterministic_fallback`, and never counted as
    * hero-image coverage.
    */
@@ -463,11 +463,16 @@ export interface MediaEvidence {
   /** Derived from the images collection, not read from a field path. */
   propertiesWithProviderDesignatedPrincipal: number;
   /**
-   * True when live data contradicts the provider's documented principal-image
-   * rule. Recorded so a low count above reads as "documentation is wrong"
-   * rather than "this provider ships no main images".
+   * Share of imaged properties carrying that designation.
+   *
+   * Reported as a plain coverage figure with NO verdict attached. HBX documents
+   * `visualOrder = 0` as the principal image AND explicitly notes that some
+   * hotels may not carry the designation, so a property without one is in a
+   * documented, allowed state — not a contradiction, and not evidence the
+   * provider lacks images. There is deliberately no threshold here: any cutoff
+   * separating "normal" from "contradicted" would be invented.
    */
-  documentedPrincipalSemanticsContradicted: boolean;
+  providerDesignatedPrincipalCoveragePct: number;
   totalImages: number;
   /** Images carrying a usable path/URL. */
   imagesWithPath: number;

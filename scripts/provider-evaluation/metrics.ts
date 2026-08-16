@@ -178,12 +178,13 @@ export function computeMediaEvidence(
     propertiesWithProviderDesignatedPrincipal: records.filter(
       (r) => r.hasProviderDesignatedPrincipal,
     ).length,
-    // Live data contradicts the documented rule when properties HAVE images and
-    // ordering but essentially none carries the documented marker.
-    documentedPrincipalSemanticsContradicted:
-      records.some((r) => r.photoCount > 0) &&
-      records.filter((r) => r.hasProviderDesignatedPrincipal).length * 10 <
-        records.filter((r) => r.photoCount > 0).length,
+    // A plain coverage figure, no verdict. The provider documents that some
+    // hotels carry no principal designation, so a low share is a documented
+    // state — and any threshold declaring it "contradicted" would be invented.
+    providerDesignatedPrincipalCoveragePct: pct(
+      records.filter((r) => r.hasProviderDesignatedPrincipal).length,
+      records.filter((r) => r.photoCount > 0).length,
+    ),
     totalImages: records.reduce((sum, r) => sum + r.photoCount, 0),
     imagesWithPath: records.reduce((sum, r) => sum + r.imagesWithPath, 0),
     categoryDistribution:

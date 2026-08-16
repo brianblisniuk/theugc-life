@@ -150,6 +150,10 @@ export function classifyStarEligibility(
  * has not documented whether maximum, minimum, array order or some other
  * transformation is intended. Calling it "principal" would manufacture provider
  * semantics we do not have.
+ *
+ * A property with images but no provider designation is a **documented, valid
+ * state**, not a failure and not a contradiction — the absence is not
+ * reinterpreted anywhere in this module.
  */
 export function deriveImageEvidence(
   payload: unknown,

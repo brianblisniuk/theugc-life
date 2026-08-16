@@ -86,7 +86,7 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
     {
       url: "https://developer.hotelbeds.com/documentation/hotels/content-api/photos-images/",
       ...EXTERNAL_REVIEW,
-      note: "images[] carry path, order, visualOrder, type and room metadata where relevant; visualOrder = 0 can identify a principal image when present.",
+      note: "images[] carry path, order, visualOrder, type and room metadata where relevant. visualOrder = 0 identifies the hotel's main/principal image, and the documentation explicitly states that some hotels may not carry that number — so its absence is a documented valid state, not a gap.",
     },
     {
       url: "https://developer.hotelbeds.com/documentation/hotels/content-api/use-images/",
@@ -151,22 +151,22 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
     path: "path",
     type: "imageTypeCode",
     visualOrder: "visualOrder",
-    // DOCUMENTED SEMANTICS CONTRADICTED BY LIVE DATA, 2026-08-16. HBX documents
-    // `visualOrder = 0` as the provider-designated principal image; live values
-    // are large ordering ranks (813, 805, 804 …) and 0 appears on ~3% of
-    // properties.
+    // PROVIDER-DESIGNATED PRINCIPAL, documented semantics VERIFIED.
     //
-    // The documented rule is KEPT as the principal metric anyway, because it is
-    // the only provider-designated one that exists. A locally-chosen image —
-    // even a deterministically-chosen one — is not the provider's principal
-    // image, and reporting it as such would manufacture a provider semantic we
-    // do not have: HBX has not documented whether maximum, minimum or array
-    // order is intended.
+    // HBX documents `visualOrder = 0` as the hotel's main/principal image AND
+    // explicitly notes that it is possible to find hotels without that number;
+    // its own examples show non-zero values (903, 38, 2 …). So a property
+    // carrying no zero is in a DOCUMENTED, ALLOWED state.
     //
-    // The low count is therefore reported as "documentation contradicted", NOT
-    // as "this provider ships no main images". Deterministic fallback selection
-    // is an integration concern, not a source-evaluation finding, so it is left
-    // switched off here.
+    // Live counts (Bali 103, Dubai 20) therefore confirm the documentation
+    // rather than contradicting it: HBX designates a principal image for that
+    // subset. The absence on the rest is not reinterpreted — not as a
+    // documentation error, not as missing images, and not as a provider defect.
+    //
+    // Local fallback selection stays OFF. A deterministically-chosen image is
+    // not a principal image: HBX has not documented whether maximum, minimum
+    // non-zero or first-array-entry is intended, so choosing one would
+    // manufacture a provider semantic we do not have.
     principalSelector: "visual_order_zero",
   },
   classification: {
