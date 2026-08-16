@@ -428,7 +428,14 @@ create table public.source_match_candidates (
   coordinate_distance_metres numeric,
   known_source_mapping boolean not null default false,
   -- Count of INDEPENDENT dimensions in agreement. A name alone is 1, whatever
-  -- its strength — which is why a name alone can never auto-merge.
+  -- its strength.
+  --
+  -- This SUMMARISES evidence; it does not decide a match. There is deliberately
+  -- no `agreeing_dimensions >= n` constraint anywhere: D063 §12.2 refuses a
+  -- universal entity-resolution threshold, and an integer floor would be one.
+  -- A single authoritative known_source_mapping can be worth more than three
+  -- circumstantial agreements, so the future resolution/review layer weighs the
+  -- evidence — the count only saves it from recomputing it.
   --
   -- GENERATED, not writer-supplied. Stored alongside the evidence it summarises,
   -- a hand-written count is duplicate truth: nothing stopped a row claiming

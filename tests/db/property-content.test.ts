@@ -1229,6 +1229,88 @@ d("property-content infrastructure (0027)", () => {
       expect(rows[0]!.dims).toBe(4);
     });
 
+    it("turns agreeing_dimensions into NO universal matching threshold", async () => {
+      // The count summarises evidence; it must never become the decision. An
+      // earlier draft of the spec claimed a match required "two or more
+      // independent agreeing dimensions" — an invented threshold of exactly the
+      // kind D063 §12.2 refuses, and an integer floor is no less invented than a
+      // score. One authoritative known_source_mapping can outweigh three
+      // circumstantial agreements, so no constraint may grade it.
+      const constraints = await adminQuery<{ def: string }>(
+        `select pg_get_constraintdef(c.oid) as def
+         from pg_constraint c join pg_class t on t.oid = c.conrelid
+         where t.relname = 'source_match_candidates'`,
+      );
+      for (const c of constraints) {
+        expect(c.def, `constraint grades the evidence: ${c.def}`).not.toMatch(
+          /agreeing_dimensions\s*(>=|>|<|<=)/i,
+        );
+      }
+
+      // ...and no trigger sneaks one in behind the constraints.
+      const triggers = await adminQuery<{ tgname: string }>(
+        `select t.tgname from pg_trigger t join pg_class c on c.oid = t.tgrelid
+         where c.relname = 'source_match_candidates' and not t.tgisinternal`,
+      );
+      expect(triggers).toEqual([]);
+
+      // A single-dimension candidate is storable, in every terminal status a
+      // reviewer might give it. What one dimension is worth is their call.
+      const identity = await makeIdentity();
+      await makeCandidate(identity, {
+        columns: {
+          candidate_kind: "canonical_hotel",
+          candidate_hotel_id: HOTEL.bali,
+          known_source_mapping: true,
+          status: "accepted",
+          match_method: "confirmed_known_mapping",
+        },
+      });
+      const rows = await adminQuery<{ dims: number; status: string }>(
+        `select agreeing_dimensions as dims, status from public.source_match_candidates
+         where source_property_identity_id = $1`,
+        [identity],
+      );
+      expect(rows[0]!.dims).toBe(1);
+      expect(rows[0]!.status).toBe("accepted");
+    });
+
+    it("keeps the terminal duplicate rule about the TARGET, not the signal count", async () => {
+      // duplicate_matched is refused for want of a canonical hotel — never for
+      // want of enough dimensions. Here the evidence is as strong as this schema
+      // can express (all six dimensions) and it still cannot resolve anything,
+      // because the identity names no canonical property.
+      const identity = await makeIdentity({ source: "provider_a" });
+      const other = await makeIdentity({ source: "provider_b" });
+      await makeCandidate(identity, {
+        columns: {
+          candidate_kind: "source_identity",
+          candidate_source_property_identity_id: other,
+          name_evidence: "exact",
+          domain_evidence: "agrees",
+          address_evidence: "agrees",
+          phone_evidence: "agrees",
+          brand_evidence: "agrees",
+          known_source_mapping: true,
+          status: "accepted",
+          match_method: "every_dimension",
+        },
+      });
+      const dims = await adminQuery<{ dims: number }>(
+        `select agreeing_dimensions as dims from public.source_match_candidates
+         where source_property_identity_id = $1`,
+        [identity],
+      );
+      expect(dims[0]!.dims).toBe(6);
+
+      await expect(
+        adminQuery(
+          `update public.source_property_identities set resolution_state = 'duplicate_matched' where id = $1`,
+          [identity],
+        ),
+      ).rejects.toThrow(/duplicate_target/i);
+    });
+
     it("recomputes agreeing_dimensions when the evidence is corrected", async () => {
       const identity = await makeIdentity();
       await makeCandidate(identity, {
@@ -1247,7 +1329,8 @@ d("property-content infrastructure (0027)", () => {
             [identity],
           )
         )[0]!.dims;
-      // A name alone is one dimension — which is why a name alone never merges.
+      // A name alone is ONE dimension, whatever its strength. What that is worth
+      // is the reviewer's call, not a number this schema enforces.
       expect(await dims()).toBe(1);
 
       await adminQuery(

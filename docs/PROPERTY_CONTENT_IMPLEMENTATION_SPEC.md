@@ -453,8 +453,11 @@ negative finding.
 **No numeric confidence column and no threshold** (D063 §12.2, locked invariant
 H). `agreeing_dimensions` counts *independent* dimensions — a name agreement is
 one dimension whatever its strength, which is the bug the pilot comparison had to
-have fixed. **A name alone never auto-merges**: it produces at most
-`agreeing_dimensions = 1`, and §8 forbids `matched` below two.
+have fixed.
+
+**The count describes the evidence; it does not decide the match.** No number of
+agreeing dimensions automatically produces a match, and no number is required for
+one — see §10.1.
 
 **Why not `import_match_candidates`?** That table FKs `import_row_id NOT NULL`
 and carries a single `score numeric NOT NULL` — a confidence number this contract
@@ -663,9 +666,12 @@ reasons.** They are hold states, and an identity carrying them stays
 Collapsing the two is the failure D061 §9 exists to prevent: "star unknown" is
 not the same fact as "confirmed 3-star".
 
-`matched` requires two or more independent agreeing dimensions on the accepted
-candidate. A name agreement alone cannot produce `duplicate_matched` — locked
-invariants H and I.
+The *structural* requirement on `duplicate_matched` is a canonical target
+(§8.2) — **not** a signal count. There is no minimum number of agreeing
+dimensions, in the schema or in this document: D063 §12.2 refuses a universal
+entity-resolution threshold, and a count is not an exception to that merely
+because it is an integer rather than a score. §10.1 says what the evidence is
+for.
 
 ### 8.1 `resolved_eligible` means THIS identity published THAT hotel
 
@@ -824,9 +830,44 @@ Evidence, not scores:
 
 `agreeing_dimensions` is **generated** from the columns above (§5.4.2), so a
 reviewer sees the count without recomputing it and without the count being able
-to contradict the evidence. No universal threshold is stored anywhere; the
-promotion gate and the reviewer decide, and §8 states the one structural floor
-(two dimensions for a match).
+to contradict the evidence.
+
+### 10.1 The count is a summary, not a rule
+
+No universal threshold is stored anywhere, and none is implied. An earlier draft
+of this document claimed that `duplicate_matched` required "two or more
+independent agreeing dimensions" and that a name alone "can never auto-merge".
+Both sentences invented exactly the thing D063 §12.2 refuses — a universal
+entity-resolution threshold — and an integer is no less invented than a score.
+There is no such constraint in the schema, and there must not be one.
+
+Why a count cannot be the decision:
+
+- **one strong dimension can outweigh three weak ones.** A confirmed,
+  authoritative `known_source_mapping` — a link a human already established — is
+  not the same evidence as three circumstantial agreements between two records
+  that happen to share a city;
+- **the dimensions are not interchangeable.** `address = agrees` between two
+  large resorts on the same road, plus a brand code both inherit from the same
+  chain, plus a switchboard phone number, is three dimensions and very little
+  information;
+- **a threshold would be applied by whatever code reads it**, which is how a
+  documented "floor" becomes an automatic merge nobody approved.
+
+So what the schema does is store the evidence and refuse to grade it. What
+decides a match is the **future resolution/review layer**, on the standing D063
+principle that a false merge is strategically worse than a temporarily retained
+duplicate — a duplicate is visible and fixable; a merge silently attributes one
+hotel's outreach history to another.
+
+The only structural rule about `duplicate_matched` is that it must name a
+canonical hotel (§8.2), which is a statement about *what a terminal state means*,
+not about how much evidence is enough.
+
+> The `strong_multi_signal` classification in the Hotelbeds evaluation
+> (`docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md` §9) is a
+> **reporting bucket for that evaluation's own comparison**, not a canonical
+> matching rule, and is unaffected by any of this.
 
 The same evidence matrix serves all three target kinds (§5.4.1). A
 source↔source comparison uses exactly the columns a source↔canonical comparison
@@ -1161,15 +1202,49 @@ state is counted, never hidden. **Nothing in the ingestion path deletes an
 unresolved candidate** — the FKs are `RESTRICT`, and no code path in this block
 issues a DELETE.
 
-**The closure count cannot be talked into being zero.** Each way out of
-`unresolved` costs something the database checks: `resolved_eligible` requires
-this identity's own active canonical link to the hotel it names (§8.1),
+**The closure count cannot be talked into being zero *structurally*.** Each way
+out of `unresolved` costs something the database checks: `resolved_eligible`
+requires this identity's own active canonical link to the hotel it names (§8.1),
 `duplicate_matched` requires an existing canonical hotel (§8.2),
 `final_exclusion` requires a durable D061 §9 reason — and "star classification
-unknown" is deliberately not one of them. A candidate can therefore only leave
-the coverage-critical count by being published, absorbed into a **published**
-property, or reviewed out; never by being relabelled, and never by a ring of
-identities pointing at each other.
+unknown" is deliberately not one of them. A candidate cannot leave the
+coverage-critical count by being relabelled, nor by a ring of identities pointing
+at each other.
+
+### 22.1 What 0027 proves, and what it does not
+
+That paragraph is a claim about **structure**, and it is important not to read it
+as more. Migration `0027` does not implement star resolution, location
+resolution, the D062 preview, apply authorization, or the resolution/promotion
+engine. It therefore cannot prove that the D062 conditions were satisfied for any
+identity — only that a terminal state is not *structurally* fabricable.
+
+> **Migration 0027 prevents structurally false terminal states and provides the
+> integrity boundary the future resolution/promotion engine will use. The future
+> D062/resolution block remains responsible for authorizing the semantic
+> transition into the terminal states.**
+
+Concretely: the schema guarantees a `resolved_eligible` identity really does hold
+its own active canonical link to the hotel it names. It does not guarantee that
+the hotel should have been published — that is what the gate is for. No
+placeholder D062 columns are added here to blur the difference.
+
+### 22.2 Sequencing — do not build Coverage Engine yet
+
+The closure query above is the intended end state, **not** something to implement
+against the current foundation. The order is:
+
+1. `0027` — the state model and its structural invariants. **Done.**
+2. The resolution / D062 promotion block — defines and *owns* the authorized
+   transitions into `resolved_eligible`, `duplicate_matched` and
+   `final_exclusion`, making those states operationally authoritative.
+3. **Then** Coverage Engine may count them.
+
+Skipping step 2 is the specific mistake this section exists to prevent: an
+engineer reading §22 straight after `0027` could implement the count and treat
+"a canonical link exists" as proof that D062 was satisfied. It is not. Until the
+resolution block lands, a terminal state means "structurally well-formed", not
+"authorized".
 
 Run-level `coverage_risks` (§7.1) belong to this layer too: they are the
 destination-level caveats the Coverage Engine must weigh, and they are

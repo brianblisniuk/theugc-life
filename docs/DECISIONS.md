@@ -1643,7 +1643,7 @@ citable), and a trigger refuses both operations for the table owner as well, so
 the guarantee survives a future migration that grants ALL for convenience. A
 corrected fact is a new observation in a new run.
 
-### 5. Provenance alignment is structural, and coverage states cannot be asserted
+### 5. Provenance alignment is structural, and terminal states cost something
 
 Run, identity and observation must agree on `source` and `source_environment`,
 enforced by composite FKs rather than by application convention: with id-only
@@ -1670,7 +1670,30 @@ resolves nothing on its own.
 
 And `agreeing_dimensions` is generated from the evidence columns rather than
 supplied. A count stored beside the evidence it summarises is duplicate truth,
-and duplicate truth drifts.
+and duplicate truth drifts. It is a **summary of evidence, not a matching rule**:
+there is no `agreeing_dimensions >= n` constraint and there must not be one,
+because D063 §12.2 refuses a universal entity-resolution threshold and an integer
+floor is still a threshold.
+
+### What this does NOT establish
+
+`0027` enforces that a terminal state is **structurally impossible to fake**. It
+does not, and cannot, establish that the D062 conditions were met — no star
+resolution, no location resolution, no promotion preview, no apply authorization
+and no resolution engine exists yet.
+
+So the boundary is:
+
+> **Migration 0027 prevents structurally false terminal states and provides the
+> integrity boundary the future resolution/promotion engine will use. That future
+> block remains responsible for authorizing the semantic transition into those
+> states.**
+
+Concretely: the schema guarantees that an identity claiming `resolved_eligible`
+really does have its own active canonical link to the hotel it names. It does not
+guarantee that the hotel should have been published. Those are different claims,
+and conflating them would be the same category of error this decision exists to
+prevent — so no placeholder D062 columns are added to imply otherwise.
 
 Reason:
 Each of these protects against a failure that is invisible in the output. Test

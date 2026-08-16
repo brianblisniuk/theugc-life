@@ -320,6 +320,11 @@ NULL `score`, and D063 §12.2 refuses to invent a confidence number.
   supplied because a hand-written count beside the evidence it summarises is
   duplicate truth and drifts. Coordinate distance is deliberately not counted:
   there is no approved threshold to count it against.
+  **It summarises evidence; it does not decide a match.** There is no
+  `agreeing_dimensions >= n` constraint anywhere and there must not be one — D063
+  §12.2 refuses a universal threshold, and an integer floor would be one. One
+  authoritative known source mapping can outweigh three circumstantial
+  agreements; the future resolution/review layer weighs it.
 - `source` / `source_environment` — denormalised, with composite FKs to both the
   identity and (when present) `source_run_id`, so a candidate cannot cite a run
   from another provider or environment as its provenance
