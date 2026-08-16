@@ -242,7 +242,11 @@ batch; a source identity must outlive every run.
   identity cannot name a run from another provider or another environment as the
   run that saw it
 - `resolution_state text` — `unresolved` | `resolved_eligible` |
-  `duplicate_matched` | `final_exclusion` (D061 §15.1 A/B/C plus the hold state)
+  `duplicate_matched` | `final_exclusion` (D061 §15.1 A/B/C plus the hold state).
+  A **post-decision record**, written by the future apply step; it stays
+  `unresolved` through investigation, review and the D062 preview, so it is
+  never evidence *for* a D062 condition (see
+  `PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md` §21.3)
 - `resolution_reason text NULL` — required for a final exclusion; the vocabulary
   deliberately has **no** value for "star unresolved" or "identity unresolved",
   which are hold states that keep a candidate inside the coverage-critical count
@@ -338,7 +342,11 @@ NULL `score`, and D063 §12.2 refuses to invent a confidence number.
   identity (see `matched_hotel_id` above).
 
 ### hotel_source_identities
-The D063 §11.1 link: canonical hotel ↔ source identity.
+The D063 §11.1 link: canonical hotel ↔ source identity. An **apply output** — the
+durable receipt of a promotion already authorised, written in the same
+transaction as the `hotels` row. It is never a D062 precondition: for
+`approve_create` no hotel exists before the gate, so no link can
+(`PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md` §21.2).
 - partial UNIQUE on `(source_property_identity_id) WHERE link_status='active'` —
   one active source identity maps to at most one canonical hotel
 - **composite FK** on `(source_property_identity_id, source, source_environment,

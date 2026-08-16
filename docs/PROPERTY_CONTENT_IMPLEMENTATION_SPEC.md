@@ -1089,15 +1089,37 @@ rather than rebuilding ingestion. Nothing here has to be undone.
 The gate is **not implemented**. What this block guarantees is that it *can* be,
 without touching source ingestion.
 
-A future promotion preview must answer, per candidate:
+### 21.0 Preview inputs are not apply outputs
 
-| D062 condition | Where the evidence comes from |
+Everything the preview reads must be able to **exist before publication**. That
+sounds obvious and is the exact thing an earlier draft of the table below got
+wrong twice, in both cases by listing an artifact that only exists *after* the
+gate has already been passed:
+
+| PREVIEW INPUTS — exist before anything is published | APPLY OUTPUTS — created by the transaction the preview authorises |
 |---|---|
-| 1. canonical identity resolved | `source_property_reviews.decision` + `hotel_source_identities` |
+| `source_property_observations` (typed source facts) | the row in `hotels` |
+| `source_property_reviews` (the reviewer's decision + its target) | the `hotel_source_identities` link |
+| `source_match_candidates` (entity-resolution evidence and status) | `source_property_identities.promoted_hotel_id` |
+| future `source_property_star_resolutions` | the terminal `resolution_state` |
+| future `source_property_location_resolutions` | |
+| `destinations` / `destination_aliases` | |
+
+An apply output used as a preview input is circular by construction: it makes the
+gate require the thing the gate produces. Both corrections below are instances of
+that one mistake, so the table is now audited against this rule rather than
+against intuition.
+
+A future promotion preview must answer, per candidate, from **pre-publication
+evidence only**:
+
+| D062 condition | Where the evidence comes from (all pre-publication) |
+|---|---|
+| 1. canonical identity resolved | `source_property_reviews.decision` + `source_match_candidates` — see §21.2. **Not** `hotel_source_identities`, which is an apply output |
 | 2. supported destination | `source_property_reviews.destination_id` → `destinations` |
-| 3. physical hospitality property | `source_property_observations.source_property_type_code/label` |
+| 3. physical hospitality property | `source_property_observations.source_property_type_code/label`, resolved by the future layer |
 | 4. not permanently closed | `source_lifecycle_status` **when the provider supplies one** |
-| 5. V1 scope resolved | `source_property_identities.resolution_state` |
+| 5. V1 scope resolved | a **pre-publication resolution owned by the future D062/resolution layer**, derived from conditions 2/3/4/6/7/11 and the review — see §21.3. **Not** `source_property_identities.resolution_state`, which is the post-decision record |
 | 6. star exactly 4 or 5 | **not from this layer alone** — §21.1 |
 | 7. star provenance | future `source_property_star_resolutions` → `source_property_observations.id` |
 | 8/9. canonical lat/long | future `source_property_location_resolutions` → `source_property_observations.id` |
@@ -1148,18 +1170,32 @@ source_property_location_resolutions (future)
   resolved_by_user_id, resolved_at
 ```
 
-The order then runs forwards with no cycle:
+The order then runs forwards with no cycle, and **every arrow points one way**:
 
 ```
-candidate (source identity, unresolved)
-  → star resolution + location resolution, citing observations
-  → D062 preview: every condition evaluable, still nothing published
-  → human approval
-  → apply: CREATE the canonical row in `hotels`          ← publication
-  → establish hotel_source_identities link (production only)
-  → write source_property_identities.promoted_hotel_id   ← §8.1 becomes true
-  → retain the resolutions as the canonical value's provenance
+source identity — resolution_state = 'unresolved' throughout this column
+  │
+  ├─ pre-publication resolutions: star, location, scope, identity/conflict
+  │     citing source_property_observations
+  │
+  ├─ D062 preview — every condition evaluable from the evidence above,
+  │     still nothing published, nothing in `hotels`
+  │
+  ├─ human authorization
+  │
+  └─ apply, in ONE transaction:
+        create the canonical row in `hotels`, or match the approved existing one
+        establish the hotel_source_identities link (production only)
+        write source_property_identities.promoted_hotel_id
+        set the terminal resolution_state                  ← §8.1 becomes true
+                                                              only here
+  ↓
+later: Coverage Engine counts terminal states (§22.2 — not before the
+       resolution block owns those transitions)
 ```
+
+Nothing below the `apply` line is readable above it. That is the whole rule, and
+§21.0 is how the condition table is checked against it.
 
 `promoted_hotel_id` is what carries the resolution forward: after apply, a
 canonical star's provenance is reachable as
@@ -1177,6 +1213,67 @@ canonical star that cites an observation must be able to keep citing it.
 star-authority hierarchy for Bali/Dubai remains explicitly undecided
 (`PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §16), which is exactly why
 `issuing_authority` is a future column rather than a value written today.
+
+### 21.2 Condition 1 — identity resolution is expressible before publication
+
+The earlier table cited `hotel_source_identities` as evidence that canonical
+identity was resolved. For `approve_match` that is merely redundant; for
+`approve_create` it is **backwards**, and `approve_create` is the path that
+actually adds inventory:
+
+- there is no new row in `hotels` yet, because creating one *is* publication
+  (D062 §7.0);
+- therefore there can be no link row, because a link FKs a hotel;
+- so requiring the link would mean requiring publication before the gate that
+  authorises publication.
+
+The link is an **apply output** — the durable canonical receipt of a decision
+already made, and the thing that later answers "which provider property is this
+hotel?" (§11). It is not an input.
+
+What identity resolution actually means at preview time depends on the decision:
+
+| Decision | "Canonical identity resolved" means |
+|---|---|
+| `approve_create` | the entity-resolution result says this candidate is a **distinct new physical property**: its `source_match_candidates` carry no unresolved conflict, and the reviewer recorded `approve_create` rather than a match. No canonical hotel and no link exist yet, and none is expected to |
+| `approve_match` | the reviewer identified an existing canonical property, recorded as `source_property_reviews.target_hotel_id` |
+
+Both are readable from tables that exist today, before anything is published.
+Note that a `new_property` candidate (§5.4.1) is an explicit finding — "we looked
+and found nothing" — which is precisely why it had to be expressible as something
+other than a NULL: the `approve_create` path needs to *cite* the search, not the
+absence of a row.
+
+### 21.3 Condition 5 — V1 scope is resolved before it is recorded
+
+The earlier table cited `source_property_identities.resolution_state`. §8 says an
+identity stays `unresolved` through the whole of pre-publication investigation
+and only reaches a terminal state **after** apply — so at preview time that
+column reads `unresolved` for every candidate under consideration. Using it as a
+precondition means using the terminal state to prove the precondition for
+reaching the terminal state.
+
+`resolution_state` is the **post-decision record**, not the evidence. V1 scope
+resolution is a pre-publication judgement owned by the future D062/resolution
+layer, derived from the candidate's own evidence:
+
+- physical-hospitality / property-type resolution (condition 3);
+- canonical star resolution and its provenance (conditions 6/7) — the D060 "4 or
+  5 exactly" test;
+- supported destination (condition 2);
+- lifecycle / known-closed evidence (condition 4);
+- identity and conflict resolution (conditions 1/11);
+- any reviewed exclusion or hold state recorded against the candidate.
+
+That is the same list D061 §9 draws its exclusion vocabulary from, which is the
+point: scope is decided from facts about the property, and `resolution_state`
+then *records* what was decided. The arrow runs one way.
+
+**No table is added for this.** The resolution layer is free to compute condition
+5 in the preview, or to persist it alongside the star and location resolutions
+when that block is designed; this document does not pre-empt that choice, and
+inventing a column here to make a documentation table tidy would be exactly the
+kind of speculative schema the rest of this block avoids.
 
 ## 22. Coverage Engine future interface
 
