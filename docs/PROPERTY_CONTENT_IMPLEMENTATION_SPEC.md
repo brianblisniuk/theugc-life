@@ -197,9 +197,8 @@ enum that means two different things.
 | `resolution_state` | `text` NOT NULL default `'unresolved'` | §8 / Coverage Engine (§22). |
 | `resolution_reason` | `text` NULL | required when the state is a final exclusion; §8. |
 | `observation_count` | `integer` NOT NULL default 0 | |
-| `matched_hotel_id` | `uuid` NULL FK `hotels` ON DELETE RESTRICT | the durable answer to "matched to WHAT?"; §8.2. |
-| `matched_source_property_identity_id` | `uuid` NULL FK identities ON DELETE RESTRICT | the same answer when the match is to **another source identity**; §8.2. |
-| `promoted_hotel_id` | `uuid` NULL FK `hotels` ON DELETE RESTRICT | which canonical row this identity's resolution actually produced. Written by a future promotion apply step; §8.1. |
+| `matched_hotel_id` | `uuid` NULL FK `hotels` ON DELETE RESTRICT | the durable answer to "matched to WHAT?" — a **canonical hotel**, and only that; §8.2. |
+| `promoted_hotel_id` | `uuid` NULL, **composite** FK `hotel_source_identities (source_property_identity_id, hotel_id)` ON DELETE RESTRICT | which canonical row **this identity's own** resolution produced. Written by a future promotion apply step; §8.1. No direct FK to `hotels`: the composite one is stronger and requiring both would be duplicate truth. |
 | `created_at` / `updated_at` | `timestamptz` | |
 
 **Uniqueness — the core invariant:**
@@ -365,7 +364,8 @@ payload is deliberately **not** stored inline (§19).
 |---|---|---|
 | `id` | `uuid` PK | |
 | `source_property_identity_id` | `uuid` NOT NULL FK identities ON DELETE CASCADE | |
-| `source_run_id` | `uuid` NULL FK runs ON DELETE SET NULL | which run generated it. |
+| `source` / `source_environment` | `text` NOT NULL | denormalised so the identity and the run can be required to agree; see below. |
+| `source_run_id` | `uuid` NULL, **composite** FK runs `(id, source, source_environment)` ON DELETE RESTRICT | which run generated it. NULL means "not produced by a run" — a reviewer's own finding. |
 | `candidate_kind` | `text` NOT NULL default `'new_property'` | `canonical_hotel` \| `source_identity` \| `new_property` — **what this candidate points at**, stated rather than inferred; §5.4.1. |
 | `candidate_hotel_id` | `uuid` NULL FK `hotels` ON DELETE CASCADE | set iff `candidate_kind = 'canonical_hotel'`. |
 | `candidate_source_property_identity_id` | `uuid` NULL FK identities ON DELETE CASCADE | set iff `candidate_kind = 'source_identity'`; §5.4.1. |
@@ -373,7 +373,7 @@ payload is deliberately **not** stored inline (§19).
 | `domain_evidence` / `address_evidence` / `phone_evidence` / `brand_evidence` | `text` NOT NULL default `'unavailable'` | `agrees` \| `differs` \| `unavailable`. |
 | `coordinate_distance_metres` | `numeric` NULL | raw distance. **No threshold is stored.** |
 | `known_source_mapping` | `boolean` NOT NULL default false | a previously confirmed identity link. |
-| `agreeing_dimensions` | `integer` NOT NULL default 0 | count of independent dimensions in agreement. |
+| `agreeing_dimensions` | `integer` NOT NULL **GENERATED ALWAYS … STORED** | count of independent dimensions in agreement, derived from the columns above; §5.4.2. Callers never write it. |
 | `match_method` | `text` NOT NULL | human-readable, e.g. `name_exact+domain_agrees`. |
 | `status` | `text` NOT NULL default `'pending'` | `pending` \| `accepted` \| `rejected` \| `superseded`. |
 | `review_note` | `text` NULL | |
@@ -417,6 +417,34 @@ constraint source_match_candidates_no_self_match check (
 NULL is therefore never overloaded: a `new_property` finding and a
 `canonical_hotel` candidate whose target was not written are different rows, and
 only one of them is storable.
+
+A source↔source candidate is **evidence, not a resolution**. Accepting one does
+not terminally resolve either identity — see §8.2 for why that distinction is
+what stops coverage closing on a cycle.
+
+#### 5.4.2 `agreeing_dimensions` is derived, not asserted
+
+```sql
+agreeing_dimensions integer not null generated always as (
+    (case when name_evidence <> 'none'      then 1 else 0 end)
+  + (case when domain_evidence  = 'agrees'  then 1 else 0 end)
+  + (case when address_evidence = 'agrees'  then 1 else 0 end)
+  + (case when phone_evidence   = 'agrees'  then 1 else 0 end)
+  + (case when brand_evidence   = 'agrees'  then 1 else 0 end)
+  + (case when known_source_mapping         then 1 else 0 end)
+) stored
+```
+
+Stored beside the evidence it summarises, a writer-supplied count is duplicate
+truth: nothing stopped a row recording `name=exact, domain=agrees,
+address=agrees` alongside `agreeing_dimensions = 0`, and the two would drift the
+first time a caller updated one and forgot the other. Deriving it means the
+summary cannot contradict its own inputs, and cannot go stale when evidence is
+corrected.
+
+`coordinate_distance_metres` is deliberately **not** counted. There is no
+approved distance threshold (D063 §12.2), and counting proximity would be
+inventing one here. The `0..6` bound is now structural rather than a CHECK.
 
 **`unavailable` is not `differs`.** "Neither side supplied an address" is not
 evidence against a match, and collapsing the two would turn missing data into a
@@ -494,14 +522,15 @@ C).
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `source_property_identity_id` | `uuid` NOT NULL **UNIQUE** FK identities ON DELETE CASCADE | one live decision per identity. |
+| `source_property_identity_id` | `uuid` NOT NULL **UNIQUE**, **composite** FK identities `(id, source, source_environment)` ON DELETE CASCADE | one live decision per identity. |
+| `source` / `source_environment` | `text` NOT NULL | denormalised so the cited run can be required to match the identity. |
 | `decision` | `text` NOT NULL | `approve_create` \| `approve_match` \| `reject` \| `defer` — **identical vocabulary to `import_property_reviews`**. |
 | `target_hotel_id` | `uuid` NULL FK `hotels` | |
 | `destination_id` | `uuid` NULL FK `destinations` | |
 | `reviewer_user_id` | `uuid` NULL FK `users` | |
 | `reviewer_label` | `text` NOT NULL | |
 | `review_note` | `text` NULL | |
-| `decided_in_run_id` | `uuid` NULL FK `source_runs` ON DELETE SET NULL | which run's evidence the decision was made against. |
+| `decided_in_run_id` | `uuid` NULL, **composite** FK `source_runs (id, source, source_environment)` ON DELETE RESTRICT | which run's evidence the decision was made against; §18.5. |
 | `reviewed_at` / `created_at` / `updated_at` | `timestamptz` | |
 
 Decision shape is constrained exactly as `import_property_reviews` is:
@@ -638,56 +667,99 @@ not the same fact as "confirmed 3-star".
 candidate. A name agreement alone cannot produce `duplicate_matched` — locked
 invariants H and I.
 
-### 8.1 `resolved_eligible` cannot mean "looks eligible"
+### 8.1 `resolved_eligible` means THIS identity published THAT hotel
 
 D061 §15.1 A is *canonical eligible V1 property*, and under D062 §7.0 a canonical
 property **is** a published row in `hotels`. So the label cannot be a judgement
-somebody types:
+somebody types. Four mechanisms, each answering a different way of faking it:
 
 ```sql
+-- 1. It must name a promoted hotel at all.
 constraint source_property_identities_eligible_requires_promotion check (
   resolution_state <> 'resolved_eligible' or promoted_hotel_id is not null
 ),
+-- 2. Evaluation data can never be eligible, for the same reason it can never
+--    be linked (§18).
 constraint source_property_identities_eligible_is_production check (
   resolution_state <> 'resolved_eligible' or source_environment = 'production'
-)
+),
+-- 3. The named hotel must be THIS identity's own canonical link, not any row
+--    in `hotels` that happens to exist.
+constraint source_property_identities_promotion_link_fk
+  foreign key (id, promoted_hotel_id)
+  references public.hotel_source_identities (source_property_identity_id, hotel_id)
+  on delete restrict
+-- 4. ...and that link must be ACTIVE — trigger
+--    enforce_eligible_requires_active_link(), plus
+--    forbid_demoting_promoted_link() in the other direction.
 ```
 
-Without the first constraint an admin or a script could set `resolved_eligible`
-directly — no D060 classification, no D062 gate, no star resolution, no location
-resolution, no review — and a future Coverage Engine closure count would read
-*zero unresolved* while nothing had been published. The count would be a lie the
-database helped tell. `promoted_hotel_id` is written by the future promotion
-apply step (§21), so the state can only become true **after** publication
-actually happened, not as a prediction that it will.
+Constraint 1 alone was the first draft, and it was not enough: **any** existing
+hotel id satisfied it, so the state proved only that some canonical property
+existed somewhere — not that this identity produced it, was promoted, or passed
+D062. Constraint 3 makes those the same fact by keying the pair against the
+canonical link. A `rejected` or `superseded` link says "this identity does *not*
+correspond to that hotel", which the FK cannot see and the trigger does.
 
-The second constraint says evaluation data can never be eligible, for the same
-reason it can never be linked (§18).
+`MATCH SIMPLE` (the default) means constraint 3 is satisfied whenever
+`promoted_hotel_id` is NULL, so an unresolved identity is unaffected.
 
-### 8.2 `duplicate_matched` must answer "matched to WHAT?"
+**This does not recreate the pre-publication cycle §21.1 removed.** Nothing here
+is required before the gate; it constrains only the terminal state after it. The
+expected apply transaction is:
+
+```
+begin
+  D062 preview has passed, a human has approved
+  insert into hotels                       ← publication
+  insert into hotel_source_identities      ← the canonical link
+  update  source_property_identities set resolution_state = 'resolved_eligible',
+                                         promoted_hotel_id = <the new hotel>
+commit
+```
+
+One transaction, published atomically — which is why it is not a canonical draft
+tier. Nothing is visible to a creator mid-sequence because nothing is committed
+mid-sequence.
+
+### 8.2 `duplicate_matched` means matched to a CANONICAL property
 
 ```sql
 constraint source_property_identities_duplicate_target check (
-  resolution_state <> 'duplicate_matched'
-  or matched_hotel_id is not null
-  or matched_source_property_identity_id is not null
+  resolution_state <> 'duplicate_matched' or matched_hotel_id is not null
 ),
 constraint source_property_identities_match_target_scope check (
-  resolution_state = 'duplicate_matched'
-  or (matched_hotel_id is null and matched_source_property_identity_id is null)
-),
-constraint source_property_identities_no_self_match check (
-  matched_source_property_identity_id is null
-  or matched_source_property_identity_id <> id
+  resolution_state = 'duplicate_matched' or matched_hotel_id is null
 )
 ```
 
 A terminal duplicate state with no durable target is an unauditable claim: the
 candidate leaves the coverage-critical count and nothing records what absorbed
-it. Either target satisfies it — an existing canonical hotel, or **another
-source identity** (§5.4.1), because two providers can describe the same physical
-property long before it is published. A match target on an identity that is not
-matched is equally meaningless and is refused too.
+it.
+
+The target must be a **canonical hotel**. An earlier draft also allowed another
+source identity, which was wrong in a way worth stating plainly: it lets coverage
+close on a cycle. If A is `duplicate_matched` to B and B is `duplicate_matched`
+to A — or A → B → C → A — then no identity is `unresolved`, the
+coverage-critical count reads zero, and **no published property exists
+anywhere**. D061 §15.1 B is literally "duplicate/matched to an existing canonical
+property", and taking it literally is what makes the count mean something.
+
+Source-to-source equivalence is not lost; it was never a terminal state. It lives
+in `source_match_candidates` with `candidate_kind = 'source_identity'` (§5.4.1),
+where it is durable, reviewable, and correctly *pre-publication*: recognising
+that Hotelbeds H123 and Nuitee N456 are the same hotel is evidence, and the
+property still has to be published before anything is resolved.
+
+So the V1 rule is:
+
+| | |
+|---|---|
+| source↔source **candidate** | pre-publication entity-resolution evidence — `pending` / `accepted` / `rejected` / `superseded` |
+| identity `duplicate_matched` | terminal D061 state, requires `matched_hotel_id` |
+
+No graph-root or entity-cluster machinery is introduced to bridge them; that is a
+later question, and the cycle is avoided by not opening it here.
 
 ## 9. Source-observation model
 
@@ -750,10 +822,11 @@ Evidence, not scores:
 | COORDINATES | raw metres, no threshold | corroborating |
 | KNOWN MAPPING | boolean | yes |
 
-`agreeing_dimensions` is stored so a reviewer sees the count without recomputing
-it, and a CHECK bounds it to `0..6`. No universal threshold is stored anywhere;
-the promotion gate and the reviewer decide, and §8 states the one structural
-floor (two dimensions for a match).
+`agreeing_dimensions` is **generated** from the columns above (§5.4.2), so a
+reviewer sees the count without recomputing it and without the count being able
+to contradict the evidence. No universal threshold is stored anywhere; the
+promotion gate and the reviewer decide, and §8 states the one structural floor
+(two dimensions for a match).
 
 The same evidence matrix serves all three target kinds (§5.4.1). A
 source↔source comparison uses exactly the columns a source↔canonical comparison
@@ -791,7 +864,32 @@ Invariants, all enforced in the database:
   by design);
 - **the link's source, environment and provider id are the identity's own**
   (composite FK), so a link cannot misdescribe what it points at;
-- **evaluation data is unlinkable** (composite FK + production-only CHECK, §18).
+- **evaluation data is unlinkable** (composite FK + production-only CHECK, §18);
+- **one row per (identity, hotel) pair**, so an identity's `promoted_hotel_id`
+  can key against the pair (§8.1). Re-linking an identity to a hotel it was
+  previously linked to reactivates that row rather than inserting a second one;
+  linking it to a different hotel is unaffected.
+
+### 11.1 Deleting a canonical hotel
+
+`hotel_source_identities.hotel_id` is `ON DELETE CASCADE` from `hotels`, but
+after §8.1 that cascade cannot fire for a promoted identity: the link row is
+itself referenced `ON DELETE RESTRICT` by `source_property_identities
+(id, promoted_hotel_id)`, so deleting the hotel fails rather than quietly
+removing the link. **A hotel that a source identity was promoted into cannot be
+deleted while that identity says so.**
+
+For a hotel with only non-promoted links (an `approve_match` link, or a
+superseded one), the cascade still applies and the link rows go with the hotel.
+That is consistent with every other child of `hotels` in the schema.
+
+> **FLAGGED, non-blocking:** the repo has **no product contract for deleting a
+> published canonical hotel** — not in `HOTEL_DATA_CONTRACT.md`,
+> `CANONICAL_PROMOTION_SPEC.md` or D062, and no code path issues such a delete.
+> This block deliberately does not invent one. Whether a published property is
+> ever hard-deleted (versus closed, excluded or superseded) is a **canonical
+> hotel lifecycle question for a later block**, and the answer should decide
+> whether that residual cascade is right — not this migration.
 
 ## 12. RLS / ACL model
 
@@ -865,6 +963,21 @@ of an evaluation identity, and an identity cannot name a run from another
 provider or another environment as the run that saw it. The environment of any
 piece of evidence is therefore not merely recoverable — it is impossible to
 lose.
+
+**18.5 Every run reference is provenance, so every one is aligned.** The same
+composite rule covers `source_match_candidates.source_run_id` and
+`source_property_reviews.decided_in_run_id`. Left as plain id references they
+would have allowed a Hotelbeds identity to claim its candidate was generated by
+an unrelated Nuitee run, or its review decided against a production run it never
+appeared in — a citation that reads as evidence and is not, which is worse than
+no citation at all. Both are nullable (`MATCH SIMPLE`), so "not produced by a
+run" and "decided outside a run" stay expressible; what is no longer expressible
+is a *false* run.
+
+Both are `ON DELETE RESTRICT` rather than `SET NULL`. A run is already
+undeletable while observations cite it, so RESTRICT states what was true anyway
+— and `SET NULL` on a composite key would try to null the NOT NULL `source`
+columns along with the run id.
 
 This implements locked invariant K. The Hotelbeds *evaluation* extraction
 (3,275 Bali + 835 Dubai records, already measured) can be loaded by a future
@@ -1049,12 +1162,14 @@ unresolved candidate** — the FKs are `RESTRICT`, and no code path in this bloc
 issues a DELETE.
 
 **The closure count cannot be talked into being zero.** Each way out of
-`unresolved` costs something the database checks: `resolved_eligible` requires an
-actual published row (§8.1), `duplicate_matched` requires a durable target
-(§8.2), `final_exclusion` requires a durable D061 §9 reason — and "star
-classification unknown" is deliberately not one of them. A candidate can
-therefore only leave the coverage-critical count by being published, absorbed or
-reviewed out, never by being relabelled.
+`unresolved` costs something the database checks: `resolved_eligible` requires
+this identity's own active canonical link to the hotel it names (§8.1),
+`duplicate_matched` requires an existing canonical hotel (§8.2),
+`final_exclusion` requires a durable D061 §9 reason — and "star classification
+unknown" is deliberately not one of them. A candidate can therefore only leave
+the coverage-critical count by being published, absorbed into a **published**
+property, or reviewed out; never by being relabelled, and never by a ring of
+identities pointing at each other.
 
 Run-level `coverage_risks` (§7.1) belong to this layer too: they are the
 destination-level caveats the Coverage Engine must weigh, and they are
@@ -1102,8 +1217,11 @@ None that block implementation. For the record:
 | Media storage strategy | **Open** (D064) — §20 keeps ingestion possible without deciding |
 | Evaluation data may never link canonically | **Determined** by locked invariant K; implemented as a composite FK **plus** a CHECK (§18.2) |
 | Where pre-publication resolution attaches | **Determined**: to the source identity / candidate, never to a `hotel_id` that does not exist yet (§21.1) |
-| Source↔source matching before publication | **Determined**: an explicit `candidate_kind` with three targets (§5.4.1) |
-| `resolved_eligible` means published, not "looks eligible" | **Determined**: constrained on `promoted_hotel_id` (§8.1) |
+| Source↔source matching before publication | **Determined**: an explicit `candidate_kind` with three targets (§5.4.1), as *evidence* — never a terminal state (§8.2) |
+| `resolved_eligible` means this identity published this hotel | **Determined**: composite FK to the identity's own canonical link, plus an active-link trigger (§8.1) |
+| Terminal `duplicate_matched` target | **Determined**: a canonical hotel only, so coverage cannot close on a cycle (§8.2) |
+| `agreeing_dimensions` | **Determined**: generated from the evidence columns, never writer-supplied (§5.4.2) |
+| Deleting a published canonical hotel | **Open, and deliberately not invented here** — no product contract exists; §11.1 records what the schema currently does |
 | Observations are append-only | **Determined**: privileges plus triggers (§9.1) |
 | Enumeration exhaustion vs coverage | **Determined**: separate columns and separate vocabularies (§7.1) |
 | Provider review is a separate table | **Implementation**, justified in §1.3 / §6 |

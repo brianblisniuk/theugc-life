@@ -161,13 +161,20 @@ create table public.source_property_identities (
        'outside_destination', 'other_reviewed_exclusion')),
   observation_count integer not null default 0 check (observation_count >= 0),
   -- Durable answer to "matched to WHAT?" for resolution_state='duplicate_matched'.
-  -- Either a canonical hotel or ANOTHER SOURCE IDENTITY: two providers can
-  -- describe the same physical property long before it is published.
+  --
+  -- A CANONICAL HOTEL, and only a canonical hotel. D061 §15.1 B is literally
+  -- "duplicate/matched to an existing canonical property", and letting a source
+  -- identity be the terminal target would let coverage close on a cycle:
+  -- A matched-to B while B is matched-to A leaves neither `unresolved` and no
+  -- published property anywhere. Source-to-source equivalence is real and is
+  -- retained — as *pre-publication evidence* in source_match_candidates (§4),
+  -- which is a candidate record, not a terminal state.
   matched_hotel_id uuid references public.hotels(id) on delete restrict,
-  matched_source_property_identity_id uuid references public.source_property_identities(id) on delete restrict,
   -- Set by a future promotion apply step. The identity does not own the hotel;
-  -- it records which canonical row its resolution produced.
-  promoted_hotel_id uuid references public.hotels(id) on delete restrict,
+  -- it records which canonical row its own resolution produced. Deliberately NO
+  -- direct FK to hotels: the composite FK added after hotel_source_identities
+  -- exists (§5) is stronger, and requiring both would be duplicate truth.
+  promoted_hotel_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   -- A final exclusion without a durable reason is not auditable (D055).
@@ -196,22 +203,15 @@ create table public.source_property_identities (
     foreign key (last_seen_run_id, source, source_environment)
     references public.source_runs (id, source, source_environment) on delete restrict,
 
-  -- "MATCHED TO WHAT?" must always have an answer. A terminal duplicate state
-  -- with no durable target is an unauditable claim, and D061 §15.1 B is
-  -- specifically "duplicate/matched TO an existing canonical property".
+  -- "MATCHED TO WHAT?" must always have an answer, and the answer must be a
+  -- CANONICAL property — see the column comment above for why another source
+  -- identity is not an acceptable terminal target.
   constraint source_property_identities_duplicate_target check (
-    resolution_state <> 'duplicate_matched'
-    or matched_hotel_id is not null
-    or matched_source_property_identity_id is not null
+    resolution_state <> 'duplicate_matched' or matched_hotel_id is not null
   ),
   -- A match target only means something for a matched identity.
   constraint source_property_identities_match_target_scope check (
-    resolution_state = 'duplicate_matched'
-    or (matched_hotel_id is null and matched_source_property_identity_id is null)
-  ),
-  -- An identity cannot be a duplicate of itself.
-  constraint source_property_identities_no_self_match check (
-    matched_source_property_identity_id is null or matched_source_property_identity_id <> id
+    resolution_state = 'duplicate_matched' or matched_hotel_id is null
   ),
 
   -- D061 §15.1 A is "CANONICAL ELIGIBLE V1 PROPERTY", and under D062 a
@@ -220,6 +220,9 @@ create table public.source_property_identities (
   -- happened. Without this, a script could set the label directly and a future
   -- Coverage Engine closure count would read zero unresolved while nothing had
   -- been published.
+  --
+  -- Naming *some* hotel is not enough either — see the composite FK added in
+  -- §5, which requires the named hotel to be THIS identity's own canonical link.
   constraint source_property_identities_eligible_requires_promotion check (
     resolution_state <> 'resolved_eligible' or promoted_hotel_id is not null
   ),
@@ -381,9 +384,18 @@ comment on column public.source_property_observations.source_payload_uri is
 -- schema change to a working, reviewed table.
 create table public.source_match_candidates (
   id uuid primary key default gen_random_uuid(),
-  source_property_identity_id uuid not null
-    references public.source_property_identities(id) on delete cascade,
-  source_run_id uuid references public.source_runs(id) on delete set null,
+  source_property_identity_id uuid not null,
+  -- NULL when the candidate was not produced by a run (a reviewer's own
+  -- finding). When present it is PROVENANCE, so it must be true: the composite
+  -- FK below requires the run to be the same provider in the same environment
+  -- as the identity. RESTRICT rather than SET NULL because a run is never
+  -- deleted anyway (observations already hold it), and because SET NULL on a
+  -- composite key would try to null the NOT NULL source columns with it.
+  source_run_id uuid,
+  -- Denormalised so both parents can be keyed on them, exactly as for
+  -- observations (§3).
+  source text not null,
+  source_environment text not null check (source_environment in ('evaluation', 'production')),
   -- WHAT this candidate points at. Explicit rather than inferred from which
   -- column is NULL, because the coverage universe is multi-source: Hotelbeds
   -- H123 and Nuitee N456 may be the same physical hotel long before either is
@@ -417,8 +429,23 @@ create table public.source_match_candidates (
   known_source_mapping boolean not null default false,
   -- Count of INDEPENDENT dimensions in agreement. A name alone is 1, whatever
   -- its strength — which is why a name alone can never auto-merge.
-  agreeing_dimensions integer not null default 0
-    check (agreeing_dimensions >= 0 and agreeing_dimensions <= 6),
+  --
+  -- GENERATED, not writer-supplied. Stored alongside the evidence it summarises,
+  -- a hand-written count is duplicate truth: nothing stopped a row claiming
+  -- `name=exact, domain=agrees, address=agrees, agreeing_dimensions=0`, and the
+  -- two would drift the first time a caller updated one and forgot the other.
+  --
+  -- coordinate_distance_metres is deliberately NOT counted: there is no approved
+  -- distance threshold, and counting it would be inventing one here (D063 §12.2).
+  -- The 0..6 bound is now structural rather than a CHECK.
+  agreeing_dimensions integer not null generated always as (
+    (case when name_evidence <> 'none' then 1 else 0 end)
+    + (case when domain_evidence = 'agrees' then 1 else 0 end)
+    + (case when address_evidence = 'agrees' then 1 else 0 end)
+    + (case when phone_evidence = 'agrees' then 1 else 0 end)
+    + (case when brand_evidence = 'agrees' then 1 else 0 end)
+    + (case when known_source_mapping then 1 else 0 end)
+  ) stored,
   match_method text not null,
   status text not null default 'pending'
     check (status in ('pending', 'accepted', 'rejected', 'superseded')),
@@ -439,7 +466,20 @@ create table public.source_match_candidates (
   constraint source_match_candidates_no_self_match check (
     candidate_source_property_identity_id is null
     or candidate_source_property_identity_id <> source_property_identity_id
-  )
+  ),
+
+  -- PROVENANCE ALIGNMENT, same rule as observations: the identity this
+  -- candidate is about, and the run that generated it, must be the same
+  -- provider in the same environment. Otherwise a Hotelbeds identity could
+  -- claim its candidate was produced by an unrelated Nuitee run and the
+  -- reference would be worse than absent.
+  constraint source_match_candidates_identity_fk
+    foreign key (source_property_identity_id, source, source_environment)
+    references public.source_property_identities (id, source, source_environment)
+    on delete cascade,
+  constraint source_match_candidates_run_fk
+    foreign key (source_run_id, source, source_environment)
+    references public.source_runs (id, source, source_environment) on delete restrict
 );
 
 create index source_match_candidates_source_identity_target_idx
@@ -499,7 +539,18 @@ create table public.hotel_source_identities (
   -- production canonical data, and the composite FK above is what makes this
   -- CHECK true of the IDENTITY rather than merely of this row's label.
   constraint hotel_source_identities_production_only
-    check (source_environment = 'production')
+    check (source_environment = 'production'),
+  -- One row per (identity, hotel) pair. Redundant against the partial unique
+  -- index below for the ACTIVE case, and present so an identity's
+  -- `promoted_hotel_id` can foreign-key THIS PAIR (see below) rather than merely
+  -- naming some row in `hotels`.
+  --
+  -- The cost is deliberate and small: re-linking an identity to a hotel it was
+  -- previously linked to reactivates the existing row instead of inserting a
+  -- second one. Linking it to a DIFFERENT hotel is unaffected, so the history
+  -- that matters — which hotel this identity used to point at — is retained.
+  constraint hotel_source_identities_identity_hotel_uk
+    unique (source_property_identity_id, hotel_id)
 );
 
 -- One ACTIVE source identity maps to AT MOST ONE canonical hotel. Partial on
@@ -522,6 +573,93 @@ create trigger hotel_source_identities_set_updated_at
 comment on table public.hotel_source_identities is
   'D063 §11.1. Canonical hotel <-> provider source identity. Production-only by CHECK; one active identity maps to at most one hotel.';
 
+-- ---------------------------------------------------------------------------
+-- PROMOTION IS THIS IDENTITY'S OWN PROMOTION
+-- ---------------------------------------------------------------------------
+-- Added here rather than inline above, because the two tables reference each
+-- other and this one is created second.
+--
+-- `resolved_eligible` already required `promoted_hotel_id`. That was still too
+-- weak: ANY existing hotel id satisfied it, so the state proved only that some
+-- canonical property existed somewhere — not that THIS identity produced it.
+-- Keying the pair against the canonical link makes the two facts the same fact.
+--
+-- MATCH SIMPLE (the default) means the constraint is satisfied whenever
+-- promoted_hotel_id is NULL, so an unresolved identity is unaffected. This does
+-- NOT recreate the pre-publication cycle the spec removed: nothing here is
+-- required *before* the gate. The expected apply transaction is
+--   create hotel -> create link -> set promoted_hotel_id -> commit,
+-- which publishes atomically and therefore introduces no draft tier.
+alter table public.source_property_identities
+  add constraint source_property_identities_promotion_link_fk
+  foreign key (id, promoted_hotel_id)
+  references public.hotel_source_identities (source_property_identity_id, hotel_id)
+  on delete restrict;
+
+-- The FK proves the link EXISTS, for any identity naming a promoted hotel at
+-- all. This trigger proves the link is the LIVE one: a rejected or superseded
+-- link says "this identity does not correspond to that hotel", which would make
+-- `resolved_eligible` a lie again. Enforced in both directions — setting the
+-- state, and later demoting the link out from under it.
+--
+-- It deliberately stays quiet when a CHECK already says something more precise
+-- (no promoted hotel at all; an evaluation identity, which can never hold a link
+-- in the first place), so each mechanism reports the failure it actually owns.
+create or replace function public.enforce_eligible_requires_active_link()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.resolution_state = 'resolved_eligible'
+     and new.source_environment = 'production'
+     and new.promoted_hotel_id is not null
+     and not exists (
+    select 1 from public.hotel_source_identities hsi
+    where hsi.source_property_identity_id = new.id
+      and hsi.hotel_id = new.promoted_hotel_id
+      and hsi.link_status = 'active'
+  ) then
+    raise exception
+      'source identity % cannot be resolved_eligible: it has no ACTIVE canonical link to hotel %. D061 §15.1 A means a published canonical property produced by THIS identity, not any existing hotel row. See docs/PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md §8.1.',
+      new.id, new.promoted_hotel_id
+      using errcode = 'restrict_violation';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.enforce_eligible_requires_active_link() from public;
+
+create trigger source_property_identities_eligible_needs_active_link
+  before insert or update on public.source_property_identities
+  for each row execute function public.enforce_eligible_requires_active_link();
+
+create or replace function public.forbid_demoting_promoted_link()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.link_status = 'active' and new.link_status <> 'active' and exists (
+    select 1 from public.source_property_identities spi
+    where spi.id = old.source_property_identity_id
+      and spi.promoted_hotel_id = old.hotel_id
+      and spi.resolution_state = 'resolved_eligible'
+  ) then
+    raise exception
+      'canonical link for source identity % cannot leave `active` while that identity is resolved_eligible against hotel %. Resolve the identity first; otherwise a coverage closure count would keep counting a property whose canonical link has been withdrawn.',
+      old.source_property_identity_id, old.hotel_id
+      using errcode = 'restrict_violation';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.forbid_demoting_promoted_link() from public;
+
+create trigger hotel_source_identities_no_demote_promoted
+  before update on public.hotel_source_identities
+  for each row execute function public.forbid_demoting_promoted_link();
+
 -- ===========================================================================
 -- 6. SOURCE PROPERTY REVIEWS — a decision that survives the next run
 -- ===========================================================================
@@ -533,8 +671,11 @@ comment on table public.hotel_source_identities is
 -- converge on the same D062 promotion gate.
 create table public.source_property_reviews (
   id uuid primary key default gen_random_uuid(),
-  source_property_identity_id uuid not null unique
-    references public.source_property_identities(id) on delete cascade,
+  source_property_identity_id uuid not null unique,
+  -- Denormalised for the same reason as everywhere else in this migration: so
+  -- the identity and the run this decision cites can be required to agree.
+  source text not null,
+  source_environment text not null check (source_environment in ('evaluation', 'production')),
   decision text not null
     check (decision in ('approve_create', 'approve_match', 'reject', 'defer')),
   target_hotel_id uuid references public.hotels(id),
@@ -542,8 +683,9 @@ create table public.source_property_reviews (
   reviewer_user_id uuid references public.users(id),
   reviewer_label text not null,
   review_note text,
-  -- Which run's evidence the decision was made against.
-  decided_in_run_id uuid references public.source_runs(id) on delete set null,
+  -- Which run's evidence the decision was made against. NULL is honest ("decided
+  -- outside a run"); a run from another provider or another environment is not.
+  decided_in_run_id uuid,
   reviewed_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -553,7 +695,14 @@ create table public.source_property_reviews (
     (decision = 'approve_create' and target_hotel_id is null and destination_id is not null)
     or (decision = 'approve_match' and target_hotel_id is not null)
     or (decision in ('reject', 'defer') and target_hotel_id is null)
-  )
+  ),
+  constraint source_property_reviews_identity_fk
+    foreign key (source_property_identity_id, source, source_environment)
+    references public.source_property_identities (id, source, source_environment)
+    on delete cascade,
+  constraint source_property_reviews_run_fk
+    foreign key (decided_in_run_id, source, source_environment)
+    references public.source_runs (id, source, source_environment) on delete restrict
 );
 
 create index source_property_reviews_decision_idx

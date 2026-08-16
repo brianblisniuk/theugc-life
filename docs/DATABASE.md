@@ -246,22 +246,29 @@ batch; a source identity must outlive every run.
 - `resolution_reason text NULL` — required for a final exclusion; the vocabulary
   deliberately has **no** value for "star unresolved" or "identity unresolved",
   which are hold states that keep a candidate inside the coverage-critical count
-- `matched_hotel_id` / `matched_source_property_identity_id` — the durable answer
-  to "matched to WHAT?"; a `duplicate_matched` identity must carry one of them
-- `promoted_hotel_id` — which canonical row this identity's resolution actually
-  produced, written by the future promotion apply step
+- `matched_hotel_id` — the durable answer to "matched to WHAT?" for
+  `duplicate_matched`. **A canonical hotel only.** Allowing another source
+  identity would let coverage close on a cycle (A↔B, or A→B→C→A): nothing
+  `unresolved`, and no published property anywhere. Cross-source equivalence
+  lives in `source_match_candidates` as pre-publication evidence instead.
+- `promoted_hotel_id` — which canonical row this identity's **own** resolution
+  produced, written by the future promotion apply step. Composite FK to
+  `hotel_source_identities (source_property_identity_id, hotel_id)`, so it cannot
+  name a hotel this identity has no canonical link to.
 
 UNIQUE `(source, source_environment, source_property_id)`, plus
 `(id, source, source_environment)` and
 `(id, source, source_environment, source_property_id)` so observations and the
 canonical link can key on the identity's own values.
 
-CHECKs: `resolved_eligible` requires `promoted_hotel_id` **and** a production
-environment — under D062 a canonical property *is* a published row, so the label
-cannot mean "looks eligible" or a coverage closure count would read zero
-unresolved while nothing had been published. `duplicate_matched` requires a match
-target; a match target on a non-matched identity is refused; an identity cannot
-be a duplicate of itself.
+`resolved_eligible` is gated four ways, because each closes a different way of
+faking it: it requires `promoted_hotel_id` (CHECK), a production environment
+(CHECK), that the named hotel is **this identity's own** canonical link
+(composite FK), and that the link is **active**
+(`enforce_eligible_requires_active_link()`, with
+`forbid_demoting_promoted_link()` in the other direction). Naming any existing
+hotel row is not evidence that this identity was promoted. `duplicate_matched`
+requires `matched_hotel_id`; a match target on a non-matched identity is refused.
 
 ### source_property_observations
 One snapshot per `(run, identity)`. Nothing is overwritten, so a future
@@ -308,13 +315,22 @@ NULL `score`, and D063 §12.2 refuses to invent a confidence number.
 - `domain_evidence`, `address_evidence`, `phone_evidence`, `brand_evidence` —
   `agrees` | `differs` | `unavailable`. `unavailable` is not `differs`.
 - `coordinate_distance_metres numeric NULL` — raw, no threshold stored
-- `agreeing_dimensions integer` — independent dimensions only; a name alone is 1
+- `agreeing_dimensions integer` — **GENERATED ALWAYS … STORED** from the evidence
+  columns; independent dimensions only, so a name alone is 1. Derived rather than
+  supplied because a hand-written count beside the evidence it summarises is
+  duplicate truth and drifts. Coordinate distance is deliberately not counted:
+  there is no approved threshold to count it against.
+- `source` / `source_environment` — denormalised, with composite FKs to both the
+  identity and (when present) `source_run_id`, so a candidate cannot cite a run
+  from another provider or environment as its provenance
 - `candidate_kind text` — `canonical_hotel` | `source_identity` | `new_property`,
   with `candidate_hotel_id` / `candidate_source_property_identity_id` and a shape
   CHECK binding each kind to exactly one target. **Source↔source matching is
   first-class**: two providers can be recognised as the same physical property
   before either is published, so de-duplication never requires publishing one
-  provider first. NULL is not overloaded — `new_property` says so by name.
+  provider first. NULL is not overloaded — `new_property` says so by name. A
+  source↔source candidate is *evidence*; it never terminally resolves an
+  identity (see `matched_hotel_id` above).
 
 ### hotel_source_identities
 The D063 §11.1 link: canonical hotel ↔ source identity.
@@ -327,12 +343,23 @@ The D063 §11.1 link: canonical hotel ↔ source identity.
   canonical evidence**. The composite FK is what makes this true of the
   *identity* rather than of this row's label: an evaluation identity claiming
   `production` now fails at INSERT rather than being detectable afterwards
+- UNIQUE `(source_property_identity_id, hotel_id)` so an identity's
+  `promoted_hotel_id` can key against the pair
 - a canonical hotel may hold many source identities, by design
+
+**Deleting a hotel** cascades its link rows — except where an identity was
+promoted into it, since `promoted_hotel_id` holds the link `ON DELETE RESTRICT`
+and the delete therefore fails. The repo has no product contract for deleting a
+published canonical hotel and this migration does not invent one; see
+`PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md` §11.1.
 
 ### source_property_reviews
 Durable decision per identity, UNIQUE on the identity. Uses the **same decision
 vocabulary** as `import_property_reviews` (`approve_create` | `approve_match` |
 `reject` | `defer`), because both pipelines converge on one D062 gate.
+`decided_in_run_id` carries the same composite-FK provenance rule as match
+candidates: NULL means "decided outside a run", but a run from another provider
+or environment cannot be cited.
 
 ## 6. Editorial evidence and signals
 

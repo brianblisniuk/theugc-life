@@ -1650,12 +1650,27 @@ enforced by composite FKs rather than by application convention: with id-only
 keys a Hotelbeds-evaluation identity could name a Nuitee-production run as the
 run that saw it, and every individual row would still exist.
 
+The same rule covers every run reference: a match candidate's `source_run_id` and
+a review's `decided_in_run_id` are provenance, so they are composite-keyed too. A
+citation that names an unrelated provider's run reads as evidence and is not,
+which is worse than no citation.
+
 For the same reason a resolution state must cost something the database checks.
-`resolved_eligible` requires `promoted_hotel_id` — under D062 a canonical
-property *is* a published row, so the label cannot be typed ahead of the fact, or
-a Coverage Engine closure count would read zero unresolved while nothing had been
-published. `duplicate_matched` requires a durable match target (a canonical hotel
-**or** another source identity), so "matched to what?" always has an answer.
+`resolved_eligible` requires `promoted_hotel_id`, and that hotel must be **this
+identity's own active canonical link** — under D062 a canonical property *is* a
+published row, so the label cannot be typed ahead of the fact, and naming an
+arbitrary existing hotel is not evidence that this identity produced it.
+
+`duplicate_matched` requires a canonical hotel — deliberately **not** another
+source identity. A source-to-source terminal target lets coverage close on a
+cycle: A matched to B while B is matched to A leaves nothing `unresolved` and no
+published property anywhere. Cross-source equivalence is real and is kept, as
+pre-publication evidence in `source_match_candidates`, where accepting it
+resolves nothing on its own.
+
+And `agreeing_dimensions` is generated from the evidence columns rather than
+supplied. A count stored beside the evidence it summarises is duplicate truth,
+and duplicate truth drifts.
 
 Reason:
 Each of these protects against a failure that is invisible in the output. Test
