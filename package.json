@@ -37,7 +37,8 @@
     "destination:alias": "tsx scripts/import/destination/alias.ts",
     "eval:sources:accommodation-types": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --accommodation-types",
     "eval:sources:extract": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --provider hotelbeds",
-    "eval:sources:pilot-compare": "tsx scripts/provider-evaluation/run.ts --pilot-compare"
+    "eval:sources:pilot-compare": "tsx scripts/provider-evaluation/run.ts --pilot-compare",
+    "source:ingest": "tsx scripts/provider-ingestion/ingest.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
