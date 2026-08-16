@@ -57,8 +57,20 @@ create table public.source_runs (
   -- properties" and "did not say" are different facts.
   provider_reported_total integer check (provider_reported_total is null or provider_reported_total >= 0),
   pagination_walk_completed boolean not null default false,
-  extraction_exhaustion_proven boolean not null default false,
-  -- Never emptied to make a run look clean.
+  -- ENUMERATION exhaustion only: did we read every record the provider offers
+  -- for this geography? Deliberately NOT a judgement about whether the
+  -- destination's coverage is settled — those are different dimensions, and
+  -- conflating them makes a correctly exhausted provider walk report false
+  -- because an unrelated question (star authority, second source) is open.
+  provider_enumeration_exhaustion_proven boolean not null default false,
+  -- Risks that make the ENUMERATION itself unprovable: a cursor loop, a
+  -- provider total that disagrees with the rows returned, a budget stop. These
+  -- block enumeration exhaustion.
+  enumeration_risks text[] not null default '{}',
+  -- Risks about what the enumerated set MEANS: geography mapping caveats,
+  -- unresolved classification authority, pending second source. These are
+  -- recorded, never emptied to make a run look clean, and deliberately do NOT
+  -- falsify a walk that genuinely completed.
   coverage_risks text[] not null default '{}',
   request_count integer not null default 0 check (request_count >= 0),
   cache_hit_count integer not null default 0 check (cache_hit_count >= 0),
@@ -72,10 +84,15 @@ create table public.source_runs (
     (run_status = 'running' and completed_at is null)
     or (run_status <> 'running' and completed_at is not null)
   ),
-  -- A run cannot claim an exhaustion it never walked.
+  -- A run cannot claim an exhaustion it never walked, and cannot claim one
+  -- while a risk to the enumeration itself is recorded.
   constraint source_runs_exhaustion_requires_walk check (
-    extraction_exhaustion_proven = false or pagination_walk_completed = true
-  )
+    provider_enumeration_exhaustion_proven = false
+    or (pagination_walk_completed = true and cardinality(enumeration_risks) = 0)
+  ),
+  -- Composite key so identities and observations can be FK'd to a run's source
+  -- AND environment, not merely to its id (see below).
+  constraint source_runs_identity_uk unique (id, source, source_environment)
 );
 
 create index source_runs_source_env_started_idx
@@ -91,8 +108,12 @@ comment on table public.source_runs is
   'One execution of one provider/source. source_environment isolates evaluation from production (D063 infrastructure).';
 comment on column public.source_runs.provider_reported_total is
   'NULL means the provider supplied no total. Never defaulted to 0.';
-comment on column public.source_runs.extraction_exhaustion_proven is
-  'Walk completed AND zero coverage risks. Separate from pagination_walk_completed: they fail for different reasons.';
+comment on column public.source_runs.provider_enumeration_exhaustion_proven is
+  'ENUMERATION exhaustion only: walk completed and zero enumeration_risks. A non-enumeration coverage risk does NOT falsify it — those are different dimensions.';
+comment on column public.source_runs.enumeration_risks is
+  'Risks to the enumeration itself (cursor loop, total mismatch, budget stop). These block enumeration exhaustion.';
+comment on column public.source_runs.coverage_risks is
+  'Risks about what the enumerated set MEANS (geography caveats, open authority, pending second source). Recorded, never emptied, and never falsify a completed walk.';
 
 -- ===========================================================================
 -- 2. SOURCE PROPERTY IDENTITIES — durable, run-independent
@@ -114,8 +135,14 @@ create table public.source_property_identities (
   last_seen_at timestamptz not null default now(),
   -- RESTRICT: a run is never deleted to hide an extraction, and an identity
   -- must always be able to name the run that first saw it.
-  first_seen_run_id uuid not null references public.source_runs(id) on delete restrict,
-  last_seen_run_id uuid not null references public.source_runs(id) on delete restrict,
+  --
+  -- These are COMPOSITE foreign keys, not plain id references. A plain FK would
+  -- let a Hotelbeds-evaluation identity name a Nuitee-production run as the one
+  -- that saw it: both rows exist, so both FKs pass, and the provenance is
+  -- silently wrong. Including source and environment in the key makes the
+  -- mismatch unrepresentable.
+  first_seen_run_id uuid not null,
+  last_seen_run_id uuid not null,
   -- D061 §15.1: every candidate resolves to exactly one of A/B/C, or is still
   -- a hold state. `unresolved` is what keeps a candidate inside the
   -- coverage-critical count.
@@ -133,6 +160,14 @@ create table public.source_property_identities (
        'agency_non_property', 'not_physical_hospitality', 'star_below_v1_scope',
        'outside_destination', 'other_reviewed_exclusion')),
   observation_count integer not null default 0 check (observation_count >= 0),
+  -- Durable answer to "matched to WHAT?" for resolution_state='duplicate_matched'.
+  -- Either a canonical hotel or ANOTHER SOURCE IDENTITY: two providers can
+  -- describe the same physical property long before it is published.
+  matched_hotel_id uuid references public.hotels(id) on delete restrict,
+  matched_source_property_identity_id uuid references public.source_property_identities(id) on delete restrict,
+  -- Set by a future promotion apply step. The identity does not own the hotel;
+  -- it records which canonical row its resolution produced.
+  promoted_hotel_id uuid references public.hotels(id) on delete restrict,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   -- A final exclusion without a durable reason is not auditable (D055).
@@ -144,7 +179,55 @@ create table public.source_property_identities (
   -- are different identities, and must be, or evaluation data could satisfy a
   -- production precondition.
   constraint source_property_identities_unique_source_id
-    unique (source, source_environment, source_property_id)
+    unique (source, source_environment, source_property_id),
+
+  -- Composite keys so observations and the canonical link can reference this
+  -- identity's source/environment/provider-id, not merely its surrogate id.
+  constraint source_property_identities_env_uk unique (id, source, source_environment),
+  constraint source_property_identities_full_uk
+    unique (id, source, source_environment, source_property_id),
+
+  -- A run that saw this identity must be a run of the SAME source and the SAME
+  -- environment. Declarative, so no ingestion bug can cross the streams.
+  constraint source_property_identities_first_run_fk
+    foreign key (first_seen_run_id, source, source_environment)
+    references public.source_runs (id, source, source_environment) on delete restrict,
+  constraint source_property_identities_last_run_fk
+    foreign key (last_seen_run_id, source, source_environment)
+    references public.source_runs (id, source, source_environment) on delete restrict,
+
+  -- "MATCHED TO WHAT?" must always have an answer. A terminal duplicate state
+  -- with no durable target is an unauditable claim, and D061 §15.1 B is
+  -- specifically "duplicate/matched TO an existing canonical property".
+  constraint source_property_identities_duplicate_target check (
+    resolution_state <> 'duplicate_matched'
+    or matched_hotel_id is not null
+    or matched_source_property_identity_id is not null
+  ),
+  -- A match target only means something for a matched identity.
+  constraint source_property_identities_match_target_scope check (
+    resolution_state = 'duplicate_matched'
+    or (matched_hotel_id is null and matched_source_property_identity_id is null)
+  ),
+  -- An identity cannot be a duplicate of itself.
+  constraint source_property_identities_no_self_match check (
+    matched_source_property_identity_id is null or matched_source_property_identity_id <> id
+  ),
+
+  -- D061 §15.1 A is "CANONICAL ELIGIBLE V1 PROPERTY", and under D062 a
+  -- canonical property IS a published row in `hotels`. So `resolved_eligible`
+  -- cannot mean "looks eligible": it requires the promotion to have actually
+  -- happened. Without this, a script could set the label directly and a future
+  -- Coverage Engine closure count would read zero unresolved while nothing had
+  -- been published.
+  constraint source_property_identities_eligible_requires_promotion check (
+    resolution_state <> 'resolved_eligible' or promoted_hotel_id is not null
+  ),
+  -- ...and evaluation data can never be eligible, for the same reason it can
+  -- never be linked (§5 below).
+  constraint source_property_identities_eligible_is_production check (
+    resolution_state <> 'resolved_eligible' or source_environment = 'production'
+  )
 );
 
 create index source_property_identities_resolution_idx
@@ -172,9 +255,14 @@ create table public.source_property_observations (
   id uuid primary key default gen_random_uuid(),
   -- RESTRICT on both: observations are evidence a canonical value may later
   -- cite. Deleting the run or the identity must not silently delete it.
-  source_run_id uuid not null references public.source_runs(id) on delete restrict,
-  source_property_identity_id uuid not null
-    references public.source_property_identities(id) on delete restrict,
+  source_run_id uuid not null,
+  source_property_identity_id uuid not null,
+  -- Denormalised so BOTH parents can be composite-FK'd on them. Without this a
+  -- production run could carry an observation of an evaluation identity: each
+  -- row exists, each plain FK passes, and the environment of the evidence is
+  -- quietly lost.
+  source text not null,
+  source_environment text not null check (source_environment in ('evaluation', 'production')),
   observed_at timestamptz not null default now(),
 
   source_name text,
@@ -214,9 +302,18 @@ create table public.source_property_observations (
   -- `where simple_code >= 4`, which is exactly the query that must never
   -- produce inventory.
   source_classification_simple_code text,
+  -- SOURCE EVIDENCE, ALWAYS. The single permitted value is deliberate: no
+  -- issuing-authority hierarchy exists yet and no registry says which source
+  -- may speak canonically, so allowing 'canonical_classification_evidence' here
+  -- would let any ingestion script promote its own provider to star authority
+  -- and Postgres would accept it.
+  --
+  -- The judgement "this observation is sufficient canonical star provenance"
+  -- belongs to the future star-resolution layer, together with the issuing
+  -- authority, the resolved value, the conflict state and who resolved it.
+  -- Widening this CHECK is a product decision, not an ingestion convenience.
   source_classification_evidence_kind text not null default 'provider_classification_evidence'
-    check (source_classification_evidence_kind in
-      ('provider_classification_evidence', 'canonical_classification_evidence')),
+    check (source_classification_evidence_kind = 'provider_classification_evidence'),
 
   -- Only when the provider ACTUALLY supplies one. The Hotelbeds hotels payload
   -- carries no lifecycle field at all, so this stays NULL for it rather than
@@ -249,7 +346,16 @@ create table public.source_property_observations (
   -- an extraction creates a NEW run, so history accumulates instead of being
   -- overwritten.
   constraint source_property_observations_unique_per_run
-    unique (source_run_id, source_property_identity_id)
+    unique (source_run_id, source_property_identity_id),
+
+  -- PROVENANCE ALIGNMENT. The run and the identity must agree on source AND
+  -- environment, enforced declaratively rather than by convention.
+  constraint source_property_observations_run_fk
+    foreign key (source_run_id, source, source_environment)
+    references public.source_runs (id, source, source_environment) on delete restrict,
+  constraint source_property_observations_identity_fk
+    foreign key (source_property_identity_id, source, source_environment)
+    references public.source_property_identities (id, source, source_environment) on delete restrict
 );
 
 create index source_property_observations_identity_time_idx
@@ -278,9 +384,16 @@ create table public.source_match_candidates (
   source_property_identity_id uuid not null
     references public.source_property_identities(id) on delete cascade,
   source_run_id uuid references public.source_runs(id) on delete set null,
-  -- NULL candidate = an explicit NEW PROPERTY assertion: we looked and found no
-  -- canonical counterpart. That is a finding, not an absence of one.
+  -- WHAT this candidate points at. Explicit rather than inferred from which
+  -- column is NULL, because the coverage universe is multi-source: Hotelbeds
+  -- H123 and Nuitee N456 may be the same physical hotel long before either is
+  -- published, and requiring one to be promoted first to de-duplicate the other
+  -- is exactly the coupling a source-agnostic architecture exists to avoid.
+  candidate_kind text not null default 'new_property'
+    check (candidate_kind in ('canonical_hotel', 'source_identity', 'new_property')),
   candidate_hotel_id uuid references public.hotels(id) on delete cascade,
+  candidate_source_property_identity_id uuid
+    references public.source_property_identities(id) on delete cascade,
 
   -- ONE dimension with two strengths. `exact` implies token containment by
   -- construction, so counting them separately would score one name agreement
@@ -311,9 +424,26 @@ create table public.source_match_candidates (
     check (status in ('pending', 'accepted', 'rejected', 'superseded')),
   review_note text,
   created_at timestamptz not null default now(),
-  resolved_at timestamptz
+  resolved_at timestamptz,
+
+  -- Exactly one target for each kind; NULL is never overloaded.
+  constraint source_match_candidates_target_shape check (
+    (candidate_kind = 'canonical_hotel'
+       and candidate_hotel_id is not null and candidate_source_property_identity_id is null)
+    or (candidate_kind = 'source_identity'
+       and candidate_source_property_identity_id is not null and candidate_hotel_id is null)
+    or (candidate_kind = 'new_property'
+       and candidate_hotel_id is null and candidate_source_property_identity_id is null)
+  ),
+  -- A source identity is never a candidate match for itself.
+  constraint source_match_candidates_no_self_match check (
+    candidate_source_property_identity_id is null
+    or candidate_source_property_identity_id <> source_property_identity_id
+  )
 );
 
+create index source_match_candidates_source_identity_target_idx
+  on public.source_match_candidates (candidate_source_property_identity_id);
 create index source_match_candidates_identity_status_idx
   on public.source_match_candidates (source_property_identity_id, status);
 create index source_match_candidates_hotel_idx
@@ -332,10 +462,16 @@ create table public.hotel_source_identities (
   id uuid primary key default gen_random_uuid(),
   hotel_id uuid not null references public.hotels(id) on delete cascade,
   -- RESTRICT: the canonical link outlives casual cleanup of source data.
-  source_property_identity_id uuid not null
-    references public.source_property_identities(id) on delete restrict,
-  -- Denormalised so the link stays auditable even if a provider is dropped, and
-  -- so the environment check below can be enforced on this row.
+  source_property_identity_id uuid not null,
+  -- Denormalised so the link stays auditable even if a provider is dropped —
+  -- and, critically, CONSTRAINED to equal the referenced identity's own values
+  -- by the composite FK below.
+  --
+  -- Without that composite key the production-only CHECK is decorative: a row
+  -- could point at an EVALUATION identity while labelling itself
+  -- 'production', the CHECK would read the label, pass, and test-environment
+  -- data would sit against a canonical hotel. The label must be the identity's
+  -- own, not the writer's assertion about it.
   source text not null,
   source_environment text not null,
   source_property_id text not null,
@@ -351,10 +487,17 @@ create table public.hotel_source_identities (
   last_synced_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  -- The denormalised source/environment/provider-id MUST be the referenced
+  -- identity's own. Combined with the CHECK below, an evaluation identity
+  -- becomes UNLINKABLE rather than merely detectable after the fact.
+  constraint hotel_source_identities_identity_fk
+    foreign key (source_property_identity_id, source, source_environment, source_property_id)
+    references public.source_property_identities (id, source, source_environment, source_property_id)
+    on delete restrict,
   -- EVALUATION DATA CAN NEVER BECOME CANONICAL EVIDENCE. Not by a bug, not by
   -- a careless script, not by a reviewer. The Hotelbeds test environment is not
-  -- production canonical data, and this is the constraint that makes
-  -- "must never be accidentally promotable" true rather than aspirational.
+  -- production canonical data, and the composite FK above is what makes this
+  -- CHECK true of the IDENTITY rather than merely of this row's label.
   constraint hotel_source_identities_production_only
     check (source_environment = 'production')
 );
@@ -462,8 +605,42 @@ $$;
 revoke all on function public.enforce_source_attributes_bound() from public;
 
 create trigger source_property_observations_bound_attributes
-  before insert or update on public.source_property_observations
+  before insert on public.source_property_observations
   for each row execute function public.enforce_source_attributes_bound();
+
+-- ---------------------------------------------------------------------------
+-- APPEND-ONLY OBSERVATIONS
+-- ---------------------------------------------------------------------------
+-- A future canonical star or coordinate will cite an observation id as its
+-- provenance (D062 conditions 7 and 10). If the cited row can later be edited
+-- or deleted, that provenance is a promise the database does not keep.
+--
+-- ON DELETE RESTRICT on the observation's PARENTS does not protect the
+-- observation itself — it stops the run being deleted, not the row. And a
+-- privilege-only defence fails the moment some future migration grants ALL to
+-- a role for convenience. So this is enforced in a trigger as well as in the
+-- grants: even the table owner and service_role are refused.
+create or replace function public.forbid_observation_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception
+    'source_property_observations is APPEND-ONLY (attempted %). A source observation is evidence a canonical star or coordinate may cite as its provenance; editing or deleting it would silently invalidate that claim. Record a NEW observation in a NEW run instead. See docs/PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md §9.',
+    tg_op
+    using errcode = 'restrict_violation';
+end;
+$$;
+
+revoke all on function public.forbid_observation_mutation() from public;
+
+create trigger source_property_observations_no_update
+  before update on public.source_property_observations
+  for each row execute function public.forbid_observation_mutation();
+
+create trigger source_property_observations_no_delete
+  before delete on public.source_property_observations
+  for each row execute function public.forbid_observation_mutation();
 
 -- ===========================================================================
 -- 9. RLS — admin/editor + service_role, exactly like the import infrastructure
@@ -502,7 +679,6 @@ create policy source_property_reviews_admin on public.source_property_reviews
 grant select, insert, update, delete on
   public.source_runs,
   public.source_property_identities,
-  public.source_property_observations,
   public.source_match_candidates,
   public.hotel_source_identities,
   public.source_property_reviews
@@ -511,8 +687,13 @@ to authenticated;
 grant all privileges on
   public.source_runs,
   public.source_property_identities,
-  public.source_property_observations,
   public.source_match_candidates,
   public.hotel_source_identities,
   public.source_property_reviews
 to service_role;
+
+-- Observations are APPEND-ONLY. The privilege set says so as the first layer,
+-- and the triggers above hold even if a future migration widens this by
+-- mistake. Neither role receives UPDATE or DELETE.
+grant select, insert on public.source_property_observations to authenticated;
+grant select, insert on public.source_property_observations to service_role;

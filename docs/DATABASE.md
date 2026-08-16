@@ -210,13 +210,26 @@ file; a run has no file and needs exhaustion/coverage/quota evidence instead.
 - `raw_records_seen`, `unique_source_property_ids integer`
 - `provider_reported_total integer NULL` — NULL means the provider said nothing;
   never defaulted to 0
-- `pagination_walk_completed boolean`, `extraction_exhaustion_proven boolean` —
-  separate, because they fail for different reasons
-- `coverage_risks text[]`, `request_count`, `cache_hit_count`
+- `pagination_walk_completed boolean`,
+  `provider_enumeration_exhaustion_proven boolean` — separate, because they fail
+  for different reasons
+- `enumeration_risks text[]` — risks to the enumeration itself (cursor loop,
+  provider total disagreeing with rows returned, budget stop). **These block
+  exhaustion.**
+- `coverage_risks text[]` — risks about what the enumerated set *means*
+  (geography caveats, unresolved star authority, pending second source).
+  Recorded, never emptied, and they do **not** falsify a completed walk: "we read
+  every record this provider offers" and "this destination's coverage is settled"
+  are different questions.
+- `request_count`, `cache_hit_count`
 - timestamps, `created_by`
+- UNIQUE `(id, source, source_environment)` — redundant as a key, present so
+  identities and observations can foreign-key a run's **source and
+  environment**, not merely its id
 
-CHECKs: a run cannot claim exhaustion it never walked, and cannot be `running`
-with a completion time or finished without one.
+CHECKs: enumeration exhaustion requires a completed walk **and** zero
+`enumeration_risks`; a run cannot be `running` with a completion time or finished
+without one.
 
 ### source_property_identities
 Durable `(source, source_environment, source_property_id)`, independent of any
@@ -224,14 +237,31 @@ canonical hotel. Not `import_rows`: an import row is immutable and dies with its
 batch; a source identity must outlive every run.
 - `id uuid PK` — our surrogate, never the provider's id
 - `source`, `source_environment`, `source_property_id text NOT NULL`
-- `first_seen_at`/`last_seen_at`, `first_seen_run_id`/`last_seen_run_id`
+- `first_seen_at`/`last_seen_at`, `first_seen_run_id`/`last_seen_run_id` —
+  **composite** FKs to `source_runs (id, source, source_environment)`, so an
+  identity cannot name a run from another provider or another environment as the
+  run that saw it
 - `resolution_state text` — `unresolved` | `resolved_eligible` |
   `duplicate_matched` | `final_exclusion` (D061 §15.1 A/B/C plus the hold state)
 - `resolution_reason text NULL` — required for a final exclusion; the vocabulary
   deliberately has **no** value for "star unresolved" or "identity unresolved",
   which are hold states that keep a candidate inside the coverage-critical count
+- `matched_hotel_id` / `matched_source_property_identity_id` — the durable answer
+  to "matched to WHAT?"; a `duplicate_matched` identity must carry one of them
+- `promoted_hotel_id` — which canonical row this identity's resolution actually
+  produced, written by the future promotion apply step
 
-UNIQUE `(source, source_environment, source_property_id)`.
+UNIQUE `(source, source_environment, source_property_id)`, plus
+`(id, source, source_environment)` and
+`(id, source, source_environment, source_property_id)` so observations and the
+canonical link can key on the identity's own values.
+
+CHECKs: `resolved_eligible` requires `promoted_hotel_id` **and** a production
+environment — under D062 a canonical property *is* a published row, so the label
+cannot mean "looks eligible" or a coverage closure count would read zero
+unresolved while nothing had been published. `duplicate_matched` requires a match
+target; a match target on a non-matched identity is refused; an identity cannot
+be a duplicate of itself.
 
 ### source_property_observations
 One snapshot per `(run, identity)`. Nothing is overwritten, so a future
@@ -242,8 +272,10 @@ canonical star or coordinate can cite which observation supported it.
 - provider classification: code, label, group, `source_classification_simple_code
   text` — **TEXT deliberately**, because `simpleCode 5` covers 5 STARS, 5 KEYS,
   aparthotel and hostel alike, and a numeric column invites `>= 4`
-- `source_classification_evidence_kind` defaults to
-  `provider_classification_evidence`
+- `source_classification_evidence_kind` — CHECKed to **exactly one** value,
+  `provider_classification_evidence`. No issuing-authority hierarchy exists yet,
+  so a source must not be able to label itself canonical star evidence; that
+  judgement belongs to the future star-resolution layer
 - `source_lifecycle_status text NULL` — only when the provider supplies one
 - `source_image_count`, `source_provider_designated_principal_image` — media
   **availability summary only**; no image rows (D064 storage strategy is open)
@@ -257,6 +289,17 @@ to audit, not rows to erase; `source_coordinates_plausible` records the verdict.
 UNIQUE `(source_run_id, source_property_identity_id)` — one run observes a
 property at most once.
 
+`source`/`source_environment` are carried on the row so **both** parents can be
+composite-FK'd on them: the run and the identity must be the same provider in the
+same environment, or the observation cannot be inserted at all.
+
+**APPEND-ONLY.** A future canonical star or coordinate cites an observation id as
+its provenance, so the row must stay citable. Neither `authenticated` nor
+`service_role` holds UPDATE or DELETE (the grant is `select, insert` only), and
+`forbid_observation_mutation()` fires `before update`/`before delete` so the
+refusal holds for the table owner too and survives a future over-broad grant. A
+later fact is a **new observation in a new run**.
+
 ### source_match_candidates
 Entity-resolution evidence. Not `import_match_candidates`: that requires a NOT
 NULL `score`, and D063 §12.2 refuses to invent a confidence number.
@@ -266,14 +309,24 @@ NULL `score`, and D063 §12.2 refuses to invent a confidence number.
   `agrees` | `differs` | `unavailable`. `unavailable` is not `differs`.
 - `coordinate_distance_metres numeric NULL` — raw, no threshold stored
 - `agreeing_dimensions integer` — independent dimensions only; a name alone is 1
-- `candidate_hotel_id NULL` = an explicit NEW PROPERTY assertion
+- `candidate_kind text` — `canonical_hotel` | `source_identity` | `new_property`,
+  with `candidate_hotel_id` / `candidate_source_property_identity_id` and a shape
+  CHECK binding each kind to exactly one target. **Source↔source matching is
+  first-class**: two providers can be recognised as the same physical property
+  before either is published, so de-duplication never requires publishing one
+  provider first. NULL is not overloaded — `new_property` says so by name.
 
 ### hotel_source_identities
 The D063 §11.1 link: canonical hotel ↔ source identity.
 - partial UNIQUE on `(source_property_identity_id) WHERE link_status='active'` —
   one active source identity maps to at most one canonical hotel
+- **composite FK** on `(source_property_identity_id, source, source_environment,
+  source_property_id)` → the identity's own values, so the denormalised labels
+  cannot misdescribe what the link points at
 - CHECK `source_environment = 'production'` — **evaluation data can never become
-  canonical evidence**
+  canonical evidence**. The composite FK is what makes this true of the
+  *identity* rather than of this row's label: an evaluation identity claiming
+  `production` now fails at INSERT rather than being detectable afterwards
 - a canonical hotel may hold many source identities, by design
 
 ### source_property_reviews

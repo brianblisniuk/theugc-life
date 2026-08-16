@@ -28,8 +28,10 @@ interface Expected {
   anon: Privs;
   authenticated: Privs;
   /** Every application relation is fully available to the trusted role, except
-   *  the read-only public projection. */
-  serviceRole: "all" | "S";
+   *  the read-only projections and the append-only evidence table — the trusted
+   *  boundary is not exempt from an invariant that exists to keep evidence
+   *  citable. */
+  serviceRole: "all" | "S" | "SI";
 }
 
 /**
@@ -92,7 +94,11 @@ const CONTRACT: Record<string, Expected> = {
   // internals and must not be publicly enumerable.
   source_runs: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   source_property_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
-  source_property_observations: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // APPEND-ONLY. A future canonical star cites an observation id as its
+  // provenance, so no client role — service_role included — holds UPDATE or
+  // DELETE. A trigger refuses both even for the table owner; this row is the
+  // first layer, not the only one.
+  source_property_observations: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_match_candidates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   hotel_source_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
@@ -211,11 +217,8 @@ d("explicit ACL contract (0024)", () => {
   it("gives service_role the coverage the trusted boundary needs", () => {
     for (const [name, contract] of Object.entries(CONTRACT)) {
       const row = byRelation.get(name)!.get("service_role")!;
-      if (contract.serviceRole === "all") {
-        expect(letters(row), name).toBe("SIUD");
-      } else {
-        expect(letters(row), name).toBe("S");
-      }
+      const expected = contract.serviceRole === "all" ? "SIUD" : contract.serviceRole;
+      expect(letters(row), name).toBe(expected);
     }
   });
 

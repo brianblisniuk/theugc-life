@@ -8,7 +8,14 @@
  *  - a provider id forking into two identities would break every future
  *    coverage count;
  *  - evaluation data reaching a canonical hotel would put test-environment
- *    records in front of creators;
+ *    records in front of creators — and a denormalised label the writer chooses
+ *    is not a defence, so the tests below require the INSERT to fail rather
+ *    than the lie to be detectable afterwards;
+ *  - a run, an identity and an observation that disagree about which provider
+ *    and which environment they belong to destroy provenance while every
+ *    individual row still exists;
+ *  - an observation that can be edited or deleted is not evidence a future
+ *    canonical star may cite;
  *  - one source identity mapping to two hotels is the false merge D063 calls
  *    strategically worse than a duplicate;
  *  - a range check on source coordinates would delete the invalid provider
@@ -27,6 +34,8 @@ const d = describe.skipIf(!hasTestDb);
 let counter = 0;
 const uniq = () => `t${Date.now().toString(36)}${(counter += 1)}`;
 
+const DEFAULT_SOURCE = "synthetic_provider";
+
 async function makeRun(
   over: Partial<{
     source: string;
@@ -35,38 +44,103 @@ async function makeRun(
     runMode: string;
   }> = {},
 ): Promise<string> {
+  const environment = over.environment ?? "evaluation";
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_runs
        (source, source_environment, destination_id, run_mode, provider_geography)
      values ($1, $2, $3, $4, '{}')
      returning id`,
     [
-      over.source ?? "synthetic_provider",
-      over.environment ?? "evaluation",
+      over.source ?? DEFAULT_SOURCE,
+      environment,
       over.destinationId === undefined ? DEST.bali : over.destinationId,
-      over.runMode ?? "evaluation",
+      over.runMode ?? (environment === "production" ? "full" : "evaluation"),
     ],
   );
   return rows[0]!.id;
 }
 
+/**
+ * An identity's runs must be runs of the SAME source and environment (composite
+ * FK), so by default the helper provisions a matching one. Tests that want a
+ * mismatch pass `firstRunId` / `lastRunId` explicitly.
+ */
 async function makeIdentity(
-  runId: string,
-  over: Partial<{ source: string; environment: string; sourcePropertyId: string }> = {},
+  over: Partial<{
+    source: string;
+    environment: string;
+    sourcePropertyId: string;
+    firstRunId: string;
+    lastRunId: string;
+  }> = {},
 ): Promise<string> {
+  const source = over.source ?? DEFAULT_SOURCE;
+  const environment = over.environment ?? "evaluation";
+  const firstRunId = over.firstRunId ?? (await makeRun({ source, environment }));
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_identities
        (source, source_environment, source_property_id, first_seen_run_id, last_seen_run_id)
-     values ($1, $2, $3, $4, $4)
+     values ($1, $2, $3, $4, $5)
      returning id`,
     [
-      over.source ?? "synthetic_provider",
-      over.environment ?? "evaluation",
+      source,
+      environment,
       over.sourcePropertyId ?? uniq(),
-      runId,
+      firstRunId,
+      over.lastRunId ?? firstRunId,
     ],
   );
   return rows[0]!.id;
+}
+
+/** An identity plus the run that first saw it, for tests that need both. */
+async function makeIdentityWithRun(
+  over: Partial<{ source: string; environment: string; sourcePropertyId: string }> = {},
+): Promise<{ identity: string; run: string }> {
+  const source = over.source ?? DEFAULT_SOURCE;
+  const environment = over.environment ?? "evaluation";
+  const run = await makeRun({ source, environment });
+  const identity = await makeIdentity({ ...over, source, environment, firstRunId: run });
+  return { identity, run };
+}
+
+/**
+ * Insert an observation. `source` / `source_environment` default to the
+ * identity's own values — the aligned case. Tests that probe the alignment
+ * constraints override them deliberately.
+ */
+async function observe(
+  runId: string,
+  identityId: string,
+  opts: {
+    source?: string;
+    environment?: string;
+    columns?: Record<string, unknown>;
+  } = {},
+): Promise<void> {
+  let { source, environment } = opts;
+  if (source === undefined || environment === undefined) {
+    const meta = await adminQuery<{ source: string; env: string }>(
+      `select source, source_environment as env
+       from public.source_property_identities where id = $1`,
+      [identityId],
+    );
+    source ??= meta[0]!.source;
+    environment ??= meta[0]!.env;
+  }
+  const row: Record<string, unknown> = {
+    source_run_id: runId,
+    source_property_identity_id: identityId,
+    source,
+    source_environment: environment,
+    ...(opts.columns ?? {}),
+  };
+  const names = Object.keys(row);
+  await adminQuery(
+    `insert into public.source_property_observations (${names.join(", ")})
+     values (${names.map((_, i) => `$${i + 1}`).join(", ")})`,
+    names.map((n) => row[n]),
+  );
 }
 
 d("property-content infrastructure (0027)", () => {
@@ -81,11 +155,11 @@ d("property-content infrastructure (0027)", () => {
   // -----------------------------------------------------------------------
   describe("durable source identity", () => {
     it("enforces provider id uniqueness within its namespace and environment", async () => {
-      const run = await makeRun();
       const providerId = uniq();
-      await makeIdentity(run, { sourcePropertyId: providerId });
+      const run = await makeRun();
+      await makeIdentity({ sourcePropertyId: providerId, firstRunId: run });
 
-      await expect(makeIdentity(run, { sourcePropertyId: providerId })).rejects.toThrow(
+      await expect(makeIdentity({ sourcePropertyId: providerId, firstRunId: run })).rejects.toThrow(
         /source_property_identities_unique_source_id|duplicate key/i,
       );
     });
@@ -95,25 +169,15 @@ d("property-content infrastructure (0027)", () => {
       // evaluation record and its production counterpart would collide — and
       // one would silently stand in for the other.
       const providerId = uniq();
-      const evalRun = await makeRun({ environment: "evaluation" });
-      const prodRun = await makeRun({ environment: "production", runMode: "full" });
-
-      const a = await makeIdentity(evalRun, {
-        environment: "evaluation",
-        sourcePropertyId: providerId,
-      });
-      const b = await makeIdentity(prodRun, {
-        environment: "production",
-        sourcePropertyId: providerId,
-      });
+      const a = await makeIdentity({ environment: "evaluation", sourcePropertyId: providerId });
+      const b = await makeIdentity({ environment: "production", sourcePropertyId: providerId });
       expect(a).not.toBe(b);
     });
 
     it("treats the same provider id from a different SOURCE as a different identity", async () => {
       const providerId = uniq();
-      const run = await makeRun();
-      const a = await makeIdentity(run, { source: "provider_a", sourcePropertyId: providerId });
-      const b = await makeIdentity(run, { source: "provider_b", sourcePropertyId: providerId });
+      const a = await makeIdentity({ source: "provider_a", sourcePropertyId: providerId });
+      const b = await makeIdentity({ source: "provider_b", sourcePropertyId: providerId });
       expect(a).not.toBe(b);
     });
 
@@ -121,7 +185,7 @@ d("property-content infrastructure (0027)", () => {
       const providerId = uniq();
       const run1 = await makeRun();
       const run2 = await makeRun();
-      const identity = await makeIdentity(run1, { sourcePropertyId: providerId });
+      const identity = await makeIdentity({ sourcePropertyId: providerId, firstRunId: run1 });
 
       // Run 2 sees the same property: the identity is updated, not forked.
       await adminQuery(
@@ -133,16 +197,14 @@ d("property-content infrastructure (0027)", () => {
 
       const rows = await adminQuery<{ count: string }>(
         `select count(*)::text as count from public.source_property_identities
-         where source = 'synthetic_provider' and source_environment = 'evaluation'
-           and source_property_id = $1`,
-        [providerId],
+         where source = $1 and source_environment = 'evaluation' and source_property_id = $2`,
+        [DEFAULT_SOURCE, providerId],
       );
       expect(rows[0]!.count).toBe("1");
     });
 
     it("requires a durable reason for a final exclusion, and refuses a hold state as one", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+      const identity = await makeIdentity();
 
       // "Final exclusion" with no reason is not auditable.
       await expect(
@@ -174,20 +236,74 @@ d("property-content infrastructure (0027)", () => {
   });
 
   // -----------------------------------------------------------------------
+  // Run <-> identity provenance alignment (§2)
+  // -----------------------------------------------------------------------
+  describe("run/identity provenance alignment", () => {
+    it("refuses an identity whose first_seen_run belongs to a DIFFERENT source", async () => {
+      // Both rows exist, so plain id-only FKs would both pass and the identity
+      // would claim it was discovered by a run of another provider entirely.
+      const foreignRun = await makeRun({ source: "provider_b" });
+      await expect(makeIdentity({ source: "provider_a", firstRunId: foreignRun })).rejects.toThrow(
+        /source_property_identities_first_run_fk/i,
+      );
+    });
+
+    it("refuses an identity whose first_seen_run belongs to a DIFFERENT environment", async () => {
+      const evaluationRun = await makeRun({ environment: "evaluation" });
+      await expect(
+        makeIdentity({ environment: "production", firstRunId: evaluationRun }),
+      ).rejects.toThrow(/source_property_identities_first_run_fk/i);
+    });
+
+    it("refuses a last_seen_run from a different source or environment", async () => {
+      const identity = await makeIdentity({ source: "provider_a", environment: "evaluation" });
+      const otherSourceRun = await makeRun({ source: "provider_b", environment: "evaluation" });
+      const otherEnvRun = await makeRun({ source: "provider_a", environment: "production" });
+
+      await expect(
+        adminQuery(
+          `update public.source_property_identities set last_seen_run_id = $1 where id = $2`,
+          [otherSourceRun, identity],
+        ),
+      ).rejects.toThrow(/source_property_identities_last_run_fk/i);
+
+      await expect(
+        adminQuery(
+          `update public.source_property_identities set last_seen_run_id = $1 where id = $2`,
+          [otherEnvRun, identity],
+        ),
+      ).rejects.toThrow(/source_property_identities_last_run_fk/i);
+    });
+
+    it("accepts an aligned later run as last_seen_run", async () => {
+      const identity = await makeIdentity({ source: "provider_a", environment: "production" });
+      const alignedRun = await makeRun({ source: "provider_a", environment: "production" });
+      await adminQuery(
+        `update public.source_property_identities set last_seen_run_id = $1 where id = $2`,
+        [alignedRun, identity],
+      );
+      const rows = await adminQuery<{ last: string }>(
+        `select last_seen_run_id as last from public.source_property_identities where id = $1`,
+        [identity],
+      );
+      expect(rows[0]!.last).toBe(alignedRun);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Observations
   // -----------------------------------------------------------------------
   describe("source observations", () => {
     it("allows many observations of one identity across runs", async () => {
-      const identityRun = await makeRun();
-      const identity = await makeIdentity(identityRun);
+      const { identity, run } = await makeIdentityWithRun();
       const run2 = await makeRun();
 
-      await adminQuery(
-        `insert into public.source_property_observations
-           (source_run_id, source_property_identity_id, source_name, source_classification_code)
-         values ($1, $2, 'Synthetic Hotel', '4EST'), ($3, $2, 'Synthetic Hotel', '5EST')`,
-        [identityRun, identity, run2],
-      );
+      await observe(run, identity, {
+        columns: { source_name: "Synthetic Hotel", source_classification_code: "4EST" },
+      });
+      await observe(run2, identity, {
+        columns: { source_name: "Synthetic Hotel", source_classification_code: "5EST" },
+      });
 
       const rows = await adminQuery<{ count: string }>(
         `select count(*)::text as count from public.source_property_observations
@@ -200,36 +316,53 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("refuses to observe the same identity twice within ONE run", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
-      await adminQuery(
-        `insert into public.source_property_observations (source_run_id, source_property_identity_id)
-         values ($1, $2)`,
-        [run, identity],
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity);
+
+      await expect(observe(run, identity)).rejects.toThrow(/unique_per_run|duplicate key/i);
+    });
+
+    it("refuses an observation whose run and identity disagree about the SOURCE", async () => {
+      const runA = await makeRun({ source: "provider_a" });
+      const identityB = await makeIdentity({ source: "provider_b" });
+
+      // Label it as the run's source: the identity FK rejects it.
+      await expect(observe(runA, identityB, { source: "provider_a" })).rejects.toThrow(
+        /source_property_observations_identity_fk/i,
       );
+      // Label it as the identity's source: the run FK rejects it.
+      await expect(observe(runA, identityB, { source: "provider_b" })).rejects.toThrow(
+        /source_property_observations_run_fk/i,
+      );
+    });
+
+    it("refuses an observation whose run and identity disagree about the ENVIRONMENT", async () => {
+      // A production run must not be able to carry evidence about an
+      // evaluation property: the environment of the evidence would be lost
+      // while both rows still exist.
+      const productionRun = await makeRun({ environment: "production" });
+      const evaluationIdentity = await makeIdentity({ environment: "evaluation" });
 
       await expect(
-        adminQuery(
-          `insert into public.source_property_observations (source_run_id, source_property_identity_id)
-           values ($1, $2)`,
-          [run, identity],
-        ),
-      ).rejects.toThrow(/unique_per_run|duplicate key/i);
+        observe(productionRun, evaluationIdentity, { environment: "production" }),
+      ).rejects.toThrow(/source_property_observations_identity_fk/i);
+      await expect(
+        observe(productionRun, evaluationIdentity, { environment: "evaluation" }),
+      ).rejects.toThrow(/source_property_observations_run_fk/i);
     });
 
     it("PRESERVES invalid provider coordinates as evidence", async () => {
       // The Bali evaluation returned one out-of-range coordinate. A range CHECK
       // would have made it unstorable, forcing the ingestion to drop, null or
       // crash — all three destroy the evidence we need to audit.
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
-      await adminQuery(
-        `insert into public.source_property_observations
-           (source_run_id, source_property_identity_id, source_latitude, source_longitude,
-            source_coordinates_plausible)
-         values ($1, $2, 999.5, -4000.25, false)`,
-        [run, identity],
-      );
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity, {
+        columns: {
+          source_latitude: 999.5,
+          source_longitude: -4000.25,
+          source_coordinates_plausible: false,
+        },
+      });
 
       const rows = await adminQuery<{ lat: string; lon: string; plausible: boolean }>(
         `select source_latitude::text as lat, source_longitude::text as lon,
@@ -243,15 +376,13 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("defaults classification evidence to PROVIDER, never canonical", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
-      await adminQuery(
-        `insert into public.source_property_observations
-           (source_run_id, source_property_identity_id, source_classification_code,
-            source_classification_simple_code)
-         values ($1, $2, '5LL', '5')`,
-        [run, identity],
-      );
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity, {
+        columns: {
+          source_classification_code: "5LL",
+          source_classification_simple_code: "5",
+        },
+      });
       const rows = await adminQuery<{ kind: string; simple: string }>(
         `select source_classification_evidence_kind as kind,
                 source_classification_simple_code as simple
@@ -265,9 +396,37 @@ d("property-content infrastructure (0027)", () => {
       expect(rows[0]!.simple).toBe("5");
     });
 
+    it("REFUSES an arbitrary source observation labelling itself CANONICAL star evidence", async () => {
+      // D060. No issuing-authority hierarchy exists yet and no registry says
+      // which source may speak canonically, so an ingestion script must not be
+      // able to promote its own provider to star authority.
+      const { identity, run } = await makeIdentityWithRun();
+      await expect(
+        observe(run, identity, {
+          columns: {
+            source_classification_code: "5EST",
+            source_classification_evidence_kind: "canonical_classification_evidence",
+          },
+        }),
+      ).rejects.toThrow(/violates check constraint/i);
+
+      // And there is no other spelling of the same escalation available: the
+      // CHECK admits exactly one value, and it is not a canonical one.
+      const def = await adminQuery<{ def: string }>(
+        `select pg_get_constraintdef(c.oid) as def
+         from pg_constraint c
+         join pg_class t on t.oid = c.conrelid
+         where t.relname = 'source_property_observations'
+           and c.contype = 'c'
+           and pg_get_constraintdef(c.oid) ilike '%source_classification_evidence_kind%'`,
+      );
+      expect(def).toHaveLength(1);
+      expect(def[0]!.def).toMatch(/'provider_classification_evidence'/);
+      expect(def[0]!.def).not.toMatch(/canonical/i);
+    });
+
     it("bounds source_attributes so payloads and image arrays cannot be dumped in", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+      const { identity, run } = await makeIdentityWithRun();
       const fatImages = JSON.stringify({
         images: Array.from({ length: 400 }, (_, i) => ({
           path: `synthetic/${i}/very-long-synthetic-image-path-segment.jpg`,
@@ -276,13 +435,86 @@ d("property-content infrastructure (0027)", () => {
       });
 
       await expect(
-        adminQuery(
-          `insert into public.source_property_observations
-             (source_run_id, source_property_identity_id, source_attributes)
-           values ($1, $2, $3::jsonb)`,
-          [run, identity, fatImages],
-        ),
+        observe(run, identity, { columns: { source_attributes: fatImages } }),
       ).rejects.toThrow(/source_attributes is \d+ bytes/i);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Append-only observations (§3)
+  // -----------------------------------------------------------------------
+  describe("observations are append-only", () => {
+    it("refuses an UPDATE even from the table owner", async () => {
+      // A future canonical star will cite an observation id as its provenance.
+      // If the cited row can be edited, that provenance is a promise the
+      // database does not keep — so the trigger refuses the owner too, not
+      // merely the client roles.
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity, { columns: { source_name: "Synthetic Hotel" } });
+
+      await expect(
+        adminQuery(
+          `update public.source_property_observations set source_name = 'Rewritten'
+           where source_property_identity_id = $1`,
+          [identity],
+        ),
+      ).rejects.toThrow(/APPEND-ONLY/i);
+    });
+
+    it("refuses a DELETE even from the table owner", async () => {
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity);
+
+      await expect(
+        adminQuery(
+          `delete from public.source_property_observations where source_property_identity_id = $1`,
+          [identity],
+        ),
+      ).rejects.toThrow(/APPEND-ONLY/i);
+    });
+
+    it("withholds UPDATE and DELETE privileges from every client role", async () => {
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity);
+
+      for (const role of ["authenticated", "service_role"] as const) {
+        const sub = role === "authenticated" ? USERS.admin : null;
+        const upd = await queryAs(
+          { role, sub },
+          `update public.source_property_observations set source_name = 'Rewritten' where source_property_identity_id = $1`,
+          [identity],
+        );
+        // The privilege layer stops it first; the trigger above is the backstop
+        // that survives a future over-broad grant.
+        expect(upd.error, `${role} could update observations`).not.toBeNull();
+        expect(upd.error?.code).toBe("42501");
+
+        const del = await queryAs(
+          { role, sub },
+          `delete from public.source_property_observations where source_property_identity_id = $1`,
+          [identity],
+        );
+        expect(del.error, `${role} could delete observations`).not.toBeNull();
+        expect(del.error?.code).toBe("42501");
+      }
+    });
+
+    it("still lets an authorized editorial actor INSERT and SELECT", async () => {
+      const { identity, run } = await makeIdentityWithRun();
+      const res = await queryAs(
+        { role: "authenticated", sub: USERS.admin },
+        `insert into public.source_property_observations
+           (source_run_id, source_property_identity_id, source, source_environment, source_name)
+         values ($1, $2, $3, 'evaluation', 'Synthetic Hotel')`,
+        [run, identity, DEFAULT_SOURCE],
+      );
+      expect(res.error).toBeNull();
+
+      const read = await queryAs(
+        { role: "authenticated", sub: USERS.editor },
+        `select count(*)::text as n from public.source_property_observations`,
+      );
+      expect(read.error).toBeNull();
     });
   });
 
@@ -290,16 +522,67 @@ d("property-content infrastructure (0027)", () => {
   // Source runs
   // -----------------------------------------------------------------------
   describe("source runs", () => {
-    it("cannot claim exhaustion it never walked", async () => {
+    it("cannot claim enumeration exhaustion it never walked", async () => {
       const run = await makeRun();
       await expect(
         adminQuery(
           `update public.source_runs
-             set extraction_exhaustion_proven = true, pagination_walk_completed = false
+             set provider_enumeration_exhaustion_proven = true, pagination_walk_completed = false
            where id = $1`,
           [run],
         ),
       ).rejects.toThrow(/exhaustion_requires_walk/i);
+    });
+
+    it("cannot claim enumeration exhaustion while an ENUMERATION risk stands", async () => {
+      const run = await makeRun();
+      await expect(
+        adminQuery(
+          `update public.source_runs
+             set pagination_walk_completed = true,
+                 enumeration_risks = array['cursor_loop_detected'],
+                 provider_enumeration_exhaustion_proven = true
+           where id = $1`,
+          [run],
+        ),
+      ).rejects.toThrow(/exhaustion_requires_walk/i);
+    });
+
+    it("lets a COMPLETED walk stay exhausted while non-enumeration coverage risks are open", async () => {
+      // PR #21's finding: "did we read every record the provider offers?" and
+      // "is this destination's coverage settled?" are different dimensions.
+      // An unresolved star authority must not falsify a walk that genuinely
+      // completed, or a correct enumeration reports itself as a failure.
+      const run = await makeRun();
+      await adminQuery(
+        `update public.source_runs
+           set pagination_walk_completed = true,
+               provider_enumeration_exhaustion_proven = true,
+               coverage_risks = array['star_authority_unresolved', 'second_source_pending']
+         where id = $1`,
+        [run],
+      );
+      const rows = await adminQuery<{ proven: boolean; risks: string[] }>(
+        `select provider_enumeration_exhaustion_proven as proven, coverage_risks as risks
+         from public.source_runs where id = $1`,
+        [run],
+      );
+      expect(rows[0]!.proven).toBe(true);
+      expect(rows[0]!.risks).toHaveLength(2);
+    });
+
+    it("keeps the two risk vocabularies as separate columns", async () => {
+      const cols = await adminQuery<{ column_name: string }>(
+        `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'source_runs'`,
+      );
+      const names = cols.map((c) => c.column_name);
+      expect(names).toContain("enumeration_risks");
+      expect(names).toContain("coverage_risks");
+      expect(names).toContain("pagination_walk_completed");
+      expect(names).toContain("provider_enumeration_exhaustion_proven");
+      // The old conflated name is gone, not aliased.
+      expect(names).not.toContain("extraction_exhaustion_proven");
     });
 
     it("cannot be 'completed' without a completion time, or 'running' with one", async () => {
@@ -323,13 +606,8 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("cannot be deleted while observations still cite it", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
-      await adminQuery(
-        `insert into public.source_property_observations (source_run_id, source_property_identity_id)
-         values ($1, $2)`,
-        [run, identity],
-      );
+      const { identity, run } = await makeIdentityWithRun();
+      await observe(run, identity);
       // Evidence a canonical value may later cite must not vanish with a
       // convenient cleanup.
       await expect(
@@ -343,14 +621,18 @@ d("property-content infrastructure (0027)", () => {
   // -----------------------------------------------------------------------
   describe("canonical source-identity mapping", () => {
     async function makeProductionIdentity(): Promise<string> {
-      const run = await makeRun({ environment: "production", runMode: "full" });
-      return makeIdentity(run, { environment: "production" });
+      return makeIdentity({ environment: "production" });
     }
 
     async function link(
       hotelId: string,
       identityId: string,
-      over: Partial<{ environment: string; status: string }> = {},
+      over: Partial<{
+        source: string;
+        environment: string;
+        sourcePropertyId: string;
+        status: string;
+      }> = {},
     ): Promise<void> {
       const meta = await adminQuery<{ source: string; env: string; pid: string }>(
         `select source, source_environment as env, source_property_id as pid
@@ -365,17 +647,16 @@ d("property-content infrastructure (0027)", () => {
         [
           hotelId,
           identityId,
-          meta[0]!.source,
+          over.source ?? meta[0]!.source,
           over.environment ?? meta[0]!.env,
-          meta[0]!.pid,
+          over.sourcePropertyId ?? meta[0]!.pid,
           over.status ?? "active",
         ],
       );
     }
 
     it("lets a source identity exist with NO canonical hotel", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+      const identity = await makeIdentity();
       const rows = await adminQuery<{ count: string }>(
         `select count(*)::text as count from public.hotel_source_identities
          where source_property_identity_id = $1`,
@@ -427,29 +708,156 @@ d("property-content infrastructure (0027)", () => {
     it("REFUSES to link evaluation-environment data to a canonical hotel", async () => {
       // Locked invariant K, enforced in the database rather than in a comment:
       // the Hotelbeds test environment must never be accidentally promotable.
-      const run = await makeRun({ environment: "evaluation" });
-      const identity = await makeIdentity(run, { environment: "evaluation" });
-
+      const identity = await makeIdentity({ environment: "evaluation" });
       await expect(link(HOTEL.bali, identity)).rejects.toThrow(/production_only/i);
     });
 
-    it("also refuses an evaluation identity smuggled in under a production label", async () => {
-      const run = await makeRun({ environment: "evaluation" });
-      const identity = await makeIdentity(run, { environment: "evaluation" });
-      // The CHECK passes (the row claims production) — but the FK'd identity is
-      // evaluation, so the lie is detectable in one join and the link is
-      // reportable. This test pins that the mismatch is VISIBLE, which is what
-      // makes the constraint auditable rather than merely present.
-      await link(HOTEL.bali, identity, { environment: "production" });
+    it("REFUSES an evaluation identity smuggled in under a PRODUCTION label", async () => {
+      // The denormalised label is the writer's assertion; the composite FK makes
+      // it the IDENTITY's own value instead. Claiming production for an
+      // evaluation identity now fails at INSERT — it is not merely detectable
+      // afterwards, because a row that never exists cannot be missed by a report
+      // nobody runs.
+      const identity = await makeIdentity({ environment: "evaluation" });
+      await expect(link(HOTEL.bali, identity, { environment: "production" })).rejects.toThrow(
+        /hotel_source_identities_identity_fk/i,
+      );
 
       const rows = await adminQuery<{ count: string }>(
         `select count(*)::text as count
          from public.hotel_source_identities hsi
          join public.source_property_identities spi on spi.id = hsi.source_property_identity_id
-         where hsi.source_environment <> spi.source_environment`,
-        [],
+         where hsi.source_environment <> spi.source_environment
+            or hsi.source <> spi.source
+            or hsi.source_property_id <> spi.source_property_id`,
       );
-      expect(Number(rows[0]!.count)).toBeGreaterThan(0);
+      // Not "detectable": unrepresentable.
+      expect(rows[0]!.count).toBe("0");
+    });
+
+    it("REFUSES a link that misstates the identity's SOURCE", async () => {
+      const identity = await makeIdentity({ source: "provider_a", environment: "production" });
+      await expect(link(HOTEL.bali, identity, { source: "provider_b" })).rejects.toThrow(
+        /hotel_source_identities_identity_fk/i,
+      );
+    });
+
+    it("REFUSES a link that misstates the identity's PROVIDER ID", async () => {
+      const identity = await makeIdentity({ environment: "production" });
+      await expect(
+        link(HOTEL.bali, identity, { sourcePropertyId: `not-${uniq()}` }),
+      ).rejects.toThrow(/hotel_source_identities_identity_fk/i);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Resolution state semantics (§5, §7)
+  // -----------------------------------------------------------------------
+  describe("resolution state cannot false-close", () => {
+    it("refuses `resolved_eligible` without an actual canonical promotion", async () => {
+      // D061 §15.1 A is "canonical eligible V1 property", and under D062 a
+      // canonical property IS a published row in `hotels`. A directly written
+      // label would make a future coverage closure count read zero unresolved
+      // while nothing had been published.
+      const identity = await makeIdentity({ environment: "production" });
+      await expect(
+        adminQuery(
+          `update public.source_property_identities set resolution_state = 'resolved_eligible' where id = $1`,
+          [identity],
+        ),
+      ).rejects.toThrow(/eligible_requires_promotion/i);
+    });
+
+    it("refuses `resolved_eligible` for evaluation data outright", async () => {
+      const identity = await makeIdentity({ environment: "evaluation" });
+      await expect(
+        adminQuery(
+          `update public.source_property_identities
+             set resolution_state = 'resolved_eligible', promoted_hotel_id = $2
+           where id = $1`,
+          [identity, HOTEL.bali],
+        ),
+      ).rejects.toThrow(/eligible_is_production/i);
+    });
+
+    it("accepts `resolved_eligible` once a canonical row actually exists", async () => {
+      const identity = await makeIdentity({ environment: "production" });
+      await adminQuery(
+        `update public.source_property_identities
+           set resolution_state = 'resolved_eligible', promoted_hotel_id = $2
+         where id = $1`,
+        [identity, HOTEL.bali],
+      );
+      const rows = await adminQuery<{ state: string; hotel: string }>(
+        `select resolution_state as state, promoted_hotel_id as hotel
+         from public.source_property_identities where id = $1`,
+        [identity],
+      );
+      expect(rows[0]!.state).toBe("resolved_eligible");
+      expect(rows[0]!.hotel).toBe(HOTEL.bali);
+    });
+
+    it("refuses `duplicate_matched` with no auditable match target", async () => {
+      // "Matched to WHAT?" must always have an answer.
+      const identity = await makeIdentity();
+      await expect(
+        adminQuery(
+          `update public.source_property_identities set resolution_state = 'duplicate_matched' where id = $1`,
+          [identity],
+        ),
+      ).rejects.toThrow(/duplicate_target/i);
+    });
+
+    it("accepts `duplicate_matched` against a canonical hotel OR another source identity", async () => {
+      const toHotel = await makeIdentity({ environment: "production" });
+      await adminQuery(
+        `update public.source_property_identities
+           set resolution_state = 'duplicate_matched', matched_hotel_id = $2
+         where id = $1`,
+        [toHotel, HOTEL.bali],
+      );
+
+      // The multi-source case: two providers describing the same physical
+      // property, neither of them published yet.
+      const primary = await makeIdentity({ source: "provider_a" });
+      const other = await makeIdentity({ source: "provider_b" });
+      await adminQuery(
+        `update public.source_property_identities
+           set resolution_state = 'duplicate_matched', matched_source_property_identity_id = $2
+         where id = $1`,
+        [primary, other],
+      );
+
+      const rows = await adminQuery<{ hotel: string | null; identity: string | null }>(
+        `select matched_hotel_id as hotel, matched_source_property_identity_id as identity
+         from public.source_property_identities where id = any($1)`,
+        [[toHotel, primary]],
+      );
+      expect(rows).toHaveLength(2);
+      expect(rows.some((r) => r.hotel === HOTEL.bali)).toBe(true);
+      expect(rows.some((r) => r.identity === other)).toBe(true);
+    });
+
+    it("refuses an identity that is a duplicate of ITSELF", async () => {
+      const identity = await makeIdentity();
+      await expect(
+        adminQuery(
+          `update public.source_property_identities
+             set resolution_state = 'duplicate_matched', matched_source_property_identity_id = id
+           where id = $1`,
+          [identity],
+        ),
+      ).rejects.toThrow(/no_self_match/i);
+    });
+
+    it("refuses a match target on an identity that is not matched", async () => {
+      const identity = await makeIdentity();
+      await expect(
+        adminQuery(
+          `update public.source_property_identities set matched_hotel_id = $2 where id = $1`,
+          [identity, HOTEL.bali],
+        ),
+      ).rejects.toThrow(/match_target_scope/i);
     });
   });
 
@@ -471,32 +879,95 @@ d("property-content infrastructure (0027)", () => {
       expect(names).toContain("name_evidence");
     });
 
-    it("records a NEW PROPERTY assertion as a candidate with no hotel", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+    it("records a NEW PROPERTY assertion as an explicit finding, not an absence", async () => {
+      const { identity, run } = await makeIdentityWithRun();
       await adminQuery(
         `insert into public.source_match_candidates
-           (source_property_identity_id, source_run_id, candidate_hotel_id, match_method)
-         values ($1, $2, null, 'no_canonical_candidate')`,
+           (source_property_identity_id, source_run_id, candidate_kind, match_method)
+         values ($1, $2, 'new_property', 'no_canonical_candidate')`,
         [identity, run],
       );
-      const rows = await adminQuery<{ hotel: string | null }>(
-        `select candidate_hotel_id as hotel from public.source_match_candidates
-         where source_property_identity_id = $1`,
+      const rows = await adminQuery<{ kind: string; hotel: string | null; target: string | null }>(
+        `select candidate_kind as kind, candidate_hotel_id as hotel,
+                candidate_source_property_identity_id as target
+         from public.source_match_candidates where source_property_identity_id = $1`,
         [identity],
       );
-      // "We looked and found nothing" is a finding, not an absence of one.
+      // "We looked and found nothing" is a finding, and it says so by name
+      // rather than by being the row where both target columns happen to be
+      // NULL.
+      expect(rows[0]!.kind).toBe("new_property");
+      expect(rows[0]!.hotel).toBeNull();
+      expect(rows[0]!.target).toBeNull();
+    });
+
+    it("supports SOURCE-to-SOURCE matching before either side is published", async () => {
+      // Hotelbeds H123 and Nuitee N456 can be the same physical hotel long
+      // before any row exists in `hotels`. Requiring one provider to be
+      // published first to de-duplicate the other is exactly the coupling a
+      // source-agnostic architecture exists to avoid.
+      const a = await makeIdentity({ source: "provider_a" });
+      const b = await makeIdentity({ source: "provider_b" });
+      await adminQuery(
+        `insert into public.source_match_candidates
+           (source_property_identity_id, candidate_kind, candidate_source_property_identity_id,
+            name_evidence, address_evidence, agreeing_dimensions, match_method)
+         values ($1, 'source_identity', $2, 'exact', 'agrees', 2, 'cross_source_name_and_address')`,
+        [a, b],
+      );
+      const rows = await adminQuery<{ kind: string; target: string; hotel: string | null }>(
+        `select candidate_kind as kind, candidate_source_property_identity_id as target,
+                candidate_hotel_id as hotel
+         from public.source_match_candidates where source_property_identity_id = $1`,
+        [a],
+      );
+      expect(rows[0]!.kind).toBe("source_identity");
+      expect(rows[0]!.target).toBe(b);
       expect(rows[0]!.hotel).toBeNull();
     });
 
+    it("refuses a candidate whose kind and target disagree", async () => {
+      const a = await makeIdentity({ source: "provider_a" });
+      const b = await makeIdentity({ source: "provider_b" });
+
+      // Claims a canonical match, supplies a source identity.
+      await expect(
+        adminQuery(
+          `insert into public.source_match_candidates
+             (source_property_identity_id, candidate_kind, candidate_source_property_identity_id, match_method)
+           values ($1, 'canonical_hotel', $2, 'bad_shape')`,
+          [a, b],
+        ),
+      ).rejects.toThrow(/target_shape/i);
+
+      // Claims NEW PROPERTY while pointing at a hotel.
+      await expect(
+        adminQuery(
+          `insert into public.source_match_candidates
+             (source_property_identity_id, candidate_kind, candidate_hotel_id, match_method)
+           values ($1, 'new_property', $2, 'bad_shape')`,
+          [a, HOTEL.bali],
+        ),
+      ).rejects.toThrow(/target_shape/i);
+
+      // Points at itself.
+      await expect(
+        adminQuery(
+          `insert into public.source_match_candidates
+             (source_property_identity_id, candidate_kind, candidate_source_property_identity_id, match_method)
+           values ($1, 'source_identity', $1, 'bad_shape')`,
+          [a],
+        ),
+      ).rejects.toThrow(/no_self_match/i);
+    });
+
     it("keeps `unavailable` distinct from `differs`", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+      const identity = await makeIdentity();
       await adminQuery(
         `insert into public.source_match_candidates
-           (source_property_identity_id, candidate_hotel_id, name_evidence,
+           (source_property_identity_id, candidate_kind, candidate_hotel_id, name_evidence,
             domain_evidence, address_evidence, agreeing_dimensions, match_method)
-         values ($1, $2, 'exact', 'unavailable', 'differs', 1, 'name_exact')`,
+         values ($1, 'canonical_hotel', $2, 'exact', 'unavailable', 'differs', 1, 'name_exact')`,
         [identity, HOTEL.bali],
       );
       const rows = await adminQuery<{ domain: string; address: string; dims: number }>(
@@ -533,8 +1004,7 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("rejects an invalid decision/target shape", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+      const identity = await makeIdentity();
       await expect(
         adminQuery(
           `insert into public.source_property_reviews
@@ -555,8 +1025,7 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("keeps at most one live decision per identity", async () => {
-      const run = await makeRun();
-      const identity = await makeIdentity(run);
+      const identity = await makeIdentity();
       await adminQuery(
         `insert into public.source_property_reviews
            (source_property_identity_id, decision, reviewer_label)
@@ -628,8 +1097,7 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("lets an ordinary creator read nothing, despite holding the privilege", async () => {
-      const run = await makeRun();
-      await makeIdentity(run);
+      await makeIdentity();
       for (const table of TABLES) {
         const res = await queryAs<{ n: string }>(
           { role: "authenticated", sub: USERS.free },
@@ -641,8 +1109,7 @@ d("property-content infrastructure (0027)", () => {
     });
 
     it("lets an editor read them", async () => {
-      const run = await makeRun();
-      await makeIdentity(run);
+      await makeIdentity();
       const res = await queryAs<{ n: string }>(
         { role: "authenticated", sub: USERS.editor },
         `select count(*)::text as n from public.source_property_identities`,
@@ -657,8 +1124,8 @@ d("property-content infrastructure (0027)", () => {
         { role: "authenticated", sub: USERS.admin },
         `insert into public.source_property_identities
            (source, source_environment, source_property_id, first_seen_run_id, last_seen_run_id)
-         values ('synthetic_provider', 'evaluation', $1, $2, $2)`,
-        [uniq(), run],
+         values ($3, 'evaluation', $1, $2, $2)`,
+        [uniq(), run, DEFAULT_SOURCE],
       );
       expect(admin.error).toBeNull();
 
@@ -666,8 +1133,8 @@ d("property-content infrastructure (0027)", () => {
         { role: "authenticated", sub: USERS.free },
         `insert into public.source_property_identities
            (source, source_environment, source_property_id, first_seen_run_id, last_seen_run_id)
-         values ('synthetic_provider', 'evaluation', $1, $2, $2)`,
-        [uniq(), run],
+         values ($3, 'evaluation', $1, $2, $2)`,
+        [uniq(), run, DEFAULT_SOURCE],
       );
       expect(creator.error).not.toBeNull();
     });

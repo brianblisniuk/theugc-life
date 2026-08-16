@@ -460,7 +460,11 @@ structurally impossible, since a property would need one PK per source.
 > **active** source identity maps to at most one canonical hotel, and a canonical
 > hotel may hold many source identities. A third was added by implementation:
 > only `production`-environment identities may be linked at all, so
-> evaluation/test provider data cannot become canonical evidence.
+> evaluation/test provider data cannot become canonical evidence — enforced by a
+> composite foreign key on `(identity id, source, source_environment,
+> source_property_id)` plus the production CHECK, so the link's labels are the
+> identity's own values and an evaluation identity is *unlinkable* rather than
+> merely auditable after the fact.
 
 Fields / semantics:
 
@@ -539,10 +543,14 @@ truth**. A future location-evidence concept should be able to retain:
 > to erase — and `source_coordinates_plausible` records the verdict.
 >
 > The *canonical resolution* half is deliberately still future: a
-> `hotel_location_resolutions` table would FK
+> `source_property_location_resolutions` table would FK
 > `source_property_observations(id)`, which is why observations are
-> `ON DELETE RESTRICT` and never mutated. Nothing about `hotels.latitude` /
-> `hotels.longitude` changes.
+> `ON DELETE RESTRICT` and append-only (enforced by privileges and a trigger).
+> It attaches to the **source identity / candidate**, not to a `hotel_id` —
+> under D062 a row in `hotels` *is* publication, so a candidate has no hotel id
+> to resolve against until after the gate
+> (`PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md` §21.1). Nothing about
+> `hotels.latitude` / `hotels.longitude` changes.
 
 `hotels.latitude` / `hotels.longitude` remain the **resolved canonical
 coordinates**.

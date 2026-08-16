@@ -86,7 +86,8 @@ provider API (evaluation or production environment)
   │    ├─ source_property_observations   one snapshot per (run, identity)
   │    │                                  source facts, never canonical truth
   │    │
-  │    ├─ source_match_candidates        evidence matrix vs canonical hotels
+  │    ├─ source_match_candidates        evidence matrix vs a canonical hotel,
+  │    │                                  another source identity, or NEW PROPERTY
   │    │
   │    └─ source_property_reviews        durable human decision per identity
   │
@@ -137,7 +138,9 @@ identity, because their lifetimes genuinely differ (§1.3).
 
 ## 5. Exact new tables
 
-Five tables. Every one is `public`, RLS-enabled, admin/editor + service_role.
+**Six tables** (§5.1–§5.6), plus one additive nullable column on an existing
+table (§5.7). Every new table is `public`, RLS-enabled, admin/editor +
+service_role.
 
 ### 5.1 `source_runs` — one execution of a source
 
@@ -155,8 +158,9 @@ Five tables. Every one is `public`, RLS-enabled, admin/editor + service_role.
 | `unique_source_property_ids` | `integer` NOT NULL default 0 | |
 | `provider_reported_total` | `integer` NULL | NULL = provider supplied none. Never defaulted to 0 — "0" and "did not say" are different facts. |
 | `pagination_walk_completed` | `boolean` NOT NULL default false | the walk consumed every page. |
-| `extraction_exhaustion_proven` | `boolean` NOT NULL default false | walk completed **and** zero coverage risks. Separate from the above because they fail for different reasons and demand different responses. |
-| `coverage_risks` | `text[]` NOT NULL default `'{}'` | never silently emptied. |
+| `provider_enumeration_exhaustion_proven` | `boolean` NOT NULL default false | **enumeration exhaustion only**: walk completed **and** zero `enumeration_risks`. §7.1. |
+| `enumeration_risks` | `text[]` NOT NULL default `'{}'` | risks to the enumeration *itself* (cursor loop, provider total disagreeing with rows returned, budget stop). These block exhaustion. |
+| `coverage_risks` | `text[]` NOT NULL default `'{}'` | risks about what the enumerated set *means* (geography-mapping caveats, unresolved star authority, pending second source). Recorded, never silently emptied, and they do **not** falsify a completed walk. §7.1. |
 | `request_count` / `cache_hit_count` | `integer` NOT NULL default 0 | quota accounting evidence. |
 | `harness_version` | `text` NULL | which code produced this run. |
 | `notes` | `text` NULL | |
@@ -165,6 +169,11 @@ Five tables. Every one is `public`, RLS-enabled, admin/editor + service_role.
 
 Indexes: `(source, source_environment, started_at desc)`,
 `(destination_id, run_status)`.
+
+Also carries `unique (id, source, source_environment)`. That is redundant as a
+key — `id` is already the PK — and exists solely so identities and observations
+can foreign-key a run's **source and environment**, not merely its id (§5.2,
+§5.3, §18.4).
 
 **Why not `import_batches`?** A batch is keyed on a parsed file
 (`source_file_name`, `file_sha256`, `parser_name`, `parser_version`) and its
@@ -184,10 +193,13 @@ enum that means two different things.
 | `source_property_id` | `text` NOT NULL | provider-native, stored as text (Hotelbeds returns a number; a provider may not). |
 | `source_url` | `text` NULL | |
 | `first_seen_at` / `last_seen_at` | `timestamptz` NOT NULL | |
-| `first_seen_run_id` / `last_seen_run_id` | `uuid` NOT NULL FK `source_runs` ON DELETE RESTRICT | |
+| `first_seen_run_id` / `last_seen_run_id` | `uuid` NOT NULL, **composite** FK `source_runs (id, source, source_environment)` ON DELETE RESTRICT | see below. |
 | `resolution_state` | `text` NOT NULL default `'unresolved'` | §8 / Coverage Engine (§22). |
 | `resolution_reason` | `text` NULL | required when the state is a final exclusion; §8. |
 | `observation_count` | `integer` NOT NULL default 0 | |
+| `matched_hotel_id` | `uuid` NULL FK `hotels` ON DELETE RESTRICT | the durable answer to "matched to WHAT?"; §8.2. |
+| `matched_source_property_identity_id` | `uuid` NULL FK identities ON DELETE RESTRICT | the same answer when the match is to **another source identity**; §8.2. |
+| `promoted_hotel_id` | `uuid` NULL FK `hotels` ON DELETE RESTRICT | which canonical row this identity's resolution actually produced. Written by a future promotion apply step; §8.1. |
 | `created_at` / `updated_at` | `timestamptz` | |
 
 **Uniqueness — the core invariant:**
@@ -201,7 +213,30 @@ same `12345` in Hotelbeds evaluation and Hotelbeds production are different
 identities, and must be, or an evaluation record could silently satisfy a
 production precondition.
 
-Indexes: the unique key, plus `(resolution_state)` and `(last_seen_run_id)`.
+**Run provenance is composite, not id-only:**
+
+```sql
+constraint source_property_identities_first_run_fk
+  foreign key (first_seen_run_id, source, source_environment)
+  references public.source_runs (id, source, source_environment) on delete restrict,
+constraint source_property_identities_last_run_fk
+  foreign key (last_seen_run_id, source, source_environment)
+  references public.source_runs (id, source, source_environment) on delete restrict
+```
+
+A plain `first_seen_run_id → source_runs(id)` would let a *Hotelbeds evaluation*
+identity name a *Nuitee production* run as the run that saw it: both rows exist,
+so the FK passes, and the provenance is silently wrong while nothing looks
+broken. Including `source` and `source_environment` in the key makes that
+combination unrepresentable rather than merely wrong (§18.4).
+
+Two further redundant unique keys exist for the same reason —
+`unique (id, source, source_environment)` and
+`unique (id, source, source_environment, source_property_id)` — so observations
+(§5.3) and the canonical link (§5.5) can reference the identity's own source,
+environment and provider id instead of trusting the writer's copy of them.
+
+Indexes: the unique keys, plus `(resolution_state)` and `(last_seen_run_id)`.
 
 **Why not `import_rows`?** An import row is immutable, belongs to exactly one
 batch, and dies with it. A source identity is mutable (last seen, resolution
@@ -212,8 +247,9 @@ state), belongs to no run in particular, and must outlive every run.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `source_run_id` | `uuid` NOT NULL FK `source_runs` **ON DELETE RESTRICT** | |
-| `source_property_identity_id` | `uuid` NOT NULL FK `source_property_identities` **ON DELETE RESTRICT** | |
+| `source_run_id` | `uuid` NOT NULL, **composite** FK `source_runs (id, source, source_environment)` **ON DELETE RESTRICT** | |
+| `source_property_identity_id` | `uuid` NOT NULL, **composite** FK identities `(id, source, source_environment)` **ON DELETE RESTRICT** | |
+| `source` / `source_environment` | `text` NOT NULL | denormalised **so both parents can be keyed on them**; see below. |
 | `observed_at` | `timestamptz` NOT NULL | |
 | `source_name` | `text` NULL | |
 | `source_destination_code` / `source_zone_code` | `text` NULL | provider geography as returned. |
@@ -248,6 +284,27 @@ One run observes one source property at most once. Re-running the extraction
 produces a **new run** and therefore a new observation — history accumulates
 rather than being overwritten.
 
+**Provenance alignment:**
+
+```sql
+constraint source_property_observations_run_fk
+  foreign key (source_run_id, source, source_environment)
+  references public.source_runs (id, source, source_environment) on delete restrict,
+constraint source_property_observations_identity_fk
+  foreign key (source_property_identity_id, source, source_environment)
+  references public.source_property_identities (id, source, source_environment) on delete restrict
+```
+
+With id-only FKs, a **production** run could carry an observation of an
+**evaluation** identity: each row exists, each FK passes, and the environment of
+the evidence is quietly lost. Keying both parents on the same denormalised
+`(source, source_environment)` pair makes the two agree by construction — the
+observation cannot be inserted at all unless its run and its identity are the
+same provider in the same environment (§18.4).
+
+**Append-only:** see §9. Observations are never updated or deleted, and that is
+enforced by privileges *and* a trigger, not by convention.
+
 Indexes: the unique key, `(source_property_identity_id, observed_at desc)`,
 `(source_run_id)`.
 
@@ -269,10 +326,29 @@ number that is *not* a star rating — `simpleCode 5` covers `5EST` (5 STARS),
 invite `where simple_code >= 4`, which is precisely the query that must never
 produce inventory.
 
-`source_classification_evidence_kind` is constrained to
-`provider_classification_evidence` or `canonical_classification_evidence`, and
-**no source may write the second without a product decision naming its issuing
-authority**. Hotelbeds is locked to the first
+`source_classification_evidence_kind` is constrained to **exactly one value**,
+`provider_classification_evidence`:
+
+```sql
+source_classification_evidence_kind text not null
+  default 'provider_classification_evidence'
+  check (source_classification_evidence_kind = 'provider_classification_evidence')
+```
+
+An earlier draft allowed `canonical_classification_evidence` as a second
+permitted value, documented as "no source may write it without a product
+decision". That is a rule with no mechanism: no issuing-authority hierarchy
+exists yet and no registry says which source may speak canonically, so an
+ingestion script could have written `hotelbeds` +
+`canonical_classification_evidence` and Postgres would have accepted it. At this
+layer a source observation is **source evidence, always** — a provider cannot
+promote itself to star authority.
+
+The judgement *"this observation is sufficient canonical star provenance"*
+belongs to the pre-publication star-resolution layer (§21), together with the
+issuing authority, the resolved value, the conflict state and who resolved it.
+Widening this CHECK is a product decision, not an ingestion convenience.
+Hotelbeds remains provider classification evidence
 (`evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md` §9).
 
 No star value is computed, rounded or averaged anywhere in this layer (D060 §8;
@@ -290,7 +366,9 @@ payload is deliberately **not** stored inline (§19).
 | `id` | `uuid` PK | |
 | `source_property_identity_id` | `uuid` NOT NULL FK identities ON DELETE CASCADE | |
 | `source_run_id` | `uuid` NULL FK runs ON DELETE SET NULL | which run generated it. |
-| `candidate_hotel_id` | `uuid` NULL FK `hotels` ON DELETE CASCADE | NULL = "no canonical candidate", i.e. a NEW PROPERTY assertion. |
+| `candidate_kind` | `text` NOT NULL default `'new_property'` | `canonical_hotel` \| `source_identity` \| `new_property` — **what this candidate points at**, stated rather than inferred; §5.4.1. |
+| `candidate_hotel_id` | `uuid` NULL FK `hotels` ON DELETE CASCADE | set iff `candidate_kind = 'canonical_hotel'`. |
+| `candidate_source_property_identity_id` | `uuid` NULL FK identities ON DELETE CASCADE | set iff `candidate_kind = 'source_identity'`; §5.4.1. |
 | `name_evidence` | `text` NOT NULL default `'none'` | `exact` \| `token_containment` \| `none` — **one dimension, two strengths**. |
 | `domain_evidence` / `address_evidence` / `phone_evidence` / `brand_evidence` | `text` NOT NULL default `'unavailable'` | `agrees` \| `differs` \| `unavailable`. |
 | `coordinate_distance_metres` | `numeric` NULL | raw distance. **No threshold is stored.** |
@@ -301,7 +379,44 @@ payload is deliberately **not** stored inline (§19).
 | `review_note` | `text` NULL | |
 | `created_at` / `resolved_at` | `timestamptz` | |
 
-Indexes: `(source_property_identity_id, status)`, `(candidate_hotel_id)`.
+Indexes: `(source_property_identity_id, status)`, `(candidate_hotel_id)`,
+`(candidate_source_property_identity_id)`.
+
+#### 5.4.1 Three target kinds, and why NULL is not one of them
+
+The coverage universe is multi-source: Hotelbeds ∪ Nuitee ∪ research ∪ other
+approved sources. Hotelbeds `H123` and Nuitee `N456` can be the same physical
+hotel **long before either has a row in `hotels`**. If the only expressible
+targets were "a canonical hotel" and "NULL", de-duplicating them would require
+publishing one provider first — exactly the coupling a source-agnostic
+architecture exists to avoid.
+
+So a candidate names its target kind explicitly:
+
+| `candidate_kind` | Target | Meaning |
+|---|---|---|
+| `canonical_hotel` | `candidate_hotel_id` | this source property may be an existing published hotel |
+| `source_identity` | `candidate_source_property_identity_id` | this source property may be the **same physical property** as another source's identity, published or not |
+| `new_property` | neither | "we looked and found nothing" — an explicit finding, not an absence of one |
+
+```sql
+constraint source_match_candidates_target_shape check (
+  (candidate_kind = 'canonical_hotel'
+     and candidate_hotel_id is not null and candidate_source_property_identity_id is null)
+  or (candidate_kind = 'source_identity'
+     and candidate_source_property_identity_id is not null and candidate_hotel_id is null)
+  or (candidate_kind = 'new_property'
+     and candidate_hotel_id is null and candidate_source_property_identity_id is null)
+),
+constraint source_match_candidates_no_self_match check (
+  candidate_source_property_identity_id is null
+  or candidate_source_property_identity_id <> source_property_identity_id
+)
+```
+
+NULL is therefore never overloaded: a `new_property` finding and a
+`canonical_hotel` candidate whose target was not written are different rows, and
+only one of them is storable.
 
 **`unavailable` is not `differs`.** "Neither side supplied an address" is not
 evidence against a match, and collapsing the two would turn missing data into a
@@ -326,8 +441,8 @@ The table `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §11.1 names.
 |---|---|---|
 | `id` | `uuid` PK | |
 | `hotel_id` | `uuid` NOT NULL FK `hotels` ON DELETE CASCADE | |
-| `source_property_identity_id` | `uuid` NOT NULL FK identities ON DELETE RESTRICT | |
-| `source` / `source_environment` / `source_property_id` | `text` NOT NULL | denormalised for the constraint below and for auditability if a provider is dropped. |
+| `source_property_identity_id` | `uuid` NOT NULL, **composite** FK identities `(id, source, source_environment, source_property_id)` ON DELETE RESTRICT | |
+| `source` / `source_environment` / `source_property_id` | `text` NOT NULL | denormalised for auditability if a provider is dropped — and **constrained by the composite FK to equal the referenced identity's own values**. |
 | `link_status` | `text` NOT NULL default `'active'` | `active` \| `superseded` \| `rejected`. |
 | `match_method` | `text` NOT NULL | how the link was established. |
 | `match_evidence` | `jsonb` NOT NULL default `'{}'` | the evidence matrix at decision time. |
@@ -336,7 +451,7 @@ The table `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §11.1 names.
 | `first_seen_at` / `last_seen_at` / `last_synced_at` | `timestamptz` | §11.1 semantics. |
 | `created_at` / `updated_at` | `timestamptz` | |
 
-**Two constraints carry the D063 invariants:**
+**Three constraints carry the D063 invariants:**
 
 ```sql
 -- One ACTIVE source identity maps to at most ONE canonical hotel.
@@ -344,10 +459,27 @@ create unique index hotel_source_identities_active_identity_uidx
   on public.hotel_source_identities (source_property_identity_id)
   where link_status = 'active';
 
+-- The denormalised labels ARE the identity's own values, not the writer's
+-- assertion about them.
+constraint hotel_source_identities_identity_fk
+  foreign key (source_property_identity_id, source, source_environment, source_property_id)
+  references public.source_property_identities (id, source, source_environment, source_property_id)
+  on delete restrict,
+
 -- Evaluation data can never become canonical evidence (§18).
 constraint hotel_source_identities_production_only
   check (source_environment = 'production')
 ```
+
+The composite FK is what makes the CHECK mean anything. On its own the CHECK
+reads a column *this row* supplies, so a link could point at an **evaluation**
+identity while writing `source_environment = 'production'`; the CHECK would read
+the label, pass, and test-environment data would sit against a canonical hotel —
+detectable in a join afterwards, but only by a report someone remembers to run.
+With the composite key the label must be the identity's own, so an evaluation
+identity is not merely *auditable* but **unlinkable**: the INSERT fails. The same
+key rejects a link that misstates the identity's `source` or `source_property_id`
+(§18.2).
 
 A canonical hotel may hold **many** source identities (different providers, or a
 superseded link plus its replacement). The unique index is partial on
@@ -382,8 +514,7 @@ check (
 )
 ```
 
-That is six tables' worth of concepts in five plus this one — see §6 for why each
-exists.
+See §6 for why each of the six exists rather than reusing its nearest neighbour.
 
 ### 5.7 One additive change to an existing table
 
@@ -429,25 +560,66 @@ Rules:
 - a run starts `running` with `completed_at` NULL;
 - `completed_at` must be NULL when `running`, and NOT NULL otherwise —
   enforced by CHECK, so "still running" and "finished" cannot be confused;
-- `extraction_exhaustion_proven = true` requires
-  `pagination_walk_completed = true` — enforced by CHECK. A run cannot claim
-  exhaustion it did not walk;
+- exhaustion semantics are §7.1;
 - `coverage_risks` is append-only by convention and never emptied to make a run
   look clean;
 - **a run is never deleted to hide a bad extraction.** Observations and
   identities FK it `ON DELETE RESTRICT`.
 
+### 7.1 Exhaustion is about ENUMERATION, not about coverage
+
+These are two different questions, and PR #21 established that conflating them
+reports a correct extraction as a failure:
+
+| Question | Column |
+|---|---|
+| Did the walk consume every page? | `pagination_walk_completed` |
+| Did we read **every record the provider offers for this geography**? | `provider_enumeration_exhaustion_proven` |
+| Is this **destination's coverage** settled? | not a run-level fact at all — see §22 |
+
+```sql
+constraint source_runs_exhaustion_requires_walk check (
+  provider_enumeration_exhaustion_proven = false
+  or (pagination_walk_completed = true and cardinality(enumeration_risks) = 0)
+)
+```
+
+Only `enumeration_risks` block exhaustion, because only they make the
+enumeration itself unprovable: a cursor loop, a provider total that disagrees
+with the rows returned, a budget stop mid-walk.
+
+`coverage_risks` deliberately do **not**. Hotelbeds BAI can be exhaustively
+enumerated while the D060 star authority remains unresolved and a second source
+is still pending — those are facts about what the enumerated set *means*, and
+making them falsify the walk would leave no way to state the true sentence "we
+read everything this provider has, and coverage is still open". They are
+recorded on the run, never emptied, and answered by the Coverage Engine layer,
+not by the extractor.
+
+An earlier draft of this section described exhaustion as "walk completed AND zero
+coverage risks", which the database never enforced. The vocabulary is now split
+so the sentence and the constraint say the same thing.
+
 ## 8. Source-identity lifecycle
 
 ```
-first observation ──> unresolved
-                        │
+first observation ──> unresolved ──────────────────────────────┐
+                        │                                      │
+                        │   (pre-publication investigation,    │  stays unresolved
+                        │    star/location resolution, review, │  throughout
+                        │    D062 preview, human approval)     │
+                        │                                      │
                         ├──> resolved_eligible      A. canonical eligible V1 property
-                        ├──> duplicate_matched      B. matched to an existing canonical hotel
+                        │                              — ONLY once promotion has
+                        │                                actually published a row
+                        ├──> duplicate_matched      B. matched, WITH a durable target
                         └──> final_exclusion        C. out of V1 scope, durable reason
 ```
 
-These are exactly D061 §15.1's three terminal states, plus the hold state.
+These are exactly D061 §15.1's three terminal states, plus the hold state. An
+identity stays `unresolved` for the whole of pre-publication investigation —
+that is the state's job, and it is what keeps the candidate inside the
+coverage-critical count.
 
 `resolution_reason` is required (CHECK) when `resolution_state =
 'final_exclusion'`, and uses the D061 §9 vocabulary:
@@ -466,6 +638,57 @@ not the same fact as "confirmed 3-star".
 candidate. A name agreement alone cannot produce `duplicate_matched` — locked
 invariants H and I.
 
+### 8.1 `resolved_eligible` cannot mean "looks eligible"
+
+D061 §15.1 A is *canonical eligible V1 property*, and under D062 §7.0 a canonical
+property **is** a published row in `hotels`. So the label cannot be a judgement
+somebody types:
+
+```sql
+constraint source_property_identities_eligible_requires_promotion check (
+  resolution_state <> 'resolved_eligible' or promoted_hotel_id is not null
+),
+constraint source_property_identities_eligible_is_production check (
+  resolution_state <> 'resolved_eligible' or source_environment = 'production'
+)
+```
+
+Without the first constraint an admin or a script could set `resolved_eligible`
+directly — no D060 classification, no D062 gate, no star resolution, no location
+resolution, no review — and a future Coverage Engine closure count would read
+*zero unresolved* while nothing had been published. The count would be a lie the
+database helped tell. `promoted_hotel_id` is written by the future promotion
+apply step (§21), so the state can only become true **after** publication
+actually happened, not as a prediction that it will.
+
+The second constraint says evaluation data can never be eligible, for the same
+reason it can never be linked (§18).
+
+### 8.2 `duplicate_matched` must answer "matched to WHAT?"
+
+```sql
+constraint source_property_identities_duplicate_target check (
+  resolution_state <> 'duplicate_matched'
+  or matched_hotel_id is not null
+  or matched_source_property_identity_id is not null
+),
+constraint source_property_identities_match_target_scope check (
+  resolution_state = 'duplicate_matched'
+  or (matched_hotel_id is null and matched_source_property_identity_id is null)
+),
+constraint source_property_identities_no_self_match check (
+  matched_source_property_identity_id is null
+  or matched_source_property_identity_id <> id
+)
+```
+
+A terminal duplicate state with no durable target is an unauditable claim: the
+candidate leaves the coverage-critical count and nothing records what absorbed
+it. Either target satisfies it — an existing canonical hotel, or **another
+source identity** (§5.4.1), because two providers can describe the same physical
+property long before it is published. A match target on an identity that is not
+matched is equally meaningless and is refused too.
+
 ## 9. Source-observation model
 
 One identity, many observations, one per run:
@@ -480,8 +703,38 @@ The 4EST → 5EST change is retained as two observations. Nothing overwrites, so
 future star resolution can cite **which observation, from which run, at which
 time** supported a canonical value — D062 conditions 7 and 10.
 
-Observations are never mutated after insert (convention, not a trigger — a
-staff-only table with an explicit contract, consistent with `import_rows`).
+### 9.1 Observations are APPEND-ONLY, and the database enforces it
+
+A future canonical star or coordinate will cite `source_property_observations.id`
+as its provenance (§21). If the cited row can later be edited or deleted, that
+provenance is a promise the database does not keep — and `ON DELETE RESTRICT` on
+the observation's **parents** does not protect the observation itself: it stops
+the run being deleted, not the row.
+
+Two layers, deliberately:
+
+1. **Privileges.** Neither `authenticated` nor `service_role` holds UPDATE or
+   DELETE on this table. The grant is `select, insert` only — the one place in
+   the schema where the trusted role is deliberately not `all`, because the
+   invariant exists to keep evidence citable and a trusted caller can break it
+   just as thoroughly as an untrusted one.
+2. **Triggers.** `forbid_observation_mutation()` fires `before update` and
+   `before delete` and raises unconditionally, so the refusal holds for the table
+   owner and survives a future migration that grants ALL to some role for
+   convenience.
+
+| Operation | Allowed |
+|---|---|
+| INSERT (admin/editor, service_role) | yes |
+| SELECT (admin/editor, service_role) | yes |
+| UPDATE | **no — trigger + no privilege** |
+| DELETE | **no — trigger + no privilege** |
+
+A corrected or later fact is recorded as a **new observation in a new run**,
+which is what the model was for. `source_payload_uri` and `source_payload_digest`
+are written at insert or left NULL; there is no post-insert attachment path and
+no narrow update exception, because every such exception is a column somebody
+later argues should also be updatable.
 
 ## 10. Entity-resolution model
 
@@ -502,6 +755,22 @@ it, and a CHECK bounds it to `0..6`. No universal threshold is stored anywhere;
 the promotion gate and the reviewer decide, and §8 states the one structural
 floor (two dimensions for a match).
 
+The same evidence matrix serves all three target kinds (§5.4.1). A
+source↔source comparison uses exactly the columns a source↔canonical comparison
+does — name, domain, address, phone, brand, coordinate distance — so
+cross-provider de-duplication needs no second vocabulary and no publication step
+first:
+
+```sql
+-- "Which Nuitee identity might be the same physical property as this
+--  Hotelbeds one?" — answerable before either has a row in `hotels`.
+select c.candidate_source_property_identity_id, c.agreeing_dimensions, c.match_method
+from public.source_match_candidates c
+where c.source_property_identity_id = $1
+  and c.candidate_kind = 'source_identity'
+  and c.status = 'pending';
+```
+
 ## 11. Canonical source-identity mapping
 
 Answers "which Hotelbeds property corresponds to this canonical hotel?" in one
@@ -514,12 +783,15 @@ join public.hotel_source_identities si on si.hotel_id = h.id
 where si.link_status = 'active' and si.source = 'hotelbeds';
 ```
 
-Invariants, both enforced in the database:
+Invariants, all enforced in the database:
 
 - **one active source identity → at most one canonical hotel** (partial unique
   index);
 - **one canonical hotel → many source identities** (no constraint prevents it,
-  by design).
+  by design);
+- **the link's source, environment and provider id are the identity's own**
+  (composite FK), so a link cannot misdescribe what it points at;
+- **evaluation data is unlinkable** (composite FK + production-only CHECK, §18).
 
 ## 12. RLS / ACL model
 
@@ -528,9 +800,11 @@ Identical to the existing import infrastructure, and stated explicitly per D046:
 - RLS enabled on all six new tables;
 - one `for all using (is_admin_or_editor()) with check (is_admin_or_editor())`
   policy per table;
-- `grant select, insert, update, delete … to authenticated` — a capability
-  grant; RLS reduces a regular creator to zero rows;
-- `grant all … to service_role`;
+- `grant select, insert, update, delete … to authenticated` on five of them — a
+  capability grant; RLS reduces a regular creator to zero rows;
+- `grant all … to service_role` on the same five;
+- **`source_property_observations` is the exception: `select, insert` only, for
+  both roles** (§9.1). Append-only is a privilege fact, not only a trigger fact;
 - **no `anon` grant of any kind**;
 - migration `0024`'s `alter default privileges` already revokes client
   privileges on future tables, so the grants above are the entire client surface.
@@ -543,7 +817,7 @@ relations, so a future table that forgets its grants fails the suite.
 | Level | Mechanism |
 |---|---|
 | identity | `unique (source, source_environment, source_property_id)` — re-running never forks an identity |
-| observation | `unique (source_run_id, source_property_identity_id)` — a run cannot double-observe |
+| observation | `unique (source_run_id, source_property_identity_id)` — a run cannot double-observe. There is no upsert path: the table is append-only (§9.1), so a re-observation is a new run's row |
 | canonical link | partial unique on `(source_property_identity_id) where link_status='active'` |
 | review | `unique (source_property_identity_id)` |
 
@@ -557,19 +831,40 @@ observations, same identities, existing reviews and links untouched.
 
 ## 18. Evaluation vs production isolation
 
-Three independent mechanisms, because one would be a single point of failure:
+Four independent mechanisms, because one would be a single point of failure:
 
-1. **Identity separation.** `source_environment` participates in the identity
-   unique key, so an evaluation record and a production record with the same
-   provider id are different rows. An evaluation identity can never be mistaken
-   for its production counterpart.
-2. **Link prohibition.** `hotel_source_identities` CHECKs
-   `source_environment = 'production'`. Evaluation data **cannot** be linked to a
-   canonical hotel at all — not by a bug, not by a careless script, not by a
-   reviewer.
-3. **Run provenance.** Every observation carries its run, and every run carries
-   its environment, so the environment of any evidence is one join away and
-   cannot be lost.
+**18.1 Identity separation.** `source_environment` participates in the identity
+unique key, so an evaluation record and a production record with the same
+provider id are different rows. An evaluation identity can never be mistaken for
+its production counterpart.
+
+**18.2 Link prohibition — enforced against the IDENTITY, not against a label.**
+`hotel_source_identities` CHECKs `source_environment = 'production'`, and the
+composite FK (§5.5) forces that column to be the referenced identity's own
+value. So the prohibition is not "a link must claim production" but "the linked
+identity must *be* production". Three separate lies are rejected at INSERT:
+
+| Attempt | Result |
+|---|---|
+| link an evaluation identity, labelled honestly | CHECK `production_only` fails |
+| link an evaluation identity, labelled `production` | **composite FK fails** |
+| link a production identity, misstating its `source` or `source_property_id` | **composite FK fails** |
+
+The middle row is the one that matters. Before the composite key existed, that
+insert succeeded and the mismatch was merely *detectable* by a join someone had
+to think to run — which is not an invariant, it is a report.
+
+**18.3 Eligibility prohibition.** An evaluation identity can never reach
+`resolved_eligible` either (§8.1), so it cannot be counted as covered inventory
+even in the absence of a link.
+
+**18.4 Provenance alignment.** Every observation carries its run and its
+identity, and the composite FKs (§5.2, §5.3) require all three to agree on
+`source` and `source_environment`. A production run cannot carry an observation
+of an evaluation identity, and an identity cannot name a run from another
+provider or another environment as the run that saw it. The environment of any
+piece of evidence is therefore not merely recoverable — it is impossible to
+lose.
 
 This implements locked invariant K. The Hotelbeds *evaluation* extraction
 (3,275 Bali + 835 Dubai records, already measured) can be loaded by a future
@@ -649,34 +944,80 @@ A future promotion preview must answer, per candidate:
 | 3. physical hospitality property | `source_property_observations.source_property_type_code/label` |
 | 4. not permanently closed | `source_lifecycle_status` **when the provider supplies one** |
 | 5. V1 scope resolved | `source_property_identities.resolution_state` |
-| 6. star exactly 4 or 5 | **not from this layer alone** — see below |
-| 7. star provenance | future `hotel_star_resolutions` → `source_property_observations.id` |
-| 8/9. canonical lat/long | future `hotel_location_resolutions` → `source_property_observations.id` |
+| 6. star exactly 4 or 5 | **not from this layer alone** — §21.1 |
+| 7. star provenance | future `source_property_star_resolutions` → `source_property_observations.id` |
+| 8/9. canonical lat/long | future `source_property_location_resolutions` → `source_property_observations.id` |
 | 10. coordinate provenance | same |
 | 11. no unresolved conflict | `source_match_candidates.status` |
 
-The two future resolution tables are **specified as an interface only**:
+### 21.1 Pre-publication resolution attaches to the CANDIDATE, not to a hotel
+
+An earlier draft of this section proposed `hotel_star_resolutions.hotel_id →
+hotels` and `hotel_location_resolutions.hotel_id → hotels`. **That interface
+cannot work**, and the reason is structural rather than cosmetic:
 
 ```
-hotel_star_resolutions (future)
-  hotel_id                        → hotels
+D062 requires resolved stars + star provenance + canonical coordinates
++ coordinate provenance BEFORE a row in `hotels` may be created
+                    │
+                    ▼
+but a hotel_id-keyed resolution table needs the hotel row to exist first
+                    │
+                    ▼
+need hotel_id to resolve → need resolution to create hotel_id
+```
+
+For `approve_match` it happens to work, because a hotel already exists. For
+`approve_create` — the path that actually adds inventory — it is circular. And
+the two ways out of the circle are both prohibited: creating a canonical draft
+hotel to hang the resolution on would reintroduce the publication tier D062 §7.0
+removes, and weakening "promotion = publication" would put unresolved rows in
+front of creators.
+
+So resolution attaches to the **pre-canonical entity** — the source property
+identity / candidate — and cites exact observations:
+
+```
+source_property_star_resolutions (future)
+  source_property_identity_id     → source_property_identities(id)
   resolved_star_value             numeric, exactly 4 or 5 for V1
   evidence_observation_id         → source_property_observations(id)
   issuing_authority               text NOT NULL   -- the open product decision
   conflict_state                  text
   resolved_by_user_id, resolved_at
 
-hotel_location_resolutions (future)
-  hotel_id                        → hotels
+source_property_location_resolutions (future)
+  source_property_identity_id     → source_property_identities(id)
   resolved_latitude, resolved_longitude
   evidence_observation_id         → source_property_observations(id)
   conflict_state                  text
   resolved_by_user_id, resolved_at
 ```
 
-Both FK `source_property_observations(id)`, which is why observations are
-`ON DELETE RESTRICT` and never mutated: a canonical star that cites an
-observation must be able to keep citing it.
+The order then runs forwards with no cycle:
+
+```
+candidate (source identity, unresolved)
+  → star resolution + location resolution, citing observations
+  → D062 preview: every condition evaluable, still nothing published
+  → human approval
+  → apply: CREATE the canonical row in `hotels`          ← publication
+  → establish hotel_source_identities link (production only)
+  → write source_property_identities.promoted_hotel_id   ← §8.1 becomes true
+  → retain the resolutions as the canonical value's provenance
+```
+
+`promoted_hotel_id` is what carries the resolution forward: after apply, a
+canonical star's provenance is reachable as
+`hotels ← promoted_hotel_id ← identity → star resolution → observation → run`.
+For `approve_match`, the same resolution rows attach to the same identity and the
+link is established against the existing hotel instead of a new one — one
+interface, both decisions.
+
+**Neither table is implemented in this block.** They are specified here only so
+the foundation is coherent, and both FK `source_property_observations(id)` —
+which is why observations are `ON DELETE RESTRICT` and append-only (§9.1): a
+canonical star that cites an observation must be able to keep citing it.
 
 **Hotelbeds is not the star authority and this block does not make it one.** The
 star-authority hierarchy for Bali/Dubai remains explicitly undecided
@@ -706,6 +1047,18 @@ The three terminal states map one-to-one onto D061 §15.1 A/B/C, and the hold
 state is counted, never hidden. **Nothing in the ingestion path deletes an
 unresolved candidate** — the FKs are `RESTRICT`, and no code path in this block
 issues a DELETE.
+
+**The closure count cannot be talked into being zero.** Each way out of
+`unresolved` costs something the database checks: `resolved_eligible` requires an
+actual published row (§8.1), `duplicate_matched` requires a durable target
+(§8.2), `final_exclusion` requires a durable D061 §9 reason — and "star
+classification unknown" is deliberately not one of them. A candidate can
+therefore only leave the coverage-critical count by being published, absorbed or
+reviewed out, never by being relabelled.
+
+Run-level `coverage_risks` (§7.1) belong to this layer too: they are the
+destination-level caveats the Coverage Engine must weigh, and they are
+deliberately not allowed to falsify a provider walk that genuinely completed.
 
 ## 23. Historical Dubai pilot treatment
 
@@ -744,9 +1097,14 @@ None that block implementation. For the record:
 
 | Question | Status |
 |---|---|
-| Star authority hierarchy | **Open** (contract §16) — deferred by design; `issuing_authority` is a future column |
+| Star authority hierarchy | **Open** (contract §16) — deferred by design; `issuing_authority` is a future column, and §5.3.2 makes it impossible for a source to appoint itself in the meantime |
 | Object storage product | **Open** — flagged in §19; the relational layer does not depend on it |
 | Media storage strategy | **Open** (D064) — §20 keeps ingestion possible without deciding |
-| Evaluation data may never link canonically | **Determined** by locked invariant K; implemented as a CHECK |
+| Evaluation data may never link canonically | **Determined** by locked invariant K; implemented as a composite FK **plus** a CHECK (§18.2) |
+| Where pre-publication resolution attaches | **Determined**: to the source identity / candidate, never to a `hotel_id` that does not exist yet (§21.1) |
+| Source↔source matching before publication | **Determined**: an explicit `candidate_kind` with three targets (§5.4.1) |
+| `resolved_eligible` means published, not "looks eligible" | **Determined**: constrained on `promoted_hotel_id` (§8.1) |
+| Observations are append-only | **Determined**: privileges plus triggers (§9.1) |
+| Enumeration exhaustion vs coverage | **Determined**: separate columns and separate vocabularies (§7.1) |
 | Provider review is a separate table | **Implementation**, justified in §1.3 / §6 |
 | Match threshold | **Refused** by D063 §12.2; none stored |

@@ -1574,7 +1574,7 @@ Status: Accepted — implemented by migration `0027`
 The property-content source infrastructure (`source_runs`,
 `source_property_identities`, `source_property_observations`,
 `source_match_candidates`, `hotel_source_identities`,
-`source_property_reviews`) carries three boundaries that are decisions rather
+`source_property_reviews`) carries five boundaries that are decisions rather
 than schema details, because a later block could plausibly relax any of them by
 accident.
 
@@ -1585,6 +1585,14 @@ identity's unique key, and `hotel_source_identities` CHECKs
 `source_environment = 'production'`. An evaluation record therefore cannot be
 linked to a canonical hotel **at all** — not by a bug, not by a careless
 script, not by a reviewer.
+
+The CHECK alone would not have delivered that. It reads a denormalised column
+the *linking row* supplies, so a link could point at an evaluation identity while
+writing `production` and pass. A composite foreign key on
+`(source_property_identity_id, source, source_environment, source_property_id)`
+makes those labels the identity's own values, which turns the guarantee from
+"the mismatch is detectable in a join" into "the INSERT fails". The same key
+rejects a link that misstates the identity's provider or provider id.
 
 The Hotelbeds *test* environment holds 3,275 Bali and 835 Dubai records that are
 perfectly good evidence and are not production inventory. Distinguishing them by
@@ -1614,6 +1622,40 @@ Likewise `source_classification_simple_code` is **text**, not numeric: Hotelbeds
 `simpleCode 5` covers 5 STARS, 5 KEYS, aparthotel and hostel alike, and a
 numeric column invites `where simple_code >= 4` — the one query that must never
 produce inventory (D060).
+
+And `source_classification_evidence_kind` admits **exactly one** value,
+`provider_classification_evidence`. Allowing a `canonical_` value "subject to a
+future product decision" would have let any ingestion script appoint its own
+provider as star authority, with Postgres accepting it, while no
+issuing-authority hierarchy exists to say otherwise. That judgement belongs to
+the pre-publication star-resolution layer, not to the row being ingested.
+
+### 4. Source observations are append-only
+
+A future canonical star or coordinate cites `source_property_observations.id` as
+its provenance. If the cited row can be edited or deleted, that provenance is a
+promise the database does not keep — and `ON DELETE RESTRICT` on the parents
+stops the *run* being deleted, not the observation.
+
+So no client role holds UPDATE or DELETE on that table (`service_role` included —
+the trusted boundary is not exempt from an invariant that exists to keep evidence
+citable), and a trigger refuses both operations for the table owner as well, so
+the guarantee survives a future migration that grants ALL for convenience. A
+corrected fact is a new observation in a new run.
+
+### 5. Provenance alignment is structural, and coverage states cannot be asserted
+
+Run, identity and observation must agree on `source` and `source_environment`,
+enforced by composite FKs rather than by application convention: with id-only
+keys a Hotelbeds-evaluation identity could name a Nuitee-production run as the
+run that saw it, and every individual row would still exist.
+
+For the same reason a resolution state must cost something the database checks.
+`resolved_eligible` requires `promoted_hotel_id` — under D062 a canonical
+property *is* a published row, so the label cannot be typed ahead of the fact, or
+a Coverage Engine closure count would read zero unresolved while nothing had been
+published. `duplicate_matched` requires a durable match target (a canonical hotel
+**or** another source identity), so "matched to what?" always has an answer.
 
 Reason:
 Each of these protects against a failure that is invisible in the output. Test
