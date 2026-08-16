@@ -133,10 +133,15 @@ export function classifyStarEligibility(
 /**
  * Derive image evidence from the images COLLECTION.
  *
- * A principal image is not always a field on the property. Hotelbeds marks one
- * with `visualOrder = 0` inside each image entry, so pointing a `heroImage` path
- * at the property record would read `undefined` forever and report 0% hero
- * coverage for a provider that actually supplies it.
+ * A principal image is not always a field on the property, so pointing a
+ * `heroImage` path at the property record would read `undefined` forever and
+ * report 0% hero coverage for a provider that actually supplies one.
+ *
+ * Which image is principal is a per-provider question, and the documented answer
+ * is not always the true one — Hotelbeds documents `visualOrder = 0` while live
+ * payloads carry large ordering ranks and no zero at all. `principalSelector`
+ * exists so that gap is a configuration choice with a stated basis, rather than
+ * a silent 0% that looks like a measurement.
  */
 export function deriveImageEvidence(
   payload: unknown,
@@ -150,10 +155,11 @@ export function deriveImageEvidence(
   const raw = descriptor.fieldMap.photos ? readPath(payload, descriptor.fieldMap.photos) : null;
   const images = Array.isArray(raw) ? raw : [];
   const { path: pathKey, type: typeKey, visualOrder: orderKey } = descriptor.imageFieldMap;
+  const selector = descriptor.imageFieldMap.principalSelector ?? "visual_order_zero";
 
   const types = new Set<string>();
+  const visualOrders: number[] = [];
   let withPath = 0;
-  let principal = false;
 
   for (const image of images) {
     if (pathKey && asString(readPath(image, pathKey)) !== null) withPath += 1;
@@ -163,9 +169,22 @@ export function deriveImageEvidence(
     }
     if (orderKey) {
       const order = asNumber(readPath(image, orderKey));
-      // visualOrder === 0 identifies a principal-image candidate.
-      if (order === 0) principal = true;
+      if (order !== null) visualOrders.push(order);
     }
+  }
+
+  // The documented rule, tried first whatever the selector says: an explicit
+  // zero is unambiguous evidence when it is actually present.
+  let principal = visualOrders.includes(0);
+
+  if (!principal && selector === "deterministic_visual_order_extremum" && visualOrders.length > 0) {
+    // The weaker, evidence-backed claim: a principal image can be SELECTED
+    // deterministically because one image ranks uniquely at the extreme. This
+    // says nothing about which end the provider considers best — ties simply do
+    // not qualify, because a tie is exactly the case where no single image can
+    // be picked without inventing a rule.
+    const max = Math.max(...visualOrders);
+    principal = visualOrders.filter((v) => v === max).length === 1;
   }
 
   // A provider WITH an explicit hero field still wins, when it has one.

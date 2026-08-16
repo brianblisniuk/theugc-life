@@ -13,18 +13,34 @@
  * verified during external review on 2026-08-15 from official HBX/Hotelbeds
  * documentation** and supplied to this repository. Claude Code did not fetch
  * those pages: `developer.hotelbeds.com` is blocked by this environment's egress
- * proxy (HTTP 403 on CONNECT), as is `api.test.hotelbeds.com`.
+ * proxy (HTTP 403 on CONNECT). The API host `api.test.hotelbeds.com` was
+ * subsequently allowlisted and HAS been reached (2026-08-16).
  *
- * ## Star classification — the careful part
+ * ## Star classification — SETTLED BY EXTERNAL REVIEW, 2026-08-16
  *
- * Hotelbeds category standards **differ by country**, and the official examples
- * distinguish `HOTEL + "5 STAR"` from `APARTMENT + "5 KEY"`. So
- * `simpleCode == 5` does NOT mean "5-star hotel": it may mean five keys on an
- * apartment, which is a different classification scheme entirely.
+ * The live category master (65 codes, enumerated to exhaustion) settled the open
+ * question, and it settled it against the optimistic reading:
  *
- * `starKindsAcceptedAsD060Evidence` is therefore EMPTY. The category code alone
- * cannot resolve D060 until the accommodation-type semantics and the issuing
- * authority are established per country. That is a live-data question.
+ *   simpleCode 5 → 5EST, 5LUX, H5_5 … and also 5LL (5 KEYS), APTH5, BB5, HS5,
+ *                  HR5, HIST
+ *   simpleCode 4 → 4EST, 4LUX, H4_5 … and also 4LL (4 KEYS), VILLA, BOU, RSORT,
+ *                  AT1 (APARTMENT 1ST CATEGORY), AG, POUSA, SUP
+ *
+ * `simpleCode` conflates different classification SYSTEMS and different property
+ * TYPES. `accommodationType` — the intended discriminator — was EMPTY (`""`) on
+ * all 65 records, so it cannot separate them either.
+ *
+ * The locked decision: Hotelbeds category data is **PROVIDER_CLASSIFICATION_
+ * EVIDENCE**, never **CANONICAL_D060_CLASSIFICATION_EVIDENCE**. Neither
+ * `simpleCode`, nor `group`, nor free-text `description` alone is canonical
+ * provenance. `resolve_d060_classification` stays BLOCKED —
+ * REQUIRES_SECONDARY_VERIFICATION.
+ *
+ * What we DO with the evidence: preserve the exact provider `categoryCode`,
+ * preserve the joined master, and report distributions — including a
+ * PROVIDER-APPARENT star breakdown clearly labelled as provider classification,
+ * not D060 resolution. "4.5"/"5.5"-style categories (`H4_5`, `H5_5`) must never
+ * become exact 4 or exact 5.
  *
  * This does **not** disqualify Hotelbeds. Under the layered-source principle a
  * provider may be an excellent inventory, location and media source while its
@@ -42,7 +58,9 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
   displayName: "HBX Group / Hotelbeds Hotel Content API",
   documentationStatus: "partially_verified",
   accessStatus: "credentials_available",
-  liveValidationStatus: "blocked",
+  // Last observed outcome, for reporting only. It never gates a future run —
+  // the probe does.
+  liveValidationStatus: "validated",
   strategicRole: "active_evaluation",
   sources: [
     {
@@ -119,14 +137,30 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
     reviewScore: undefined,
     photos: "images",
     // No principal-image FIELD on the property; it is derived from the images
-    // collection via `visualOrder = 0` (see imageFieldMap).
+    // collection (see imageFieldMap).
     heroImage: null,
-    activeStatus: "status",
+    // FIELD_MAP_MISMATCH, fixed 2026-08-16. This pointed at `status`, which does
+    // not exist anywhere in the live hotels payload — the Content API hotels
+    // response carries NO lifecycle field. Left mapped it would have reported
+    // "0% active-status coverage", which reads as a provider weakness rather
+    // than our wrong path. Provider lifecycle state does surface elsewhere, but
+    // only as a `*CLOSED` suffix inside destination NAMES.
+    activeStatus: null,
   },
   imageFieldMap: {
     path: "path",
     type: "imageTypeCode",
     visualOrder: "visualOrder",
+    // DOCUMENTED SEMANTICS CONTRADICTED BY LIVE DATA, 2026-08-16. The docs say
+    // `visualOrder = 0` marks the principal image; live values are large ranks
+    // (813, 805, 804 …) and 0 essentially never appears. Keeping the documented
+    // rule would have reported ~0% principal-image availability for a provider
+    // that supplies a complete ordering on every image.
+    //
+    // We do NOT assert which end of the range is "best" — that is not
+    // established. We assert only what the data supports: a principal image can
+    // be selected DETERMINISTICALLY when the ordering has a unique extremum.
+    principalSelector: "deterministic_visual_order_extremum",
   },
   classification: {
     // The documented architecture: the hotels operation returns CODES, and the
@@ -171,9 +205,38 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
   // observed. Pre-filtering to HOTEL would hide eligible hospitality properties
   // (D060 §2.2), and guessing which codes are hospitality would prejudge scope.
   hospitalityPropertyTypes: [],
-  geography: [],
+  // Resolved from LIVE master data on 2026-08-16 and approved by external review.
+  //
+  // Approval scope is narrow and deliberate: this is "provider enumeration
+  // mapping accepted for the Hotelbeds bake-off", NOT "Bali/Dubai coverage
+  // complete". D061 closure is untouched by anything recorded here.
+  geography: [
+    {
+      destination: "bali",
+      providerEntityIds: ["BAI"],
+      providerEntityKind: "destinationCode (provider name: Bali)",
+      resolutionMethod:
+        "Indonesia (ID) destination master enumerated EXHAUSTIVELY on 2026-08-16: 178 of 178 returned, provider total matched, exhaustion proven. BAI is the single provider destination named Bali and carries 76 zones. Denpasar, Ubud, Kuta, Seminyak, Canggu, Nusa Dua, Jimbaran, Sanur and Uluwatu are NOT peer destination records in that universe — they sit beneath BAI as zones. Approved by external review.",
+      requiresUnion: false,
+      caveats: [
+        "Lombok (AMI, and 46J Lombok Timur) is a SEPARATE provider destination and is explicitly NOT part of this mapping.",
+        "BAI's 76 zones have not been enumerated individually. If live hotel evidence shows records inconsistent with this mapping, that is a GEOGRAPHY_MAPPING_CONTRADICTION and the run must stop rather than reconcile it silently.",
+      ],
+    },
+    {
+      destination: "dubai",
+      providerEntityIds: ["DXB"],
+      providerEntityKind: "destinationCode (provider name: Dubai)",
+      resolutionMethod:
+        "UAE (AE) destination master enumerated EXHAUSTIVELY on 2026-08-16: 10 of 10 returned, provider total matched, exhaustion proven. DXB is the unambiguous Dubai provider destination and carries 29 zones. Approved by external review.",
+      requiresUnion: false,
+      caveats: [
+        "DXB's 29 zones have not been enumerated individually; a record returned under DXB but inconsistent with Dubai is a GEOGRAPHY_MAPPING_CONTRADICTION.",
+        "The UAE master carries lifecycle state inside the NAME string (03I 'Al Noaf *CLOSED') rather than a status field. Not part of this mapping, but it means provider lifecycle cannot be read from a structured field here.",
+      ],
+    },
+  ],
   geographyEnumerationRisks: [
-    "Bali and Dubai destination codes are UNRESOLVED. They must be read from Content API country/destination master data, never assumed, and Bali may require a UNION of several destination codes rather than one city.",
     "HBX documents a GLOBAL initial-load procedure of roughly 173 hotel-page requests. That is incompatible with a 50-request/day evaluation quota and must NOT be attempted; only targeted destination retrieval is acceptable here.",
   ],
   operations: {
@@ -206,13 +269,15 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
   // does NOT appear under inventory/location/media — those are measurable as
   // soon as egress and geography exist.
   capabilityBlockers: {
-    assess_classification: [
-      "Category master join is documented but unexercised: the exact category-code field on the hotels response has not been confirmed against a live payload.",
-    ],
+    // CONFIRMED against live payloads 2026-08-16: `categoryCode` is present on
+    // every Bali and Dubai record and joined the master at 100%.
+    assess_classification: [],
     resolve_d060_classification: [
-      "Category standards are country-dependent and the issuing authority is undocumented, so no category resolves D060 ('5 KEY' on an apartment is not five hotel stars).",
-      "accommodationType distribution has not been observed, so no accommodation type is accepted as carrying a hotel star classification.",
-      "Whether classification provenance can be stored and cited — publishability condition 7 (D062) — is unresolved.",
+      "LOCKED BY EXTERNAL REVIEW 2026-08-16: Hotelbeds category data is PROVIDER_CLASSIFICATION_EVIDENCE, not CANONICAL_D060_CLASSIFICATION_EVIDENCE. REQUIRES_SECONDARY_VERIFICATION.",
+      "OBSERVED in the live 65-code master: simpleCode conflates classification systems and property types. simpleCode 5 includes 5LL (5 KEYS), APTH5, BB5, HS5, HR5 and HIST; simpleCode 4 includes VILLA, BOU, RSORT and AT1 (APARTMENT 1ST CATEGORY).",
+      "OBSERVED in live inventory: a STAR-labelled category does NOT imply a hotel. Dubai returns Apartment x '4 STARS' and Aparthotel x '5 STARS'; Bali returns Bed-and-breakfast, Guest-house and Resort records carrying STAR categories.",
+      "Category `group` and free-text `description` are not accepted as canonical D060 provenance either.",
+      "No issuing authority is established for the category, so publishability condition 7 (D062) cannot be satisfied — this remains the binding blocker even where HOTEL x '5 STARS' pairs cleanly.",
     ],
   },
 };

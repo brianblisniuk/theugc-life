@@ -205,6 +205,67 @@ export async function fetchHotelbedsCategoryMaster(
   };
 }
 
+const ACCOMMODATIONS_PATH = "/hotel-content-api/1.0/types/accommodations";
+
+/**
+ * Fetch the accommodation-types master.
+ *
+ * The hotels response carries `accommodationTypeCode` as a single letter (`H`,
+ * `V`, `A` …). Reporting a distribution of bare letters would be reporting
+ * something nobody can check — and guessing that `H` means HOTEL is exactly the
+ * assumption this harness exists to refuse. One request buys the actual meanings.
+ */
+export async function fetchAccommodationTypeMaster(client: HotelbedsClient): Promise<{
+  types: Map<string, string>;
+  rawCount: number;
+  evidence: PaginationEvidence;
+}> {
+  const { records, evidence } = await paginateAll<Record<string, unknown>>(
+    async (cursor) => {
+      const from = cursor === null ? 1 : Number(cursor);
+      const to = from + MAX_PAGE_SIZE - 1;
+      const response = await client.request(ACCOMMODATIONS_PATH, {
+        fields: "all",
+        language: "ENG",
+        from,
+        to,
+      });
+      const body = response.body as {
+        accommodations?: Record<string, unknown>[];
+        total?: number;
+      };
+      const rows = body.accommodations ?? [];
+      const total = body.total ?? null;
+      const retrieved = from - 1 + rows.length;
+      const done =
+        rows.length === 0 ||
+        (rows.length < MAX_PAGE_SIZE && (total === null || retrieved >= total));
+      return {
+        records: rows,
+        nextCursor: done ? null : String(from + rows.length),
+        reportedTotal: total,
+      };
+    },
+    { method: "from/to window over the accommodations master" },
+  );
+
+  const types = new Map<string, string>();
+  for (const row of records) {
+    const code = typeof row.code === "string" ? row.code : String(row.code ?? "");
+    if (!code) continue;
+    // FIELD_MAP correction, observed 2026-08-16: this master uses
+    // `typeDescription` / `typeMultiDescription.content`, NOT the `description`
+    // shape the categories master uses. Reading `description` returned empty
+    // strings for all 24 codes — which would have looked like a provider that
+    // ships unlabelled accommodation types.
+    const multi = row.typeMultiDescription as { content?: string } | undefined;
+    const flat = typeof row.typeDescription === "string" ? row.typeDescription : null;
+    types.set(code, multi?.content ?? flat ?? "");
+  }
+
+  return { types, rawCount: records.length, evidence };
+}
+
 interface HotelsResponseShape {
   hotels?: unknown[];
   total?: number;

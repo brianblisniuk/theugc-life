@@ -133,6 +133,9 @@ export async function paginateAll<T>(
       documentedHardCap: options.documentedHardCap ?? null,
       reportedTotal,
       exhaustionProven,
+      // At this level the walk and the proof are the same thing: the paginator
+      // has no view of geography caveats, which are added by the caller.
+      walkCompleted: exhaustionProven,
       coverageRisks,
     },
   };

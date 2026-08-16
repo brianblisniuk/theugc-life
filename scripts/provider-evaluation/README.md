@@ -14,10 +14,14 @@ anything, and is not imported by the application.**
 held in the gitignored `.env.local`. Booking and Expedia are preserved as
 documented future strategic sources with no direct access.
 
-The API is reachable and the credentials are **valid**. Master data has been
-observed — 65 categories, 178 Indonesian and 10 UAE destinations, all enumerated
-to exhaustion for **4 of the 50 daily requests**. **No hotel inventory has been
-extracted** and no destination code has been promoted into the descriptor. See
+The API is reachable, the credentials are **valid**, and **both destinations
+have been extracted**: Bali (`BAI`) 3,275 properties and Dubai (`DXB`) 835, each
+paginated to exhaustion against the provider's own total, for **11 of the 50
+daily requests**. Geography is mapped (`BAI`, `DXB`) by external review.
+
+**Hotelbeds does not resolve canonical D060 stars** — that is locked as
+REQUIRES_SECONDARY_VERIFICATION, and category data is reported as provider
+classification evidence only. Nothing has been promoted into `hotels`. See
 [`docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](../../docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
 
 ## Commands
@@ -43,9 +47,19 @@ npm run eval:sources:geography -- --country ID
 # Prepare the Dubai pilot probe input from the local (gitignored) workbook.
 npm run eval:sources:pilot-probe
 
+# Accommodation-types master. The hotels payload carries a one-letter
+# accommodationTypeCode; this is where its meaning comes from.
+npm run eval:sources:accommodation-types
+
 # Live extraction. Fetches the category master first, then enumerates every
-# provider entity for the destination.
-npx tsx scripts/provider-evaluation/run.ts --provider hotelbeds --destination bali
+# provider entity for the destination, then writes a per-destination source
+# analysis (inventory, geography, provider classification, location, contact,
+# media) and STOPS on a geography-mapping contradiction.
+npm run eval:sources:extract -- --destination bali
+
+# Dubai 30-property pilot vs the live DXB population. Costs ZERO requests —
+# both sides are local artifacts. Resolves nothing; invents no threshold.
+npm run eval:sources:pilot-compare
 ```
 
 Shared flags: `--max-requests N` (local run ceiling, default 40) and `--no-cache`.
@@ -99,8 +113,23 @@ both. That output is indistinguishable from a measurement, and it would be used
 to choose a provider. A path mismatch is our bug and must never be published as
 the provider's zero.
 
-`classification.codePath` is verified the same way. It is currently recorded as
-DOCUMENTED/EXPECTED, not confirmed, and the first real payload settles it.
+`classification.codePath` is verified the same way, and live payloads have now
+**confirmed** it as `categoryCode` for both destinations.
+
+Two documented facts did NOT survive contact with the live data, and both would
+have been silent:
+
+- `activeStatus -> status` was a **FIELD_MAP_MISMATCH** — the hotels response has
+  no lifecycle field at all. Now unmapped, with the reason recorded.
+- the documented principal-image rule `visualOrder === 0` matches ~3% of
+  properties; live values are large ordering ranks. `principalSelector` now makes
+  the weaker, evidence-backed claim (a unique extremum can be selected
+  deterministically) and both numbers are reported.
+
+The per-destination analysis classifies every empty field as
+`field_not_populated` (the key exists, the provider leaves it blank) or
+`field_map_mismatch` (the key does not exist, so the descriptor is wrong). Those
+look identical as a 0% and have opposite owners.
 
 ## Exhaustive enumeration
 
@@ -112,10 +141,17 @@ would silently lose one, and under D061 that is a coverage claim we would be
 unable to support. When a budget or quota stop interrupts the walk, the result is
 marked **INCOMPLETE** rather than returned as a partial list.
 
-Geography is discovery output, never a hardcoded code. Bali in particular may
-require a **union** of several destination codes; one famous town is not Bali,
-and an incorrect mapping makes a perfectly exhaustive extraction systematically
-incomplete.
+Geography is discovery output, never a hardcoded code. External review approved
+`BAI` = Bali and `DXB` = Dubai from exhaustive master enumeration; both were
+confirmed against live inventory with **zero** records outside the mapping. A
+record returned outside it raises `GEOGRAPHY_MAPPING_CONTRADICTION` and stops the
+run, because an extraction whose geography does not mean what the mapping says
+produces counts that look precise and are not.
+
+`walkCompleted` and `exhaustionProven` are reported separately. The first says
+the pagination consumed every page and matched the provider's total; the second
+additionally requires zero coverage risks. A completed walk carrying a mapping
+caveat must not send anyone to fix a paginator that worked perfectly.
 
 ## Quota safety
 

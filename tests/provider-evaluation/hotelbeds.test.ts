@@ -39,6 +39,9 @@ import {
   redactHeaders,
   signRequest,
 } from "../../scripts/provider-evaluation/hotelbeds/signature";
+import { analyseDestination } from "../../scripts/provider-evaluation/hotelbeds/destination-report";
+import { comparePilotAgainstProvider } from "../../scripts/provider-evaluation/hotelbeds/pilot-comparison";
+import { hotelbedsContentDescriptor } from "../../scripts/provider-evaluation/adapters/hotelbeds";
 import {
   createHotelbedsTransport,
   fetchDestinations,
@@ -761,5 +764,255 @@ describe("a bypassed proxy is not a policy denial", () => {
     // spent and the credential stays UNTESTED rather than invalid.
     expect(error.message).toContain("no provider quota was consumed");
     expect(error.message).toContain("UNTESTED");
+  });
+});
+
+describe("per-destination source analysis", () => {
+  const descriptor = hotelbedsContentDescriptor;
+  const master = new Map([
+    [
+      "5EST",
+      {
+        code: "5EST",
+        simpleCode: "5",
+        accommodationType: null,
+        group: "GRUPO5",
+        description: "5 STARS",
+      },
+    ],
+    [
+      "5LL",
+      {
+        code: "5LL",
+        simpleCode: "5",
+        accommodationType: null,
+        group: "GRUPO7",
+        description: "5 KEYS",
+      },
+    ],
+    [
+      "VILLA",
+      {
+        code: "VILLA",
+        simpleCode: "4",
+        accommodationType: null,
+        group: "GRUPO4",
+        description: "VILLA",
+      },
+    ],
+  ]);
+
+  function hotel(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      code: 100,
+      name: { content: "Test Hotel" },
+      destinationCode: "DXB",
+      zoneCode: 1,
+      categoryCode: "5EST",
+      accommodationTypeCode: "H",
+      coordinates: { latitude: 25.1, longitude: 55.2 },
+      address: { content: "1 Test Street" },
+      postalCode: "00000",
+      chainCode: "TEST",
+      web: "https://test.example",
+      email: "info@test.example",
+      phones: [{ phoneNumber: "+97141234567", phoneType: "PHONEHOTEL" }],
+      images: [
+        { imageTypeCode: "GEN", path: "a.jpg", visualOrder: 900 },
+        { imageTypeCode: "HAB", path: "b.jpg", visualOrder: 100 },
+      ],
+      ...over,
+    };
+  }
+
+  const pagination = { requests: 1, pages: 1, providerReportedTotal: 2, exhaustionProven: true };
+
+  it("retains every record and never discards an unrecognised one", () => {
+    // A source record that vanishes because we do not understand it is
+    // indistinguishable, in the output, from one the provider never had.
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel(), hotel({ code: 101, categoryCode: "UNKNOWN_CODE" })],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.inventory.rawRecords).toBe(2);
+    expect(analysis.inventory.uniqueProviderIds).toBe(2);
+    expect(analysis.providerClassification.unjoined).toBe(1);
+    expect(analysis.providerClassification.codesMissingFromMaster).toEqual(["UNKNOWN_CODE"]);
+  });
+
+  it("keeps KEY and VILLA categories out of any star bucket", () => {
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [
+        hotel(),
+        hotel({ code: 101, categoryCode: "5LL" }),
+        hotel({ code: 102, categoryCode: "VILLA" }),
+      ],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.providerClassification.starLabelled).toBe(1);
+    expect(analysis.providerClassification.keyLabelled).toBe(1);
+    expect(analysis.providerClassification.otherLabelled).toBe(1);
+    // Both share simpleCode 5 with 5EST — which is precisely why simpleCode
+    // cannot stand in for a star rating.
+    expect(analysis.providerClassification.simpleCodeDistribution["5"]).toBe(2);
+  });
+
+  it("separates OUR wrong path from the provider's empty field", () => {
+    // `status` does not exist anywhere in a Hotelbeds hotels payload, while a
+    // present-but-blank key is a genuine provider gap. Same 0% on the surface,
+    // opposite owners underneath.
+    const withBlank = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel({ web: "" }), hotel({ code: 101, web: "" })],
+      descriptor,
+      master,
+      pagination,
+    );
+    const website = withBlank.fieldFindings.find((f) => f.field === "websiteUrl");
+    expect(website?.verdict).toBe("field_not_populated");
+
+    const mismatched = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel()],
+      { ...descriptor, fieldMap: { ...descriptor.fieldMap, websiteUrl: "no_such_key" } },
+      master,
+      pagination,
+    );
+    expect(mismatched.fieldFindings.find((f) => f.field === "websiteUrl")?.verdict).toBe(
+      "field_map_mismatch",
+    );
+  });
+
+  it("counts a record outside the approved mapping as a contradiction", () => {
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel(), hotel({ code: 101, destinationCode: "AUH" })],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.geography.contradictions).toBe(1);
+    expect(analysis.geography.destinationCodesReturned).toEqual({ DXB: 1, AUH: 1 });
+  });
+
+  it("does not report a fax number as a phone", () => {
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel({ phones: [{ phoneNumber: "+97141234567", phoneType: "FAXNUMBER" }] })],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.identity.phoneAnyPresent).toBe(1);
+    expect(analysis.identity.nonFaxPhonePresent).toBe(0);
+  });
+
+  it("reports the documented visualOrder=0 rule and the selectable principal apart", () => {
+    // Live visualOrder values are large ranks, so the documented rule finds
+    // nothing. Reporting only that would say "no principal images available"
+    // about a provider supplying a complete ordering on every image.
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [hotel()],
+      descriptor,
+      master,
+      pagination,
+    );
+    expect(analysis.media.propertiesWithDocumentedVisualOrderZero).toBe(0);
+    expect(analysis.media.propertiesWithDeterministicPrincipal).toBe(1);
+  });
+
+  it("reports median and average image counts separately", () => {
+    const analysis = analyseDestination(
+      "dubai",
+      ["DXB"],
+      [
+        hotel({ images: [] }),
+        hotel({ code: 101, images: [{ path: "a.jpg", visualOrder: 1 }] }),
+        hotel({
+          code: 102,
+          images: Array.from({ length: 100 }, (_, i) => ({ path: `${i}.jpg`, visualOrder: i })),
+        }),
+      ],
+      descriptor,
+      master,
+      pagination,
+    );
+    // A long tail of image-rich properties drags the mean far above the median,
+    // which is why the brief asks for both.
+    expect(analysis.media.medianImages).toBe(1);
+    expect(analysis.media.averageImages).toBeCloseTo(33.67, 1);
+  });
+});
+
+describe("pilot comparison invents no threshold", () => {
+  const pilot = [
+    {
+      sourcePropertyId: "p1",
+      name: "Burj Test Hotel",
+      address: null,
+      latitude: null,
+      longitude: null,
+      websiteUrl: null,
+    },
+    {
+      sourcePropertyId: "p2",
+      name: "Totally Absent Property",
+      address: null,
+      latitude: null,
+      longitude: null,
+      websiteUrl: null,
+    },
+  ];
+
+  function record(over: Partial<Parameters<typeof comparePilotAgainstProvider>[1][number]> = {}) {
+    return {
+      id: "h1",
+      name: "Burj Test Hotel",
+      address: "1 Street",
+      websiteUrl: "https://burjtest.example",
+      phone: "+97141234567",
+      chain: "TEST",
+      latitude: 25.1,
+      longitude: 55.2,
+      ...over,
+    };
+  }
+
+  it("never calls provider coordinates an agreement when the pilot has none", () => {
+    const result = comparePilotAgainstProvider(pilot, [record()]);
+    expect(result.pilotEntriesWithCoordinates).toBe(0);
+    expect(result.coordinateEnrichmentAvailable).toBe(1);
+    expect(result.disclaimers.join(" ")).toContain("COORDINATE ENRICHMENT AVAILABLE");
+  });
+
+  it("reports ambiguity instead of picking a winner", () => {
+    const result = comparePilotAgainstProvider(
+      [pilot[0]!],
+      [record({ id: "h1" }), record({ id: "h2" })],
+    );
+    // Two identical-looking candidates. Choosing one would require a threshold
+    // we have no basis to invent, so the honest output is "ambiguous".
+    expect(result.outcomes.ambiguous_multiple_candidates).toBe(1);
+    expect(result.outcomes.strong_multi_signal).toBe(0);
+  });
+
+  it("says NO TEXTUAL EVIDENCE, which is not the same as absent from the provider", () => {
+    const result = comparePilotAgainstProvider([pilot[1]!], [record()]);
+    expect(result.outcomes.no_textual_evidence).toBe(1);
+    expect(result.disclaimers.join(" ")).toContain("NOT that the provider lacks the property");
   });
 });

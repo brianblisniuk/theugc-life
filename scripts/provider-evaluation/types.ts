@@ -321,8 +321,23 @@ export interface ProviderImageFieldMap {
   path?: string | null;
   /** Path to the image type/category within one image entry. */
   type?: string | null;
-  /** Path to a visual-order value; 0 identifies a principal-image candidate. */
+  /** Path to a visual-order value within one image entry. */
   visualOrder?: string | null;
+  /**
+   * How a principal-image candidate is identified.
+   *
+   * `visual_order_zero` (default) is the documented Hotelbeds rule. It is kept
+   * as the default because it is what provider documentation says — but
+   * documentation can be wrong about live data, and when it is, the failure is
+   * silent: every property reports "no principal image" and the provider looks
+   * weak at media when it is not.
+   *
+   * `deterministic_visual_order_extremum` makes the weaker, evidence-backed
+   * claim instead: a principal image can be SELECTED deterministically because
+   * the ordering has a unique extreme value. It deliberately does not assert
+   * which end of the range the provider considers best.
+   */
+  principalSelector?: "visual_order_zero" | "deterministic_visual_order_extremum";
 }
 
 /** Counts describing what arrived vs what survived normalization. */
@@ -405,7 +420,23 @@ export interface PaginationEvidence {
   documentedHardCap: number | null;
   /** Provider's own claimed total, when it supplies one. */
   reportedTotal: number | null;
+  /**
+   * The CONSERVATIVE flag: the walk finished AND no coverage risk was recorded.
+   * This is the one that may be cited as "we have the whole set".
+   */
   exhaustionProven: boolean;
+  /**
+   * Did the pagination WALK itself run to completion — every page consumed and
+   * the provider's own total satisfied?
+   *
+   * Kept separate from `exhaustionProven` because the two fail for different
+   * reasons and demand different responses. A walk that stopped early means
+   * re-run and spend more requests. A completed walk carrying a geography
+   * caveat means the records are all there but the mapping needs review — and
+   * reporting that as "pagination not exhaustive" sends someone to fix a
+   * paginator that worked perfectly.
+   */
+  walkCompleted: boolean;
   coverageRisks: string[];
 }
 

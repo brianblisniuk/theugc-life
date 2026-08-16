@@ -153,6 +153,7 @@ export async function executeEvaluation(options: ExecuteOptions): Promise<Evalua
     documentedHardCap: descriptor.pagination?.documentedHardCap ?? null,
     reportedTotal,
     exhaustionProven: allEntitiesProvenExhaustive && coverageRisks.length === 0,
+    walkCompleted: allEntitiesProvenExhaustive,
     coverageRisks,
   };
 

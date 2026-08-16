@@ -200,6 +200,7 @@ const EVIDENCE: PaginationEvidence = {
   documentedHardCap: null,
   reportedTotal: null,
   exhaustionProven: true,
+  walkCompleted: true,
   coverageRisks: [],
 };
 

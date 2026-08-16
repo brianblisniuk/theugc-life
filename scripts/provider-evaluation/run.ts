@@ -15,13 +15,22 @@
  * This script never writes to Supabase, never touches `hotels`, and is not
  * imported by the application.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { sep } from "node:path";
+
 import { checkCredentials, requireCredential } from "./credentials";
+import {
+  analyseDestination,
+  GeographyMappingContradictionError,
+} from "./hotelbeds/destination-report";
+import { comparePilotAgainstProvider, type PilotEntryLike } from "./hotelbeds/pilot-comparison";
 import { RequestBudget } from "./hotelbeds/budget";
 import { HotelbedsClient } from "./hotelbeds/client";
 import { EvaluationLock, QuotaLedger } from "./hotelbeds/quota-ledger";
 import { accountFingerprint } from "./hotelbeds/signature";
 import {
   createHotelbedsTransport,
+  fetchAccommodationTypeMaster,
   fetchDestinations,
   fetchHotelbedsCategoryMaster,
   probeCredentials,
@@ -29,7 +38,7 @@ import {
 import type { ReferenceData, RuntimeObservation } from "./types";
 import { ADAPTERS, getAdapter } from "./adapters/registry";
 import { assessAllCapabilities, assertRunnableForAnyCapability } from "./capabilities";
-import { writeArtifact } from "./artifacts";
+import { artifactPath, writeArtifact } from "./artifacts";
 import { loadLocalEnv } from "./env";
 import { executeEvaluation, type ProviderTransport } from "./execute";
 import { createSafeLogger, collectSecretValues } from "./redact";
@@ -253,14 +262,78 @@ async function runProvider(
   log(`  normalized records:        ${result.metrics.accounting.normalizedRecords}`);
   log(`  missing provider id:       ${result.metrics.accounting.recordsMissingSourcePropertyId}`);
   log(`  unique provider ids:       ${result.metrics.accounting.uniqueSourcePropertyIds}`);
-  log(`  exact 4-star:              ${result.metrics.inventory.apparentExactFourStar}`);
-  log(`  exact 5-star:              ${result.metrics.inventory.apparentExactFiveStar}`);
-  log(`  classified, not V1 scope:  ${result.metrics.inventory.classifiedNotV1Scope}`);
-  log(`  star unresolved:           ${result.metrics.inventory.unresolvedStar}`);
   log(`  exhaustion proven:         ${result.metrics.pagination.exhaustionProven}`);
   for (const risk of result.metrics.pagination.coverageRisks) log(`  COVERAGE RISK: ${risk}`);
   for (const path of result.artifacts) log(`  artifact (gitignored): ${path}`);
   log(`  ${result.coverageDisclaimer}`);
+
+  // D060 counts are deliberately NOT printed here. Hotelbeds category data is
+  // provider classification evidence, not canonical star provenance, so the
+  // per-destination analysis below reports PROVIDER-APPARENT distributions and
+  // nothing that could be read as an exact-four/exact-five inventory count.
+  const rawArtifact = result.artifacts.find((p) => p.includes(`${sep}raw${sep}`));
+  if (!rawArtifact) {
+    log("  No raw artifact retained; skipping the per-destination source analysis.");
+    return;
+  }
+
+  const rawPayloads = JSON.parse(readFileSync(rawArtifact, "utf8")) as unknown[];
+  const geography = descriptor.geography.find((g) => g.destination === destination);
+  const analysis = analyseDestination(
+    destination,
+    geography?.providerEntityIds ?? [],
+    rawPayloads,
+    descriptor,
+    session.reference.classifications,
+    {
+      requests: result.metrics.pagination.requests,
+      pages: result.metrics.pagination.pages,
+      providerReportedTotal: result.metrics.pagination.reportedTotal,
+      exhaustionProven: result.metrics.pagination.exhaustionProven,
+    },
+  );
+
+  const written = writeArtifact(`hotelbeds-destination-${destination}.json`, analysis);
+  log(`  source analysis (gitignored): ${written}`);
+
+  const inv = analysis.inventory;
+  const cls = analysis.providerClassification;
+  const loc = analysis.location;
+  const med = analysis.media;
+  log(
+    `  inventory: ${inv.rawRecords} raw / ${inv.uniqueProviderIds} unique ids / ${inv.duplicateProviderIds} duplicate / provider total ${inv.providerReportedTotal ?? "?"}`,
+  );
+  log(
+    `  geography: ${Object.keys(analysis.geography.destinationCodesReturned).join(",")} · ${analysis.geography.uniqueZoneCodes} zones · ${analysis.geography.contradictions} contradictions`,
+  );
+  log(
+    `  PROVIDER classification (NOT D060): master join ${cls.masterJoinResolvedPct}% · STAR ${cls.starLabelled} · KEY ${cls.keyLabelled} · other ${cls.otherLabelled} · unjoined ${cls.unjoined}`,
+  );
+  log(
+    `  location: coords valid ${loc.coordinatesValid}/${inv.rawRecords} · address ${loc.addressPresent} · postal ${loc.postalCodePresent}`,
+  );
+  log(
+    `  media: ≥1 image ${med.propertiesWithAnyImage} · principal selectable ${med.propertiesWithDeterministicPrincipal} · documented visualOrder=0 ${med.propertiesWithDocumentedVisualOrderZero} · avg ${med.averageImages} · median ${med.medianImages}`,
+  );
+
+  for (const finding of analysis.fieldFindings) {
+    if (finding.verdict === "field_map_mismatch") {
+      log(`  FIELD_MAP_MISMATCH: ${finding.field} -> ${finding.path} (key absent from payload)`);
+    } else if (finding.verdict === "field_not_populated") {
+      log(`  FIELD_NOT_POPULATED: ${finding.field} -> ${finding.path} (key present, never filled)`);
+    }
+  }
+
+  // The approved mapping is a claim about what these records MEAN. If the
+  // provider returns records outside it, the counts above describe a different
+  // population than the report says they do — so stop rather than reconcile.
+  if (analysis.geography.contradictions > 0) {
+    throw new GeographyMappingContradictionError(
+      destination,
+      geography?.providerEntityIds ?? [],
+      analysis.geography.destinationCodesReturned,
+    );
+  }
 }
 
 async function main(): Promise<void> {
@@ -281,6 +354,16 @@ async function main(): Promise<void> {
 
   if (args.has("category-master")) {
     await runCategoryMaster(args, log);
+    return;
+  }
+
+  if (args.has("accommodation-types")) {
+    await runAccommodationTypes(args, log);
+    return;
+  }
+
+  if (args.has("pilot-compare")) {
+    runPilotComparison(log);
     return;
   }
 
@@ -340,6 +423,100 @@ async function main(): Promise<void> {
   }
 
   await runProvider(String(args.get("provider")), String(args.get("destination") ?? ""), args, log);
+}
+
+/**
+ * Fetch the accommodation-types master.
+ *
+ * `accommodationTypeCode` is populated on every hotel record but was EMPTY in
+ * the category master, so this is the only place its meaning can come from.
+ */
+async function runAccommodationTypes(
+  args: Map<string, string | true>,
+  log: (...parts: unknown[]) => void,
+): Promise<void> {
+  const descriptor = getAdapter("hotelbeds");
+  for (const name of descriptor.requiredCredentialEnvVars) requireCredential(name);
+
+  const budget = createBudget(args);
+  const { client, ledger, lock } = createHotelbedsClient(
+    descriptor,
+    budget,
+    (m) => log(m),
+    !args.has("no-cache"),
+  );
+
+  let master;
+  try {
+    master = await fetchAccommodationTypeMaster(client);
+  } finally {
+    lock.release();
+  }
+
+  log("Hotelbeds accommodation-types master");
+  log(`  records:           ${master.rawCount}`);
+  log(`  exhaustion proven: ${master.evidence.exhaustionProven}`);
+  for (const [code, description] of master.types) log(`    ${code} = ${description}`);
+  const q = ledger.summary();
+  log(
+    `  daily quota: ${q.confirmedInWindow} confirmed + ${q.possiblyConsumedInWindow} ambiguous, ${q.remainingInWindow}/${q.quota} safe remaining`,
+  );
+
+  const written = writeArtifact("hotelbeds-accommodation-types.json", {
+    rawCount: master.rawCount,
+    exhaustionProven: master.evidence.exhaustionProven,
+    types: [...master.types].map(([code, description]) => ({ code, description })),
+  });
+  log(`  artifact (gitignored): ${written}`);
+}
+
+/**
+ * Compare the gitignored Dubai 30-property pilot against the live DXB extract.
+ *
+ * Costs ZERO provider requests: both sides already exist as local artifacts.
+ * Resolves nothing — see `pilot-comparison.ts` for why no threshold is invented.
+ */
+function runPilotComparison(log: (...parts: unknown[]) => void): void {
+  const pilotPath = artifactPath("dubai-pilot-probe-input.json");
+  const extractPath = artifactPath(`normalized${sep}hotelbeds-dubai-run.json`);
+
+  if (!existsSync(pilotPath) || !existsSync(extractPath)) {
+    log("DUBAI PILOT COMPARISON = BLOCKED — an input artifact is missing.");
+    log(`  pilot input:   ${existsSync(pilotPath) ? "present" : `MISSING (${pilotPath})`}`);
+    log(`  DXB extract:   ${existsSync(extractPath) ? "present" : `MISSING (${extractPath})`}`);
+    log("Run `npm run eval:sources:pilot-probe` and the Dubai extraction first.");
+    return;
+  }
+
+  const pilot = JSON.parse(readFileSync(pilotPath, "utf8")) as {
+    entries: PilotEntryLike[];
+  };
+  const extract = JSON.parse(readFileSync(extractPath, "utf8")) as {
+    sourcePropertyId: string;
+    name: string | null;
+    address: string | null;
+    websiteUrl: string | null;
+    phone: string | null;
+    chain: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  }[];
+
+  const comparison = comparePilotAgainstProvider(
+    pilot.entries,
+    extract.map((r) => ({ ...r, id: r.sourcePropertyId })),
+  );
+
+  log("Dubai pilot (30) × live Hotelbeds DXB population");
+  log(`  pilot entries:            ${comparison.pilotEntries}`);
+  log(`  provider records:         ${comparison.providerRecords}`);
+  log(`  pilot with coordinates:   ${comparison.pilotEntriesWithCoordinates}`);
+  for (const [outcome, n] of Object.entries(comparison.outcomes)) log(`  ${outcome}: ${n}`);
+  log(`  COORDINATE ENRICHMENT AVAILABLE: ${comparison.coordinateEnrichmentAvailable}`);
+  for (const d of comparison.disclaimers) log(`  NOTE: ${d}`);
+
+  const written = writeArtifact("dubai-pilot-hotelbeds-comparison.json", comparison);
+  log(`  artifact (gitignored): ${written}`);
 }
 
 /**
