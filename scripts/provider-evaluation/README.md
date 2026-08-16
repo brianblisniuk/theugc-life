@@ -14,9 +14,10 @@ anything, and is not imported by the application.**
 held in the gitignored `.env.local`. Booking and Expedia are preserved as
 documented future strategic sources with no direct access.
 
-Nothing has been measured yet: `api.test.hotelbeds.com` is blocked by this
-environment's egress policy, so **zero requests have reached the provider and
-zero of the 50/day quota has been consumed**. See
+The API is reachable and the credentials are **valid**. Master data has been
+observed — 65 categories, 178 Indonesian and 10 UAE destinations, all enumerated
+to exhaustion for **4 of the 50 daily requests**. **No hotel inventory has been
+extracted** and no destination code has been promoted into the descriptor. See
 [`docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](../../docs/evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
 
 ## Commands
@@ -187,12 +188,19 @@ aggregate metrics belong in the evaluation report, copied across deliberately.
 
 ## Network requirement
 
-The live bake-off needs egress to the provider API hosts. In the environment this
-block ran in, `api.test.hotelbeds.com` was denied by the egress proxy with
-`x-deny-reason: host_not_allowed`, as were the documentation domains
+The live bake-off needs egress to the provider API hosts.
+`api.test.hotelbeds.com` is allowlisted. The documentation domains
 `developers.booking.com`, `developers.expediagroup.com` and
-`developers.google.com`.
+`developers.google.com` are not.
 
 A proxy denial is a **technical error, not a domain fact**. The client detects it
 before any status-based classification, so a 403 from the sandbox is never
 reported as an authentication failure against a credential that was never tested.
+
+**Node's built-in `fetch` ignores `HTTPS_PROXY`.** Without
+`NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) requests bypass the proxy, get
+intercepted, and return a denial — so a perfectly reachable host reports as
+`EGRESS_BLOCKED`. The `eval:sources:*` commands set the flag; if you invoke
+`run.ts` directly, set it yourself. `EgressBlockedError` detects the
+configured-but-unused proxy and says so, because "fix your env var" and "change
+the org allowlist" are very different next actions.

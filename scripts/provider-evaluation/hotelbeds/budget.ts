@@ -45,6 +45,24 @@ export class BudgetExceededError extends Error {
  * provider quota. Collapsing the two would both slander a working credential and
  * mis-state the remaining daily allowance.
  */
+/**
+ * Is this process configured to actually USE the proxy the environment provides?
+ *
+ * Node's built-in `fetch` does not read `HTTPS_PROXY`; it needs
+ * `NODE_USE_ENV_PROXY=1` (Node >= 22.21). With a proxy configured and that flag
+ * unset, requests bypass the proxy, get intercepted, and come back denied — so
+ * a perfectly reachable host reports as EGRESS_BLOCKED. That is a client-config
+ * artifact wearing the costume of a policy denial, and the two must not be
+ * confused: one is fixed by an env var, the other by an allowlist change.
+ */
+export function proxyConfiguredButUnused(
+  env: Partial<Record<string, string>> = process.env,
+): boolean {
+  const hasProxy = Boolean(env.HTTPS_PROXY ?? env.https_proxy);
+  const usesProxy = (env.NODE_USE_ENV_PROXY ?? "") !== "";
+  return hasProxy && !usesProxy;
+}
+
 export class EgressBlockedError extends Error {
   constructor(
     readonly host: string,
@@ -53,7 +71,13 @@ export class EgressBlockedError extends Error {
     super(
       `EGRESS_BLOCKED: the local network policy refused a connection to ${host} (${denyReason}). ` +
         "The request never reached the provider, so no provider quota was consumed and the " +
-        "credentials remain UNTESTED — this is not an authentication failure.",
+        "credentials remain UNTESTED — this is not an authentication failure." +
+        (proxyConfiguredButUnused()
+          ? "\n\nWARNING: HTTPS_PROXY is set but NODE_USE_ENV_PROXY is not, so Node's fetch " +
+            "bypassed the proxy entirely. This denial may be a CLIENT CONFIGURATION artifact " +
+            "rather than a policy denial — re-run with NODE_USE_ENV_PROXY=1 before reporting " +
+            "the host as blocked."
+          : ""),
     );
     this.name = "EgressBlockedError";
   }

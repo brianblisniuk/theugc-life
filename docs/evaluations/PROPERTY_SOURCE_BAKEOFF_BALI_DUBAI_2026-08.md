@@ -4,10 +4,18 @@ Date: **2026-08-15**
 Governing contract: [`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](../PROPERTY_CONTENT_COVERAGE_CONTRACT.md) (D060–D064)
 Specification: [`PROPERTY_SOURCE_EVALUATION.md`](../PROPERTY_SOURCE_EVALUATION.md)
 
-> ## STATUS: HOTELBEDS CREDENTIALS AVAILABLE · LIVE RUN BLOCKED BY NETWORK EGRESS
+> ## STATUS: HOTELBEDS REACHED · MASTER DATA OBSERVED · NO HOTEL EXTRACTION YET
 >
 > **No provider was measured. No provider is recommended. No star verdict is
 > issued. The bake-off is NOT complete.**
+>
+> **Update 2026-08-16.** Egress to `api.test.hotelbeds.com` was enabled and
+> **Phase B ran**: credentials **VALID**, category master and both destination
+> masters enumerated to exhaustion, **4 of 50 daily requests consumed, 0
+> ambiguous**. No `/hotels` extraction was performed and no destination code was
+> promoted into the descriptor — see B.1a–B.1d. The paragraphs below describing
+> egress as blocked are the state *before* that change and are preserved as the
+> record of it.
 >
 > The strategy has changed: **HBX Group / Hotelbeds is now the active live
 > evaluation target** and real evaluation credentials are held. Booking and
@@ -240,20 +248,24 @@ D060 star evidence.** It is a guest-satisfaction score.
 
 ## B. MEASURED FROM LIVE API
 
-**EMPTY. No provider API was reached.**
+**MASTER DATA ONLY. No hotel inventory was extracted for any destination.**
 
-### B.1 Hotelbeds access result
+### B.1 Hotelbeds access result (as of 2026-08-16)
 
 | Question | Answer |
 |---|---|
 | `HOTELBEDS_API_KEY` | **AVAILABLE** |
 | `HOTELBEDS_SECRET` | **AVAILABLE** |
 | `.env.local` gitignored | **verified** before writing (`git check-ignore`) |
-| CREDENTIALS_VALID | **UNTESTED** — see below |
-| EGRESS to `api.test.hotelbeds.com` | **BLOCKED** (`x-deny-reason: host_not_allowed`) |
-| Requests that reached Hotelbeds | **0** |
-| Hotelbeds daily quota consumed | **0 of 50** |
-| Local run-budget attempts spent | 1 (the probe) |
+| CREDENTIALS_VALID | **YES** — live, cache-bypassed probe accepted |
+| EGRESS to `api.test.hotelbeds.com` | **REACHABLE** |
+| Requests that reached Hotelbeds | **4** |
+| Hotelbeds daily quota consumed | **4 of 50** (0 ambiguous, 46 safe remaining) |
+
+The paragraphs immediately below record the earlier blocked state and the
+credential-classification bug it exposed. Both are kept because the distinction
+they draw — a technical error is not a domain fact — is the reason the
+credential was never reported as invalid while it was merely untested.
 
 **Why "UNTESTED" and not "invalid".** The probe received an HTTP 403, but that
 403 came from the local egress proxy, not from Hotelbeds — the response carried
@@ -267,29 +279,130 @@ have slandered a working credential and mis-stated the remaining quota. The
 client now detects the proxy denial explicitly and reports three distinct
 outcomes — `valid`, `invalid`, `untested` — with a regression test for each.
 
-### B.1a Phase B live discovery — NOT RUN
+### B.1a Phase B live discovery — EXECUTED 2026-08-16
 
-The four Phase B steps, in the order they were to run and with the result of
-each. None was attempted beyond the single egress check.
+`api.test.hotelbeds.com` was allowlisted, and the four Phase B steps ran in
+order. **No `/hotels` extraction was performed.**
 
 | # | Step | Result | Quota |
 |---|---|---|---|
-| 1 | Credential probe (`--probe`) | **NOT RUN — EGRESS BLOCKED** | 0 |
-| 2 | Category master (`--category-master`) | **NOT RUN** | 0 |
-| 3 | Indonesia (`ID`) destination master, paginated to exhaustion | **NOT RUN** | 0 |
-| 4 | UAE (`AE`) destination master, paginated to exhaustion | **NOT RUN** | 0 |
+| 1 | Credential probe (`--probe`, cache bypassed) | **CREDENTIALS VALID**, egress reachable | 1 |
+| 2 | Category master (`--category-master`) | 65 records, 65 unique codes, 0 duplicates, **exhaustion proven** | 1 |
+| 3 | Indonesia (`ID`) destination master | 178 of 178, **exhaustion proven**, 0 coverage risks | 1 |
+| 4 | UAE (`AE`) destination master | 10 of 10, **exhaustion proven**, 0 coverage risks | 1 |
 
-**Total Hotelbeds quota consumed: 0 of 50.** Confirmed provider-reaching
-requests: 0. Possibly-consumed (ambiguous) requests: 0.
+**Total Hotelbeds quota consumed: 4 of 50** — 4 confirmed provider-reaching,
+**0 ambiguous**, **46 safe remaining** in the conservative 24-hour rolling
+window. Every walk terminated on the provider's own reported total, so no
+`INCOMPLETE` state was raised.
 
-Reachability was checked **once**. A second identical `host_not_allowed`
-response carries no information, and repeat probing of a policy denial is not
-diagnosis.
+#### A false EGRESS_BLOCKED, and why it mattered
 
-`/hotels` extraction for Bali or Dubai was **not** part of Phase B and remains
-correctly out of scope: the destination masters have to be reviewed first,
-because an incorrect Bali geography mapping makes a perfectly exhaustive API
-extraction systematically incomplete.
+The first probe after allowlisting still reported `EGRESS_BLOCKED /
+host_not_allowed` while `curl` to the same host succeeded. The cause was not
+policy: **Node's built-in `fetch` does not read `HTTPS_PROXY`** without
+`NODE_USE_ENV_PROXY=1`, so the request bypassed the proxy, was intercepted, and
+came back denied.
+
+That is a client-configuration artifact wearing the costume of a policy denial,
+and the two lead to opposite actions — one is fixed by an environment variable,
+the other by an allowlist change nobody needed to make. The evaluation commands
+now set the flag, and `EgressBlockedError` detects the configured-but-unused
+proxy and says so in the message rather than letting a reachable host be
+reported as blocked. **No quota was consumed by the false denial** — the deny
+was detected before any provider-reaching request was recorded, exactly as the
+accounting rules require.
+
+### B.1b Category master — OBSERVED, and it changes the star plan
+
+65 categories, all unique, exhaustion proven. Two observations, both material.
+
+**1. `accommodationType` is EMPTY on all 65 records.** The field exists in the
+response and its value is `""` on every row. The descriptor's planned
+HOTEL-vs-APARTMENT discriminator therefore **does not exist in this endpoint's
+data**. The path is correct; the provider does not populate it here.
+
+**2. `simpleCode` is emphatically NOT a star rating.** This is the single most
+important finding of Phase B, and it confirms the hypothesis recorded in C.3 in
+the strongest possible terms:
+
+| `simpleCode` | Codes carrying that value |
+|---|---|
+| **5** | `5EST` 5 STARS · `5LUX` 5 STARS LUXURY · `H5_5` 5 STARS AND A HALF · **`5LL` 5 KEYS** · **`APTH5` APARTHOTEL 5\*** · **`BB5` BED AND BREAKFAST 5\*** · **`HS5` HOSTEL 5\*** · **`HR5` RURAL HOTEL 5\*** · **`HIST` HISTORICAL HOTEL LUXURIOUS** |
+| **4** | `4EST` 4 STARS · `4LUX` 4 STARS LUXURY · `H4_5` 4 STARS AND A HALF · **`4LL` 4 KEYS** · **`VILLA`** · **`BOU` BOUTIQUE** · **`RSORT` RESORT** · **`AT1` APARTMENT 1ST CATEGORY** · **`AG` RURAL HOUSE** · **`POUSA` POUSADA** · `APTH4` · `BB4` · `HS4` · `HR4` · `HRS` · `SUP` SUPERIOR 4\* |
+
+A rule of "`simpleCode >= 4` means a 4-or-5-star hotel" would have admitted
+**villas, resorts, boutiques, hostels, B&Bs, aparthotels and an apartment
+category** into V1 inventory. Under D060 that is not a rounding error, it is a
+different population.
+
+The discriminators that **do** exist in the master are `group` (GRUPO1–GRUPO7,
+distribution: G1 2, G2 6, G3 5, G4 13, G5 4, G6 14, G7 16, ungrouped 5) and the
+free-text `description` (12 contain "STAR", 5 contain "KEY", 45 neither).
+Deciding which of those constitutes D060 evidence is **a review decision, not an
+automatic one**, and it is deliberately left open here. `starKindsAccepted
+AsD060Evidence` stays empty and `hotelAccommodationTypes` stays `[]`, so every
+category still resolves to `unresolved` until that review happens.
+
+### B.1c Geography candidates — CANDIDATES ONLY, no descriptor change
+
+Both masters enumerated to exhaustion. **No destination code has been promoted
+into the descriptor**; the final Bali/Dubai geography is an explicit review
+decision, per the standing instruction.
+
+**Indonesia — 178 destinations, exhaustion proven.**
+
+| Code | Name | Zones |
+|---|---|---|
+| **`BAI`** | **Bali** | **76** |
+
+No separate `Denpasar`, `Ubud`, `Kuta`, `Seminyak`, `Canggu`, `Nusa Dua`,
+`Jimbaran`, `Sanur` or `Uluwatu` destination exists in the master — those are
+zones beneath `BAI`, not peer destinations. `AMI Lombok` (19 zones) and
+`46J Lombok Timur` are separate destinations and are **not** Bali.
+
+Name-substring matching also surfaced `45F Tanah Bumbu`, `45G Tanah Laut`,
+`45U Kutai Timur`, `BPN Balikpapan-Kalimantan` and `IGB Balige Kabu`. These are
+**false positives** — Kalimantan and Sumatra, matched on letter sequences, not
+places in Bali. They are listed because a name-matching heuristic that silently
+drops its own misses is not evidence.
+
+**So the current reading is that Bali is ONE destination code, not a union** —
+which is a change from the working assumption. It still needs confirmation
+against the 76 zones before extraction, because a single code that turns out to
+exclude part of the island produces a systematically incomplete extraction that
+no downstream rigour can recover.
+
+**UAE — 10 destinations, exhaustion proven.** The full list, since it is short:
+
+| Code | Name | Zones |
+|---|---|---|
+| **`DXB`** | **Dubai** | **29** |
+| `AUH` | Abu Dhabi | 3 |
+| `SHJ` | Sharjah | 1 |
+| `AAN` | Al Ain | 1 |
+| `AE1` | Ajman | 1 |
+| `FJR` | Fujairah | 1 |
+| `RKT` | Ras Al Khaymah | 1 |
+| `UMM` | UMM AL QUWAIN | 1 |
+| `032` | Ghalliah | 1 |
+| `03I` | Al Noaf \*CLOSED | 1 |
+
+Dubai is unambiguously `DXB`. Note that the master carries explicitly
+`*CLOSED` destinations (`03I` here; `464` and `48Y` in Indonesia) — provider
+lifecycle state is visible in the name string rather than a status field, which
+is worth handling deliberately rather than by string matching.
+
+### B.1d FIELD_MAP_MISMATCH
+
+**None raised**, because `verifyFieldMap` runs against `/hotels` payloads and no
+hotel extraction was performed. The hotels field map — including
+`classification.codePath = "categoryCode"` — remains **DOCUMENTED / EXPECTED,
+NOT CONFIRMED**.
+
+The nearest equivalent finding is B.1b's empty `accommodationType`: the path
+resolves, the provider returns `""`. That is an observation about the data, not
+a wrong path, and it is recorded as such.
 
 ### B.2 Everything else, still not run
 
@@ -687,26 +800,31 @@ passed directly and exposed as an explicit getter, so no caller reconstructs it.
 
 ## Exact next action
 
-**Allowlist `api.test.hotelbeds.com` in the environment's network egress
-settings.** This is a setting on the Claude Code environment, changed from the
-environment's configuration outside the sandbox; a process inside the sandbox
-cannot grant itself egress, and the proxy exposes no self-service allowlist.
-Add `photos.hotelbeds.com` too if image metadata is to be fetched.
+Phase B is done and the run is **stopped for external review**, as instructed.
+Two decisions are now blocked on a human, and both are decisions precisely
+because getting them wrong is invisible in the output.
 
-Then, in order, staying inside the 50/day allowance:
+**Decision 1 — what counts as D060 classification evidence.** `simpleCode` is
+not a star rating (B.1b), and `accommodationType` is empty across the whole
+master, so the intended discriminator is unavailable. The remaining candidates
+are `group` (GRUPO1–7) and the free-text `description`. Whichever is chosen has
+to be justified as a *hotel* classification with a citable issuer — `VILLA` and
+`RESORT` both carry `simpleCode` 4, and `5LL` means five keys.
 
-1. `npm run eval:sources:probe` — one request, confirms CREDENTIALS_VALID.
-2. `npm run eval:sources:categories` — the category master, paginated to
-   exhaustion.
-3. `npm run eval:sources:geography -- --country ID` — Indonesia destination
-   master, candidates only.
-4. `npm run eval:sources:geography -- --country AE` — UAE destination master,
-   candidates only.
-5. **Stop.** Review the candidates and resolve Bali's destination code(s) — a
-   union, if that is what the data says — before any `/hotels` extraction. An
-   incorrect Bali geography mapping makes a perfectly exhaustive API extraction
-   systematically incomplete, and no amount of downstream rigour recovers it.
-6. Only then run each destination, recording the category/accommodationType
-   distribution before any star verdict.
+**Decision 2 — Bali's geography.** The master says Bali is the single code
+`BAI` with 76 zones, and no peer destination for Ubud/Kuta/Seminyak/Canggu
+exists. That is cheap to accept and expensive to get wrong: confirm against the
+76 zones that the code covers the whole island before extracting, because a
+destination that silently omits part of Bali produces a systematically
+incomplete extraction. Dubai is unambiguously `DXB`.
+
+Only after both decisions are recorded:
+
+1. Promote the reviewed codes into the descriptor's `geography` with the
+   resolution method that produced them.
+2. Run each destination inside the remaining allowance. The first payload also
+   settles `classification.codePath` — the field-map verifier will stop the run
+   rather than publish a 0% for a path that is wrong on our side.
+3. Record the category distribution before any star verdict.
 
 The bake-off is not complete and the Coverage Engine must not start.

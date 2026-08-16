@@ -21,6 +21,7 @@ import {
   DailyQuotaError,
   EgressBlockedError,
   isTransientStatus,
+  proxyConfiguredButUnused,
   RequestBudget,
   terminalReasonFor,
 } from "../../scripts/provider-evaluation/hotelbeds/budget";
@@ -734,5 +735,31 @@ describe("exhaustive master-data pagination", () => {
     // The join preserves the distinction that matters.
     expect(master.classifications.get("5EST")?.accommodationType).toBe("HOTEL");
     expect(master.classifications.get("5LL")?.description).toBe("5 KEY");
+  });
+});
+
+describe("a bypassed proxy is not a policy denial", () => {
+  // Node's built-in fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY is set.
+  // With a proxy configured and the flag missing, a REACHABLE host comes back
+  // denied — and reporting that as "blocked by policy" sends someone to change
+  // an allowlist that was never the problem.
+  it("detects a configured-but-unused proxy", () => {
+    expect(proxyConfiguredButUnused({ HTTPS_PROXY: "http://127.0.0.1:1" })).toBe(true);
+    expect(proxyConfiguredButUnused({ https_proxy: "http://127.0.0.1:1" })).toBe(true);
+    expect(
+      proxyConfiguredButUnused({ HTTPS_PROXY: "http://127.0.0.1:1", NODE_USE_ENV_PROXY: "1" }),
+    ).toBe(false);
+    // No proxy at all: a denial really is a denial.
+    expect(proxyConfiguredButUnused({})).toBe(false);
+  });
+
+  it("still reports the host and the deny reason", () => {
+    const error = new EgressBlockedError("api.test.hotelbeds.com", "host_not_allowed");
+    expect(error.host).toBe("api.test.hotelbeds.com");
+    expect(error.denyReason).toBe("host_not_allowed");
+    // The core claim is unchanged: nothing reached the provider, so nothing was
+    // spent and the credential stays UNTESTED rather than invalid.
+    expect(error.message).toContain("no provider quota was consumed");
+    expect(error.message).toContain("UNTESTED");
   });
 });
