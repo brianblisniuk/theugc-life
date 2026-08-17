@@ -1332,8 +1332,9 @@ d("property-content infrastructure (0027)", () => {
       });
       const dims = await adminQuery<{ dims: number }>(
         `select agreeing_dimensions as dims from public.source_match_candidates
-         where source_property_identity_id = $1`,
-        [identity],
+         where source_property_identity_id in ($1,$2)
+           and candidate_source_property_identity_id in ($1,$2)`,
+        [identity, other],
       );
       expect(dims[0]!.dims).toBe(6);
 
