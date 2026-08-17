@@ -501,7 +501,7 @@ saying `H → physical_hospitality` is worthless if `H` can be remapped inside t
 version it cites. `approved_at` NULL = draft, assemblable and not citable; once
 set, the field and the whole mapping set are immutable, on both the version a
 mapping leaves and the one it arrives at. Seeded with the Hotelbeds
-`accommodationTypeCode` policy v1 — 11 codes in scope, 2 out, 11 of the 24-code
+`accommodationTypeCode` policy v1 — 10 codes in scope, 2 out, 12 of the 24-code
 master deliberately unmapped
 ([`PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md`](PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md)).
 

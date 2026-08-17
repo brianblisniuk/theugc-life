@@ -13,11 +13,15 @@
  *     triggers independently verify that the persisted resolution restates what
  *     its cited observation says. A string handed in from anywhere else cannot be
  *     blessed, from this module or from psql.
- *  2. **It invents no precedence.** There is no "newest wins", no provider
- *     ranking, no majority vote, no confidence score and no distance tolerance.
- *     The first approved observation resolves the candidate (D066); a later
- *     approved observation that disagrees is recorded as a CONFLICT for review,
- *     never averaged and never silently substituted.
+ *  2. **It invents no precedence BETWEEN SOURCES.** There is no provider ranking,
+ *     no majority vote, no confidence score and no distance tolerance. For star
+ *     and location — two readings of one durable fact — the first approved
+ *     observation resolves the candidate (D066) and a later one that disagrees is
+ *     recorded as a CONFLICT for review, never averaged and never silently
+ *     substituted. Physical-hospitality SCOPE is different and says so at its own
+ *     fold: an accommodation type that changes is the provider reclassifying its
+ *     property, so the latest mapped reading is the current fact and the previous
+ *     one survives as its own immutable revision.
  *
  * The three dimensions are RESOLVED INDEPENDENTLY and composed by nothing here.
  * D060 is explicit that property type alone does not decide V1 eligibility, and
@@ -321,12 +325,23 @@ export function resolveLocationFromObservations(
  * supported destination, composed later at the D062 preview. Nothing here reads
  * a star code, a name, a rating, a price, a chain, a website or a photo.
  *
- * There is deliberately no conflict dimension. Star and location can disagree
- * about a FACT the provider stated twice; an accommodation type that changes
- * between runs is the provider reclassifying its own property, which is a new
- * conclusion rather than a contradiction — and adjudicating it belongs to the
- * review layer this block does not build. The first mapped observation decides;
- * an unmapped one says nothing and cannot unset it.
+ * THE LATEST MAPPED OBSERVATION WINS, and that is the opposite of the star rule
+ * on purpose. A star code stating 4 and then 5 is two readings of one durable
+ * fact, so the first stands and the disagreement goes to review. An
+ * accommodation type that changes is the provider RECLASSIFYING its own property
+ * — the boat really did become a hotel, or the listing was corrected — so the
+ * newest reading is simply what is true now, and pinning the oldest one would
+ * make the head a record of what the property used to be.
+ *
+ * There is deliberately no conflict dimension here for the same reason: a new
+ * conclusion is not a contradiction. History is not lost either — the previous
+ * conclusion stays as its own immutable revision, and the new one supersedes it.
+ *
+ * An UNMAPPED later observation is still no new information: it cannot erase an
+ * already-resolved fact, and it cannot manufacture one.
+ *
+ * Observations arrive in deterministic order — identity, `observed_at`, `id` —
+ * so "latest" is well defined even when two observations share a timestamp.
  */
 export function resolveScopeFromObservations(
   observations: readonly ObservationRow[],
@@ -338,7 +353,7 @@ export function resolveScopeFromObservations(
   for (const obs of observations) {
     const outcome = resolveScopeCode(policy, obs.source_property_type_code);
     if (outcome === "unresolved") continue;
-    if (decided === null) decided = { obs, outcome };
+    decided = { obs, outcome };
   }
 
   // Nothing reviewable. Cite the most recent observation as what was examined,

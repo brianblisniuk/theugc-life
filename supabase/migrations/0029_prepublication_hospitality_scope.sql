@@ -173,7 +173,6 @@ insert into public.provider_hospitality_scope_policy_mappings
   ('hotelbeds', 'hotelbeds-hospitality-scope/1', 'accommodationTypeCode', 'D', 'physical_hospitality'), -- Lodge
   ('hotelbeds', 'hotelbeds-hospitality-scope/1', 'accommodationTypeCode', 'Z', 'physical_hospitality'), -- Rural hotel
   ('hotelbeds', 'hotelbeds-hospitality-scope/1', 'accommodationTypeCode', 'X', 'physical_hospitality'), -- Historical hotel Luxurious
-  ('hotelbeds', 'hotelbeds-hospitality-scope/1', 'accommodationTypeCode', 'Q', 'physical_hospitality'), -- Boutique
   -- NOT PHYSICAL HOSPITALITY: a vessel or an itinerary, not a property.
   ('hotelbeds', 'hotelbeds-hospitality-scope/1', 'accommodationTypeCode', 'U', 'not_physical_hospitality'), -- Cruise
   ('hotelbeds', 'hotelbeds-hospitality-scope/1', 'accommodationTypeCode', 'L', 'not_physical_hospitality'); -- Boat

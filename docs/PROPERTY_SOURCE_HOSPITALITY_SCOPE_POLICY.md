@@ -67,10 +67,12 @@ explicitly **not** the same fact as `not_physical_hospitality`.
    property carrying that type.
 2. **Versioned and frozen.** Changing any mapping is a NEW version; migration
    0029 enforces that in the database, not by convention.
-3. **Evidence-bound.** A code may only be mapped when its semantics are
-   established by reviewed evidence already in this repository — the provider's
-   own master, and D060's own enumeration of qualifying forms. Absent that,
-   `unresolved`.
+3. **Evidence-bound, and the evidence is the PROVIDER's.** A code may only be
+   mapped when the provider's own reviewed master semantics establish it. D060's
+   enumeration of qualifying forms says which KINDS of property may qualify; it
+   is not evidence about what a given provider code means, and it must never be
+   used to complete a master description that does not say. Absent provider
+   semantics: `unresolved`.
 4. **The line is BUSINESS vs DWELLING.** Map to `physical_hospitality` only when
    the master's wording names an accommodation BUSINESS — a place operated to
    host guests. A label proving that a unit is accommodation does **not** prove
@@ -109,7 +111,6 @@ Counts are from the cached Bali/Dubai evaluation (4,110 properties).
 | `K` | Bed and breakfast | 126 | 0 | 4 | 0 | `physical_hospitality` |
 | `P` | Aparthotel | 5 | 55 | 3 | 5 | `physical_hospitality` |
 | `S` | Hostel | 25 | 1 | 2 | 0 | `physical_hospitality` |
-| `Q` | Boutique | 22 | 1 | 3 | 2 | `physical_hospitality` |
 | `D` | Lodge | 8 | 1 | 1 | 1 | `physical_hospitality` |
 | `M` | Motel | 2 | 0 | 0 | 0 | `physical_hospitality` |
 | `Z` | Rural hotel | 0 | 0 | 0 | 0 | `physical_hospitality` |
@@ -122,6 +123,7 @@ Counts are from the cached Bali/Dubai evaluation (4,110 properties).
 | `N` | Residence | 1 | 1 | 0 | 1 | **`unresolved`** |
 | `B` | Botel | 0 | 1 | 0 | 1 | **`unresolved`** |
 | `R` | Vacation resort | 1 | 0 | 1 | 0 | **`unresolved`** |
+| `Q` | Boutique | 22 | 1 | 3 | 2 | **`unresolved`** |
 | `T` | Vacation Townhouse | 0 | 0 | 0 | 0 | **`unresolved`** |
 | `Y` | Rural house | 0 | 0 | 0 | 0 | **`unresolved`** |
 | `E` | Camping | 0 | 0 | 0 | 0 | **`unresolved`** |
@@ -129,10 +131,10 @@ Counts are from the cached Bali/Dubai evaluation (4,110 properties).
 | `O` | Pousada | 0 | 0 | 0 | 0 | **`unresolved`** |
 | | **total** | **3275** | **835** | **853** | **546** | |
 
-11 mapped in scope, 2 mapped out, 11 deliberately unresolved. All 24 accounted
+10 mapped in scope, 2 mapped out, 12 deliberately unresolved. All 24 accounted
 for.
 
-### 5.2 Why the eleven are approved
+### 5.2 Why the ten are approved
 
 Each names an operated accommodation establishment in the provider's own
 register, or contains one:
@@ -141,9 +143,6 @@ register, or contains one:
   `P` Aparthotel is additionally named by D060 ("aparthotel / hotel apartment").
 - `W` Resort, `G` Guest house, `K` Bed and breakfast, `S` Hostel, `D` Lodge —
   plain-English establishment nouns. `D` Lodge is named by D060.
-- `Q` Boutique — a bare adjective, and mapped **only** because D060 itself names
-  "boutique hotel" as a qualifying physical hospitality form. The evidence is in
-  this repository; it is not inferred from the word.
 
 ### 5.3 Why the two are excluded
 
@@ -151,7 +150,7 @@ register, or contains one:
 reading of D060's "physical hospitality property" admits them, so unlike the
 unresolved set these are a positive finding.
 
-### 5.4 Why the eleven stay unresolved
+### 5.4 Why the twelve stay unresolved
 
 Grouped by *why*, because the reasons differ:
 
@@ -162,9 +161,9 @@ this master does not settle the difference:
 `T` Vacation Townhouse · `Y` Rural house
 
 > `V` and `A` are the largest unresolved groups (141 and 53), and between them
-> hold **17 of the 20** exact-4/5 candidates whose scope is unresolved. That is
-> the honest position: a five-star villa in Bali may well be a hospitality
-> operation, and this policy does not yet know.
+> hold 17 of the exact-4/5 candidates whose scope is unresolved. That is the
+> honest position: a five-star villa in Bali may well be a hospitality operation,
+> and this policy does not yet know.
 
 **The provider's own "Vacation *" register** — `R` Vacation resort sits inside a
 prefix family that otherwise denotes self-catering rentals, so "resort" inside it
@@ -178,6 +177,16 @@ floating hotel) and `E` Camping (an operated site). 1 botel in Dubai, carrying
 `O` Pousada are regional words that usually denote an operated guesthouse or inn,
 but nothing in this repository establishes that reading for this provider. 0
 properties in the evaluation.
+
+**`Q` Boutique — a bare adjective, and the rule tested honestly.** D060 says a
+*boutique hotel* may qualify. That is a product rule about a FORM OF PROPERTY; it
+is not evidence about what **this provider** means by a code whose entire master
+label is "Boutique". Rule 3 says a code may only be mapped when the provider's own
+reviewed semantics establish it, and completing the master's missing noun from our
+own contract is exactly the inference that rule forbids — the same way `SUP`
+("SUPERIOR 4\*") stays unresolved in the classification policy despite naming a
+star count. 23 properties, 5 of them exact-4/5, all now holds. D060's generic
+statement is unchanged and unaffected; it simply does not decide this code.
 
 **`N` Residence — the closest call, and the first candidate for v2.** D060
 explicitly allows a "residence" form, and 1 Dubai property carries `N` with

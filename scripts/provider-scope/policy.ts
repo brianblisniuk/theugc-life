@@ -44,13 +44,17 @@ export interface HospitalityScopePolicy {
  *
  * Absent, blank or unmapped is `unresolved`, which means REVIEW — and is
  * explicitly not the same fact as `not_physical_hospitality`.
+ *
+ * **The match is EXACT**, for the same reason as `classifyProviderCode`: 0029's
+ * trigger compares `mapping.source_code = revision.source_value` against the
+ * cited observation's stored code verbatim, so trimming here would make `'H '`
+ * resolve to `physical_hospitality` in a preview and to `unresolved` in
+ * Postgres. A provider code is an identifier, not free-form text.
  */
 export function resolveScopeCode(
   policy: HospitalityScopePolicy,
   code: string | null | undefined,
 ): HospitalityScopeOutcome {
   if (code === null || code === undefined) return "unresolved";
-  const trimmed = code.trim();
-  if (trimmed === "") return "unresolved";
-  return policy.mappings[trimmed] ?? "unresolved";
+  return policy.mappings[code] ?? "unresolved";
 }

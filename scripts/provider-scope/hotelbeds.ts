@@ -56,10 +56,6 @@ export const HOTELBEDS_HOSPITALITY_SCOPE_POLICY: HospitalityScopePolicy = {
     D: "physical_hospitality", // Lodge — named by D060
     Z: "physical_hospitality", // Rural hotel
     X: "physical_hospitality", // Historical hotel Luxurious
-    // "Boutique" is a bare adjective, and is mapped only because D060 itself
-    // names "boutique hotel" as a qualifying physical hospitality form — the
-    // evidence is in this repository, not inferred from the word.
-    Q: "physical_hospitality", // Boutique
 
     // ---- NOT PHYSICAL HOSPITALITY: not a fixed property at all --------------
     // The only two codes the master settles negatively. Both name a vessel or an
@@ -72,6 +68,13 @@ export const HOTELBEDS_HOSPITALITY_SCOPE_POLICY: HospitalityScopePolicy = {
     // lookup treats an absent code as unresolved, so these are the reasoning,
     // not the mechanism:
     //
+    //   Q  Boutique                     a bare adjective. D060 says a BOUTIQUE
+    //                                   HOTEL may qualify, but that is a product
+    //                                   rule about a form of property, not
+    //                                   evidence about what THIS provider means
+    //                                   by this code. Using it to complete the
+    //                                   master's missing noun would be inferring
+    //                                   provider semantics from our own contract.
     //   A  Apartment                    a dwelling, not evidently an operation
     //   V  Vacation home or villa       same
     //   C  Vacation condo or apartment  same

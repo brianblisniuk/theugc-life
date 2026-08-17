@@ -18,13 +18,17 @@
  */
 import { randomUUID } from "node:crypto";
 
+import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "./harness";
 import { seed, USERS, DEST } from "../rls/seed";
 import { HOTELBEDS_HOSPITALITY_SCOPE_POLICY } from "../../scripts/provider-scope/hotelbeds";
 import { resolveScopeCode } from "../../scripts/provider-scope/policy";
-import { resolveScopeFromObservations } from "../../scripts/provider-resolution/resolver";
+import {
+  resolveDestination,
+  resolveScopeFromObservations,
+} from "../../scripts/provider-resolution/resolver";
 
 const d = describe.skipIf(!hasTestDb);
 
@@ -73,9 +77,9 @@ const ACCOMMODATION_MASTER: Readonly<Record<string, string>> = {
 
 /** The reviewed decision, code by code. Absent from `mappings` = `unresolved`. */
 const REVIEWED = {
-  physical: ["H", "W", "P", "G", "K", "S", "M", "D", "Z", "X", "Q"],
+  physical: ["H", "W", "P", "G", "K", "S", "M", "D", "Z", "X"],
   notPhysical: ["U", "L"],
-  unresolved: ["A", "V", "C", "T", "R", "Y", "N", "B", "E", "I", "O"],
+  unresolved: ["A", "V", "C", "T", "R", "Y", "N", "B", "E", "I", "O", "Q"],
 } as const;
 
 let counter = 0;
@@ -194,6 +198,40 @@ async function setHead(identityId: string, revisionId: string): Promise<void> {
   );
 }
 
+/** Run the real resolver over every evaluation candidate in the test database. */
+async function resolveOneDestination() {
+  const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+  await client.connect();
+  try {
+    return await resolveDestination(client, {
+      source: SOURCE,
+      environment: "evaluation",
+      destinationId: null,
+      apply: true,
+    });
+  } finally {
+    await client.end();
+  }
+}
+
+async function head(identityId: string) {
+  const rows = await adminQuery<{ current_revision_id: string }>(
+    `select current_revision_id from public.source_property_scope_resolutions
+      where source_property_identity_id = $1`,
+    [identityId],
+  );
+  return rows[0]!;
+}
+
+async function revision(id: string) {
+  const rows = await adminQuery<Record<string, unknown>>(
+    `select source_value, outcome, supersedes_revision_id, revision_digest, resolved_at::text
+       from public.source_property_scope_resolution_revisions where id = $1`,
+    [id],
+  );
+  return rows[0]!;
+}
+
 /** A synthetic observation row for the pure fold. */
 function obs(over: Record<string, unknown> = {}) {
   const pick = <T>(key: string, fallback: T): T => (key in over ? (over[key] as T) : fallback);
@@ -271,6 +309,19 @@ d("pre-publication physical-hospitality scope (0029)", () => {
       }
     });
 
+    it("keeps `Q` Boutique OUT, because the master never says `hotel`", () => {
+      // D060 says a BOUTIQUE HOTEL may qualify. That is a product rule about a
+      // form of property; it is not evidence about what THIS provider means by
+      // a code whose entire master label is the adjective "Boutique". Using our
+      // own contract to complete the provider's missing noun would be exactly
+      // the inference the conservative rule forbids.
+      expect(resolveScopeCode(HOTELBEDS_HOSPITALITY_SCOPE_POLICY, "Q")).toBe("unresolved");
+      // A HOLD, not an exclusion.
+      expect(resolveScopeCode(HOTELBEDS_HOSPITALITY_SCOPE_POLICY, "Q")).not.toBe(
+        "not_physical_hospitality",
+      );
+    });
+
     it("keeps Hostel IN scope — type and star eligibility are independent", () => {
       // D060: property type alone does not decide eligibility. Excluding `S`
       // here because the product sells 4/5 inventory would smuggle a
@@ -292,6 +343,44 @@ d("pre-publication physical-hospitality scope (0029)", () => {
         evidenceObservationId: "obs-1",
         sourceValue: "ZZZ",
       });
+    });
+
+    it("matches provider codes EXACTLY — no trimming, no normalisation", () => {
+      // The database compares `mapping.source_code = revision.source_value`
+      // against the stored observation verbatim. If TypeScript trimmed, `'H '`
+      // would resolve physical_hospitality in a preview and unresolved in
+      // Postgres — two different truths for one candidate.
+      expect(resolveScopeCode(HOTELBEDS_HOSPITALITY_SCOPE_POLICY, "H")).toBe(
+        "physical_hospitality",
+      );
+      for (const malformed of [" H", "H ", " H ", "\tH", "H\n", "h", "", "   "]) {
+        expect(
+          resolveScopeCode(HOTELBEDS_HOSPITALITY_SCOPE_POLICY, malformed),
+          JSON.stringify(malformed),
+        ).toBe("unresolved");
+      }
+      expect(resolveScopeCode(HOTELBEDS_HOSPITALITY_SCOPE_POLICY, null)).toBe("unresolved");
+      expect(resolveScopeCode(HOTELBEDS_HOSPITALITY_SCOPE_POLICY, undefined)).toBe("unresolved");
+    });
+
+    it("a malformed code PERSISTED in the evidence can only resolve to unresolved", async () => {
+      // The proof that the two layers agree: the same string, through the
+      // database, reaches the same answer the resolver does.
+      const f = await fixture({ typeCode: "H " });
+      expect(scope([obs({ typeCode: "H " })])!.outcome).toBe("unresolved");
+      await expect(
+        insertScope(f, { sourceValue: "H ", outcome: "physical_hospitality" }),
+      ).rejects.toThrow(/never acquires a meaning by accident/i);
+      await expect(
+        insertScope(f, { sourceValue: "H ", outcome: "unresolved" }),
+      ).resolves.toBeTruthy();
+      // …and the evidence string is preserved exactly as the provider gave it.
+      const rows = await adminQuery<{ v: string }>(
+        `select source_value as v from public.source_property_scope_resolution_revisions
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(rows[0]!.v).toBe("H ");
     });
 
     it("the DB policy and the TypeScript policy cannot drift", async () => {
@@ -428,18 +517,19 @@ d("pre-publication physical-hospitality scope (0029)", () => {
           [V1],
         ],
         [
-          // Nothing existing changes, and yet `V` would silently acquire a
-          // meaning inside a version revisions already cite.
+          // Nothing existing changes, and yet `Q` would silently acquire a
+          // meaning inside a version revisions already cite. This is precisely
+          // how approving Boutique later must NOT happen.
           `insert into public.provider_hospitality_scope_policy_mappings
              (provider, version, field, source_code, outcome)
-           values ('hotelbeds',$1,'accommodationTypeCode','V','physical_hospitality')`,
+           values ('hotelbeds',$1,'accommodationTypeCode','Q','physical_hospitality')`,
           [V1],
         ],
         [
           // Moving a code OUT of a frozen version changes its meaning by removal.
           `update public.provider_hospitality_scope_policy_mappings
               set version = 'hotelbeds-hospitality-scope/draft-test'
-            where provider='hotelbeds' and version=$1 and source_code='Q'`,
+            where provider='hotelbeds' and version=$1 and source_code='X'`,
           [V1],
         ],
       ];
@@ -467,7 +557,7 @@ d("pre-publication physical-hospitality scope (0029)", () => {
           where provider='hotelbeds' and version=$1`,
         [V1],
       );
-      expect(rows[0]!.n).toBe("13");
+      expect(rows[0]!.n).toBe("12");
     });
 
     it("a NEW version can still be assembled, approved and used normally", async () => {
@@ -782,22 +872,95 @@ d("pre-publication physical-hospitality scope (0029)", () => {
   });
 
   // -----------------------------------------------------------------------
-  describe("the fold itself", () => {
-    it("cites the first MAPPED observation and ignores unmapped ones", () => {
-      const r = scope([obs({ id: "o1", typeCode: "V" }), obs({ id: "o2", typeCode: "H" })])!;
-      expect(r.outcome).toBe("physical_hospitality");
-      expect(r.evidenceObservationId).toBe("o2");
+  describe("the fold: the LATEST mapped observation is the current fact", () => {
+    // The opposite of the star rule, deliberately. A star code stating 4 and
+    // then 5 is two readings of one durable fact, so the first stands and the
+    // disagreement goes to review. An accommodation type that changes is the
+    // provider RECLASSIFYING its property, so the newest reading is what is true
+    // now — and the previous conclusion survives as its own immutable revision
+    // rather than being argued with.
+    const cases: [string, string[], string, string][] = [
+      ["V → H", ["V", "H"], "physical_hospitality", "o2"],
+      ["H → V", ["H", "V"], "physical_hospitality", "o1"],
+      ["H → L", ["H", "L"], "not_physical_hospitality", "o2"],
+      ["L → H", ["L", "H"], "physical_hospitality", "o2"],
+      ["H → L → H", ["H", "L", "H"], "physical_hospitality", "o3"],
+      ["L → H → L", ["L", "H", "L"], "not_physical_hospitality", "o3"],
+      ["V → H → V", ["V", "H", "V"], "physical_hospitality", "o2"],
+    ];
+
+    for (const [name, codes, outcome, evidence] of cases) {
+      it(`${name} → ${outcome}, citing ${evidence}`, () => {
+        const rows = codes.map((typeCode, i) => obs({ id: `o${i + 1}`, typeCode }));
+        const r = scope(rows)!;
+        expect(r.outcome).toBe(outcome);
+        expect(r.evidenceObservationId).toBe(evidence);
+        expect(r.sourceValue).toBe(codes[Number(evidence.slice(1)) - 1]);
+      });
+    }
+
+    it("an unmapped later observation cannot ERASE a resolved fact", () => {
+      // `H → V` above states it positively; this is the same rule read as a
+      // prohibition, which is how it will be violated if it ever is.
+      const r = scope([obs({ id: "o1", typeCode: "H" }), obs({ id: "o2", typeCode: "V" })])!;
+      expect(r.outcome).not.toBe("unresolved");
     });
 
-    it("a later mapped observation does not displace the first", () => {
-      const r = scope([obs({ id: "o1", typeCode: "H" }), obs({ id: "o2", typeCode: "L" })])!;
-      expect(r.outcome).toBe("physical_hospitality");
-      expect(r.evidenceObservationId).toBe("o1");
+    it("all-unmapped stays unresolved and cites the LATEST observation", () => {
+      const r = scope([obs({ id: "o1", typeCode: "V" }), obs({ id: "o2", typeCode: "A" })])!;
+      expect(r.outcome).toBe("unresolved");
+      expect(r.evidenceObservationId).toBe("o2");
+      expect(r.sourceValue).toBe("A");
     });
 
     it("is deterministic", () => {
       const rows = [obs({ id: "o1", typeCode: "V" }), obs({ id: "o2", typeCode: "H" })];
       expect(scope(rows)).toEqual(scope(rows));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // THE SAME RULE, THROUGH THE RESOLVER AND THE DATABASE
+  // -----------------------------------------------------------------------
+  describe("a reclassification appends a revision and moves the head", () => {
+    it("H then L: new revision, superseded lineage, old row untouched, head moved", async () => {
+      const f = await fixture({ typeCode: "H" });
+      const counts = await resolveOneDestination();
+      expect(counts.revisionsCreated.scope).toBeGreaterThan(0);
+
+      const firstHead = await head(f.identityId);
+      const firstRevision = await revision(firstHead.current_revision_id);
+      expect(firstRevision.outcome).toBe("physical_hospitality");
+      expect(firstRevision.source_value).toBe("H");
+
+      // The provider reclassifies the property.
+      await addObservation(f, { typeCode: "L" });
+      const second = await resolveOneDestination();
+      expect(second.revisionsCreated.scope).toBe(1);
+      expect(second.pointerMoves.scope).toBe(1);
+
+      const secondHead = await head(f.identityId);
+      expect(secondHead.current_revision_id).not.toBe(firstHead.current_revision_id);
+      const secondRevision = await revision(secondHead.current_revision_id);
+      expect(secondRevision.outcome).toBe("not_physical_hospitality");
+      expect(secondRevision.source_value).toBe("L");
+      expect(secondRevision.supersedes_revision_id).toBe(firstHead.current_revision_id);
+
+      // History is not rewritten: the pre-reclassification conclusion is intact.
+      expect(await revision(firstHead.current_revision_id)).toEqual(firstRevision);
+
+      const total = await adminQuery<{ n: string }>(
+        `select count(*)::text as n from public.source_property_scope_resolution_revisions
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(total[0]!.n).toBe("2");
+
+      // …and an exact replay of that same evidence adds nothing.
+      const replay = await resolveOneDestination();
+      expect(replay.revisionsCreated.scope).toBe(0);
+      expect(replay.pointerMoves.scope).toBe(0);
+      expect((await head(f.identityId)).current_revision_id).toBe(secondHead.current_revision_id);
     });
   });
 });
