@@ -129,6 +129,18 @@ const CONTRACT: Record<string, Expected> = {
   // is held by freeze triggers — a grant cannot tell a draft row from a frozen
   // one, and a trigger can.
   provider_location_policies: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // Physical-hospitality scope (0029). Same two-layer shape as 0028: the policy
+  // tables carry the full set so a NEW version can be assembled and approved,
+  // the REVISIONS are append-only, and the head pointer moves.
+  provider_hospitality_scope_policies: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  provider_hospitality_scope_policy_mappings: {
+    anon: "",
+    authenticated: "SIUD",
+    serviceRole: "all",
+  },
+  source_property_scope_resolution_revisions: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  source_property_scope_resolutions: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  source_property_current_scope_resolutions: { anon: "", authenticated: "S", serviceRole: "S" },
   // Read models over the head pointers. `security_invoker`, so they inherit the
   // base tables' RLS rather than handing a definer's view of everything to
   // anyone holding SELECT.

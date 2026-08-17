@@ -1,5 +1,6 @@
 /**
- * source:resolve — pre-publication star + location resolution.
+ * source:resolve — pre-publication star, location and physical-hospitality
+ * resolution.
  *
  *   npm run source:resolve -- --provider hotelbeds --destination bali
  *   npm run source:resolve -- --provider hotelbeds --destination bali --apply
@@ -72,7 +73,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const target = resolveIngestionTarget(process.env);
 
-  console.info("\n[source:resolve] pre-publication star + location resolution\n");
+  console.info("\n[source:resolve] pre-publication star + location + scope resolution\n");
   console.info(`  mode          ${args.apply ? "APPLY" : "DRY-RUN (no writes)"}`);
   console.info(`  provider      ${args.provider}`);
   console.info(`  environment   ${EVALUATION} (locked)`);
@@ -127,14 +128,36 @@ async function main(): Promise<void> {
     );
     console.info(`    conflicts             ${counts.locationConflicts}`);
     console.info("");
+    // PHYSICAL HOSPITALITY — a D062 INPUT, not V1 eligibility. D060: property
+    // type alone does not decide eligibility.
+    console.info("  SCOPE (physical hospitality)");
+    console.info(`    physical_hospitality  ${counts.scope.physical_hospitality}`);
+    console.info(`    not_physical_hosp.    ${counts.scope.not_physical_hospitality}`);
+    console.info(`    unresolved            ${counts.scope.unresolved}`);
+    const scopeTotal =
+      counts.scope.physical_hospitality +
+      counts.scope.not_physical_hospitality +
+      counts.scope.unresolved;
+    console.info(
+      `    ---- total            ${scopeTotal}${scopeTotal === counts.identities ? " ✓ accounts for every candidate" : " ✗ MISMATCH"}`,
+    );
+    console.info("");
+    console.info("  STAR x SCOPE (composed by NEITHER — this is not eligibility)");
+    for (const so of ["exact_four", "exact_five", "classified_not_v1_scope", "unresolved"]) {
+      const cells = ["physical_hospitality", "not_physical_hospitality", "unresolved"]
+        .map((sc) => `${sc.replace("_hospitality", "")}=${counts.starByScope[`${so}|${sc}`] ?? 0}`)
+        .join("  ");
+      console.info(`    ${so.padEnd(24)}${cells}`);
+    }
+    console.info("");
     // Append-only bookkeeping. On a replay of identical evidence under an
     // identical policy every one of these must be 0 — that is the whole claim.
     console.info("  APPEND-ONLY LEDGER");
     console.info(
-      `    revisions appended    star ${counts.revisionsCreated.star}, location ${counts.revisionsCreated.location}`,
+      `    revisions appended    star ${counts.revisionsCreated.star}, location ${counts.revisionsCreated.location}, scope ${counts.revisionsCreated.scope}`,
     );
     console.info(
-      `    head pointers moved   star ${counts.pointerMoves.star}, location ${counts.pointerMoves.location}`,
+      `    head pointers moved   star ${counts.pointerMoves.star}, location ${counts.pointerMoves.location}, scope ${counts.pointerMoves.scope}`,
     );
     console.info("");
     console.info("  canonical writes: 0 hotels, 0 links, 0 candidates, 0 reviews");

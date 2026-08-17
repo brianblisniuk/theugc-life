@@ -245,6 +245,7 @@ function obs(over: Record<string, unknown> = {}) {
     source: SOURCE,
     source_environment: "evaluation",
     source_classification_code: pick<string | null>("code", "5EST"),
+    source_property_type_code: pick<string | null>("typeCode", "H"),
     source_latitude: pick<string | null>("lat", "-8.5"),
     source_longitude: pick<string | null>("lon", "115.2"),
     source_coordinates_plausible: pick<boolean | null>("plausible", true),
