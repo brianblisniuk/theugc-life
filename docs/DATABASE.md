@@ -518,6 +518,35 @@ appends nothing.
 Head pointer, composite-FK'd so a head can only name a revision of its own
 candidate; and a `security_invoker` read model over it.
 
+## 5d. Entity-resolution evidence (migration 0030)
+
+**No new table, no new column.** 0027's `source_match_candidates` already models
+the candidate kinds, the evidence vocabulary, the generated
+`agreeing_dimensions` and the review status vocabulary, so 0030 adds only what
+application code cannot keep on its own. Full contract:
+[`PROPERTY_ENTITY_RESOLUTION_CONTRACT.md`](PROPERTY_ENTITY_RESOLUTION_CONTRACT.md).
+
+### A candidate pair is ONE row
+Three partial unique indexes — `(identity, candidate_identity)` for
+`source_identity`, `(identity, candidate_hotel_id)` for `canonical_hotel`, and
+`(identity)` for `new_property`. Without them, re-running discovery over
+unchanged evidence inserts a second row per pair and the review queue grows by
+one duplicate per replay; select-then-insert would be a race and a convention
+rather than a guarantee.
+
+Keyed on the PAIR, not the pair plus the reason it surfaced: a pair found by
+both a shared domain and a shared phone is one candidate carrying both reasons in
+`match_method`, because a reviewer deciding the same pair twice is the duplicated
+work this queue exists to prevent.
+
+### `new_property` requires a finding
+`candidate_kind` DEFAULTS to `new_property` in 0027, so the constraint
+`source_match_candidates_new_property_requires_finding` requires such a row to
+carry a `review_note`. The inference it blocks is "the sweep produced no
+candidate, therefore this is a new property" — a statement about the RULES read
+as a statement about the world, which D062 would later treat as authorisation to
+publish. A sweep has no justification to write; a reviewer does.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -804,5 +833,7 @@ At minimum:
     resolution revisions, head pointers
 15. pre-publication physical-hospitality scope (0029) — the same shape applied to
     D062's condition 3; an INPUT to eligibility, never eligibility itself
+16. entity-resolution idempotency (0030) — no new table: a candidate pair is one
+    row, and `new_property` must carry the finding behind it
 
 Every migration must be reproducible from an empty database.

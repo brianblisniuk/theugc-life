@@ -39,7 +39,9 @@
     "eval:sources:extract": "NODE_USE_ENV_PROXY=1 tsx scripts/provider-evaluation/run.ts --provider hotelbeds",
     "eval:sources:pilot-compare": "tsx scripts/provider-evaluation/run.ts --pilot-compare",
     "source:ingest": "tsx scripts/provider-ingestion/ingest.ts",
-    "source:resolve": "tsx scripts/provider-resolution/resolve.ts"
+    "source:resolve": "tsx scripts/provider-resolution/resolve.ts",
+    "source:match": "tsx scripts/entity-resolution/match.ts",
+    "source:match:review": "tsx scripts/entity-resolution/review.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

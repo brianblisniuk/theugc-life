@@ -209,13 +209,19 @@ async function makeCandidate(
   } = {},
 ): Promise<void> {
   const meta = await identityMeta(identityId);
+  const columns = opts.columns ?? {};
+  // `candidate_kind` DEFAULTS to `new_property`, and 0030 requires such a row to
+  // carry the finding behind it. Fixtures that do not care about the kind get a
+  // note so the constraint under test is the one they meant to test.
+  const impliedKind = (columns.candidate_kind as string | undefined) ?? "new_property";
   const row: Record<string, unknown> = {
     source_property_identity_id: identityId,
     source: opts.source ?? meta.source,
     source_environment: opts.environment ?? meta.env,
     match_method: "synthetic_test",
+    ...(impliedKind === "new_property" ? { review_note: "synthetic explicit finding" } : {}),
     ...(opts.runId !== undefined ? { source_run_id: opts.runId } : {}),
-    ...(opts.columns ?? {}),
+    ...columns,
   };
   const names = Object.keys(row);
   await adminQuery(
@@ -1015,7 +1021,15 @@ d("property-content infrastructure (0027)", () => {
       const { identity, run } = await makeIdentityWithRun();
       await makeCandidate(identity, {
         runId: run,
-        columns: { candidate_kind: "new_property", match_method: "no_canonical_candidate" },
+        columns: {
+          candidate_kind: "new_property",
+          match_method: "manual_search",
+          // 0030 requires this: a `new_property` row must carry the finding
+          // behind it. `match_method: 'no_canonical_candidate'` — what this
+          // fixture said before — is the exact inference that rule forbids,
+          // because a sweep finding nothing is a fact about the sweep.
+          review_note: "Searched canonical inventory; no existing property. — editor:fixture",
+        },
       });
       const rows = await adminQuery<{ kind: string; hotel: string | null; target: string | null }>(
         `select candidate_kind as kind, candidate_hotel_id as hotel,
@@ -1116,7 +1130,11 @@ d("property-content infrastructure (0027)", () => {
       // Claims NEW PROPERTY while pointing at a hotel.
       await expect(
         makeCandidate(a, {
-          columns: { candidate_kind: "new_property", candidate_hotel_id: HOTEL.bali },
+          columns: {
+            candidate_kind: "new_property",
+            candidate_hotel_id: HOTEL.bali,
+            review_note: "explicit finding, wrong target",
+          },
         }),
       ).rejects.toThrow(/target_shape/i);
 
