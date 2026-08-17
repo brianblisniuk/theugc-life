@@ -64,6 +64,11 @@ create table public.provider_classification_policies (
   -- reader never has to wonder whether an aggregate field was involved.
   field text not null,
   notes text,
+  -- THE FREEZE POINT. NULL means DRAFT: the version is being assembled and may
+  -- still change, and no resolution may cite it. Once set, the version — its
+  -- field and its complete mapping set — is immutable, and D066's "changing any
+  -- mapping is a NEW version" stops being a convention and becomes a rule.
+  approved_at timestamptz,
   created_at timestamptz not null default now(),
   primary key (provider, version),
   -- Redundant, and the FK target the mappings and resolutions key against.
@@ -71,7 +76,9 @@ create table public.provider_classification_policies (
 );
 
 comment on table public.provider_classification_policies is
-  'Reviewed per-provider classification policies (D066). The unit of review is the provider, not the property.';
+  'Reviewed per-provider classification policies (D066). Draft while approved_at is NULL; frozen and citable once set.';
+comment on column public.provider_classification_policies.approved_at is
+  'NULL = draft, still assemblable, not citable. Once set the version and its whole mapping set are immutable — a semantic change needs a NEW version.';
 
 create table public.provider_classification_policy_mappings (
   provider text not null,
@@ -104,9 +111,98 @@ comment on table public.provider_classification_policy_mappings is
 -- code and it means nothing" and "we never reviewed this code" the same row.
 
 -- --------------------------------------------------------------------------
+-- A POLICY VERSION IS FROZEN ONCE APPROVED
+-- --------------------------------------------------------------------------
+-- Revisions being immutable is worth nothing if the POLICY they cite can change
+-- meaning underneath them. A revision saying `hotelbeds-classification/1` +
+-- `5EST` -> `exact_five` stays byte-identical while somebody edits that version's
+-- mapping to `exact_four`; the row is unchanged and its provenance is now false.
+--
+-- So a version has two lives. While `approved_at` is NULL it is a DRAFT: freely
+-- assemblable, and refused by §5 as the basis of any resolution. Setting
+-- `approved_at` freezes the field and the whole mapping set forever. A semantic
+-- change is therefore not merely discouraged — it is unrepresentable except as a
+-- new version.
+--
+-- Enforced in triggers rather than by removing the grants, because creating and
+-- approving a NEW version must stay possible; it is the EXISTING approved one
+-- that must not move.
+create or replace function public.forbid_approved_policy_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.approved_at is not null then
+    raise exception
+      'classification policy %/% was approved at % and is IMMUTABLE (attempted %). Its field and mapping set are what resolutions already cite. Create a NEW version instead.',
+      old.provider, old.version, old.approved_at, tg_op
+      using errcode = 'restrict_violation';
+  end if;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.forbid_approved_policy_mutation() from public;
+
+create trigger provider_classification_policies_freeze
+  before update or delete on public.provider_classification_policies
+  for each row execute function public.forbid_approved_policy_mutation();
+
+-- Both sides are checked: the version a mapping is LEAVING and the one it is
+-- ARRIVING at. Checking only one would let a row be moved out of a frozen
+-- version, or a new code be smuggled into one.
+create or replace function public.forbid_approved_policy_mapping_mutation()
+returns trigger
+language plpgsql
+as $$
+declare
+  approved timestamptz;
+begin
+  if tg_op in ('UPDATE', 'DELETE') then
+    select p.approved_at into approved from public.provider_classification_policies p
+     where p.provider = old.provider and p.version = old.version;
+    if approved is not null then
+      raise exception
+        'classification policy %/% was approved at % and its mapping set is IMMUTABLE (attempted % on %). Create a NEW version instead.',
+        old.provider, old.version, approved, tg_op, old.source_code
+        using errcode = 'restrict_violation';
+    end if;
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') then
+    select p.approved_at into approved from public.provider_classification_policies p
+     where p.provider = new.provider and p.version = new.version;
+    if approved is not null then
+      raise exception
+        'classification policy %/% was approved at % and its mapping set is IMMUTABLE (attempted % of %). Create a NEW version instead.',
+        new.provider, new.version, approved, tg_op, new.source_code
+        using errcode = 'restrict_violation';
+    end if;
+  end if;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.forbid_approved_policy_mapping_mutation() from public;
+
+create trigger provider_classification_policy_mappings_freeze
+  before insert or update or delete on public.provider_classification_policy_mappings
+  for each row execute function public.forbid_approved_policy_mapping_mutation();
+
+-- --------------------------------------------------------------------------
 -- The Hotelbeds policy v1, exactly as reviewed in
 -- docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md §5. A parity test fails if this
 -- and the TypeScript policy ever drift.
+--
+-- Assembled as a draft and approved at the end, which is the only way any policy
+-- version can ever be built — including this one.
 -- --------------------------------------------------------------------------
 insert into public.provider_classification_policies (provider, version, field, notes) values
   ('hotelbeds', 'hotelbeds-classification/1', 'categoryCode',
@@ -132,6 +228,34 @@ insert into public.provider_classification_policy_mappings
   ('hotelbeds', 'hotelbeds-classification/1', 'categoryCode', 'H5_5', 'classified_not_v1_scope', null),
   ('hotelbeds', 'hotelbeds-classification/1', 'categoryCode', 'H2S', 'classified_not_v1_scope', null),
   ('hotelbeds', 'hotelbeds-classification/1', 'categoryCode', 'H3S', 'classified_not_v1_scope', null);
+
+-- Frozen. From here the only way to change any of the above is a new version.
+update public.provider_classification_policies
+   set approved_at = now()
+ where provider = 'hotelbeds' and version = 'hotelbeds-classification/1';
+
+-- --------------------------------------------------------------------------
+-- APPROVED LOCATION POLICIES
+-- --------------------------------------------------------------------------
+-- The location rule has no per-code mapping — coordinates are usable exactly
+-- when the provider supplied both and the ingestion audit found them plausible —
+-- so there is nothing to freeze. What was missing is the same thing the star
+-- side already had: proof that the version a revision NAMES was ever reviewed.
+-- Without this, `hotelbeds-location/999` was insertable.
+create table public.provider_location_policies (
+  provider text not null,
+  version text not null,
+  notes text,
+  created_at timestamptz not null default now(),
+  primary key (provider, version)
+);
+
+comment on table public.provider_location_policies is
+  'Approved per-provider location policies. A location resolution may only cite a version listed here; a new provider is a row, not a schema change.';
+
+insert into public.provider_location_policies (provider, version, notes) values
+  ('hotelbeds', 'hotelbeds-location/1',
+   'Hotelbeds approved as a location source by the PR #21 evaluation (99.91% plausible in Bali, 100% in Dubai). Coordinates are usable exactly when both are supplied and the ingestion audit found them plausible; nothing is clamped, snapped or geocoded.');
 
 -- ===========================================================================
 -- 3. IMMUTABLE RESOLUTION REVISIONS
@@ -174,9 +298,11 @@ create table public.source_property_star_resolution_revisions (
   issuing_authority text,
 
   -- Lineage. Excluded from the digest below, so re-deriving the same conclusion
-  -- does not mint a revision merely because the chain moved.
-  supersedes_revision_id uuid references public.source_property_star_resolution_revisions(id)
-    on delete restrict,
+  -- does not mint a revision merely because the chain moved. Composite-FK'd at
+  -- the bottom of the table: a plain `-> revisions(id)` would let candidate A
+  -- claim it superseded a revision of candidate B, which is a false history of
+  -- both.
+  supersedes_revision_id uuid,
 
   resolved_by_user_id uuid references public.users(id),
   resolved_at timestamptz not null default now(),
@@ -224,6 +350,10 @@ create table public.source_property_star_resolution_revisions (
         and conflicting_outcome is distinct from outcome
         and conflicting_observation_id <> evidence_observation_id)
   ),
+  -- A revision cannot be its own ancestor.
+  constraint source_property_star_resolution_revisions_supersedes_self check (
+    supersedes_revision_id is distinct from id
+  ),
   constraint source_property_star_resolution_revisions_digest_uk
     unique (source_property_identity_id, revision_digest),
   -- The head pointer keys this pair, so a head can only ever name a revision of
@@ -251,6 +381,10 @@ create table public.source_property_star_resolution_revisions (
   constraint source_property_star_resolution_revisions_policy_fk
     foreign key (policy_provider, policy_version, policy_field)
     references public.provider_classification_policies (provider, version, field)
+    on delete restrict,
+  constraint source_property_star_resolution_revisions_supersedes_fk
+    foreign key (supersedes_revision_id, source_property_identity_id)
+    references public.source_property_star_resolution_revisions (id, source_property_identity_id)
     on delete restrict
 );
 
@@ -279,16 +413,18 @@ create table public.source_property_location_resolution_revisions (
   -- snaps, rounds, geocodes or substitutes.
   resolved_latitude numeric,
   resolved_longitude numeric,
-  -- "Not supplied" and "supplied but implausible" are different facts about the
-  -- provider and must not collapse into one.
+  -- Three distinct facts about the provider, which must not collapse into one:
+  -- it supplied nothing, it supplied something the audit judged wrong, or it
+  -- supplied something the audit never judged at all. The third is UNKNOWN, and
+  -- reporting it as `coordinates_implausible` would be an accusation the evidence
+  -- does not support.
   unresolved_reason text check (unresolved_reason is null or unresolved_reason in
-    ('coordinates_missing', 'coordinates_implausible')),
+    ('coordinates_missing', 'coordinates_implausible', 'coordinates_plausibility_unknown')),
 
   conflict_state text not null default 'none' check (conflict_state in ('none', 'conflict')),
   conflicting_observation_id uuid,
 
-  supersedes_revision_id uuid references public.source_property_location_resolution_revisions(id)
-    on delete restrict,
+  supersedes_revision_id uuid,
 
   resolved_by_user_id uuid references public.users(id),
   resolved_at timestamptz not null default now(),
@@ -328,6 +464,9 @@ create table public.source_property_location_resolution_revisions (
     conflict_state = 'none'
     or (outcome = 'resolved' and conflicting_observation_id <> evidence_observation_id)
   ),
+  constraint source_property_location_resolution_revisions_supersedes_self check (
+    supersedes_revision_id is distinct from id
+  ),
   constraint source_property_location_resolution_revisions_digest_uk
     unique (source_property_identity_id, revision_digest),
   constraint source_property_location_resolution_revisions_identity_uk
@@ -344,6 +483,16 @@ create table public.source_property_location_resolution_revisions (
   constraint source_property_location_resolution_revisions_conflict_obs_fk
     foreign key (conflicting_observation_id, source_property_identity_id)
     references public.source_property_observations (id, source_property_identity_id)
+    on delete restrict,
+  -- The location twin of the star policy FK: the version named must be one that
+  -- was actually reviewed and approved.
+  constraint source_property_location_resolution_revisions_policy_fk
+    foreign key (policy_provider, policy_version)
+    references public.provider_location_policies (provider, version)
+    on delete restrict,
+  constraint source_property_location_resolution_revisions_supersedes_fk
+    foreign key (supersedes_revision_id, source_property_identity_id)
+    references public.source_property_location_resolution_revisions (id, source_property_identity_id)
     on delete restrict
 );
 
@@ -432,6 +581,8 @@ language plpgsql
 as $$
 declare
   observed_code text;
+  policy_approved timestamptz;
+  policy_exists boolean;
   mapped_outcome text;
   mapped_value numeric;
   mapping_found boolean;
@@ -452,7 +603,25 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  -- (b) The OUTCOME must be the one the approved policy reaches from that value.
+  -- (b) The policy cited must be APPROVED. A draft version is still assemblable,
+  -- so resolving through one would let the meaning of this revision change after
+  -- the fact — exactly what freezing exists to prevent.
+  select p.approved_at into policy_approved
+    from public.provider_classification_policies p
+   where p.provider = new.policy_provider
+     and p.version = new.policy_version
+     and p.field = new.policy_field;
+  policy_exists := found;
+
+  if not policy_exists or policy_approved is null then
+    raise exception
+      '%/% on field % is not an APPROVED classification policy (%). A resolution may only cite a frozen, reviewed version.',
+      new.policy_provider, new.policy_version, quote_literal(new.policy_field),
+      case when policy_exists then 'still a draft' else 'no such policy' end
+      using errcode = 'check_violation';
+  end if;
+
+  -- (c) The OUTCOME must be the one the approved policy reaches from that value.
   select m.outcome, m.resolved_star_value into mapped_outcome, mapped_value
     from public.provider_classification_policy_mappings m
    where m.provider = new.policy_provider
@@ -482,7 +651,7 @@ begin
     end if;
   end if;
 
-  -- (c) A conflict must be a REAL disagreement, from a real competing reading.
+  -- (d) A conflict must be a REAL disagreement, from a real competing reading.
   if new.conflict_state = 'conflict' then
     select o.source_classification_code into conflict_code
       from public.source_property_observations o
@@ -557,18 +726,27 @@ begin
         'reports coordinates_missing, but the cited observation carries (%, %).', lat, lon
         using errcode = 'check_violation';
     end if;
-    if new.unresolved_reason = 'coordinates_implausible' then
-      if lat is null or lon is null then
-        raise exception
-          'reports coordinates_implausible, but the cited observation supplies no coordinates at all — those are different facts.'
-          using errcode = 'check_violation';
-      end if;
-      if plausible is true then
-        raise exception
-          'reports coordinates_implausible, but the cited observation was audited as PLAUSIBLE (lat %, lon %). A usable coordinate cannot be discarded as implausible.',
-          lat, lon
-          using errcode = 'check_violation';
-      end if;
+    if new.unresolved_reason in ('coordinates_implausible', 'coordinates_plausibility_unknown')
+       and (lat is null or lon is null) then
+      raise exception
+        'reports %, but the cited observation supplies no coordinates at all — those are different facts.',
+        new.unresolved_reason
+        using errcode = 'check_violation';
+    end if;
+    -- `coordinates_implausible` is a finding AGAINST the provider and requires
+    -- the audit to have actually made it. A NULL verdict is UNKNOWN, not FALSE;
+    -- collapsing the two would report data as wrong that nobody ever judged.
+    if new.unresolved_reason = 'coordinates_implausible' and plausible is distinct from false then
+      raise exception
+        'reports coordinates_implausible, but the cited observation''s plausibility verdict is % (lat %, lon %). Only an explicit FALSE verdict supports that reason.',
+        coalesce(plausible::text, 'UNKNOWN'), lat, lon
+        using errcode = 'check_violation';
+    end if;
+    if new.unresolved_reason = 'coordinates_plausibility_unknown' and plausible is not null then
+      raise exception
+        'reports coordinates_plausibility_unknown, but the cited observation carries an explicit plausibility verdict of %.',
+        plausible
+        using errcode = 'check_violation';
     end if;
   end if;
 
@@ -635,6 +813,7 @@ create trigger source_property_location_resolution_revisions_no_update
 -- ===========================================================================
 alter table public.provider_classification_policies enable row level security;
 alter table public.provider_classification_policy_mappings enable row level security;
+alter table public.provider_location_policies enable row level security;
 alter table public.source_property_star_resolution_revisions enable row level security;
 alter table public.source_property_location_resolution_revisions enable row level security;
 alter table public.source_property_star_resolutions enable row level security;
@@ -643,6 +822,8 @@ alter table public.source_property_location_resolutions enable row level securit
 create policy provider_classification_policies_admin on public.provider_classification_policies
   for all using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
 create policy provider_classification_policy_mappings_admin on public.provider_classification_policy_mappings
+  for all using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
+create policy provider_location_policies_admin on public.provider_location_policies
   for all using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
 create policy source_property_star_resolution_revisions_admin on public.source_property_star_resolution_revisions
   for all using (public.is_admin_or_editor()) with check (public.is_admin_or_editor());
@@ -670,9 +851,15 @@ grant select, insert on
   public.source_property_location_resolution_revisions
 to service_role;
 
+-- The policy tables keep the full set on purpose: assembling and approving a NEW
+-- version is editorial work that must stay possible. What must not move is an
+-- APPROVED version, and that is held by the freeze triggers above rather than by
+-- withholding the privilege — a grant cannot distinguish a draft from a frozen
+-- row, and a trigger can.
 grant select, insert, update, delete on
   public.provider_classification_policies,
   public.provider_classification_policy_mappings,
+  public.provider_location_policies,
   public.source_property_star_resolutions,
   public.source_property_location_resolutions
 to authenticated;
@@ -680,6 +867,7 @@ to authenticated;
 grant all privileges on
   public.provider_classification_policies,
   public.provider_classification_policy_mappings,
+  public.provider_location_policies,
   public.source_property_star_resolutions,
   public.source_property_location_resolutions
 to service_role;

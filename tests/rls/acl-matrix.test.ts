@@ -124,6 +124,11 @@ const CONTRACT: Record<string, Expected> = {
   // approving a new provider version IS an editorial act — but never by anon.
   provider_classification_policies: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   provider_classification_policy_mappings: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // The full set is deliberate: assembling and APPROVING a new policy version is
+  // editorial work. What must not move is an already-approved version, and that
+  // is held by freeze triggers — a grant cannot tell a draft row from a frozen
+  // one, and a trigger can.
+  provider_location_policies: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   // Read models over the head pointers. `security_invoker`, so they inherit the
   // base tables' RLS rather than handing a definer's view of everything to
   // anyone holding SELECT.

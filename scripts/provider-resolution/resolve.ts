@@ -116,8 +116,12 @@ async function main(): Promise<void> {
     console.info(`    resolved              ${location.resolved}`);
     console.info(`    coordinates_missing   ${location.coordinates_missing}`);
     console.info(`    coordinates_implaus.  ${location.coordinates_implausible}`);
+    console.info(`    plausibility_unknown  ${location.coordinates_plausibility_unknown}`);
     const locTotal =
-      location.resolved + location.coordinates_missing + location.coordinates_implausible;
+      location.resolved +
+      location.coordinates_missing +
+      location.coordinates_implausible +
+      location.coordinates_plausibility_unknown;
     console.info(
       `    ---- total            ${locTotal}${locTotal === counts.identities ? " ✓ accounts for every candidate" : " ✗ MISMATCH"}`,
     );

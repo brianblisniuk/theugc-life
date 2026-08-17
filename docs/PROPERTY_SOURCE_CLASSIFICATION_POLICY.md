@@ -192,6 +192,13 @@ from the resolver. A code that is ABSENT from the mappings can resolve to
 `unresolved` and to nothing else. A parity test fails if this table and the
 TypeScript policy in `scripts/provider-classification/hotelbeds.ts` ever drift.
 
+A version is assembled as a DRAFT and then frozen: once `approved_at` is set, its
+field and its complete mapping set are immutable — editing a code, deleting one,
+or adding a new one are all refused. D066's "changing any mapping is a new
+version" is therefore a rule the database keeps, not a convention. A resolution
+may only cite an approved version, so nothing can resolve through a policy that
+is still being written.
+
 Adding a provider means adding rows here. It changes no canonical schema.
 
 ## 8. Not implemented here

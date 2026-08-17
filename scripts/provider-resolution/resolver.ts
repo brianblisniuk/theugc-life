@@ -53,7 +53,43 @@ export const LOCATION_POLICY_VERSION = "hotelbeds-location/1";
 
 export type StarOutcome = StarEligibility;
 export type LocationOutcome = "resolved" | "unresolved";
-export type LocationUnresolvedReason = "coordinates_missing" | "coordinates_implausible";
+export type LocationUnresolvedReason =
+  "coordinates_missing" | "coordinates_implausible" | "coordinates_plausibility_unknown";
+
+/**
+ * A decimal string reduced to the form PostgreSQL `numeric` would compare it in.
+ *
+ * Coordinates arrive here as `numeric::text`, and `numeric` preserves the scale
+ * it was given — so the same point can come back as `-8.5` from one run and
+ * `-8.5000` from another. Comparing the strings would call that a CONFLICT and
+ * send the candidate to human review over a formatting difference, while the
+ * database's own trigger — which compares as `numeric` — would refuse the
+ * conflict as agreement, and the transaction would fail.
+ *
+ * This is NOT a tolerance. Nothing is rounded and no distance threshold is
+ * introduced; `-8.5` and `-8.5001` remain different points and remain a conflict.
+ * Anything that is not a plain decimal is returned untouched, so an unexpected
+ * representation is compared literally rather than silently normalised away.
+ */
+export function canonicalNumeric(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(trimmed)) return trimmed;
+
+  let sign = trimmed.startsWith("-") ? "-" : "";
+  const [rawInt = "", rawFrac = ""] = trimmed.replace(/^[+-]/, "").split(".");
+  const integer = rawInt.replace(/^0+(?=\d)/, "") || "0";
+  const fraction = rawFrac.replace(/0+$/, "");
+  const magnitude = fraction ? `${integer}.${fraction}` : integer;
+  // `-0` and `0` are the same point.
+  if (/^0(\.0*)?$/.test(magnitude)) sign = "";
+  return `${sign}${magnitude}`;
+}
+
+/** Do two coordinate strings name the same point, as PostgreSQL would decide? */
+export function sameCoordinate(a: string | null, b: string | null): boolean {
+  return canonicalNumeric(a) === canonicalNumeric(b);
+}
 
 interface ObservationRow {
   id: string;
@@ -194,8 +230,8 @@ export function resolveLocationFromObservations(
       continue;
     }
     if (
-      (obs.source_latitude !== decided.source_latitude ||
-        obs.source_longitude !== decided.source_longitude) &&
+      (!sameCoordinate(obs.source_latitude, decided.source_latitude) ||
+        !sameCoordinate(obs.source_longitude, decided.source_longitude)) &&
       conflict === null
     ) {
       conflict = obs;
@@ -204,12 +240,16 @@ export function resolveLocationFromObservations(
 
   if (decided === null) {
     const latest = observations[observations.length - 1]!;
-    // "Not supplied" and "supplied but implausible" are different facts about
-    // the provider and are recorded as such.
+    // Three different facts about the provider, kept apart. The third one is the
+    // easiest to get wrong: a NULL plausibility verdict means the audit reached
+    // no conclusion, and reporting that as `coordinates_implausible` would be an
+    // accusation the evidence does not support.
     const reason: LocationUnresolvedReason =
       latest.source_latitude === null || latest.source_longitude === null
         ? "coordinates_missing"
-        : "coordinates_implausible";
+        : latest.source_coordinates_plausible === false
+          ? "coordinates_implausible"
+          : "coordinates_plausibility_unknown";
     return {
       identityId: latest.source_property_identity_id,
       source: latest.source,
@@ -245,7 +285,7 @@ export interface ResolutionCounts {
   identities: number;
   star: Record<StarOutcome, number>;
   starConflicts: number;
-  location: { resolved: number; coordinates_missing: number; coordinates_implausible: number };
+  location: { resolved: number } & Record<LocationUnresolvedReason, number>;
   locationConflicts: number;
   /** Revisions actually APPENDED by this run. A replay must add none. */
   revisionsCreated: { star: number; location: number };
@@ -258,7 +298,12 @@ function emptyCounts(): ResolutionCounts {
     identities: 0,
     star: { exact_four: 0, exact_five: 0, classified_not_v1_scope: 0, unresolved: 0 },
     starConflicts: 0,
-    location: { resolved: 0, coordinates_missing: 0, coordinates_implausible: 0 },
+    location: {
+      resolved: 0,
+      coordinates_missing: 0,
+      coordinates_implausible: 0,
+      coordinates_plausibility_unknown: 0,
+    },
     locationConflicts: 0,
     revisionsCreated: { star: 0, location: 0 },
     pointerMoves: { star: 0, location: 0 },

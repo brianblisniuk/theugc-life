@@ -398,6 +398,30 @@ and "we never reviewed this code" the same row. Seeded with the Hotelbeds
 `categoryCode` policy v1 (14 codes). A new provider adds rows here and changes no
 canonical schema.
 
+**A version has two lives.** While `approved_at` is NULL it is a DRAFT: mappings
+are freely writable, and §5's trigger refuses it as the basis of any resolution.
+Setting `approved_at` freezes the field and the entire mapping set — update,
+delete, and *adding a new code* are all refused by
+`forbid_approved_policy_mutation()` / `forbid_approved_policy_mapping_mutation()`,
+on both the version a mapping leaves and the one it arrives at.
+
+That is what makes immutable revisions mean anything. A revision reading
+`hotelbeds-classification/1` + `5EST` → `exact_five` stays byte-identical while
+someone edits that version's mapping to `exact_four`: the row is untouched and
+its provenance is now false. D066 says a mapping change is a NEW VERSION; the
+freeze makes it the only representable one. The grants stay full because
+assembling and approving a *new* version must remain possible — a privilege
+cannot tell a draft row from a frozen one, and a trigger can.
+
+### provider_location_policies
+The location twin, PK `(provider, version)`, seeded with
+`hotelbeds / hotelbeds-location/1`. There is no mapping table because the
+location rule has no per-code semantics — coordinates are usable exactly when
+both are supplied and the audit found them plausible — so there is nothing to
+freeze. What it provides is the same proof the star side had: the version a
+revision NAMES was actually reviewed. Without it `hotelbeds-location/999` was
+insertable.
+
 ### source_property_star_resolution_revisions / _location_resolution_revisions
 **IMMUTABLE, append-only.** A future D062 publication cites a revision id as the
 evidence that authorised it, so the row must never be rewritten — otherwise a
@@ -411,7 +435,14 @@ Integrity is layered, because each layer catches what the one before cannot:
   cited observation provably belongs to THIS candidate;
 - composite FK `(id, source, source_environment)` to the identity — provider and
   environment streams cannot cross;
-- FK `(policy_provider, policy_version, policy_field)` — the policy named exists;
+- composite FK `(supersedes_revision_id, source_property_identity_id)` — lineage
+  is provenance too, and a pointer into another candidate's history is a false
+  statement about both of them; plus a CHECK that a revision is not its own
+  ancestor;
+- FK `(policy_provider, policy_version, policy_field)` — the policy named exists,
+  and a trigger additionally requires it to be APPROVED, not a draft;
+- CHECK `policy_provider = source` — a provider's policy applies only to that
+  provider's observations;
 - `enforce_star_revision_integrity()` — `source_value` equals the cited
   observation's own code, AND the outcome is the one the approved policy maps it
   to, AND a conflict cites an observation that maps under the same policy and
@@ -420,6 +451,14 @@ Integrity is layered, because each layer catches what the one before cannot:
   resolution refused from missing/implausible evidence, each unresolved reason
   checked against what the evidence actually carries in BOTH directions, and a
   conflict required to have usable coordinates that actually differ.
+
+`source_coordinates_plausible` is nullable, so an unresolved location carries one
+of THREE reasons, not two: `coordinates_missing` (at least one absent),
+`coordinates_implausible` (both supplied, verdict explicitly FALSE) and
+`coordinates_plausibility_unknown` (both supplied, no verdict). UNKNOWN is not
+FALSE — reporting an unjudged coordinate as implausible would accuse the provider
+of bad data on evidence that says nothing. Each reason is checked against the
+cited observation in both directions.
 
 `revision_digest` is `GENERATED ALWAYS ... STORED` over the semantic fields, with
 UNIQUE `(source_property_identity_id, revision_digest)`. Re-deriving the same

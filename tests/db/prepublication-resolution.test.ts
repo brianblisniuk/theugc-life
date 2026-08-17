@@ -17,6 +17,8 @@
  *
  * All fixtures synthetic. No real provider data appears here.
  */
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "./harness";
@@ -138,6 +140,8 @@ interface StarOverrides {
   conflictObservationId?: string | null;
   conflictOutcome?: string | null;
   supersedesRevisionId?: string | null;
+  /** Only set when a test needs to reason about the id BEFORE it exists. */
+  id?: string;
 }
 
 /** Insert a star revision directly, to probe the database's own guards. */
@@ -146,10 +150,11 @@ async function insertStar(f: Fixture, over: StarOverrides = {}): Promise<string>
     key in over ? (over[key] as T) : fallback;
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_star_resolution_revisions
-       (source_property_identity_id, source, source_environment, evidence_observation_id,
+       (id, source_property_identity_id, source, source_environment, evidence_observation_id,
         policy_provider, policy_version, policy_field, source_value, outcome, resolved_star_value,
         conflict_state, conflicting_observation_id, conflicting_outcome, supersedes_revision_id)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
+     values (coalesce($15::uuid, gen_random_uuid()),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     returning id`,
     [
       over.identityId ?? f.identityId,
       over.source ?? f.source,
@@ -165,12 +170,14 @@ async function insertStar(f: Fixture, over: StarOverrides = {}): Promise<string>
       pick<string | null>("conflictObservationId", null),
       pick<string | null>("conflictOutcome", null),
       pick<string | null>("supersedesRevisionId", null),
+      pick<string | null>("id", null),
     ],
   );
   return rows[0]!.id;
 }
 
 interface LocationOverrides {
+  id?: string;
   evidenceObservationId?: string;
   policyProvider?: string;
   policyVersion?: string;
@@ -180,6 +187,7 @@ interface LocationOverrides {
   reason?: string | null;
   conflictState?: string;
   conflictObservationId?: string | null;
+  supersedesRevisionId?: string | null;
 }
 
 async function insertLocation(f: Fixture, over: LocationOverrides = {}): Promise<string> {
@@ -187,10 +195,11 @@ async function insertLocation(f: Fixture, over: LocationOverrides = {}): Promise
     key in over ? (over[key] as T) : fallback;
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_location_resolution_revisions
-       (source_property_identity_id, source, source_environment, evidence_observation_id,
+       (id, source_property_identity_id, source, source_environment, evidence_observation_id,
         policy_provider, policy_version, outcome, resolved_latitude, resolved_longitude,
-        unresolved_reason, conflict_state, conflicting_observation_id)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
+        unresolved_reason, conflict_state, conflicting_observation_id, supersedes_revision_id)
+     values (coalesce($14::uuid, gen_random_uuid()),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     returning id`,
     [
       f.identityId,
       f.source,
@@ -204,6 +213,8 @@ async function insertLocation(f: Fixture, over: LocationOverrides = {}): Promise
       pick<string | null>("reason", null),
       over.conflictState ?? (over.conflictObservationId ? "conflict" : "none"),
       pick<string | null>("conflictObservationId", null),
+      pick<string | null>("supersedesRevisionId", null),
+      pick<string | null>("id", null),
     ],
   );
   return rows[0]!.id;
@@ -249,37 +260,37 @@ d("pre-publication resolution (0028)", () => {
     await setupDatabase();
     await seed();
 
-    // Two extra policy versions, used to prove that what refuses a bad outcome is
-    // the MAPPING and not merely the existence of a policy row:
-    //   * `test-empty` exists but maps nothing;
-    //   * `2-test` maps 5EST the same way v1 does, at a different version.
+    // Fixture policy versions. Each is assembled as a draft and then frozen,
+    // because that is the only way any version can be built — including the
+    // shipped one.
+    //
+    //   * `test-empty`  approved, maps nothing — proves what refuses a bad
+    //                   outcome is the MAPPING, not merely a policy row existing;
+    //   * `2-test`      approved, maps 5EST as v1 does, at a different version;
+    //   * `draft-test`  NEVER approved — the only version whose mappings can
+    //                   still be written, so the mapping-shape constraints are
+    //                   reachable at all;
+    //   * `provider-b/1` approved, and deliberately maps 5EST DIFFERENTLY, so the
+    //                   cross-provider tests aim at a real contradicting policy
+    //                   rather than a nonexistent one.
     await adminQuery(
       `insert into public.provider_classification_policies (provider, version, field, notes) values
          ('hotelbeds', 'hotelbeds-classification/test-empty', 'categoryCode', 'test fixture'),
-         ('hotelbeds', 'hotelbeds-classification/2-test', 'categoryCode', 'test fixture')
+         ('hotelbeds', 'hotelbeds-classification/2-test', 'categoryCode', 'test fixture'),
+         ('hotelbeds', 'hotelbeds-classification/draft-test', 'categoryCode', 'draft fixture'),
+         ('provider_b', 'provider-b/1', 'categoryCode', 'test fixture')
        on conflict do nothing`,
     );
     await adminQuery(
       `insert into public.provider_classification_policy_mappings
-         (provider, version, field, source_code, outcome, resolved_star_value)
-       values ('hotelbeds','hotelbeds-classification/2-test','categoryCode','5EST','exact_five',5)
-       on conflict do nothing`,
-    );
-
-    // A stand-in for a future Provider B, whose policy deliberately maps `5EST`
-    // to a DIFFERENT outcome. Nothing resolves through it here; it exists so the
-    // cross-provider tests have a real, approved, contradicting policy to aim at
-    // rather than a nonexistent one.
-    await adminQuery(
-      `insert into public.provider_classification_policies (provider, version, field, notes)
-       values ('provider_b', 'provider-b/1', 'categoryCode', 'test fixture')
+         (provider, version, field, source_code, outcome, resolved_star_value) values
+         ('hotelbeds','hotelbeds-classification/2-test','categoryCode','5EST','exact_five',5),
+         ('provider_b','provider-b/1','categoryCode','5EST','exact_four',4)
        on conflict do nothing`,
     );
     await adminQuery(
-      `insert into public.provider_classification_policy_mappings
-         (provider, version, field, source_code, outcome, resolved_star_value)
-       values ('provider_b','provider-b/1','categoryCode','5EST','exact_four',4)
-       on conflict do nothing`,
+      `update public.provider_classification_policies set approved_at = now()
+        where approved_at is null and version <> 'hotelbeds-classification/draft-test'`,
     );
   });
   afterAll(teardownDatabase);
@@ -359,6 +370,16 @@ d("pre-publication resolution (0028)", () => {
       expect(r.unresolvedReason).toBe("coordinates_missing");
       expect(r.latitude).toBeNull();
       expect(r.longitude).toBeNull();
+    });
+
+    it("leaves an UNJUDGED coordinate unresolved, as its own third reason", () => {
+      // `source_coordinates_plausible` is nullable: the audit can have reached no
+      // verdict. That is UNKNOWN, not FALSE, and calling it implausible would
+      // report data as wrong that nobody ever examined.
+      const r = resolveLocationFromObservations([obs({ plausible: null })])!;
+      expect(r.outcome).toBe("unresolved");
+      expect(r.unresolvedReason).toBe("coordinates_plausibility_unknown");
+      expect(r.latitude).toBeNull();
     });
 
     it("9. leaves implausible coordinates unresolved, as a DIFFERENT reason", () => {
@@ -457,50 +478,48 @@ d("pre-publication resolution (0028)", () => {
       ).resolves.toBeTruthy();
     });
 
-    // Two layers refuse a bogus policy citation, and both are worth having:
-    // the MAPPING lookup refuses the claimed outcome, and — once a caller
-    // retreats to `unresolved` to get past it — the FK refuses the policy
-    // itself, so a resolution can never name a policy nobody approved.
+    // A resolution may cite only a policy that was reviewed AND frozen. The
+    // approval check runs before the mapping lookup, because a draft version's
+    // mappings can still change and resolving through one would let this
+    // revision's meaning move after the fact.
     it("REFUSES a policy VERSION that was never approved", async () => {
       const f = await fixture({ categoryCode: "5EST" });
-      await expect(insertStar(f, { policyVersion: "hotelbeds-classification/99" })).rejects.toThrow(
-        /has no mapping for/i,
-      );
-      await expect(
-        insertStar(f, {
-          policyVersion: "hotelbeds-classification/99",
-          outcome: "unresolved",
-          starValue: null,
-        }),
-      ).rejects.toThrow(/policy_fk/i);
-    });
-
-    it("REFUSES a policy FIELD the approved policy does not read", async () => {
-      const f = await fixture({ categoryCode: "5EST" });
-      await expect(insertStar(f, { policyField: "simpleCode" })).rejects.toThrow(
-        /has no mapping for .* under field 'simpleCode'/i,
-      );
-      await expect(
-        insertStar(f, { policyField: "simpleCode", outcome: "unresolved", starValue: null }),
-      ).rejects.toThrow(/policy_fk/i);
-    });
-
-    it("REFUSES a provider with no approved policy at all", async () => {
-      const f = await fixture({ categoryCode: "5EST" });
-      await expect(insertStar(f, { policyProvider: "provider_z" })).rejects.toThrow(
-        /has no mapping for/i,
-      );
-      // Retreating to `unresolved` gets past the mapping check and straight into
-      // the constraint that a policy must belong to the observation's provider.
-      await expect(
-        insertStar(f, { policyProvider: "provider_z", outcome: "unresolved", starValue: null }),
-      ).rejects.toThrow(/policy_source_ck/i);
-      // …and the FK itself is real, independently of that.
+      for (const outcome of ["exact_five", "unresolved"]) {
+        await expect(
+          insertStar(f, {
+            policyVersion: "hotelbeds-classification/99",
+            outcome,
+            starValue: outcome === "exact_five" ? 5 : null,
+          }),
+        ).rejects.toThrow(/not an APPROVED classification policy \(no such policy\)/i);
+      }
+      // …and the FK is real independently of the trigger.
       const def = await adminQuery<{ def: string }>(
         `select pg_get_constraintdef(oid) as def from pg_constraint
           where conname = 'source_property_star_resolution_revisions_policy_fk'`,
       );
       expect(def[0]!.def).toMatch(/provider_classification_policies/i);
+    });
+
+    it("REFUSES a policy version that exists but is still a DRAFT", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(
+        insertStar(f, { policyVersion: "hotelbeds-classification/draft-test" }),
+      ).rejects.toThrow(/not an APPROVED classification policy \(still a draft\)/i);
+    });
+
+    it("REFUSES a policy FIELD the approved policy does not read", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(f, { policyField: "simpleCode" })).rejects.toThrow(
+        /on field 'simpleCode' is not an APPROVED classification policy/i,
+      );
+    });
+
+    it("REFUSES a provider with no approved policy at all", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(f, { policyProvider: "provider_z" })).rejects.toThrow(
+        /not an APPROVED classification policy/i,
+      );
     });
 
     it("a version that EXISTS but does not map the code can only say unresolved", async () => {
@@ -520,11 +539,13 @@ d("pre-publication resolution (0028)", () => {
     });
 
     it("the mapping table itself cannot hold an incoherent outcome", async () => {
+      // Against the DRAFT version, because a frozen one refuses the write before
+      // the shape is ever evaluated.
       await expect(
         adminQuery(
           `insert into public.provider_classification_policy_mappings
              (provider, version, field, source_code, outcome, resolved_star_value)
-           values ('hotelbeds','hotelbeds-classification/1','categoryCode','ZZTOP','exact_five',4)`,
+           values ('hotelbeds','hotelbeds-classification/draft-test','categoryCode','ZZTOP','exact_five',4)`,
         ),
       ).rejects.toThrow(/value_shape/i);
     });
@@ -534,9 +555,140 @@ d("pre-publication resolution (0028)", () => {
         adminQuery(
           `insert into public.provider_classification_policy_mappings
              (provider, version, field, source_code, outcome, resolved_star_value)
-           values ('provider_b','provider-b/1','stars','5','exact_five',5)`,
+           values ('provider_z','provider-z/1','stars','5','exact_five',5)`,
         ),
       ).rejects.toThrow(/policy_fk/i);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // AN APPROVED POLICY VERSION IS FROZEN
+  // -----------------------------------------------------------------------
+  // Immutable revisions are worth nothing if the policy they cite can change
+  // meaning underneath them. A revision reading `hotelbeds-classification/1` +
+  // `5EST` -> `exact_five` stays byte-identical while somebody edits that
+  // version's mapping to `exact_four`: the row is untouched and its provenance
+  // is now false. D066 says a mapping change is a NEW VERSION; these make that
+  // structural rather than a convention.
+  describe("approved policy versions are immutable", () => {
+    const V1 = "hotelbeds-classification/1";
+
+    it("the shipped Hotelbeds policy is approved, and so frozen", async () => {
+      const rows = await adminQuery<{ approved: string | null }>(
+        `select approved_at::text as approved from public.provider_classification_policies
+          where provider = 'hotelbeds' and version = $1`,
+        [V1],
+      );
+      expect(rows[0]!.approved).not.toBeNull();
+    });
+
+    it("REFUSES changing a mapping's outcome or star value", async () => {
+      await expect(
+        adminQuery(
+          `update public.provider_classification_policy_mappings
+              set outcome = 'exact_four', resolved_star_value = 4
+            where provider='hotelbeds' and version=$1 and source_code='5EST'`,
+          [V1],
+        ),
+      ).rejects.toThrow(/mapping set is IMMUTABLE/i);
+    });
+
+    it("REFUSES deleting a mapping", async () => {
+      await expect(
+        adminQuery(
+          `delete from public.provider_classification_policy_mappings
+            where provider='hotelbeds' and version=$1 and source_code='4EST'`,
+          [V1],
+        ),
+      ).rejects.toThrow(/mapping set is IMMUTABLE/i);
+    });
+
+    it("REFUSES adding a NEW mapping to a frozen version", async () => {
+      // The subtlest of the three: nothing existing changes, and yet `SUP` would
+      // silently acquire a meaning inside a version already cited by revisions.
+      await expect(
+        adminQuery(
+          `insert into public.provider_classification_policy_mappings
+             (provider, version, field, source_code, outcome, resolved_star_value)
+           values ('hotelbeds',$1,'categoryCode','SUP','exact_four',4)`,
+          [V1],
+        ),
+      ).rejects.toThrow(/mapping set is IMMUTABLE/i);
+    });
+
+    it("REFUSES moving a mapping OUT of a frozen version", async () => {
+      // Checking only the destination would let a code be lifted out of a frozen
+      // version into the draft, changing the frozen version's meaning by removal.
+      await expect(
+        adminQuery(
+          `update public.provider_classification_policy_mappings
+              set version = 'hotelbeds-classification/draft-test'
+            where provider='hotelbeds' and version=$1 and source_code='5LUX'`,
+          [V1],
+        ),
+      ).rejects.toThrow(/mapping set is IMMUTABLE/i);
+    });
+
+    it("REFUSES changing the policy's field, or deleting or un-approving it", async () => {
+      for (const sql of [
+        `update public.provider_classification_policies set field = 'simpleCode'
+          where provider='hotelbeds' and version=$1`,
+        `update public.provider_classification_policies set approved_at = null
+          where provider='hotelbeds' and version=$1`,
+        `update public.provider_classification_policies set notes = 'rewritten'
+          where provider='hotelbeds' and version=$1`,
+        `delete from public.provider_classification_policies
+          where provider='hotelbeds' and version=$1`,
+      ]) {
+        await expect(adminQuery(sql, [V1]), sql).rejects.toThrow(/is IMMUTABLE/i);
+      }
+    });
+
+    it("the mapping set is unchanged after all of that", async () => {
+      const rows = await adminQuery<{ n: string }>(
+        `select count(*)::text as n from public.provider_classification_policy_mappings
+          where provider='hotelbeds' and version=$1`,
+        [V1],
+      );
+      expect(rows[0]!.n).toBe("14");
+    });
+
+    it("a NEW version can still be assembled, approved and used normally", async () => {
+      const version = `hotelbeds-classification/${uniq()}`;
+      await adminQuery(
+        `insert into public.provider_classification_policies (provider, version, field, notes)
+         values ('hotelbeds', $1, 'categoryCode', 'a later review')`,
+        [version],
+      );
+      // Draft: mappings are writable, and a resolution may not cite it yet.
+      await adminQuery(
+        `insert into public.provider_classification_policy_mappings
+           (provider, version, field, source_code, outcome, resolved_star_value)
+         values ('hotelbeds', $1, 'categoryCode', '5EST', 'exact_five', 5)`,
+        [version],
+      );
+      const draftCandidate = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(draftCandidate, { policyVersion: version })).rejects.toThrow(
+        /still a draft/i,
+      );
+
+      await adminQuery(
+        `update public.provider_classification_policies set approved_at = now()
+          where provider='hotelbeds' and version=$1`,
+        [version],
+      );
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(f, { policyVersion: version })).resolves.toBeTruthy();
+
+      // …and it is frozen the moment it is approved.
+      await expect(
+        adminQuery(
+          `insert into public.provider_classification_policy_mappings
+             (provider, version, field, source_code, outcome, resolved_star_value)
+           values ('hotelbeds', $1, 'categoryCode', '4EST', 'exact_four', 4)`,
+          [version],
+        ),
+      ).rejects.toThrow(/mapping set is IMMUTABLE/i);
     });
   });
 
@@ -586,7 +738,7 @@ d("pre-publication resolution (0028)", () => {
         adminQuery(
           `insert into public.provider_classification_policy_mappings
              (provider, version, field, source_code, outcome, resolved_star_value)
-           values ('hotelbeds','hotelbeds-classification/1','categoryCode','SUP','unresolved',null)`,
+           values ('hotelbeds','hotelbeds-classification/draft-test','categoryCode','SUP','unresolved',null)`,
         ),
       ).rejects.toThrow(/outcome_check|violates check constraint/i);
       expect(HOTELBEDS_CLASSIFICATION_POLICY.mappings.SUP).toBeUndefined();
@@ -757,7 +909,7 @@ d("pre-publication resolution (0028)", () => {
           lon: null,
           reason: "coordinates_implausible",
         }),
-      ).rejects.toThrow(/audited as PLAUSIBLE/i);
+      ).rejects.toThrow(/plausibility verdict is true/i);
     });
 
     it("ACCEPTS coordinates_implausible for supplied-but-implausible coordinates", async () => {
@@ -770,6 +922,75 @@ d("pre-publication resolution (0028)", () => {
           reason: "coordinates_implausible",
         }),
       ).resolves.toBeTruthy();
+    });
+
+    // UNKNOWN is not FALSE. `source_coordinates_plausible` is nullable, so an
+    // observation can carry coordinates the ingestion audit never judged;
+    // reporting those as `coordinates_implausible` accuses the provider of
+    // supplying bad data on evidence that says nothing at all.
+    it("REFUSES coordinates_implausible when the plausibility verdict is UNKNOWN", async () => {
+      const unknown = await fixture({ latitude: -8.5, longitude: 115.2, plausible: null });
+      await expect(
+        insertLocation(unknown, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_implausible",
+        }),
+      ).rejects.toThrow(/plausibility verdict is UNKNOWN/i);
+    });
+
+    it("ACCEPTS coordinates_plausibility_unknown for exactly that case", async () => {
+      const unknown = await fixture({ latitude: -8.5, longitude: 115.2, plausible: null });
+      await expect(
+        insertLocation(unknown, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_plausibility_unknown",
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it("REFUSES coordinates_plausibility_unknown when a verdict EXISTS", async () => {
+      for (const plausible of [true, false]) {
+        const f = await fixture({ latitude: -8.5, longitude: 115.2, plausible });
+        await expect(
+          insertLocation(f, {
+            outcome: "unresolved",
+            lat: null,
+            lon: null,
+            reason: "coordinates_plausibility_unknown",
+          }),
+          `plausible=${plausible}`,
+        ).rejects.toThrow(/carries an explicit plausibility verdict/i);
+      }
+    });
+
+    it("REFUSES coordinates_plausibility_unknown when no coordinates were supplied", async () => {
+      const none = await fixture({ latitude: null, longitude: null, plausible: null });
+      await expect(
+        insertLocation(none, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_plausibility_unknown",
+        }),
+      ).rejects.toThrow(/supplies no coordinates at all/i);
+    });
+
+    it("REFUSES a location policy version that was never approved", async () => {
+      // The location twin of the star policy FK. Before this, a resolution could
+      // carry correct coordinates while citing `hotelbeds-location/999`.
+      const f = await fixture({ latitude: -8.5, longitude: 115.2 });
+      await expect(insertLocation(f, { policyVersion: "hotelbeds-location/999" })).rejects.toThrow(
+        /location_resolution_revisions_policy_fk/i,
+      );
+      // The approved one is a row, not a schema constant.
+      const rows = await adminQuery<{ provider: string; version: string }>(
+        `select provider, version from public.provider_location_policies order by provider, version`,
+      );
+      expect(rows).toEqual([{ provider: "hotelbeds", version: "hotelbeds-location/1" }]);
     });
   });
 
@@ -1008,6 +1229,54 @@ d("pre-publication resolution (0028)", () => {
       ).rejects.toThrow(/IMMUTABLE/i);
     });
 
+    // Lineage is provenance too. `supersedes` says "this replaced that", and a
+    // pointer into another candidate's history is a false statement about both
+    // of them — the superseded candidate acquires a successor it never had.
+    it("REFUSES lineage pointing at ANOTHER candidate's revision", async () => {
+      const mine = await fixture({ categoryCode: "5EST" });
+      const theirs = await fixture({ categoryCode: "5EST" });
+      const theirRevision = await insertStar(theirs);
+      await expect(insertStar(mine, { supersedesRevisionId: theirRevision })).rejects.toThrow(
+        /star_resolution_revisions_supersedes_fk/i,
+      );
+
+      const mineLoc = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const theirsLoc = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const theirLocRevision = await insertLocation(theirsLoc);
+      await expect(
+        insertLocation(mineLoc, { supersedesRevisionId: theirLocRevision }),
+      ).rejects.toThrow(/location_resolution_revisions_supersedes_fk/i);
+    });
+
+    it("REFUSES a revision that supersedes ITSELF", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const id = randomUUID();
+      await expect(insertStar(f, { id, supersedesRevisionId: id })).rejects.toThrow(
+        /supersedes_self/i,
+      );
+
+      const g = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const locId = randomUUID();
+      await expect(insertLocation(g, { id: locId, supersedesRevisionId: locId })).rejects.toThrow(
+        /supersedes_self/i,
+      );
+    });
+
+    it("ACCEPTS lineage within the SAME candidate", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const first = await insertStar(f);
+      const second = await insertStar(f, {
+        policyVersion: "hotelbeds-classification/2-test",
+        supersedesRevisionId: first,
+      });
+      const rows = await adminQuery<{ supersedes: string }>(
+        `select supersedes_revision_id as supersedes
+           from public.source_property_star_resolution_revisions where id = $1`,
+        [second],
+      );
+      expect(rows[0]!.supersedes).toBe(first);
+    });
+
     it("REFUSES to delete a revision", async () => {
       const f = await fixture({ categoryCode: "5EST" });
       const id = await insertStar(f);
@@ -1217,6 +1486,42 @@ d("pre-publication resolution (0028)", () => {
       expect(r.conflictObservationId).toBeNull();
     });
 
+    it("does not mistake a different NUMBER OF DECIMALS for a different place", () => {
+      // `numeric` preserves the scale it was given, so the same point can come
+      // back as `-8.5` and `-8.5000`. Comparing the strings would queue this for
+      // human review — and the database, which compares as numeric, would then
+      // refuse the conflict as agreement and abort the transaction.
+      for (const [a, b] of [
+        ["-8.5", "-8.5000"],
+        ["115.2", "115.200000"],
+        ["0.0", "-0"],
+        ["-8.50", "-08.5"],
+      ]) {
+        const r = resolveLocationFromObservations([
+          obs({ id: "o1", lat: a, lon: "115.2" }),
+          obs({ id: "o2", lat: b, lon: "115.200" }),
+        ])!;
+        expect(r.outcome, `${a} vs ${b}`).toBe("resolved");
+        expect(r.conflictObservationId, `${a} vs ${b} manufactured a conflict`).toBeNull();
+        // The evidence is preserved exactly as the provider gave it.
+        expect(r.latitude).toBe(a);
+      }
+    });
+
+    it("still calls a REAL difference a conflict, at any magnitude", () => {
+      for (const [a, b] of [
+        ["-8.5", "-8.5001"],
+        ["-8.5", "-8.50001"],
+        ["115.2", "115.2000001"],
+      ]) {
+        const r = resolveLocationFromObservations([
+          obs({ id: "o1", lat: a, lon: "115.2" }),
+          obs({ id: "o2", lat: b, lon: "115.2" }),
+        ])!;
+        expect(r.conflictObservationId, `${a} vs ${b} was not flagged`).toBe("o2");
+      }
+    });
+
     it("flags differing coordinates rather than choosing between them", () => {
       // Any difference at all. A tolerance would be a distance threshold, which
       // D063 §12.2 refuses to invent.
@@ -1279,6 +1584,7 @@ d("pre-publication resolution (0028)", () => {
       for (const relation of [
         "provider_classification_policies",
         "provider_classification_policy_mappings",
+        "provider_location_policies",
         "source_property_star_resolution_revisions",
         "source_property_location_resolution_revisions",
         "source_property_star_resolutions",
@@ -1303,6 +1609,7 @@ d("pre-publication resolution (0028)", () => {
         "source_property_star_resolutions",
         "source_property_location_resolutions",
         "provider_classification_policy_mappings",
+        "provider_location_policies",
         // The views are `security_invoker`, so RLS reaches through them. A
         // definer view here would have handed the creator the whole table.
         "source_property_current_star_resolutions",
@@ -1321,6 +1628,7 @@ d("pre-publication resolution (0028)", () => {
       const names = [
         "provider_classification_policies",
         "provider_classification_policy_mappings",
+        "provider_location_policies",
         "source_property_star_resolution_revisions",
         "source_property_location_resolution_revisions",
         "source_property_star_resolutions",
