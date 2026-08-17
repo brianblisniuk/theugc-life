@@ -181,8 +181,28 @@ No other provider has an approved classification policy. Booking, Expedia and
 Nuitee remain `unresolved` for every code until each is reviewed the same way:
 field, codes, semantics, evidence, version.
 
-## 7. Not implemented here
+## 7. Where this policy is enforced
 
-The star resolver, `source_property_star_resolutions`, the D062 gate, promotion,
-Coverage Engine. This document is the product contract those will implement
-against.
+Migration `0028_prepublication_resolution.sql` carries this document's §5 table
+as DATA, in `provider_classification_policies` and
+`provider_classification_policy_mappings`, keyed by provider, version and field.
+A star resolution's outcome is checked against those rows by a trigger, so
+`5EST → exact_four` is refused from psql and from a service-role script, not only
+from the resolver. A code that is ABSENT from the mappings can resolve to
+`unresolved` and to nothing else. A parity test fails if this table and the
+TypeScript policy in `scripts/provider-classification/hotelbeds.ts` ever drift.
+
+A version is assembled as a DRAFT and then frozen: once `approved_at` is set, its
+field and its complete mapping set are immutable — editing a code, deleting one,
+or adding a new one are all refused. D066's "changing any mapping is a new
+version" is therefore a rule the database keeps, not a convention. A resolution
+may only cite an approved version, so nothing can resolve through a policy that
+is still being written.
+
+Adding a provider means adding rows here. It changes no canonical schema.
+
+## 8. Not implemented here
+
+The scope (physical-hospitality) resolver, the review/adjudication workflow, the
+D062 gate, promotion, Coverage Engine. This document is the product contract
+those will implement against.

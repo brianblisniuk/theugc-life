@@ -374,6 +374,106 @@ vocabulary** as `import_property_reviews` (`approve_create` | `approve_match` |
 candidates: NULL means "decided outside a run", but a run from another provider
 or environment cannot be cited.
 
+## 5b. Pre-publication resolution (migration 0028)
+
+Six tables plus two views. Same access posture as 5a: `service_role` +
+admin/editor through RLS, **no anon grant**. They turn provider observations into
+resolved product facts, attached to the **source property identity** — never to a
+`hotel_id`, because under D062 a row in `hotels` is publication and a candidate
+has none until after the gate.
+
+### provider_classification_policies / provider_classification_policy_mappings
+The reviewed classification policy (D066), as DATA rather than as a property of
+one code path.
+- `policies` PK `(provider, version)`, plus UNIQUE `(provider, version, field)`
+  so mappings and resolutions can key against the field the policy is contracted
+  to read.
+- `mappings` PK `(provider, version, source_code)`, `outcome` restricted to
+  `exact_four | exact_five | classified_not_v1_scope`, with a CHECK tying the
+  star value to the outcome.
+
+`unresolved` is deliberately **not** a storable mapping. Absence of a row IS
+unresolved; storing it would make "we reviewed this code and it means nothing"
+and "we never reviewed this code" the same row. Seeded with the Hotelbeds
+`categoryCode` policy v1 (14 codes). A new provider adds rows here and changes no
+canonical schema.
+
+**A version has two lives.** While `approved_at` is NULL it is a DRAFT: mappings
+are freely writable, and §5's trigger refuses it as the basis of any resolution.
+Setting `approved_at` freezes the field and the entire mapping set — update,
+delete, and *adding a new code* are all refused by
+`forbid_approved_policy_mutation()` / `forbid_approved_policy_mapping_mutation()`,
+on both the version a mapping leaves and the one it arrives at.
+
+That is what makes immutable revisions mean anything. A revision reading
+`hotelbeds-classification/1` + `5EST` → `exact_five` stays byte-identical while
+someone edits that version's mapping to `exact_four`: the row is untouched and
+its provenance is now false. D066 says a mapping change is a NEW VERSION; the
+freeze makes it the only representable one. The grants stay full because
+assembling and approving a *new* version must remain possible — a privilege
+cannot tell a draft row from a frozen one, and a trigger can.
+
+### provider_location_policies
+The location twin, PK `(provider, version)`, seeded with
+`hotelbeds / hotelbeds-location/1`. There is no mapping table because the
+location rule has no per-code semantics — coordinates are usable exactly when
+both are supplied and the audit found them plausible — so there is nothing to
+freeze. What it provides is the same proof the star side had: the version a
+revision NAMES was actually reviewed. Without it `hotelbeds-location/999` was
+insertable.
+
+### source_property_star_resolution_revisions / _location_resolution_revisions
+**IMMUTABLE, append-only.** A future D062 publication cites a revision id as the
+evidence that authorised it, so the row must never be rewritten — otherwise a
+hotel published in August from `5EST → exact_five` would, after an October
+observation of `4EST`, appear to have been authorised by evidence that did not
+exist at the time. No client role holds UPDATE or DELETE, and a trigger refuses
+both even for the table owner.
+
+Integrity is layered, because each layer catches what the one before cannot:
+- composite FK `(evidence_observation_id, source_property_identity_id)` — the
+  cited observation provably belongs to THIS candidate;
+- composite FK `(id, source, source_environment)` to the identity — provider and
+  environment streams cannot cross;
+- composite FK `(supersedes_revision_id, source_property_identity_id)` — lineage
+  is provenance too, and a pointer into another candidate's history is a false
+  statement about both of them; plus a CHECK that a revision is not its own
+  ancestor;
+- FK `(policy_provider, policy_version, policy_field)` — the policy named exists,
+  and a trigger additionally requires it to be APPROVED, not a draft;
+- CHECK `policy_provider = source` — a provider's policy applies only to that
+  provider's observations;
+- `enforce_star_revision_integrity()` — `source_value` equals the cited
+  observation's own code, AND the outcome is the one the approved policy maps it
+  to, AND a conflict cites an observation that maps under the same policy and
+  genuinely disagrees;
+- `enforce_location_revision_integrity()` — coordinates copied verbatim,
+  resolution refused from missing/implausible evidence, each unresolved reason
+  checked against what the evidence actually carries in BOTH directions, and a
+  conflict required to have usable coordinates that actually differ.
+
+`source_coordinates_plausible` is nullable, so an unresolved location carries one
+of THREE reasons, not two: `coordinates_missing` (at least one absent),
+`coordinates_implausible` (both supplied, verdict explicitly FALSE) and
+`coordinates_plausibility_unknown` (both supplied, no verdict). UNKNOWN is not
+FALSE — reporting an unjudged coordinate as implausible would accuse the provider
+of bad data on evidence that says nothing. Each reason is checked against the
+cited observation in both directions.
+
+`revision_digest` is `GENERATED ALWAYS ... STORED` over the semantic fields, with
+UNIQUE `(source_property_identity_id, revision_digest)`. Re-deriving the same
+conclusion from the same evidence under the same policy inserts nothing.
+
+### source_property_star_resolutions / source_property_location_resolutions
+**HEAD POINTERS.** `source_property_identity_id` PK, `current_revision_id` with a
+composite FK to `(id, source_property_identity_id)` of the revision table — so a
+head can only ever name a revision of its own candidate. Exactly one current
+resolution per candidate per dimension. The pointer moves; the revisions do not.
+
+### source_property_current_star_resolutions / _current_location_resolutions
+Read model: one join from the head, `security_invoker = true` so RLS reaches
+through. Not an aggregate over history — reading current state never replays it.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -656,5 +756,7 @@ At minimum:
 12. explicit privilege contract (0024) — every later migration must state its
     own grants, because `alter default privileges` gives new tables none
 13. property-content source infrastructure (0027)
+14. pre-publication resolution (0028) — provider policy as data, immutable
+    resolution revisions, head pointers
 
 Every migration must be reproducible from an empty database.

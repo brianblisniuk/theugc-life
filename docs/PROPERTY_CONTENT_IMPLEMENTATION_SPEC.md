@@ -1108,8 +1108,8 @@ gate has already been passed:
 | `source_property_observations` (typed source facts) | the row in `hotels` |
 | `source_property_reviews` (the reviewer's decision + its target) | the `hotel_source_identities` link |
 | `source_match_candidates` (entity-resolution evidence and status) | `source_property_identities.promoted_hotel_id` |
-| future `source_property_star_resolutions` | the terminal `resolution_state` |
-| future `source_property_location_resolutions` | |
+| `source_property_star_resolution_revisions` + its head pointer (0028) | the terminal `resolution_state` |
+| `source_property_location_resolution_revisions` + its head pointer (0028) | |
 | `destinations` / `destination_aliases` | |
 
 An apply output used as a preview input is circular by construction: it makes the
@@ -1128,8 +1128,8 @@ evidence only**:
 | 4. not permanently closed | `source_lifecycle_status` **when the provider supplies one** |
 | 5. V1 scope resolved | a **pre-publication resolution owned by the future D062/resolution layer**, derived from conditions 2/3/4/6/7/11 and the review — see §21.3. **Not** `source_property_identities.resolution_state`, which is the post-decision record |
 | 6. star exactly 4 or 5 | **not from this layer alone** — §21.1 |
-| 7. star provenance | future `source_property_star_resolutions` → `source_property_observations.id` |
-| 8/9. canonical lat/long | future `source_property_location_resolutions` → `source_property_observations.id` |
+| 7. star provenance | `source_property_star_resolution_revisions` → `source_property_observations.id`, cited as an IMMUTABLE revision id |
+| 8/9. canonical lat/long | `source_property_location_resolution_revisions` → `source_property_observations.id` |
 | 10. coordinate provenance | same |
 | 11. no unresolved conflict | `source_match_candidates.status` |
 
@@ -1160,22 +1160,39 @@ front of creators.
 So resolution attaches to the **pre-canonical entity** — the source property
 identity / candidate — and cites exact observations:
 
-```
-source_property_star_resolutions (future)
-  source_property_identity_id     → source_property_identities(id)
-  resolved_star_value             numeric, exactly 4 or 5 for V1
-  evidence_observation_id         → source_property_observations(id)
-  issuing_authority               text NOT NULL   -- the open product decision
-  conflict_state                  text
-  resolved_by_user_id, resolved_at
+Implemented in `0028_prepublication_resolution.sql`, in two layers. The split is
+not decoration: D062 will cite a resolution as the evidence that authorised a
+publication, so the row it cites must never be rewritten afterwards.
 
-source_property_location_resolutions (future)
-  source_property_identity_id     → source_property_identities(id)
-  resolved_latitude, resolved_longitude
-  evidence_observation_id         → source_property_observations(id)
-  conflict_state                  text
-  resolved_by_user_id, resolved_at
 ```
+source_property_star_resolution_revisions   -- IMMUTABLE, append-only
+  id                              uuid
+  (source_property_identity_id, source, source_environment)
+                                  → source_property_identities (composite)
+  (evidence_observation_id, source_property_identity_id)
+                                  → source_property_observations (composite)
+  (policy_provider, policy_version, policy_field)
+                                  → provider_classification_policies
+  source_value                    text     -- must equal the cited observation's
+  outcome, resolved_star_value             -- must equal what the policy maps
+  conflict_state, conflicting_observation_id, conflicting_outcome
+  issuing_authority               text NULL   -- OPTIONAL corroboration (D066)
+  supersedes_revision_id, resolved_by_user_id, resolved_at
+  revision_digest                 generated  -- idempotency key
+
+source_property_star_resolutions            -- HEAD POINTER, one per candidate
+  source_property_identity_id     primary key
+  (current_revision_id, source_property_identity_id)
+                                  → the revision above (composite)
+
+source_property_location_resolution_revisions / _resolutions
+                                             -- the same two-layer shape, with
+                                             -- verbatim coordinates and a
+                                             -- missing/implausible reason
+```
+
+`source_property_current_star_resolutions` and its location twin are the read
+model: one join from the head, never a replay of history.
 
 The order then runs forwards with no cycle, and **every arrow points one way**:
 
@@ -1211,13 +1228,13 @@ For `approve_match`, the same resolution rows attach to the same identity and th
 link is established against the existing hotel instead of a new one — one
 interface, both decisions.
 
-**Neither table is implemented in this block.** They are specified here only so
-the foundation is coherent, and both FK `source_property_observations(id)` —
-which is why observations are `ON DELETE RESTRICT` and append-only (§9.1): a
-canonical star that cites an observation must be able to keep citing it.
+**Neither table is implemented in the 0027 block.** 0028 builds them, and both
+FK `source_property_observations` — which is why observations are `ON DELETE
+RESTRICT` and append-only (§9.1): a canonical star that cites an observation must
+be able to keep citing it.
 
-**Hotelbeds does not become canonical by being ingested, and this block does not
-make it so.** Classification is resolved by the future star resolver, from the
+**Hotelbeds does not become canonical by being ingested, and 0027 does not make
+it so.** Classification is resolved by the star resolver, from the
 reviewed provider policy in
 [`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)
 (D066) — one approved provider is sufficient, and `issuing_authority` records an
@@ -1382,8 +1399,8 @@ identity.
 4. Documentation: `DATABASE.md` §5a, this spec, contract cross-references.
 
 **Not in this block, in dependency order afterwards:** provider ingestion writer
-→ resolution runner → D062 gate + star/location resolution tables → Coverage
-Engine → media.
+(shipped, PR #23) → star/location resolution tables + resolution runner (shipped,
+0028) → scope resolver → D062 gate → Coverage Engine → media.
 
 ---
 
