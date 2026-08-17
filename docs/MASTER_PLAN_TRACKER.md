@@ -1,0 +1,412 @@
+# TheUGC.life — Master Plan Execution Tracker
+
+**Version:** 1.0  
+**Baseline date:** 2026-08-17  
+**Strategic plan:** [`MASTER_PLAN.md`](MASTER_PLAN.md)  
+**Purpose:** live execution ledger, base Claude Code round estimate, milestone gates and planning-time model.
+
+---
+
+## 0. What this tracker counts
+
+A **base CC round** means one deliberately scoped Claude Code implementation block / PR.
+
+It does **not** count:
+
+- external audit turns;
+- audit correction prompts;
+- CI/debug follow-ups;
+- clarifications;
+- research performed by ChatGPT/Gemini;
+- tiny documentation corrections.
+
+Those correction loops remain mandatory. They are intentionally excluded so this file measures the underlying implementation plan rather than pretending a complex PR always succeeds in one pass.
+
+### Current forward estimate
+
+From the post-PR25 baseline:
+
+- **Base estimate to commercial Travel Creator OS V1:** ~30 future CC rounds.
+- **Base estimate through Agency OS:** ~34 future CC rounds.
+- **Base estimate through travel scale tooling:** ~38 future CC rounds.
+- **Base estimate through a first second-vertical pilot:** ~43 future CC rounds.
+- Planning uncertainty: **approximately ±20%**. Expect roughly **35–52** base rounds for the full sequence below depending on how much existing code can be reused and which blocks prove inseparable.
+
+The estimate should be recalibrated after every 5–8 merged base rounds.
+
+---
+
+# 1. Completed foundation relevant to the current master plan
+
+These are already merged and are **not** included in the 43 future-round estimate.
+
+| PR | Status | What it established |
+|---|---|---|
+| #20 | DONE | D060–D064 property content / destination coverage contract |
+| #21 | DONE | Hotelbeds Source A evaluation, Bali/Dubai evidence, provider-source architecture |
+| #22 | DONE | pre-publication source infrastructure (`0027`) |
+| #23 | DONE | cached Hotelbeds ingestion writer + 4,110-property offline stress proof |
+| #24 | DONE | D066 provider-resolved classification policy; one approved provider can resolve product stars |
+| #25 | DONE | immutable pre-publication star/location resolution, policy registries, provenance, real Bali/Dubai resolution |
+
+**Baseline after PR25:** canonical travel source facts are increasingly trustworthy, but the physical-hospitality dimension, entity decision and D062 publication boundary are still incomplete.
+
+---
+
+# 2. Forward round ledger
+
+Statuses:
+
+- `NEXT` — immediate next block.
+- `PLANNED` — planned but not yet contracted.
+- `GATED` — depends on earlier evidence/decision.
+- `OPTIONAL` — build only if usage proves need.
+- `DONE` — merged.
+
+The round IDs are stable planning IDs. GitHub PR numbers may differ.
+
+---
+
+## PHASE A — Finish canonical travel truth
+
+**Goal:** trustworthy canonical properties to which future private creator outcomes can attach.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| A01 | **NEXT** | Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution | Every provider type code reviewed once; scope ≠ final eligibility |
+| A02 | PLANNED | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
+| A03 | PLANNED | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
+| A04 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
+
+**Base rounds:** 4  
+**Cumulative future rounds:** 4
+
+**Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
+
+---
+
+## PHASE B — Gmail Historical Intelligence Data Pipe
+
+**Goal:** prove whether creator inbox history contains enough qualified hotel outreach to create a proprietary outcome dataset.
+
+**Before B01:** ChatGPT performs a current primary-source Gmail/OAuth/privacy/technical contract. Do not let CC invent scopes, retention or shared-data semantics.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| B01 | GATED | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
+| B02 | GATED | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
+| B03 | GATED | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
+| B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
+| B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
+| B06 | GATED | sent/reply/time-to-reply extraction | qualifying human reply semantics explicit; auto/delivery noise separated |
+| B07 | GATED | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
+| B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
+
+**Base rounds:** 8  
+**Cumulative future rounds:** 12
+
+**Milestone B gate — Historical Inbox Truth Test:**
+
+We can connect a small professional-creator cohort and measure:
+
+- opt-in rate;
+- qualified hotel threads per inbox;
+- thread-detection precision/recall;
+- % automatically classifiable outcomes;
+- unique hotels per 1,000 outcomes;
+- median observations/property;
+- metadata completeness;
+- correction rate.
+
+If qualified data is too sparse/ambiguous, pause before building a large intelligence product.
+
+---
+
+## PHASE C — Intelligence V1
+
+**Goal:** transform private operational history into useful personal/network decision intelligence without misleading precision.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| C01 | GATED | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
+| C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
+| C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
+| C05 | GATED | intelligence APIs + destination/property decision UI experiment | creators demonstrably change/prioritize decisions or save meaningful time |
+
+**Base rounds:** 5  
+**Cumulative future rounds:** 17
+
+**Milestone C gate — Intelligence Value Test:**
+
+Compare a static/public-data experience with behavioral intelligence.
+
+Measure:
+
+- decision-change rate;
+- time saved;
+- contact choice changes;
+- reply/collaboration lift where sample permits;
+- calibration;
+- creator trust in confidence/freshness display.
+
+At this point the central intelligence thesis should be materially more or less credible.
+
+---
+
+## PHASE D — Complete the Travel Creator OS loop
+
+**Goal:** make TheUGC.life the creator’s actual system of record from trip intent through completed collaboration.
+
+Reuse existing pipeline, event-ledger, negotiation and collaboration foundations. Do not rebuild working core logic merely because UI/product sequencing changes.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| D01 | PLANNED | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
+| D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
+| D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
+| D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
+| D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
+| D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
+| D07 | PLANNED | collaboration workspace + deliverables over existing lifecycle core | won deal flows through execution/completion without external spreadsheet |
+| D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
+
+**Base rounds:** 8  
+**Cumulative future rounds:** 25
+
+**Milestone D gate — Complete Travel OS loop:**
+
+A creator can:
+
+```text
+destination
+→ discover
+→ prioritize
+→ contact
+→ send
+→ follow up
+→ negotiate
+→ win
+→ execute deliverables
+→ complete outcome
+→ see learned intelligence
+```
+
+without needing Sheets/Notion/a separate CRM as the operational source of truth.
+
+---
+
+## PHASE E — Commercial Travel V1 / Product Experience / Launch Readiness
+
+**Goal:** turn the complete loop into a coherent, reliable paid product.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| E01 | PLANNED | Sunlit Creator OS Discover + Map + Hotel Detail production experience | A2 visual direction, real canonical data, no demo leakage |
+| E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
+| E03 | PLANNED | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
+| E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
+| E05 | PLANNED | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
+
+**Base rounds:** 5  
+**Cumulative future rounds:** 30
+
+**Milestone E gate — Commercial Travel Creator OS V1:** real users can pay, activate, manage real opportunity cycles and return for a later trip.
+
+---
+
+## PHASE F — Agency / Manager OS
+
+**Goal:** support high-volume multi-creator workflows, higher ARPU and denser outcome data.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| F01 | PLANNED | organization/workspace tenancy + agency RBAC | DB-level isolation across agency/creator/private mailbox boundaries |
+| F02 | PLANNED | managed creators + assignment + shared targets/contacts | manager can coordinate without impersonating private creator ownership |
+| F03 | PLANNED | agency pipeline/calendar/reporting | multi-creator operational dashboard with clear responsibility/state |
+| F04 | PLANNED | agency analytics + billing/limits | value and usage support a distinct agency commercial plan |
+
+**Base rounds:** 4  
+**Cumulative future rounds:** 34
+
+**Milestone F gate:** one manager can run several creators through the OS without privacy ambiguity or spreadsheet-level operational gaps.
+
+---
+
+## PHASE G — Travel Scale
+
+**Goal:** expand supply depth after the product loop and paid value are validated.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| G01 | GATED | Coverage Engine | destination closure cannot hide unresolved candidates |
+| G02 | GATED | Provider B evaluation + adapter | expands coverage universe; does not revalidate every Hotelbeds star by default |
+| G03 | GATED | scalable contact/media/enrichment queues + provider economics | quality/freshness/cost measurable per destination |
+| G04 | GATED | destination closure + DataOps/freshness tooling | repeatable operating process for expanding destinations safely |
+
+**Base rounds:** 4  
+**Cumulative future rounds:** 38
+
+**Milestone G gate:** destination expansion is a repeatable operation rather than custom research work.
+
+---
+
+## PHASE H — First second-vertical pilot
+
+**Goal:** prove that the operating system generalizes beyond travel without destroying travel quality.
+
+**Before H01:** market research chooses the vertical based on demand, workflow similarity, monetization and data access.
+
+| Round | Status | Implementation block | Core gate |
+|---|---|---|---|
+| H01 | GATED | second-vertical product/data contract + shared-core boundary | no premature mega-schema; explicit shared vs vertical-specific concepts |
+| H02 | GATED | generalized opportunity/target seam + second-vertical source adapter | existing travel contracts remain stable |
+| H03 | GATED | second-vertical Discover + Contact workflow | creator can identify and contact targets in same workspace |
+| H04 | GATED | reuse Outreach/Deal/Deliverable/Outcome core across verticals | no duplicated CRM stack per industry |
+| H05 | GATED | second-vertical intelligence + cross-vertical creator dashboard | same creator gets meaningful value across two categories |
+
+**Base rounds:** 5  
+**Cumulative future rounds:** 43
+
+**Milestone H gate:** TheUGC.life is demonstrably a Creator OS with travel as its first vertical, not merely a hotel-collaboration app.
+
+---
+
+# 3. Milestone round estimate summary
+
+| Milestone | Future base CC rounds from PR25 baseline | What exists at that point |
+|---|---:|---|
+| Canonical Travel Truth | **4** | trustworthy publishable property pipeline |
+| Historical Inbox + Intelligence proof | **17** | real historical outcomes + decision intelligence experiment |
+| Complete Travel OS loop | **25** | discover→outcome operational system |
+| Commercial Travel V1 | **30** | paid/polished/observable launch candidate |
+| Agency OS | **34** | multi-creator organization product |
+| Travel scale machinery | **38** | repeatable destination/provider expansion |
+| First second vertical | **43** | first proof of generalized Creator OS |
+
+Planning range for the full sequence: **35–52 base rounds**.
+
+---
+
+# 4. Calendar-time scenarios
+
+These are planning scenarios, not promises. Audit/correction loops are excluded from the round count but must be included in calendar buffer.
+
+### Scenario 1 — ~1 merged base round/week
+
+- Intelligence proof: ~17 weeks base; plan **5–6 months** with correction/research buffer.
+- Commercial Travel V1: ~30 weeks base; plan **8–10 months**.
+- Agency OS: ~34 weeks base; plan **9–11 months**.
+- Second vertical pilot: ~43 weeks base; plan **11–14 months**.
+
+### Scenario 2 — ~2 merged base rounds/week
+
+- Intelligence proof: ~8.5 weeks base; plan **2.5–3.5 months**.
+- Commercial Travel V1: ~15 weeks base; plan **4.5–6 months**.
+- Agency OS: ~17 weeks base; plan **5–7 months**.
+- Second vertical pilot: ~21.5 weeks base; plan **6.5–8.5 months**.
+
+### Scenario 3 — ~3 merged base rounds/week
+
+This requires small, well-contracted blocks and enough CC availability. It should not be achieved by skipping audits.
+
+- Intelligence proof: ~6 weeks base; plan **2–2.5 months**.
+- Commercial Travel V1: ~10 weeks base; plan **3–4 months**.
+- Agency OS: ~11–12 weeks base; plan **3.5–4.5 months**.
+- Second vertical pilot: ~14–15 weeks base; plan **4.5–6 months**.
+
+### Recommended planning assumption
+
+Use **Scenario 2 as an optimistic-but-responsible operating target** and Scenario 1 as the conservative capacity case.
+
+The objective is not to maximize PR count/week. The objective is to maintain the current quality loop while reducing wasted work through better contracts.
+
+---
+
+# 5. What can change the estimate
+
+## Could reduce rounds
+
+- existing pipeline/negotiation/collaboration code proves reusable with only UI work;
+- Gmail integration can share one coherent persistence model for historical + ongoing sync;
+- intelligence and personal analytics share the same event/aggregate framework;
+- design modules can be implemented safely in larger visual batches after behavior is stable.
+
+## Could increase rounds
+
+- Gmail OAuth/privacy requirements force additional security/data-retention work;
+- historical thread matching to canonical hotels is harder than expected;
+- outcome classification accuracy requires a dedicated evaluation/human-review subsystem;
+- agency permissions require finer-grained private-mail boundaries;
+- provider commercial rights force inventory/media substitutions;
+- second vertical exposes a real need to refactor shared domain primitives.
+
+---
+
+# 6. Business experiment gates that can pause engineering
+
+The roadmap is not an instruction to blindly complete 43 rounds.
+
+### Gate B — Historical Inbox Truth
+
+Pause/rethink if professional creators will not opt in or inboxes contain too little qualified data.
+
+### Gate C — Intelligence Value
+
+Pause/rethink if behavior-based ranking does not change decisions or outperform a simple static heuristic.
+
+### Gate E — Paid Travel V1
+
+Pause/rethink pricing/ICP if creators will not pay for the integrated value even when real intelligence exists.
+
+### Gate H — Second vertical
+
+Do not generalize merely because travel code is mature. Choose the second vertical through fresh market research.
+
+---
+
+# 7. Current business hypotheses to measure
+
+| Hypothesis | Current state | How to validate |
+|---|---|---|
+| Professional travel creators have repeated outbound pain | supported, not fully quantified | qualified-user recruitment + historical inbox analysis |
+| An all-in-one OS is more valuable than disconnected tools | strategic hypothesis | activation/retention + competitor-switch interviews + usage concentration |
+| $39 Destination Pass works with actionable intelligence | plausible, unproven | real paid destination pilot |
+| $199/year Pro works for semi-pro/pro creators | plausible, unproven | annual paid beta conversion |
+| Historical Gmail can rapidly seed a proprietary dataset | high-value hypothesis | qualified threads / connected inbox |
+| Creator-conditioned intelligence improves decisions | unproven | baseline-vs-intelligence decision/lift experiment |
+| Agency accounts are higher-value and data-dense | plausible | agency data-partner pilot + workflow interviews |
+| Travel core can generalize to other UGC industries | vision, not yet validated | second-vertical research/pilot |
+
+---
+
+# 8. Progress update protocol
+
+After each merged base round, update this tracker with:
+
+- round status `DONE`;
+- actual PR number;
+- merge date;
+- important scope deviation;
+- any newly discovered dependency;
+- cumulative completed future rounds.
+
+After every 5–8 merged base rounds:
+
+1. compare actual complexity with estimate;
+2. update remaining round range;
+3. update calendar scenarios;
+4. record strategic changes in `MASTER_PLAN.md` if needed;
+5. preserve completed history rather than renumbering old rounds.
+
+---
+
+# 9. Immediate next move
+
+At this baseline, the next base implementation block is:
+
+> **A01 — Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution.**
+
+After A01 is externally audited and merged, continue A02 rather than jumping ahead to Gmail implementation. The canonical target spine must be reliable before historical communication outcomes are attached to it.
+
+In parallel, business/technical research may prepare the Gmail contract so Phase B can begin immediately after the publication spine is closed.
