@@ -89,7 +89,20 @@ group? — not a tuned constant. **Its cost is stated plainly**: a genuine
 triplicate reaches a reviewer as one cluster rather than three pairs. Nothing is
 hidden; it is just not pre-paired.
 
-### 3.3 Destination scope
+### 3.3 Unknown geography is not the same place
+
+Every rule here is destination-scoped, so an identity whose destination is
+unknown satisfies none of them. Mapping NULL to a shared sentinel would make two
+unknown-geography identities "the same destination" on the fiction that NULL
+equals NULL, and a shared name, domain or phone between them would become a pair
+on the strength of a fact nobody has.
+
+They are not discarded: they are reported as an **INCOMPLETE GEOGRAPHY** finding,
+which is the honest description — the pair may well be real, and this contract
+cannot say so. An absent destination is likewise not a *second* destination, so
+it never counts toward a cross-destination anomaly either.
+
+### 3.4 Destination scope
 
 Keys are scoped to the destination, and a key appearing in more than one is a
 **cross-destination anomaly** — surfaced, never paired. The real data holds 19,
@@ -99,6 +112,16 @@ Bali and one in Dubai are two properties.
 This does **not** assert that one physical property can never span a destination
 boundary. It asserts that a shared chain asset is not the evidence that would
 establish it.
+
+### 3.5 Geography comes from the observation being compared
+
+The destination is read from the run that produced the **latest observation**,
+not from the run that first saw the identity. Taking the name, domain and phone
+from a new observation and the geography from an old one describes a property
+that never existed: if a provider enumerates a property under destination A and
+a later run corrects it into B, that seam can manufacture pairs, miss real ones
+and invent a cross-destination anomaly out of nothing. The latest observation and
+its run's geography are **one current evidence unit**.
 
 ## 4. Normalisation
 
@@ -174,12 +197,62 @@ Re-running candidate generation refreshes evidence only on rows that are still
 `pending`. Rewriting evidence under a decision a human already made would make
 that decision look as though it rested on facts that were not in front of them.
 
-## 8. Idempotency
+## 8. One pair, one row — literally
 
-Migration 0030 adds partial unique indexes so a candidate pair is **one row**,
-keyed on the pair rather than on the reason it surfaced: a pair found by both
-domain and phone is one candidate carrying both reasons in `match_method`, not
-two candidates for a reviewer to decide twice.
+Migration 0030 makes this true **in the database**, not by convention:
+
+- a CHECK requires the canonical orientation for a source↔source candidate
+  (`source_property_identity_id < candidate_source_property_identity_id`), so
+  `B → A` is refused outright rather than merely deduplicated. UUID ordering
+  carries no meaning of its own, which is what makes it a safe canonical form;
+- partial unique indexes then make the pair unique, and — because only one
+  orientation is legal — genuinely unordered;
+- the key is the PAIR, not the pair plus the reason: a pair found by both domain
+  and phone is one candidate carrying both reasons in `match_method`, not two
+  candidates for a reviewer to decide twice, possibly differently.
+
+## 8a. A pending candidate is a claim about CURRENT evidence
+
+When the provider corrects a property so a pair shares no domain, no phone and no
+destination-scoped name, discovery stops returning it — and a generator that only
+visits current pairs would never look at that row again. It would sit in the
+review queue forever describing a relationship nothing supports, and D062 cannot
+read a queue like that.
+
+So the generator **stands its own stale rows down**: `status = 'superseded'` with
+`superseded_reason = 'no_current_blocking_rule'`.
+
+| | |
+|---|---|
+| eligible | `status = 'pending'` AND `match_method like 'blocking:%'` — the generator's own mark |
+| never touched | anything a human decided; anything the generator did not create |
+| deleted | nothing |
+| rewritten | nothing — the evidence that WAS current is preserved, so a reader can still see why the pair once stood |
+
+**appears → disappears → reappears.** `source_match_candidates` is a MUTABLE
+CURRENT record — 0027 gave it `status`, `resolved_at` and `review_note` and never
+declared it append-only — so a pair that returns reactivates **the same row**:
+`pending` again, reason cleared, evidence refreshed. A second row would be a
+second thing to review for one relationship.
+
+The reason column is what makes that safe. Only the machine writes
+`no_current_blocking_rule`, and only a row carrying it may be revived — so a
+human's `superseded` decision, which has no reason recorded, can never be
+overturned by re-running a script.
+
+Replay after any of these transitions changes nothing further.
+
+## 8b. Future requirement — decision receipts (NOT in this layer)
+
+`source_match_candidates` does not structurally freeze the exact left/right
+observation ids behind a human decision, and this layer does not need it to:
+nothing here decides anything.
+
+**Before a D062 apply may rely on an entity-resolution decision**, the durable
+decision receipt must be able to reconstruct the exact evidence snapshot, the
+reviewer and the time the decision was made — the same guarantee 0028/0029 give
+star, location and scope through immutable revisions. That is a named
+prerequisite for the promotion block, not a gap in candidate discovery.
 
 ## 9. Not in this layer
 

@@ -527,12 +527,30 @@ application code cannot keep on its own. Full contract:
 [`PROPERTY_ENTITY_RESOLUTION_CONTRACT.md`](PROPERTY_ENTITY_RESOLUTION_CONTRACT.md).
 
 ### A candidate pair is ONE row
-Three partial unique indexes — `(identity, candidate_identity)` for
+A CHECK first: for `candidate_kind = 'source_identity'` the left identity must
+sort before the right. An index alone is DIRECTIONAL — it stops `A → B` twice but
+not `A → B` and `B → A`, which is the same pair recorded as two candidates for a
+reviewer to decide twice. Application code orienting pairs is a convention;
+a future writer, a Provider B workflow, a manual tool and psql are not bound by
+it. UUID ordering carries no meaning of its own, which makes it a safe canonical
+form.
+
+Then three partial unique indexes — `(identity, candidate_identity)` for
 `source_identity`, `(identity, candidate_hotel_id)` for `canonical_hotel`, and
-`(identity)` for `new_property`. Without them, re-running discovery over
-unchanged evidence inserts a second row per pair and the review queue grows by
-one duplicate per replay; select-then-insert would be a race and a convention
-rather than a guarantee.
+`(identity)` for `new_property` — which are genuinely unordered because only one
+orientation is legal. Without them, re-running discovery over unchanged evidence
+inserts a second row per pair; select-then-insert would be a race and a
+convention rather than a guarantee.
+
+### `superseded_reason`
+Set ONLY by candidate generation, and only to `no_current_blocking_rule`: no
+current blocking rule supports this pair any more. A pending candidate is a claim
+about CURRENT evidence, and discovery no longer returning a pair means nothing
+would ever revisit the row — it would sit in the review queue forever. The
+generator stands down its own stale rows (`status = 'pending'` AND
+`match_method like 'blocking:%'`), deletes nothing, rewrites no evidence, and
+reactivates the same row if the evidence returns. A human decision carries no
+reason here, which is exactly what stops a script overturning one.
 
 Keyed on the PAIR, not the pair plus the reason it surfaced: a pair found by
 both a shared domain and a shared phone is one candidate carrying both reasons in

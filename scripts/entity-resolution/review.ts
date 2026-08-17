@@ -74,6 +74,7 @@ interface CandidateRow {
   known_source_mapping: boolean;
   agreeing_dimensions: number;
   review_note: string | null;
+  superseded_reason: string | null;
 }
 
 export const CANDIDATE_QUERY = `
@@ -86,20 +87,22 @@ export const CANDIDATE_QUERY = `
          ro.source_name as right_name, rd.slug as right_destination,
          c.name_evidence, c.domain_evidence, c.address_evidence, c.phone_evidence,
          c.brand_evidence, c.coordinate_distance_metres::text as coordinate_distance_metres,
-         c.known_source_mapping, c.agreeing_dimensions, c.review_note
+         c.known_source_mapping, c.agreeing_dimensions, c.review_note, c.superseded_reason
     from public.source_match_candidates c
     join public.source_property_identities li on li.id = c.source_property_identity_id
-    join lateral (select o.source_name from public.source_property_observations o
+    join lateral (select o.source_name, o.source_run_id
+                    from public.source_property_observations o
                    where o.source_property_identity_id = li.id
                    order by o.observed_at desc, o.id desc limit 1) lo on true
-    join public.source_runs lr on lr.id = li.first_seen_run_id
+    join public.source_runs lr on lr.id = lo.source_run_id
     left join public.destinations ld on ld.id = lr.destination_id
     left join public.source_property_identities ri
            on ri.id = c.candidate_source_property_identity_id
-    left join lateral (select o.source_name from public.source_property_observations o
+    left join lateral (select o.source_name, o.source_run_id
+                         from public.source_property_observations o
                         where o.source_property_identity_id = ri.id
                         order by o.observed_at desc, o.id desc limit 1) ro on true
-    left join public.source_runs rr on rr.id = ri.first_seen_run_id
+    left join public.source_runs rr on rr.id = ro.source_run_id
     left join public.destinations rd on rd.id = rr.destination_id
    where c.source = $1 and c.source_environment = $2
    order by c.agreeing_dimensions desc, c.match_method, c.id
@@ -131,7 +134,9 @@ async function main(): Promise<void> {
       );
       console.info(`  ${total.rows[0]!.n} candidate(s); showing ${res.rows.length}\n`);
       for (const r of res.rows) {
-        console.info(`  ── ${r.candidate_kind} · ${r.status} · ${r.match_method}`);
+        console.info(
+          `  ── ${r.candidate_kind} · ${r.status}${r.superseded_reason ? ` (${r.superseded_reason})` : ""} · ${r.match_method}`,
+        );
         console.info(
           `     A  ${r.left_source_id}  ${r.left_name ?? "(no name)"}  [${r.left_destination ?? "?"}]`,
         );

@@ -34,7 +34,10 @@ import {
 } from "../../scripts/entity-resolution/normalize";
 import { compareRecords, type ComparableRecord } from "../../scripts/entity-resolution/evidence";
 import { discoverCandidates, matchMethodFor } from "../../scripts/entity-resolution/candidates";
-import { generateCandidates } from "../../scripts/entity-resolution/writer";
+import {
+  generateCandidates,
+  loadBlockableIdentities,
+} from "../../scripts/entity-resolution/writer";
 
 const d = describe.skipIf(!hasTestDb);
 const SOURCE = "hotelbeds";
@@ -117,6 +120,35 @@ async function identity(
     ],
   );
   return { identityId, runId, sourcePropertyId };
+}
+
+/** A LATER observation for an existing identity, in a run of its own. */
+async function addObservation(
+  f: Fixture,
+  fields: ObservationFields & { destinationId?: string } = {},
+): Promise<void> {
+  const runId = await newRun(fields.destinationId ?? DEST.bali);
+  await adminQuery(
+    `insert into public.source_property_observations
+       (source_run_id, source_property_identity_id, source, source_environment, observed_at,
+        source_name, source_website_url, source_address, source_phone, source_phone_type,
+        source_brand_code, source_latitude, source_longitude, source_coordinates_plausible)
+     values ($1,$2,$3,'evaluation', now() + interval '1 second', $4,$5,$6,$7,$8,$9,$10,$11,
+             case when $10::numeric is null then null else true end)`,
+    [
+      runId,
+      f.identityId,
+      SOURCE,
+      fields.name ?? null,
+      fields.website ?? null,
+      fields.address ?? null,
+      fields.phone ?? null,
+      fields.phoneType ?? null,
+      fields.brand ?? null,
+      fields.lat ?? null,
+      fields.lon ?? null,
+    ],
+  );
 }
 
 async function runMatcher(apply = true) {
@@ -434,9 +466,36 @@ d("pre-publication entity resolution (0030)", () => {
         expect(code, `${file} carries a confidence/score`).not.toMatch(
           /confidence|matchScore|similarity/i,
         );
-        expect(code, `${file} sets a status other than pending`).not.toMatch(
-          /'(accepted|rejected|superseded)'/,
+        // ACCEPTED and REJECTED are a human's words. No file may contain them.
+        expect(code, `${file} decides a candidate`).not.toMatch(/'(accepted|rejected)'/);
+      }
+
+      // `superseded` IS written, by the generator standing down its own stale
+      // rows — so the guard on it is narrower and stronger than "never".
+      const writer = readFileSync(
+        path.join(REPO_ROOT, "scripts", "entity-resolution", "writer.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      for (const required of [
+        "'no_current_blocking_rule'", // never an unexplained supersession
+        "status = 'pending'", // only a row nobody has decided
+        "match_method like 'blocking:%'", // only a row the generator made
+      ]) {
+        expect(writer, `stand-down is missing ${required}`).toContain(required);
+      }
+      for (const file of [
+        "candidates.ts",
+        "evidence.ts",
+        "normalize.ts",
+        "review.ts",
+        "match.ts",
+      ]) {
+        const src = readFileSync(
+          path.join(REPO_ROOT, "scripts", "entity-resolution", file),
+          "utf8",
         );
+        const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        expect(code, `${file} changes a candidate status`).not.toMatch(/'superseded'/);
       }
     });
 
@@ -637,6 +696,39 @@ d("pre-publication entity resolution (0030)", () => {
       expect(anon.error?.code).toBe("42501");
     });
 
+    it("a decided candidate is NEVER rewritten, superseded or revived", async () => {
+      const a = await identity({ website: "https://decided.example.com" });
+      const b = await identity({ website: "https://decided.example.com" });
+      await runMatcher();
+      const row = await candidateBetween(a.identityId, b.identityId);
+
+      // A human accepts it, then the provider removes the shared domain.
+      await adminQuery(
+        `update public.source_match_candidates set status='accepted', resolved_at=now() where id=$1`,
+        [row!.id],
+      );
+      await addObservation(a, { website: "https://moved-away.example.com" });
+      await runMatcher();
+
+      const after = await candidateBetween(a.identityId, b.identityId);
+      expect(after!.status).toBe("accepted");
+      expect(after!.superseded_reason).toBeNull();
+      expect(after!.match_method).toBe(row!.match_method);
+      expect(after!.domain_evidence).toBe(row!.domain_evidence);
+
+      // …and a human-superseded row is not revived when the evidence returns,
+      // because it carries no machine reason.
+      await adminQuery(
+        `update public.source_match_candidates set status='superseded', resolved_at=now() where id=$1`,
+        [row!.id],
+      );
+      await addObservation(a, { website: "https://decided.example.com" });
+      await runMatcher();
+      const final = await candidateBetween(a.identityId, b.identityId);
+      expect(final!.status).toBe("superseded");
+      expect(final!.superseded_reason).toBeNull();
+    });
+
     it("27. a full replay leaves the candidate set byte-identical", async () => {
       const checksum = async () =>
         (
@@ -655,6 +747,241 @@ d("pre-publication entity resolution (0030)", () => {
       expect(replay.candidatesCreated).toBe(0);
       expect(replay.candidatesEvidenceUpdated).toBe(0);
       expect(await checksum()).toBe(before);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A PAIR IS ONE ROW, IN ONE ORIENTATION
+  // -----------------------------------------------------------------------
+  describe("unordered pair uniqueness is a DATABASE invariant", () => {
+    const insertPair = (left: string, right: string) =>
+      adminQuery(
+        `insert into public.source_match_candidates
+           (source_property_identity_id, candidate_source_property_identity_id, source,
+            source_environment, candidate_kind, match_method)
+         values ($1,$2,$3,'evaluation','source_identity','manual_probe')`,
+        [left, right, SOURCE],
+      );
+
+    it("accepts the canonical orientation, and refuses both the reverse and the repeat", async () => {
+      const x = await identity({});
+      const y = await identity({});
+      const [low, high] =
+        x.identityId < y.identityId ? [x.identityId, y.identityId] : [y.identityId, x.identityId];
+
+      await expect(insertPair(low, high)).resolves.toBeTruthy();
+      // The same pair, written the other way round: two rows for one pair, for a
+      // reviewer to decide twice and possibly differently.
+      await expect(insertPair(high, low)).rejects.toThrow(/source_pair_orientation/i);
+      await expect(insertPair(low, high)).rejects.toThrow(/source_pair_uk|duplicate key/i);
+    });
+
+    it("refuses the reverse orientation even with no row present at all", async () => {
+      const x = await identity({});
+      const y = await identity({});
+      const [low, high] =
+        x.identityId < y.identityId ? [x.identityId, y.identityId] : [y.identityId, x.identityId];
+      // Structural, not a deduplication side effect.
+      await expect(insertPair(high, low)).rejects.toThrow(/source_pair_orientation/i);
+    });
+
+    it("leaves canonical_hotel candidates unconstrained by orientation", async () => {
+      const f = await identity({});
+      await expect(
+        adminQuery(
+          `insert into public.source_match_candidates
+             (source_property_identity_id, source, source_environment, candidate_kind,
+              candidate_hotel_id, match_method)
+           values ($1,$2,'evaluation','canonical_hotel',$3,'manual_probe')`,
+          [f.identityId, SOURCE, HOTEL.bali],
+        ),
+      ).resolves.toBeTruthy();
+    });
+
+    it("discovery orients every pair canonically", () => {
+      const make = (id: string) => ({
+        identityId: id,
+        observationId: `o${id}`,
+        destinationId: "dest-1",
+        ...blank,
+        websiteUrl: "https://orient.example.com",
+      });
+      for (const order of [
+        ["zzz", "aaa"],
+        ["aaa", "zzz"],
+      ]) {
+        const { pairs } = discoverCandidates(order.map(make));
+        expect(pairs).toHaveLength(1);
+        expect(pairs[0]!.leftIdentityId < pairs[0]!.rightIdentityId).toBe(true);
+      }
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A PENDING CANDIDATE IS A CLAIM ABOUT CURRENT EVIDENCE
+  // -----------------------------------------------------------------------
+  describe("stale machine candidates are stood down, not left pending", () => {
+    it("appears → disappears → reappears, with history intact throughout", async () => {
+      const a = await identity({ website: "https://lifecycle.example.com" });
+      const b = await identity({ website: "https://lifecycle.example.com" });
+
+      // APPEARS.
+      const first = await runMatcher();
+      expect(first.candidatesCreated).toBeGreaterThan(0);
+      const appeared = await candidateBetween(a.identityId, b.identityId);
+      expect(appeared!.status).toBe("pending");
+      expect(appeared!.match_method).toBe(matchMethodFor(["exact_domain"]));
+
+      // DISAPPEARS: the provider corrects one property's website, so no blocking
+      // rule connects them any more.
+      await addObservation(a, { website: "https://elsewhere.example.com" });
+      const second = await runMatcher();
+      expect(second.candidatesSuperseded).toBeGreaterThan(0);
+
+      const stoodDown = await candidateBetween(a.identityId, b.identityId);
+      expect(stoodDown!.status).toBe("superseded");
+      expect(stoodDown!.superseded_reason).toBe("no_current_blocking_rule");
+      // History is not deleted, and the evidence that WAS current is preserved
+      // exactly, so a reader can still see why the pair once stood.
+      expect(stoodDown!.id).toBe(appeared!.id);
+      expect(stoodDown!.match_method).toBe(appeared!.match_method);
+      expect(stoodDown!.domain_evidence).toBe(appeared!.domain_evidence);
+
+      // Replay after standing down changes nothing further.
+      const third = await runMatcher();
+      expect(third.candidatesSuperseded).toBe(0);
+      expect(third.candidatesCreated).toBe(0);
+      expect(third.candidatesReactivated).toBe(0);
+
+      // REAPPEARS: the correction is itself corrected.
+      await addObservation(a, { website: "https://lifecycle.example.com" });
+      const fourth = await runMatcher();
+      expect(fourth.candidatesReactivated).toBe(1);
+      expect(fourth.candidatesCreated).toBe(0);
+
+      const revived = await candidateBetween(a.identityId, b.identityId);
+      // The SAME row: this is the current-candidate record for this pair, so a
+      // second row would be a second thing to review for one relationship.
+      expect(revived!.id).toBe(appeared!.id);
+      expect(revived!.status).toBe("pending");
+      expect(revived!.superseded_reason).toBeNull();
+      expect(revived!.resolved_at).toBeNull();
+
+      const fifth = await runMatcher();
+      expect([
+        fifth.candidatesCreated,
+        fifth.candidatesReactivated,
+        fifth.candidatesSuperseded,
+        fifth.candidatesEvidenceUpdated,
+      ]).toEqual([0, 0, 0, 0]);
+    });
+
+    it("a pair that stays current but whose evidence changes is refreshed in place", async () => {
+      const a = await identity({ website: "https://refresh.example.com", name: "Alpha One" });
+      const b = await identity({ website: "https://refresh.example.com", name: "Beta Two" });
+      await runMatcher();
+      const before = await candidateBetween(a.identityId, b.identityId);
+      expect(before!.name_evidence).toBe("none");
+
+      // Still linked by domain; now the names agree too.
+      await addObservation(a, { website: "https://refresh.example.com", name: "Beta Two" });
+      const run = await runMatcher();
+      expect(run.candidatesEvidenceUpdated).toBe(1);
+      expect(run.candidatesSuperseded).toBe(0);
+
+      const after = await candidateBetween(a.identityId, b.identityId);
+      expect(after!.id).toBe(before!.id);
+      expect(after!.name_evidence).toBe("exact");
+      expect(after!.status).toBe("pending");
+    });
+
+    it("never stands down a candidate it did not generate", async () => {
+      const x = await identity({});
+      const y = await identity({});
+      const [low, high] =
+        x.identityId < y.identityId ? [x.identityId, y.identityId] : [y.identityId, x.identityId];
+      await adminQuery(
+        `insert into public.source_match_candidates
+           (source_property_identity_id, candidate_source_property_identity_id, source,
+            source_environment, candidate_kind, match_method, review_note)
+         values ($1,$2,$3,'evaluation','source_identity','manual_search','found by an editor')`,
+        [low, high, SOURCE],
+      );
+      await runMatcher();
+      const row = await candidateBetween(low, high);
+      // No blocking rule supports it, and it is still pending: `match_method`
+      // does not carry the generator's mark, so the generator leaves it alone.
+      expect(row!.status).toBe("pending");
+      expect(row!.superseded_reason).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // GEOGRAPHY COMES FROM THE OBSERVATION BEING COMPARED
+  // -----------------------------------------------------------------------
+  describe("destination evidence is aligned to the latest observation", () => {
+    it("uses the LATEST observation's own run, not the first-seen run", async () => {
+      const f = await identity({ destinationId: DEST.bali, name: "Moved Property" });
+      await addObservation(f, { destinationId: DEST.ubud, name: "Moved Property v2" });
+
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      let loaded;
+      try {
+        loaded = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+      } finally {
+        await client.end();
+      }
+      const mine = loaded.find((i) => i.identityId === f.identityId)!;
+      // Latest fields AND the geography of the run that observed them: one
+      // current evidence unit, not two moments spliced together.
+      expect(mine.name).toBe("Moved Property v2");
+      expect(mine.destinationId).toBe(DEST.ubud);
+      expect(mine.destinationId).not.toBe(DEST.bali);
+    });
+
+    it("UNKNOWN destination is not the SAME destination", () => {
+      const make = (
+        id: string,
+        destinationId: string | null,
+        over: Partial<typeof blank> = {},
+      ) => ({
+        identityId: id,
+        observationId: `o${id}`,
+        destinationId,
+        ...blank,
+        ...over,
+      });
+
+      for (const [label, over] of [
+        ["name", { name: "Identical Villa Name" }],
+        ["domain", { websiteUrl: "https://unknown-geo.example.com" }],
+        ["phone", { phone: "+62361999888" }],
+      ] as const) {
+        const result = discoverCandidates([make("a", null, over), make("b", null, over)]);
+        expect(result.pairs, `${label} paired two unknown-geography identities`).toHaveLength(0);
+        // Not silently dropped: reported as what it is.
+        expect(result.incompleteGeography.length, `${label} not reported`).toBeGreaterThan(0);
+        // …and an absent destination is not a second destination either.
+        expect(result.crossDestinationCollisions, `${label} faked an anomaly`).toHaveLength(0);
+      }
+    });
+
+    it("two KNOWN and equal destinations still pair normally", () => {
+      const make = (id: string, destinationId: string) => ({
+        identityId: id,
+        observationId: `o${id}`,
+        destinationId,
+        ...blank,
+        name: "Identical Villa Name",
+      });
+      expect(discoverCandidates([make("a", "bali"), make("b", "bali")]).pairs).toHaveLength(1);
+      const cross = discoverCandidates([make("a", "bali"), make("b", "dubai")]);
+      expect(cross.pairs).toHaveLength(0);
+      expect(cross.crossDestinationCollisions.length).toBeGreaterThan(0);
     });
   });
 });

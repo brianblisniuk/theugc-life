@@ -200,7 +200,7 @@ async function promote(identityId: string, hotelId: string): Promise<void> {
 
 /** A match candidate. `source`/`source_environment` default to the identity's. */
 async function makeCandidate(
-  identityId: string,
+  identityIdInput: string,
   opts: {
     runId?: string;
     source?: string;
@@ -208,8 +208,19 @@ async function makeCandidate(
     columns?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
+  let identityId = identityIdInput;
+  let columns = opts.columns ?? {};
+  // 0030 requires ONE canonical orientation for a source-to-source pair, so the
+  // same pair cannot be recorded as two candidates. Fixtures state the pair; the
+  // helper puts it in the legal order — BEFORE reading the identity's own
+  // source/environment, which the composite FK requires to belong to whichever
+  // side ends up on the left.
+  const target = columns.candidate_source_property_identity_id as string | undefined;
+  if (columns.candidate_kind === "source_identity" && target && target < identityId) {
+    columns = { ...columns, candidate_source_property_identity_id: identityId };
+    identityId = target;
+  }
   const meta = await identityMeta(identityId);
-  const columns = opts.columns ?? {};
   // `candidate_kind` DEFAULTS to `new_property`, and 0030 requires such a row to
   // carry the finding behind it. Fixtures that do not care about the kind get a
   // note so the constraint under test is the one they meant to test.
@@ -1064,11 +1075,16 @@ d("property-content infrastructure (0027)", () => {
       const rows = await adminQuery<{ kind: string; target: string; hotel: string | null }>(
         `select candidate_kind as kind, candidate_source_property_identity_id as target,
                 candidate_hotel_id as hotel
-         from public.source_match_candidates where source_property_identity_id = $1`,
-        [a],
+         from public.source_match_candidates
+         where source_property_identity_id in ($1,$2)
+           and candidate_source_property_identity_id in ($1,$2)`,
+        [a, b],
       );
+      // The pair is recorded in ONE canonical orientation (0030), so the test
+      // asserts the RELATIONSHIP rather than which side it happens to be on.
+      expect(rows).toHaveLength(1);
       expect(rows[0]!.kind).toBe("source_identity");
-      expect(rows[0]!.target).toBe(b);
+      expect([a, b]).toContain(rows[0]!.target);
       expect(rows[0]!.hotel).toBeNull();
 
       // Both remain coverage-critical. Recognising an equivalence is evidence,

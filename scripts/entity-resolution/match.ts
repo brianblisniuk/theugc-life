@@ -107,6 +107,12 @@ async function main(): Promise<void> {
       console.info(`      ${c.reason.padEnd(28)}${c.key} → ${c.identityIds.length} identities`);
     }
     console.info("");
+    console.info("  INCOMPLETE GEOGRAPHY (destination unknown — never a pair)");
+    console.info(`    shared keys           ${counts.discovery.incompleteGeography.length}`);
+    for (const c of counts.discovery.incompleteGeography.slice(0, args.clusters)) {
+      console.info(`      ${c.reason.padEnd(28)}${c.key} → ${c.identityIds.length} identities`);
+    }
+    console.info("");
     console.info("  PAIR EVIDENCE");
     table("name", counts.evidence.name);
     table("domain", counts.evidence.domain);
@@ -126,6 +132,10 @@ async function main(): Promise<void> {
     console.info(`    candidates created    ${counts.candidatesCreated}`);
     console.info(`    evidence refreshed    ${counts.candidatesEvidenceUpdated}`);
     console.info(`    already decided       ${counts.candidatesDecidedSkipped} (left untouched)`);
+    console.info(
+      `    stood down            ${counts.candidatesSuperseded} (no current blocking rule)`,
+    );
+    console.info(`    reactivated           ${counts.candidatesReactivated} (evidence returned)`);
     console.info("    new_property rows     0 (only an explicit review finding may create one)");
     console.info("");
     console.info("  canonical writes: 0 hotels, 0 links, 0 reviews, 0 terminal transitions");

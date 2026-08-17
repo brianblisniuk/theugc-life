@@ -41,6 +41,10 @@ export interface MatchCounts {
   candidatesEvidenceUpdated: number;
   /** Rows left alone because a human had already decided them. */
   candidatesDecidedSkipped: number;
+  /** Machine rows stood down because no current blocking rule supports them. */
+  candidatesSuperseded: number;
+  /** Machine-superseded rows the evidence brought back. */
+  candidatesReactivated: number;
   evidence: {
     name: Record<string, number>;
     domain: Record<string, number>;
@@ -57,10 +61,16 @@ export interface MatchCounts {
  * Load the latest observation per evaluation identity, with its destination.
  *
  * The LATEST observation, because a candidate is about what the property looks
- * like now. The destination comes from the run that first saw the identity —
- * 0027 has no destination column on the identity itself, and a run's
- * destination is the only recorded statement of where the enumeration was
- * looking.
+ * like now — and the destination comes from THAT observation's own run, not
+ * from the run that first saw the identity.
+ *
+ * Mixing the two would mix evidence from two different moments. If a provider
+ * enumerated a property under destination A and a later run corrects it into
+ * destination B, taking the name/domain/phone from the new observation and the
+ * geography from the old one describes a property that never existed: it can
+ * manufacture pairs, miss real ones, and invent a cross-destination anomaly out
+ * of the seam. The latest observation and its run's geography are ONE current
+ * evidence unit.
  */
 export async function loadBlockableIdentities(
   client: Client,
@@ -83,7 +93,7 @@ export async function loadBlockableIdentities(
     `select distinct on (i.id)
             i.id as identity_id,
             o.id as observation_id,
-            first_run.destination_id,
+            latest_run.destination_id,
             o.source_name, o.source_website_url, o.source_address,
             o.source_phone, o.source_phone_type,
             o.source_brand_code, o.source_chain_code,
@@ -91,7 +101,7 @@ export async function loadBlockableIdentities(
             case when o.source_coordinates_plausible then o.source_longitude::text end as longitude
        from public.source_property_identities i
        join public.source_property_observations o on o.source_property_identity_id = i.id
-       join public.source_runs first_run on first_run.id = i.first_seen_run_id
+       join public.source_runs latest_run on latest_run.id = o.source_run_id
       where i.source = $1 and i.source_environment = $2
       order by i.id, o.observed_at desc, o.id desc`,
     [opts.source, opts.environment],
@@ -134,6 +144,8 @@ function emptyCounts(discovery: DiscoveryResult, identities: number): MatchCount
     candidatesCreated: 0,
     candidatesEvidenceUpdated: 0,
     candidatesDecidedSkipped: 0,
+    candidatesSuperseded: 0,
+    candidatesReactivated: 0,
     evidence: {
       name: {},
       domain: {},
@@ -245,6 +257,28 @@ export async function generateCandidates(
       // still PENDING — rewriting the evidence under a decision a human already
       // made would make the decision look as if it rested on facts that were
       // not in front of them.
+      // The pair is current again after the generator itself stood it down.
+      // ONLY a row carrying the machine's own reason may be revived: a human
+      // `superseded` decision has no reason recorded, and reviving it would
+      // overturn a decision by re-running a script.
+      const reactivated = await client.query(
+        `update public.source_match_candidates set
+           status = 'pending', superseded_reason = null, resolved_at = null,
+           match_method = $3, name_evidence = $4, domain_evidence = $5, address_evidence = $6,
+           phone_evidence = $7, brand_evidence = $8, coordinate_distance_metres = $9
+         where source_property_identity_id = $1
+           and candidate_source_property_identity_id = $2
+           and candidate_kind = 'source_identity'
+           and status = 'superseded'
+           and superseded_reason = 'no_current_blocking_rule'
+         returning id`,
+        [...pairKeys, ...evidenceValues],
+      );
+      if ((reactivated.rowCount ?? 0) > 0) {
+        counts.candidatesReactivated += 1;
+        continue;
+      }
+
       const updated = await client.query(
         `update public.source_match_candidates set
            match_method = $3, name_evidence = $4, domain_evidence = $5, address_evidence = $6,
@@ -271,6 +305,41 @@ export async function generateCandidates(
         if ((decided.rowCount ?? 0) > 0) counts.candidatesDecidedSkipped += 1;
       }
     }
+    // STAND DOWN what the current evidence no longer supports.
+    //
+    // A pending candidate is a claim about the CURRENT evidence. When the
+    // provider corrects a property so the pair shares no domain, no phone and no
+    // destination-scoped name, discovery stops returning it — and a generator
+    // that only visits current pairs would never look at the row again. It would
+    // sit in the review queue forever, describing a relationship nothing
+    // supports.
+    //
+    // Three things this deliberately does NOT do: it deletes no row, it rewrites
+    // no evidence (the reader can still see what the pair looked like when it
+    // stood), and it touches nothing a human decided — `match_method like
+    // 'blocking:%'` is the generator's own mark, and only `pending` is eligible.
+    const stood = await client.query(
+      `update public.source_match_candidates set
+         status = 'superseded', superseded_reason = 'no_current_blocking_rule',
+         resolved_at = now()
+       where source = $1 and source_environment = $2
+         and candidate_kind = 'source_identity'
+         and status = 'pending'
+         and match_method like 'blocking:%'
+         and not exists (
+           select 1 from unnest($3::uuid[], $4::uuid[]) as current_pair(l, r)
+            where current_pair.l = source_property_identity_id
+              and current_pair.r = candidate_source_property_identity_id)
+       returning id`,
+      [
+        opts.source,
+        opts.environment,
+        prepared.map((p) => p.pair.leftIdentityId),
+        prepared.map((p) => p.pair.rightIdentityId),
+      ],
+    );
+    counts.candidatesSuperseded = stood.rowCount ?? 0;
+
     await client.query("commit");
   } catch (err) {
     await client.query("rollback").catch(() => {

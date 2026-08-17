@@ -26,6 +26,27 @@
 -- deciding the same pair twice is exactly the duplicated work this queue exists
 -- to prevent, and it would also read as two findings in any count.
 --
+-- The index alone is DIRECTIONAL, and that is not what "one row" means. It stops
+-- `A -> B` twice; it does not stop `A -> B` and `B -> A`, which are the same
+-- pair recorded as two candidates for a reviewer to decide twice — and possibly
+-- to decide differently. Today's discovery orients pairs lexicographically, but
+-- that is an application convention, and a future writer, a Provider B workflow,
+-- a manual tool or plain psql are not bound by it.
+--
+-- So the ORIENTATION is the invariant, and the index is only unambiguous
+-- because of it: for a source↔source candidate the left identity must sort
+-- before the right. UUID ordering carries no meaning of its own, which is
+-- exactly what makes it a safe canonical form.
+alter table public.source_match_candidates
+  add constraint source_match_candidates_source_pair_orientation check (
+    candidate_kind <> 'source_identity'
+    or source_property_identity_id < candidate_source_property_identity_id
+  );
+
+comment on constraint source_match_candidates_source_pair_orientation
+  on public.source_match_candidates is
+  'A source-to-source pair has ONE canonical orientation, so the pair unique index below is genuinely unordered: B -> A is refused, not merely deduplicated.';
+
 -- Partial indexes, one per kind, because the target column differs and NULL
 -- does not deduplicate.
 create unique index source_match_candidates_source_pair_uk
@@ -72,3 +93,37 @@ alter table public.source_match_candidates
 comment on constraint source_match_candidates_new_property_requires_finding
   on public.source_match_candidates is
   'A new_property candidate is an explicit search/review finding and must say who found what. Absence of a machine candidate is NOT a finding.';
+
+-- ===========================================================================
+-- 3. A MACHINE CANDIDATE THAT IS NO LONGER CURRENT
+-- ===========================================================================
+-- A pending candidate is a claim about the CURRENT evidence: "these two are
+-- worth comparing, because right now they share a domain". When the provider
+-- corrects one of them and that stops being true, the row is a claim nothing
+-- supports any more — and because discovery no longer returns the pair, a
+-- generator that only visits current pairs would never revisit it. It would sit
+-- in the review queue forever, and D062 cannot read a queue like that.
+--
+-- `superseded` already exists in 0027's status vocabulary for exactly this
+-- shape. What it could not express is WHO superseded the row, and that
+-- distinction is load-bearing: the pipeline must be able to reactivate a pair it
+-- itself stood down when the evidence returns, and must never touch a decision a
+-- human made. So the reason is recorded, and the machine's own reason is the
+-- ONLY value it may write or clear.
+--
+-- `source_match_candidates` is a MUTABLE CURRENT record — 0027 gave it `status`,
+-- `resolved_at` and `review_note` and never declared it append-only — so this
+-- is a status transition on that record, not a rewrite of history: no row is
+-- deleted, and the evidence that was current when the pair stood is left exactly
+-- as it was.
+alter table public.source_match_candidates
+  add column superseded_reason text
+    check (superseded_reason is null or superseded_reason in ('no_current_blocking_rule'));
+
+alter table public.source_match_candidates
+  add constraint source_match_candidates_superseded_reason_shape check (
+    superseded_reason is null or status = 'superseded'
+  );
+
+comment on column public.source_match_candidates.superseded_reason is
+  'Set ONLY by candidate generation, and only to `no_current_blocking_rule`: no current blocking rule supports this pair any more. A human decision never carries a reason here, which is what keeps the generator from reactivating one.';
