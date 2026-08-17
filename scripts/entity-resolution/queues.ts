@@ -93,3 +93,90 @@ export function partitionForReview(
  * would put four different meanings behind one word.
  */
 export const ACTIONABLE_CANDIDATE_STATUS = "pending" as const;
+
+/**
+ * The generator's own namespace.
+ *
+ * A machine candidate is a `source_identity` row whose `match_method` starts
+ * with `blocking:` — the mark `generateCandidates` puts on everything it
+ * creates. Rows outside it (a `manual_search` pair a reviewer added, a
+ * `canonical_hotel` candidate, a `new_property` finding) belong to somebody
+ * else, and this module never claims authority over them.
+ */
+export const MACHINE_MATCH_METHOD_PREFIX = "blocking:" as const;
+
+export function isMachineMatchMethod(matchMethod: string): boolean {
+  return matchMethod.startsWith(MACHINE_MATCH_METHOD_PREFIX);
+}
+
+/** An unordered source↔source pair, in the canonical orientation 0030 enforces. */
+export interface PairKey {
+  leftIdentityId: string;
+  rightIdentityId: string;
+}
+
+const pairId = (p: PairKey): string =>
+  p.leftIdentityId < p.rightIdentityId
+    ? `${p.leftIdentityId} ${p.rightIdentityId}`
+    : `${p.rightIdentityId} ${p.leftIdentityId}`;
+
+export interface MachineSyncResult {
+  inSync: boolean;
+  /** Discovered now, and nothing has accounted for it — the writer has not run. */
+  discoveredNotPersisted: PairKey[];
+  /** A pending machine row current discovery no longer produces — stale. */
+  persistedNotDiscovered: PairKey[];
+}
+
+/**
+ * Is the persisted ACTIONABLE machine state the same claim current discovery
+ * makes?
+ *
+ * The CANDIDATES queue reads persisted rows, and the other two queues are
+ * computed from a live sweep. Those are two different moments, and between them
+ * a provider correction can leave the queue describing a relationship that no
+ * longer has evidence — or hide one that just gained it. Neither is visible from
+ * the queue itself: a stale row looks exactly like a current one.
+ *
+ * So the two are compared before the queue is shown, and DISAGREEMENT IS AN
+ * ERROR rather than a filter. Silently intersecting them would hide a newly
+ * discovered pair that was never persisted, and would hide a stale pending row
+ * without recording the supersession it is owed — both of which leave a reviewer
+ * believing they saw everything current.
+ *
+ * Only the generator's own namespace is compared. A `manual_search` pending row
+ * is legitimate review work that discovery never claimed to produce, so its
+ * absence from the sweep is not a disagreement about anything.
+ *
+ * THE COMPARISON IS NOT SYMMETRIC, and it must not be.
+ *
+ * A pair a human has ACCEPTED, REJECTED or set aside keeps its evidence, so
+ * discovery keeps producing it — while its row is no longer `pending`. Counting
+ * that as "discovered but not persisted" would raise an alarm the generator can
+ * never clear: it is required to leave decided rows alone, so re-running it
+ * would change nothing and the gate would refuse review forever. A decided pair
+ * is ACCOUNTED FOR, which is the question the gate actually asks. It just is not
+ * actionable, and it is the actionable side that must match discovery.
+ */
+export function compareMachinePairSync(
+  discovered: readonly PairKey[],
+  persistedActionableMachine: readonly PairKey[],
+  humanDecided: readonly PairKey[] = [],
+): MachineSyncResult {
+  const discoveredById = new Map(discovered.map((p) => [pairId(p), p]));
+  const persistedById = new Map(persistedActionableMachine.map((p) => [pairId(p), p]));
+  const decidedIds = new Set(humanDecided.map(pairId));
+
+  const discoveredNotPersisted = [...discoveredById]
+    .filter(([id]) => !persistedById.has(id) && !decidedIds.has(id))
+    .map(([, p]) => p);
+  const persistedNotDiscovered = [...persistedById]
+    .filter(([id]) => !discoveredById.has(id))
+    .map(([, p]) => p);
+
+  return {
+    inSync: discoveredNotPersisted.length === 0 && persistedNotDiscovered.length === 0,
+    discoveredNotPersisted,
+    persistedNotDiscovered,
+  };
+}

@@ -60,7 +60,14 @@ export const BLOCKING_REASONS: readonly BlockingReason[] = [
 
 export interface BlockableIdentity extends ComparableRecord {
   identityId: string;
-  /** Which destination's run first saw this identity. NULL = unscoped. */
+  /**
+   * The destination of the LATEST observation being compared, read through that
+   * observation's own `source_run` — never the run that first saw the identity.
+   * The observation and its geography are one current evidence unit.
+   *
+   * NULL = the destination is unknown, which is NOT a destination: it scopes
+   * nothing, and it never equals another NULL.
+   */
   destinationId: string | null;
   observationId: string;
 }

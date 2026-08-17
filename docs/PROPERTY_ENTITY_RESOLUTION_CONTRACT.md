@@ -236,6 +236,43 @@ Geography on every one of these surfaces is read from each identity's LATEST
 observation and that observation's own run (§3.5) — never from the run that
 first saw it.
 
+### 7.2 The sync gate — CANDIDATES fails closed
+
+ANOMALIES and NO MACHINE CANDIDATE are computed live, so they are current by
+construction. CANDIDATES is not: it reads rows the generator wrote at an earlier
+moment, and between then and now a provider correction can remove the blocking
+relation behind a pending row, or create a pair nothing has persisted. Either
+way the queue silently stops describing the present, and the row itself shows
+nothing — a stale candidate looks exactly like a current one.
+
+So before the queue may be shown, the generator's own pair set is compared with
+a live sweep:
+
+| | |
+|---|---|
+| discovered side | the pairs `discoverCandidates` returns right now |
+| persisted side | `status = 'pending'` AND `candidate_kind = 'source_identity'` AND `match_method like 'blocking:%'` |
+| accounted for | a pair a human decided — `accepted`, `rejected`, or `superseded` with no reason |
+| out of scope | `manual_search` and every other non-generator row |
+
+Disagreement in **either** direction stops the review with the command to run.
+It is deliberately **not** a filter: intersecting the two would hide a newly
+discovered pair that was never persisted, and hide a stale pending row without
+recording the supersession it is owed — and a reviewer would believe they had
+seen everything current. The review command still writes nothing; it reports the
+disagreement and does not fix it.
+
+The comparison is **not symmetric**, and must not be. A pair a human decided
+keeps its evidence, so discovery keeps producing it while its row is no longer
+`pending`. Counting that as missing would raise an alarm the generator can never
+clear — it is required to leave decided rows alone — so a decided pair is
+*accounted for* rather than absent.
+
+A `manual_search` pending row is a reviewer's own pair. Discovery never claimed
+to produce it, so its absence from the sweep is not a disagreement about
+anything; it remains reviewable, and the queue labels every row `machine` or
+`MANUAL` so the two are never read as one kind of thing.
+
 Re-running candidate generation refreshes evidence only on rows that are still
 `pending`. Rewriting evidence under a decision a human already made would make
 that decision look as though it rested on facts that were not in front of them.

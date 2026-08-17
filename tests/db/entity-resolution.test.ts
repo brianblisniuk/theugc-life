@@ -34,8 +34,19 @@ import {
 } from "../../scripts/entity-resolution/normalize";
 import { compareRecords, type ComparableRecord } from "../../scripts/entity-resolution/evidence";
 import { discoverCandidates, matchMethodFor } from "../../scripts/entity-resolution/candidates";
-import { partitionForReview } from "../../scripts/entity-resolution/queues";
-import { ACTIONABLE_COUNT_QUERY, CANDIDATE_QUERY } from "../../scripts/entity-resolution/review";
+import {
+  compareMachinePairSync,
+  isMachineMatchMethod,
+  partitionForReview,
+  type PairKey,
+} from "../../scripts/entity-resolution/queues";
+import {
+  ACTIONABLE_COUNT_QUERY,
+  CANDIDATE_QUERY,
+  loadDecidedPairs,
+  loadPersistedMachinePairs,
+  outOfSyncMessage,
+} from "../../scripts/entity-resolution/review";
 import {
   generateCandidates,
   loadBlockableIdentities,
@@ -468,8 +479,41 @@ d("pre-publication entity resolution (0030)", () => {
         expect(code, `${file} carries a confidence/score`).not.toMatch(
           /confidence|matchScore|similarity/i,
         );
-        // ACCEPTED and REJECTED are a human's words. No file may contain them.
-        expect(code, `${file} decides a candidate`).not.toMatch(/'(accepted|rejected)'/);
+      }
+
+      // ACCEPTED and REJECTED are a human's words.
+      //
+      // The guard is on the WRITE, not on the string, and that is the stronger
+      // claim: `review.ts` has to NAME those statuses to classify a row as
+      // already decided, and banning the characters would have forced that
+      // read-only classification to be written obscurely instead. So every file
+      // that is not the writer must contain no candidate write AT ALL — no
+      // insert, no update, no delete — which forbids deciding a candidate along
+      // with everything else it could otherwise do.
+      for (const file of [
+        "candidates.ts",
+        "evidence.ts",
+        "normalize.ts",
+        "review.ts",
+        "match.ts",
+      ]) {
+        const code = readFileSync(
+          path.join(REPO_ROOT, "scripts", "entity-resolution", file),
+          "utf8",
+        ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        expect(code, `${file} writes to source_match_candidates`).not.toMatch(
+          /\b(insert\s+into|update|delete\s+from)\s+public\.source_match_candidates/i,
+        );
+        expect(code, `${file} writes a candidate status`).not.toMatch(/set\s+status\s*=/i);
+      }
+
+      // And the writer, which DOES write, still may not write either of them.
+      {
+        const writerCode = readFileSync(
+          path.join(REPO_ROOT, "scripts", "entity-resolution", "writer.ts"),
+          "utf8",
+        ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        expect(writerCode, "writer.ts decides a candidate").not.toMatch(/'(accepted|rejected)'/);
       }
 
       // `superseded` IS written, by the generator standing down its own stale
@@ -485,13 +529,10 @@ d("pre-publication entity resolution (0030)", () => {
       ]) {
         expect(writer, `stand-down is missing ${required}`).toContain(required);
       }
-      for (const file of [
-        "candidates.ts",
-        "evidence.ts",
-        "normalize.ts",
-        "review.ts",
-        "match.ts",
-      ]) {
+      // `'superseded'` is likewise permitted only where it cannot decide
+      // anything: the four non-writer files carry no candidate write at all
+      // (asserted above), so any mention of it there is a read filter.
+      for (const file of ["candidates.ts", "evidence.ts", "normalize.ts", "match.ts"]) {
         const src = readFileSync(
           path.join(REPO_ROOT, "scripts", "entity-resolution", file),
           "utf8",
@@ -1221,6 +1262,274 @@ d("pre-publication entity resolution (0030)", () => {
       expect(partition.inPairs.has(a.identityId)).toBe(true);
       expect(partition.inPairs.has(b.identityId)).toBe(true);
       expect(partition.noMachineFinding).not.toContain(a.identityId);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // The CANDIDATES queue reads PERSISTED rows, so unlike the other two queues
+  // it can silently fall behind the evidence. The gate compares the generator's
+  // own pair set against a live sweep, and refuses rather than filters.
+  describe("the CANDIDATES sync gate fails CLOSED", () => {
+    /**
+     * Current discovery vs persisted machine pairs, exactly as the manifest
+     * checks it — but restricted to the identities THIS test created.
+     *
+     * The gate itself is global, and has to be: an unpersisted pair anywhere is
+     * a pair no reviewer can see. These tests share one database with fifty
+     * others that deliberately leave drifting fixtures behind, so a global
+     * assertion here would measure that ambient state rather than the behaviour
+     * under test. Scoping the comparison keeps the assertion about this pair.
+     */
+    async function syncState(...owned: Fixture[]) {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const identities = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const discovery = discoverCandidates(identities);
+        const persisted = await loadPersistedMachinePairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const decided = await loadDecidedPairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const mine = new Set(owned.map((f) => f.identityId));
+        const scope = (pairs: readonly PairKey[]) =>
+          mine.size === 0
+            ? pairs
+            : pairs.filter((p) => mine.has(p.leftIdentityId) || mine.has(p.rightIdentityId));
+        return compareMachinePairSync(scope(discovery.pairs), scope(persisted), scope(decided));
+      } finally {
+        await client.end();
+      }
+    }
+
+    it("1. persisted machine state matching current discovery lets review proceed", async () => {
+      const key = `https://sync-ok-${uniq()}.example.com`;
+      const a = await identity({ website: key });
+      const b = await identity({ website: key });
+      await runMatcher();
+
+      const sync = await syncState(a, b);
+      expect(sync.inSync, JSON.stringify(sync)).toBe(true);
+      expect(sync.discoveredNotPersisted).toHaveLength(0);
+      expect(sync.persistedNotDiscovered).toHaveLength(0);
+    });
+
+    it("2. a stale pending row REFUSES the queue when the matcher has not re-run", async () => {
+      const key = `https://sync-stale-${uniq()}.example.com`;
+      const a = await identity({ website: key });
+      const b = await identity({ website: key });
+      await runMatcher();
+      expect((await syncState(a, b)).inSync).toBe(true);
+
+      // The provider corrects A so the pair shares nothing. No matcher run.
+      await addObservation(a, { name: `Now Unrelated ${uniq()}` });
+
+      const sync = await syncState(a, b);
+      expect(sync.inSync).toBe(false);
+      expect(sync.persistedNotDiscovered).toHaveLength(1);
+      expect(sync.discoveredNotPersisted).toHaveLength(0);
+      const [stale] = sync.persistedNotDiscovered;
+      expect([stale!.leftIdentityId, stale!.rightIdentityId].sort()).toEqual(
+        [a.identityId, b.identityId].sort(),
+      );
+
+      // And the operator is told what to run — not offered a filtered queue.
+      const message = outOfSyncMessage(sync, SOURCE);
+      expect(message).toContain("NOT current");
+      expect(message).toContain(`npm run source:match -- --provider ${SOURCE} --apply`);
+    });
+
+    it("3. running the matcher supersedes the stale row and restores sync", async () => {
+      const key = `https://sync-restore-${uniq()}.example.com`;
+      const a = await identity({ website: key });
+      const b = await identity({ website: key });
+      await runMatcher();
+      await addObservation(a, { name: `Now Unrelated ${uniq()}` });
+      expect((await syncState(a, b)).inSync).toBe(false);
+
+      const counts = await runMatcher();
+      expect(counts.candidatesSuperseded).toBeGreaterThanOrEqual(1);
+
+      const row = await candidateBetween(a.identityId, b.identityId);
+      expect(row!.status).toBe("superseded");
+      expect(row!.superseded_reason).toBe("no_current_blocking_rule");
+      expect((await syncState(a, b)).inSync).toBe(true);
+    });
+
+    it("4. a newly discovered pair nobody persisted REFUSES the queue", async () => {
+      const key = `https://sync-unpersisted-${uniq()}.example.com`;
+      const a = await identity({ website: key });
+      const b = await identity({ website: key });
+      // Deliberately no matcher run: discovery sees the pair, the queue cannot.
+      const sync = await syncState(a, b);
+      expect(sync.inSync).toBe(false);
+      expect(sync.discoveredNotPersisted).toHaveLength(1);
+      const [fresh] = sync.discoveredNotPersisted;
+      expect([fresh!.leftIdentityId, fresh!.rightIdentityId].sort()).toEqual(
+        [a.identityId, b.identityId].sort(),
+      );
+    });
+
+    it("5. persisting it restores sync", async () => {
+      const key = `https://sync-persist-${uniq()}.example.com`;
+      const a = await identity({ website: key });
+      const b = await identity({ website: key });
+      expect((await syncState(a, b)).inSync).toBe(false);
+
+      await runMatcher();
+      expect((await syncState(a, b)).inSync).toBe(true);
+    });
+
+    it("6. a MANUAL pending candidate is review work, not a sync failure", async () => {
+      // A reviewer's own pair. Discovery never claimed to produce it, so its
+      // absence from the sweep says nothing about whether the sweep is current.
+      const a = await identity({ name: `Manual Left ${uniq()}` });
+      const b = await identity({ name: `Manual Right ${uniq()}` });
+      const [left, right] =
+        a.identityId < b.identityId ? [a.identityId, b.identityId] : [b.identityId, a.identityId];
+      await adminQuery(
+        `insert into public.source_match_candidates
+           (source, source_environment, source_property_identity_id,
+            candidate_source_property_identity_id, candidate_kind, match_method, status,
+            name_evidence, domain_evidence, address_evidence, phone_evidence, brand_evidence)
+         values ($1,'evaluation',$2,$3,'source_identity','manual_search','pending',
+                 'none','unavailable','unavailable','unavailable','unavailable')`,
+        [SOURCE, left, right],
+      );
+      await runMatcher();
+
+      expect((await syncState(a, b)).inSync).toBe(true);
+
+      // It is still actionable review work, and it is still labelled as manual.
+      const row = await candidateBetween(a.identityId, b.identityId);
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const queue = await client.query<{ candidate_id: string; match_method: string }>(
+          CANDIDATE_QUERY,
+          [SOURCE, "evaluation", 1000, "pending"],
+        );
+        expect(queue.rows.map((r) => r.candidate_id)).toContain(row!.id as string);
+      } finally {
+        await client.end();
+      }
+      expect(isMachineMatchMethod(row!.match_method as string)).toBe(false);
+    });
+
+    it("7. accepted / rejected / human-superseded rows are outside the machine sync set", async () => {
+      const decided: { id: string; pair: string }[] = [];
+      const involved: Fixture[] = [];
+      for (const status of ["accepted", "rejected", "superseded"] as const) {
+        const key = `https://sync-decided-${status}-${uniq()}.example.com`;
+        const a = await identity({ website: key });
+        const b = await identity({ website: key });
+        await runMatcher();
+        const row = await candidateBetween(a.identityId, b.identityId);
+        // A HUMAN decision: no superseded_reason is recorded for any of them.
+        await adminQuery(
+          `update public.source_match_candidates set status = $2, resolved_at = now(),
+                  review_note = 'human decision' where id = $1`,
+          [row!.id, status],
+        );
+        decided.push({
+          id: row!.id as string,
+          pair: [a.identityId, b.identityId].sort().join(" "),
+        });
+        involved.push(a, b);
+      }
+
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        // Discovery still produces all three pairs, but none of them is
+        // ACTIONABLE MACHINE state any more, so neither side of the comparison
+        // carries them and the gate has nothing to disagree about.
+        const persisted = await loadPersistedMachinePairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const persistedPairs = persisted.map((p) =>
+          [p.leftIdentityId, p.rightIdentityId].sort().join(" "),
+        );
+        for (const d of decided) expect(persistedPairs).not.toContain(d.pair);
+
+        // And the matcher leaves every one of them exactly as the human left it.
+        const counts = await generateCandidates(client, {
+          source: SOURCE,
+          environment: "evaluation",
+          runId: null,
+          apply: true,
+        });
+        expect(counts.candidatesDecidedSkipped).toBeGreaterThanOrEqual(3);
+      } finally {
+        await client.end();
+      }
+
+      for (const d of decided) {
+        const rows = await adminQuery<{ status: string; superseded_reason: string | null }>(
+          "select status, superseded_reason from public.source_match_candidates where id = $1",
+          [d.id],
+        );
+        expect(rows[0]!.superseded_reason).toBeNull();
+      }
+      expect((await syncState(...involved)).inSync).toBe(true);
+    });
+
+    it("8. machine-superseded history is outside the current actionable sync set", async () => {
+      const key = `https://sync-history-${uniq()}.example.com`;
+      const a = await identity({ website: key });
+      const b = await identity({ website: key });
+      await runMatcher();
+      await addObservation(a, { name: `Now Unrelated ${uniq()}` });
+      await runMatcher();
+
+      const row = await candidateBetween(a.identityId, b.identityId);
+      expect(row!.status).toBe("superseded");
+
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const persisted = await loadPersistedMachinePairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const ids = persisted.map((p) => `${p.leftIdentityId} ${p.rightIdentityId}`);
+        const pair = [a.identityId, b.identityId].sort().join(" ");
+        expect(ids).not.toContain(pair);
+      } finally {
+        await client.end();
+      }
+      expect((await syncState(a, b)).inSync).toBe(true);
+    });
+
+    it("compares pairs UNORDERED, and reports each direction of disagreement", () => {
+      // Pure, so the gate is auditable without a database.
+      const x = "00000000-0000-4000-8000-000000000001";
+      const y = "00000000-0000-4000-8000-000000000002";
+      const z = "00000000-0000-4000-8000-000000000003";
+
+      expect(
+        compareMachinePairSync(
+          [{ leftIdentityId: x, rightIdentityId: y }],
+          [{ leftIdentityId: y, rightIdentityId: x }],
+        ).inSync,
+      ).toBe(true);
+
+      const drift = compareMachinePairSync(
+        [{ leftIdentityId: x, rightIdentityId: y }],
+        [{ leftIdentityId: x, rightIdentityId: z }],
+      );
+      expect(drift.inSync).toBe(false);
+      expect(drift.discoveredNotPersisted).toHaveLength(1);
+      expect(drift.persistedNotDiscovered).toHaveLength(1);
+
+      expect(compareMachinePairSync([], []).inSync).toBe(true);
     });
   });
 });

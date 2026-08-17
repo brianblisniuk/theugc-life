@@ -10,8 +10,9 @@
  * match (D063 §12.2 — there is no approved threshold, and no code here computes
  * one).
  *
- * Three queues, all derived from ONE current discovery result so they cannot
- * drift apart:
+ * EVERY invocation begins with ONE current evidence unit —
+ * `loadBlockableIdentities` → `discoverCandidates` → `partitionForReview` — and
+ * all three queues are answered from it.
  *
  *   CANDIDATES            pairs AWAITING A DECISION — `status = 'pending'` and
  *                         nothing else. A machine-superseded row is history, an
@@ -19,6 +20,9 @@
  *                         human-superseded one is decided too; none is
  *                         actionable, and showing them together would put four
  *                         meanings behind one word.
+ *                         These rows are PERSISTED, so before they may be shown
+ *                         as current they are checked against the live sweep —
+ *                         see the SYNC GATE below.
  *   ANOMALIES             shared-key clusters, cross-destination collisions AND
  *                         incomplete geography — real findings that are not
  *                         pairwise evidence.
@@ -29,6 +33,24 @@
  *                         of a historical row.
  *                         NOT "new property": the rules finding nothing is a
  *                         statement about the rules, not about the world.
+ *
+ * THE SYNC GATE
+ * -------------
+ * ANOMALIES and NO MACHINE CANDIDATE are computed live, so they are current by
+ * construction. CANDIDATES is not: it reads rows `source:match --apply` wrote at
+ * some earlier moment, and between that moment and now a provider correction can
+ * have removed the blocking relation behind a pending row, or created a pair
+ * nothing has persisted yet. Either way the queue silently stops describing the
+ * present, and nothing in the row itself shows it.
+ *
+ * So the generator-owned pair set is compared against the live sweep, and a
+ * disagreement STOPS the review with an instruction to run the generator. It is
+ * deliberately not a filter: intersecting the two would hide a newly discovered
+ * pair that was never persisted, and hide a stale pending row without recording
+ * the supersession it is owed. Fail closed, and let the operator resynchronise.
+ *
+ * This command still writes NOTHING. It reports the disagreement; it does not
+ * fix it, and it does not run the generator for you.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,7 +62,15 @@ import {
   UnsafeIngestionTargetError,
 } from "../provider-ingestion/db-target";
 import { discoverCandidates } from "./candidates";
-import { ACTIONABLE_CANDIDATE_STATUS, partitionForReview } from "./queues";
+import {
+  ACTIONABLE_CANDIDATE_STATUS,
+  compareMachinePairSync,
+  isMachineMatchMethod,
+  MACHINE_MATCH_METHOD_PREFIX,
+  partitionForReview,
+  type MachineSyncResult,
+  type PairKey,
+} from "./queues";
 import { loadBlockableIdentities } from "./writer";
 
 const EVALUATION = "evaluation" as const;
@@ -126,6 +156,113 @@ export const ACTIONABLE_COUNT_QUERY = `
   select count(*)::text as n from public.source_match_candidates
    where source = $1 and source_environment = $2 and status = $3`;
 
+/**
+ * The persisted side of the sync gate: ACTIONABLE rows in the GENERATOR'S OWN
+ * namespace, and nothing else.
+ *
+ *   - `status = 'pending'`     — a decided or machine-superseded row is history,
+ *                                and history is not a claim about now;
+ *   - `candidate_kind`         — only source↔source pairs are discovered;
+ *   - `match_method like`      — the generator's mark. A `manual_search` row is
+ *                                a reviewer's pair, which discovery never
+ *                                claimed to produce and must not be called stale
+ *                                for being absent from it.
+ */
+export const PERSISTED_MACHINE_PAIRS_QUERY = `
+  select source_property_identity_id as left_identity,
+         candidate_source_property_identity_id as right_identity
+    from public.source_match_candidates
+   where source = $1 and source_environment = $2
+     and status = $3
+     and candidate_kind = 'source_identity'
+     and match_method like $4`;
+
+/**
+ * Pairs a HUMAN has already decided.
+ *
+ * `accepted`, `rejected`, and the `superseded` a reviewer set aside — which is
+ * exactly a `superseded` row with NO `superseded_reason`, since only the machine
+ * records one. These stay discoverable (their evidence did not change) but are
+ * not actionable, and the generator is required to leave them alone, so they are
+ * ACCOUNTED FOR rather than missing.
+ */
+export const DECIDED_PAIRS_QUERY = `
+  select source_property_identity_id as left_identity,
+         candidate_source_property_identity_id as right_identity
+    from public.source_match_candidates
+   where source = $1 and source_environment = $2
+     and candidate_kind = 'source_identity'
+     and (status in ('accepted', 'rejected')
+          or (status = 'superseded' and superseded_reason is null))`;
+
+export class ReviewOutOfSyncError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReviewOutOfSyncError";
+  }
+}
+
+/**
+ * Read the persisted machine pair set for the sync gate.
+ *
+ * Exported so the gate can be exercised against a real database without going
+ * through the CLI. Read-only, like everything else here.
+ */
+export async function loadPersistedMachinePairs(
+  client: Pick<Client, "query">,
+  opts: { source: string; environment: string },
+): Promise<PairKey[]> {
+  const res = await client.query<{ left_identity: string; right_identity: string }>(
+    PERSISTED_MACHINE_PAIRS_QUERY,
+    [opts.source, opts.environment, ACTIONABLE_CANDIDATE_STATUS, `${MACHINE_MATCH_METHOD_PREFIX}%`],
+  );
+  return res.rows.map((r) => ({
+    leftIdentityId: r.left_identity,
+    rightIdentityId: r.right_identity,
+  }));
+}
+
+/** Read the human-decided pair set. Read-only, like everything else here. */
+export async function loadDecidedPairs(
+  client: Pick<Client, "query">,
+  opts: { source: string; environment: string },
+): Promise<PairKey[]> {
+  const res = await client.query<{ left_identity: string; right_identity: string }>(
+    DECIDED_PAIRS_QUERY,
+    [opts.source, opts.environment],
+  );
+  return res.rows.map((r) => ({
+    leftIdentityId: r.left_identity,
+    rightIdentityId: r.right_identity,
+  }));
+}
+
+/** The operator-facing message. Names the command, and runs nothing itself. */
+export function outOfSyncMessage(sync: MachineSyncResult, provider: string): string {
+  const lines = [
+    "The CANDIDATES queue is NOT current.",
+    "",
+    "Persisted candidate rows and current discovery disagree, so the queue would",
+    "show a decision surface that the evidence no longer supports:",
+    "",
+    `  discovered now, never persisted   ${sync.discoveredNotPersisted.length}` +
+      "   (a real pair no reviewer can see)",
+    `  persisted, no longer discovered   ${sync.persistedNotDiscovered.length}` +
+      "   (a pending row nothing supports)",
+    "",
+    "Nothing is filtered out and nothing is guessed at: showing the intersection",
+    "would hide both of those, and this command may not write the supersession a",
+    "stale row is owed.",
+    "",
+    "Synchronise first, then review:",
+    "",
+    `  npm run source:match -- --provider ${provider} --apply`,
+    "",
+    "ANOMALIES and NO MACHINE CANDIDATE are computed live and remain available.",
+  ];
+  return lines.join("\n");
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const target = resolveIngestionTarget(process.env);
@@ -139,7 +276,29 @@ async function main(): Promise<void> {
   const client = new Client({ connectionString: target.url });
   await client.connect();
   try {
+    // ONE current evidence unit, for every queue. The candidates queue needs it
+    // as much as the other two — it just needs it to CHECK persisted rows rather
+    // than to produce them.
+    const identities = await loadBlockableIdentities(client, {
+      source: args.provider,
+      environment: EVALUATION,
+    });
+    const discovery = discoverCandidates(identities);
+    const partition = partitionForReview(identities, discovery);
+
     if (args.queue === "candidates") {
+      const scope = { source: args.provider, environment: EVALUATION };
+      const sync = compareMachinePairSync(
+        discovery.pairs,
+        await loadPersistedMachinePairs(client, scope),
+        await loadDecidedPairs(client, scope),
+      );
+      if (!sync.inSync) throw new ReviewOutOfSyncError(outOfSyncMessage(sync, args.provider));
+      console.info(
+        `  sync          current discovery and persisted machine candidates AGREE ` +
+          `(${discovery.pairs.length} pair(s))\n`,
+      );
+
       const res = await client.query<CandidateRow>(CANDIDATE_QUERY, [
         args.provider,
         EVALUATION,
@@ -167,8 +326,12 @@ async function main(): Promise<void> {
         .join("  ");
       console.info(`  not actionable (history): ${historyLine || "none"}\n`);
       for (const r of res.rows) {
+        // A machine pair and a reviewer's own pair are both legitimate review
+        // work, and they carry different authority — only the first is covered
+        // by the sync gate above, so the reviewer is told which they are reading.
+        const origin = isMachineMatchMethod(r.match_method) ? "machine" : "MANUAL";
         console.info(
-          `  ── ${r.candidate_kind} · ${r.status}${r.superseded_reason ? ` (${r.superseded_reason})` : ""} · ${r.match_method}`,
+          `  ── ${r.candidate_kind} · ${origin} · ${r.status}${r.superseded_reason ? ` (${r.superseded_reason})` : ""} · ${r.match_method}`,
         );
         console.info(
           `     A  ${r.left_source_id}  ${r.left_name ?? "(no name)"}  [${r.left_destination ?? "?"}]`,
@@ -191,14 +354,6 @@ async function main(): Promise<void> {
       console.info("  combination above accepts anything on its own.\n");
       return;
     }
-
-    const identities = await loadBlockableIdentities(client, {
-      source: args.provider,
-      environment: EVALUATION,
-    });
-
-    const discovery = discoverCandidates(identities);
-    const partition = partitionForReview(identities, discovery);
 
     if (args.queue === "anomalies") {
       console.info(`  SHARED-KEY CLUSTERS  ${discovery.sharedKeyClusters.length}`);
@@ -284,6 +439,10 @@ if (invokedDirectly) {
     if (err instanceof UnsafeIngestionTargetError) {
       console.error(`\n[source:match:review] STOP\n\n${err.message}\n`);
       process.exit(2);
+    }
+    if (err instanceof ReviewOutOfSyncError) {
+      console.error(`\n[source:match:review] STOP — OUT OF SYNC\n\n${err.message}\n`);
+      process.exit(3);
     }
     console.error(`\n[source:match:review] failed: ${(err as Error).message}\n`);
     process.exit(1);
