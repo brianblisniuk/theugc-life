@@ -1708,3 +1708,103 @@ all build on these tables without relaxing the boundaries. A future block that
 needs evaluation data promoted, or payloads in Postgres, is making a new product
 decision and should say so. Full model in
 `PROPERTY_CONTENT_IMPLEMENTATION_SPEC.md`.
+
+## D066 — Canonical star classification is PRODUCT truth, resolved from an approved provider policy
+Status: Accepted — amends the *interpretation* of D060. D060 itself stands.
+
+D060 said the classification must be justifiable, and deliberately did not choose
+an authority hierarchy. Implementation work then read "canonical" as "certified by
+a government or tourism registry", and locked Hotelbeds out of D060 resolution on
+the grounds that no issuing authority was established.
+
+**That interpretation is superseded.** It does not scale: it would make V1
+inventory depend on building country-by-country hotel-classification compliance
+pipelines, and that is not the product.
+
+### What "canonical" means
+
+> **Canonical classification is theugc.life's resolved PRODUCT truth, backed by
+> accepted source evidence — not a fact that must have been independently
+> certified by a government authority.**
+
+Official registries stay valuable evidence, especially for resolving a conflict
+or auditing a decision. They are **optional**, never a precondition.
+
+### One approved provider is sufficient
+
+A single approved provider observation **can** resolve a property's canonical
+classification, when a reviewed provider-specific policy maps that exact
+field/code to an unambiguous exact hospitality classification.
+
+**There is no two-source minimum and no government-authority requirement.**
+
+### The unit of review is the PROVIDER, not the property
+
+This is the part that makes it scale. We do not research 4,110 hotels; we review
+one mapping:
+
+```
+provider + field/code + semantics + version
+  → exact_four | exact_five | classified_not_v1_scope | unresolved
+```
+
+The mapping is reviewed once, versioned, and applies to every property carrying
+that code. Approving a provider's *classification policy* is a product decision;
+applying it is mechanical.
+
+### A provider still never declares itself canonical
+
+```
+provider observation → reviewed provider classification policy → star resolver
+  → canonical product classification + provenance
+```
+
+The observation stays source evidence (D065 §3). The policy is ours, not the
+provider's. The resolver — a future block — owns canonical truth. So the
+source-agnostic architecture is unchanged: what moved is *how much evidence a
+resolution needs*, not *who gets to decide*.
+
+### Second sources: corroboration, and exception handling
+
+- **Agreement** → keep the canonical value, add corroborating provenance.
+- **Conflict** → do **not** average, do **not** silently flip. Mark a
+  classification conflict and send it to REVIEW, resolvable by another approved
+  provider, an official source, hotel-owned evidence, or manual research.
+
+That is exception handling. It is **not** a mandatory second lookup per hotel.
+
+Existing published properties are not deleted or mutated merely because a later
+conflicting source appears; post-publication conflict lifecycle remains a future
+concern and is not invented here.
+
+### Classification ≠ coverage
+
+Removing the two-source rule for *classification* says nothing about whether one
+provider contains every real property. Coverage remains a separate dimension: a
+Provider B may later expand the destination universe (union → identity resolution
+→ coverage), and Provider B is **not** required to re-check the classification of
+every Hotelbeds property.
+
+### What D060 keeps, unchanged
+
+Exactly 4 or exactly 5 · guest-review scores are never classification evidence ·
+never average conflicts · unknown stays REVIEW/unresolved · source observations
+survive resolution · property type neither admits nor excludes, so resorts,
+aparthotels, lodges, residences and villa-style hospitality properties may
+qualify on their own classification.
+
+Reason:
+The old reading confused *provenance* with *certification*. D060 asks the system
+to answer "why does theugc.life consider this a 4-star property?", and "an
+approved provider published the code `4EST`, whose semantics we reviewed and
+accepted on this date under this policy version" is a complete, checkable,
+contestable answer. Demanding a registry entry as well answers a question the
+product never asked, and answers it in 190 different legal regimes.
+
+Consequence:
+The star-resolution block builds against reviewed provider policies rather than
+per-property research. Hotelbeds becomes usable for D060 resolution through an
+explicit reviewed code mapping — see
+`docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md` — and the PR #21 finding that
+`simpleCode` alone is unusable is **preserved**, because the mapping is on the
+category code, never on `simpleCode`.

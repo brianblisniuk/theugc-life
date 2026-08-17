@@ -167,16 +167,23 @@ Two kinds, kept apart, because they answer different questions (`0027` §7.1):
   emptied, and they never falsify a completed walk.
 
 Each run carries its per-destination geography caveats from the metrics **plus**
-two evaluation-wide risks locked by external review, which live outside any
-single run's pagination evidence:
+one evaluation-wide risk, which lives outside any single run's pagination
+evidence:
 
-1. **Classification authority.** Hotelbeds category data is
-   `PROVIDER_CLASSIFICATION_EVIDENCE`, not
-   `CANONICAL_D060_CLASSIFICATION_EVIDENCE`. Canonical D060 stars need secondary
-   authoritative verification, and no issuing authority is established, so D062
-   condition 7 cannot be satisfied from this source alone.
-2. **Multi-source coverage pending.** Hotelbeds is approved as Source A;
-   enumerating it exhaustively does not close the D061 coverage universe.
+- **Coverage universe pending.** Hotelbeds is approved as Source A; enumerating
+  it exhaustively does not establish that it lists every real property in the
+  destination, so the D061 coverage universe is not closed. This concerns the
+  **universe only** — it is not a second-source requirement for validating any
+  property's star classification.
+
+> **Removed 2026-08-17 (D066).** A second risk used to claim that canonical D060
+> classification "requires secondary authoritative verification" because no
+> issuing authority was established. That reading of D060 is withdrawn: one
+> approved provider resolves classification when a reviewed policy maps the exact
+> code (`docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`). Keeping the risk would
+> now mislabel a resolvable property as blocked, so it was removed rather than
+> reworded — and `RUN_EVIDENCE_VERSION` moved to
+> `hotelbeds-cached-evaluation/3` accordingly.
 
 Media-rights review is deliberately absent from both lists — it gates ingesting
 images, not the completeness of a property walk.

@@ -160,7 +160,7 @@ service_role.
 | `pagination_walk_completed` | `boolean` NOT NULL default false | the walk consumed every page. |
 | `provider_enumeration_exhaustion_proven` | `boolean` NOT NULL default false | **enumeration exhaustion only**: walk completed **and** zero `enumeration_risks`. §7.1. |
 | `enumeration_risks` | `text[]` NOT NULL default `'{}'` | risks to the enumeration *itself* (cursor loop, provider total disagreeing with rows returned, budget stop). These block exhaustion. |
-| `coverage_risks` | `text[]` NOT NULL default `'{}'` | risks about what the enumerated set *means* (geography-mapping caveats, unresolved star authority, pending second source). Recorded, never silently emptied, and they do **not** falsify a completed walk. §7.1. |
+| `coverage_risks` | `text[]` NOT NULL default `'{}'` | risks about what the enumerated set *means* (geography-mapping caveats, pending coverage-universe comparison). Recorded, never silently emptied, and they do **not** falsify a completed walk. §7.1. |
 | `request_count` / `cache_hit_count` | `integer` NOT NULL default 0 | quota accounting evidence. |
 | `harness_version` | `text` NULL | which code produced this run. |
 | `notes` | `text` NULL | |
@@ -336,16 +336,24 @@ source_classification_evidence_kind text not null
 
 An earlier draft allowed `canonical_classification_evidence` as a second
 permitted value, documented as "no source may write it without a product
-decision". That is a rule with no mechanism: no issuing-authority hierarchy
-exists yet and no registry says which source may speak canonically, so an
-ingestion script could have written `hotelbeds` +
+decision". That is a rule with no mechanism: nothing in the row said which source
+may speak canonically, so an ingestion script could have written `hotelbeds` +
 `canonical_classification_evidence` and Postgres would have accepted it. At this
 layer a source observation is **source evidence, always** — a provider cannot
 promote itself to star authority.
 
+D066 does **not** weaken this. It says a single approved provider is *sufficient
+input* for resolution; it does not say the provider's own row may declare the
+outcome. The approving artefact is a reviewed policy of ours
+([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)),
+applied by the resolver — so this CHECK stays exactly as narrow as it was, and is
+now *more* load-bearing rather than less.
+
 The judgement *"this observation is sufficient canonical star provenance"*
 belongs to the pre-publication star-resolution layer (§21), together with the
-issuing authority, the resolved value, the conflict state and who resolved it.
+resolved value, the conflict state, the reviewed policy version and who resolved
+it (plus an OPTIONAL issuing authority, which D066 makes corroboration rather
+than a precondition).
 Widening this CHECK is a product decision, not an ingestion convenience.
 Hotelbeds remains provider classification evidence
 (`evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md` §9).
@@ -621,8 +629,7 @@ enumeration itself unprovable: a cursor loop, a provider total that disagrees
 with the rows returned, a budget stop mid-walk.
 
 `coverage_risks` deliberately do **not**. Hotelbeds BAI can be exhaustively
-enumerated while the D060 star authority remains unresolved and a second source
-is still pending — those are facts about what the enumerated set *means*, and
+enumerated while a second source is still pending for the coverage UNIVERSE — those are facts about what the enumerated set *means*, and
 making them falsify the walk would leave no way to state the true sentence "we
 read everything this provider has, and coverage is still open". They are
 recorded on the run, never emptied, and answered by the Coverage Engine layer,
@@ -1209,10 +1216,12 @@ the foundation is coherent, and both FK `source_property_observations(id)` —
 which is why observations are `ON DELETE RESTRICT` and append-only (§9.1): a
 canonical star that cites an observation must be able to keep citing it.
 
-**Hotelbeds is not the star authority and this block does not make it one.** The
-star-authority hierarchy for Bali/Dubai remains explicitly undecided
-(`PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §16), which is exactly why
-`issuing_authority` is a future column rather than a value written today.
+**Hotelbeds does not become canonical by being ingested, and this block does not
+make it so.** Classification is resolved by the future star resolver, from the
+reviewed provider policy in
+[`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)
+(D066) — one approved provider is sufficient, and `issuing_authority` records an
+OPTIONAL corroborating registry rather than a required one.
 
 ### 21.2 Condition 1 — identity resolution is expressible before publication
 
@@ -1384,7 +1393,7 @@ None that block implementation. For the record:
 
 | Question | Status |
 |---|---|
-| Star authority hierarchy | **Open** (contract §16) — deferred by design; `issuing_authority` is a future column, and §5.3.2 makes it impossible for a source to appoint itself in the meantime |
+| Star authority hierarchy | **Resolved by D066** — there is no hierarchy to rank. A reviewed per-provider code policy resolves classification; a conflict between two approved providers goes to REVIEW. §5.3.2 still makes it impossible for a source to appoint *itself*, because the policy is ours, not the provider's |
 | Object storage product | **Open** — flagged in §19; the relational layer does not depend on it |
 | Media storage strategy | **Open** (D064) — §20 keeps ingestion possible without deciding |
 | Evaluation data may never link canonically | **Determined** by locked invariant K; implemented as a composite FK **plus** a CHECK (§18.2) |

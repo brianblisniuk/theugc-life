@@ -23,33 +23,39 @@ export const MANIFEST_FORMAT_VERSION = "provider-ingestion-manifest/1";
  * belongs to the MEANING of the evidence: if we change how run evidence is
  * derived from the artifacts, the old run is not the same run.
  */
-export const RUN_EVIDENCE_VERSION = "hotelbeds-cached-evaluation/2";
+export const RUN_EVIDENCE_VERSION = "hotelbeds-cached-evaluation/3";
 
 /**
  * Coverage risks that are true of the whole approved Hotelbeds evaluation, and
  * therefore of every destination replayed from it.
  *
  * The cached metrics record only the per-destination GEOGRAPHY caveats, because
- * that is what the extractor observed. These two were locked by external review
- * at evaluation time and live outside any single run's pagination evidence — but
- * they are exactly the kind of fact a coverage judgement must weigh, so a run
- * that omitted them would understate what is still open.
+ * that is what the extractor observed. This one lives outside any single run's
+ * pagination evidence but is exactly the kind of fact a coverage judgement must
+ * weigh, so a run that omitted it would understate what is still open.
  *
- * Both are COVERAGE risks: they concern what the enumerated set MEANS. Neither
- * touches whether the walk read every record the provider offers, so neither may
+ * It is a COVERAGE risk: it concerns what the enumerated set MEANS. It does not
+ * touch whether the walk read every record the provider offers, so it may not
  * falsify `provider_enumeration_exhaustion_proven` (0027 §7.1).
+ *
+ * SUPERSEDED (D066): a second risk used to sit here claiming that canonical D060
+ * classification required "secondary authoritative verification" because no
+ * issuing authority was established. That reading of D060 is withdrawn — canonical
+ * classification is theugc.life's resolved PRODUCT truth backed by accepted source
+ * evidence, and one approved provider is sufficient when a reviewed
+ * provider-specific policy maps the exact code (see
+ * docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md). Carrying it would now mislabel a
+ * resolvable property as blocked, so it is removed rather than reworded.
  *
  * Media-rights review is deliberately NOT here and is not an enumeration risk
  * either — it gates ingesting images, not the completeness of a property walk.
  */
 export const HOTELBEDS_EVALUATION_COVERAGE_RISKS: readonly string[] = [
-  "[classification] Hotelbeds category data is PROVIDER_CLASSIFICATION_EVIDENCE, not " +
-    "CANONICAL_D060_CLASSIFICATION_EVIDENCE. Canonical D060 star classification requires " +
-    "secondary authoritative verification, and no issuing authority is established for the " +
-    "Hotelbeds category, so D062 condition 7 cannot be satisfied from this source alone.",
-  "[multi-source] Multi-source destination coverage comparison is PENDING. Hotelbeds is " +
-    "approved as Source A; enumerating Hotelbeds exhaustively does not close the D061 " +
-    "coverage universe for this destination.",
+  "[coverage-universe] Multi-source destination COVERAGE comparison is PENDING. Hotelbeds " +
+    "is approved as Source A; enumerating Hotelbeds exhaustively does not establish that " +
+    "it lists every real property in this destination, so the D061 coverage universe is " +
+    "not closed. This is about the UNIVERSE only — it is NOT a second-source requirement " +
+    "for validating any property's star classification (D066).",
 ];
 
 export const EVALUATION_ARTIFACT_ROOT = ".data/provider-evaluation";
