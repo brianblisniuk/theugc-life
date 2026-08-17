@@ -103,12 +103,32 @@ const CONTRACT: Record<string, Expected> = {
   hotel_source_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
 
-  // Pre-publication resolution (0028). NOT append-only: a resolution is the
-  // CURRENT answer and is upserted as evidence accumulates, so the client roles
-  // hold the full capability set and RLS reduces a creator to zero rows. The
-  // evidence they cite stays append-only one level down.
+  // Pre-publication resolution (0028), in two layers with deliberately different
+  // grants.
+  //
+  // REVISIONS are APPEND-ONLY, like the observations they cite: a future D062
+  // publication names a revision id as the evidence that authorised it, so no
+  // client role — service_role included — holds UPDATE or DELETE. A trigger
+  // refuses both even for the table owner; this row is the first layer.
+  source_property_star_resolution_revisions: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  source_property_location_resolution_revisions: {
+    anon: "",
+    authenticated: "SI",
+    serviceRole: "SI",
+  },
+  // HEAD POINTERS are meant to move, so they carry the full capability set.
+  // Moving a pointer changes which revision is current; it changes no revision.
   source_property_star_resolutions: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   source_property_location_resolutions: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // The reviewed provider policy, as data. Editable by an admin/editor because
+  // approving a new provider version IS an editorial act — but never by anon.
+  provider_classification_policies: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  provider_classification_policy_mappings: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // Read models over the head pointers. `security_invoker`, so they inherit the
+  // base tables' RLS rather than handing a definer's view of everything to
+  // anyone holding SELECT.
+  source_property_current_star_resolutions: { anon: "", authenticated: "S", serviceRole: "S" },
+  source_property_current_location_resolutions: { anon: "", authenticated: "S", serviceRole: "S" },
   hotel_claims: { anon: "", authenticated: "SU", serviceRole: "all" },
   contact_signals: { anon: "", authenticated: "SI", serviceRole: "all" },
   verification_events: { anon: "", authenticated: "SI", serviceRole: "all" },

@@ -18,6 +18,12 @@
  *     The first approved observation resolves the candidate (D066); a later
  *     approved observation that disagrees is recorded as a CONFLICT for review,
  *     never averaged and never silently substituted.
+ *
+ * Persistence is APPEND-ONLY. A resolution is written as an immutable REVISION
+ * and a head pointer is moved to name it. Re-deriving the same conclusion from
+ * the same evidence under the same policy produces the same revision digest, so
+ * a replay inserts nothing and moves no pointer; new evidence that changes the
+ * conclusion mints a NEW revision and leaves the old one exactly as it was.
  */
 import type { Client } from "pg";
 
@@ -81,6 +87,7 @@ export interface LocationResolution {
   source: string;
   environment: string;
   evidenceObservationId: string;
+  policyProvider: string;
   policyVersion: string;
   outcome: LocationOutcome;
   latitude: string | null;
@@ -208,6 +215,7 @@ export function resolveLocationFromObservations(
       source: latest.source,
       environment: latest.source_environment,
       evidenceObservationId: latest.id,
+      policyProvider: latest.source,
       policyVersion: LOCATION_POLICY_VERSION,
       outcome: "unresolved",
       latitude: null,
@@ -222,6 +230,7 @@ export function resolveLocationFromObservations(
     source: decided.source,
     environment: decided.source_environment,
     evidenceObservationId: decided.id,
+    policyProvider: decided.source,
     policyVersion: LOCATION_POLICY_VERSION,
     outcome: "resolved",
     // Verbatim. 0028's trigger independently checks this against the evidence.
@@ -238,6 +247,10 @@ export interface ResolutionCounts {
   starConflicts: number;
   location: { resolved: number; coordinates_missing: number; coordinates_implausible: number };
   locationConflicts: number;
+  /** Revisions actually APPENDED by this run. A replay must add none. */
+  revisionsCreated: { star: number; location: number };
+  /** Head pointers actually MOVED by this run. A replay must move none. */
+  pointerMoves: { star: number; location: number };
 }
 
 function emptyCounts(): ResolutionCounts {
@@ -247,6 +260,8 @@ function emptyCounts(): ResolutionCounts {
     starConflicts: 0,
     location: { resolved: 0, coordinates_missing: 0, coordinates_implausible: 0 },
     locationConflicts: 0,
+    revisionsCreated: { star: 0, location: 0 },
+    pointerMoves: { star: 0, location: 0 },
   };
 }
 
@@ -281,20 +296,141 @@ async function loadObservations(
   return grouped;
 }
 
-const CHUNK = 500;
+/**
+ * The semantic columns of a star revision, in digest order.
+ *
+ * They are listed once and used twice: to INSERT, and — when the insert hits the
+ * digest unique constraint because this exact conclusion is already on record —
+ * to find the revision that already says it. `is not distinct from` rather than
+ * `=` so a NULL source value or a null star value matches itself.
+ */
+const STAR_SEMANTIC_COLUMNS = [
+  "evidence_observation_id",
+  "policy_provider",
+  "policy_version",
+  "policy_field",
+  "source_value",
+  "outcome",
+  "resolved_star_value",
+  "conflict_state",
+  "conflicting_observation_id",
+  "conflicting_outcome",
+] as const;
 
-function chunked<T>(items: readonly T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
+const LOCATION_SEMANTIC_COLUMNS = [
+  "evidence_observation_id",
+  "policy_provider",
+  "policy_version",
+  "outcome",
+  "resolved_latitude",
+  "resolved_longitude",
+  "unresolved_reason",
+  "conflict_state",
+  "conflicting_observation_id",
+] as const;
+
+interface AppendResult {
+  revisionCreated: boolean;
+  pointerMoved: boolean;
+}
+
+/**
+ * Every current head pointer for one dimension, read once per run.
+ *
+ * A candidate is resolved once per run, so a head read at the start cannot go
+ * stale before it is used, and this keeps the per-candidate work to the writes
+ * themselves rather than a lookup each time.
+ */
+async function loadHeads(client: Client, headTable: string): Promise<Map<string, string>> {
+  const res = await client.query<{
+    source_property_identity_id: string;
+    current_revision_id: string;
+  }>(`select source_property_identity_id, current_revision_id from ${headTable}`);
+  return new Map(res.rows.map((r) => [r.source_property_identity_id, r.current_revision_id]));
+}
+
+/**
+ * Append one revision and point the head at it.
+ *
+ * Three statements, and each one is a decision:
+ *
+ *  1. INSERT the revision, recording the head it supersedes. `on conflict ... do
+ *     nothing` — never `do update`, which would be a rewrite of an immutable row
+ *     and is refused by the table's own trigger anyway.
+ *  2. If the insert added nothing, this exact conclusion from this exact evidence
+ *     is already recorded; find it. This is the idempotent path: same evidence,
+ *     same policy, zero new rows.
+ *  3. Move the head — but only `where` it would actually change. A no-op replay
+ *     must not even bump `updated_at`, or "nothing happened" and "we rewrote
+ *     everything identically" would be indistinguishable in the table.
+ */
+async function appendRevision(
+  client: Client,
+  spec: {
+    revisionTable: string;
+    headTable: string;
+    identityColumns: readonly string[];
+    semanticColumns: readonly string[];
+    identityValues: readonly unknown[];
+    semanticValues: readonly unknown[];
+    supersedesRevisionId: string | null;
+  },
+): Promise<AppendResult> {
+  const { revisionTable, headTable, identityColumns, semanticColumns } = spec;
+  const identityId = spec.identityValues[0] as string;
+  const values = [...spec.identityValues, ...spec.semanticValues, spec.supersedesRevisionId];
+  const placeholders = values.map((_, i) => `$${i + 1}`);
+
+  const inserted = await client.query<{ id: string }>(
+    `insert into ${revisionTable}
+       (${[...identityColumns, ...semanticColumns].join(", ")}, supersedes_revision_id)
+     values (${placeholders.join(", ")})
+     on conflict (source_property_identity_id, revision_digest) do nothing
+     returning id`,
+    values,
+  );
+
+  let revisionId = inserted.rows[0]?.id ?? null;
+  const revisionCreated = revisionId !== null;
+
+  if (revisionId === null) {
+    const semanticParams = spec.semanticValues.map((_, i) => `$${i + 2}`);
+    const existing = await client.query<{ id: string }>(
+      `select id from ${revisionTable}
+        where source_property_identity_id = $1
+          and ${semanticColumns.map((c, i) => `${c} is not distinct from ${semanticParams[i]}`).join(" and ")}
+        limit 1`,
+      [identityId, ...spec.semanticValues],
+    );
+    revisionId = existing.rows[0]?.id ?? null;
+    if (revisionId === null) {
+      throw new Error(
+        `${revisionTable}: the digest for candidate ${identityId} already exists but no revision ` +
+          "matches its semantic columns. That should be impossible and means the digest and the " +
+          "columns it is derived from have diverged.",
+      );
+    }
+  }
+
+  const moved = await client.query(
+    `insert into ${headTable} (source_property_identity_id, current_revision_id)
+     values ($1, $2)
+     on conflict (source_property_identity_id) do update
+       set current_revision_id = excluded.current_revision_id
+     where ${headTable}.current_revision_id is distinct from excluded.current_revision_id
+     returning source_property_identity_id`,
+    [identityId, revisionId],
+  );
+
+  return { revisionCreated, pointerMoved: (moved.rowCount ?? 0) > 0 };
 }
 
 /**
  * Resolve every candidate for one provider/environment/destination.
  *
- * Idempotent: the resolution tables are unique on the identity, and the upsert
- * rewrites the same values from the same evidence, so a replay changes no row's
- * meaning and creates none.
+ * Idempotent by CONCLUSION, not by row count: replaying identical evidence under
+ * an identical policy re-derives the same revision digest, so nothing is appended
+ * and no head pointer moves.
  */
 export async function resolveDestination(
   client: Client,
@@ -341,77 +477,56 @@ export async function resolveDestination(
 
   await client.query("begin");
   try {
-    for (const part of chunked(stars, CHUNK)) {
-      for (const s of part) {
-        await client.query(
-          `insert into public.source_property_star_resolutions
-             (source_property_identity_id, source, source_environment, evidence_observation_id,
-              policy_provider, policy_version, policy_field, source_value, outcome,
-              resolved_star_value, conflict_state, conflicting_observation_id, conflicting_outcome)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-           on conflict (source_property_identity_id) do update set
-             evidence_observation_id = excluded.evidence_observation_id,
-             policy_provider = excluded.policy_provider,
-             policy_version = excluded.policy_version,
-             policy_field = excluded.policy_field,
-             source_value = excluded.source_value,
-             outcome = excluded.outcome,
-             resolved_star_value = excluded.resolved_star_value,
-             conflict_state = excluded.conflict_state,
-             conflicting_observation_id = excluded.conflicting_observation_id,
-             conflicting_outcome = excluded.conflicting_outcome`,
-          [
-            s.identityId,
-            s.source,
-            s.environment,
-            s.evidenceObservationId,
-            s.policyProvider,
-            s.policyVersion,
-            s.policyField,
-            s.sourceValue,
-            s.outcome,
-            s.resolvedStarValue,
-            s.conflictObservationId ? "conflict" : "none",
-            s.conflictObservationId,
-            s.conflictOutcome,
-          ],
-        );
-      }
+    const starHeads = await loadHeads(client, "public.source_property_star_resolutions");
+    const locationHeads = await loadHeads(client, "public.source_property_location_resolutions");
+
+    for (const s of stars) {
+      const result = await appendRevision(client, {
+        revisionTable: "public.source_property_star_resolution_revisions",
+        headTable: "public.source_property_star_resolutions",
+        identityColumns: ["source_property_identity_id", "source", "source_environment"],
+        semanticColumns: STAR_SEMANTIC_COLUMNS,
+        identityValues: [s.identityId, s.source, s.environment],
+        semanticValues: [
+          s.evidenceObservationId,
+          s.policyProvider,
+          s.policyVersion,
+          s.policyField,
+          s.sourceValue,
+          s.outcome,
+          s.resolvedStarValue,
+          s.conflictObservationId ? "conflict" : "none",
+          s.conflictObservationId,
+          s.conflictOutcome,
+        ],
+        supersedesRevisionId: starHeads.get(s.identityId) ?? null,
+      });
+      if (result.revisionCreated) counts.revisionsCreated.star += 1;
+      if (result.pointerMoved) counts.pointerMoves.star += 1;
     }
 
-    for (const part of chunked(locations, CHUNK)) {
-      for (const l of part) {
-        await client.query(
-          `insert into public.source_property_location_resolutions
-             (source_property_identity_id, source, source_environment, evidence_observation_id,
-              policy_provider, policy_version, outcome, resolved_latitude, resolved_longitude,
-              unresolved_reason, conflict_state, conflicting_observation_id)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-           on conflict (source_property_identity_id) do update set
-             evidence_observation_id = excluded.evidence_observation_id,
-             policy_version = excluded.policy_version,
-             outcome = excluded.outcome,
-             resolved_latitude = excluded.resolved_latitude,
-             resolved_longitude = excluded.resolved_longitude,
-             unresolved_reason = excluded.unresolved_reason,
-             conflict_state = excluded.conflict_state,
-             conflicting_observation_id = excluded.conflicting_observation_id`,
-          [
-            l.identityId,
-            l.source,
-            l.environment,
-            l.evidenceObservationId,
-            opts.source,
-            l.policyVersion,
-            l.outcome,
-            l.latitude,
-            l.longitude,
-            l.unresolvedReason,
-            l.conflictObservationId ? "conflict" : "none",
-            l.conflictObservationId,
-          ],
-        );
-      }
+    for (const l of locations) {
+      const result = await appendRevision(client, {
+        revisionTable: "public.source_property_location_resolution_revisions",
+        headTable: "public.source_property_location_resolutions",
+        identityColumns: ["source_property_identity_id", "source", "source_environment"],
+        semanticColumns: LOCATION_SEMANTIC_COLUMNS,
+        identityValues: [l.identityId, l.source, l.environment],
+        semanticValues: [
+          l.evidenceObservationId,
+          l.policyProvider,
+          l.policyVersion,
+          l.outcome,
+          l.latitude,
+          l.longitude,
+          l.unresolvedReason,
+          l.conflictObservationId ? "conflict" : "none",
+          l.conflictObservationId,
+        ],
+        supersedesRevisionId: locationHeads.get(l.identityId) ?? null,
+      });
+      if (result.revisionCreated) counts.revisionsCreated.location += 1;
+      if (result.pointerMoved) counts.pointerMoves.location += 1;
     }
 
     await client.query("commit");

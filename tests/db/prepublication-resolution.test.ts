@@ -1,10 +1,19 @@
 /**
  * Pre-publication star and location resolution (migration 0028).
  *
- * The invariants that make a resolution trustworthy: it cites a real observation
- * belonging to THIS candidate, it restates what that observation actually says,
- * it never crosses provider or environment streams, and it never invents
- * precedence between disagreeing sources.
+ * Three things have to be true for a resolution to be worth citing later, and
+ * each has its own section below:
+ *
+ *   1. It cites a real observation BELONGING to this candidate and restates what
+ *      that observation actually says.
+ *   2. Its conclusion is the one the APPROVED POLICY reaches from that value —
+ *      not merely a well-formed one, and not one the caller picked.
+ *   3. It is IMMUTABLE. A later observation or a new policy version appends a
+ *      revision and moves a pointer; it never rewrites what was already decided.
+ *
+ * Most of these run as direct SQL rather than through the resolver, deliberately:
+ * the guarantee has to hold against psql and a service-role script, not only
+ * against the one code path that happens to be careful.
  *
  * All fixtures synthetic. No real provider data appears here.
  */
@@ -21,6 +30,13 @@ import {
 const d = describe.skipIf(!hasTestDb);
 
 const SOURCE = "hotelbeds";
+const POLICY = {
+  provider: "hotelbeds",
+  version: "hotelbeds-classification/1",
+  field: "categoryCode",
+};
+const LOCATION_POLICY = { provider: "hotelbeds", version: "hotelbeds-location/1" };
+
 let counter = 0;
 const uniq = () => `r${Date.now().toString(36)}${(counter += 1)}`;
 
@@ -28,38 +44,39 @@ interface Fixture {
   identityId: string;
   runId: string;
   observationId: string;
+  source: string;
+  environment: string;
 }
 
-/** One identity with one observation, in the evaluation environment. */
-async function fixture(
-  over: {
-    environment?: string;
-    source?: string;
-    categoryCode?: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-    plausible?: boolean | null;
-    observedAt?: string;
-  } = {},
-): Promise<Fixture> {
-  const source = over.source ?? SOURCE;
-  const environment = over.environment ?? "evaluation";
-  const run = await adminQuery<{ id: string }>(
+interface ObservationOverrides {
+  categoryCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  plausible?: boolean | null;
+  observedAt?: string;
+}
+
+async function newRun(source: string, environment: string, startedAt?: string): Promise<string> {
+  const rows = await adminQuery<{ id: string }>(
     `insert into public.source_runs (source, source_environment, destination_id, run_mode, started_at)
      values ($1, $2, $3, 'evaluation', coalesce($4::timestamptz, now())) returning id`,
-    [source, environment, DEST.bali, over.observedAt ?? null],
+    [source, environment, DEST.bali, startedAt ?? null],
   );
-  const runId = run[0]!.id;
+  return rows[0]!.id;
+}
 
-  const identity = await adminQuery<{ id: string }>(
-    `insert into public.source_property_identities
-       (source, source_environment, source_property_id, first_seen_run_id, last_seen_run_id)
-     values ($1, $2, $3, $4, $4) returning id`,
-    [source, environment, uniq(), runId],
-  );
-  const identityId = identity[0]!.id;
-
-  const observation = await adminQuery<{ id: string }>(
+/**
+ * A LATER observation of the same candidate.
+ *
+ * It gets its own run, because 0027 allows one observation per candidate per run
+ * — a second reading is by definition a second look.
+ */
+async function addObservation(
+  f: Fixture,
+  over: ObservationOverrides & { runId?: string } = {},
+): Promise<string> {
+  const runId = over.runId ?? (await newRun(f.source, f.environment, over.observedAt));
+  const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_observations
        (source_run_id, source_property_identity_id, source, source_environment,
         observed_at, source_classification_code, source_latitude, source_longitude,
@@ -67,9 +84,9 @@ async function fixture(
      values ($1,$2,$3,$4, coalesce($9::timestamptz, now()), $5,$6,$7,$8) returning id`,
     [
       runId,
-      identityId,
-      source,
-      environment,
+      f.identityId,
+      f.source,
+      f.environment,
       over.categoryCode === undefined ? "5EST" : over.categoryCode,
       over.latitude === undefined ? -8.5 : over.latitude,
       over.longitude === undefined ? 115.2 : over.longitude,
@@ -77,65 +94,128 @@ async function fixture(
       over.observedAt ?? null,
     ],
   );
-
-  return { identityId, runId, observationId: observation[0]!.id };
+  return rows[0]!.id;
 }
 
-/** Insert a star resolution directly, to probe the database's own guards. */
-async function insertStar(
-  f: Fixture,
-  over: Partial<{
-    evidenceObservationId: string;
-    identityId: string;
-    sourceValue: string | null;
-    outcome: string;
-    starValue: number | null;
-    environment: string;
-    source: string;
-  }> = {},
-): Promise<void> {
-  await adminQuery(
-    `insert into public.source_property_star_resolutions
+/** One identity with one observation, in the evaluation environment. */
+async function fixture(
+  over: ObservationOverrides & { environment?: string; source?: string } = {},
+): Promise<Fixture> {
+  const source = over.source ?? SOURCE;
+  const environment = over.environment ?? "evaluation";
+  const runId = await newRun(source, environment, over.observedAt);
+
+  const identity = await adminQuery<{ id: string }>(
+    `insert into public.source_property_identities
+       (source, source_environment, source_property_id, first_seen_run_id, last_seen_run_id)
+     values ($1, $2, $3, $4, $4) returning id`,
+    [source, environment, uniq(), runId],
+  );
+
+  const partial: Fixture = {
+    identityId: identity[0]!.id,
+    runId,
+    observationId: "",
+    source,
+    environment,
+  };
+  partial.observationId = await addObservation(partial, { ...over, runId });
+  return partial;
+}
+
+interface StarOverrides {
+  evidenceObservationId?: string;
+  identityId?: string;
+  policyProvider?: string;
+  policyVersion?: string;
+  policyField?: string;
+  sourceValue?: string | null;
+  outcome?: string;
+  starValue?: number | null;
+  environment?: string;
+  source?: string;
+  conflictState?: string;
+  conflictObservationId?: string | null;
+  conflictOutcome?: string | null;
+  supersedesRevisionId?: string | null;
+}
+
+/** Insert a star revision directly, to probe the database's own guards. */
+async function insertStar(f: Fixture, over: StarOverrides = {}): Promise<string> {
+  const pick = <T>(key: keyof StarOverrides, fallback: T): T =>
+    key in over ? (over[key] as T) : fallback;
+  const rows = await adminQuery<{ id: string }>(
+    `insert into public.source_property_star_resolution_revisions
        (source_property_identity_id, source, source_environment, evidence_observation_id,
-        policy_provider, policy_version, policy_field, source_value, outcome, resolved_star_value)
-     values ($1,$2,$3,$4,'hotelbeds','hotelbeds-classification/1','categoryCode',$5,$6,$7)`,
+        policy_provider, policy_version, policy_field, source_value, outcome, resolved_star_value,
+        conflict_state, conflicting_observation_id, conflicting_outcome, supersedes_revision_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
     [
       over.identityId ?? f.identityId,
-      over.source ?? SOURCE,
-      over.environment ?? "evaluation",
+      over.source ?? f.source,
+      over.environment ?? f.environment,
       over.evidenceObservationId ?? f.observationId,
-      over.sourceValue === undefined ? "5EST" : over.sourceValue,
+      over.policyProvider ?? POLICY.provider,
+      over.policyVersion ?? POLICY.version,
+      over.policyField ?? POLICY.field,
+      pick<string | null>("sourceValue", "5EST"),
       over.outcome ?? "exact_five",
-      over.starValue === undefined ? 5 : over.starValue,
+      pick<number | null>("starValue", 5),
+      over.conflictState ?? (over.conflictObservationId ? "conflict" : "none"),
+      pick<string | null>("conflictObservationId", null),
+      pick<string | null>("conflictOutcome", null),
+      pick<string | null>("supersedesRevisionId", null),
     ],
   );
+  return rows[0]!.id;
 }
 
-async function insertLocation(
-  f: Fixture,
-  over: Partial<{
-    evidenceObservationId: string;
-    outcome: string;
-    lat: number | null;
-    lon: number | null;
-    reason: string | null;
-  }> = {},
-): Promise<void> {
-  await adminQuery(
-    `insert into public.source_property_location_resolutions
+interface LocationOverrides {
+  evidenceObservationId?: string;
+  policyProvider?: string;
+  policyVersion?: string;
+  outcome?: string;
+  lat?: number | null;
+  lon?: number | null;
+  reason?: string | null;
+  conflictState?: string;
+  conflictObservationId?: string | null;
+}
+
+async function insertLocation(f: Fixture, over: LocationOverrides = {}): Promise<string> {
+  const pick = <T>(key: keyof LocationOverrides, fallback: T): T =>
+    key in over ? (over[key] as T) : fallback;
+  const rows = await adminQuery<{ id: string }>(
+    `insert into public.source_property_location_resolution_revisions
        (source_property_identity_id, source, source_environment, evidence_observation_id,
         policy_provider, policy_version, outcome, resolved_latitude, resolved_longitude,
-        unresolved_reason)
-     values ($1,$2,'evaluation',$3,'hotelbeds','hotelbeds-location/1',$4,$5,$6,$7)`,
+        unresolved_reason, conflict_state, conflicting_observation_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
     [
       f.identityId,
-      SOURCE,
+      f.source,
+      f.environment,
       over.evidenceObservationId ?? f.observationId,
+      over.policyProvider ?? LOCATION_POLICY.provider,
+      over.policyVersion ?? LOCATION_POLICY.version,
       over.outcome ?? "resolved",
-      over.lat === undefined ? -8.5 : over.lat,
-      over.lon === undefined ? 115.2 : over.lon,
-      over.reason ?? null,
+      pick<number | null>("lat", -8.5),
+      pick<number | null>("lon", 115.2),
+      pick<string | null>("reason", null),
+      over.conflictState ?? (over.conflictObservationId ? "conflict" : "none"),
+      pick<string | null>("conflictObservationId", null),
     ],
+  );
+  return rows[0]!.id;
+}
+
+async function setStarHead(identityId: string, revisionId: string): Promise<void> {
+  await adminQuery(
+    `insert into public.source_property_star_resolutions
+       (source_property_identity_id, current_revision_id) values ($1,$2)
+     on conflict (source_property_identity_id) do update
+       set current_revision_id = excluded.current_revision_id`,
+    [identityId, revisionId],
   );
 }
 
@@ -168,6 +248,23 @@ d("pre-publication resolution (0028)", () => {
   beforeAll(async () => {
     await setupDatabase();
     await seed();
+
+    // Two extra policy versions, used to prove that what refuses a bad outcome is
+    // the MAPPING and not merely the existence of a policy row:
+    //   * `test-empty` exists but maps nothing;
+    //   * `2-test` maps 5EST the same way v1 does, at a different version.
+    await adminQuery(
+      `insert into public.provider_classification_policies (provider, version, field, notes) values
+         ('hotelbeds', 'hotelbeds-classification/test-empty', 'categoryCode', 'test fixture'),
+         ('hotelbeds', 'hotelbeds-classification/2-test', 'categoryCode', 'test fixture')
+       on conflict do nothing`,
+    );
+    await adminQuery(
+      `insert into public.provider_classification_policy_mappings
+         (provider, version, field, source_code, outcome, resolved_star_value)
+       values ('hotelbeds','hotelbeds-classification/2-test','categoryCode','5EST','exact_five',5)
+       on conflict do nothing`,
+    );
   });
   afterAll(teardownDatabase);
 
@@ -261,15 +358,212 @@ d("pre-publication resolution (0028)", () => {
   });
 
   // -----------------------------------------------------------------------
+  // THE APPROVED POLICY DECIDES THE OUTCOME
+  // -----------------------------------------------------------------------
+  // Restating the observation's code faithfully is not enough: `5EST` +
+  // `exact_four` cites real evidence, passes every FK and every shape check, and
+  // is still a classification the reviewed policy never sanctioned. These probe
+  // the database directly, because the guarantee must not depend on the resolver.
+  describe("policy semantics are structural", () => {
+    it("ACCEPTS the mapping the approved policy actually reaches", async () => {
+      const five = await fixture({ categoryCode: "5EST" });
+      await expect(
+        insertStar(five, { sourceValue: "5EST", outcome: "exact_five", starValue: 5 }),
+      ).resolves.toBeTruthy();
+
+      const four = await fixture({ categoryCode: "4LUX" });
+      await expect(
+        insertStar(four, { sourceValue: "4LUX", outcome: "exact_four", starValue: 4 }),
+      ).resolves.toBeTruthy();
+
+      const half = await fixture({ categoryCode: "H4_5" });
+      await expect(
+        insertStar(half, {
+          sourceValue: "H4_5",
+          outcome: "classified_not_v1_scope",
+          starValue: null,
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it("REFUSES 5EST claimed as exact_four", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(
+        insertStar(f, { sourceValue: "5EST", outcome: "exact_four", starValue: 4 }),
+      ).rejects.toThrow(/approved policy decides the outcome, not the caller/i);
+    });
+
+    it("REFUSES 4EST claimed as exact_five", async () => {
+      const f = await fixture({ categoryCode: "4EST" });
+      await expect(
+        insertStar(f, { sourceValue: "4EST", outcome: "exact_five", starValue: 5 }),
+      ).rejects.toThrow(/approved policy decides the outcome, not the caller/i);
+    });
+
+    it("REFUSES an UNMAPPED code claimed as anything but unresolved", async () => {
+      // `SPC` is "absent/unknown category" in the provider's own master. It is
+      // not in the allow-list, so it has exactly one available outcome.
+      for (const outcome of ["exact_five", "exact_four", "classified_not_v1_scope"]) {
+        const f = await fixture({ categoryCode: "SPC" });
+        await expect(
+          insertStar(f, {
+            sourceValue: "SPC",
+            outcome,
+            starValue: outcome === "exact_five" ? 5 : outcome === "exact_four" ? 4 : null,
+          }),
+        ).rejects.toThrow(/never acquires a meaning by accident/i);
+      }
+    });
+
+    it("ACCEPTS an unmapped code resolved to unresolved", async () => {
+      const f = await fixture({ categoryCode: "SPC" });
+      await expect(
+        insertStar(f, { sourceValue: "SPC", outcome: "unresolved", starValue: null }),
+      ).resolves.toBeTruthy();
+    });
+
+    // Two layers refuse a bogus policy citation, and both are worth having:
+    // the MAPPING lookup refuses the claimed outcome, and — once a caller
+    // retreats to `unresolved` to get past it — the FK refuses the policy
+    // itself, so a resolution can never name a policy nobody approved.
+    it("REFUSES a policy VERSION that was never approved", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(f, { policyVersion: "hotelbeds-classification/99" })).rejects.toThrow(
+        /has no mapping for/i,
+      );
+      await expect(
+        insertStar(f, {
+          policyVersion: "hotelbeds-classification/99",
+          outcome: "unresolved",
+          starValue: null,
+        }),
+      ).rejects.toThrow(/policy_fk/i);
+    });
+
+    it("REFUSES a policy FIELD the approved policy does not read", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(f, { policyField: "simpleCode" })).rejects.toThrow(
+        /has no mapping for .* under field 'simpleCode'/i,
+      );
+      await expect(
+        insertStar(f, { policyField: "simpleCode", outcome: "unresolved", starValue: null }),
+      ).rejects.toThrow(/policy_fk/i);
+    });
+
+    it("REFUSES a provider with no approved policy at all", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(insertStar(f, { policyProvider: "provider_b" })).rejects.toThrow(
+        /has no mapping for/i,
+      );
+      await expect(
+        insertStar(f, { policyProvider: "provider_b", outcome: "unresolved", starValue: null }),
+      ).rejects.toThrow(/policy_fk/i);
+    });
+
+    it("a version that EXISTS but does not map the code can only say unresolved", async () => {
+      // The sharper case: the policy row is real, so the FK passes. What refuses
+      // is the mapping lookup — which is the point of keeping them separate.
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(
+        insertStar(f, { policyVersion: "hotelbeds-classification/test-empty" }),
+      ).rejects.toThrow(/has no mapping for/i);
+      await expect(
+        insertStar(f, {
+          policyVersion: "hotelbeds-classification/test-empty",
+          outcome: "unresolved",
+          starValue: null,
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it("the mapping table itself cannot hold an incoherent outcome", async () => {
+      await expect(
+        adminQuery(
+          `insert into public.provider_classification_policy_mappings
+             (provider, version, field, source_code, outcome, resolved_star_value)
+           values ('hotelbeds','hotelbeds-classification/1','categoryCode','ZZTOP','exact_five',4)`,
+        ),
+      ).rejects.toThrow(/value_shape/i);
+    });
+
+    it("a mapping cannot be attached to a policy that does not exist", async () => {
+      await expect(
+        adminQuery(
+          `insert into public.provider_classification_policy_mappings
+             (provider, version, field, source_code, outcome, resolved_star_value)
+           values ('provider_b','provider-b/1','stars','5','exact_five',5)`,
+        ),
+      ).rejects.toThrow(/policy_fk/i);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  describe("the DB policy and the TypeScript policy cannot drift", () => {
+    it("hold exactly the same provider, version, field and mappings", async () => {
+      const ts = HOTELBEDS_CLASSIFICATION_POLICY;
+
+      const policy = await adminQuery<{ provider: string; version: string; field: string }>(
+        `select provider, version, field from public.provider_classification_policies
+          where provider = $1 and version = $2`,
+        [ts.provider, ts.version],
+      );
+      expect(policy, "the TypeScript policy has no row in the database").toHaveLength(1);
+      expect(policy[0]!.field).toBe(ts.field);
+
+      const rows = await adminQuery<{ source_code: string; outcome: string }>(
+        `select source_code, outcome from public.provider_classification_policy_mappings
+          where provider = $1 and version = $2 and field = $3 order by source_code`,
+        [ts.provider, ts.version, ts.field],
+      );
+      const fromDb = Object.fromEntries(rows.map((r) => [r.source_code, r.outcome]));
+      const fromTs = Object.fromEntries(
+        Object.entries(ts.mappings).sort(([a], [b]) => a.localeCompare(b)),
+      );
+      // Both directions: a code added to one and not the other fails here, which
+      // is the only thing keeping two copies of the same decision honest.
+      expect(fromDb).toEqual(fromTs);
+    });
+
+    it("agree on the star VALUE each outcome carries", async () => {
+      const rows = await adminQuery<{ source_code: string; value: string | null }>(
+        `select source_code, resolved_star_value::text as value
+           from public.provider_classification_policy_mappings
+          where provider = $1 and version = $2`,
+        [HOTELBEDS_CLASSIFICATION_POLICY.provider, HOTELBEDS_CLASSIFICATION_POLICY.version],
+      );
+      for (const row of rows) {
+        const outcome = HOTELBEDS_CLASSIFICATION_POLICY.mappings[row.source_code];
+        const expected = outcome === "exact_four" ? "4" : outcome === "exact_five" ? "5" : null;
+        expect(row.value, `${row.source_code} star value`).toBe(expected);
+      }
+    });
+
+    it("`unresolved` is not a storable mapping — absence IS the answer", async () => {
+      await expect(
+        adminQuery(
+          `insert into public.provider_classification_policy_mappings
+             (provider, version, field, source_code, outcome, resolved_star_value)
+           values ('hotelbeds','hotelbeds-classification/1','categoryCode','SUP','unresolved',null)`,
+        ),
+      ).rejects.toThrow(/outcome_check|violates check constraint/i);
+      expect(HOTELBEDS_CLASSIFICATION_POLICY.mappings.SUP).toBeUndefined();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   describe("provenance is structural", () => {
     it("11. cites the exact observation that produced it", async () => {
       const f = await fixture({ categoryCode: "4EST" });
-      await insertStar(f, { sourceValue: "4EST", outcome: "exact_four", starValue: 4 });
+      const id = await insertStar(f, {
+        sourceValue: "4EST",
+        outcome: "exact_four",
+        starValue: 4,
+      });
 
       const rows = await adminQuery<{ evidence: string; identity: string }>(
         `select evidence_observation_id as evidence, source_property_identity_id as identity
-           from public.source_property_star_resolutions where source_property_identity_id = $1`,
-        [f.identityId],
+           from public.source_property_star_resolution_revisions where id = $1`,
+        [id],
       );
       expect(rows[0]!.evidence).toBe(f.observationId);
       expect(rows[0]!.identity).toBe(f.identityId);
@@ -281,10 +575,10 @@ d("pre-publication resolution (0028)", () => {
       // Both observations exist; a plain id-only FK would accept this.
       await expect(
         insertStar(mine, { evidenceObservationId: theirs.observationId }),
-      ).rejects.toThrow(/star_resolutions_evidence_fk/i);
+      ).rejects.toThrow(/star_resolution_revisions_evidence_fk/i);
       await expect(
         insertLocation(mine, { evidenceObservationId: theirs.observationId }),
-      ).rejects.toThrow(/location_resolutions_evidence_fk/i);
+      ).rejects.toThrow(/location_resolution_revisions_evidence_fk/i);
     });
 
     it("REFUSES a resolution that restates something the evidence never said", async () => {
@@ -305,17 +599,59 @@ d("pre-publication resolution (0028)", () => {
       );
     });
 
-    it("REFUSES resolving a location from implausible or missing coordinates", async () => {
+    it("13. cannot cross evaluation and production streams", async () => {
+      const evaluation = await fixture({ environment: "evaluation" });
+      // Claim production for an evaluation identity: the identity composite FK
+      // refuses, exactly as 0027 does for the canonical link.
+      await expect(insertStar(evaluation, { environment: "production" })).rejects.toThrow(
+        /star_resolution_revisions_identity_fk/i,
+      );
+    });
+
+    it("cannot cross providers either", async () => {
+      const hb = await fixture({ source: "hotelbeds" });
+      await expect(insertStar(hb, { source: "other_provider" })).rejects.toThrow(
+        /star_resolution_revisions_identity_fk/i,
+      );
+    });
+
+    it("protects the cited observation from deletion", async () => {
+      // Observations are already append-only in 0027; this proves the REVISION
+      // also holds them, so the guarantee does not depend on that alone.
+      const defs = await adminQuery<{ conname: string; def: string }>(
+        `select conname, pg_get_constraintdef(oid) as def from pg_constraint
+          where conname in ('source_property_star_resolution_revisions_evidence_fk',
+                            'source_property_star_resolution_revisions_conflict_obs_fk',
+                            'source_property_location_resolution_revisions_evidence_fk',
+                            'source_property_location_resolution_revisions_conflict_obs_fk')`,
+      );
+      expect(defs).toHaveLength(4);
+      for (const row of defs) expect(row.def, row.conname).toMatch(/ON DELETE RESTRICT/i);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // LOCATION EVIDENCE INTEGRITY
+  // -----------------------------------------------------------------------
+  // `coordinates_missing` and `coordinates_implausible` are claims ABOUT THE
+  // PROVIDER, and a wrong one is a defamation of the data. Each is checked
+  // against what the cited observation actually carries, in both directions.
+  describe("location evidence integrity", () => {
+    it("REFUSES resolving a location from implausible coordinates", async () => {
       const bad = await fixture({ latitude: 999, longitude: -244.7, plausible: false });
       await expect(insertLocation(bad, { lat: 999, lon: -244.7 })).rejects.toThrow(
         /missing or implausible/i,
       );
-
-      const none = await fixture({ latitude: null, longitude: null, plausible: null });
-      await expect(insertLocation(none, { lat: null, lon: null })).rejects.toThrow();
     });
 
-    it("REFUSES an unresolved reason the evidence contradicts", async () => {
+    it("REFUSES resolving a location from absent coordinates", async () => {
+      const none = await fixture({ latitude: null, longitude: null, plausible: null });
+      await expect(insertLocation(none, { lat: null, lon: null })).rejects.toThrow(
+        /outcome_shape|missing or implausible/i,
+      );
+    });
+
+    it("REFUSES coordinates_missing when the evidence supplies BOTH", async () => {
       const hasCoords = await fixture({ latitude: -8.5, longitude: 115.2, plausible: false });
       await expect(
         insertLocation(hasCoords, {
@@ -327,80 +663,471 @@ d("pre-publication resolution (0028)", () => {
       ).rejects.toThrow(/reports coordinates_missing, but the cited observation carries/i);
     });
 
-    it("13. cannot cross evaluation and production streams", async () => {
-      const evaluation = await fixture({ environment: "evaluation" });
-      // Claim production for an evaluation identity: the identity composite FK
-      // refuses, exactly as 0027 does for the canonical link.
-      await expect(insertStar(evaluation, { environment: "production" })).rejects.toThrow(
-        /star_resolutions_identity_fk/i,
-      );
+    it("ACCEPTS coordinates_missing when EITHER coordinate is absent", async () => {
+      for (const partial of [
+        { latitude: -8.5, longitude: null },
+        { latitude: null, longitude: 115.2 },
+        { latitude: null, longitude: null },
+      ]) {
+        const f = await fixture({ ...partial, plausible: null });
+        await expect(
+          insertLocation(f, {
+            outcome: "unresolved",
+            lat: null,
+            lon: null,
+            reason: "coordinates_missing",
+          }),
+          `lat=${partial.latitude} lon=${partial.longitude}`,
+        ).resolves.toBeTruthy();
+      }
     });
 
-    it("cannot cross providers either", async () => {
-      const hb = await fixture({ source: "hotelbeds" });
-      await expect(insertStar(hb, { source: "other_provider" })).rejects.toThrow(
-        /star_resolutions_identity_fk/i,
-      );
+    it("REFUSES coordinates_implausible when NO coordinates were supplied", async () => {
+      // "The provider gave us nothing" and "the provider gave us something wrong"
+      // are different findings about the source, and collapsing them would make
+      // the coverage numbers lie.
+      const none = await fixture({ latitude: null, longitude: null, plausible: null });
+      await expect(
+        insertLocation(none, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_implausible",
+        }),
+      ).rejects.toThrow(/supplies no coordinates at all/i);
     });
 
-    it("protects the cited observation from deletion", async () => {
+    it("REFUSES coordinates_implausible for coordinates audited as PLAUSIBLE", async () => {
+      const good = await fixture({ latitude: -8.5, longitude: 115.2, plausible: true });
+      await expect(
+        insertLocation(good, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_implausible",
+        }),
+      ).rejects.toThrow(/audited as PLAUSIBLE/i);
+    });
+
+    it("ACCEPTS coordinates_implausible for supplied-but-implausible coordinates", async () => {
+      const bad = await fixture({ latitude: -8.69, longitude: -244.73, plausible: false });
+      await expect(
+        insertLocation(bad, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_implausible",
+        }),
+      ).resolves.toBeTruthy();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // CONFLICT EVIDENCE INTEGRITY
+  // -----------------------------------------------------------------------
+  // A conflict sends a candidate to human review. Manufacturing one from an
+  // observation that does not actually disagree is as damaging as missing a real
+  // one, so the citation is checked the same way the resolution's own is.
+  describe("star conflict evidence integrity", () => {
+    it("ACCEPTS a genuine disagreement between two mapped observations", async () => {
+      const f = await fixture({ categoryCode: "4EST" });
+      const other = await addObservation(f, { categoryCode: "5EST" });
+      await expect(
+        insertStar(f, {
+          sourceValue: "4EST",
+          outcome: "exact_four",
+          starValue: 4,
+          conflictObservationId: other,
+          conflictOutcome: "exact_five",
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it("REFUSES a conflicting_outcome the policy does not reach from that observation", async () => {
+      const f = await fixture({ categoryCode: "4EST" });
+      const other = await addObservation(f, { categoryCode: "3EST" });
+      await expect(
+        insertStar(f, {
+          sourceValue: "4EST",
+          outcome: "exact_four",
+          starValue: 4,
+          conflictObservationId: other,
+          // 3EST maps to classified_not_v1_scope, not exact_five.
+          conflictOutcome: "exact_five",
+        }),
+      ).rejects.toThrow(/conflicting_outcome says/i);
+    });
+
+    it("REFUSES a conflict cited from an UNRESOLVED observation", async () => {
       const f = await fixture({ categoryCode: "5EST" });
-      await insertStar(f);
-      // Observations are already append-only in 0027; this proves the RESOLUTION
-      // also holds them, so the guarantee does not depend on that alone.
-      const def = await adminQuery<{ def: string }>(
-        `select pg_get_constraintdef(oid) as def from pg_constraint
-          where conname = 'source_property_star_resolutions_evidence_fk'`,
+      const other = await addObservation(f, { categoryCode: "VILLA" });
+      await expect(
+        insertStar(f, {
+          conflictObservationId: other,
+          conflictOutcome: "exact_four",
+        }),
+      ).rejects.toThrow(/not a competing claim and cannot manufacture a conflict/i);
+    });
+
+    it("REFUSES a conflict that agrees with the resolution", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const other = await addObservation(f, { categoryCode: "5LUX" });
+      await expect(
+        insertStar(f, { conflictObservationId: other, conflictOutcome: "exact_five" }),
+      ).rejects.toThrow(/conflict_differs/i);
+    });
+
+    it("REFUSES an observation conflicting with itself", async () => {
+      // Necessarily also an agreement — one observation maps to one outcome — so
+      // the same constraint catches both halves of "this is not a disagreement".
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(
+        insertStar(f, { conflictObservationId: f.observationId, conflictOutcome: "exact_five" }),
+      ).rejects.toThrow(/conflict_differs/i);
+    });
+
+    it("REFUSES a conflict on an UNRESOLVED resolution", async () => {
+      // Nothing was decided, so there is nothing for a second reading to
+      // contradict. This would otherwise queue reviews for candidates that have
+      // no classification to review.
+      const f = await fixture({ categoryCode: "SPC" });
+      const other = await addObservation(f, { categoryCode: "5EST" });
+      await expect(
+        insertStar(f, {
+          sourceValue: "SPC",
+          outcome: "unresolved",
+          starValue: null,
+          conflictObservationId: other,
+          conflictOutcome: "exact_five",
+        }),
+      ).rejects.toThrow(/conflict_differs/i);
+    });
+
+    it("cannot record a conflict without naming what it conflicts with", async () => {
+      const f = await fixture();
+      await expect(insertStar(f, { conflictState: "conflict" })).rejects.toThrow(
+        /conflict_shape|not a competing claim/i,
       );
-      expect(def[0]!.def).toMatch(/ON DELETE RESTRICT/i);
+      // …nor cite conflict evidence while declaring no conflict, which would
+      // leave a disagreement recorded and invisible.
+      const other = await addObservation(f, { categoryCode: "4EST" });
+      await expect(
+        insertStar(f, {
+          conflictState: "none",
+          conflictObservationId: other,
+          conflictOutcome: "exact_four",
+        }),
+      ).rejects.toThrow(/conflict_shape/i);
+    });
+
+    it("cannot cite another candidate's observation as the conflict", async () => {
+      const mine = await fixture({ categoryCode: "5EST" });
+      const theirs = await fixture({ categoryCode: "4EST" });
+      await expect(
+        insertStar(mine, {
+          conflictObservationId: theirs.observationId,
+          conflictOutcome: "exact_four",
+        }),
+      ).rejects.toThrow(/conflict_obs_fk/i);
+    });
+  });
+
+  describe("location conflict evidence integrity", () => {
+    it("ACCEPTS a genuinely different coordinate pair", async () => {
+      const f = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const other = await addObservation(f, { latitude: -8.5001, longitude: 115.2 });
+      await expect(insertLocation(f, { conflictObservationId: other })).resolves.toBeTruthy();
+    });
+
+    it("REFUSES a conflict from an IDENTICAL coordinate pair", async () => {
+      const f = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const same = await addObservation(f, { latitude: -8.5, longitude: 115.2 });
+      await expect(insertLocation(f, { conflictObservationId: same })).rejects.toThrow(
+        /Agreement is not a conflict/i,
+      );
+    });
+
+    it("REFUSES a conflict from an observation with no coordinates", async () => {
+      const f = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const none = await addObservation(f, {
+        latitude: null,
+        longitude: null,
+        plausible: null,
+      });
+      await expect(insertLocation(f, { conflictObservationId: none })).rejects.toThrow(
+        /no usable coordinates/i,
+      );
+    });
+
+    it("REFUSES a conflict from an IMPLAUSIBLE observation", async () => {
+      const f = await fixture({ latitude: -8.5, longitude: 115.2 });
+      const bad = await addObservation(f, {
+        latitude: -8.69,
+        longitude: -244.73,
+        plausible: false,
+      });
+      await expect(insertLocation(f, { conflictObservationId: bad })).rejects.toThrow(
+        /no usable coordinates/i,
+      );
+    });
+
+    it("REFUSES a conflict on an UNRESOLVED location", async () => {
+      const f = await fixture({ latitude: null, longitude: null, plausible: null });
+      const other = await addObservation(f, { latitude: -8.5, longitude: 115.2 });
+      await expect(
+        insertLocation(f, {
+          outcome: "unresolved",
+          lat: null,
+          lon: null,
+          reason: "coordinates_missing",
+          conflictObservationId: other,
+        }),
+      ).rejects.toThrow(/conflict_differs/i);
+    });
+
+    it("REFUSES an observation conflicting with itself", async () => {
+      // Its coordinates are trivially identical to the resolved pair, so the
+      // "agreement is not a conflict" guard reaches it first.
+      const f = await fixture({ latitude: -8.5, longitude: 115.2 });
+      await expect(insertLocation(f, { conflictObservationId: f.observationId })).rejects.toThrow(
+        /Agreement is not a conflict|conflict_differs/i,
+      );
     });
   });
 
   // -----------------------------------------------------------------------
   describe("shape constraints", () => {
     it("cannot claim a star value the outcome does not support", async () => {
-      const f = await fixture({ categoryCode: "3EST" });
+      // For a MAPPED code the policy trigger reaches these first, which is the
+      // stronger check. The shape constraint is what catches the case the policy
+      // has no opinion on: an unresolved outcome carrying a star value anyway.
+      const f = await fixture({ categoryCode: "SPC" });
       await expect(
-        insertStar(f, { sourceValue: "3EST", outcome: "classified_not_v1_scope", starValue: 3 }),
+        insertStar(f, { sourceValue: "SPC", outcome: "unresolved", starValue: 5 }),
       ).rejects.toThrow(/value_shape/i);
 
       const g = await fixture({ categoryCode: "5EST" });
       await expect(
         insertStar(g, { sourceValue: "5EST", outcome: "exact_five", starValue: 4 }),
-      ).rejects.toThrow(/value_shape/i);
-    });
-
-    it("cannot record a conflict without naming what it conflicts with", async () => {
-      const f = await fixture();
-      await expect(
-        adminQuery(
-          `insert into public.source_property_star_resolutions
-             (source_property_identity_id, source, source_environment, evidence_observation_id,
-              policy_provider, policy_version, policy_field, source_value, outcome,
-              resolved_star_value, conflict_state)
-           values ($1,$2,'evaluation',$3,'hotelbeds','hotelbeds-classification/1','categoryCode',
-                   '5EST','exact_five',5,'conflict')`,
-          [f.identityId, SOURCE, f.observationId],
-        ),
-      ).rejects.toThrow(/conflict_shape/i);
-    });
-
-    it("keeps at most one CURRENT resolution per candidate", async () => {
-      const f = await fixture();
-      await insertStar(f);
-      await expect(insertStar(f)).rejects.toThrow(/duplicate key/i);
+      ).rejects.toThrow(/value_shape|approved policy decides/i);
     });
 
     it("does not require an issuing authority", async () => {
       // D066: a registry is optional corroboration, never a gate.
       const f = await fixture({ categoryCode: "5EST" });
-      await insertStar(f);
+      const id = await insertStar(f);
       const rows = await adminQuery<{ authority: string | null }>(
-        `select issuing_authority as authority from public.source_property_star_resolutions
+        `select issuing_authority as authority
+           from public.source_property_star_resolution_revisions where id = $1`,
+        [id],
+      );
+      expect(rows[0]!.authority).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // IMMUTABLE REVISIONS + A MOVING HEAD
+  // -----------------------------------------------------------------------
+  // The reason for the whole split: a future D062 publication cites a revision
+  // as the evidence that authorised it. If that row can be rewritten, the
+  // citation is a promise the database does not keep.
+  describe("resolution history is immutable", () => {
+    it("REFUSES to update a revision's semantic fields", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const id = await insertStar(f);
+      await expect(
+        adminQuery(
+          `update public.source_property_star_resolution_revisions
+              set outcome = 'exact_four', resolved_star_value = 4 where id = $1`,
+          [id],
+        ),
+      ).rejects.toThrow(/IMMUTABLE/i);
+    });
+
+    it("REFUSES to update the observation a revision cites", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const id = await insertStar(f);
+      const other = await addObservation(f, { categoryCode: "4EST" });
+      await expect(
+        adminQuery(
+          `update public.source_property_star_resolution_revisions
+              set evidence_observation_id = $2 where id = $1`,
+          [id, other],
+        ),
+      ).rejects.toThrow(/IMMUTABLE/i);
+    });
+
+    it("REFUSES to delete a revision", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const id = await insertStar(f);
+      await expect(
+        adminQuery(`delete from public.source_property_star_resolution_revisions where id = $1`, [
+          id,
+        ]),
+      ).rejects.toThrow(/IMMUTABLE/i);
+      await expect(
+        adminQuery(
+          `delete from public.source_property_location_resolution_revisions where id is not null`,
+        ),
+      ).rejects.toThrow(/IMMUTABLE/i);
+    });
+
+    it("holds no UPDATE or DELETE privilege for any client role", async () => {
+      const rows = await adminQuery<{
+        table_name: string;
+        privilege_type: string;
+        grantee: string;
+      }>(
+        `select table_name, privilege_type, grantee
+           from information_schema.role_table_grants
+          where table_schema = 'public'
+            and table_name in ('source_property_star_resolution_revisions',
+                               'source_property_location_resolution_revisions')
+            and privilege_type in ('UPDATE', 'DELETE', 'TRUNCATE')
+            and grantee in ('anon', 'authenticated', 'service_role')`,
+      );
+      expect(rows, JSON.stringify(rows)).toHaveLength(0);
+    });
+
+    it("an identical replay creates NO new revision and moves NO pointer", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const id = await insertStar(f);
+      await setStarHead(f.identityId, id);
+
+      // Byte-identical conclusion from byte-identical evidence: the digest is the
+      // same, so the append is refused rather than duplicated.
+      await expect(insertStar(f)).rejects.toThrow(/digest_uk|duplicate key/i);
+
+      const rows = await adminQuery<{ n: string }>(
+        `select count(*)::text as n from public.source_property_star_resolution_revisions
           where source_property_identity_id = $1`,
         [f.identityId],
       );
-      expect(rows[0]!.authority).toBeNull();
+      expect(rows[0]!.n).toBe("1");
+    });
+
+    it("a NEW conclusion appends a revision, leaves the old one untouched, and moves the head", async () => {
+      const f = await fixture({ categoryCode: "4EST" });
+      const first = await insertStar(f, {
+        sourceValue: "4EST",
+        outcome: "exact_four",
+        starValue: 4,
+      });
+      await setStarHead(f.identityId, first);
+
+      const snapshot = async (id: string) =>
+        (
+          await adminQuery<{ row: string }>(
+            `select outcome || ':' || coalesce(source_value,'') || ':' ||
+                    evidence_observation_id::text || ':' || conflict_state || ':' ||
+                    coalesce(resolved_star_value::text,'') || ':' || revision_digest as row
+               from public.source_property_star_resolution_revisions where id = $1`,
+            [id],
+          )
+        )[0]!.row;
+      const before = await snapshot(first);
+
+      // A later observation disagrees. The candidate goes to conflict — as a NEW
+      // revision that supersedes the pre-conflict one.
+      const other = await addObservation(f, { categoryCode: "5EST" });
+      const second = await insertStar(f, {
+        sourceValue: "4EST",
+        outcome: "exact_four",
+        starValue: 4,
+        conflictObservationId: other,
+        conflictOutcome: "exact_five",
+        // Lineage is recorded at insert time, because it can never be added later.
+        supersedesRevisionId: first,
+      });
+      await setStarHead(f.identityId, second);
+
+      expect(second).not.toBe(first);
+      expect(await snapshot(first), "the pre-conflict revision was rewritten").toBe(before);
+
+      const head = await adminQuery<{ current: string; total: string }>(
+        `select h.current_revision_id as current,
+                (select count(*)::text from public.source_property_star_resolution_revisions
+                  where source_property_identity_id = $1) as total
+           from public.source_property_star_resolutions h
+          where h.source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(head[0]!.current).toBe(second);
+      expect(head[0]!.total).toBe("2");
+
+      const lineage = await adminQuery<{ supersedes: string | null }>(
+        `select supersedes_revision_id as supersedes
+           from public.source_property_star_resolution_revisions where id = $1`,
+        [second],
+      );
+      expect(lineage[0]!.supersedes).toBe(first);
+    });
+
+    it("a POLICY VERSION change appends a revision rather than overwriting one", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const v1 = await insertStar(f);
+      const v2 = await insertStar(f, { policyVersion: "hotelbeds-classification/2-test" });
+      expect(v2).not.toBe(v1);
+
+      const rows = await adminQuery<{ id: string; policy_version: string }>(
+        `select id, policy_version from public.source_property_star_resolution_revisions
+          where source_property_identity_id = $1 order by created_at`,
+        [f.identityId],
+      );
+      expect(rows.map((r) => r.policy_version)).toEqual([
+        "hotelbeds-classification/1",
+        "hotelbeds-classification/2-test",
+      ]);
+    });
+
+    it("has exactly one unambiguous CURRENT resolution per candidate", async () => {
+      const f = await fixture({ categoryCode: "5EST" });
+      const a = await insertStar(f);
+      const b = await insertStar(f, { policyVersion: "hotelbeds-classification/2-test" });
+      await setStarHead(f.identityId, a);
+      await setStarHead(f.identityId, b);
+
+      const heads = await adminQuery<{ n: string }>(
+        `select count(*)::text as n from public.source_property_star_resolutions
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(heads[0]!.n).toBe("1");
+
+      const view = await adminQuery<{ id: string }>(
+        `select id from public.source_property_current_star_resolutions
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(view).toHaveLength(1);
+      expect(view[0]!.id).toBe(b);
+    });
+
+    it("a head can only ever name a revision of its OWN candidate", async () => {
+      const mine = await fixture({ categoryCode: "5EST" });
+      const theirs = await fixture({ categoryCode: "5EST" });
+      const theirRevision = await insertStar(theirs);
+      await expect(setStarHead(mine.identityId, theirRevision)).rejects.toThrow(
+        /star_resolutions_revision_fk/i,
+      );
+    });
+
+    it("a revision that a head points at cannot be deleted out from under it", async () => {
+      const def = await adminQuery<{ def: string }>(
+        `select pg_get_constraintdef(oid) as def from pg_constraint
+          where conname = 'source_property_star_resolutions_revision_fk'`,
+      );
+      expect(def[0]!.def).toMatch(/ON DELETE RESTRICT/i);
+    });
+
+    it("the current view reads state without replaying history", async () => {
+      // One join from the head, not an aggregate over every revision — invariant
+      // 8, and the reason the head table exists at all.
+      const def = await adminQuery<{ definition: string }>(
+        `select pg_get_viewdef('public.source_property_current_star_resolutions'::regclass, true)
+                  as definition`,
+      );
+      expect(def[0]!.definition).not.toMatch(/order by|row_number|distinct on|max\(/i);
     });
   });
 
@@ -455,27 +1182,34 @@ d("pre-publication resolution (0028)", () => {
       const r = star([obs({ code: "5EST" })])!;
       expect(Object.keys(r).join(" ")).not.toMatch(/confidence|score|threshold|weight/i);
     });
+
+    it("is deterministic: the same observations always fold the same way", () => {
+      const rows = [obs({ id: "o1", code: "4EST" }), obs({ id: "o2", code: "5EST" })];
+      expect(star(rows)).toEqual(star(rows));
+    });
   });
 
   // -----------------------------------------------------------------------
   describe("15. canonical safety and security", () => {
     it("writes nothing canonical", async () => {
-      const before = await adminQuery<Record<string, string>>(
-        `select (select count(*) from public.hotels)::text h,
-                (select count(*) from public.hotel_source_identities)::text l,
-                (select count(*) from public.source_match_candidates)::text c,
-                (select count(*) from public.source_property_reviews)::text r`,
-      );
+      const snapshot = async () =>
+        (
+          await adminQuery<Record<string, string>>(
+            `select (select count(*) from public.hotels)::text h,
+                    (select count(*) from public.hotel_source_identities)::text l,
+                    (select count(*) from public.hotel_contacts)::text ct,
+                    (select count(*) from public.source_match_candidates)::text c,
+                    (select count(*) from public.source_property_reviews)::text r,
+                    (select count(*) from public.editorial_evidence)::text e`,
+          )
+        )[0];
+      const before = await snapshot();
       const f = await fixture({ categoryCode: "5EST" });
-      await insertStar(f);
-      await insertLocation(f);
-      const after = await adminQuery<Record<string, string>>(
-        `select (select count(*) from public.hotels)::text h,
-                (select count(*) from public.hotel_source_identities)::text l,
-                (select count(*) from public.source_match_candidates)::text c,
-                (select count(*) from public.source_property_reviews)::text r`,
-      );
-      expect(after[0]).toEqual(before[0]);
+      const starId = await insertStar(f);
+      const locationId = await insertLocation(f);
+      await setStarHead(f.identityId, starId);
+      expect(locationId).toBeTruthy();
+      expect(await snapshot()).toEqual(before);
     });
 
     it("leaves the identity's terminal resolution state alone", async () => {
@@ -490,90 +1224,65 @@ d("pre-publication resolution (0028)", () => {
       expect(rows[0]!.state).toBe("unresolved");
     });
 
-    it("gives anon no access to either table", async () => {
-      for (const table of [
+    it("gives anon no access to any 0028 relation", async () => {
+      for (const relation of [
+        "provider_classification_policies",
+        "provider_classification_policy_mappings",
+        "source_property_star_resolution_revisions",
+        "source_property_location_resolution_revisions",
         "source_property_star_resolutions",
         "source_property_location_resolutions",
+        "source_property_current_star_resolutions",
+        "source_property_current_location_resolutions",
       ]) {
-        const res = await queryAs({ role: "anon", sub: null }, `select * from public.${table}`);
-        expect(res.error, `anon reached ${table}`).not.toBeNull();
+        const res = await queryAs({ role: "anon", sub: null }, `select * from public.${relation}`);
+        expect(res.error, `anon reached ${relation}`).not.toBeNull();
         expect(res.error?.code).toBe("42501");
       }
     });
 
     it("lets an ordinary creator read nothing, despite holding the privilege", async () => {
       const f = await fixture({ categoryCode: "5EST" });
-      await insertStar(f);
-      for (const table of [
+      const id = await insertStar(f);
+      await setStarHead(f.identityId, id);
+      await insertLocation(f);
+      for (const relation of [
+        "source_property_star_resolution_revisions",
+        "source_property_location_resolution_revisions",
         "source_property_star_resolutions",
         "source_property_location_resolutions",
+        "provider_classification_policy_mappings",
+        // The views are `security_invoker`, so RLS reaches through them. A
+        // definer view here would have handed the creator the whole table.
+        "source_property_current_star_resolutions",
+        "source_property_current_location_resolutions",
       ]) {
         const res = await queryAs<{ n: string }>(
           { role: "authenticated", sub: USERS.free },
-          `select count(*)::text as n from public.${table}`,
+          `select count(*)::text as n from public.${relation}`,
         );
-        expect(res.error, `creator errored on ${table}`).toBeNull();
-        expect(res.rows[0]!.n, `creator saw rows in ${table}`).toBe("0");
+        expect(res.error, `creator errored on ${relation}`).toBeNull();
+        expect(res.rows[0]!.n, `creator saw rows in ${relation}`).toBe("0");
       }
     });
 
-    it("has RLS enabled on both new tables", async () => {
+    it("has RLS enabled on every 0028 table", async () => {
+      const names = [
+        "provider_classification_policies",
+        "provider_classification_policy_mappings",
+        "source_property_star_resolution_revisions",
+        "source_property_location_resolution_revisions",
+        "source_property_star_resolutions",
+        "source_property_location_resolutions",
+      ];
       const rows = await adminQuery<{ relname: string; relrowsecurity: boolean }>(
         `select c.relname, c.relrowsecurity from pg_class c
            join pg_namespace n on n.oid = c.relnamespace
           where n.nspname = 'public' and c.relname = any($1)`,
-        [["source_property_star_resolutions", "source_property_location_resolutions"]],
+        [names],
       );
-      expect(rows).toHaveLength(2);
+      expect(rows).toHaveLength(names.length);
       for (const row of rows) expect(row.relrowsecurity, row.relname).toBe(true);
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  describe("14. idempotency", () => {
-    it("re-resolving the same evidence changes nothing", async () => {
-      const f = await fixture({ categoryCode: "4EST" });
-      await insertStar(f, { sourceValue: "4EST", outcome: "exact_four", starValue: 4 });
-
-      const snapshot = async () =>
-        (
-          await adminQuery<{ row: string }>(
-            `select outcome || ':' || coalesce(source_value,'') || ':' ||
-                    evidence_observation_id::text || ':' || coalesce(resolved_star_value::text,'')
-                      as row
-               from public.source_property_star_resolutions where source_property_identity_id = $1`,
-            [f.identityId],
-          )
-        )[0]!.row;
-
-      const before = await snapshot();
-      // The resolver upserts; re-running writes the same values from the same
-      // evidence, so nothing about the row's meaning moves.
-      await adminQuery(
-        `insert into public.source_property_star_resolutions
-           (source_property_identity_id, source, source_environment, evidence_observation_id,
-            policy_provider, policy_version, policy_field, source_value, outcome, resolved_star_value)
-         values ($1,$2,'evaluation',$3,'hotelbeds','hotelbeds-classification/1','categoryCode',
-                 '4EST','exact_four',4)
-         on conflict (source_property_identity_id) do update set
-           outcome = excluded.outcome, source_value = excluded.source_value,
-           evidence_observation_id = excluded.evidence_observation_id,
-           resolved_star_value = excluded.resolved_star_value`,
-        [f.identityId, SOURCE, f.observationId],
-      );
-      expect(await snapshot()).toBe(before);
-
-      const count = await adminQuery<{ n: string }>(
-        `select count(*)::text as n from public.source_property_star_resolutions
-          where source_property_identity_id = $1`,
-        [f.identityId],
-      );
-      expect(count[0]!.n).toBe("1");
-    });
-
-    it("is deterministic: the same observations always fold the same way", () => {
-      const rows = [obs({ id: "o1", code: "4EST" }), obs({ id: "o2", code: "5EST" })];
-      expect(star(rows)).toEqual(star(rows));
     });
   });
 });

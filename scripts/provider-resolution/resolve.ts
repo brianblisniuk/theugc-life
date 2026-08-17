@@ -123,6 +123,16 @@ async function main(): Promise<void> {
     );
     console.info(`    conflicts             ${counts.locationConflicts}`);
     console.info("");
+    // Append-only bookkeeping. On a replay of identical evidence under an
+    // identical policy every one of these must be 0 — that is the whole claim.
+    console.info("  APPEND-ONLY LEDGER");
+    console.info(
+      `    revisions appended    star ${counts.revisionsCreated.star}, location ${counts.revisionsCreated.location}`,
+    );
+    console.info(
+      `    head pointers moved   star ${counts.pointerMoves.star}, location ${counts.pointerMoves.location}`,
+    );
+    console.info("");
     console.info("  canonical writes: 0 hotels, 0 links, 0 candidates, 0 reviews");
     console.info(`  duration      ${ms} ms`);
     console.info(args.apply ? "" : "\n  Re-run with --apply to write.\n");
