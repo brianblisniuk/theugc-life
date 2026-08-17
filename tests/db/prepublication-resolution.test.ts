@@ -265,6 +265,22 @@ d("pre-publication resolution (0028)", () => {
        values ('hotelbeds','hotelbeds-classification/2-test','categoryCode','5EST','exact_five',5)
        on conflict do nothing`,
     );
+
+    // A stand-in for a future Provider B, whose policy deliberately maps `5EST`
+    // to a DIFFERENT outcome. Nothing resolves through it here; it exists so the
+    // cross-provider tests have a real, approved, contradicting policy to aim at
+    // rather than a nonexistent one.
+    await adminQuery(
+      `insert into public.provider_classification_policies (provider, version, field, notes)
+       values ('provider_b', 'provider-b/1', 'categoryCode', 'test fixture')
+       on conflict do nothing`,
+    );
+    await adminQuery(
+      `insert into public.provider_classification_policy_mappings
+         (provider, version, field, source_code, outcome, resolved_star_value)
+       values ('provider_b','provider-b/1','categoryCode','5EST','exact_four',4)
+       on conflict do nothing`,
+    );
   });
   afterAll(teardownDatabase);
 
@@ -400,6 +416,25 @@ d("pre-publication resolution (0028)", () => {
       ).rejects.toThrow(/approved policy decides the outcome, not the caller/i);
     });
 
+    it("REFUSES resolving one provider's observation through another's policy", async () => {
+      // The `provider_b` fixture policy maps 5EST to exact_four. If a Hotelbeds
+      // observation could be run through it, the classification would come from a
+      // provider that never said it — with every FK and the mapping check
+      // passing.
+      const f = await fixture({ categoryCode: "5EST" });
+      await expect(
+        insertStar(f, {
+          policyProvider: "provider_b",
+          policyVersion: "provider-b/1",
+          outcome: "exact_four",
+          starValue: 4,
+        }),
+      ).rejects.toThrow(/policy_source_ck/i);
+      await expect(
+        insertLocation(f, { policyProvider: "provider_b", policyVersion: "provider-b/1" }),
+      ).rejects.toThrow(/policy_source_ck/i);
+    });
+
     it("REFUSES an UNMAPPED code claimed as anything but unresolved", async () => {
       // `SPC` is "absent/unknown category" in the provider's own master. It is
       // not in the allow-list, so it has exactly one available outcome.
@@ -452,12 +487,20 @@ d("pre-publication resolution (0028)", () => {
 
     it("REFUSES a provider with no approved policy at all", async () => {
       const f = await fixture({ categoryCode: "5EST" });
-      await expect(insertStar(f, { policyProvider: "provider_b" })).rejects.toThrow(
+      await expect(insertStar(f, { policyProvider: "provider_z" })).rejects.toThrow(
         /has no mapping for/i,
       );
+      // Retreating to `unresolved` gets past the mapping check and straight into
+      // the constraint that a policy must belong to the observation's provider.
       await expect(
-        insertStar(f, { policyProvider: "provider_b", outcome: "unresolved", starValue: null }),
-      ).rejects.toThrow(/policy_fk/i);
+        insertStar(f, { policyProvider: "provider_z", outcome: "unresolved", starValue: null }),
+      ).rejects.toThrow(/policy_source_ck/i);
+      // …and the FK itself is real, independently of that.
+      const def = await adminQuery<{ def: string }>(
+        `select pg_get_constraintdef(oid) as def from pg_constraint
+          where conname = 'source_property_star_resolution_revisions_policy_fk'`,
+      );
+      expect(def[0]!.def).toMatch(/provider_classification_policies/i);
     });
 
     it("a version that EXISTS but does not map the code can only say unresolved", async () => {
@@ -610,9 +653,17 @@ d("pre-publication resolution (0028)", () => {
 
     it("cannot cross providers either", async () => {
       const hb = await fixture({ source: "hotelbeds" });
+      // Two independent guards refuse this, and whichever fires first is fine:
+      // the policy must belong to the observation's provider, and the identity
+      // composite FK must match on `source`.
       await expect(insertStar(hb, { source: "other_provider" })).rejects.toThrow(
-        /star_resolution_revisions_identity_fk/i,
+        /policy_source_ck|identity_fk/i,
       );
+      const def = await adminQuery<{ def: string }>(
+        `select pg_get_constraintdef(oid) as def from pg_constraint
+          where conname = 'source_property_star_resolution_revisions_identity_fk'`,
+      );
+      expect(def[0]!.def).toMatch(/source_property_identity_id, source, source_environment/i);
     });
 
     it("protects the cited observation from deletion", async () => {

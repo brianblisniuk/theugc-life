@@ -197,6 +197,13 @@ create table public.source_property_star_resolution_revisions (
     )
   ) stored,
 
+  -- A provider's policy applies to THAT provider's observations. Without this a
+  -- Hotelbeds observation could be resolved through a future Provider B policy
+  -- that maps the same string differently — every FK passing, the mapping check
+  -- passing, and the classification coming from a provider that never said it.
+  constraint source_property_star_resolution_revisions_policy_source_ck check (
+    policy_provider = source
+  ),
   constraint source_property_star_resolution_revisions_value_shape check (
     (outcome = 'exact_four' and resolved_star_value = 4)
     or (outcome = 'exact_five' and resolved_star_value = 5)
@@ -300,6 +307,9 @@ create table public.source_property_location_resolution_revisions (
     )
   ) stored,
 
+  constraint source_property_location_resolution_revisions_policy_source_ck check (
+    policy_provider = source
+  ),
   constraint source_property_location_resolution_revisions_outcome_shape check (
     (outcome = 'resolved'
        and resolved_latitude is not null and resolved_longitude is not null
