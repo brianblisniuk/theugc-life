@@ -79,12 +79,25 @@ async function main(): Promise<void> {
     });
     const ms = Date.now() - started;
 
+    const p = counts.partition;
     console.info(`  identities evaluated       ${counts.identities}`);
-    console.info(`  with >=1 machine candidate ${counts.identitiesWithCandidate}`);
-    console.info(
-      `  NO MACHINE CANDIDATE       ${counts.identitiesWithoutCandidate}   <- NOT "new property"`,
-    );
     console.info(`  candidate pairs            ${counts.pairs}`);
+    console.info("");
+    console.info("  WHAT THE CURRENT SWEEP SURFACED (these sets OVERLAP by design)");
+    console.info(`    in a pair                  ${p.inPairs.size}`);
+    console.info(`    in a shared-key cluster    ${p.inSharedKeyClusters.size}`);
+    console.info(`    in a cross-dest. anomaly   ${p.inCrossDestinationAnomalies.size}`);
+    console.info(`    in incomplete geography    ${p.inIncompleteGeography.size}`);
+    console.info(
+      `  NO MACHINE FINDING AT ALL  ${p.noMachineFinding.length}   <- NOT "new property"`,
+    );
+    console.info(
+      "    ^ the residual of the SAME discovery result: no pair, no cluster, no anomaly,",
+    );
+    console.info(
+      "      no incomplete-geography key. The rules finding nothing is a statement about",
+    );
+    console.info("      the RULES, not about the world. Nothing may be published on it.");
     console.info("");
     console.info("  BLOCKING REASON (a reason to COMPARE, never a match)");
     for (const reason of BLOCKING_REASONS) {

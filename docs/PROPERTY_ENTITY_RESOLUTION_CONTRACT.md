@@ -15,7 +15,9 @@ ID is a source identity; §12.2 refuses a universal match threshold), **D062**
 > **What other known property or entity could this source property be?**
 
 It does **not** answer "should this be published?", it creates no canonical
-hotel, and it decides no match. Every row it writes is `status = 'pending'`.
+hotel, and **it decides no match** — nothing in this system marks a pair
+`accepted`. Every candidate it *surfaces* is written `pending`; the only other
+status it may write is `superseded`, and only on its own stale rows (§8a).
 
 ```
 source property identity
@@ -26,8 +28,8 @@ candidate discovery / blocking        "is this pair worth COMPARING?"
         ↓
 pair evidence                         what the evidence SAYS
         ↓
-source_match_candidates               pending, always
-        ↓
+source_match_candidates               pending while current;
+        ↓                             superseded by the machine when not
 review manifest
         ↓
 a human                               the only thing that may decide a match
@@ -177,21 +179,62 @@ So:
 - the manifest's queue for these identities is called **NO MACHINE CANDIDATE**,
   and says in the output that it is not a new-property list.
 
-In the real run, 3,600 of 4,110 identities have no machine candidate, and **zero**
-`new_property` rows exist.
+### 6.1 What that queue may contain
+
+It is the RESIDUAL of the current discovery result, and nothing else: an
+identity appears there exactly when the current sweep surfaced **no pair, no
+shared-key cluster, no cross-destination anomaly and no incomplete-geography
+finding** about it (§7.1).
+
+Deriving it instead from "no row exists in `source_match_candidates`" answers a
+different question and swallows findings in both directions — a pair that was
+stood down leaves a row behind, so its identities would be excluded forever; the
+31 identities sharing `oyorooms.com` produce a cluster and no rows at all, so
+they would be listed as "nothing surfaced" when the machine found something
+material about every one of them.
+
+In the real run **3,002** of 4,110 identities have no machine finding of any
+kind, and **zero** `new_property` rows exist.
 
 ## 7. Review
 
 Status vocabulary is 0027's: `pending` | `accepted` | `rejected` | `superseded`.
-Every generated row is `pending`, and no code path in this repository sets any of
-the other three.
 
-`npm run source:match:review` is READ-ONLY and offers three queues:
+| Status | Written by | Meaning |
+|---|---|---|
+| `pending` | the generator | a current blocking rule supports comparing this pair |
+| `superseded` | the generator, with `superseded_reason = 'no_current_blocking_rule'` | no current rule supports it any more (§8a) |
+| `superseded` | a human, with no reason recorded | a reviewer set this pair aside |
+| `accepted` / `rejected` | a human, only | a decision |
 
-- **CANDIDATES** — pair, both names, both destinations, why it surfaced, every
-  evidence dimension, the raw distance, the descriptive count;
-- **NO MACHINE CANDIDATE** — see §6;
-- **ANOMALIES** — shared-key clusters and cross-destination collisions.
+**No code path in this repository writes `accepted` or `rejected`**, and a test
+reads the source files to prove it. **The system decides no MATCH**, at any
+volume, on any evidence.
+
+### 7.1 The review surfaces
+
+`npm run source:match:review` is READ-ONLY, and every one of its queues is
+computed from ONE current discovery result plus the current rows — never from
+the history of what was once found:
+
+- **CANDIDATES** — `status = 'pending'` **only**, because that is the single
+  status that is waiting for somebody. A machine-superseded row is history and
+  a decided row is decided; showing all four under one heading would put four
+  meanings behind one word, and the displayed total uses the identical filter so
+  the count and the list can never disagree. Non-actionable rows are summarised
+  separately, grouped by status and reason. Each entry shows the pair, both
+  names, both destinations, why it surfaced, every evidence dimension, the raw
+  distance and the descriptive count;
+- **ANOMALIES** — shared-key clusters, cross-destination collisions **and**
+  incomplete-geography findings (reason, key, affected identities), plus the
+  size of each partition. These sets **overlap by design**: one identity can be
+  in a pair on its phone and in a cluster on its chain domain, and both facts
+  are true;
+- **NO MACHINE CANDIDATE** — the residual of the same discovery result (§6.1).
+
+Geography on every one of these surfaces is read from each identity's LATEST
+observation and that observation's own run (§3.5) — never from the run that
+first saw it.
 
 Re-running candidate generation refreshes evidence only on rows that are still
 `pending`. Rewriting evidence under a decision a human already made would make

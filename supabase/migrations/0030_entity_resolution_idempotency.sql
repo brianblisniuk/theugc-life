@@ -1,13 +1,20 @@
 -- 0030_entity_resolution_idempotency.sql
 --
--- ENTITY-RESOLUTION EVIDENCE: the two things 0027's candidate table could not
+-- ENTITY-RESOLUTION EVIDENCE: the things 0027's candidate table could not
 -- express, and nothing else.
 --
--- 0027 already models everything this block needs — candidate kinds, the
+-- 0027 already models most of what this block needs — candidate kinds, the
 -- evidence vocabulary, the generated `agreeing_dimensions`, the review status
--- vocabulary, the provenance composite FKs. This migration adds NO table, NO
--- column and NO new concept. It adds two constraints, because both encode a
--- rule that application code cannot keep on its own.
+-- vocabulary, the provenance composite FKs. This migration adds NO new TABLE
+-- and NO new concept: it adds the minimum lifecycle column, constraints and
+-- indexes required for CURRENT candidate semantics —
+--
+--   1. a CHECK fixing the canonical orientation of a source↔source pair, plus
+--      the partial unique indexes that make a pair one row;
+--   2. a CHECK requiring a `new_property` row to carry the finding behind it;
+--   3. `superseded_reason`, one nullable text column, so that a candidate the
+--      machine stood down can be told apart from one a human decided — and can
+--      be safely revived when its evidence returns.
 --
 -- Additive only. Nothing existing is altered or dropped.
 

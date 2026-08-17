@@ -1,16 +1,25 @@
 /**
  * Persist entity-resolution EVIDENCE.
  *
- * What this writer may do: insert `source_match_candidates` rows with
- * `status = 'pending'`, and refresh the evidence on a pending row when the
- * underlying observations changed.
+ * What this writer may do, and nothing more:
+ *
+ *   - insert `source_match_candidates` rows with `status = 'pending'`;
+ *   - refresh the evidence on a PENDING row when the observations changed;
+ *   - stand down its OWN pending rows the current rules no longer support,
+ *     `status = 'superseded'` + `superseded_reason = 'no_current_blocking_rule'`;
+ *   - reactivate one of those same rows — and only one carrying that reason —
+ *     when the evidence returns.
+ *
+ * Every one of those is a statement about whether a pair is worth COMPARING.
+ * **None of them decides a match.** There is no code path here that writes
+ * `accepted` or `rejected`: those are a human's, and a test reads these source
+ * files to prove no such write exists. A `superseded` row a human wrote carries
+ * no reason, which is exactly what keeps this writer from touching it.
  *
  * What it may not do, and does not contain SQL for: `hotels`,
  * `hotel_source_identities`, `source_property_reviews`,
  * `source_property_identities.resolution_state`, `promoted_hotel_id`, or a
- * `new_property` candidate. Nothing here accepts, rejects or supersedes a
- * candidate either — status transitions are a human's, and there is no code
- * path that computes one.
+ * `new_property` candidate.
  */
 import type { Client } from "pg";
 
@@ -25,10 +34,13 @@ import {
   type SharedKeyCluster,
 } from "./candidates";
 import { compareRecords, type PairEvidence } from "./evidence";
+import { partitionForReview, type ReviewPartition } from "./queues";
 
 export interface MatchCounts {
   identities: number;
+  /** Identities in at least one PAIR. Says nothing about clusters or anomalies. */
   identitiesWithCandidate: number;
+  /** Identities in no pair. NOT the "no machine candidate" queue — see `partition`. */
   identitiesWithoutCandidate: number;
   pairs: number;
   pairsByReason: Record<BlockingReason, number>;
@@ -55,6 +67,13 @@ export interface MatchCounts {
   };
   agreeingDimensions: Record<number, number>;
   discovery: DiscoveryResult;
+  /**
+   * The review partition of this same discovery result — the ONE definition of
+   * "the machine surfaced nothing about this identity", shared with the review
+   * manifest so the two commands cannot report different numbers under the same
+   * heading.
+   */
+  partition: ReviewPartition;
 }
 
 /**
@@ -130,7 +149,11 @@ function bump(bucket: Record<string, number>, key: string): void {
   bucket[key] = (bucket[key] ?? 0) + 1;
 }
 
-function emptyCounts(discovery: DiscoveryResult, identities: number): MatchCounts {
+function emptyCounts(
+  discovery: DiscoveryResult,
+  partition: ReviewPartition,
+  identities: number,
+): MatchCounts {
   return {
     identities,
     identitiesWithCandidate: 0,
@@ -156,6 +179,7 @@ function emptyCounts(discovery: DiscoveryResult, identities: number): MatchCount
     },
     agreeingDimensions: {},
     discovery,
+    partition,
   };
 }
 
@@ -192,7 +216,11 @@ export async function generateCandidates(
   const identities = await loadBlockableIdentities(client, opts);
   const byId = new Map(identities.map((i) => [i.identityId, i]));
   const discovery = discoverCandidates(identities);
-  const counts = emptyCounts(discovery, identities.length);
+  const counts = emptyCounts(
+    discovery,
+    partitionForReview(identities, discovery),
+    identities.length,
+  );
 
   const withCandidate = new Set<string>();
   const prepared: { pair: CandidatePair; evidence: PairEvidence }[] = [];

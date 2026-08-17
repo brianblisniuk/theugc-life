@@ -34,6 +34,8 @@ import {
 } from "../../scripts/entity-resolution/normalize";
 import { compareRecords, type ComparableRecord } from "../../scripts/entity-resolution/evidence";
 import { discoverCandidates, matchMethodFor } from "../../scripts/entity-resolution/candidates";
+import { partitionForReview } from "../../scripts/entity-resolution/queues";
+import { ACTIONABLE_COUNT_QUERY, CANDIDATE_QUERY } from "../../scripts/entity-resolution/review";
 import {
   generateCandidates,
   loadBlockableIdentities,
@@ -730,11 +732,17 @@ d("pre-publication entity resolution (0030)", () => {
     });
 
     it("27. a full replay leaves the candidate set byte-identical", async () => {
+      // The checksum covers the COMPLETE mutable candidate state — including
+      // `superseded_reason` and `resolved_at`, the two fields the lifecycle
+      // moves — so "nothing changed" is a claim about lifecycle too, not only
+      // about evidence.
       const checksum = async () =>
         (
           await adminQuery<{ ck: string | null }>(
             `select md5(string_agg(x, '|' order by x)) as ck from (
                select id::text || ':' || match_method || ':' || status || ':' ||
+                      coalesce(superseded_reason,'~') || ':' ||
+                      coalesce(resolved_at::text,'~') || ':' ||
                       name_evidence || domain_evidence || address_evidence ||
                       phone_evidence || brand_evidence || ':' ||
                       coalesce(coordinate_distance_metres::text,'~') || ':' ||
@@ -982,6 +990,237 @@ d("pre-publication entity resolution (0030)", () => {
       const cross = discoverCandidates([make("a", "bali"), make("b", "dubai")]);
       expect(cross.pairs).toHaveLength(0);
       expect(cross.crossDestinationCollisions.length).toBeGreaterThan(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // THE REVIEW PARTITION
+  // -----------------------------------------------------------------------
+  // Every queue is derived from ONE current discovery result, because the way
+  // queues stop agreeing is by being computed in different places from
+  // different sources.
+  describe("review queues describe CURRENT state", () => {
+    /** The CANDIDATES queue exactly as the manifest builds it. */
+    async function actionableQueue() {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const rows = await client.query<{ candidate_id: string; status: string }>(CANDIDATE_QUERY, [
+          SOURCE,
+          "evaluation",
+          1000,
+          "pending",
+        ]);
+        const total = await client.query<{ n: string }>(ACTIONABLE_COUNT_QUERY, [
+          SOURCE,
+          "evaluation",
+          "pending",
+        ]);
+        return { ids: rows.rows.map((r) => r.candidate_id), total: Number(total.rows[0]!.n) };
+      } finally {
+        await client.end();
+      }
+    }
+
+    async function currentPartition() {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const identities = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        return partitionForReview(identities, discoverCandidates(identities));
+      } finally {
+        await client.end();
+      }
+    }
+
+    it("2. a current pending pair IS in the CANDIDATES queue, and the count agrees", async () => {
+      const a = await identity({ website: "https://queue-pending.example.com" });
+      const b = await identity({ website: "https://queue-pending.example.com" });
+      await runMatcher();
+      const row = await candidateBetween(a.identityId, b.identityId);
+      const queue = await actionableQueue();
+      expect(queue.ids).toContain(row!.id);
+      // The list and the total must use identical semantics, or the header lies.
+      expect(queue.total).toBe(queue.ids.length);
+    });
+
+    it("3. a MACHINE-SUPERSEDED pair is NOT in the CANDIDATES queue", async () => {
+      const a = await identity({ website: "https://queue-stale.example.com" });
+      const b = await identity({ website: "https://queue-stale.example.com" });
+      await runMatcher();
+      const row = await candidateBetween(a.identityId, b.identityId);
+      expect((await actionableQueue()).ids).toContain(row!.id);
+
+      await addObservation(a, { website: "https://queue-moved.example.com" });
+      await runMatcher();
+      const after = await candidateBetween(a.identityId, b.identityId);
+      expect(after!.status).toBe("superseded");
+      // History, not an action item — and still on record.
+      expect((await actionableQueue()).ids).not.toContain(row!.id);
+      expect(after!.id).toBe(row!.id);
+    });
+
+    it("4. an ACCEPTED, REJECTED or human-SUPERSEDED candidate is NOT actionable", async () => {
+      for (const status of ["accepted", "rejected", "superseded"]) {
+        const a = await identity({ website: `https://decided-${status}.example.com` });
+        const b = await identity({ website: `https://decided-${status}.example.com` });
+        await runMatcher();
+        const row = await candidateBetween(a.identityId, b.identityId);
+        await adminQuery(
+          `update public.source_match_candidates set status = $2, resolved_at = now() where id = $1`,
+          [row!.id, status],
+        );
+        expect((await actionableQueue()).ids, status).not.toContain(row!.id);
+      }
+    });
+
+    it("5. classification follows CURRENT discovery, not historical rows", async () => {
+      const a = await identity({ website: "https://queue-history.example.com" });
+      const b = await identity({ website: "https://queue-history.example.com" });
+      await runMatcher();
+      let partition = await currentPartition();
+      expect(partition.inPairs.has(a.identityId)).toBe(true);
+      expect(partition.noMachineFinding).not.toContain(a.identityId);
+
+      // The pair disappears. A row remains on record — and MUST NOT keep these
+      // identities out of "nothing surfaced" forever.
+      await addObservation(a, { website: "https://queue-history-gone.example.com" });
+      await runMatcher();
+      expect(await candidateBetween(a.identityId, b.identityId)).toBeDefined();
+
+      partition = await currentPartition();
+      expect(partition.inPairs.has(a.identityId)).toBe(false);
+      expect(partition.noMachineFinding).toContain(a.identityId);
+      expect(partition.noMachineFinding).toContain(b.identityId);
+    });
+
+    it("6. a shared-key CLUSTER identity is NOT in NO MACHINE CANDIDATE", async () => {
+      // The OYO shape: three or more properties behind one group domain produce
+      // a cluster and no pairs. The machine found something material about every
+      // one of them.
+      const key = `https://cluster-${uniq()}.example.com`;
+      const members = [
+        await identity({ website: key }),
+        await identity({ website: key }),
+        await identity({ website: key }),
+      ];
+      const partition = await currentPartition();
+      for (const m of members) {
+        expect(partition.inSharedKeyClusters.has(m.identityId)).toBe(true);
+        expect(partition.inPairs.has(m.identityId)).toBe(false);
+        expect(partition.noMachineFinding).not.toContain(m.identityId);
+      }
+    });
+
+    it("7. a CROSS-DESTINATION anomaly identity is NOT in NO MACHINE CANDIDATE", async () => {
+      const key = `https://chain-${uniq()}.example.com`;
+      const bali = await identity({ website: key, destinationId: DEST.bali });
+      const other = await identity({ website: key, destinationId: DEST.ubud });
+      const partition = await currentPartition();
+      for (const f of [bali, other]) {
+        expect(partition.inCrossDestinationAnomalies.has(f.identityId)).toBe(true);
+        expect(partition.inPairs.has(f.identityId)).toBe(false);
+        expect(partition.noMachineFinding).not.toContain(f.identityId);
+      }
+    });
+
+    it("8/9. an INCOMPLETE-GEOGRAPHY identity is surfaced, not swallowed", async () => {
+      // A run with no destination: geography unknown, so no destination-scoped
+      // rule can fire — but the shared key is still a finding.
+      const runId = (
+        await adminQuery<{ id: string }>(
+          `insert into public.source_runs (source, source_environment, destination_id, run_mode, started_at)
+           values ($1,'evaluation',null,'evaluation', now()) returning id`,
+          [SOURCE],
+        )
+      )[0]!.id;
+      const key = `https://nogeo-${uniq()}.example.com`;
+      const a = await identity({ website: key, runId });
+      const b = await identity({ website: key, runId });
+
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      let discovery;
+      try {
+        const identities = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        discovery = discoverCandidates(identities);
+        var partition = partitionForReview(identities, discovery);
+      } finally {
+        await client.end();
+      }
+
+      // 9. visible in the ANOMALIES data the manifest renders.
+      // The finding carries the NORMALISED key — the same string blocking used.
+      const finding = discovery.incompleteGeography.find((g) => g.key === normalizeDomain(key));
+      expect(finding, "incomplete geography not reported").toBeDefined();
+      expect(finding!.identityIds.sort()).toEqual([a.identityId, b.identityId].sort());
+      expect(finding!.reason).toBe("exact_domain");
+
+      // 8. and NOT counted as "nothing surfaced".
+      for (const f of [a, b]) {
+        expect(partition!.inIncompleteGeography.has(f.identityId)).toBe(true);
+        expect(partition!.inPairs.has(f.identityId)).toBe(false);
+        expect(partition!.noMachineFinding).not.toContain(f.identityId);
+      }
+    });
+
+    it("10. an identity with NO finding of any kind IS in NO MACHINE CANDIDATE", async () => {
+      const lonely = await identity({ name: `Nothing Shares This ${uniq()}` });
+      const partition = await currentPartition();
+      expect(partition.inPairs.has(lonely.identityId)).toBe(false);
+      expect(partition.inSharedKeyClusters.has(lonely.identityId)).toBe(false);
+      expect(partition.inCrossDestinationAnomalies.has(lonely.identityId)).toBe(false);
+      expect(partition.inIncompleteGeography.has(lonely.identityId)).toBe(false);
+      expect(partition.noMachineFinding).toContain(lonely.identityId);
+    });
+
+    it("11. the NO MACHINE CANDIDATE display geography is the LATEST observation's", async () => {
+      const f = await identity({
+        name: `Relocated ${uniq()}`,
+        destinationId: DEST.bali,
+      });
+      await addObservation(f, { name: `Relocated v2 ${uniq()}`, destinationId: DEST.ubud });
+
+      // The manifest renders this identity from the same query shape.
+      const rows = await adminQuery<{ slug: string | null; source_name: string | null }>(
+        `select d.slug, o.source_name
+           from public.source_property_identities i
+           join lateral (select o.source_name, o.source_run_id
+                           from public.source_property_observations o
+                          where o.source_property_identity_id = i.id
+                          order by o.observed_at desc, o.id desc limit 1) o on true
+           join public.source_runs r on r.id = o.source_run_id
+           left join public.destinations d on d.id = r.destination_id
+          where i.id = $1`,
+        [f.identityId],
+      );
+      expect(rows[0]!.slug).toBe("ubud");
+      expect(rows[0]!.source_name).toMatch(/^Relocated v2/);
+
+      const partition = await currentPartition();
+      expect(partition.noMachineFinding).toContain(f.identityId);
+    });
+
+    it("the finding sets OVERLAP, and only the residual is exclusive", async () => {
+      // One identity can be in a pair on its phone and in a cluster on its
+      // chain domain, and both facts are true.
+      const domain = `https://overlap-${uniq()}.example.com`;
+      const phone = "+62361700700";
+      const a = await identity({ website: domain, phone });
+      const b = await identity({ website: domain, phone });
+      await identity({ website: domain });
+
+      const partition = await currentPartition();
+      expect(partition.inSharedKeyClusters.has(a.identityId)).toBe(true);
+      expect(partition.inPairs.has(a.identityId)).toBe(true);
+      expect(partition.inPairs.has(b.identityId)).toBe(true);
+      expect(partition.noMachineFinding).not.toContain(a.identityId);
     });
   });
 });

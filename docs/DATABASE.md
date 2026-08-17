@@ -520,10 +520,12 @@ candidate; and a `security_invoker` read model over it.
 
 ## 5d. Entity-resolution evidence (migration 0030)
 
-**No new table, no new column.** 0027's `source_match_candidates` already models
-the candidate kinds, the evidence vocabulary, the generated
-`agreeing_dimensions` and the review status vocabulary, so 0030 adds only what
-application code cannot keep on its own. Full contract:
+**No new table.** 0027's `source_match_candidates` already models the candidate
+kinds, the evidence vocabulary, the generated `agreeing_dimensions` and the
+review status vocabulary, so 0030 adds no new concept — only the minimum
+lifecycle column (`superseded_reason`), constraints and indexes that CURRENT
+candidate semantics need and application code cannot keep on its own. Full
+contract:
 [`PROPERTY_ENTITY_RESOLUTION_CONTRACT.md`](PROPERTY_ENTITY_RESOLUTION_CONTRACT.md).
 
 ### A candidate pair is ONE row
@@ -852,6 +854,7 @@ At minimum:
 15. pre-publication physical-hospitality scope (0029) — the same shape applied to
     D062's condition 3; an INPUT to eligibility, never eligibility itself
 16. entity-resolution idempotency (0030) — no new table: a candidate pair is one
-    row, and `new_property` must carry the finding behind it
+    row, `new_property` must carry the finding behind it, and
+    `superseded_reason` separates a machine stand-down from a human decision
 
 Every migration must be reproducible from an empty database.

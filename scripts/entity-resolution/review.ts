@@ -10,14 +10,25 @@
  * match (D063 §12.2 — there is no approved threshold, and no code here computes
  * one).
  *
- * Three queues, deliberately named for what they are:
+ * Three queues, all derived from ONE current discovery result so they cannot
+ * drift apart:
  *
- *   CANDIDATES            pairs worth comparing, with their evidence
- *   NO MACHINE CANDIDATE  identities the blocking rules surfaced nothing for.
+ *   CANDIDATES            pairs AWAITING A DECISION — `status = 'pending'` and
+ *                         nothing else. A machine-superseded row is history, an
+ *                         accepted/rejected one is decided, and a
+ *                         human-superseded one is decided too; none is
+ *                         actionable, and showing them together would put four
+ *                         meanings behind one word.
+ *   ANOMALIES             shared-key clusters, cross-destination collisions AND
+ *                         incomplete geography — real findings that are not
+ *                         pairwise evidence.
+ *   NO MACHINE CANDIDATE  identities current discovery surfaced NOTHING for —
+ *                         no pair, no cluster, no cross-destination collision,
+ *                         no incomplete-geography key. Computed by subtraction
+ *                         from the same discovery result, never from the absence
+ *                         of a historical row.
  *                         NOT "new property": the rules finding nothing is a
  *                         statement about the rules, not about the world.
- *   ANOMALIES             shared-key clusters and cross-destination collisions —
- *                         findings that are real but are not pairwise evidence.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +40,7 @@ import {
   UnsafeIngestionTargetError,
 } from "../provider-ingestion/db-target";
 import { discoverCandidates } from "./candidates";
+import { ACTIONABLE_CANDIDATE_STATUS, partitionForReview } from "./queues";
 import { loadBlockableIdentities } from "./writer";
 
 const EVALUATION = "evaluation" as const;
@@ -105,8 +117,14 @@ export const CANDIDATE_QUERY = `
     left join public.source_runs rr on rr.id = ro.source_run_id
     left join public.destinations rd on rd.id = rr.destination_id
    where c.source = $1 and c.source_environment = $2
+     and c.status = $4
    order by c.agreeing_dimensions desc, c.match_method, c.id
    limit $3`;
+
+/** The same filter the queue uses, so the count and the list cannot disagree. */
+export const ACTIONABLE_COUNT_QUERY = `
+  select count(*)::text as n from public.source_match_candidates
+   where source = $1 and source_environment = $2 and status = $3`;
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -126,13 +144,28 @@ async function main(): Promise<void> {
         args.provider,
         EVALUATION,
         args.limit,
+        ACTIONABLE_CANDIDATE_STATUS,
       ]);
-      const total = await client.query<{ n: string }>(
-        `select count(*)::text as n from public.source_match_candidates
-          where source = $1 and source_environment = $2`,
-        [args.provider, EVALUATION],
+      const total = await client.query<{ n: string }>(ACTIONABLE_COUNT_QUERY, [
+        args.provider,
+        EVALUATION,
+        ACTIONABLE_CANDIDATE_STATUS,
+      ]);
+      const history = await client.query<{ status: string; reason: string | null; n: string }>(
+        `select status, superseded_reason as reason, count(*)::text as n
+           from public.source_match_candidates
+          where source = $1 and source_environment = $2 and status <> $3
+          group by 1, 2 order by 1, 2`,
+        [args.provider, EVALUATION, ACTIONABLE_CANDIDATE_STATUS],
       );
-      console.info(`  ${total.rows[0]!.n} candidate(s); showing ${res.rows.length}\n`);
+      console.info(
+        `  ${total.rows[0]!.n} candidate(s) AWAITING REVIEW; showing ${res.rows.length}`,
+      );
+      // History is not hidden — it is just not in the actionable queue.
+      const historyLine = history.rows
+        .map((h) => `${h.status}${h.reason ? `/${h.reason}` : ""}=${h.n}`)
+        .join("  ");
+      console.info(`  not actionable (history): ${historyLine || "none"}\n`);
       for (const r of res.rows) {
         console.info(
           `  ── ${r.candidate_kind} · ${r.status}${r.superseded_reason ? ` (${r.superseded_reason})` : ""} · ${r.match_method}`,
@@ -164,55 +197,77 @@ async function main(): Promise<void> {
       environment: EVALUATION,
     });
 
+    const discovery = discoverCandidates(identities);
+    const partition = partitionForReview(identities, discovery);
+
     if (args.queue === "anomalies") {
-      const { sharedKeyClusters, crossDestinationCollisions } = discoverCandidates(identities);
-      console.info(`  SHARED-KEY CLUSTERS  ${sharedKeyClusters.length}`);
+      console.info(`  SHARED-KEY CLUSTERS  ${discovery.sharedKeyClusters.length}`);
       console.info("  A key naming a GROUP — a chain, an operator, a reservations desk.");
       console.info("  Real, and not pairwise identity evidence, so never expanded to pairs.\n");
-      for (const c of [...sharedKeyClusters]
+      for (const c of [...discovery.sharedKeyClusters]
         .sort((a, b) => b.identityIds.length - a.identityIds.length)
         .slice(0, args.limit)) {
         console.info(`    ${c.reason.padEnd(28)}${c.key}  → ${c.identityIds.length} identities`);
       }
-      console.info(`\n  CROSS-DESTINATION COLLISIONS  ${crossDestinationCollisions.length}`);
+
+      console.info(
+        `\n  CROSS-DESTINATION COLLISIONS  ${discovery.crossDestinationCollisions.length}`,
+      );
       console.info("  The same key in more than one destination. Surfaced, never merged.\n");
-      for (const c of crossDestinationCollisions.slice(0, args.limit)) {
+      for (const c of discovery.crossDestinationCollisions.slice(0, args.limit)) {
         console.info(`    ${c.reason.padEnd(28)}${c.key}  → ${c.identityIds.length} identities`);
       }
-      console.info("");
+
+      console.info(`\n  INCOMPLETE GEOGRAPHY  ${discovery.incompleteGeography.length}`);
+      console.info("  A key shared by identities whose destination is unknown. Every blocking");
+      console.info("  rule here is destination-scoped, so these cannot be paired — unknown is");
+      console.info("  not the same place. The pair may well be real; this contract cannot say.\n");
+      for (const c of discovery.incompleteGeography.slice(0, args.limit)) {
+        console.info(`    ${c.reason.padEnd(28)}${c.key}  → ${c.identityIds.length} identities`);
+      }
+
+      console.info(
+        `\n  identities involved: pairs ${partition.inPairs.size} · clusters ` +
+          `${partition.inSharedKeyClusters.size} · cross-destination ` +
+          `${partition.inCrossDestinationAnomalies.size} · incomplete geography ` +
+          `${partition.inIncompleteGeography.size}`,
+      );
+      console.info("  (these sets OVERLAP by design — one identity can be in several)\n");
       return;
     }
 
-    const res = await client.query<{
-      source_property_id: string;
-      source_name: string | null;
-      slug: string | null;
-      n: string;
-    }>(
-      `select i.source_property_id, o.source_name, d.slug,
-              count(*) over ()::text as n
-         from public.source_property_identities i
-         join lateral (select o.source_name from public.source_property_observations o
-                        where o.source_property_identity_id = i.id
-                        order by o.observed_at desc, o.id desc limit 1) o on true
-         join public.source_runs r on r.id = i.first_seen_run_id
-         left join public.destinations d on d.id = r.destination_id
-        where i.source = $1 and i.source_environment = $2
-          and not exists (select 1 from public.source_match_candidates c
-                           where c.source_property_identity_id = i.id
-                              or c.candidate_source_property_identity_id = i.id)
-        order by i.source_property_id
-        limit $3`,
-      [args.provider, EVALUATION, args.limit],
-    );
-    console.info(`  NO MACHINE CANDIDATE: ${res.rows[0]?.n ?? 0} identities`);
-    console.info("  The blocking rules surfaced nothing to compare. That is a statement");
-    console.info("  about the RULES, not about the world — these are NOT new properties,");
-    console.info("  and nothing here may be promoted on the strength of this queue.\n");
-    for (const r of res.rows) {
-      console.info(
-        `    ${r.source_property_id}  ${r.source_name ?? "(no name)"}  [${r.slug ?? "?"}]`,
+    console.info(`  NO MACHINE CANDIDATE: ${partition.noMachineFinding.length} identities`);
+    console.info("  Current discovery surfaced NOTHING for these: no pair, no shared-key");
+    console.info("  cluster, no cross-destination collision, no incomplete-geography key.");
+    console.info("  That is a statement about the RULES, not about the world — these are");
+    console.info("  NOT new properties, and nothing here may be promoted on this queue.\n");
+
+    if (partition.noMachineFinding.length > 0) {
+      // Display geography from the SAME observation that supplies the displayed
+      // facts — the latest one — not from the run that first saw the identity.
+      const rows = await client.query<{
+        source_property_id: string;
+        source_name: string | null;
+        slug: string | null;
+      }>(
+        `select i.source_property_id, o.source_name, d.slug
+           from public.source_property_identities i
+           join lateral (select o.source_name, o.source_run_id
+                           from public.source_property_observations o
+                          where o.source_property_identity_id = i.id
+                          order by o.observed_at desc, o.id desc limit 1) o on true
+           join public.source_runs r on r.id = o.source_run_id
+           left join public.destinations d on d.id = r.destination_id
+          where i.id = any($1::uuid[])
+          order by i.source_property_id
+          limit $2`,
+        [partition.noMachineFinding, args.limit],
       );
+      for (const r of rows.rows) {
+        console.info(
+          `    ${r.source_property_id}  ${r.source_name ?? "(no name)"}  [${r.slug ?? "?"}]`,
+        );
+      }
     }
     console.info("");
   } finally {
