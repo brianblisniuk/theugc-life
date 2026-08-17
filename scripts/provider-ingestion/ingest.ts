@@ -18,6 +18,12 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 import { buildBatch } from "./adapters/hotelbeds-cached";
+import {
+  ArtifactConsistencyError,
+  assertArtifactsConsistent,
+  assertGeographyConsistent,
+  GeographyContradictionError,
+} from "./consistency";
 import { resolveIngestionTarget, UnsafeIngestionTargetError } from "./db-target";
 import {
   buildManifest,
@@ -25,6 +31,7 @@ import {
   manifestPath,
   MissingArtifactError,
   ArtifactDigestMismatchError,
+  ManifestIntegrityError,
   verifyManifest,
   type IngestionManifest,
 } from "./manifest";
@@ -195,6 +202,12 @@ async function main(): Promise<void> {
     const outcome = await buildBatch(manifest, destinationId, REPO_ROOT);
     const mapMs = Date.now() - started;
 
+    // PRE-WRITE GATES. Both run before preview as well as before apply: a
+    // preview that reported counts the apply would refuse would be worse than
+    // useless.
+    assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount);
+    assertGeographyConsistent(manifest, outcome);
+
     summarize(manifest, outcome);
     console.info(`  adapter mapping       ${mapMs} ms`);
     console.info("");
@@ -248,6 +261,9 @@ if (invokedDirectly) {
     if (
       err instanceof MissingArtifactError ||
       err instanceof ArtifactDigestMismatchError ||
+      err instanceof ManifestIntegrityError ||
+      err instanceof ArtifactConsistencyError ||
+      err instanceof GeographyContradictionError ||
       err instanceof UnsafeIngestionTargetError
     ) {
       console.error(`\n[source:ingest] STOP\n\n${err.message}\n`);

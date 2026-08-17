@@ -215,6 +215,11 @@ export function mapProperty(
 }
 
 export interface AdapterOutcome extends ProviderIngestionBatch {
+  /**
+   * Length of the raw payload array as actually read from the artifact — NOT a
+   * value copied from the metrics. The consistency gate compares the two.
+   */
+  rawRecordCount: number;
   /** Records the provider returned that carry no usable id. */
   recordsMissingSourcePropertyId: number;
   /** Provider ids appearing more than once in one artifact. */
@@ -281,6 +286,7 @@ export async function buildBatch(
       harnessVersion: HARNESS_VERSION,
     },
     observations,
+    rawRecordCount: payloads.length,
     recordsMissingSourcePropertyId: missingId,
     duplicateSourcePropertyIds: duplicates,
   };

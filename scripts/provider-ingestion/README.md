@@ -59,7 +59,7 @@ Every run is anchored to a frozen manifest under `.data/provider-ingestion/`
 ```jsonc
 {
   "formatVersion": "provider-ingestion-manifest/1",
-  "runEvidenceVersion": "hotelbeds-cached-evaluation/1",
+  "runEvidenceVersion": "hotelbeds-cached-evaluation/2",
   "provider": "hotelbeds",
   "sourceEnvironment": "evaluation",
   "destinationSlug": "bali",
@@ -87,9 +87,37 @@ none of which are properties, and several of which a pattern match would happily
 pick up. The whitelist lives in `HOTELBEDS_CACHED_SELECTIONS`, so adding a
 destination is a reviewable diff.
 
-Before every preview and every apply, **all artifacts are re-hashed** and
-compared with the manifest. A mismatch is a hard stop: changed source data must
-never be ingested under the identity of an older run.
+### Three gates before anything is written
+
+Each catches a different lie, and all three run before **preview** as well as
+before apply — a preview reporting counts the apply would refuse is worse than
+useless.
+
+**1. Manifest self-integrity.** The stored `manifestDigest` is recomputed from
+the manifest's own contents. Artifact hashing proves the _source files_ are
+unchanged and says nothing about the manifest, which is an ordinary local JSON
+file — its evidence counts, coverage risks, `observedAt` and provider geography
+could otherwise be hand-edited while every artifact still hashed clean, and
+those edited values are exactly what reaches `source_runs`. A mismatch stops;
+re-deriving is the deliberate `--refresh-manifest`.
+
+**2. Artifact re-hash.** Every artifact is SHA-256'd and compared. Changed source
+data must never be ingested under an older run's identity.
+
+**3. Raw ↔ metrics consistency.** The manifest takes its accounting from the
+_metrics_ artifact while the adapter independently maps the _raw properties_
+artifact. Both hashing clean proves each file is unchanged — not that they
+describe the same extraction. Without this gate, raw properties from run A plus
+metrics from run B pass every other check, and the run row then stores run B's
+accounting over run A's observations. So the counts the adapter actually derived
+(raw array length, unique ids, missing ids, duplicate ids, and observations
+accounting for every record) are compared with what the manifest claims. A
+disagreement stops: the metrics are not reinterpreted and the raw artifact is
+not repaired.
+
+Plus a **geography** gate: every mapped record must carry the destination code
+the manifest selected, or the observations would land under the wrong canonical
+destination. A record with _no_ code is absence, not contradiction, and passes.
 
 ---
 
@@ -125,6 +153,38 @@ Below the run, the existing 0027 keys do the rest — identities on
 inserted, and `last_seen_run_id` advances **only** for a run newer than the one
 already recorded — so ingesting an older cached run records its observation
 without dragging the identity's last sighting backwards.
+
+---
+
+## Coverage risks: what the run records as still open
+
+Two kinds, kept apart, because they answer different questions (`0027` §7.1):
+
+- **Enumeration risks** — did we read every record the provider offers? Derived
+  from enumeration facts only, and they _do_ block
+  `provider_enumeration_exhaustion_proven`.
+- **Coverage risks** — what does the enumerated set _mean_? Recorded, never
+  emptied, and they never falsify a completed walk.
+
+Each run carries its per-destination geography caveats from the metrics **plus**
+two evaluation-wide risks locked by external review, which live outside any
+single run's pagination evidence:
+
+1. **Classification authority.** Hotelbeds category data is
+   `PROVIDER_CLASSIFICATION_EVIDENCE`, not
+   `CANONICAL_D060_CLASSIFICATION_EVIDENCE`. Canonical D060 stars need secondary
+   authoritative verification, and no issuing authority is established, so D062
+   condition 7 cannot be satisfied from this source alone.
+2. **Multi-source coverage pending.** Hotelbeds is approved as Source A;
+   enumerating it exhaustively does not close the D061 coverage universe.
+
+Media-rights review is deliberately absent from both lists — it gates ingesting
+images, not the completeness of a property walk.
+
+Changing how run evidence is derived changes what a run _means_, so
+`RUN_EVIDENCE_VERSION` is part of the run fingerprint. Adding these two risks
+bumped it to `hotelbeds-cached-evaluation/2`, and the deterministic run ids
+changed with it. That is the intended behaviour, not a bug to work around.
 
 ---
 

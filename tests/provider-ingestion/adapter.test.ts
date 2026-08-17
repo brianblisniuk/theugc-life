@@ -34,10 +34,21 @@ import {
   buildManifest,
   runFingerprint,
   verifyManifest,
+  verifyManifestIntegrity,
   ArtifactDigestMismatchError,
+  ManifestIntegrityError,
   MissingArtifactError,
+  HOTELBEDS_EVALUATION_COVERAGE_RISKS,
+  RUN_EVIDENCE_VERSION,
   type ArtifactSelection,
+  type IngestionManifest,
 } from "../../scripts/provider-ingestion/manifest";
+import {
+  assertArtifactsConsistent,
+  assertGeographyConsistent,
+  ArtifactConsistencyError,
+  GeographyContradictionError,
+} from "../../scripts/provider-ingestion/consistency";
 import { parseArgs } from "../../scripts/provider-ingestion/ingest";
 import {
   assertAttributesBounded,
@@ -356,7 +367,9 @@ describe("ingestion manifest", () => {
     expect(manifest.evidence.paginationWalkCompleted).toBe(true);
     expect(manifest.evidence.enumerationRisks).toEqual([]);
     expect(manifest.evidence.providerEnumerationExhaustionProven).toBe(true);
-    expect(manifest.evidence.coverageRisks).toHaveLength(1);
+    // One synthetic geography caveat from the metrics, plus the two durable
+    // evaluation-wide risks.
+    expect(manifest.evidence.coverageRisks).toHaveLength(3);
   });
 
   it("refuses exhaustion when the provider total disagrees with the rows returned", async () => {
@@ -557,6 +570,232 @@ describe("database target safety", () => {
       /unclassifiable/,
     );
     expect(() => resolveIngestionTarget({})).toThrow(/No database configured/);
+  });
+});
+
+describe("manifest self-integrity", () => {
+  /** Freeze a manifest, tamper with one field, and re-verify. */
+  async function tampered(
+    mutate: (m: IngestionManifest) => void,
+  ): Promise<{ manifest: IngestionManifest; root: string }> {
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    mutate(manifest);
+    return { manifest, root };
+  }
+
+  it("A. accepts an untouched frozen manifest", async () => {
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    expect(() => verifyManifestIntegrity(manifest)).not.toThrow();
+    await expect(verifyManifest(manifest, root)).resolves.toBeUndefined();
+  });
+
+  it("B. REJECTS edited coverageRisks", async () => {
+    // The scenario that matters: the source files are untouched and still hash
+    // clean, but the risks written to source_runs have been quietly deleted.
+    const { manifest, root } = await tampered((m) => {
+      m.evidence.coverageRisks = [];
+    });
+    expect(() => verifyManifestIntegrity(manifest)).toThrow(ManifestIntegrityError);
+    await expect(verifyManifest(manifest, root)).rejects.toThrow(ManifestIntegrityError);
+  });
+
+  it("C. REJECTS an edited observedAt", async () => {
+    const { manifest } = await tampered((m) => {
+      m.observedAt = "1999-01-01T00:00:00.000Z";
+    });
+    expect(() => verifyManifestIntegrity(manifest)).toThrow(ManifestIntegrityError);
+  });
+
+  it("D. REJECTS edited providerGeography", async () => {
+    const { manifest } = await tampered((m) => {
+      m.providerGeography = { destinationCode: "XXX" };
+    });
+    expect(() => verifyManifestIntegrity(manifest)).toThrow(ManifestIntegrityError);
+  });
+
+  it("E. REJECTS an edited evidence count", async () => {
+    const { manifest } = await tampered((m) => {
+      m.evidence.rawRecordCount = 99999;
+    });
+    expect(() => verifyManifestIntegrity(manifest)).toThrow(ManifestIntegrityError);
+  });
+
+  it("REJECTS edited artifact metadata, and still hashes the artifacts too", async () => {
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    manifest.artifacts[0]!.sha256 = "0".repeat(64);
+    // Caught by self-integrity first — but the artifact hashing remains in place
+    // for the case where the manifest is honest and the FILE changed.
+    await expect(verifyManifest(manifest, root)).rejects.toThrow(ManifestIntegrityError);
+
+    const honest = await buildManifest(selection, root);
+    writeFileSync(path.join(root, "raw", "properties.json"), JSON.stringify([syntheticProperty()]));
+    await expect(verifyManifest(honest, root)).rejects.toThrow(ArtifactDigestMismatchError);
+  });
+});
+
+describe("raw ↔ metrics consistency gate", () => {
+  /** Build a manifest, then overwrite the metrics so the two disagree. */
+  async function withMetrics(
+    metrics: Record<string, unknown>,
+  ): Promise<{ manifest: IngestionManifest; outcome: Awaited<ReturnType<typeof buildBatch>> }> {
+    const { root, selection } = syntheticRepo();
+    writeFileSync(path.join(root, "metrics.json"), JSON.stringify(metrics));
+    const manifest = await buildManifest(selection, root);
+    const outcome = await buildBatch(manifest, "00000000-0000-0000-0000-0000000000ff", root);
+    return { manifest, outcome };
+  }
+
+  const metricsWith = (over: Record<string, number>) => ({
+    metrics: {
+      accounting: {
+        rawRecordsReturned: 2,
+        uniqueSourcePropertyIds: 2,
+        duplicateIdRecords: 0,
+        recordsMissingSourcePropertyId: 0,
+        ...over,
+      },
+      pagination: { reportedTotal: 2, walkCompleted: true, coverageRisks: [] },
+    },
+  });
+
+  it("passes when both artifacts describe the same extraction", async () => {
+    const { manifest, outcome } = await withMetrics(metricsWith({}));
+    expect(() =>
+      assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount),
+    ).not.toThrow();
+  });
+
+  it("STOPS on a raw record count mismatch", async () => {
+    // Metrics from a different run: 5 records claimed, 2 in the raw artifact.
+    const { manifest, outcome } = await withMetrics(metricsWith({ rawRecordsReturned: 5 }));
+    expect(() => assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount)).toThrow(
+      ArtifactConsistencyError,
+    );
+    expect(() => assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount)).toThrow(
+      /raw record count/,
+    );
+  });
+
+  it("STOPS on a unique-id count mismatch", async () => {
+    const { manifest, outcome } = await withMetrics(metricsWith({ uniqueSourcePropertyIds: 7 }));
+    expect(() => assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount)).toThrow(
+      /unique source property ids/,
+    );
+  });
+
+  it("STOPS on a missing-id count mismatch", async () => {
+    const { manifest, outcome } = await withMetrics(
+      metricsWith({ recordsMissingSourcePropertyId: 3 }),
+    );
+    expect(() => assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount)).toThrow(
+      /missing a source property id/,
+    );
+  });
+
+  it("STOPS on a duplicate-id count mismatch", async () => {
+    const { manifest, outcome } = await withMetrics(metricsWith({ duplicateIdRecords: 4 }));
+    expect(() => assertArtifactsConsistent(manifest, outcome, outcome.rawRecordCount)).toThrow(
+      /duplicate source property ids/,
+    );
+  });
+
+  it("STOPS when observations do not account for every raw record", async () => {
+    // Hand-built outcome: clean accounting, but one record vanished between the
+    // artifact and the observation list.
+    const { manifest, outcome } = await withMetrics(metricsWith({}));
+    const short = { ...outcome, observations: outcome.observations.slice(0, 1) };
+    expect(() => assertArtifactsConsistent(manifest, short, 2)).toThrow(
+      /observations vs raw records/,
+    );
+  });
+});
+
+describe("geography consistency gate", () => {
+  async function outcomeWithCodes(codes: (string | null)[]) {
+    const { root, selection } = syntheticRepo();
+    writeFileSync(
+      path.join(root, "raw", "properties.json"),
+      JSON.stringify(
+        codes.map((code, i) =>
+          syntheticProperty({ code: 900100 + i, destinationCode: code ?? undefined }),
+        ),
+      ),
+    );
+    const manifest = await buildManifest(selection, root);
+    const outcome = await buildBatch(manifest, "00000000-0000-0000-0000-0000000000ff", root);
+    return { manifest, outcome };
+  }
+
+  it("passes when every record carries the selected destination code", async () => {
+    const { manifest, outcome } = await outcomeWithCodes(["SYN", "SYN"]);
+    expect(() => assertGeographyConsistent(manifest, outcome)).not.toThrow();
+  });
+
+  it("STOPS on a geography contradiction rather than writing the wrong destination", async () => {
+    const { manifest, outcome } = await outcomeWithCodes(["SYN", "OTHER"]);
+    expect(() => assertGeographyConsistent(manifest, outcome)).toThrow(GeographyContradictionError);
+    expect(() => assertGeographyConsistent(manifest, outcome)).toThrow(/OTHER × 1/);
+  });
+
+  it("treats a MISSING destination code as absence, not contradiction", async () => {
+    // The provider omitting a field is not the provider making a conflicting
+    // claim, and absence must not be reinterpreted as one.
+    const { manifest, outcome } = await outcomeWithCodes(["SYN", null]);
+    expect(() => assertGeographyConsistent(manifest, outcome)).not.toThrow();
+  });
+});
+
+describe("durable evaluation coverage risks", () => {
+  it("carries the D060 and multi-source risks alongside the geography caveats", async () => {
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+
+    // 1 synthetic geography caveat + the 2 durable evaluation risks.
+    expect(manifest.evidence.coverageRisks).toHaveLength(3);
+    expect(manifest.evidence.coverageRisks[0]).toMatch(/geography/);
+    expect(manifest.evidence.coverageRisks).toEqual(
+      expect.arrayContaining([...HOTELBEDS_EVALUATION_COVERAGE_RISKS]),
+    );
+    // Stated for what they are: classification authority and multi-source.
+    expect(manifest.evidence.coverageRisks.join(" ")).toMatch(
+      /PROVIDER_CLASSIFICATION_EVIDENCE.*secondary authoritative verification/s,
+    );
+    expect(manifest.evidence.coverageRisks.join(" ")).toMatch(/Multi-source.*PENDING/s);
+  });
+
+  it("does NOT let any of them falsify enumeration exhaustion", async () => {
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    // The walk completed and the total matched, so enumeration stands proven
+    // with three open coverage risks — different dimensions (0027 §7.1).
+    expect(manifest.evidence.paginationWalkCompleted).toBe(true);
+    expect(manifest.evidence.enumerationRisks).toEqual([]);
+    expect(manifest.evidence.providerEnumerationExhaustionProven).toBe(true);
+    expect(manifest.evidence.coverageRisks.length).toBeGreaterThan(0);
+  });
+
+  it("classifies neither as an enumeration risk, and omits media rights entirely", () => {
+    for (const risk of HOTELBEDS_EVALUATION_COVERAGE_RISKS) {
+      expect(risk).not.toMatch(/^\[enumeration\]/);
+    }
+    expect(HOTELBEDS_EVALUATION_COVERAGE_RISKS.join(" ")).not.toMatch(/media|rights|image/i);
+  });
+
+  it("bumps the run evidence version, so the run fingerprint changes", async () => {
+    expect(RUN_EVIDENCE_VERSION).toBe("hotelbeds-cached-evaluation/2");
+
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    // The fingerprint is version-sensitive by construction: changed evidence
+    // semantics mean a different logical run.
+    const asV1 = runFingerprint({
+      ...manifest,
+      runEvidenceVersion: "hotelbeds-cached-evaluation/1" as never,
+    });
+    expect(runFingerprint(manifest)).not.toBe(asV1);
   });
 });
 

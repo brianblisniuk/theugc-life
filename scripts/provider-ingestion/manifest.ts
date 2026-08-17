@@ -23,7 +23,34 @@ export const MANIFEST_FORMAT_VERSION = "provider-ingestion-manifest/1";
  * belongs to the MEANING of the evidence: if we change how run evidence is
  * derived from the artifacts, the old run is not the same run.
  */
-export const RUN_EVIDENCE_VERSION = "hotelbeds-cached-evaluation/1";
+export const RUN_EVIDENCE_VERSION = "hotelbeds-cached-evaluation/2";
+
+/**
+ * Coverage risks that are true of the whole approved Hotelbeds evaluation, and
+ * therefore of every destination replayed from it.
+ *
+ * The cached metrics record only the per-destination GEOGRAPHY caveats, because
+ * that is what the extractor observed. These two were locked by external review
+ * at evaluation time and live outside any single run's pagination evidence — but
+ * they are exactly the kind of fact a coverage judgement must weigh, so a run
+ * that omitted them would understate what is still open.
+ *
+ * Both are COVERAGE risks: they concern what the enumerated set MEANS. Neither
+ * touches whether the walk read every record the provider offers, so neither may
+ * falsify `provider_enumeration_exhaustion_proven` (0027 §7.1).
+ *
+ * Media-rights review is deliberately NOT here and is not an enumeration risk
+ * either — it gates ingesting images, not the completeness of a property walk.
+ */
+export const HOTELBEDS_EVALUATION_COVERAGE_RISKS: readonly string[] = [
+  "[classification] Hotelbeds category data is PROVIDER_CLASSIFICATION_EVIDENCE, not " +
+    "CANONICAL_D060_CLASSIFICATION_EVIDENCE. Canonical D060 star classification requires " +
+    "secondary authoritative verification, and no issuing authority is established for the " +
+    "Hotelbeds category, so D062 condition 7 cannot be satisfied from this source alone.",
+  "[multi-source] Multi-source destination coverage comparison is PENDING. Hotelbeds is " +
+    "approved as Source A; enumerating Hotelbeds exhaustively does not close the D061 " +
+    "coverage universe for this destination.",
+];
 
 export const EVALUATION_ARTIFACT_ROOT = ".data/provider-evaluation";
 export const INGESTION_ROOT = ".data/provider-ingestion";
@@ -121,6 +148,22 @@ export class MissingArtifactError extends Error {
   }
 }
 
+export class ManifestIntegrityError extends Error {
+  constructor(
+    readonly expected: string,
+    readonly actual: string,
+  ) {
+    super(
+      "The frozen ingestion manifest does not match its own digest — it has been " +
+        `edited since it was written.\n  stored     ${expected}\n  recomputed ${actual}\n\n` +
+        "Its evidence counts, coverage risks, timestamp and provider geography are what " +
+        "get written to source_runs, so an edited manifest is edited provenance. " +
+        "Re-derive it deliberately with --refresh-manifest if that is what you intend.",
+    );
+    this.name = "ManifestIntegrityError";
+  }
+}
+
 export class ArtifactDigestMismatchError extends Error {
   constructor(readonly mismatches: { relativePath: string; expected: string; actual: string }[]) {
     super(
@@ -181,9 +224,13 @@ function readEvidence(metrics: unknown): IngestionManifest["evidence"] {
       ? reportedTotalRaw
       : null;
   const walkCompleted = pagination.walkCompleted === true;
-  const coverageRisks = Array.isArray(pagination.coverageRisks)
-    ? pagination.coverageRisks.map(String)
-    : [];
+  // Per-destination geography caveats observed by the extractor, PLUS the
+  // durable evaluation-wide risks locked by external review. Both are coverage
+  // facts; neither is emptied to make a run look clean.
+  const coverageRisks = [
+    ...(Array.isArray(pagination.coverageRisks) ? pagination.coverageRisks.map(String) : []),
+    ...HOTELBEDS_EVALUATION_COVERAGE_RISKS,
+  ];
 
   // ENUMERATION risks, derived from enumeration facts only. A provider total
   // that disagrees with the rows returned is the classic one; an incomplete
@@ -263,7 +310,22 @@ export async function buildManifest(
     observedAtBasis: "artifact_capture_timestamp_local_evidence",
   } satisfies Omit<IngestionManifest, "manifestDigest">;
 
-  return { ...base, manifestDigest: digestValue(base) };
+  return { ...base, manifestDigest: manifestPayloadDigest(base) };
+}
+
+/**
+ * Digest of everything in the manifest EXCEPT the digest field itself.
+ *
+ * One function, used both to stamp a new manifest and to re-derive the value
+ * when checking a frozen one — so the two can never disagree about what is
+ * covered.
+ */
+export function manifestPayloadDigest(
+  manifest: IngestionManifest | Omit<IngestionManifest, "manifestDigest">,
+): string {
+  const { manifestDigest: _ignored, ...payload } = manifest as IngestionManifest;
+  void _ignored;
+  return digestValue(payload);
 }
 
 /**
@@ -288,8 +350,31 @@ export function runFingerprint(manifest: IngestionManifest): string {
   });
 }
 
+/**
+ * Does the frozen manifest still describe itself?
+ *
+ * Artifact hashing proves the SOURCE FILES are unchanged; it says nothing about
+ * the manifest, which is an ordinary local JSON file. Without this check the
+ * evidence counts, the coverage risks, `observedAt` and even the provider
+ * geography could be edited by hand while every artifact still hashed clean —
+ * and the edited values are precisely what gets written to `source_runs`.
+ *
+ * A mismatch is a hard stop, never a silent rebuild. Re-deriving the manifest
+ * from the artifacts is `--refresh-manifest`, which is a deliberate act.
+ */
+export function verifyManifestIntegrity(manifest: IngestionManifest): void {
+  const actual = manifestPayloadDigest(manifest);
+  if (actual !== manifest.manifestDigest) {
+    throw new ManifestIntegrityError(manifest.manifestDigest, actual);
+  }
+}
+
 /** Re-hash every artifact and compare against the manifest. */
 export async function verifyManifest(manifest: IngestionManifest, repoRoot: string): Promise<void> {
+  // Self-integrity FIRST: an edited manifest could otherwise point verification
+  // at the wrong artifacts, or at the right ones with the wrong evidence.
+  verifyManifestIntegrity(manifest);
+
   const missing = manifest.artifacts
     .map((a) => a.relativePath)
     .filter((rel) => !existsSync(path.resolve(repoRoot, rel)));
