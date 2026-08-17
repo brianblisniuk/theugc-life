@@ -367,9 +367,9 @@ describe("ingestion manifest", () => {
     expect(manifest.evidence.paginationWalkCompleted).toBe(true);
     expect(manifest.evidence.enumerationRisks).toEqual([]);
     expect(manifest.evidence.providerEnumerationExhaustionProven).toBe(true);
-    // One synthetic geography caveat from the metrics, plus the two durable
-    // evaluation-wide risks.
-    expect(manifest.evidence.coverageRisks).toHaveLength(3);
+    // One synthetic geography caveat from the metrics, plus the one durable
+    // evaluation-wide coverage-universe risk.
+    expect(manifest.evidence.coverageRisks).toHaveLength(2);
   });
 
   it("refuses exhaustion when the provider total disagrees with the rows returned", async () => {
@@ -749,35 +749,54 @@ describe("geography consistency gate", () => {
 });
 
 describe("durable evaluation coverage risks", () => {
-  it("carries the D060 and multi-source risks alongside the geography caveats", async () => {
+  it("carries the coverage-universe risk alongside the geography caveats", async () => {
     const { root, selection } = syntheticRepo();
     const manifest = await buildManifest(selection, root);
 
-    // 1 synthetic geography caveat + the 2 durable evaluation risks.
-    expect(manifest.evidence.coverageRisks).toHaveLength(3);
+    // 1 synthetic geography caveat + the 1 durable evaluation risk.
+    expect(manifest.evidence.coverageRisks).toHaveLength(2);
     expect(manifest.evidence.coverageRisks[0]).toMatch(/geography/);
     expect(manifest.evidence.coverageRisks).toEqual(
       expect.arrayContaining([...HOTELBEDS_EVALUATION_COVERAGE_RISKS]),
     );
-    // Stated for what they are: classification authority and multi-source.
-    expect(manifest.evidence.coverageRisks.join(" ")).toMatch(
-      /PROVIDER_CLASSIFICATION_EVIDENCE.*secondary authoritative verification/s,
-    );
-    expect(manifest.evidence.coverageRisks.join(" ")).toMatch(/Multi-source.*PENDING/s);
+    expect(manifest.evidence.coverageRisks.join(" ")).toMatch(/coverage-universe.*PENDING/s);
+  });
+
+  it("no longer carries the SUPERSEDED secondary-verification risk", async () => {
+    // D066: canonical classification is resolved product truth from a reviewed
+    // provider policy. A run still claiming that stars need "secondary
+    // authoritative verification" would mislabel a resolvable property as
+    // blocked, so the risk is removed rather than reworded.
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    const joined = manifest.evidence.coverageRisks.join(" ");
+    expect(joined).not.toMatch(/secondary authoritative verification/i);
+    expect(joined).not.toMatch(/issuing authority/i);
+    expect(joined).not.toMatch(/CANONICAL_D060_CLASSIFICATION_EVIDENCE/);
+  });
+
+  it("states the remaining risk is about the UNIVERSE, not star validation", async () => {
+    const { root, selection } = syntheticRepo();
+    const manifest = await buildManifest(selection, root);
+    const joined = manifest.evidence.coverageRisks.join(" ");
+    // Coverage and classification are separate dimensions, and the risk text
+    // says so explicitly so a later reader cannot re-derive the old rule.
+    expect(joined).toMatch(/NOT a second-source requirement/i);
+    expect(joined).toMatch(/star classification/i);
   });
 
   it("does NOT let any of them falsify enumeration exhaustion", async () => {
     const { root, selection } = syntheticRepo();
     const manifest = await buildManifest(selection, root);
     // The walk completed and the total matched, so enumeration stands proven
-    // with three open coverage risks — different dimensions (0027 §7.1).
+    // with open coverage risks — different dimensions (0027 §7.1).
     expect(manifest.evidence.paginationWalkCompleted).toBe(true);
     expect(manifest.evidence.enumerationRisks).toEqual([]);
     expect(manifest.evidence.providerEnumerationExhaustionProven).toBe(true);
     expect(manifest.evidence.coverageRisks.length).toBeGreaterThan(0);
   });
 
-  it("classifies neither as an enumeration risk, and omits media rights entirely", () => {
+  it("classifies it as coverage, not enumeration, and omits media rights entirely", () => {
     for (const risk of HOTELBEDS_EVALUATION_COVERAGE_RISKS) {
       expect(risk).not.toMatch(/^\[enumeration\]/);
     }
@@ -785,7 +804,7 @@ describe("durable evaluation coverage risks", () => {
   });
 
   it("bumps the run evidence version, so the run fingerprint changes", async () => {
-    expect(RUN_EVIDENCE_VERSION).toBe("hotelbeds-cached-evaluation/2");
+    expect(RUN_EVIDENCE_VERSION).toBe("hotelbeds-cached-evaluation/3");
 
     const { root, selection } = syntheticRepo();
     const manifest = await buildManifest(selection, root);

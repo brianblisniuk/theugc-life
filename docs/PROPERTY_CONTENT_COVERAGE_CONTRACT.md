@@ -351,9 +351,18 @@ CANONICAL STAR CLASSIFICATION  +  SOURCE EVIDENCE / PROVENANCE
 
 Sources that may later be approved include inventory providers, official
 property/brand information, tourism/hospitality authorities, and other approved
-authoritative sources. **The authority hierarchy among them is not chosen here**
-(§16) — it belongs to the source-evaluation block, which will have evidence for
-the choice.
+authoritative sources.
+
+> **Resolved by D066 (2026-08-17).** This section previously deferred "the
+> authority hierarchy among them" to the source-evaluation block. There is no
+> hierarchy to choose: canonical classification is theugc.life's resolved
+> **product** truth, and a single **approved provider** resolves it when a
+> reviewed per-provider code policy maps the exact code
+> ([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)).
+> Tourism/hospitality authorities remain **optional** corroboration and are the
+> natural way to settle a conflict — they are not a precondition for any
+> property. Two approved providers that disagree go to REVIEW; they are not
+> ranked and never averaged.
 
 ### 8.1 Rules
 
@@ -800,7 +809,12 @@ None of the following is decided by this contract. Do not invent them:
 - Booking vs Expedia precedence;
 - the geocoding provider;
 - exact provider API integration;
-- the exact star-source authority hierarchy;
+- ~~the exact star-source authority hierarchy;~~ **RESOLVED by D066** — there is
+  no authority *hierarchy* to choose. Canonical classification is theugc.life's
+  resolved product truth, resolved from a reviewed per-provider code policy
+  ([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md));
+  one approved provider is sufficient, and a conflict between two approved
+  providers goes to REVIEW rather than being ranked;
 - exact automated entity-match thresholds;
 - exact media supplier priority between third-party providers;
 - whether third-party media is stored locally or referenced remotely;

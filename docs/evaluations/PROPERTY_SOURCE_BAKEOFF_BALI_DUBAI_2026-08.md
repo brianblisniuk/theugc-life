@@ -19,10 +19,10 @@ lives under [Chronological attempt history](#chronological-attempt-history).**
 | Live extraction | **DONE for Bali (BAI) and Dubai (DXB)** — static content only |
 | Hotelbeds daily quota | **11 confirmed · 0 ambiguous · 39 safe remaining of 50** |
 | Geography mapping | **BAI = Bali, DXB = Dubai**, approved by external review for this bake-off |
-| D060 canonical stars from Hotelbeds | **REQUIRES SECONDARY VERIFICATION** — locked by external review |
+| D060 canonical stars from Hotelbeds | ~~**REQUIRES SECONDARY VERIFICATION**~~ → **SUPERSEDED 2026-08-17 by D066: APPROVED through the reviewed `categoryCode` policy** (`4EST`/`4LUX`/`5EST`/`5LUX`). `simpleCode` remains unusable. |
 | Promotion into `hotels` | **NONE.** No Supabase, no canonical write, no Coverage Engine |
 | **HBX/Hotelbeds source evaluation** | **COMPLETE BY DIMENSION** (verdicts below) |
-| Multi-source coverage comparison | **PENDING SECOND SOURCE** |
+| Multi-source COVERAGE-UNIVERSE comparison | **PENDING SECOND SOURCE** — for unique inventory and blind spots, NOT for star validation |
 | Bali or Dubai coverage complete? | **NO.** D061 closure is untouched |
 
 **What "geography approved" does and does not mean.** It means *provider
@@ -83,6 +83,13 @@ state.
 `simpleCode`, category `group` and free-text `description` are each rejected as
 canonical provenance. Everything in this section is provider-apparent.
 
+> **Still true under D066, and worth reading precisely.** An observation remains
+> source evidence and never canonical *by itself* — a provider cannot declare its
+> own row canonical (D065). What D066 changed is that a **reviewed policy of
+> ours**, applied by the star resolver, can turn specific `categoryCode` values
+> into a canonical classification without a second source. `simpleCode`, `group`
+> and `description` remain rejected exactly as stated here.
+
 | | Bali | Dubai |
 |---|---|---|
 | Records carrying a `categoryCode` | 3,275 (100%) | 835 (100%) |
@@ -134,15 +141,22 @@ accommodations master (24 codes, fetched to exhaustion) explains it:
 | others (`D`, `M`, `N`, `R`, `B`) | 12 | 4 |
 
 This makes the `HOTEL × "5 STARS"` pairing **observable**, which is what D060
-eventually needs. It does **not** unlock D060, for two reasons — one recorded,
-one newly observed:
+eventually needs. At the time of writing it was held not to unlock D060, for two
+reasons — one recorded, one newly observed:
 
-1. **The issuing authority is still unestablished**, so publishability
-   condition 7 (D062) cannot be satisfied. This is the binding blocker.
+1. ~~**The issuing authority is still unestablished**, so publishability
+   condition 7 (D062) cannot be satisfied. This is the binding blocker.~~
+   **SUPERSEDED by D066** — no issuing authority is required. A reviewed
+   provider-specific code mapping is what satisfies condition 7's provenance
+   requirement, and Hotelbeds now has one.
 2. **A STAR label does not imply a hotel.** Dubai returns `Apartment × 4 STARS`
    (5) and `Aparthotel × 5 STARS` (5); Bali returns Bed-and-breakfast,
    Guest-house and Resort records carrying STAR categories. Filtering on "has a
-   star category" would have admitted them.
+   star category" would have admitted them. **This finding STANDS** — and note
+   what it does and does not say under D060/D066: property type neither admits
+   nor excludes, so an aparthotel is not disqualified by being an aparthotel. The
+   approved mapping is on the specific hotel-star codes, so `APTH5` and the other
+   registers resolve to nothing regardless of the type beside them.
 
 For the record, the provider-apparent `Hotel ×` star pairing is:
 Bali — `H × 5 STARS` 258, `H × 4 STARS` 522, `H × 3 STARS` 728, `H × 3.5` 66;
@@ -339,7 +353,23 @@ be approved for three dimensions and rejected for a fourth.
 | **Location source** | **APPROVED** | 99.91% valid coordinates in Bali, 100% in Dubai, 100% addresses, no `0,0`, one out-of-range value. Directly addresses the pilot's 0/30 coordinate gap. |
 | **Media source** | **APPROVED FOR TECHNICAL INTEGRATION** — production/commercial rights review pending | 80–89% of properties carry images, median 28–44 each, 100% usable paths. Storage and display are the documented integration model; the commercial licence is a separate question (D064). |
 | **Contact enrichment source** | **USEFUL / PARTIALLY SUITABLE** | Strong in Dubai (97.2% phone, 82.6% email, 61.4% website); materially weaker in Bali (87.1% phone, 58.5% email, **36.7% website**). Enrichment, not a sole contact authority — and the fax/phone distinction must be preserved. |
-| **Canonical D060 classification source** | **NOT APPROVED — REQUIRES SECONDARY VERIFICATION** | No issuing authority; `simpleCode` conflates keys with stars; STAR-labelled categories appear on apartments and aparthotels. |
+| **Canonical D060 classification source** | ~~**NOT APPROVED — REQUIRES SECONDARY VERIFICATION**~~ → **SUPERSEDED by D066: APPROVED THROUGH AN EXPLICIT REVIEWED CODE MAPPING** | `simpleCode` conflates keys with stars and STAR-labelled categories appear on apartments and aparthotels — **both findings stand**. What changed is the conclusion drawn from them: see below. |
+
+> **SUPERSEDED 2026-08-17 (D066).** The verdict in this row read "requires
+> secondary verification" because no government/tourism issuing authority was
+> established. That interpretation of D060 is withdrawn: canonical classification
+> is theugc.life's resolved **product** truth backed by accepted source evidence,
+> not a fact requiring independent certification, and **one approved provider is
+> sufficient** when a reviewed provider-specific policy maps the exact code.
+>
+> Hotelbeds is now **APPROVED for D060 resolution through the explicit mapping in
+> [`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](../PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)
+> §5** — four codes (`4EST`, `4LUX` → exactly 4; `5EST`, `5LUX` → exactly 5),
+> with every other register left unresolved.
+>
+> **The measurements in this document are unchanged.** The `simpleCode` finding
+> in particular is *why* the approved mapping is on `categoryCode` — preserving
+> the finding is what makes the approval safe.
 
 ### This evaluation is COMPLETE BY DIMENSION
 
@@ -408,7 +438,14 @@ Hotelbeds category value as D060 evidence:
 
 Under the layered-source principle this does **not** disqualify Hotelbeds. A
 provider can be an excellent inventory, location and media source while its
-classification requires secondary verification.
+classification is handled separately.
+
+> **SUPERSEDED 2026-08-17 (D066).** `starKindsAcceptedAsD060Evidence` being empty
+> remains correct — Hotelbeds exposes no *star field*, so there is no star kind to
+> accept. Classification resolution does not run through that path at all: it runs
+> through the reviewed `categoryCode` mapping in
+> [`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](../PROPERTY_SOURCE_CLASSIFICATION_POLICY.md).
+> "Requires secondary verification" is no longer the product rule.
 
 #### ⚠️ A.1.2 The 173-request global load must not be attempted
 
@@ -549,11 +586,21 @@ D060 star evidence.** It is a guest-satisfaction score.
 
 # STILL BLOCKED / UNKNOWN
 
-### Canonical D060 classification — REQUIRES SECONDARY VERIFICATION
+### ~~Canonical D060 classification — REQUIRES SECONDARY VERIFICATION~~ — SUPERSEDED
 
-Locked. See CURRENT FINDINGS §3. No exact-four or exact-five **canonical**
-inventory count exists for either destination, and none may be manufactured from
-Hotelbeds alone.
+> **SUPERSEDED 2026-08-17 (D066).** This block read: *"Locked. No exact-four or
+> exact-five canonical inventory count exists for either destination, and none
+> may be manufactured from Hotelbeds alone."*
+>
+> The **measurement** stands — this evaluation produced no canonical count, and
+> still has not. What is withdrawn is the claim that one may never be produced
+> *from Hotelbeds alone*: under D066 a reviewed provider policy resolves
+> classification, and Hotelbeds now has one
+> ([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](../PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)).
+>
+> What is still genuinely blocked is that **no star resolver exists yet**, so no
+> canonical classification has been resolved for any property. That is an
+> unbuilt component, not a missing second source.
 
 ### Coverage closure — NOT ESTABLISHED FOR ANY DESTINATION
 
@@ -649,9 +696,11 @@ Replaced with **capability-specific gates**: `enumerate_inventory`,
 `resolve_d060_classification`. A run proceeds when **any** dimension is
 measurable, and the result reports each independently.
 
-**D060 is not weakened.** `resolve_d060_classification` still requires an
-established issuing authority and accepted classification semantics; it simply no
-longer vetoes measuring coordinates.
+**D060 is not weakened.** `resolve_d060_classification` still requires accepted
+classification semantics; it simply no longer vetoes measuring coordinates.
+(The "established issuing authority" half of this requirement is **superseded by
+D066**: accepted semantics now come from a reviewed provider policy, not from a
+registry.)
 
 ### 2. Geography discovery was circular
 

@@ -169,19 +169,28 @@ Provider selection is **not** in scope — see §9.
 - Media/photography **implementation** — schema, sourcing and ingestion. The
   *contract* is now closed (D064, VISUAL_DIRECTION.md §21A); no table, no
   pipeline and no supplier choice exists.
-- **Property inventory sources** for D055's coverage universe — Booking, Expedia,
-  Google and every other provider remain explicitly unchosen. The comparative
-  evaluation that will choose them is specified in
-  [`PROPERTY_SOURCE_EVALUATION.md`](PROPERTY_SOURCE_EVALUATION.md) and runs
-  against Bali and Dubai.
+- **Property inventory sources** for D055's coverage universe — ~~all providers
+  remain explicitly unchosen~~ **partly settled**: **Hotelbeds is the approved
+  Source A** for inventory and location, evaluated live against Bali and Dubai
+  ([`PROPERTY_SOURCE_EVALUATION.md`](PROPERTY_SOURCE_EVALUATION.md)). A **second
+  provider remains unchosen and pending**, for COVERAGE-UNIVERSE comparison and
+  blind-spot discovery — **not** for classification: under D066 a property does
+  not need a second source to be classified. Booking, Expedia, Google and Nuitee
+  remain unevaluated live. Production/commercial usage terms remain a separate
+  unresolved concern.
 - **Geocoding provider** — still unchosen (VISUAL_DIRECTION.md §21B). D054 fixes
   the coverage target, not the supplier.
 - ~~The **initial destination list** — not selected.~~ **Selected** — the initial
   twenty are recorded in `INTELLIGENCE_ROADMAP.md` §11. Not ingested, and no
   destination carries a hotel-count target (D061).
-- The exact **star-source authority hierarchy** and **entity-match thresholds** —
-  deferred to the source-evaluation block on purpose (D060, D063), because a
-  number invented before the evidence would read as a decision.
+- ~~The exact **star-source authority hierarchy**~~ — **resolved by D066**: there
+  is no hierarchy to rank. A reviewed per-provider code policy resolves
+  classification
+  ([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)),
+  and two approved providers that disagree go to REVIEW.
+- **Entity-match thresholds** — still deliberately absent (D063 §12.2). A number
+  invented before the evidence would read as a decision nobody made, and none is
+  introduced here.
 - ~~The exact **Premium Intelligence field projection and numeric thresholds**.~~
   **Closed by D058**, implemented in `0026`.
 - Payment-provider integration (Hotmart or otherwise) — a later concern (D051,

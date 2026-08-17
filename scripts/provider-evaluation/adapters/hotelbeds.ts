@@ -30,21 +30,29 @@
  * TYPES. `accommodationType` — the intended discriminator — was EMPTY (`""`) on
  * all 65 records, so it cannot separate them either.
  *
- * The locked decision: Hotelbeds category data is **PROVIDER_CLASSIFICATION_
- * EVIDENCE**, never **CANONICAL_D060_CLASSIFICATION_EVIDENCE**. Neither
- * `simpleCode`, nor `group`, nor free-text `description` alone is canonical
- * provenance. `resolve_d060_classification` stays BLOCKED —
- * REQUIRES_SECONDARY_VERIFICATION.
+ * The finding stands: neither `simpleCode`, nor `group`, nor free-text
+ * `description` alone is canonical provenance, and an observation here is
+ * PROVIDER_CLASSIFICATION_EVIDENCE, never canonical by itself (D065).
  *
- * What we DO with the evidence: preserve the exact provider `categoryCode`,
+ * SUPERSEDED 2026-08-17 (D066): the CONCLUSION that this "requires secondary
+ * verification" is withdrawn. Canonical classification is theugc.life's resolved
+ * product truth backed by accepted source evidence, and one approved provider is
+ * sufficient when a reviewed policy maps the exact `categoryCode`. That mapping
+ * lives in `scripts/provider-classification/hotelbeds.ts` and is documented in
+ * `docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md` §5 — four approved codes
+ * (`4EST`, `4LUX`, `5EST`, `5LUX`), every other register unresolved.
+ *
+ * This EVALUATION descriptor is unchanged in behaviour: it measures what the
+ * provider exposes, and Hotelbeds exposes no star FIELD, so
+ * `starKindsAcceptedAsD060Evidence` stays empty and this harness still resolves
+ * nothing. Resolution is the star resolver's job, through the policy — not this
+ * module's.
+ *
+ * What we DO with the evidence here: preserve the exact provider `categoryCode`,
  * preserve the joined master, and report distributions — including a
  * PROVIDER-APPARENT star breakdown clearly labelled as provider classification,
  * not D060 resolution. "4.5"/"5.5"-style categories (`H4_5`, `H5_5`) must never
  * become exact 4 or exact 5.
- *
- * This does **not** disqualify Hotelbeds. Under the layered-source principle a
- * provider may be an excellent inventory, location and media source while its
- * classification requires secondary verification.
  */
 import type { AdapterDescriptor, DocumentationSource } from "../types";
 
@@ -280,11 +288,11 @@ export const hotelbedsContentDescriptor: AdapterDescriptor = {
     // every Bali and Dubai record and joined the master at 100%.
     assess_classification: [],
     resolve_d060_classification: [
-      "LOCKED BY EXTERNAL REVIEW 2026-08-16: Hotelbeds category data is PROVIDER_CLASSIFICATION_EVIDENCE, not CANONICAL_D060_CLASSIFICATION_EVIDENCE. REQUIRES_SECONDARY_VERIFICATION.",
-      "OBSERVED in the live 65-code master: simpleCode conflates classification systems and property types. simpleCode 5 includes 5LL (5 KEYS), APTH5, BB5, HS5, HR5 and HIST; simpleCode 4 includes VILLA, BOU, RSORT and AT1 (APARTMENT 1ST CATEGORY).",
-      "OBSERVED in live inventory: a STAR-labelled category does NOT imply a hotel. Dubai returns Apartment x '4 STARS' and Aparthotel x '5 STARS'; Bali returns Bed-and-breakfast, Guest-house and Resort records carrying STAR categories.",
+      "THIS EVALUATION HARNESS resolves no Hotelbeds classification, because Hotelbeds exposes no star FIELD for it to read. That is a statement about this module, not a product verdict: D060 resolution runs through the reviewed categoryCode policy in scripts/provider-classification/hotelbeds.ts (D066), which approves 4EST/4LUX as exactly four and 5EST/5LUX as exactly five.",
+      "OBSERVED in the live 65-code master, and STILL BINDING: simpleCode conflates classification systems and property types. simpleCode 5 includes 5LL (5 KEYS), APTH5, BB5, HS5, HR5 and HIST; simpleCode 4 includes VILLA, BOU, RSORT and AT1 (APARTMENT 1ST CATEGORY). This is exactly why the approved policy maps categoryCode and never simpleCode.",
+      "OBSERVED in live inventory, and STILL BINDING: a STAR-labelled category does NOT imply a hotel. Dubai returns Apartment x '4 STARS' and Aparthotel x '5 STARS'; Bali returns Bed-and-breakfast, Guest-house and Resort records carrying STAR categories. Under D060 property type neither admits nor excludes, and the approved policy resolves only the specific hotel-star codes regardless of the type beside them.",
       "Category `group` and free-text `description` are not accepted as canonical D060 provenance either.",
-      "No issuing authority is established for the category, so publishability condition 7 (D062) cannot be satisfied — this remains the binding blocker even where HOTEL x '5 STARS' pairs cleanly.",
+      "SUPERSEDED 2026-08-17 (D066): 'no issuing authority is established, so condition 7 cannot be satisfied' is withdrawn. Canonical classification is resolved PRODUCT truth backed by accepted source evidence; a government or tourism registry is optional corroboration, never a precondition.",
     ],
   },
 };
