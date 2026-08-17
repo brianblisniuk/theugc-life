@@ -474,6 +474,50 @@ resolution per candidate per dimension. The pointer moves; the revisions do not.
 Read model: one join from the head, `security_invoker = true` so RLS reaches
 through. Not an aggregate over history — reading current state never replays it.
 
+## 5c. Pre-publication physical-hospitality scope (migration 0029)
+
+Four tables plus one view, resolving D062's condition 3 — "it is a physical
+hospitality property" — and **nothing else**. Same access posture as 5a/5b:
+`service_role` + admin/editor through RLS, **no anon grant**.
+
+**This is not V1 eligibility.** D060 says property type alone does not decide it;
+the gate is physical hospitality AND an exact 4/5 classification AND a supported
+destination, composed at the future D062 preview. No column here is named
+`eligible`, `publishable` or `resolved_eligible`, and a test asserts that.
+
+### provider_hospitality_scope_policies / _policy_mappings
+The reviewed scope policy as DATA, `(provider, version)` + a redundant
+`(provider, version, field)` for the mappings and revisions to key against.
+`outcome` is restricted to `physical_hospitality | not_physical_hospitality` —
+`unresolved` is deliberately **not** storable, because absence of a row IS
+unresolved and storing it would make an unreviewed type look adjudicated.
+
+Deliberately SEPARATE tables from the classification policy rather than one with
+a `dimension` column: a shared outcome domain would have to admit every value of
+both, which is exactly how `exact_five` becomes insertable as a scope answer.
+
+Draft/frozen semantics are 0028's, including the reason: an immutable revision
+saying `H → physical_hospitality` is worthless if `H` can be remapped inside the
+version it cites. `approved_at` NULL = draft, assemblable and not citable; once
+set, the field and the whole mapping set are immutable, on both the version a
+mapping leaves and the one it arrives at. Seeded with the Hotelbeds
+`accommodationTypeCode` policy v1 — 10 codes in scope, 2 out, 12 of the 24-code
+master deliberately unmapped
+([`PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md`](PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md)).
+
+### source_property_scope_resolution_revisions
+**IMMUTABLE, append-only**, with the same layered integrity as 0028: composite
+FK to `(observation, identity)`, composite FK to `(identity, source,
+source_environment)`, composite FK on `(supersedes_revision_id, identity)` plus a
+no-self-supersession CHECK, a policy FK, a `policy_provider = source` CHECK, and
+a trigger requiring the cited policy to be APPROVED and the outcome to be the one
+it maps. `revision_digest` is generated and unique per candidate, so a replay
+appends nothing.
+
+### source_property_scope_resolutions / source_property_current_scope_resolutions
+Head pointer, composite-FK'd so a head can only name a revision of its own
+candidate; and a `security_invoker` read model over it.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -758,5 +802,7 @@ At minimum:
 13. property-content source infrastructure (0027)
 14. pre-publication resolution (0028) — provider policy as data, immutable
     resolution revisions, head pointers
+15. pre-publication physical-hospitality scope (0029) — the same shape applied to
+    D062's condition 3; an INPUT to eligibility, never eligibility itself
 
 Every migration must be reproducible from an empty database.

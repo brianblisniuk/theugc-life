@@ -1124,8 +1124,8 @@ evidence only**:
 |---|---|
 | 1. canonical identity resolved | `source_property_reviews.decision` + `source_match_candidates` — see §21.2. **Not** `hotel_source_identities`, which is an apply output |
 | 2. supported destination | `source_property_reviews.destination_id` → `destinations` |
-| 3. physical hospitality property | `source_property_observations.source_property_type_code/label`, resolved by the future layer |
-| 4. not permanently closed | `source_lifecycle_status` **when the provider supplies one** |
+| 3. physical hospitality property | `source_property_scope_resolution_revisions` (0029) → `source_property_observations.id`, resolved through the reviewed provider scope policy. **A `physical_hospitality` result is an INPUT, not eligibility** — D060 §21.4 |
+| 4. not permanently closed | `source_lifecycle_status` **when a provider supplies one** — Hotelbeds does not; see §21.4 |
 | 5. V1 scope resolved | a **pre-publication resolution owned by the future D062/resolution layer**, derived from conditions 2/3/4/6/7/11 and the review — see §21.3. **Not** `source_property_identities.resolution_state`, which is the post-decision record |
 | 6. star exactly 4 or 5 | **not from this layer alone** — §21.1 |
 | 7. star provenance | `source_property_star_resolution_revisions` → `source_property_observations.id`, cited as an IMMUTABLE revision id |
@@ -1300,6 +1300,47 @@ then *records* what was decided. The arrow runs one way.
 when that block is designed; this document does not pre-empt that choice, and
 inventing a column here to make a documentation table tidy would be exactly the
 kind of speculative schema the rest of this block avoids.
+
+### 21.4 Condition 3 is resolved; condition 4 has no evidence yet
+
+**Condition 3** is answered by migration 0029: a reviewed per-provider policy on
+`accommodationTypeCode`, frozen once approved, resolved into immutable revisions
+with a head pointer — the same shape as star and location.
+
+Its result is an INPUT to this gate and **not** V1 eligibility. D060 is explicit
+that property type alone does not decide eligibility, so nothing in 0029 says
+`eligible` or `publishable`. `physical_hospitality` + 3 stars is not eligible;
+`unresolved` + 5 stars is a HOLD, not an exclusion. The conjunction is composed
+here, at the preview, and nowhere earlier. Full contract:
+[`PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md`](PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md).
+
+**Condition 4 has no resolver, deliberately.** The Hotelbeds Content API supplies
+no property-level lifecycle field. `source_lifecycle_status` is NULL on all 4,110
+observations in the evaluation dataset, and nothing else in the payload is one:
+
+- `license` is a tax/registration number, not a status;
+- the `issues[]` array is the only closure-shaped evidence, and it is
+  **facility-scoped and date-ranged**, not a property status. Across 4,110
+  properties there are 176 issue rows, 13 with `issueType = CLOSED` — and 11 of
+  those name a WATERPARK, RESTAURANT, SPA or PARKING, not the property.
+
+Exactly **2** rows carry `issueCode = HOTEL` with `issueType = CLOSED`: one Bali
+property closed `2020-04-24 → 2039-12-31`, and one Dubai property closed
+`2026-05-31 → 2026-08-31`. That is a genuine lead for condition 4 and it is
+recorded here rather than acted on, because:
+
+1. it is not persisted — 0027's ingestion does not map `issues[]`, so no
+   observation carries it today;
+2. a date range is not a lifecycle status, and a three-month window is a
+   temporary closure while a nineteen-year one is not — collapsing them would be
+   inventing the very distinction D062 condition 4 needs;
+3. `active = true` must never be manufactured from the ABSENCE of a field, and a
+   destination name containing `*CLOSED` is a provider geography label, not a
+   property lifecycle fact.
+
+So condition 4 stays for the D062 preview, and the next block that wants it
+should start by persisting `issues[]` with `issueCode` and `issueType` kept
+apart.
 
 ## 22. Coverage Engine future interface
 

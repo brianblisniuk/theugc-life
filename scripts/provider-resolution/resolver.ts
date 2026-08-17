@@ -1,5 +1,5 @@
 /**
- * Pre-publication star and location resolution.
+ * Pre-publication star, location and physical-hospitality resolution.
  *
  * Turns persisted provider OBSERVATIONS into resolved PRODUCT facts, attached to
  * the SOURCE PROPERTY IDENTITY — never to a `hotel_id`, because under D062 a row
@@ -13,11 +13,22 @@
  *     triggers independently verify that the persisted resolution restates what
  *     its cited observation says. A string handed in from anywhere else cannot be
  *     blessed, from this module or from psql.
- *  2. **It invents no precedence.** There is no "newest wins", no provider
- *     ranking, no majority vote, no confidence score and no distance tolerance.
- *     The first approved observation resolves the candidate (D066); a later
- *     approved observation that disagrees is recorded as a CONFLICT for review,
- *     never averaged and never silently substituted.
+ *  2. **It invents no precedence BETWEEN SOURCES.** There is no provider ranking,
+ *     no majority vote, no confidence score and no distance tolerance. For star
+ *     and location — two readings of one durable fact — the first approved
+ *     observation resolves the candidate (D066) and a later one that disagrees is
+ *     recorded as a CONFLICT for review, never averaged and never silently
+ *     substituted. Physical-hospitality SCOPE is different and says so at its own
+ *     fold: an accommodation type that changes is the provider reclassifying its
+ *     property, so the latest mapped reading is the current fact and the previous
+ *     one survives as its own immutable revision.
+ *
+ * The three dimensions are RESOLVED INDEPENDENTLY and composed by nothing here.
+ * D060 is explicit that property type alone does not decide V1 eligibility, and
+ * the converse holds too: an approved 4/5 classification does not make a
+ * candidate in scope. The V1 gate — physical hospitality AND exact 4/5 AND a
+ * supported destination — is composed at the future D062 preview, and no word in
+ * this module is `eligible`, `publishable` or `resolved_eligible`.
  *
  * Persistence is APPEND-ONLY. A resolution is written as an immutable REVISION
  * and a head pointer is moved to name it. Re-deriving the same conclusion from
@@ -33,10 +44,21 @@ import {
   type StarEligibility,
 } from "../provider-classification/policy";
 import { HOTELBEDS_CLASSIFICATION_POLICY } from "../provider-classification/hotelbeds";
+import {
+  resolveScopeCode,
+  type HospitalityScopeOutcome,
+  type HospitalityScopePolicy,
+} from "../provider-scope/policy";
+import { HOTELBEDS_HOSPITALITY_SCOPE_POLICY } from "../provider-scope/hotelbeds";
 
 /** Reviewed classification policies, by provider. */
 export const CLASSIFICATION_POLICIES: Record<string, ClassificationPolicy> = {
   hotelbeds: HOTELBEDS_CLASSIFICATION_POLICY,
+};
+
+/** Reviewed physical-hospitality scope policies, by provider. */
+export const HOSPITALITY_SCOPE_POLICIES: Record<string, HospitalityScopePolicy> = {
+  hotelbeds: HOTELBEDS_HOSPITALITY_SCOPE_POLICY,
 };
 
 /**
@@ -97,6 +119,7 @@ interface ObservationRow {
   source: string;
   source_environment: string;
   source_classification_code: string | null;
+  source_property_type_code: string | null;
   source_latitude: string | null;
   source_longitude: string | null;
   source_coordinates_plausible: boolean | null;
@@ -116,6 +139,18 @@ export interface StarResolution {
   resolvedStarValue: 4 | 5 | null;
   conflictObservationId: string | null;
   conflictOutcome: StarOutcome | null;
+}
+
+export interface ScopeResolution {
+  identityId: string;
+  source: string;
+  environment: string;
+  evidenceObservationId: string;
+  policyProvider: string;
+  policyVersion: string;
+  policyField: string;
+  sourceValue: string | null;
+  outcome: HospitalityScopeOutcome;
 }
 
 export interface LocationResolution {
@@ -281,16 +316,79 @@ export function resolveLocationFromObservations(
   };
 }
 
+/**
+ * Fold one identity's observations into a PHYSICAL-HOSPITALITY resolution.
+ *
+ * This dimension answers one question — is this a physical hospitality property?
+ * — and it is NOT V1 eligibility. D060 says property type alone does not decide
+ * that; the gate is physical hospitality AND an exact 4/5 classification AND a
+ * supported destination, composed later at the D062 preview. Nothing here reads
+ * a star code, a name, a rating, a price, a chain, a website or a photo.
+ *
+ * THE LATEST MAPPED OBSERVATION WINS, and that is the opposite of the star rule
+ * on purpose. A star code stating 4 and then 5 is two readings of one durable
+ * fact, so the first stands and the disagreement goes to review. An
+ * accommodation type that changes is the provider RECLASSIFYING its own property
+ * — the boat really did become a hotel, or the listing was corrected — so the
+ * newest reading is simply what is true now, and pinning the oldest one would
+ * make the head a record of what the property used to be.
+ *
+ * There is deliberately no conflict dimension here for the same reason: a new
+ * conclusion is not a contradiction. History is not lost either — the previous
+ * conclusion stays as its own immutable revision, and the new one supersedes it.
+ *
+ * An UNMAPPED later observation is still no new information: it cannot erase an
+ * already-resolved fact, and it cannot manufacture one.
+ *
+ * Observations arrive in deterministic order — identity, `observed_at`, `id` —
+ * so "latest" is well defined even when two observations share a timestamp.
+ */
+export function resolveScopeFromObservations(
+  observations: readonly ObservationRow[],
+  policy: HospitalityScopePolicy,
+): ScopeResolution | null {
+  if (observations.length === 0) return null;
+
+  let decided: { obs: ObservationRow; outcome: HospitalityScopeOutcome } | null = null;
+  for (const obs of observations) {
+    const outcome = resolveScopeCode(policy, obs.source_property_type_code);
+    if (outcome === "unresolved") continue;
+    decided = { obs, outcome };
+  }
+
+  // Nothing reviewable. Cite the most recent observation as what was examined,
+  // so "we looked at this type and it means nothing to us yet" stays auditable
+  // rather than looking like we never looked.
+  const obs = decided?.obs ?? observations[observations.length - 1]!;
+  return {
+    identityId: obs.source_property_identity_id,
+    source: obs.source,
+    environment: obs.source_environment,
+    evidenceObservationId: obs.id,
+    policyProvider: policy.provider,
+    policyVersion: policy.version,
+    policyField: policy.field,
+    sourceValue: obs.source_property_type_code,
+    outcome: decided?.outcome ?? "unresolved",
+  };
+}
+
 export interface ResolutionCounts {
   identities: number;
   star: Record<StarOutcome, number>;
   starConflicts: number;
   location: { resolved: number } & Record<LocationUnresolvedReason, number>;
   locationConflicts: number;
+  scope: Record<HospitalityScopeOutcome, number>;
   /** Revisions actually APPENDED by this run. A replay must add none. */
-  revisionsCreated: { star: number; location: number };
+  revisionsCreated: { star: number; location: number; scope: number };
   /** Head pointers actually MOVED by this run. A replay must move none. */
-  pointerMoves: { star: number; location: number };
+  pointerMoves: { star: number; location: number; scope: number };
+  /**
+   * star outcome x scope outcome, so the two dimensions can be read together
+   * WITHOUT either one being treated as the other's gate.
+   */
+  starByScope: Record<string, number>;
 }
 
 function emptyCounts(): ResolutionCounts {
@@ -305,8 +403,10 @@ function emptyCounts(): ResolutionCounts {
       coordinates_plausibility_unknown: 0,
     },
     locationConflicts: 0,
-    revisionsCreated: { star: 0, location: 0 },
-    pointerMoves: { star: 0, location: 0 },
+    scope: { physical_hospitality: 0, not_physical_hospitality: 0, unresolved: 0 },
+    revisionsCreated: { star: 0, location: 0, scope: 0 },
+    pointerMoves: { star: 0, location: 0, scope: 0 },
+    starByScope: {},
   };
 }
 
@@ -323,7 +423,8 @@ async function loadObservations(
   }
   const res = await client.query<ObservationRow>(
     `select o.id, o.source_property_identity_id, o.source, o.source_environment,
-            o.source_classification_code, o.source_latitude::text as source_latitude,
+            o.source_classification_code, o.source_property_type_code,
+            o.source_latitude::text as source_latitude,
             o.source_longitude::text as source_longitude, o.source_coordinates_plausible,
             o.observed_at
        from public.source_property_observations o
@@ -360,6 +461,15 @@ const STAR_SEMANTIC_COLUMNS = [
   "conflict_state",
   "conflicting_observation_id",
   "conflicting_outcome",
+] as const;
+
+const SCOPE_SEMANTIC_COLUMNS = [
+  "evidence_observation_id",
+  "policy_provider",
+  "policy_version",
+  "policy_field",
+  "source_value",
+  "outcome",
 ] as const;
 
 const LOCATION_SEMANTIC_COLUMNS = [
@@ -493,11 +603,19 @@ export async function resolveDestination(
         "approved policy resolves nothing — see docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md §6.",
     );
   }
+  const scopePolicy = HOSPITALITY_SCOPE_POLICIES[opts.source];
+  if (!scopePolicy) {
+    throw new Error(
+      `No reviewed hospitality-scope policy for provider '${opts.source}'. See ` +
+        "docs/PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md.",
+    );
+  }
 
   const grouped = await loadObservations(client, opts);
   const counts = emptyCounts();
   const stars: StarResolution[] = [];
   const locations: LocationResolution[] = [];
+  const scopes: ScopeResolution[] = [];
 
   for (const observations of grouped.values()) {
     counts.identities += 1;
@@ -516,6 +634,18 @@ export async function resolveDestination(
       if (location.conflictObservationId) counts.locationConflicts += 1;
       locations.push(location);
     }
+
+    const scope = resolveScopeFromObservations(observations, scopePolicy);
+    if (scope) {
+      counts.scope[scope.outcome] += 1;
+      scopes.push(scope);
+      // The two dimensions are reported TOGETHER and composed by neither. A
+      // 5-star candidate whose type is unresolved is a hold, not an exclusion.
+      if (star) {
+        const key = `${star.outcome}|${scope.outcome}`;
+        counts.starByScope[key] = (counts.starByScope[key] ?? 0) + 1;
+      }
+    }
   }
 
   if (!opts.apply) return counts;
@@ -524,6 +654,7 @@ export async function resolveDestination(
   try {
     const starHeads = await loadHeads(client, "public.source_property_star_resolutions");
     const locationHeads = await loadHeads(client, "public.source_property_location_resolutions");
+    const scopeHeads = await loadHeads(client, "public.source_property_scope_resolutions");
 
     for (const s of stars) {
       const result = await appendRevision(client, {
@@ -572,6 +703,27 @@ export async function resolveDestination(
       });
       if (result.revisionCreated) counts.revisionsCreated.location += 1;
       if (result.pointerMoved) counts.pointerMoves.location += 1;
+    }
+
+    for (const sc of scopes) {
+      const result = await appendRevision(client, {
+        revisionTable: "public.source_property_scope_resolution_revisions",
+        headTable: "public.source_property_scope_resolutions",
+        identityColumns: ["source_property_identity_id", "source", "source_environment"],
+        semanticColumns: SCOPE_SEMANTIC_COLUMNS,
+        identityValues: [sc.identityId, sc.source, sc.environment],
+        semanticValues: [
+          sc.evidenceObservationId,
+          sc.policyProvider,
+          sc.policyVersion,
+          sc.policyField,
+          sc.sourceValue,
+          sc.outcome,
+        ],
+        supersedesRevisionId: scopeHeads.get(sc.identityId) ?? null,
+      });
+      if (result.revisionCreated) counts.revisionsCreated.scope += 1;
+      if (result.pointerMoved) counts.pointerMoves.scope += 1;
     }
 
     await client.query("commit");

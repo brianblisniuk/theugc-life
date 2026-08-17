@@ -245,6 +245,7 @@ function obs(over: Record<string, unknown> = {}) {
     source: SOURCE,
     source_environment: "evaluation",
     source_classification_code: pick<string | null>("code", "5EST"),
+    source_property_type_code: pick<string | null>("typeCode", "H"),
     source_latitude: pick<string | null>("lat", "-8.5"),
     source_longitude: pick<string | null>("lon", "115.2"),
     source_coordinates_plausible: pick<boolean | null>("plausible", true),
@@ -342,6 +343,39 @@ d("pre-publication resolution (0028)", () => {
       expect(star([obs({ code: null })])!.outcome).toBe("unresolved");
       // …and still cites what it examined, so "we looked" stays auditable.
       expect(star([obs({ code: null })])!.evidenceObservationId).toBe("obs-1");
+    });
+
+    it("matches provider codes EXACTLY — no trimming, no normalisation", () => {
+      // 0028's trigger compares `mapping.source_code = revision.source_value`
+      // against the stored observation verbatim. If TypeScript trimmed, `'5EST '`
+      // would resolve exact_five in a preview and unresolved in Postgres — two
+      // different truths for one candidate, one of them publishable.
+      expect(star([obs({ code: "5EST" })])!.outcome).toBe("exact_five");
+      for (const malformed of [" 5EST", "5EST ", " 5EST ", "\t5EST", "5est", "", "   "]) {
+        expect(star([obs({ code: malformed })])!.outcome, JSON.stringify(malformed)).toBe(
+          "unresolved",
+        );
+      }
+      expect(star([obs({ code: null })])!.outcome).toBe("unresolved");
+    });
+
+    it("a malformed code PERSISTED in the evidence can only resolve to unresolved", async () => {
+      const f = await fixture({ categoryCode: "5EST " });
+      await expect(
+        insertStar(f, { sourceValue: "5EST ", outcome: "exact_five", starValue: 5 }),
+      ).rejects.toThrow(/never acquires a meaning by accident/i);
+      const id = await insertStar(f, {
+        sourceValue: "5EST ",
+        outcome: "unresolved",
+        starValue: null,
+      });
+      // The evidence string is preserved exactly as the provider gave it.
+      const rows = await adminQuery<{ v: string }>(
+        `select source_value as v from public.source_property_star_resolution_revisions
+          where id = $1`,
+        [id],
+      );
+      expect(rows[0]!.v).toBe("5EST ");
     });
 
     it("does not fall back to any other field when the code is unresolved", () => {

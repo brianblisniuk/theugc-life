@@ -39,15 +39,24 @@ export interface ClassificationPolicy {
  *
  * Everything unknown is `unresolved`, which means REVIEW — and is explicitly not
  * the same fact as "below scope" (D061 §9).
+ *
+ * **The match is EXACT.** This function deliberately does not trim, upper-case or
+ * otherwise normalise, because the database does not either: 0028's trigger
+ * compares `mapping.source_code = revision.source_value`, and `source_value` must
+ * equal the cited observation's stored code verbatim. Normalising here would make
+ * `'5EST '` resolve to `exact_five` in a preview and to `unresolved` in Postgres —
+ * one semantics for the resolver, another for the persisted truth.
+ *
+ * A provider code is an IDENTIFIER, not free-form text. A malformed one is
+ * evidence that something is wrong upstream, and turning it into a valid code
+ * would hide exactly the thing worth seeing.
  */
 export function classifyProviderCode(
   policy: ClassificationPolicy,
   code: string | null | undefined,
 ): StarEligibility {
   if (code === null || code === undefined) return "unresolved";
-  const trimmed = code.trim();
-  if (trimmed === "") return "unresolved";
-  return policy.mappings[trimmed] ?? "unresolved";
+  return policy.mappings[code] ?? "unresolved";
 }
 
 /** Does this outcome put a property inside V1 scope? Exactly 4 or exactly 5. */
