@@ -25,8 +25,9 @@ export const HOTELBEDS_CLASSIFICATION_POLICY: ClassificationPolicy = {
     "property-type label is unresolved. See docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md.",
   mappings: {
     // ---- APPROVED: plain hotel star classifications, exactly 4 or exactly 5 --
-    // `*LUX` is a luxury sub-grade WITHIN a star level, not an increment: the
-    // master encodes half-steps separately as H4_5 / H5_5.
+    // Each of these names an exact star count in the provider's own master. The
+    // `*LUX` pair states the count AND a LUXURY qualifier; the count is what the
+    // mapping reads, and no inference is needed beyond the master's own wording.
     "4EST": "exact_four", // 4 STARS
     "4LUX": "exact_four", // 4 STARS LUXURY
     "5EST": "exact_five", // 5 STARS

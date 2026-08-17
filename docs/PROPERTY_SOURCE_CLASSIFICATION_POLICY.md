@@ -93,9 +93,9 @@ Bali/Dubai category distributions from the same evaluation.
 Four codes. Each states a plain hotel star count in the provider's own master,
 in the star groups (`GRUPO4` / `GRUPO5`), with no competing register.
 
-`4LUX` and `5LUX` add a luxury qualifier **within** a star level rather than
-moving between levels — the master encodes half-steps separately (`H4_5`,
-`H5_5`), which is what makes "luxury" a sub-grade rather than an increment.
+`4LUX` and `5LUX` are approved on the master's explicit wording: it names an
+exact star count — "4 STARS", "5 STARS" — plus a `LUXURY` qualifier. The count is
+what the mapping reads. No further inference is required or made.
 
 ### 5.2 Classified, but not V1 scope
 
@@ -138,12 +138,13 @@ established as equivalent to the ordinary hotel scale:
 > classification. Unresolved.
 
 > **`SUP`** ("SUPERIOR 4\*", `simpleCode 4`, `GRUPO4`) is the closest call left
-> unresolved. Its description names 4\*, and the master encodes 4.5 separately as
-> `H4_5`, which argues "superior" is a sub-grade like `4LUX`. It is left
-> unresolved because no reviewed evidence in this repository establishes that
-> reading, and D066 requires a mapping to rest on evidence rather than on a
-> plausible argument. **It is the first candidate for policy v2**, and approving
-> it is a one-line change with a reviewer's name on it.
+> unresolved. Its description names 4\*, so there is a plausible reading in which
+> "superior" is a sub-grade and the code means exactly four. It is left
+> unresolved because **plausible is not reviewed**: nothing in this repository
+> establishes what "superior" denotes for this provider, and D066 requires a
+> mapping to rest on evidence rather than on an argument. **It is the first
+> candidate for policy v2**, and approving it is a one-line change with a
+> reviewer's name on it.
 
 ### 5.4 What this does NOT change
 

@@ -8,7 +8,7 @@ Governing contract:
 [`PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
 (D060–D064). Governing decisions: D054, D055.
 
-> ## CURRENT RUN STATUS (2026-08-16)
+> ## CURRENT RUN STATUS (updated 2026-08-17)
 >
 > **HBX / Hotelbeds source evaluation: COMPLETE BY DIMENSION.**
 >
@@ -21,11 +21,29 @@ Governing contract:
 > | Location source | **APPROVED** |
 > | Media source | **APPROVED FOR TECHNICAL INTEGRATION** — production/commercial rights review pending |
 > | Contact enrichment | **USEFUL / PARTIALLY SUITABLE** |
-> | Canonical D060 classification | **NOT APPROVED — REQUIRES SECONDARY VERIFICATION** |
-> | Multi-source coverage comparison | **PENDING SECOND SOURCE** |
+> | Canonical D060 classification | **APPROVED — through the reviewed provider-specific `categoryCode` policy (D066)** |
+> | Source infrastructure (migration `0027`) | **BUILT** |
+> | Cached-evaluation ingestion writer | **BUILT** — survived the real Bali/Dubai replay |
+> | Production ingestion | **NOT STARTED** |
+> | Multi-source COVERAGE-UNIVERSE comparison | **PENDING SECOND SOURCE** |
 > | Canonical promotion into `hotels` | **NONE** |
+> | Star resolver / D062 gate | **NOT STARTED** |
 > | Coverage Engine | **NOT STARTED** |
 > | Bali / Dubai destination coverage | **NOT COMPLETE** |
+>
+> **On the classification row.** It previously read *NOT APPROVED — REQUIRES
+> SECONDARY VERIFICATION*. **D066 supersedes that**: canonical classification is
+> theugc.life's resolved product truth backed by accepted source evidence, and one
+> approved provider is sufficient when a reviewed policy maps the exact code. The
+> approved mapping — `4EST`/`4LUX` → exactly four, `5EST`/`5LUX` → exactly five —
+> is [`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md) §5.
+>
+> **`simpleCode` alone remains UNUSABLE as stars.** That PR #21 finding is
+> unchanged and is precisely why the approved mapping reads `categoryCode`.
+>
+> **The pending second source is about the COVERAGE UNIVERSE** — unique inventory
+> and blind-spot discovery — **not** star validation. No property needs a second
+> source to be classified.
 >
 > Evidence, metrics and method:
 > [`evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md`](evaluations/PROPERTY_SOURCE_BAKEOFF_BALI_DUBAI_2026-08.md).
@@ -55,9 +73,11 @@ constraints.
 
 **No single global provider winner is chosen in this document**, and none is
 needed. Sources are approved BY DIMENSION: a provider can be an approved
-inventory, location and media source while its classification requires secondary
-verification. Booking, Expedia, Google and every other candidate remain
-unevaluated live. The purpose is to make each decision defensible rather than
+inventory, location and media source while its classification is assessed
+separately — and, under D066, a provider whose code semantics genuinely do not
+support standalone resolution may still receive a *requires corroboration*
+verdict on that dimension alone. Booking, Expedia, Google and every other
+candidate remain unevaluated live. The purpose is to make each decision defensible rather than
 intuitive.
 
 The output is a comparison, not a procurement. Contracts, pricing and licensing
@@ -265,23 +285,44 @@ determine and record:
 
 ### 8.1 The verdict is explicit
 
-Each provider's star field must be recorded as one of:
+Each provider's classification field must be recorded as one of:
 
-- **SUITABLE** as evidence for the hospitality star-classification contract;
+- **APPROVED FOR STANDALONE RESOLUTION** — a reviewed provider policy maps
+  specific codes/values to an unambiguous exact classification, so this provider
+  alone resolves those properties (D066);
 - **UNSUITABLE**;
-- **REQUIRES SECONDARY VERIFICATION** — usable only alongside another source.
+- **REQUIRES CORROBORATION** — the semantics do not support standalone
+  resolution, so a value is usable only alongside another source.
 
 A field that cannot be shown suitable is not usable to publish a hotel, because
 a 4/5-star classification without defensible provenance fails condition 7 of the
 publishability contract.
+
+> **Amended by D066 (2026-08-17).** The middle verdict used to be *REQUIRES
+> SECONDARY VERIFICATION* and was applied as a **universal** rule — every
+> property needed a second, ideally official, source. That is withdrawn.
+> Provenance is satisfied by a reviewed provider policy, and the verdict is now
+> per-provider: a genuinely weak provider can still land in **REQUIRES
+> CORROBORATION**, but that is a finding about *that provider's semantics*, not a
+> default.
+>
+> **Current verdicts.** Hotelbeds: **APPROVED FOR STANDALONE RESOLUTION** on the
+> four reviewed `categoryCode` values, with every other register unresolved
+> ([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)).
+> Its `simpleCode` remains **UNSUITABLE** and always will — it conflates keys,
+> aparthotels, hostels and "without official category" into one number. Every
+> other provider is unevaluated.
 
 **Guest and user review scores remain prohibited** as star evidence in every
 case, however the provider labels them (coverage contract §2.1). A 0–5 float that
 moves when guests write reviews is a satisfaction measurement, not a
 classification, and no amount of field naming changes that.
 
-**Do not choose the final authority hierarchy here.** This evidence is what the
-later hierarchy decision (D060) will be made from.
+**There is no authority hierarchy to choose** (D066): a reviewed provider policy
+resolves classification, and two approved providers that disagree go to REVIEW
+rather than being ranked. What this section still requires is the per-provider
+semantic record above. That record is what a provider's classification policy is
+built from.
 
 ---
 
@@ -291,12 +332,15 @@ later hierarchy decision (D060) will be made from.
 2. an explicit recommendation — primary / secondary / union — with reasoning
    traceable to those metrics;
 3. the open items the evaluation resolved, and those it did not;
-4. **per-provider star semantics and provenance findings (§8)**, each with an
-   explicit SUITABLE / UNSUITABLE / REQUIRES-SECONDARY-VERIFICATION verdict, and
-   a proposed star-source authority hierarchy built from them (coverage contract
-   §8);
-5. a proposed entity-resolution threshold policy, for the same reason (coverage
-   contract §12.2);
+4. **per-provider classification semantics and provenance findings (§8)**, each
+   with an explicit APPROVED-FOR-STANDALONE-RESOLUTION / UNSUITABLE /
+   REQUIRES-CORROBORATION verdict, and — for an approved provider — the reviewed
+   code mapping that becomes its classification policy (D066). *No star-source
+   authority hierarchy is produced: D066 established there is none to rank.*
+5. the entity-resolution EVIDENCE dimensions observed per provider (name, domain,
+   address, phone, brand, coordinate distance) and how often each is available.
+   **Not a universal match threshold** — D063 §12.2 refuses to invent one, and
+   this block does not;
 6. licensing and usage constraints that require a decision before any production
    ingestion.
 

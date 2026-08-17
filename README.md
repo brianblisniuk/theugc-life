@@ -39,23 +39,28 @@ identity, stars and coordinates — both with provenance — and **without** a p
 a contact or any intelligence. A destination is _coverage complete_ only when
 zero candidates in its universe remain unresolved. See
 [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md)
-(D060–D064). No provider, geocoder or ingestion is chosen; the bake-off is
-specified in
+(D060–D064, amended by D066). **Hotelbeds is the approved Source A** for
+inventory and location, and is approved for D060 classification only through its
+reviewed `categoryCode` policy
+([`docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)).
+No geocoder is chosen, and a second inventory source is still pending for
+coverage-universe comparison. Evidence and method:
 [`docs/PROPERTY_SOURCE_EVALUATION.md`](docs/PROPERTY_SOURCE_EVALUATION.md).
 
-| Question                                            | Where it is answered                                                                                                 |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| What is the product?                                | [`docs/PRD.md`](docs/PRD.md) §1                                                                                      |
-| What is already built?                              | [`docs/PRD.md`](docs/PRD.md) §30.0, [`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](docs/audits/CORE_V1_AUDIT_CLOSEOUT.md) |
-| What phase are we entering?                         | [`docs/PRD.md`](docs/PRD.md) §30.0 — **Sprint 3 = Product Experience**                                               |
-| What does A2 mean, and what is locked vs open?      | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md)                                                               |
-| What is explicitly out of Sprint 3A scope?          | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §23                                                           |
-| What does each plan actually include?               | [`docs/PRD.md`](docs/PRD.md) §5.3.1                                                                                  |
-| What still needs building to match the contract?    | [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)                           |
-| What counts as a hotel, and when is it publishable? | [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md)                           |
-| What does "all hotels in a destination" mean?       | [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md) §3–§4                     |
-| Which inventory provider do we use?                 | Undecided — [`docs/PROPERTY_SOURCE_EVALUATION.md`](docs/PROPERTY_SOURCE_EVALUATION.md)                               |
-| Why is a decision the way it is?                    | [`docs/DECISIONS.md`](docs/DECISIONS.md)                                                                             |
+| Question                                            | Where it is answered                                                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| What is the product?                                | [`docs/PRD.md`](docs/PRD.md) §1                                                                                          |
+| What is already built?                              | [`docs/PRD.md`](docs/PRD.md) §30.0, [`docs/audits/CORE_V1_AUDIT_CLOSEOUT.md`](docs/audits/CORE_V1_AUDIT_CLOSEOUT.md)     |
+| What phase are we entering?                         | [`docs/PRD.md`](docs/PRD.md) §30.0 — **Sprint 3 = Product Experience**                                                   |
+| What does A2 mean, and what is locked vs open?      | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md)                                                                   |
+| What is explicitly out of Sprint 3A scope?          | [`docs/VISUAL_DIRECTION.md`](docs/VISUAL_DIRECTION.md) §23                                                               |
+| What does each plan actually include?               | [`docs/PRD.md`](docs/PRD.md) §5.3.1                                                                                      |
+| What still needs building to match the contract?    | [`docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md`](docs/V1_CONTRACT_IMPLEMENTATION_BACKLOG.md)                               |
+| What counts as a hotel, and when is it publishable? | [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md)                               |
+| What does "all hotels in a destination" mean?       | [`docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md`](docs/PROPERTY_CONTENT_COVERAGE_CONTRACT.md) §3–§4                         |
+| Which inventory provider do we use?                 | Hotelbeds = Source A; second source pending — [`docs/PROPERTY_SOURCE_EVALUATION.md`](docs/PROPERTY_SOURCE_EVALUATION.md) |
+| How does a property get its star classification?    | [`docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md) (D066)                  |
+| Why is a decision the way it is?                    | [`docs/DECISIONS.md`](docs/DECISIONS.md)                                                                                 |
 
 > The product specification in [`docs/`](docs/) is the source of truth.
 > `docs/PRD.md` is the master; the other docs add implementation detail and must
@@ -247,7 +252,12 @@ intelligence split is **implemented** — migration `0026` removed `reply_rate`
 from the public projection and added the entitlement-gated premium projection
 (D057–D059). What remains from that backlog is the Sun accent and Archivo.
 
-The V1 **property** contract is closed (D060–D064) and deliberately
-**unimplemented**: no provider, no geocoder, no media table, no coverage engine.
-The next block evaluates inventory sources against Bali and Dubai before anything
-is ingested.
+The V1 **property** contract is closed (D060–D064, amended by D066) and partly
+built. **Done:** the Hotelbeds source evaluation against Bali and Dubai;
+migration `0027`'s source infrastructure — runs, durable source identities,
+append-only observations; and a cached-evaluation ingestion writer that replayed
+3,275 Bali and 835 Dubai records offline into a disposable database with exact
+aggregate parity. **Not built:** production ingestion, the star resolver, the
+D062 promotion gate, Coverage Engine, media, and any geocoder. Nothing has been
+promoted into `hotels`, and a second inventory source is still pending for
+coverage-universe comparison — not for star validation.

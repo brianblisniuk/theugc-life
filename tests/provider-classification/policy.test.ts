@@ -159,10 +159,25 @@ describe("E. no two-source requirement exists", () => {
     expect(classifyProviderCode.length).toBe(2);
   });
 
-  it("treats a first approved observation as resolving, not merely corroborating", () => {
+  it("treats a first approved observation as RESOLVING, not merely corroborating", () => {
+    // The distinction matters: one approved provider is sufficient, so this
+    // observation classified the property. There was no prior value for it to
+    // agree with, and calling it "corroborated" would describe the single-source
+    // case as though a second source had confirmed it.
     const first = reconcile("unresolved", "exact_five");
-    expect(first).toEqual({ state: "corroborated", value: "exact_five" });
+    expect(first).toEqual({ state: "resolved", value: "exact_five" });
     expect(isV1Eligible((first as { value: "exact_five" }).value)).toBe(true);
+  });
+
+  it("keeps FIRST RESOLUTION and CORROBORATION as different states", () => {
+    expect(reconcile("unresolved", "exact_four").state).toBe("resolved");
+    expect(reconcile("exact_four", "exact_four").state).toBe("corroborated");
+    // A first out-of-scope classification is also a resolution — "confirmed
+    // 3-star" is a decided fact, not a pending one.
+    expect(reconcile("unresolved", "classified_not_v1_scope")).toEqual({
+      state: "resolved",
+      value: "classified_not_v1_scope",
+    });
   });
 
   it("requires no registry or authority input to reach a decision", () => {
@@ -197,11 +212,13 @@ describe("F. conflicting observations are never averaged", () => {
     expect(outcome).toHaveProperty("existing", "exact_five");
   });
 
-  it("corroborates agreement without changing the value", () => {
+  it("corroborates agreement with an EXISTING value, without changing it", () => {
     expect(reconcile("exact_five", "exact_five")).toEqual({
       state: "corroborated",
       value: "exact_five",
     });
+    // Corroboration requires something to corroborate.
+    expect(reconcile("unresolved", "exact_five").state).not.toBe("corroborated");
   });
 
   it("lets an unresolved second source change nothing", () => {

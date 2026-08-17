@@ -19,10 +19,10 @@ lives under [Chronological attempt history](#chronological-attempt-history).**
 | Live extraction | **DONE for Bali (BAI) and Dubai (DXB)** — static content only |
 | Hotelbeds daily quota | **11 confirmed · 0 ambiguous · 39 safe remaining of 50** |
 | Geography mapping | **BAI = Bali, DXB = Dubai**, approved by external review for this bake-off |
-| D060 canonical stars from Hotelbeds | **REQUIRES SECONDARY VERIFICATION** — locked by external review |
+| D060 canonical stars from Hotelbeds | ~~**REQUIRES SECONDARY VERIFICATION**~~ → **SUPERSEDED 2026-08-17 by D066: APPROVED through the reviewed `categoryCode` policy** (`4EST`/`4LUX`/`5EST`/`5LUX`). `simpleCode` remains unusable. |
 | Promotion into `hotels` | **NONE.** No Supabase, no canonical write, no Coverage Engine |
 | **HBX/Hotelbeds source evaluation** | **COMPLETE BY DIMENSION** (verdicts below) |
-| Multi-source coverage comparison | **PENDING SECOND SOURCE** |
+| Multi-source COVERAGE-UNIVERSE comparison | **PENDING SECOND SOURCE** — for unique inventory and blind spots, NOT for star validation |
 | Bali or Dubai coverage complete? | **NO.** D061 closure is untouched |
 
 **What "geography approved" does and does not mean.** It means *provider
@@ -82,6 +82,13 @@ state.
 `PROVIDER_CLASSIFICATION_EVIDENCE`, never `CANONICAL_D060_CLASSIFICATION_EVIDENCE`.**
 `simpleCode`, category `group` and free-text `description` are each rejected as
 canonical provenance. Everything in this section is provider-apparent.
+
+> **Still true under D066, and worth reading precisely.** An observation remains
+> source evidence and never canonical *by itself* — a provider cannot declare its
+> own row canonical (D065). What D066 changed is that a **reviewed policy of
+> ours**, applied by the star resolver, can turn specific `categoryCode` values
+> into a canonical classification without a second source. `simpleCode`, `group`
+> and `description` remain rejected exactly as stated here.
 
 | | Bali | Dubai |
 |---|---|---|
@@ -579,11 +586,21 @@ D060 star evidence.** It is a guest-satisfaction score.
 
 # STILL BLOCKED / UNKNOWN
 
-### Canonical D060 classification — REQUIRES SECONDARY VERIFICATION
+### ~~Canonical D060 classification — REQUIRES SECONDARY VERIFICATION~~ — SUPERSEDED
 
-Locked. See CURRENT FINDINGS §3. No exact-four or exact-five **canonical**
-inventory count exists for either destination, and none may be manufactured from
-Hotelbeds alone.
+> **SUPERSEDED 2026-08-17 (D066).** This block read: *"Locked. No exact-four or
+> exact-five canonical inventory count exists for either destination, and none
+> may be manufactured from Hotelbeds alone."*
+>
+> The **measurement** stands — this evaluation produced no canonical count, and
+> still has not. What is withdrawn is the claim that one may never be produced
+> *from Hotelbeds alone*: under D066 a reviewed provider policy resolves
+> classification, and Hotelbeds now has one
+> ([`PROPERTY_SOURCE_CLASSIFICATION_POLICY.md`](../PROPERTY_SOURCE_CLASSIFICATION_POLICY.md)).
+>
+> What is still genuinely blocked is that **no star resolver exists yet**, so no
+> canonical classification has been resolved for any property. That is an
+> unbuilt component, not a missing second source.
 
 ### Coverage closure — NOT ESTABLISHED FOR ANY DESTINATION
 

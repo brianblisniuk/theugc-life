@@ -56,17 +56,25 @@ export function isV1Eligible(outcome: StarEligibility): boolean {
 }
 
 /**
- * Combine a NEW approved observation with an ALREADY RESOLVED classification.
+ * Combine a new approved observation with whatever classification exists.
  *
- * D066's second-source rule, and the reason it is a function rather than a
- * comment: agreement corroborates, disagreement goes to REVIEW, and nothing
- * averages. There is no arithmetic here at all, which is the point — 4 and 5
- * cannot produce 4.5 because no code path can add them.
+ * Four outcomes, and the distinction between the first two is the point:
+ * a FIRST approved observation **resolves** the classification, it does not
+ * corroborate one. Under D066 one approved provider is sufficient, so there is
+ * nothing prior for it to agree with — conflating the two would describe the
+ * single-source case as if a second source had confirmed it.
  *
- * This is EXCEPTION HANDLING. A second source is never required to classify a
- * property in the first place.
+ * After that: agreement corroborates, disagreement goes to REVIEW, and nothing
+ * averages. There is no arithmetic in this function at all, which is deliberate
+ * — 4 and 5 cannot produce 4.5 because no code path can add them.
+ *
+ * Everything past the first resolution is EXCEPTION HANDLING. A second source is
+ * never required to classify a property in the first place.
  */
 export type ConflictOutcome =
+  /** FIRST resolution: nothing was classified before, and now it is. */
+  | { state: "resolved"; value: StarEligibility }
+  /** A later source AGREES with a classification that already existed. */
   | { state: "corroborated"; value: StarEligibility }
   | { state: "conflict"; existing: StarEligibility; incoming: StarEligibility }
   | { state: "no_change"; value: StarEligibility };
@@ -75,7 +83,11 @@ export function reconcile(existing: StarEligibility, incoming: StarEligibility):
   // An unresolved incoming observation tells us nothing; it cannot unset a
   // resolved value, and it cannot manufacture a conflict.
   if (incoming === "unresolved") return { state: "no_change", value: existing };
-  if (existing === "unresolved") return { state: "corroborated", value: incoming };
+  // FIRST RESOLUTION, not corroboration. One approved provider is sufficient
+  // (D066), so this observation is what classified the property — there was no
+  // prior value for it to agree with, and calling it "corroborated" would imply
+  // a second source did the work that the first one actually did.
+  if (existing === "unresolved") return { state: "resolved", value: incoming };
   if (existing === incoming) return { state: "corroborated", value: existing };
   // Two approved sources disagree. The canonical value is NOT flipped and NOT
   // averaged: it goes to a human, per D066.
