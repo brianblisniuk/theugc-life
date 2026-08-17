@@ -102,6 +102,13 @@ const CONTRACT: Record<string, Expected> = {
   source_match_candidates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   hotel_source_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+
+  // Pre-publication resolution (0028). NOT append-only: a resolution is the
+  // CURRENT answer and is upserted as evidence accumulates, so the client roles
+  // hold the full capability set and RLS reduces a creator to zero rows. The
+  // evidence they cite stays append-only one level down.
+  source_property_star_resolutions: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  source_property_location_resolutions: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   hotel_claims: { anon: "", authenticated: "SU", serviceRole: "all" },
   contact_signals: { anon: "", authenticated: "SI", serviceRole: "all" },
   verification_events: { anon: "", authenticated: "SI", serviceRole: "all" },
