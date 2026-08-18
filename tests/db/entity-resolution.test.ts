@@ -92,6 +92,7 @@ async function newRun(destinationId: string): Promise<string> {
 }
 
 interface ObservationFields {
+  observedAt?: string;
   name?: string | null;
   website?: string | null;
   address?: string | null;
@@ -120,7 +121,7 @@ async function identity(
        (source_run_id, source_property_identity_id, source, source_environment, observed_at,
         source_name, source_website_url, source_address, source_phone, source_phone_type,
         source_brand_code, source_latitude, source_longitude, source_coordinates_plausible)
-     values ($1,$2,$3,'evaluation', now(), $4,$5,$6,$7,$8,$9,$10,$11,
+     values ($1,$2,$3,'evaluation', coalesce($12::timestamptz, now()), $4,$5,$6,$7,$8,$9,$10,$11,
              case when $10::numeric is null then null else true end)`,
     [
       runId,
@@ -134,6 +135,7 @@ async function identity(
       fields.brand ?? null,
       fields.lat ?? null,
       fields.lon ?? null,
+      fields.observedAt ?? null,
     ],
   );
   return { identityId, runId, sourcePropertyId };
@@ -150,7 +152,7 @@ async function addObservation(
        (source_run_id, source_property_identity_id, source, source_environment, observed_at,
         source_name, source_website_url, source_address, source_phone, source_phone_type,
         source_brand_code, source_latitude, source_longitude, source_coordinates_plausible)
-     values ($1,$2,$3,'evaluation', now() + interval '1 second', $4,$5,$6,$7,$8,$9,$10,$11,
+     values ($1,$2,$3,'evaluation', coalesce($12::timestamptz, now() + interval '1 second'), $4,$5,$6,$7,$8,$9,$10,$11,
              case when $10::numeric is null then null else true end)`,
     [
       runId,
@@ -164,6 +166,7 @@ async function addObservation(
       fields.brand ?? null,
       fields.lat ?? null,
       fields.lon ?? null,
+      fields.observedAt ?? null,
     ],
   );
   if (fields.advanceCurrent !== false) {
@@ -1013,13 +1016,12 @@ d("pre-publication entity resolution (0030)", () => {
     });
 
     it("identical observed_at values are decided by last_seen_run_id, never UUID order", async () => {
-      const f = await identity({ name: "Pointer Old" });
-      const nextRun = await addObservation(f, { name: "Pointer Current" });
-      await adminQuery(
-        `update public.source_property_observations set observed_at='2026-08-17T00:00:00Z'
-          where source_property_identity_id=$1`,
-        [f.identityId],
-      );
+      const sameObservedAt = "2026-08-17T00:00:00Z";
+      const f = await identity({ name: "Pointer Old", observedAt: sameObservedAt });
+      const nextRun = await addObservation(f, {
+        name: "Pointer Current",
+        observedAt: sameObservedAt,
+      });
       const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
       await client.connect();
       try {

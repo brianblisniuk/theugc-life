@@ -42,6 +42,7 @@ async function observation(
   runId: string,
   observedAt: string,
   website = `https://${identityId}.example`,
+  name = `Preview Property ${identityId}`,
 ) {
   return (
     await adminQuery<{ id: string }>(
@@ -49,9 +50,9 @@ async function observation(
        (source_run_id,source_property_identity_id,source,source_environment,observed_at,
         source_name,source_website_url,source_property_type_code,source_classification_code,
         source_latitude,source_longitude,source_coordinates_plausible,source_payload_digest)
-     values ($1,$2,$3,$4,$5,'Preview Hotel',$7,'H','4EST',-8.5,115.2,true,$6)
+     values ($1,$2,$3,$4,$5,$8,$7,'H','4EST',-8.5,115.2,true,$6)
      returning id`,
-      [runId, identityId, source, environment, observedAt, `${key()}-digest`, website],
+      [runId, identityId, source, environment, observedAt, `${key()}-digest`, website, name],
     )
   )[0]!.id;
 }
@@ -66,8 +67,9 @@ async function foreignMachinePair(
   const a = await identity(source, environment, r);
   const b = await identity(source, environment, r);
   const shared = `https://${key()}.example`;
-  await observation(a, source, environment, r, "2026-08-17T00:00:00Z", shared);
-  await observation(b, source, environment, r, "2026-08-17T00:00:00Z", shared);
+  const pairName = `Foreign Pair ${key()}`;
+  await observation(a, source, environment, r, "2026-08-17T00:00:00Z", shared, pairName);
+  await observation(b, source, environment, r, "2026-08-17T00:00:00Z", shared, pairName);
   const [left, right] = a < b ? [a, b] : [b, a];
   await adminQuery(
     `insert into public.source_match_candidates
@@ -167,6 +169,58 @@ d("D062 preview real DB composition", () => {
       expect(preview!.conditions[9]!.evidence.observationId).toBe(currentObservation);
       expect(preview!.conditions[3]!.status).toBe("PASS");
       expect(before).toEqual(after);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("keeps a genuine selected-target entity conflict unresolved", async () => {
+    const r = await run("hotelbeds", "evaluation");
+    const target = await identity("hotelbeds", "evaluation", r);
+    const other = await identity("hotelbeds", "evaluation", r);
+    const sharedDomain = `https://${key()}.example`;
+    const sharedName = `Real Conflict ${key()}`;
+    await observation(
+      target,
+      "hotelbeds",
+      "evaluation",
+      r,
+      "2026-08-17T00:00:00Z",
+      sharedDomain,
+      sharedName,
+    );
+    await observation(
+      other,
+      "hotelbeds",
+      "evaluation",
+      r,
+      "2026-08-17T00:00:00Z",
+      sharedDomain,
+      sharedName,
+    );
+    const [left, right] = target < other ? [target, other] : [other, target];
+    await adminQuery(
+      `insert into public.source_match_candidates
+         (source_property_identity_id,candidate_source_property_identity_id,source,
+          source_environment,candidate_kind,match_method,status)
+       values ($1,$2,'hotelbeds','evaluation','source_identity',
+               'blocking:exact_domain+name_exact','pending')`,
+      [left, right],
+    );
+
+    const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await client.connect();
+    try {
+      const [preview] = await loadPreviewResults(client, {
+        source: "hotelbeds",
+        environment: "evaluation",
+        asOf: "2026-08-17",
+        identityId: target,
+        sourcePropertyId: null,
+        limit: 1,
+      });
+      expect(preview!.conditions[10]!.status).toBe("UNRESOLVED");
+      expect(preview!.conditions[10]!.reason).toBe("current_entity_conflict");
     } finally {
       await client.end();
     }
