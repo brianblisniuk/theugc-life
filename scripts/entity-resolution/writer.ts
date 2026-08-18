@@ -215,9 +215,10 @@ function agreeingDimensions(evidence: PairEvidence): number {
  * Generate and persist candidate evidence for one provider/environment.
  *
  * Idempotent: 0030's partial unique index makes a pair one row, the insert is
- * `on conflict do nothing`, and the evidence refresh only touches rows that are
- * still `pending` AND whose evidence actually differs. A replay over unchanged
- * observations therefore creates nothing and updates nothing.
+ * `on conflict do nothing`, and the evidence refresh only touches
+ * generator-owned rows that are still `pending` AND whose evidence actually
+ * differs. A replay over unchanged observations therefore creates nothing and
+ * updates nothing.
  */
 export async function generateCandidates(
   client: Client,
@@ -292,9 +293,9 @@ export async function generateCandidates(
       }
 
       // The pair is already on record. Refresh its evidence only while it is
-      // still PENDING — rewriting the evidence under a decision a human already
-      // made would make the decision look as if it rested on facts that were
-      // not in front of them.
+      // generator-owned AND PENDING — rewriting the evidence under a decision a
+      // human already made would make the decision look as if it rested on facts
+      // that were not in front of them.
       // The pair is current again after the generator itself stood it down.
       // ONLY a row carrying the machine's own reason may be revived: a human
       // `superseded` decision has no reason recorded, and reviving it would
@@ -373,8 +374,9 @@ export async function generateCandidates(
     //
     // Three things this deliberately does NOT do: it deletes no row, it rewrites
     // no evidence (the reader can still see what the pair looked like when it
-    // stood), and it touches nothing a human decided — `match_method like
-    // 'blocking:%'` is the generator's own mark, and only `pending` is eligible.
+    // stood), and it touches nothing a human decided. Generator ownership is
+    // `candidate_kind = 'source_identity'` plus `match_method like
+    // 'blocking:%'`, and only a row still `pending` is eligible.
     const stood = await client.query(
       `update public.source_match_candidates set
          status = 'superseded', superseded_reason = 'no_current_blocking_rule',
