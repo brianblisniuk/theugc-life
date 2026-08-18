@@ -79,10 +79,18 @@ export function parseArgs(argv: readonly string[]): LifecycleArgs {
   if (!isValidIsoDate(asOf)) {
     throw new Error(`--as-of must be a real YYYY-MM-DD date; received ${JSON.stringify(asOf)}.`);
   }
-  const destinations = (get("destinations") ?? "bali,dubai")
-    .split(",")
-    .map((d) => d.trim())
-    .filter(Boolean);
+  // A destination names a set of artifacts to read, not a unit of work to repeat. Listing one
+  // twice (`--destinations bali,bali`) means the same artifacts, so it is normalised to one
+  // entry here — first occurrence wins, order is otherwise preserved. `persistIssueEvidence`
+  // refuses duplicate targets on its own; this only keeps the CLI's intent unambiguous.
+  const destinations = [
+    ...new Set(
+      (get("destinations") ?? "bali,dubai")
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean),
+    ),
+  ];
   return {
     provider: get("provider") ?? "hotelbeds",
     asOf,
@@ -144,7 +152,7 @@ export function buildReport(
       snapshot: property.snapshot,
       policy,
       asOf,
-      latestObservationId: property.currentObservationId,
+      currentObservationId: property.currentObservationId,
       hasCurrentObservation: property.currentObservationId !== null,
     });
     report.outcomes[evaluation.outcome] += 1;

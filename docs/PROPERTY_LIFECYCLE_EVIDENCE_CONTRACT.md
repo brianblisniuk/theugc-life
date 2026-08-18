@@ -15,13 +15,17 @@ default), D066.
 > **Does the latest complete provider evidence contain a CURRENT property-level
 > closure window for this source property, AS OF an explicit date?**
 
+"Latest" is not a measurement of time here: it is the observation the identity's
+`last_seen_run_id` points at (§7). Nothing in this layer picks an observation by
+timestamp or by id ordering.
+
 It does **not** answer "is the hotel active?", it does not answer "is this hotel
 permanently closed?", it publishes nothing, and it changes no canonical state.
 
 ```
 source property identity
         ↓
-latest observation                    (evidence, never canonical — D065)
+current observation                   (the identity's `last_seen_run_id`)
         ↓
 complete issue snapshot               "we extracted this observation's issues"
         ↓
@@ -92,9 +96,9 @@ is not positive proof of operation. A provider that has never said "this hotel i
 trading" has not said it, and the name is deliberately negative so no reader can
 borrow a claim the evidence does not carry.
 
-`unresolved` arises when: the latest observation has no complete snapshot; a
+`unresolved` arises when: the current observation has no complete snapshot; a
 mapped property-level closure has a missing, impossible or inverted date range;
-or lifecycle evidence cannot be tied to the latest observation. **Unknown is not
+or lifecycle evidence cannot be tied to the current observation. **Unknown is not
 `no_known_closure`.**
 
 ## 4. Completeness is its own fact
@@ -129,6 +133,22 @@ holding 3,275 Bali snapshots reported "3,275 already present, 0 would be
 created" while `--apply` went on to create all 835; and after a full apply, a
 replay preview still counted every incoming issue as created though apply writes
 none. Both modes now read the same plan, so their semantics cannot drift.
+
+#### 4.3 One observation is one planned write
+
+The plan holds **one item per target observation**, not one per input record.
+Otherwise a batch listing the same observation twice previews two creations while
+the apply inserts one and `on conflict do nothing` silently swallows the rest —
+the same preview/apply divergence 4.2 closes, arriving by a different door.
+`--destinations bali,bali` is the reachable version of this, and the CLI now
+normalises a repeated destination to one entry as well.
+
+Exact duplicates collapse to one item, deterministically. But if two inputs claim
+one observation and **disagree** about what to persist, the batch is refused
+before the first write (`MalformedIssueBatchError`) rather than resolved by
+position: an observation is immutable, its complete extraction is written once and
+never updated, so letting array order pick the winner would make row order decide
+the permanent record of what the provider said.
 
 ### 4.1 Complete means EVERY entry was represented
 

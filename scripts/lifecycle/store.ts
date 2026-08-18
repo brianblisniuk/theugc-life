@@ -7,6 +7,7 @@
  */
 import type { Client } from "pg";
 
+import { digestValue } from "../provider-ingestion/digest";
 import type { ExtractedIssueSnapshot } from "./extract";
 import type { IssueSnapshot, LifecyclePolicy } from "./policy";
 
@@ -39,6 +40,89 @@ export interface ExtractionCounts {
 }
 
 export const EXTRACTION_METHOD = "cached-artifact/hotelbeds/1.0.0" as const;
+
+/**
+ * Two inputs claim the same observation and disagree about what to write.
+ *
+ * Refused BEFORE any write, because there is no honest way to choose: picking
+ * the first or the last would let ARRAY ORDER decide which extraction becomes
+ * the permanent, append-only record of what the provider said.
+ */
+export class MalformedIssueBatchError extends Error {
+  constructor(
+    readonly observationId: string,
+    readonly variants: number,
+  ) {
+    super(
+      `Malformed batch: ${variants} different extractions target observation ${observationId}. ` +
+        "One observation may have exactly one complete extraction, and this batch does not say " +
+        "which. Nothing was written. Deduplicate the input — for example a repeated " +
+        "`--destinations` argument — or resolve the disagreement before extracting.",
+    );
+    this.name = "MalformedIssueBatchError";
+  }
+}
+
+/**
+ * What this input INTENDS to persist, as one comparable value.
+ *
+ * Everything that would reach a column: the provenance the snapshot claims, the
+ * count it asserts, and every issue row it would write, in order. Two inputs
+ * agreeing on all of it are the same instruction repeated; disagreeing on any of
+ * it is a contradiction, not a duplicate.
+ */
+function intendedWriteDigest(snapshot: ExtractedIssueSnapshot): string {
+  return digestValue({
+    sourceRunId: snapshot.sourceRunId,
+    sourcePropertyId: snapshot.sourcePropertyId,
+    wholeRecordPayloadDigest: snapshot.wholeRecordPayloadDigest,
+    providerIssueCount: snapshot.providerIssueCount,
+    issues: snapshot.issues,
+  });
+}
+
+/**
+ * ONE PLAN ITEM PER TARGET OBSERVATION.
+ *
+ * The write plan is only a preview of the apply if each observation appears in
+ * it once. It did not: a batch containing the same extraction twice planned two
+ * creations, while apply inserted one and let `on conflict do nothing` swallow
+ * the second — so `--destinations bali,bali` made the dry-run wrong by exactly
+ * one duplicate. Fixing that with arithmetic would be patching the symptom; the
+ * plan itself has to be a set.
+ *
+ * EXACT duplicates collapse deterministically — repeating an identical
+ * instruction is not a conflict, and the second one adds nothing.
+ *
+ * DISAGREEING duplicates FAIL CLOSED, before any write. Choosing one by input
+ * order would let array position decide which extraction becomes the permanent
+ * record of what the provider said.
+ */
+function collapseByObservation(
+  matched: readonly {
+    snapshot: ExtractedIssueSnapshot;
+    identityId: string;
+    observationId: string;
+  }[],
+): { snapshot: ExtractedIssueSnapshot; identityId: string; observationId: string }[] {
+  const byObservation = new Map<string, { item: (typeof matched)[number]; digests: Set<string> }>();
+
+  for (const item of matched) {
+    const digest = intendedWriteDigest(item.snapshot);
+    const existing = byObservation.get(item.observationId);
+    if (!existing) {
+      byObservation.set(item.observationId, { item, digests: new Set([digest]) });
+      continue;
+    }
+    existing.digests.add(digest);
+  }
+
+  for (const [observationId, { digests }] of byObservation) {
+    if (digests.size > 1) throw new MalformedIssueBatchError(observationId, digests.size);
+  }
+
+  return [...byObservation.values()].map((v) => v.item);
+}
 
 /**
  * Resolve `(source run, provider id, whole-record digest) -> THAT observation`.
@@ -172,6 +256,10 @@ export async function persistIssueEvidence(
     matched.push({ snapshot, ...target });
   }
 
+  // ONE PLAN ITEM PER OBSERVATION, before anything is counted or written.
+  // Throws on a contradictory duplicate, so a malformed batch writes nothing.
+  const plan = collapseByObservation(matched);
+
   // ONE WRITE PLAN, computed from THIS BATCH, consumed by both modes.
   //
   // The dry-run used to subtract a GLOBAL snapshot count from the batch size,
@@ -186,10 +274,10 @@ export async function persistIssueEvidence(
   // cannot drift — a dry-run is the apply, minus the writing.
   const present = await snapshotsPresentFor(
     client,
-    matched.map((m) => m.observationId),
+    plan.map((m) => m.observationId),
   );
 
-  for (const m of matched) {
+  for (const m of plan) {
     if (present.has(m.observationId)) {
       // An immutable observation already has its complete extraction. Apply
       // would insert nothing here, and neither would it write issue rows: it
@@ -213,7 +301,7 @@ export async function persistIssueEvidence(
 
   await client.query("begin");
   try {
-    for (const { snapshot, identityId, observationId } of matched) {
+    for (const { snapshot, identityId, observationId } of plan) {
       const inserted = await client.query<{ id: string }>(
         `insert into public.source_property_issue_snapshots
            (source_property_identity_id, source, source_environment, evidence_observation_id,

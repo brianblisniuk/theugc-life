@@ -2,7 +2,8 @@
  * Pre-publication lifecycle / closure evidence (migration 0031 + the evaluator).
  *
  * This layer answers ONE question — "does the latest complete provider evidence
- * contain a current property-level closure window, as of an explicit date?" —
+ * contain a current property-level closure window, as of an explicit date?",
+ * where "latest" is the observation the identity's `last_seen_run_id` points at —
  * and the suite is organised around the four ways that question gets corrupted:
  *
  *   1. `issueType = CLOSED` read as "the hotel is closed". The provider's own
@@ -40,8 +41,10 @@ import {
 import {
   loadEvaluableProperties,
   loadLifecyclePolicy,
+  MalformedIssueBatchError,
   persistIssueEvidence,
 } from "../../scripts/lifecycle/store";
+import { parseArgs } from "../../scripts/lifecycle/lifecycle";
 
 const d = describe.skipIf(!hasTestDb);
 const SOURCE = "hotelbeds";
@@ -251,7 +254,7 @@ async function evaluateFromDb(f: Fixture, asOf: string) {
       snapshot: mine.snapshot,
       policy,
       asOf,
-      latestObservationId: mine.currentObservationId,
+      currentObservationId: mine.currentObservationId,
       hasCurrentObservation: mine.currentObservationId !== null,
     });
   } finally {
@@ -685,7 +688,7 @@ d("pre-publication lifecycle evidence (0031)", () => {
   });
 
   // -----------------------------------------------------------------------
-  describe("currentness belongs to the LATEST observation", () => {
+  describe("currentness belongs to the observation the identity points at", () => {
     it("19. a lifted closure does NOT survive in a historical snapshot", async () => {
       const f = await property("Reopened");
       await persistSnapshot(f, f.observationId, [
@@ -709,7 +712,7 @@ d("pre-publication lifecycle evidence (0031)", () => {
       expect(historical[0]!.n).toBe("1");
     });
 
-    it("20. a latest observation with NO snapshot does not fall back to an older one", async () => {
+    it("20. a current observation with NO snapshot does not fall back to an older one", async () => {
       const f = await property("Stale evidence");
       await persistSnapshot(f, f.observationId, []);
       expect((await evaluateFromDb(f, "2026-08-17")).outcome).toBe("no_known_closure");
@@ -1843,6 +1846,173 @@ d("pre-publication lifecycle evidence (0031)", () => {
       expect(dry.issuesCreated).toBe(0);
       expect(dry.provenanceMismatches).toHaveLength(1);
       expect(dry.provenanceMismatches[0]!.reason).toBe("no_exact_observation_match");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // ONE observation => ONE planned operation. A write plan that lists the same
+  // target twice is not a plan: the preview counts two creations, the apply
+  // inserts one and `on conflict do nothing` eats the rest, and the two
+  // disagree. So the plan is built per OBSERVATION, not per input item.
+  describe("one observation is one planned write, never two", () => {
+    async function extractedFor(f: Fixture, issues: IssueInput[]) {
+      const digest = (
+        await adminQuery<{ source_payload_digest: string }>(
+          "select source_payload_digest from public.source_property_observations where id = $1",
+          [f.observationId],
+        )
+      )[0]!.source_payload_digest;
+      return {
+        sourcePropertyId: f.sourcePropertyId,
+        sourceRunId: f.runId,
+        wholeRecordPayloadDigest: digest,
+        providerIssueCount: issues.length,
+        issues: issues.map((i) => ({
+          issueCode: i.issueCode,
+          issueType: i.issueType,
+          dateFromRaw: i.dateFrom ?? null,
+          dateToRaw: i.dateTo ?? null,
+          providerOrder: i.providerOrder ?? null,
+          alternative: i.alternative ?? null,
+          description: null,
+        })),
+      };
+    }
+
+    async function persist(batch: unknown[], apply: boolean) {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        return await persistIssueEvidence(client, batch as never, {
+          source: SOURCE,
+          environment: "evaluation",
+          apply,
+        });
+      } finally {
+        await client.end();
+      }
+    }
+
+    /** Rows actually persisted FOR ONE observation — batch-scoped, not global. */
+    async function persistedFor(observationId: string) {
+      const rows = await adminQuery<{ snapshots: string; issues: string }>(
+        `select (select count(*)::text
+                   from public.source_property_issue_snapshots
+                  where evidence_observation_id = $1) as snapshots,
+                (select count(*)::text
+                   from public.source_property_issue_evidence e
+                   join public.source_property_issue_snapshots s on s.id = e.snapshot_id
+                  where s.evidence_observation_id = $1) as issues`,
+        [observationId],
+      );
+      return { snapshots: Number(rows[0]!.snapshots), issues: Number(rows[0]!.issues) };
+    }
+
+    const totals = async () => {
+      const rows = await adminQuery<{ snapshots: string; issues: string }>(
+        `select (select count(*)::text from public.source_property_issue_snapshots) as snapshots,
+                (select count(*)::text from public.source_property_issue_evidence) as issues`,
+      );
+      return rows[0]!;
+    };
+
+    it("A. an exact duplicate is ONE write in the preview and ONE write on apply", async () => {
+      const f = await property("Duplicated exactly");
+      const item = await extractedFor(f, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      const batch = [item, item];
+
+      const dry = await persist(batch, false);
+      // The bug this replaces: two items, two predicted creations, one actual row.
+      expect(dry.snapshotsCreated).toBe(1);
+      expect(dry.snapshotsAlreadyPresent).toBe(0);
+      expect(dry.issuesCreated).toBe(1);
+
+      const applied = await persist(batch, true);
+      expect(applied.snapshotsCreated).toBe(dry.snapshotsCreated);
+      expect(applied.snapshotsAlreadyPresent).toBe(dry.snapshotsAlreadyPresent);
+      expect(applied.issuesCreated).toBe(dry.issuesCreated);
+
+      expect(await persistedFor(f.observationId)).toEqual({ snapshots: 1, issues: 1 });
+    });
+
+    it("B. two inputs that DISAGREE about one observation are refused, and write nothing", async () => {
+      const f = await property("Duplicated in conflict");
+      const closed = await extractedFor(f, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      const open = await extractedFor(f, []);
+
+      const before = await totals();
+
+      // Neither order wins. Array position is not evidence about the provider.
+      await expect(persist([closed, open], false)).rejects.toBeInstanceOf(MalformedIssueBatchError);
+      await expect(persist([open, closed], false)).rejects.toBeInstanceOf(MalformedIssueBatchError);
+      await expect(persist([closed, open], true)).rejects.toBeInstanceOf(MalformedIssueBatchError);
+      await expect(persist([open, closed], true)).rejects.toBeInstanceOf(MalformedIssueBatchError);
+
+      // It fails CLOSED: refused before the first insert, in apply mode too.
+      expect(await totals()).toEqual(before);
+      expect(await persistedFor(f.observationId)).toEqual({ snapshots: 0, issues: 0 });
+
+      const err = await persist([closed, open], true).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MalformedIssueBatchError);
+      expect((err as MalformedIssueBatchError).observationId).toBe(f.observationId);
+      expect((err as MalformedIssueBatchError).message).toContain("Nothing was written");
+    });
+
+    it("C. `--destinations bali,bali` cannot become two targets", async () => {
+      expect(
+        parseArgs(["--as-of", "2026-08-18", "--destinations", "bali,bali"]).destinations,
+      ).toEqual(["bali"]);
+      expect(
+        parseArgs(["--as-of", "2026-08-18", "--destinations", "bali, bali ,dubai,dubai"])
+          .destinations,
+      ).toEqual(["bali", "dubai"]);
+      // Order of first appearance is preserved; dedup is not a sort.
+      expect(
+        parseArgs(["--as-of", "2026-08-18", "--destinations", "dubai,bali,dubai"]).destinations,
+      ).toEqual(["dubai", "bali"]);
+    });
+
+    it("D. replaying a duplicated batch reports one already-present, not two", async () => {
+      const f = await property("Duplicated then replayed");
+      const item = await extractedFor(f, [
+        { issueCode: "SPA", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-02-01" },
+      ]);
+      await persist([item, item], true);
+
+      const replayDry = await persist([item, item], false);
+      expect(replayDry.snapshotsCreated).toBe(0);
+      expect(replayDry.snapshotsAlreadyPresent).toBe(1);
+      expect(replayDry.issuesCreated).toBe(0);
+
+      const replay = await persist([item, item], true);
+      expect(replay.snapshotsCreated).toBe(0);
+      expect(replay.snapshotsAlreadyPresent).toBe(1);
+      expect(replay.issuesCreated).toBe(0);
+
+      expect(await persistedFor(f.observationId)).toEqual({ snapshots: 1, issues: 1 });
+    });
+
+    it("E. duplicates of DIFFERENT observations are still two separate writes", async () => {
+      const a = await property("Distinct A");
+      const b = await property("Distinct B");
+      const ia = await extractedFor(a, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      const ib = await extractedFor(b, []);
+
+      const dry = await persist([ia, ib, ia, ib], false);
+      expect(dry.snapshotsCreated).toBe(2);
+      expect(dry.issuesCreated).toBe(1);
+
+      const applied = await persist([ia, ib, ia, ib], true);
+      expect(applied.snapshotsCreated).toBe(2);
+      expect(applied.issuesCreated).toBe(1);
+      expect(await persistedFor(a.observationId)).toEqual({ snapshots: 1, issues: 1 });
+      expect(await persistedFor(b.observationId)).toEqual({ snapshots: 1, issues: 0 });
     });
   });
 

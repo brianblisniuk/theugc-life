@@ -94,7 +94,8 @@ export interface IssueEvidence {
 }
 
 /**
- * The latest observation's issue extraction.
+ * The CURRENT observation's issue extraction — current meaning the one the
+ * identity's `last_seen_run_id` points at, never the newest by timestamp or id.
  *
  * `null` means NO COMPLETE SNAPSHOT EXISTS, which is ignorance — not "no
  * issues". The two must never collapse: an unextracted property reading as
@@ -203,8 +204,12 @@ export function evaluateLifecycle(args: {
    * snapshot. An `unresolved` receipt has to be able to say WHICH observation
    * nobody extracted; "we could not evaluate something, somewhere" is not a
    * citation anybody can act on.
+   *
+   * CURRENT, never "latest". The caller resolves it through the identity's
+   * `last_seen_run_id` pointer. It is deliberately not named for recency: no
+   * timestamp and no id ordering may be used to pick it.
    */
-  latestObservationId?: string | null;
+  currentObservationId?: string | null;
   /**
    * False when the identity's current-run pointer resolved to no observation.
    * Distinguished from "no snapshot" because they are different failures: one is
@@ -226,7 +231,7 @@ export function evaluateLifecycle(args: {
     asOf,
     policyProvider: policy.provider,
     policyVersion: policy.version,
-    observationId: args.latestObservationId ?? snapshot?.observationId ?? null,
+    observationId: args.currentObservationId ?? snapshot?.observationId ?? null,
     snapshotId: snapshot?.snapshotId ?? null,
   };
 
