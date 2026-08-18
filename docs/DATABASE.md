@@ -547,12 +547,14 @@ convention rather than a guarantee.
 ### `superseded_reason`
 Set ONLY by candidate generation, and only to `no_current_blocking_rule`: no
 current blocking rule supports this pair any more. A pending candidate is a claim
-about CURRENT evidence, and discovery no longer returning a pair means nothing
-would ever revisit the row — it would sit in the review queue forever. The
-generator stands down its own stale rows (`status = 'pending'` AND
-`match_method like 'blocking:%'`), deletes nothing, rewrites no evidence, and
-reactivates the same row if the evidence returns. A human decision carries no
-reason here, which is exactly what stops a script overturning one.
+about CURRENT evidence, but `pending` alone does **not** establish generator
+ownership. The generator stands down only its own stale rows:
+`candidate_kind = 'source_identity'` AND `status = 'pending'` AND
+`match_method like 'blocking:%'`. It deletes nothing, rewrites no evidence, and
+reactivates only the same row it previously stood down if the evidence returns. A
+manual pending row or human decision is not generator-owned and carries no
+machine stand-down authority, which is exactly what stops a script seizing or
+overturning one.
 
 Keyed on the PAIR, not the pair plus the reason it surfaced: a pair found by
 both a shared domain and a shared phone is one candidate carrying both reasons in
