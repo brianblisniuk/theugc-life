@@ -109,12 +109,14 @@ export const MACHINE_CANDIDATE_KIND = "source_identity" as const;
 /**
  * Is this row the generator's to touch?
  *
- * BOTH halves are required, and one shared answer is used by the writer, the
- * review origin label and the sync gate — three places that must not drift.
- * `match_method` alone is too weak: a `canonical_hotel` row is not something
- * `generateCandidates` produces at all, and nothing stops a future tool writing
- * one with a blocking-shaped method. Ownership is the pair of facts, or it is
- * not ownership.
+ * BOTH halves are required. One ownership definition governs the writer, review
+ * origin label and sync gate: `candidate_kind = 'source_identity'` plus a
+ * `blocking:` match method. This TypeScript helper implements that definition;
+ * the writer and sync SQL mirror the same two conditions at their database
+ * boundaries. `match_method` alone is too weak: a `canonical_hotel` row is not
+ * something `generateCandidates` produces at all, and nothing stops a future
+ * tool writing one with a blocking-shaped method. Ownership is the pair of
+ * facts, or it is not ownership.
  */
 export function isGeneratorOwned(row: { candidateKind: string; matchMethod: string }): boolean {
   return (
