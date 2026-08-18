@@ -1091,10 +1091,12 @@ hotel_media (future, D064 §14.1)
 Both FK targets exist after this block, so the future media block adds a table
 rather than rebuilding ingestion. Nothing here has to be undone.
 
-## 21. D062 future-gate interface
+## 21. D062 pre-publication preview interface
 
-The gate is **not implemented**. What this block guarantees is that it *can* be,
-without touching source ingestion.
+The read-only gate preview is implemented by A04 under
+`scripts/prepublication-preview/`. It composes existing pre-publication evidence
+without writing publication, canonical, review, resolution, candidate, or
+lifecycle state. Human authorization and atomic apply remain A05.
 
 ### 21.0 Preview inputs are not apply outputs
 
@@ -1125,7 +1127,7 @@ evidence only**:
 | 1. canonical identity resolved | `source_property_reviews.decision` + `source_match_candidates` — see §21.2. **Not** `hotel_source_identities`, which is an apply output |
 | 2. supported destination | `source_property_reviews.destination_id` → `destinations` |
 | 3. physical hospitality property | `source_property_scope_resolution_revisions` (0029) → `source_property_observations.id`, resolved through the reviewed provider scope policy. **A `physical_hospitality` result is an INPUT, not eligibility** — D060 §21.4 |
-| 4. not permanently closed | `source_lifecycle_status` **when a provider supplies one** — Hotelbeds does not; see §21.4 |
+| 4. not blocked by current property-level closure evidence | A03's current complete `source_property_issue_snapshots` and `source_property_issue_evidence`, evaluated through the approved lifecycle policy for an explicit `as_of` — see §21.4 |
 | 5. V1 scope resolved | a **pre-publication resolution owned by the future D062/resolution layer**, derived from conditions 2/3/4/6/7/11 and the review — see §21.3. **Not** `source_property_identities.resolution_state`, which is the post-decision record |
 | 6. star exactly 4 or 5 | **not from this layer alone** — §21.1 |
 | 7. star provenance | `source_property_star_resolution_revisions` → `source_property_observations.id`, cited as an IMMUTABLE revision id |
@@ -1301,7 +1303,7 @@ when that block is designed; this document does not pre-empt that choice, and
 inventing a column here to make a documentation table tidy would be exactly the
 kind of speculative schema the rest of this block avoids.
 
-### 21.4 Condition 3 is resolved; condition 4 has no evidence yet
+### 21.4 Conditions 3 and 4 are resolved pre-publication
 
 **Condition 3** is answered by migration 0029: a reviewed per-provider policy on
 `accommodationTypeCode`, frozen once approved, resolved into immutable revisions
@@ -1314,9 +1316,11 @@ that property type alone does not decide eligibility, so nothing in 0029 says
 here, at the preview, and nowhere earlier. Full contract:
 [`PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md`](PROPERTY_SOURCE_HOSPITALITY_SCOPE_POLICY.md).
 
-**Condition 4 has no resolver, deliberately.** The Hotelbeds Content API supplies
-no property-level lifecycle field. `source_lifecycle_status` is NULL on all 4,110
-observations in the evaluation dataset, and nothing else in the payload is one:
+**Condition 4 is now answered by A03 / migration 0031.** This corrects the
+historical state described below; it does not pretend the evidence existed in
+0027. The Hotelbeds Content API supplies no property-level lifecycle field, so
+A03 preserves complete `issues[]` snapshots and evaluates only an approved exact
+pair: `HOTEL + CLOSED` may establish a property-level date interval.
 
 - `license` is a tax/registration number, not a status;
 - the `issues[]` array is the only closure-shaped evidence, and it is
@@ -1338,9 +1342,13 @@ recorded here rather than acted on, because:
    destination name containing `*CLOSED` is a provider geography label, not a
    property lifecycle fact.
 
-So condition 4 stays for the D062 preview, and the next block that wants it
-should start by persisting `issues[]` with `issueCode` and `issueType` kept
-apart.
+The evaluator requires an explicit `as_of`, resolves currentness exclusively by
+`source_property_identities.last_seen_run_id` to an observation for that same
+identity/run, and never falls back to history. `KNOWN_CLOSED` fails condition 4;
+`NO_KNOWN_CLOSURE` passes it but does **not** mean active, open, or operating;
+`UNRESOLVED` holds it. Facility codes such as SPA, RESTAURANT, WATERPARK, and
+PARKING never close the property. Full semantics and provenance are in
+[`PROPERTY_LIFECYCLE_EVIDENCE_CONTRACT.md`](PROPERTY_LIFECYCLE_EVIDENCE_CONTRACT.md).
 
 ## 22. Coverage Engine future interface
 
