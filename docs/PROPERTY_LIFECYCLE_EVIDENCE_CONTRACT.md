@@ -116,6 +116,20 @@ no such key, and not one has an empty one. "The array was empty" is therefore no
 an observable state, and `provider_issue_count = 0` on a snapshot is a real
 provider statement while *no snapshot* is nobody having looked.
 
+#### 4.2 A dry-run is the apply, minus the writing
+
+Extraction previews and extraction writes are computed from **one** write plan,
+scoped to the observations in the current batch: for each, does a snapshot
+already exist? An existing one means zero snapshot writes and zero issue writes;
+a missing one means one snapshot and its represented issue rows.
+
+The alternative — subtracting a GLOBAL snapshot count from the batch size — is
+not a preview of anything. Extracting Dubai alone against a database already
+holding 3,275 Bali snapshots reported "3,275 already present, 0 would be
+created" while `--apply` went on to create all 835; and after a full apply, a
+replay preview still counted every incoming issue as created though apply writes
+none. Both modes now read the same plan, so their semantics cannot drift.
+
 ### 4.1 Complete means EVERY entry was represented
 
 `provider_issue_count` always equals the number of issue rows. A snapshot is
@@ -219,20 +233,36 @@ to record a fact nobody stated. What is persisted is the EVIDENCE; the outcome i
 computed by an evaluator holding an explicit date, and D062's receipt will record
 which date it used.
 
-## 7. Currentness belongs to the LATEST observation
+## 7. Currentness comes from the identity's run pointer
 
-Current evaluation uses the snapshot tied to the **latest** observation, and only
-that one. Historical snapshots stay as historical evidence and are never unioned
-in.
+Current evaluation uses the observation belonging to
+`source_property_identities.last_seen_run_id`, and only that one. Historical
+snapshots stay as historical evidence and are never unioned in.
+
+**Not "the latest by timestamp", and emphatically not by UUID.** Observations are
+unique per `(source_run_id, source_property_identity_id)` — *not* per
+`(identity, observed_at)` — so two observations of one identity may legitimately
+share an `observed_at`. An earlier version broke that tie with `o.id desc`, which
+made the lifecycle answer depend on which random UUID happened to sort later:
+where one observation carried `HOTEL`/`CLOSED` and the other did not, the same
+database returned `known_closed` or `no_known_closure` by accident. **A UUID is
+not evidence about time.**
+
+Ingestion already owns this question. `last_seen_run_id` advances only when the
+new run's `started_at` is *strictly* newer, so a tie is never promoted
+arbitrarily; lifecycle reads that pointer rather than inventing a second notion
+of "current". Because of the uniqueness above, joining on the run selects **at
+most one** observation per identity, with no ordering involved at all.
 
 | situation | result |
 |---|---|
-| latest observation has a complete snapshot with no closure; an older one recorded a closure | `no_known_closure` — the closure was lifted |
-| latest observation has NO complete snapshot; an older one does | **`unresolved`** — never a fallback to stale evidence |
+| current run's snapshot complete, no closure; an older run recorded one | `no_known_closure` — the closure was lifted |
+| current run has NO complete snapshot; an older run does | **`unresolved`** — never a fallback to stale evidence |
+| the pointer resolves to NO observation of this identity | **`unresolved`** with `no_current_observation` — and the property stays in the sweep |
 
-Both directions matter. Carrying an old closure forward would keep a reopened
-hotel closed; falling back to an old clean bill would cover an observation nobody
-extracted.
+That last row is a fail-closed, not a filter. Dropping the property would remove
+it from the lifecycle sweep entirely and hide it from D062, which is worse than
+reporting that we cannot currently say.
 
 ## 8. Malformed closure evidence is not "nothing known"
 

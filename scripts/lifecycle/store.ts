@@ -12,14 +12,22 @@ import type { IssueSnapshot, LifecyclePolicy } from "./policy";
 
 export interface ProvenanceMismatch {
   sourcePropertyId: string;
-  reason: "no_ingested_property" | "no_observation_with_this_payload";
+  /**
+   * `no_exact_observation_match` rather than the older
+   * `no_observation_with_this_payload`, which stopped being true when the
+   * lookup gained the RUN: an observation carrying this payload may well exist
+   * — in a DIFFERENT run — and saying otherwise would send a reader looking for
+   * the wrong thing. What is missing is the exact `(run, property, payload)`
+   * triple.
+   */
+  reason: "no_ingested_property" | "no_exact_observation_match";
   sourceRunId: string;
   wholeRecordPayloadDigest: string;
 }
 
 export interface ExtractionCounts {
-  /** Properties the artifact described. */
-  extracted: number;
+  /** Records the artifact yielded a COMPLETE snapshot for. Not raw records read. */
+  completeSnapshotsExtracted: number;
   /** Snapshots actually INSERTED. A replay must add none. */
   snapshotsCreated: number;
   /** Snapshots already present for that observation, left untouched. */
@@ -85,6 +93,27 @@ const provenanceKey = (s: {
   wholeRecordPayloadDigest: string;
 }) => `${s.sourceRunId} ${s.sourcePropertyId} ${s.wholeRecordPayloadDigest}`;
 
+/**
+ * Which of THESE observations already carry a complete snapshot?
+ *
+ * Batch-scoped on purpose: the only thing that can make this apply write less
+ * than it plans to is an existing snapshot on one of ITS OWN observations.
+ * Snapshots belonging to properties outside the batch are irrelevant, and
+ * counting them globally is what made the old preview wrong.
+ */
+async function snapshotsPresentFor(
+  client: Client,
+  observationIds: readonly string[],
+): Promise<Set<string>> {
+  if (observationIds.length === 0) return new Set();
+  const res = await client.query<{ evidence_observation_id: string }>(
+    `select evidence_observation_id from public.source_property_issue_snapshots
+      where evidence_observation_id = any($1::uuid[])`,
+    [observationIds],
+  );
+  return new Set(res.rows.map((r) => r.evidence_observation_id));
+}
+
 /** Provider ids that exist here at all, to tell "not ingested" from "wrong record". */
 async function knownSourcePropertyIds(
   client: Client,
@@ -114,7 +143,7 @@ export async function persistIssueEvidence(
   const byRunAndPayload = await observationsByRunAndPayload(client, opts);
   const knownIds = await knownSourcePropertyIds(client, opts);
   const counts: ExtractionCounts = {
-    extracted: snapshots.length,
+    completeSnapshotsExtracted: snapshots.length,
     snapshotsCreated: 0,
     snapshotsAlreadyPresent: 0,
     issuesCreated: 0,
@@ -133,7 +162,7 @@ export async function persistIssueEvidence(
       counts.provenanceMismatches.push({
         sourcePropertyId: snapshot.sourcePropertyId,
         reason: knownIds.has(snapshot.sourcePropertyId)
-          ? "no_observation_with_this_payload"
+          ? "no_exact_observation_match"
           : "no_ingested_property",
         sourceRunId: snapshot.sourceRunId,
         wholeRecordPayloadDigest: snapshot.wholeRecordPayloadDigest,
@@ -143,18 +172,44 @@ export async function persistIssueEvidence(
     matched.push({ snapshot, ...target });
   }
 
-  if (!opts.apply) {
-    const existing = await client.query<{ n: string }>(
-      `select count(*)::text as n from public.source_property_issue_snapshots
-        where source = $1 and source_environment = $2`,
-      [opts.source, opts.environment],
-    );
-    counts.snapshotsAlreadyPresent = Number(existing.rows[0]!.n);
-    counts.snapshotsCreated = matched.length - counts.snapshotsAlreadyPresent;
-    if (counts.snapshotsCreated < 0) counts.snapshotsCreated = 0;
-    counts.issuesCreated = matched.reduce((n, m) => n + m.snapshot.issues.length, 0);
-    return counts;
+  // ONE WRITE PLAN, computed from THIS BATCH, consumed by both modes.
+  //
+  // The dry-run used to subtract a GLOBAL snapshot count from the batch size,
+  // which is not a preview of anything. Extracting Dubai alone against a
+  // database already holding 3,275 Bali snapshots reported "3,275 already
+  // present, 0 would be created" — while `--apply` went on to create all 835.
+  // And after a full apply, a replay dry-run still counted every incoming issue
+  // as `issuesCreated`, though apply writes none.
+  //
+  // So the question is asked properly: FOR THE OBSERVATIONS IN THIS BATCH, which
+  // already have a snapshot? Both modes read the same answer, so their semantics
+  // cannot drift — a dry-run is the apply, minus the writing.
+  const present = await snapshotsPresentFor(
+    client,
+    matched.map((m) => m.observationId),
+  );
+
+  for (const m of matched) {
+    if (present.has(m.observationId)) {
+      // An immutable observation already has its complete extraction. Apply
+      // would insert nothing here, and neither would it write issue rows: it
+      // `continue`s past them.
+      counts.snapshotsAlreadyPresent += 1;
+    } else {
+      counts.snapshotsCreated += 1;
+      counts.issuesCreated += m.snapshot.issues.length;
+    }
   }
+
+  // A provenance mismatch writes nothing in either mode; it is already counted.
+  if (!opts.apply) return counts;
+
+  // APPLY re-derives its counters from what the database actually did, so a
+  // concurrent writer between the plan and the insert is reported truthfully
+  // rather than assumed away.
+  counts.snapshotsCreated = 0;
+  counts.snapshotsAlreadyPresent = 0;
+  counts.issuesCreated = 0;
 
   await client.query("begin");
   try {
@@ -268,21 +323,21 @@ export interface EvaluableProperty {
   sourcePropertyId: string;
   name: string | null;
   destinationSlug: string | null;
-  latestObservationId: string;
-  /** NULL when the LATEST observation has no complete snapshot. */
+  /** The identity's authoritative current run pointer. */
+  lastSeenRunId: string;
+  /**
+   * The observation belonging to THAT run.
+   *
+   * `null` when the pointer resolves to no observation of this identity. The
+   * property is still evaluated — and fails closed as `unresolved` — rather than
+   * dropped, because silently omitting a property from a lifecycle sweep hides
+   * it from D062 instead of flagging it.
+   */
+  currentObservationId: string | null;
+  /** NULL when the CURRENT observation has no complete snapshot. */
   snapshot: IssueSnapshot | null;
 }
 
-/**
- * Load every identity with its LATEST observation and THAT observation's
- * snapshot.
- *
- * The join is deliberately `left`, and the snapshot is looked up by the latest
- * observation id alone. An older observation's snapshot is therefore invisible
- * here — which is the point: a lifted closure must not survive because a
- * historical row still says it, and a stale clean bill must not cover an
- * observation nobody extracted.
- */
 export async function loadEvaluableProperties(
   client: Pick<Client, "query">,
   opts: { source: string; environment: string },
@@ -290,24 +345,47 @@ export async function loadEvaluableProperties(
   const res = await client.query<{
     identity_id: string;
     source_property_id: string;
+    last_seen_run_id: string;
     source_name: string | null;
     slug: string | null;
-    observation_id: string;
+    observation_id: string | null;
     snapshot_id: string | null;
     provider_issue_count: number | null;
   }>(
-    `select distinct on (i.id)
-            i.id as identity_id, i.source_property_id,
+    // CURRENTNESS COMES FROM `last_seen_run_id`, NOT FROM A UUID.
+    //
+    // The previous ordering was `observed_at desc, id desc`, which used the
+    // UUID as a temporal tie-breaker. Observations are unique per
+    // `(source_run_id, source_property_identity_id)` — NOT per
+    // `(identity, observed_at)` — so two observations of one identity may
+    // legitimately share an `observed_at`. Where one carried HOTEL/CLOSED and
+    // the other did not, the lifecycle answer would then have been decided by
+    // which UUID happened to sort later. A random identifier is not evidence
+    // about time.
+    //
+    // Ingestion already owns this question: `last_seen_run_id` advances only
+    // when the new run's `started_at` is STRICTLY newer, so a tie is never
+    // promoted arbitrarily. Lifecycle uses that same pointer rather than
+    // inventing a second notion of "current", and the join is on the run — which
+    // by the uniqueness above selects at most ONE observation per identity, with
+    // no ordering involved at all.
+    //
+    // A LEFT join, deliberately: if the pointer resolves to no observation of
+    // this identity the property still appears, with a null observation, and the
+    // evaluator fails closed. Dropping it would hide it from the sweep entirely.
+    `select i.id as identity_id, i.source_property_id, i.last_seen_run_id,
             o.source_name, d.slug,
             o.id as observation_id,
             s.id as snapshot_id, s.provider_issue_count
        from public.source_property_identities i
-       join public.source_property_observations o on o.source_property_identity_id = i.id
-       join public.source_runs r on r.id = o.source_run_id
+       left join public.source_property_observations o
+              on o.source_property_identity_id = i.id
+             and o.source_run_id = i.last_seen_run_id
+       left join public.source_runs r on r.id = i.last_seen_run_id
        left join public.destinations d on d.id = r.destination_id
        left join public.source_property_issue_snapshots s on s.evidence_observation_id = o.id
       where i.source = $1 and i.source_environment = $2
-      order by i.id, o.observed_at desc, o.id desc`,
+      order by i.source_property_id`,
     [opts.source, opts.environment],
   );
 
@@ -349,9 +427,10 @@ export async function loadEvaluableProperties(
     sourcePropertyId: r.source_property_id,
     name: r.source_name,
     destinationSlug: r.slug,
-    latestObservationId: r.observation_id,
+    lastSeenRunId: r.last_seen_run_id,
+    currentObservationId: r.observation_id,
     snapshot:
-      r.snapshot_id === null
+      r.snapshot_id === null || r.observation_id === null
         ? null
         : {
             snapshotId: r.snapshot_id,

@@ -107,6 +107,39 @@ async function newRun(destinationId: string | null = DEST.bali): Promise<string>
   return rows[0]!.id;
 }
 
+/** A run whose `started_at` is strictly newer than another run's. */
+async function newRunAfter(
+  previousRunId: string,
+  destinationId: string | null = DEST.bali,
+): Promise<string> {
+  const rows = await adminQuery<{ id: string }>(
+    `insert into public.source_runs (source, source_environment, destination_id, run_mode, started_at)
+     select $1, 'evaluation', $2, 'evaluation', p.started_at + interval '1 hour'
+       from public.source_runs p where p.id = $3
+     returning id`,
+    [SOURCE, destinationId, previousRunId],
+  );
+  return rows[0]!.id;
+}
+
+/**
+ * Move `last_seen_run_id` under EXACTLY the rule ingestion uses: only when the
+ * new run's `started_at` is STRICTLY newer. A tie is never promoted.
+ */
+async function advanceLastSeen(identityId: string, runId: string): Promise<number> {
+  const rows = await adminQuery<{ id: string }>(
+    `update public.source_property_identities spi
+        set last_seen_run_id = $1
+      where spi.id = $2
+        and spi.last_seen_run_id <> $1
+        and (select r.started_at from public.source_runs r where r.id = $1)
+            > (select p.started_at from public.source_runs p where p.id = spi.last_seen_run_id)
+      returning spi.id`,
+    [runId, identityId],
+  );
+  return rows.length;
+}
+
 /** One identity with one observation. */
 async function property(name = `Lifecycle ${uniq()}`, payloadDigest?: string): Promise<Fixture> {
   const runId = await newRun();
@@ -129,12 +162,19 @@ async function property(name = `Lifecycle ${uniq()}`, payloadDigest?: string): P
 }
 
 /** A LATER observation for an existing identity. */
+/**
+ * A LATER observation, advancing `last_seen_run_id` the way ingestion does.
+ *
+ * `newRunAfter` gives the run a strictly newer `started_at`, because that — not
+ * the UUID and not `observed_at` — is what ingestion requires before it will
+ * move the pointer.
+ */
 async function laterObservation(
   f: Fixture,
   name = `Later ${uniq()}`,
   payloadDigest?: string,
 ): Promise<{ observationId: string; runId: string }> {
-  const runId = await newRun();
+  const runId = await newRunAfter(f.runId);
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_observations
        (source_run_id, source_property_identity_id, source, source_environment, observed_at,
@@ -142,6 +182,7 @@ async function laterObservation(
      values ($1,$2,$3,'evaluation', now() + interval '1 second', $4, $5) returning id`,
     [runId, f.identityId, SOURCE, name, payloadDigest ?? `digest-${uniq()}`],
   );
+  await advanceLastSeen(f.identityId, runId);
   return { observationId: rows[0]!.id, runId };
 }
 
@@ -210,7 +251,8 @@ async function evaluateFromDb(f: Fixture, asOf: string) {
       snapshot: mine.snapshot,
       policy,
       asOf,
-      latestObservationId: mine.latestObservationId,
+      latestObservationId: mine.currentObservationId,
+      hasCurrentObservation: mine.currentObservationId !== null,
     });
   } finally {
     await client.end();
@@ -1417,9 +1459,9 @@ d("pre-publication lifecycle evidence (0031)", () => {
 
       expect(counts.snapshotsCreated).toBe(0);
       expect(counts.provenanceMismatches).toHaveLength(1);
-      // The property IS ingested — this is the "wrong record" case, kept
-      // distinct from "never ingested".
-      expect(counts.provenanceMismatches[0]!.reason).toBe("no_observation_with_this_payload");
+      // The property IS ingested — this is the "no exact (run, property,
+      // payload) match" case, kept distinct from "never ingested".
+      expect(counts.provenanceMismatches[0]!.reason).toBe("no_exact_observation_match");
 
       const rows = await adminQuery<{ n: string }>(
         `select count(*)::text n from public.source_property_issue_snapshots
@@ -1615,6 +1657,346 @@ d("pre-publication lifecycle evidence (0031)", () => {
       expect(
         outcomeOn([{ issueCode: "HOTEL", issueType: " CLOSED", ...window }], "2026-08-17"),
       ).toBe("no_known_closure");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A dry-run is the apply, minus the writing. Anything else is a false preview.
+  describe("DRY-RUN mirrors APPLY exactly", () => {
+    async function extractedFor(f: Fixture, issues: IssueInput[]) {
+      const digest = (
+        await adminQuery<{ source_payload_digest: string }>(
+          "select source_payload_digest from public.source_property_observations where id = $1",
+          [f.observationId],
+        )
+      )[0]!.source_payload_digest;
+      return {
+        sourcePropertyId: f.sourcePropertyId,
+        sourceRunId: f.runId,
+        wholeRecordPayloadDigest: digest,
+        providerIssueCount: issues.length,
+        issues: issues.map((i) => ({
+          issueCode: i.issueCode,
+          issueType: i.issueType,
+          dateFromRaw: i.dateFrom ?? null,
+          dateToRaw: i.dateTo ?? null,
+          providerOrder: i.providerOrder ?? null,
+          alternative: i.alternative ?? null,
+          description: null,
+        })),
+      };
+    }
+
+    async function persist(batch: unknown[], apply: boolean) {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        return await persistIssueEvidence(client, batch as never, {
+          source: SOURCE,
+          environment: "evaluation",
+          apply,
+        });
+      } finally {
+        await client.end();
+      }
+    }
+
+    const totals = async () => {
+      const rows = await adminQuery<{ snapshots: string; issues: string; checksum: string | null }>(
+        `select (select count(*)::text from public.source_property_issue_snapshots) as snapshots,
+                (select count(*)::text from public.source_property_issue_evidence) as issues,
+                (select md5(string_agg(evidence_digest, '|' order by evidence_digest))
+                   from public.source_property_issue_evidence) as checksum`,
+      );
+      return rows[0]!;
+    };
+
+    it("A. fresh: the dry-run prediction equals what apply writes, and writes nothing itself", async () => {
+      const a = await property("Fresh one");
+      const b = await property("Fresh two");
+      const batch = [
+        await extractedFor(a, [
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+        ]),
+        await extractedFor(b, []),
+      ];
+
+      const before = await totals();
+      const dry = await persist(batch, false);
+      const afterDry = await totals();
+
+      // The dry-run mutated nothing at all.
+      expect(afterDry).toEqual(before);
+
+      expect(dry.snapshotsCreated).toBe(2);
+      expect(dry.snapshotsAlreadyPresent).toBe(0);
+      expect(dry.issuesCreated).toBe(1);
+
+      const applied = await persist(batch, true);
+      expect(applied.snapshotsCreated).toBe(dry.snapshotsCreated);
+      expect(applied.snapshotsAlreadyPresent).toBe(dry.snapshotsAlreadyPresent);
+      expect(applied.issuesCreated).toBe(dry.issuesCreated);
+    });
+
+    it("B. replay: after apply, the dry-run predicts zero writes", async () => {
+      const f = await property("Replay preview");
+      const batch = [
+        await extractedFor(f, [
+          { issueCode: "SPA", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-02-01" },
+        ]),
+      ];
+      await persist(batch, true);
+
+      const dry = await persist(batch, false);
+      expect(dry.snapshotsCreated).toBe(0);
+      // The old bug: every incoming issue counted as created even though apply
+      // sees the snapshot, continues, and writes none.
+      expect(dry.issuesCreated).toBe(0);
+      expect(dry.snapshotsAlreadyPresent).toBe(1);
+
+      const replay = await persist(batch, true);
+      expect(replay.snapshotsCreated).toBe(0);
+      expect(replay.issuesCreated).toBe(0);
+      expect(replay.snapshotsAlreadyPresent).toBe(1);
+    });
+
+    it("C. cross-batch: snapshots OUTSIDE the batch do not affect its counts", async () => {
+      // The exact Bali/Dubai failure: a database already full of snapshots for
+      // other properties must not make this batch look already-done.
+      const outsiders = [];
+      for (let i = 0; i < 3; i += 1) {
+        const o = await property(`Outsider ${i}`);
+        outsiders.push(await extractedFor(o, []));
+      }
+      await persist(outsiders, true);
+
+      const mine = await property("In batch");
+      const batch = [
+        await extractedFor(mine, [
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+        ]),
+      ];
+
+      const dry = await persist(batch, false);
+      expect(dry.snapshotsCreated).toBe(1);
+      expect(dry.snapshotsAlreadyPresent).toBe(0);
+      expect(dry.issuesCreated).toBe(1);
+
+      const applied = await persist(batch, true);
+      expect(applied.snapshotsCreated).toBe(1);
+      expect(applied.issuesCreated).toBe(1);
+    });
+
+    it("D. mixed batch: one existing, one new — counted separately", async () => {
+      const existing = await property("Already extracted");
+      const fresh = await property("Not yet extracted");
+      const existingBatch = [
+        await extractedFor(existing, [
+          { issueCode: "SPA", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-02-01" },
+        ]),
+      ];
+      await persist(existingBatch, true);
+
+      const mixed = [
+        existingBatch[0],
+        await extractedFor(fresh, [
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+          {
+            issueCode: "WATERPARK",
+            issueType: "CLOSED",
+            dateFrom: "2026-03-01",
+            dateTo: "2026-04-01",
+          },
+        ]),
+      ];
+
+      const dry = await persist(mixed, false);
+      expect(dry.snapshotsAlreadyPresent).toBe(1);
+      expect(dry.snapshotsCreated).toBe(1);
+      // ONLY the new snapshot's issues — the existing one contributes none.
+      expect(dry.issuesCreated).toBe(2);
+
+      const applied = await persist(mixed, true);
+      expect(applied.snapshotsAlreadyPresent).toBe(1);
+      expect(applied.snapshotsCreated).toBe(1);
+      expect(applied.issuesCreated).toBe(2);
+    });
+
+    it("E. a dry-run leaves row counts and the evidence checksum untouched", async () => {
+      const f = await property("Checksum guard");
+      const batch = [
+        await extractedFor(f, [
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+        ]),
+      ];
+      const before = await totals();
+      await persist(batch, false);
+      await persist(batch, false);
+      expect(await totals()).toEqual(before);
+    });
+
+    it("a provenance mismatch predicts no writes in either mode", async () => {
+      const f = await property("Mismatch preview");
+      const bad = { ...(await extractedFor(f, [])), wholeRecordPayloadDigest: `NOPE-${uniq()}` };
+      const dry = await persist([bad], false);
+      expect(dry.snapshotsCreated).toBe(0);
+      expect(dry.issuesCreated).toBe(0);
+      expect(dry.provenanceMismatches).toHaveLength(1);
+      expect(dry.provenanceMismatches[0]!.reason).toBe("no_exact_observation_match");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A UUID is not evidence about time. Observations are unique per
+  // (run, identity), NOT per (identity, observed_at), so a tie is representable.
+  describe("the CURRENT observation follows last_seen_run_id, never a UUID", () => {
+    /** A second observation for the same identity, in its own run, SAME observed_at. */
+    async function tiedObservation(f: Fixture, name: string, startedAtOffsetHours: number) {
+      const runRows = await adminQuery<{ id: string }>(
+        `insert into public.source_runs (source, source_environment, destination_id, run_mode, started_at)
+         select $1,'evaluation',$2,'evaluation', p.started_at + ($3 || ' hours')::interval
+           from public.source_runs p where p.id = $4
+         returning id`,
+        [SOURCE, DEST.bali, String(startedAtOffsetHours), f.runId],
+      );
+      const runId = runRows[0]!.id;
+      const rows = await adminQuery<{ id: string }>(
+        // IDENTICAL observed_at to the first observation — the tie the schema
+        // permits and the old ordering could not resolve.
+        `insert into public.source_property_observations
+           (source_run_id, source_property_identity_id, source, source_environment, observed_at,
+            source_name, source_payload_digest)
+         select $1,$2,$3,'evaluation',
+                (select o.observed_at from public.source_property_observations o where o.id = $4),
+                $5, $6
+         returning id`,
+        [runId, f.identityId, SOURCE, f.observationId, name, `digest-${uniq()}`],
+      );
+      return { observationId: rows[0]!.id, runId };
+    }
+
+    it("A. identical observed_at: the run pointer decides, not the UUID", async () => {
+      const f = await property("Tie: original");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+
+      // A second observation at the SAME instant, with no closure.
+      const other = await tiedObservation(f, "Tie: other", 1);
+      await persistSnapshot(f, other.observationId, []);
+
+      const tied = await adminQuery<{ n: string }>(
+        `select count(distinct observed_at)::text n from public.source_property_observations
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      // Precondition: the two really are tied on observed_at.
+      expect(tied[0]!.n).toBe("1");
+
+      // last_seen_run_id still points at the ORIGINAL run.
+      const before = await evaluateFromDb(f, "2026-08-17");
+      expect(before.observationId).toBe(f.observationId);
+      expect(before.outcome).toBe("known_closed");
+
+      // Advance the pointer the way ingestion would, then re-evaluate.
+      expect(await advanceLastSeen(f.identityId, other.runId)).toBe(1);
+      const after = await evaluateFromDb(f, "2026-08-17");
+      expect(after.observationId).toBe(other.observationId);
+      expect(after.outcome).toBe("no_known_closure");
+    });
+
+    it("B. the answer does not change when UUID order opposes the run pointer", async () => {
+      // Whichever way the UUIDs happen to sort, the pointer wins. Repeated so a
+      // lucky ordering cannot pass by accident.
+      for (let i = 0; i < 6; i += 1) {
+        const f = await property(`Order probe ${i}`);
+        await persistSnapshot(f, f.observationId, [
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+        ]);
+        const other = await tiedObservation(f, `Order probe other ${i}`, 1);
+        await persistSnapshot(f, other.observationId, []);
+
+        // The pointer stays on the original, so the closure stays current —
+        // even in the iterations where the other UUID sorts later.
+        const evaluation = await evaluateFromDb(f, "2026-08-17");
+        expect(evaluation.observationId, `iteration ${i}`).toBe(f.observationId);
+        expect(evaluation.outcome, `iteration ${i}`).toBe("known_closed");
+      }
+    });
+
+    it("C. a genuinely newer run advances the pointer and lifecycle follows it", async () => {
+      const f = await property("Newer run");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      expect((await evaluateFromDb(f, "2026-08-17")).outcome).toBe("known_closed");
+
+      const newer = await laterObservation(f, "Reopened");
+      await persistSnapshot(f, newer.observationId, []);
+
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.observationId).toBe(newer.observationId);
+      expect(evaluation.outcome).toBe("no_known_closure");
+    });
+
+    it("D. the current run has no snapshot while an older one does -> UNRESOLVED", async () => {
+      const f = await property("No fallback");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      const newer = await laterObservation(f, "Unextracted");
+
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toContain("no_complete_issue_snapshot");
+      expect(evaluation.observationId).toBe(newer.observationId);
+    });
+
+    it("E. an unresolvable current-run pointer FAILS CLOSED and stays in the sweep", async () => {
+      const f = await property("Dangling pointer");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+
+      // A newer run the identity now points at, with NO observation of its own —
+      // representable because `last_seen_run_id` is a run reference, not an
+      // observation one.
+      const orphanRun = await newRunAfter(f.runId);
+      expect(await advanceLastSeen(f.identityId, orphanRun)).toBe(1);
+
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      let mine;
+      try {
+        const properties = await loadEvaluableProperties(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        mine = properties.find((p) => p.identityId === f.identityId);
+      } finally {
+        await client.end();
+      }
+
+      // NOT dropped from the sweep — that would hide it from D062.
+      expect(mine, "the property must still be evaluated").toBeDefined();
+      expect(mine!.currentObservationId).toBeNull();
+      expect(mine!.lastSeenRunId).toBe(orphanRun);
+      expect(mine!.snapshot).toBeNull();
+
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toContain("no_current_observation");
+      // And specifically NOT answered from the older observation that has one.
+      expect(evaluation.snapshotId).toBeNull();
+    });
+
+    it("no lifecycle query uses a UUID as a temporal tie-breaker", () => {
+      const code = readFileSync(
+        path.join(REPO_ROOT, "scripts", "lifecycle", "store.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      expect(code).not.toMatch(/observed_at\s+desc\s*,\s*o?\.?id\s+desc/i);
+      expect(code).toContain("o.source_run_id = i.last_seen_run_id");
     });
   });
 

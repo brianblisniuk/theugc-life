@@ -49,6 +49,13 @@ export const OUTCOME_MEANINGS: Record<LifecycleOutcome, string> = {
 export type UnresolvedReason =
   | "no_complete_issue_snapshot"
   /**
+   * The identity's `last_seen_run_id` resolves to no observation of that
+   * identity, so there is no CURRENT evidence to read. Fail closed: the property
+   * stays in the sweep and is reported, rather than being dropped from it or
+   * answered from some other observation.
+   */
+  | "no_current_observation"
+  /**
    * The snapshot says the provider sent N issues and fewer than N are present.
    * DEFENCE IN DEPTH: the extractor cannot produce this state — a record with an
    * unreadable entry yields no snapshot at all — but a row written by hand, by a
@@ -198,6 +205,13 @@ export function evaluateLifecycle(args: {
    * citation anybody can act on.
    */
   latestObservationId?: string | null;
+  /**
+   * False when the identity's current-run pointer resolved to no observation.
+   * Distinguished from "no snapshot" because they are different failures: one is
+   * missing EVIDENCE, the other is missing the OBSERVATION the evidence would
+   * hang from.
+   */
+  hasCurrentObservation?: boolean;
 }): LifecycleEvaluation {
   const { snapshot, policy, asOf } = args;
 
@@ -215,6 +229,17 @@ export function evaluateLifecycle(args: {
     observationId: args.latestObservationId ?? snapshot?.observationId ?? null,
     snapshotId: snapshot?.snapshotId ?? null,
   };
+
+  // NO CURRENT OBSERVATION AT ALL. Fail closed, and say which failure it is.
+  if (args.hasCurrentObservation === false) {
+    return {
+      ...base,
+      outcome: "unresolved",
+      activeClosureWindows: [],
+      mappedWindows: [],
+      unresolvedReasons: ["no_current_observation"],
+    };
+  }
 
   // NO COMPLETE SNAPSHOT = IGNORANCE.
   //

@@ -648,6 +648,16 @@ evaluator, which distinguishes an ABSENT endpoint from a present-but-unreadable
 one and reports them as different reasons. `evidence_digest` is
 `GENERATED ALWAYS` over those raw values.
 
+### Currentness
+Lifecycle reads the observation belonging to the identity's
+`last_seen_run_id` — the pointer ingestion already advances only on a strictly
+newer `started_at`. Not "latest by timestamp", and never by UUID: observations
+are unique per `(source_run_id, source_property_identity_id)`, not per
+`(identity, observed_at)`, so a tie is representable and a UUID tie-breaker would
+decide a closure by accident. Joining on the run selects at most one observation,
+with no ordering at all. A pointer that resolves to no observation fails closed
+as `unresolved` and the property stays in the sweep.
+
 ### Append-only
 Both evidence tables refuse UPDATE and DELETE by trigger. A snapshot is bound to
 an immutable observation, so rewriting it would change what the provider is

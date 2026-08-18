@@ -144,7 +144,8 @@ export function buildReport(
       snapshot: property.snapshot,
       policy,
       asOf,
-      latestObservationId: property.latestObservationId,
+      latestObservationId: property.currentObservationId,
+      hasCurrentObservation: property.currentObservationId !== null,
     });
     report.outcomes[evaluation.outcome] += 1;
     if (evaluation.outcome === "known_closed") report.knownClosed.push({ property, evaluation });
@@ -199,7 +200,9 @@ async function main(): Promise<void> {
         apply: args.apply,
       });
       console.info("  ISSUE EXTRACTION (cached artifacts only — zero provider calls)");
-      console.info(`    records read          ${counts.extracted}`);
+      console.info(
+        `    complete snapshots    ${counts.completeSnapshotsExtracted} extracted from the artifacts`,
+      );
       console.info(`    snapshots created     ${counts.snapshotsCreated}`);
       console.info(`    snapshots already on  ${counts.snapshotsAlreadyPresent} (left untouched)`);
       console.info(`    issue rows created    ${counts.issuesCreated}`);
