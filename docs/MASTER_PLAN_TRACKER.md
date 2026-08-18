@@ -73,13 +73,24 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| A01 | **NEXT** | Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution | Every provider type code reviewed once; scope ≠ final eligibility |
-| A02 | PLANNED | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
-| A03 | PLANNED | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
-| A04 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
+| A01 | **DONE** (PR #26, merged) | Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution | Every provider type code reviewed once; scope ≠ final eligibility |
+| A02 | **DONE** (PR #27, merged) | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
+| A03 | **CURRENT PR** | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
+| A04 | PLANNED | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
+| A05 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
-**Base rounds:** 4  
-**Cumulative future rounds:** 4
+**Base rounds:** 4 *(original estimate, preserved)*  
+**Cumulative future rounds:** 5
+
+**Why A03 exists.** It was not in the original four. The A01 provider evidence
+showed that D062's condition 4 — "the property is not known inactive / closed" —
+had **no safe evidence path**: the only lifecycle-shaped provider signal was
+Hotelbeds' `issues[]`, and the obvious reading of it (`issueType = CLOSED`) is
+materially wrong. In the real Bali/Dubai data 13 rows are `CLOSED` and only 2 are
+the hotel itself; the other 11 are a water park, a restaurant, a spa and a car
+park. Building D062 Preview on that would have closed eleven operating hotels, so
+the lifecycle evidence layer was inserted ahead of it. The former A03 and A04 are
+now A04 and A05; their scope and gates are unchanged.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 
@@ -405,8 +416,14 @@ After every 5–8 merged base rounds:
 
 At this baseline, the next base implementation block is:
 
-> **A01 — Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution.**
+> **A03 — pre-publication lifecycle / closure evidence.**
 
-After A01 is externally audited and merged, continue A02 rather than jumping ahead to Gmail implementation. The canonical target spine must be reliable before historical communication outcomes are attached to it.
+A01 (PR #26) and A02 (PR #27) are merged. A03 is the current PR: it supplies the
+evidence D062's condition 4 needs, and deliberately stops short of composing it.
+
+After A03 is externally audited and merged, continue A04 (D062 pre-publication
+preview) rather than jumping ahead to Gmail implementation. The canonical target
+spine must be reliable before historical communication outcomes are attached to
+it.
 
 In parallel, business/technical research may prepare the Gmail contract so Phase B can begin immediately after the publication spine is closed.

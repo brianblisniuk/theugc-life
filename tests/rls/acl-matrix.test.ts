@@ -101,6 +101,22 @@ const CONTRACT: Record<string, Expected> = {
   source_property_observations: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_match_candidates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   hotel_source_identities: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+
+  // Lifecycle / closure evidence (0031). The policy tables keep the full set so
+  // a NEW version can be assembled and approved — the freeze triggers hold the
+  // approved one, which a grant could not do without also blocking the draft.
+  provider_lifecycle_issue_policies: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  provider_lifecycle_issue_policy_mappings: {
+    anon: "",
+    authenticated: "SIUD",
+    serviceRole: "all",
+  },
+  // APPEND-ONLY, like the observations they cite. A snapshot is bound to an
+  // immutable observation, so rewriting it would change what the provider is
+  // recorded as having said at a moment that has already passed. No role —
+  // service_role included — holds UPDATE or DELETE.
+  source_property_issue_snapshots: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  source_property_issue_evidence: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
 
   // Pre-publication resolution (0028), in two layers with deliberately different
