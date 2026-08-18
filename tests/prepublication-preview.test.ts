@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluatePreview, type PreviewInput } from "../scripts/prepublication-preview/evaluate";
+import {
+  buildFingerprintPayload,
+  evaluatePreview,
+  fingerprintSemanticBundle,
+  type PreviewInput,
+} from "../scripts/prepublication-preview/evaluate";
+import { parseArgs } from "../scripts/prepublication-preview/preview";
 
 const AS_OF = "2026-08-17";
 const current = "00000000-0000-0000-0000-000000000010";
@@ -214,5 +220,54 @@ describe("D062 pre-publication preview", () => {
     changed.star!.revisionId = "star-2";
     expect(evaluatePreview(changed, AS_OF).fingerprint).not.toBe(a.fingerprint);
     expect(evaluatePreview(valid(), "2026-08-18").fingerprint).not.toBe(a.fingerprint);
+  });
+
+  it("fingerprint ignores object insertion order, set order, and human display copy", () => {
+    const left = valid();
+    left.entity.pendingCandidateIds = ["b", "a"];
+    left.entity.currentAnomalyReasons = ["z", "x"];
+    const right = valid();
+    right.entity.pendingCandidateIds = ["a", "b"];
+    right.entity.currentAnomalyReasons = ["x", "z"];
+    const a = evaluatePreview(left, AS_OF);
+    const b = evaluatePreview(right, AS_OF);
+    expect(a.fingerprint).toBe(b.fingerprint);
+
+    const copyChanged = a.conditions.map((c) => ({ ...c, explanation: `new copy: ${c.number}` }));
+    expect(
+      fingerprintSemanticBundle(
+        buildFingerprintPayload({ identity: left.identity, asOf: AS_OF, conditions: copyChanged }),
+      ),
+    ).toBe(a.fingerprint);
+    expect(fingerprintSemanticBundle({ z: 1, a: { y: 2, x: 3 } })).toBe(
+      fingerprintSemanticBundle({ a: { x: 3, y: 2 }, z: 1 }),
+    );
+  });
+
+  it("fingerprint changes when condition status or machine reason changes", () => {
+    const preview = evaluatePreview(valid(), AS_OF);
+    for (const change of [{ status: "FAIL" as const }, { reason: "different_semantic_reason" }]) {
+      const conditions = preview.conditions.map((c, i) => (i === 0 ? { ...c, ...change } : c));
+      const digest = fingerprintSemanticBundle(
+        buildFingerprintPayload({ identity: valid().identity, asOf: AS_OF, conditions }),
+      );
+      expect(digest).not.toBe(preview.fingerprint);
+    }
+  });
+
+  it("condition 10 requires both location policy provider and version", () => {
+    const input = valid();
+    input.location!.policyProvider = "";
+    expect(condition(evaluatePreview(input, AS_OF), 10).status).toBe("UNRESOLVED");
+  });
+
+  it("requires an explicit supported environment and accepts read-only production inspection", () => {
+    const base = ["--as-of", AS_OF, "--source-property-id", "123", "--source", "hotelbeds"];
+    expect(parseArgs([...base, "--environment", "evaluation"]).environment).toBe("evaluation");
+    expect(parseArgs([...base, "--environment", "production"]).environment).toBe("production");
+    expect(() => parseArgs([...base, "--environment", "staging"])).toThrow(
+      /evaluation or production/,
+    );
+    expect(() => parseArgs(base)).toThrow(/environment/);
   });
 });

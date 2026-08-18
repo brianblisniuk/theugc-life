@@ -142,8 +142,8 @@ async function identity(
 /** A LATER observation for an existing identity, in a run of its own. */
 async function addObservation(
   f: Fixture,
-  fields: ObservationFields & { destinationId?: string } = {},
-): Promise<void> {
+  fields: ObservationFields & { destinationId?: string; advanceCurrent?: boolean } = {},
+): Promise<string> {
   const runId = await newRun(fields.destinationId ?? DEST.bali);
   await adminQuery(
     `insert into public.source_property_observations
@@ -166,6 +166,22 @@ async function addObservation(
       fields.lon ?? null,
     ],
   );
+  if (fields.advanceCurrent !== false) {
+    const advanced = await adminQuery<{ id: string }>(
+      `update public.source_property_identities i
+          set last_seen_run_id = $1, last_seen_at = r.started_at
+         from public.source_runs r
+        where i.id = $2 and r.id = $1
+          and r.started_at > (select p.started_at from public.source_runs p where p.id=i.last_seen_run_id)
+        returning i.id`,
+      [runId, f.identityId],
+    );
+    expect(
+      advanced,
+      "fixture must model the ingestion writer's strictly-newer-run transition",
+    ).toHaveLength(1);
+  }
+  return runId;
 }
 
 async function runMatcher(apply = true) {
@@ -972,8 +988,8 @@ d("pre-publication entity resolution (0030)", () => {
   // -----------------------------------------------------------------------
   // GEOGRAPHY COMES FROM THE OBSERVATION BEING COMPARED
   // -----------------------------------------------------------------------
-  describe("destination evidence is aligned to the latest observation", () => {
-    it("uses the LATEST observation's own run, not the first-seen run", async () => {
+  describe("destination evidence is aligned to the pointed current observation", () => {
+    it("uses last_seen_run_id's observation and run, not the first-seen run", async () => {
       const f = await identity({ destinationId: DEST.bali, name: "Moved Property" });
       await addObservation(f, { destinationId: DEST.ubud, name: "Moved Property v2" });
 
@@ -994,6 +1010,89 @@ d("pre-publication entity resolution (0030)", () => {
       expect(mine.name).toBe("Moved Property v2");
       expect(mine.destinationId).toBe(DEST.ubud);
       expect(mine.destinationId).not.toBe(DEST.bali);
+    });
+
+    it("identical observed_at values are decided by last_seen_run_id, never UUID order", async () => {
+      const f = await identity({ name: "Pointer Old" });
+      const nextRun = await addObservation(f, { name: "Pointer Current" });
+      await adminQuery(
+        `update public.source_property_observations set observed_at='2026-08-17T00:00:00Z'
+          where source_property_identity_id=$1`,
+        [f.identityId],
+      );
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const loaded = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const mine = loaded.find((i) => i.identityId === f.identityId)!;
+        expect(mine.name).toBe("Pointer Current");
+        const pointed = await adminQuery<{ run: string }>(
+          `select last_seen_run_id run from public.source_property_identities where id=$1`,
+          [f.identityId],
+        );
+        expect(pointed[0]!.run).toBe(nextRun);
+      } finally {
+        await client.end();
+      }
+    });
+
+    it("a newer timestamp loses to an unchanged pointer, then a legitimate advance changes discovery", async () => {
+      const f = await identity({
+        name: "Pointer Wins",
+        website: "https://pointer-old.example.com",
+      });
+      const nextRun = await addObservation(f, {
+        name: "Timestamp Loses",
+        website: "https://pointer-new.example.com",
+        advanceCurrent: false,
+      });
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        let loaded = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        expect(loaded.find((i) => i.identityId === f.identityId)!.name).toBe("Pointer Wins");
+        const advanced = await adminQuery(
+          `update public.source_property_identities i set last_seen_run_id=$1, last_seen_at=r.started_at
+             from public.source_runs r where i.id=$2 and r.id=$1
+             and r.started_at > (select p.started_at from public.source_runs p where p.id=i.last_seen_run_id)
+           returning i.id`,
+          [nextRun, f.identityId],
+        );
+        expect(advanced).toHaveLength(1);
+        loaded = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        expect(loaded.find((i) => i.identityId === f.identityId)!.name).toBe("Timestamp Loses");
+      } finally {
+        await client.end();
+      }
+    });
+
+    it("an unresolvable pointer never falls back to a historical observation", async () => {
+      const f = await identity({ name: "Historical Must Not Return" });
+      const emptyRun = await newRun(DEST.bali);
+      await adminQuery(
+        `update public.source_property_identities set last_seen_run_id=$1 where id=$2`,
+        [emptyRun, f.identityId],
+      );
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const loaded = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        expect(loaded.some((i) => i.identityId === f.identityId)).toBe(false);
+      } finally {
+        await client.end();
+      }
     });
 
     it("UNKNOWN destination is not the SAME destination", () => {

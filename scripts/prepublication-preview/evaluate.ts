@@ -87,6 +87,15 @@ export interface PreviewResult {
   meaning: string;
 }
 
+export interface FingerprintPayload {
+  fingerprintSchemaVersion: "d062-prepublication-preview-fingerprint/1";
+  identity: PreviewInput["identity"];
+  asOf: string;
+  conditions: Array<
+    Pick<ConditionResult, "number" | "name" | "status" | "reason" | "evidence" | "asOf">
+  >;
+}
+
 const names = [
   "canonical_property_identity_resolved",
   "supported_canonical_destination",
@@ -123,6 +132,27 @@ function stable(value: unknown): string {
 
 export function fingerprintSemanticBundle(bundle: object): string {
   return createHash("sha256").update(stable(bundle)).digest("hex");
+}
+
+/** Machine-stable semantics only. Human display copy is deliberately excluded. */
+export function buildFingerprintPayload(args: {
+  identity: PreviewInput["identity"];
+  asOf: string;
+  conditions: readonly ConditionResult[];
+}): FingerprintPayload {
+  return {
+    fingerprintSchemaVersion: "d062-prepublication-preview-fingerprint/1",
+    identity: args.identity,
+    asOf: args.asOf,
+    conditions: args.conditions.map(({ number, name, status, reason, evidence, asOf }) => ({
+      number,
+      name,
+      status,
+      reason,
+      evidence,
+      asOf,
+    })),
+  };
 }
 
 export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResult {
@@ -395,6 +425,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
     locationCurrent &&
     input.location!.latitude !== null &&
     input.location!.longitude !== null &&
+    input.location!.policyProvider &&
     input.location!.policyVersion
       ? result(
           10,
@@ -475,20 +506,21 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
     : conditions.some((c) => c.status === "FAIL")
       ? "FAIL"
       : "UNRESOLVED";
-  const semanticBundle = {
-    schemaVersion: "d062-prepublication-preview/1" as const,
+  const fingerprintPayload = buildFingerprintPayload({
     identity: input.identity,
     asOf,
     conditions,
-  };
+  });
   return {
-    ...semanticBundle,
+    schemaVersion: "d062-prepublication-preview/1",
     identityId: input.identity.id,
     source: input.identity.source,
     environment: input.identity.environment,
     overall,
     fingerprintAlgorithm: "sha256",
-    fingerprint: fingerprintSemanticBundle(semanticBundle),
+    asOf,
+    conditions,
+    fingerprint: fingerprintSemanticBundle(fingerprintPayload),
     meaning:
       "D062 preconditions currently appear satisfied only when PASS; authorization and publication remain separate A05 actions.",
   };

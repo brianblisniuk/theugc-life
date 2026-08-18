@@ -11,8 +11,9 @@ npm run source:preview -- --source hotelbeds --environment evaluation \
   --as-of YYYY-MM-DD --source-property-id PROVIDER_ID
 ```
 
-`--identity-id` is the alternative scope. There is no unscoped default and no
-`--apply`.
+`--identity-id` is the alternative scope. `--environment` explicitly selects
+`evaluation` or `production`; production inspection remains read-only and does
+not implement production ingestion. There is no unscoped default and no `--apply`.
 
 ## Vocabulary and composition
 
@@ -34,11 +35,13 @@ creation time, and row order never select evidence; history is not a fallback.
 Every condition contains its number, stable name, status, machine reason,
 explanation, immutable identifiers/policy fields, and condition-specific
 `asOf`. The preview fingerprint is lowercase SHA-256 over a canonical JSON
-semantic bundle containing schema version, identity/source/environment/current
-observation, explicit as-of, and all eleven complete condition results. Object
-keys are recursively sorted and set-like identifier/reason arrays are sorted.
-It reads no clock, creates no UUID, depends on no DB row order, and is not an
-authorization.
+semantic bundle containing fingerprint schema version,
+identity/source/environment/current observation, explicit as-of, and every
+condition's stable number/key, status, machine reason, semantic evidence, and
+condition-specific as-of. Human-readable explanations/display copy are
+explicitly excluded. Object keys are recursively sorted and set-like
+identifier/reason arrays are sorted. It reads no clock, creates no UUID, depends
+on no DB row order, and is not an authorization.
 
 Entity evidence uses a live discovery sweep and the existing sync gate. Pending
 current pairs and live anomaly findings hold conditions 1/11; legitimately
