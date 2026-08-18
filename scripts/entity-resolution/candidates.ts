@@ -4,8 +4,10 @@
  * WHAT A BLOCKING RULE DECIDES
  * ----------------------------
  * Only this: **is this pair worth comparing?** It is not a match, not a partial
- * match, and not a reason to accept anything. Every pair it produces lands in
- * `source_match_candidates` with `status = 'pending'` and waits for a human.
+ * match, not a reason to accept anything, and not a persistence-ownership
+ * decision. A newly machine-owned relationship may be persisted as a pending
+ * `source_match_candidates` row by the writer; an existing manual or decided
+ * relationship is not rewritten into machine state. BLOCKING != MATCH.
  *
  * A KEY MUST IDENTIFY, NOT GROUP
  * ------------------------------
