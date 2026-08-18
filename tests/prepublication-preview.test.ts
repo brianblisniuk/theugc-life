@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,7 @@ const AS_OF = "2026-08-17";
 const current = "00000000-0000-0000-0000-000000000010";
 const candidate = (over: Record<string, unknown> = {}) => ({
   id: "finding-1",
+  sourcePropertyIdentityId: "identity-1",
   kind: "new_property" as const,
   status: "accepted",
   candidateHotelId: null,
@@ -53,6 +55,7 @@ function valid(): PreviewInput {
       reviewNote: "reviewed",
     },
     destination: { id: "destination-1", slug: "bali" },
+    targetHotel: null,
     entity: {
       synchronized: true,
       acceptedCandidates: [candidate()],
@@ -152,10 +155,17 @@ describe("D062 pre-publication preview", () => {
       destinationId: "destination-1",
       targetHotelId: "hotel-1",
     };
+    input.targetHotel = { id: "hotel-1", destinationId: "destination-1", destinationSlug: "bali" };
     input.entity.acceptedCandidates = [
       candidate({ id: "candidate-1", kind: "canonical_hotel", candidateHotelId: "hotel-1" }),
     ];
     expect(condition(evaluatePreview(input, AS_OF), 1).status).toBe("PASS");
+    input.review!.destinationId = null;
+    expect(condition(evaluatePreview(input, AS_OF), 2).status).toBe("PASS");
+    input.review!.destinationId = "destination-other";
+    expect(condition(evaluatePreview(input, AS_OF), 2).reason).toBe(
+      "reviewed_destination_target_mismatch",
+    );
     input.review!.targetHotelId = "hotel-other";
     expect(condition(evaluatePreview(input, AS_OF), 1).reason).toBe(
       "identity_decision_lacks_support",
@@ -355,5 +365,75 @@ describe("D062 pre-publication preview", () => {
     expect(resolvePreviewTarget(env).classification.isRemote).toBe(true);
     expect(resolvePreviewTarget(env).classification.redactedTarget).not.toContain("secret");
     expect(() => resolveIngestionTarget(env)).toThrow(/Refusing to ingest into a remote target/);
+  });
+
+  it("binds both source-identity pair endpoints and ignores candidate array order", () => {
+    const a = candidate({
+      id: "pair",
+      kind: "source_identity",
+      sourcePropertyIdentityId: "A",
+      candidateSourcePropertyIdentityId: "B",
+    });
+    const b = candidate({
+      id: "other",
+      kind: "source_identity",
+      sourcePropertyIdentityId: "C",
+      candidateSourcePropertyIdentityId: "B",
+    });
+    const first = valid();
+    first.entity.acceptedCandidates = [a, b];
+    const reversed = structuredClone(first);
+    reversed.entity.acceptedCandidates.reverse();
+    expect(evaluatePreview(reversed, AS_OF).fingerprint).toBe(
+      evaluatePreview(first, AS_OF).fingerprint,
+    );
+    const changed = structuredClone(first);
+    changed.entity.acceptedCandidates[0]!.sourcePropertyIdentityId = "Z";
+    expect(evaluatePreview(changed, AS_OF).fingerprint).not.toBe(
+      evaluatePreview(first, AS_OF).fingerprint,
+    );
+  });
+
+  it("canonicalizes lifecycle issue sets independently of array, tied order, and null order", () => {
+    const issue = (code: string, order: number | null) => ({
+      issueCode: code,
+      issueType: "CLOSED",
+      dateFromRaw: "2026-08-01",
+      dateToRaw: "2026-08-31",
+      providerOrder: order,
+      alternative: false,
+    });
+    for (const order of [1, null]) {
+      const left = valid(),
+        right = valid();
+      left.lifecycle.snapshot!.providerIssueCount = 2;
+      left.lifecycle.snapshot!.issues = [issue("SPA", order), issue("HOTEL", order)];
+      right.lifecycle.snapshot!.providerIssueCount = 2;
+      right.lifecycle.snapshot!.issues = left.lifecycle
+        .snapshot!.issues.map((value) => ({ ...value }))
+        .reverse();
+      expect(evaluatePreview(right, AS_OF).fingerprint).toBe(
+        evaluatePreview(left, AS_OF).fingerprint,
+      );
+      right.lifecycle.snapshot!.issues.find((issue) => issue.issueCode === "HOTEL")!.dateToRaw =
+        "2026-09-01";
+      expect(evaluatePreview(right, AS_OF).fingerprint).not.toBe(
+        evaluatePreview(left, AS_OF).fingerprint,
+      );
+    }
+  });
+
+  it("uses locale-independent fingerprint ordering and schema v2", () => {
+    expect(
+      buildFingerprintPayload({
+        identity: valid().identity,
+        asOf: AS_OF,
+        conditions: evaluatePreview(valid(), AS_OF).conditions,
+      }).fingerprintSchemaVersion,
+    ).toBe("d062-prepublication-preview-fingerprint/2");
+    const source =
+      readFileSync("scripts/prepublication-preview/evaluate.ts", "utf8") +
+      readFileSync("scripts/prepublication-preview/preview.ts", "utf8");
+    expect(source).not.toContain("localeCompare");
   });
 });

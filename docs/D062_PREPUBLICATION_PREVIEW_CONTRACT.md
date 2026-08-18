@@ -44,6 +44,11 @@ contradiction.
 
 ## Evidence and fingerprint
 
+For `approve_create`, condition 2 uses the explicit reviewed destination. For
+`approve_match`, it uses the named canonical target hotel's destination; a null
+review destination is permitted, but a non-null one must agree exactly with the
+target hotel or the condition holds as unresolved.
+
 Every condition contains its number, stable name, status, machine reason,
 explanation, immutable identifiers/policy fields, and condition-specific
 `asOf`. The preview fingerprint is lowercase SHA-256 over a canonical JSON
@@ -56,6 +61,13 @@ contradicting accepted entity candidate. Human-readable explanations/display cop
 explicitly excluded. Object keys are recursively sorted and set-like
 identifier/reason arrays are sorted. It reads no clock, creates no UUID, depends
 on no DB row order, and is not an authorization.
+
+Fingerprint schema `d062-prepublication-preview-fingerprint/2` uses explicit
+code-point lexical comparison rather than locale collation. Source-identity
+candidate evidence binds both pair endpoints. Lifecycle arrays are retained and
+sorted by semantic contents (including provider order when present), never by
+evidence-row UUID. Fingerprint-bound `timestamptz` values are emitted as canonical
+UTC instants with six fractional digits and `Z`.
 
 Entity evidence uses a live discovery sweep and the existing sync gate. Pending
 current pairs and live anomaly findings hold conditions 1/11; legitimately

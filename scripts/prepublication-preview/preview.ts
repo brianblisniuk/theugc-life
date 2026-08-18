@@ -10,7 +10,7 @@ import {
 import { loadBlockableIdentities } from "../entity-resolution/writer";
 import { loadEvaluableProperties, loadLifecyclePolicy } from "../lifecycle/store";
 import { isValidIsoDate } from "../lifecycle/policy";
-import { evaluatePreview, type PreviewInput } from "./evaluate";
+import { compareStableStrings, evaluatePreview, type PreviewInput } from "./evaluate";
 import { resolvePreviewTarget } from "./target";
 
 interface Args {
@@ -61,6 +61,7 @@ type BundleRow = {
   observation_id: string | null;
   review: PreviewInput["review"];
   destination: PreviewInput["destination"];
+  target_hotel: PreviewInput["targetHotel"];
   scope: PreviewInput["scope"];
   star: PreviewInput["star"];
   location: PreviewInput["location"];
@@ -68,8 +69,9 @@ type BundleRow = {
 
 export const BUNDLE_QUERY = `
 select i.id identity_id, i.source, i.source_environment, i.source_property_id, o.id observation_id,
-  case when rv.id is null then null else jsonb_build_object('id',rv.id,'decision',rv.decision,'destinationId',rv.destination_id,'targetHotelId',rv.target_hotel_id,'decidedInRunId',rv.decided_in_run_id,'reviewerUserId',rv.reviewer_user_id,'reviewerLabel',rv.reviewer_label,'reviewedAt',rv.reviewed_at,'reviewNote',rv.review_note) end review,
+  case when rv.id is null then null else jsonb_build_object('id',rv.id,'decision',rv.decision,'destinationId',rv.destination_id,'targetHotelId',rv.target_hotel_id,'decidedInRunId',rv.decided_in_run_id,'reviewerUserId',rv.reviewer_user_id,'reviewerLabel',rv.reviewer_label,'reviewedAt',to_char(rv.reviewed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'reviewNote',rv.review_note) end review,
   case when d.id is null then null else jsonb_build_object('id',d.id,'slug',d.slug) end destination,
+  case when th.id is null then null else jsonb_build_object('id',th.id,'destinationId',th.destination_id,'destinationSlug',td.slug) end target_hotel,
   case when sc.id is null then null else jsonb_build_object('revisionId',sc.id,'observationId',sc.evidence_observation_id,'outcome',sc.outcome,'policyProvider',sc.policy_provider,'policyVersion',sc.policy_version,'sourceValue',sc.source_value) end scope,
   case when st.id is null then null else jsonb_build_object('revisionId',st.id,'observationId',st.evidence_observation_id,'outcome',st.outcome,'resolvedStarValue',st.resolved_star_value,'conflictState',st.conflict_state,'policyProvider',st.policy_provider,'policyVersion',st.policy_version,'sourceValue',st.source_value) end star,
   case when lo.id is null then null else jsonb_build_object('revisionId',lo.id,'observationId',lo.evidence_observation_id,'outcome',lo.outcome,'latitude',lo.resolved_latitude::text,'longitude',lo.resolved_longitude::text,'conflictState',lo.conflict_state,'unresolvedReason',lo.unresolved_reason,'policyProvider',lo.policy_provider,'policyVersion',lo.policy_version) end location
@@ -77,6 +79,8 @@ from public.source_property_identities i
 left join public.source_property_observations o on o.source_property_identity_id=i.id and o.source_run_id=i.last_seen_run_id
 left join public.source_property_reviews rv on rv.source_property_identity_id=i.id
 left join public.destinations d on d.id=rv.destination_id
+left join public.hotels th on th.id=rv.target_hotel_id
+left join public.destinations td on td.id=th.destination_id
 left join public.source_property_current_scope_resolutions sc on sc.source_property_identity_id=i.id
 left join public.source_property_current_star_resolutions st on st.source_property_identity_id=i.id
 left join public.source_property_current_location_resolutions lo on lo.source_property_identity_id=i.id
@@ -131,7 +135,7 @@ async function composePreviewResults(client: Client, args: Args) {
               candidate_hotel_id, candidate_source_property_identity_id candidate_source_identity_id,
               source_run_id, name_evidence, domain_evidence, address_evidence, phone_evidence,
               brand_evidence, coordinate_distance_metres::text, known_source_mapping,
-              review_note, resolved_at::text, id
+              review_note, case when resolved_at is null then null else to_char(resolved_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end resolved_at, id
          from public.source_match_candidates
         where source = $1 and source_environment = $2`,
     [args.source, args.environment],
@@ -168,6 +172,7 @@ async function composePreviewResults(client: Client, args: Args) {
       .filter((c) => c.status === "accepted")
       .map((c) => ({
         id: c.id,
+        sourcePropertyIdentityId: c.left_id,
         kind: c.kind as "canonical_hotel" | "source_identity" | "new_property",
         status: c.status,
         candidateHotelId: c.candidate_hotel_id,
@@ -186,8 +191,9 @@ async function composePreviewResults(client: Client, args: Args) {
         supersededReason: c.superseded_reason,
       }))
       .sort((a, b) =>
-        `${a.kind}|${a.candidateHotelId ?? ""}|${a.candidateSourcePropertyIdentityId ?? ""}|${a.id}`.localeCompare(
-          `${b.kind}|${b.candidateHotelId ?? ""}|${b.candidateSourcePropertyIdentityId ?? ""}|${b.id}`,
+        compareStableStrings(
+          `${a.kind}|${a.sourcePropertyIdentityId}|${a.candidateHotelId ?? ""}|${a.candidateSourcePropertyIdentityId ?? ""}|${a.id}`,
+          `${b.kind}|${b.sourcePropertyIdentityId}|${b.candidateHotelId ?? ""}|${b.candidateSourcePropertyIdentityId ?? ""}|${b.id}`,
         ),
       );
     const pending = related.filter((c) => c.status === "pending").map((c) => c.id);
@@ -207,6 +213,7 @@ async function composePreviewResults(client: Client, args: Args) {
       },
       review: row.review,
       destination: row.destination,
+      targetHotel: row.target_hotel,
       scope: row.scope,
       star: row.star,
       location: row.location,

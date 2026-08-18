@@ -205,7 +205,50 @@ d("D062 preview real DB composition", () => {
         limit: 1,
       });
       expect(preview!.conditions[0]!.reason).toBe("reviewed_explicit_canonical_match");
+      expect(preview!.conditions[1]!.reason).toBe("canonical_match_target_destination_supported");
       const oneFingerprint = preview!.fingerprint;
+      await client.query(`set time zone 'Pacific/Honolulu'`);
+      const [zoned] = await loadPreviewResults(client, {
+        source: "hotelbeds",
+        environment: "evaluation",
+        asOf: "2026-08-17",
+        identityId: id,
+        sourcePropertyId: null,
+        limit: 1,
+      });
+      expect(zoned!.fingerprint).toBe(oneFingerprint);
+      expect(zoned!.conditions[0]!.evidence.reviewedAt).toBe("2026-08-17T00:00:00.000000Z");
+      await adminQuery(
+        `update public.source_property_reviews set reviewed_at='2026-08-17T00:00:01Z' where source_property_identity_id=$1`,
+        [id],
+      );
+      const [instantChanged] = await loadPreviewResults(client, {
+        source: "hotelbeds",
+        environment: "evaluation",
+        asOf: "2026-08-17",
+        identityId: id,
+        sourcePropertyId: null,
+        limit: 1,
+      });
+      expect(instantChanged!.fingerprint).not.toBe(oneFingerprint);
+      await adminQuery(
+        `update public.source_property_reviews set destination_id=$1 where source_property_identity_id=$2`,
+        [DEST.ubud, id],
+      );
+      [preview] = await loadPreviewResults(client, {
+        source: "hotelbeds",
+        environment: "evaluation",
+        asOf: "2026-08-17",
+        identityId: id,
+        sourcePropertyId: null,
+        limit: 1,
+      });
+      expect(preview!.conditions[1]!.reason).toBe("reviewed_destination_target_mismatch");
+      expect(preview!.fingerprint).not.toBe(oneFingerprint);
+      await adminQuery(
+        `update public.source_property_reviews set destination_id=null where source_property_identity_id=$1`,
+        [id],
+      );
       await addCanonical(HOTEL.ubud);
       [preview] = await loadPreviewResults(client, {
         source: "hotelbeds",

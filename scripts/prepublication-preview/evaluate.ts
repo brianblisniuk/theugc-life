@@ -38,6 +38,7 @@ export interface PreviewInput {
     reviewNote: string | null;
   };
   destination: null | { id: string; slug: string };
+  targetHotel: null | { id: string; destinationId: string; destinationSlug: string };
   entity: {
     synchronized: boolean;
     acceptedCandidates: CandidateEvidence[];
@@ -78,6 +79,7 @@ export interface PreviewInput {
 
 export interface CandidateEvidence extends EvidenceRef {
   id: string;
+  sourcePropertyIdentityId: string;
   kind: "canonical_hotel" | "source_identity" | "new_property";
   status: string;
   candidateHotelId: string | null;
@@ -110,7 +112,7 @@ export interface PreviewResult {
 }
 
 export interface FingerprintPayload {
-  fingerprintSchemaVersion: "d062-prepublication-preview-fingerprint/1";
+  fingerprintSchemaVersion: "d062-prepublication-preview-fingerprint/2";
   identity: PreviewInput["identity"];
   asOf: string;
   conditions: Array<
@@ -147,9 +149,30 @@ function stable(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   return `{${Object.entries(value as Record<string, unknown>)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareStableStrings(a, b))
     .map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`)
     .join(",")}}`;
+}
+
+export function compareStableStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function canonicalLifecycleEvidence(evaluation: ReturnType<typeof evaluateLifecycle>): EvidenceRef {
+  const issueKey = (v: (typeof evaluation.mappedWindows)[number]) =>
+    `${v.providerOrder === null ? "~" : String(v.providerOrder).padStart(12, "0")}|${v.issueCode}|${v.issueType}|${v.dateFromRaw ?? ""}|${v.dateToRaw ?? ""}|${String(v.alternative)}`;
+  const closureKey = (v: (typeof evaluation.activeClosureWindows)[number]) =>
+    `${v.issueCode}|${v.issueType}|${v.dateFrom}|${v.dateTo}`;
+  return {
+    ...evaluation,
+    mappedWindows: [...evaluation.mappedWindows].sort((a, b) =>
+      compareStableStrings(issueKey(a), issueKey(b)),
+    ),
+    activeClosureWindows: [...evaluation.activeClosureWindows].sort((a, b) =>
+      compareStableStrings(closureKey(a), closureKey(b)),
+    ),
+    unresolvedReasons: [...evaluation.unresolvedReasons].sort(compareStableStrings),
+  } as unknown as EvidenceRef;
 }
 
 export function fingerprintSemanticBundle(bundle: object): string {
@@ -163,7 +186,7 @@ export function buildFingerprintPayload(args: {
   conditions: readonly ConditionResult[];
 }): FingerprintPayload {
   return {
-    fingerprintSchemaVersion: "d062-prepublication-preview-fingerprint/1",
+    fingerprintSchemaVersion: "d062-prepublication-preview-fingerprint/2",
     identity: args.identity,
     asOf: args.asOf,
     conditions: args.conditions.map(({ number, name, status, reason, evidence, asOf }) => ({
@@ -181,8 +204,9 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
   const current = input.identity.currentObservationId;
   const currentOk = current !== null;
   const acceptedCandidates = [...input.entity.acceptedCandidates].sort((a, b) =>
-    `${a.kind}|${a.candidateHotelId ?? ""}|${a.candidateSourcePropertyIdentityId ?? ""}|${a.id}`.localeCompare(
-      `${b.kind}|${b.candidateHotelId ?? ""}|${b.candidateSourcePropertyIdentityId ?? ""}|${b.id}`,
+    compareStableStrings(
+      `${a.kind}|${a.sourcePropertyIdentityId}|${a.candidateHotelId ?? ""}|${a.candidateSourcePropertyIdentityId ?? ""}|${a.id}`,
+      `${b.kind}|${b.sourcePropertyIdentityId}|${b.candidateHotelId ?? ""}|${b.candidateSourcePropertyIdentityId ?? ""}|${b.id}`,
     ),
   );
   const canonicalCandidates = acceptedCandidates.filter((c) => c.kind === "canonical_hotel");
@@ -269,29 +293,60 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       { ...reviewEvidence, ...entityEvidence },
     );
 
+  const destinationEvidence: EvidenceRef = {
+    ...reviewEvidence,
+    reviewedDestinationId: input.review?.destinationId ?? null,
+    targetHotelId: input.targetHotel?.id ?? null,
+    targetHotelDestinationId: input.targetHotel?.destinationId ?? null,
+    targetHotelDestinationSlug: input.targetHotel?.destinationSlug ?? null,
+  };
   const c2 =
-    input.review?.destinationId && input.destination?.id === input.review.destinationId
-      ? result(
-          2,
-          "PASS",
-          "reviewed_destination_supported",
-          "The reviewed destination resolves to the canonical destination catalogue.",
-          {
-            ...reviewEvidence,
-            destinationId: input.destination.id,
-            destinationSlug: input.destination.slug,
-          },
-        )
-      : result(
-          2,
-          "UNRESOLVED",
-          "reviewed_destination_missing_or_invalid",
-          "No valid reviewed canonical destination can be established.",
-          {
-            ...reviewEvidence,
-            reviewedDestinationId: input.review?.destinationId ?? null,
-          },
-        );
+    input.review?.decision === "approve_match"
+      ? !input.targetHotel || input.targetHotel.id !== input.review.targetHotelId
+        ? result(
+            2,
+            "UNRESOLVED",
+            "canonical_match_target_destination_missing",
+            "The reviewed canonical target and its destination cannot be reconstructed.",
+            destinationEvidence,
+          )
+        : input.review.destinationId !== null &&
+            input.review.destinationId !== input.targetHotel.destinationId
+          ? result(
+              2,
+              "UNRESOLVED",
+              "reviewed_destination_target_mismatch",
+              "The optional reviewed destination disagrees with the canonical target hotel's destination.",
+              destinationEvidence,
+            )
+          : result(
+              2,
+              "PASS",
+              "canonical_match_target_destination_supported",
+              "The canonical target hotel's destination is supported and agrees with the optional reviewed destination.",
+              destinationEvidence,
+            )
+      : input.review?.destinationId && input.destination?.id === input.review.destinationId
+        ? result(
+            2,
+            "PASS",
+            "reviewed_destination_supported",
+            "The reviewed destination resolves to the canonical destination catalogue.",
+            {
+              ...destinationEvidence,
+              destinationId: input.destination.id,
+              destinationSlug: input.destination.slug,
+            },
+          )
+        : result(
+            2,
+            "UNRESOLVED",
+            "reviewed_destination_missing_or_invalid",
+            "No valid reviewed canonical destination can be established.",
+            {
+              ...destinationEvidence,
+            },
+          );
 
   const scopeCurrent = currentOk && input.scope?.observationId === current;
   const c3 = !scopeCurrent
@@ -340,6 +395,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
     currentObservationId: current,
     hasCurrentObservation: currentOk,
   });
+  const lifecycleEvidence = canonicalLifecycleEvidence(lifecycle);
   const c4 =
     lifecycle.outcome === "known_closed"
       ? result(
@@ -347,7 +403,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           "FAIL",
           "known_property_closed",
           "A HOTEL+CLOSED window covers the explicit as-of date; this is not permanent-closure inference.",
-          lifecycle as unknown as EvidenceRef,
+          lifecycleEvidence,
           asOf,
         )
       : lifecycle.outcome === "no_known_closure"
@@ -356,7 +412,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
             "PASS",
             "no_known_property_closure",
             "No property-level closure covers this date. This does not mean active, open, or operating.",
-            lifecycle as unknown as EvidenceRef,
+            lifecycleEvidence,
             asOf,
           )
         : result(
@@ -364,7 +420,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
             "UNRESOLVED",
             "lifecycle_evidence_unresolved",
             "Current lifecycle evidence is insufficient; historical evidence is not substituted.",
-            lifecycle as unknown as EvidenceRef,
+            lifecycleEvidence,
             asOf,
           );
 
