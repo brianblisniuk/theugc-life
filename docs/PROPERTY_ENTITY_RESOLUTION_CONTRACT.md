@@ -16,8 +16,14 @@ ID is a source identity; §12.2 refuses a universal match threshold), **D062**
 
 It does **not** answer "should this be published?", it creates no canonical
 hotel, and **it decides no match** — nothing in this system marks a pair
-`accepted`. Every candidate it *surfaces* is written `pending`; the only other
-status it may write is `superseded`, and only on its own stale rows (§8a).
+`accepted`. Discovery surfaces relationships worth comparing; persistence
+ownership is a separate question. If no row exists, the generator may create its
+own `source_identity` + `blocking:%` row as `pending`. It may refresh that row
+while it remains pending, stand it down as `superseded` when its own blocking
+rule disappears, and reactivate only a row it previously stood down with
+`superseded_reason = 'no_current_blocking_rule'`. A manual pending row, a
+human-decided row, or any other non-generator-owned row is never acquired or
+rewritten by discovery.
 
 ```
 source property identity
@@ -28,9 +34,9 @@ candidate discovery / blocking        "is this pair worth COMPARING?"
         ↓
 pair evidence                         what the evidence SAYS
         ↓
-source_match_candidates               pending while current;
-        ↓                             superseded by the machine when not
-review manifest
+source_match_candidates               generator-owned: pending while current;
+        ↓                             machine-superseded when stale;
+review manifest                       manual/decided rows keep their ownership
         ↓
 a human                               the only thing that may decide a match
 ```
@@ -227,10 +233,14 @@ Status vocabulary is 0027's: `pending` | `accepted` | `rejected` | `superseded`.
 
 | Status | Written by | Meaning |
 |---|---|---|
-| `pending` | the generator | a current blocking rule supports comparing this pair |
-| `superseded` | the generator, with `superseded_reason = 'no_current_blocking_rule'` | no current rule supports it any more (§8a) |
+| `pending` | the generator, when generator-owned | a current blocking rule supports comparing this machine-owned pair |
+| `pending` | a human/manual tool, when non-generator-owned | a reviewer explicitly placed the relationship into review; the generator may not acquire it |
+| `superseded` | the generator, with `superseded_reason = 'no_current_blocking_rule'` | no current rule supports its own machine row any more (§8a) |
 | `superseded` | a human, with no reason recorded | a reviewer set this pair aside |
 | `accepted` / `rejected` | a human, only | a decision |
+
+`pending` alone never establishes ownership. Generator ownership requires both
+`candidate_kind = 'source_identity'` and `match_method like 'blocking:%'`.
 
 **No code path in this repository writes `accepted` or `rejected`**, and a test
 reads the source files to prove it. **The system decides no MATCH**, at any
@@ -243,13 +253,15 @@ computed from ONE current discovery result plus the current rows — never from
 the history of what was once found:
 
 - **CANDIDATES** — `status = 'pending'` **only**, because that is the single
-  status that is waiting for somebody. A machine-superseded row is history and
-  a decided row is decided; showing all four under one heading would put four
-  meanings behind one word, and the displayed total uses the identical filter so
-  the count and the list can never disagree. Non-actionable rows are summarised
-  separately, grouped by status and reason. Each entry shows the pair, both
-  names, both destinations, why it surfaced, every evidence dimension, the raw
-  distance and the descriptive count;
+  status that is waiting for somebody. A pending row may be generator-owned or
+  manual; the queue labels every row `machine` or `MANUAL`. A
+  machine-superseded row is history and a decided row is decided; showing all
+  four statuses under one heading would put four meanings behind one word, and
+  the displayed total uses the identical filter so the count and the list can
+  never disagree. Non-actionable rows are summarised separately, grouped by
+  status and reason. Each entry shows the pair, both names, both destinations,
+  why it surfaced, every evidence dimension, the raw distance and the descriptive
+  count;
 - **ANOMALIES** — shared-key clusters, cross-destination collisions **and**
   incomplete-geography findings (reason, key, affected identities), plus the
   size of each partition. These sets **overlap by design**: one identity can be
@@ -264,11 +276,12 @@ first saw it.
 ### 7.2 The sync gate — CANDIDATES fails closed
 
 ANOMALIES and NO MACHINE CANDIDATE are computed live, so they are current by
-construction. CANDIDATES is not: it reads rows the generator wrote at an earlier
-moment, and between then and now a provider correction can remove the blocking
-relation behind a pending row, or create a pair nothing has persisted. Either
-way the queue silently stops describing the present, and the row itself shows
-nothing — a stale candidate looks exactly like a current one.
+construction. CANDIDATES is not: it reads persisted pending rows from an earlier
+moment. Between then and now a provider correction can remove the blocking
+relation behind a generator-owned pending row, or create a relationship that
+nothing has yet accounted for. Either way the queue can silently stop describing
+the present, and the row itself shows nothing — a stale machine candidate looks
+exactly like a current one.
 
 So before the queue may be shown, the generator's own pair set is compared with
 a live sweep:
@@ -276,7 +289,7 @@ a live sweep:
 | | |
 |---|---|
 | discovered side | the pairs `discoverCandidates` returns right now |
-| generator-owned | `status = 'pending'` AND `candidate_kind = 'source_identity'` AND `match_method like 'blocking:%'` — **both** halves, always |
+| generator-owned | `status = 'pending'` AND `candidate_kind = 'source_identity'` AND `match_method like 'blocking:%'` — **both** ownership halves, always |
 | accounted for | a pair a human DECIDED (`accepted`, `rejected`, or `superseded` with no reason), **or** a MANUAL pending `source_identity` pair |
 | out of scope | `canonical_hotel`, `new_property`, and every other kind |
 
@@ -323,16 +336,19 @@ Without the ownership guard the sequence is a silent conversion: the refresh
 takes the row, stamps it `blocking:…`, overwrites the evidence, and the next run
 is then entitled to stand down what was a human's pair.
 
-**Ownership requires the kind as well as the method.** `match_method` alone is
-too weak — a `canonical_hotel` row is not something the generator produces at
-all, and nothing stops a future tool writing one with a blocking-shaped method.
-One shared predicate answers "is this the generator's?" for the writer, the
-review origin label and the sync gate, so the three cannot drift. The queue
-labels every row `machine` or `MANUAL`.
+**One ownership definition governs every path:**
+`candidate_kind = 'source_identity'` plus `match_method like 'blocking:%'`.
+The TypeScript `isGeneratorOwned(...)` helper and the writer/sync SQL boundaries
+mirror that exact two-part definition. Neither half alone establishes ownership:
+`match_method` by itself is too weak because a `canonical_hotel` row is not
+something the generator produces at all, and nothing stops a future tool writing
+one with a blocking-shaped method. The queue labels every row `machine` or
+`MANUAL`.
 
-Re-running candidate generation refreshes evidence only on rows that are still
-`pending`. Rewriting evidence under a decision a human already made would make
-that decision look as though it rested on facts that were not in front of them.
+Re-running candidate generation refreshes evidence only on its own rows that are
+still `pending`. Rewriting evidence under a decision a human already made would
+make that decision look as though it rested on facts that were not in front of
+them.
 
 ## 8. One pair, one row — literally
 
@@ -361,7 +377,7 @@ So the generator **stands its own stale rows down**: `status = 'superseded'` wit
 
 | | |
 |---|---|
-| eligible | `status = 'pending'` AND `match_method like 'blocking:%'` — the generator's own mark |
+| eligible | `candidate_kind = 'source_identity'` AND `status = 'pending'` AND `match_method like 'blocking:%'` — all ownership/current-state conditions |
 | never touched | anything a human decided; anything the generator did not create |
 | deleted | nothing |
 | rewritten | nothing — the evidence that WAS current is preserved, so a reader can still see why the pair once stood |
