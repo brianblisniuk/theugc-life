@@ -115,6 +115,31 @@ This does **not** assert that one physical property can never span a destination
 boundary. It asserts that a shared chain asset is not the evidence that would
 establish it.
 
+**The veto is global, and decided before any pair exists.** Whether a key names
+a chain is a fact about the KEY, not about the destination you happen to be
+standing in: `marriott.com` does not become property-level identity evidence
+inside Bali merely because the Dubai Marriotts sit in a different bucket. So a
+key appearing in more than one *known* destination contributes **zero pairs
+anywhere**, in every destination, and the same computation produces both the
+anomaly and the refusal — what is reported and what is refused cannot disagree.
+
+Scoping first and checking afterwards would have let two Bali properties pair on
+a domain that was simultaneously reported as a cross-destination anomaly, which
+is the contradiction this rule exists to prevent.
+
+Two things the veto deliberately does not do:
+
+- it removes a **reason**, not a pair. Two Bali properties sharing both
+  `marriott.com` and a local phone still surface as one candidate —
+  `blocking:exact_phone`, not `blocking:exact_domain+exact_phone`;
+- it does not touch **clusters**. A cluster is not a pair, and "these four Bali
+  properties share a chain domain that also appears in Dubai" is true and worth
+  showing.
+
+In the real data the veto removes **5** of 266 pairs, every one of them domain-only
+and every domain a chain: `movenpick.com`, `anantara.com` (twice), `hyatt.com`,
+`fourseasons.com`. None survived on an independent reason, because none had one.
+
 ### 3.5 Geography comes from the observation being compared
 
 The destination is read from the run that produced the **latest observation**,
@@ -251,9 +276,19 @@ a live sweep:
 | | |
 |---|---|
 | discovered side | the pairs `discoverCandidates` returns right now |
-| persisted side | `status = 'pending'` AND `candidate_kind = 'source_identity'` AND `match_method like 'blocking:%'` |
-| accounted for | a pair a human decided — `accepted`, `rejected`, or `superseded` with no reason |
-| out of scope | `manual_search` and every other non-generator row |
+| generator-owned | `status = 'pending'` AND `candidate_kind = 'source_identity'` AND `match_method like 'blocking:%'` — **both** halves, always |
+| accounted for | a pair a human DECIDED (`accepted`, `rejected`, or `superseded` with no reason), **or** a MANUAL pending `source_identity` pair |
+| out of scope | `canonical_hotel`, `new_property`, and every other kind |
+
+The discovered side asks *"does a reviewer have this relationship in front of
+them?"*, not *"does the generator own a row for it?"*. Three things answer yes: a
+current actionable machine pair, a decided pair, and a manual pending pair. Only
+the first is generator-owned; the other two are accounted for and never machine
+state — which is exactly why they must count. The generator is forbidden from
+touching either, so calling them missing would raise an alarm no run could ever
+clear, and the gate would refuse review forever over a pair a reviewer can
+already see. The reverse direction stays narrow: only an actionable machine row
+may be called stale, because only the generator can stand one down.
 
 Disagreement in **either** direction stops the review with the command to run.
 It is deliberately **not** a filter: intersecting the two would hide a newly
@@ -268,10 +303,32 @@ keeps its evidence, so discovery keeps producing it while its row is no longer
 clear — it is required to leave decided rows alone — so a decided pair is
 *accounted for* rather than absent.
 
-A `manual_search` pending row is a reviewer's own pair. Discovery never claimed
-to produce it, so its absence from the sweep is not a disagreement about
-anything; it remains reviewable, and the queue labels every row `machine` or
-`MANUAL` so the two are never read as one kind of thing.
+### 7.3 A manual pair belongs to the human who made it
+
+One pair is one row (§8), so when a reviewer creates A↔B by hand and the
+provider evidence later makes the *same* pair machine-discoverable, the
+generator's INSERT conflicts with **their** row. What happens next is the whole
+question, and the answer is: nothing.
+
+- the evidence refresh matches only rows in the generator's own namespace, so a
+  manual row is left **byte-identical** — `manual_search` is never rewritten to a
+  blocking method, and the reviewer's evidence and note are never overwritten;
+- no second row is created; the unique-pair invariant forbids one, and the
+  relationship is already in front of a reviewer;
+- the row never becomes machine-supersedable, because it never becomes machine
+  state;
+- the sync gate treats it as **accounted for** while it stays actionable.
+
+Without the ownership guard the sequence is a silent conversion: the refresh
+takes the row, stamps it `blocking:…`, overwrites the evidence, and the next run
+is then entitled to stand down what was a human's pair.
+
+**Ownership requires the kind as well as the method.** `match_method` alone is
+too weak — a `canonical_hotel` row is not something the generator produces at
+all, and nothing stops a future tool writing one with a blocking-shaped method.
+One shared predicate answers "is this the generator's?" for the writer, the
+review origin label and the sync gate, so the three cannot drift. The queue
+labels every row `machine` or `MANUAL`.
 
 Re-running candidate generation refreshes evidence only on rows that are still
 `pending`. Rewriting evidence under a decision a human already made would make

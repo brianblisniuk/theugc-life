@@ -65,7 +65,7 @@ import { discoverCandidates } from "./candidates";
 import {
   ACTIONABLE_CANDIDATE_STATUS,
   compareMachinePairSync,
-  isMachineMatchMethod,
+  isGeneratorOwned,
   MACHINE_MATCH_METHOD_PREFIX,
   partitionForReview,
   type MachineSyncResult,
@@ -178,22 +178,31 @@ export const PERSISTED_MACHINE_PAIRS_QUERY = `
      and match_method like $4`;
 
 /**
- * Pairs a HUMAN has already decided.
+ * Pairs that are in front of a reviewer WITHOUT belonging to the generator.
  *
- * `accepted`, `rejected`, and the `superseded` a reviewer set aside — which is
- * exactly a `superseded` row with NO `superseded_reason`, since only the machine
- * records one. These stay discoverable (their evidence did not change) but are
- * not actionable, and the generator is required to leave them alone, so they are
- * ACCOUNTED FOR rather than missing.
+ * Two kinds, and the gate needs both:
+ *
+ *   - DECIDED — `accepted`, `rejected`, or the `superseded` a reviewer set
+ *     aside, which is exactly a `superseded` row with NO `superseded_reason`,
+ *     since only the machine records one;
+ *   - MANUAL PENDING — a `source_identity` row a reviewer created, whose
+ *     `match_method` is not the generator's. One pair is one row, so the
+ *     generator may not add a second for the same relationship, and it may not
+ *     seize this one.
+ *
+ * Neither is machine state, and the generator is forbidden from touching
+ * either — which is precisely why they count as ACCOUNTED FOR. Calling them
+ * missing would raise an alarm no run could ever clear.
  */
-export const DECIDED_PAIRS_QUERY = `
+export const ACCOUNTED_NON_MACHINE_PAIRS_QUERY = `
   select source_property_identity_id as left_identity,
          candidate_source_property_identity_id as right_identity
     from public.source_match_candidates
    where source = $1 and source_environment = $2
      and candidate_kind = 'source_identity'
      and (status in ('accepted', 'rejected')
-          or (status = 'superseded' and superseded_reason is null))`;
+          or (status = 'superseded' and superseded_reason is null)
+          or (status = 'pending' and match_method not like $3))`;
 
 export class ReviewOutOfSyncError extends Error {
   constructor(message: string) {
@@ -222,14 +231,14 @@ export async function loadPersistedMachinePairs(
   }));
 }
 
-/** Read the human-decided pair set. Read-only, like everything else here. */
-export async function loadDecidedPairs(
+/** Read the accounted-for non-machine pair set. Read-only, like the rest. */
+export async function loadAccountedNonMachinePairs(
   client: Pick<Client, "query">,
   opts: { source: string; environment: string },
 ): Promise<PairKey[]> {
   const res = await client.query<{ left_identity: string; right_identity: string }>(
-    DECIDED_PAIRS_QUERY,
-    [opts.source, opts.environment],
+    ACCOUNTED_NON_MACHINE_PAIRS_QUERY,
+    [opts.source, opts.environment, `${MACHINE_MATCH_METHOD_PREFIX}%`],
   );
   return res.rows.map((r) => ({
     leftIdentityId: r.left_identity,
@@ -291,7 +300,7 @@ async function main(): Promise<void> {
       const sync = compareMachinePairSync(
         discovery.pairs,
         await loadPersistedMachinePairs(client, scope),
-        await loadDecidedPairs(client, scope),
+        await loadAccountedNonMachinePairs(client, scope),
       );
       if (!sync.inSync) throw new ReviewOutOfSyncError(outOfSyncMessage(sync, args.provider));
       console.info(
@@ -329,7 +338,12 @@ async function main(): Promise<void> {
         // A machine pair and a reviewer's own pair are both legitimate review
         // work, and they carry different authority — only the first is covered
         // by the sync gate above, so the reviewer is told which they are reading.
-        const origin = isMachineMatchMethod(r.match_method) ? "machine" : "MANUAL";
+        const origin = isGeneratorOwned({
+          candidateKind: r.candidate_kind,
+          matchMethod: r.match_method,
+        })
+          ? "machine"
+          : "MANUAL";
         console.info(
           `  ── ${r.candidate_kind} · ${origin} · ${r.status}${r.superseded_reason ? ` (${r.superseded_reason})` : ""} · ${r.match_method}`,
         );

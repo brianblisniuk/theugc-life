@@ -34,11 +34,21 @@
  * DESTINATION SCOPE
  * -----------------
  * Keys are scoped to the destination. A Ritz-Carlton in Bali and a Ritz-Carlton
- * in Dubai share `ritzcarlton.com` and are two properties; the real data
- * contains five such cross-destination domain collisions, every one of them a
- * chain. They are reported as ANOMALIES and never paired. This does not assert
- * that one physical property can never span a destination boundary — it asserts
- * that a shared chain asset is not the evidence that would establish it.
+ * in Dubai share `ritzcarlton.com` and are two properties. They are reported as
+ * ANOMALIES and never paired. This does not assert that one physical property
+ * can never span a destination boundary — it asserts that a shared chain asset
+ * is not the evidence that would establish it.
+ *
+ * And that is a fact about the KEY, not about the destination you are standing
+ * in: `marriott.com` does not become property-level identity evidence inside
+ * Bali just because the Dubai Marriotts are in a different bucket. So a key
+ * appearing in more than one KNOWN destination is VETOED GLOBALLY — it
+ * contributes zero pairs anywhere, in every destination, and the veto is decided
+ * before any scoped bucket is expanded.
+ *
+ * The veto removes a REASON, not a pair. Two Bali properties sharing both
+ * `marriott.com` and a local phone still surface as one candidate on the phone.
+ * And it does not touch clusters, which are not pairs.
  *
  * WHAT IS NOT HERE
  * ----------------
@@ -174,10 +184,41 @@ export function discoverCandidates(input: readonly BlockableIdentity[]): Discove
       (global.get(key) ?? global.set(key, []).get(key)!).push(identity);
     }
 
+    // THE CROSS-DESTINATION VETO, DECIDED BEFORE ANY PAIR EXISTS.
+    //
+    // A key seen in more than one KNOWN destination is evidence about a chain,
+    // an operator or a booking desk — `marriott.com` is not a property anywhere,
+    // and that is a fact about the key itself, not about the destination you
+    // happen to be standing in. Scoping first and checking afterwards would let
+    // the two Bali properties on `marriott.com` become a pair while the same key
+    // was simultaneously reported as a cross-destination anomaly: the contract
+    // says such a key contributes ZERO pairs, so the veto has to be known before
+    // the scoped buckets are expanded.
+    //
+    // A NULL destination is not a second destination, so it can never veto
+    // anything; unknown geography is reported on its own terms below.
+    const vetoed = new Set<string>();
+    for (const [key, members] of global) {
+      const destinations = new Set(members.map((m) => scopeOf(m)));
+      destinations.delete(null);
+      if (destinations.size > 1) vetoed.add(key);
+    }
+
     for (const [scopedKey, members] of scoped) {
       if (members.length < 2) continue;
       const key = scopedKey.slice(scopedKey.indexOf(" ") + 1);
       const destinationId = members[0]!.destinationId;
+
+      // The veto removes this REASON from this pair, and nothing else. An
+      // independent reason that is destination-safe still stands on its own: two
+      // Bali properties sharing both `marriott.com` and a local phone number are
+      // still worth comparing, on the phone — the pair survives with
+      // `blocking:exact_phone`, not `blocking:exact_domain+exact_phone`.
+      //
+      // A CLUSTER is not vetoed: it is not a pair, and "these four Bali
+      // properties share a chain domain that also appears in Dubai" is a true
+      // and useful thing to show a reviewer.
+      if (vetoed.has(key) && members.length === 2) continue;
 
       if (members.length > 2) {
         // A key naming a GROUP. Recorded so a reviewer can see it; not expanded.
@@ -209,19 +250,16 @@ export function discoverCandidates(input: readonly BlockableIdentity[]): Discove
       });
     }
 
+    // The anomalies are exactly the vetoed keys — one computation, so what is
+    // REPORTED and what is REFUSED can never disagree.
     for (const [key, members] of global) {
-      const destinations = new Set(members.map((m) => scopeOf(m)));
-      // A NULL destination is not a second destination — it is an absent one,
-      // and it is reported by `incompleteGeography` rather than counted here.
-      destinations.delete(null);
-      if (destinations.size > 1) {
-        crossDestinationCollisions.push({
-          reason,
-          key,
-          destinationIds: [...new Set(members.map((m) => m.destinationId))],
-          identityIds: members.map((m) => m.identityId).sort(),
-        });
-      }
+      if (!vetoed.has(key)) continue;
+      crossDestinationCollisions.push({
+        reason,
+        key,
+        destinationIds: [...new Set(members.map((m) => m.destinationId))],
+        identityIds: members.map((m) => m.identityId).sort(),
+      });
     }
   }
 

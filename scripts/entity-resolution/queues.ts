@@ -104,9 +104,23 @@ export const ACTIONABLE_CANDIDATE_STATUS = "pending" as const;
  * else, and this module never claims authority over them.
  */
 export const MACHINE_MATCH_METHOD_PREFIX = "blocking:" as const;
+export const MACHINE_CANDIDATE_KIND = "source_identity" as const;
 
-export function isMachineMatchMethod(matchMethod: string): boolean {
-  return matchMethod.startsWith(MACHINE_MATCH_METHOD_PREFIX);
+/**
+ * Is this row the generator's to touch?
+ *
+ * BOTH halves are required, and one shared answer is used by the writer, the
+ * review origin label and the sync gate — three places that must not drift.
+ * `match_method` alone is too weak: a `canonical_hotel` row is not something
+ * `generateCandidates` produces at all, and nothing stops a future tool writing
+ * one with a blocking-shaped method. Ownership is the pair of facts, or it is
+ * not ownership.
+ */
+export function isGeneratorOwned(row: { candidateKind: string; matchMethod: string }): boolean {
+  return (
+    row.candidateKind === MACHINE_CANDIDATE_KIND &&
+    row.matchMethod.startsWith(MACHINE_MATCH_METHOD_PREFIX)
+  );
 }
 
 /** An unordered source↔source pair, in the canonical orientation 0030 enforces. */
@@ -150,25 +164,38 @@ export interface MachineSyncResult {
  *
  * THE COMPARISON IS NOT SYMMETRIC, and it must not be.
  *
- * A pair a human has ACCEPTED, REJECTED or set aside keeps its evidence, so
- * discovery keeps producing it — while its row is no longer `pending`. Counting
- * that as "discovered but not persisted" would raise an alarm the generator can
- * never clear: it is required to leave decided rows alone, so re-running it
- * would change nothing and the gate would refuse review forever. A decided pair
- * is ACCOUNTED FOR, which is the question the gate actually asks. It just is not
- * actionable, and it is the actionable side that must match discovery.
+ * The question the discovered side asks is "does a reviewer have this
+ * relationship in front of them?", NOT "does the generator own a row for it?".
+ * Three different things answer yes:
+ *
+ *   1. a current actionable MACHINE pair — the generator's own row;
+ *   2. a pair a human DECIDED — accepted, rejected, or set aside. Its evidence
+ *      did not change, so discovery keeps producing it while its row is no
+ *      longer `pending`;
+ *   3. a MANUAL pending pair — a reviewer's own `source_identity` row that the
+ *      generator did not create. One pair is one row, so the generator may not
+ *      add a second, and it may not seize this one.
+ *
+ * Only (1) is generator-owned. (2) and (3) are ACCOUNTED FOR and never machine
+ * state — which is exactly why the gate must count them: treating either as
+ * missing would raise an alarm no run of the generator could ever clear, since
+ * it is forbidden from touching both. The gate would then refuse review forever
+ * over a relationship a reviewer can already see.
+ *
+ * The reverse direction stays narrow: only an actionable MACHINE row may be
+ * called stale, because only the generator can stand one down.
  */
 export function compareMachinePairSync(
   discovered: readonly PairKey[],
   persistedActionableMachine: readonly PairKey[],
-  humanDecided: readonly PairKey[] = [],
+  accountedNonMachine: readonly PairKey[] = [],
 ): MachineSyncResult {
   const discoveredById = new Map(discovered.map((p) => [pairId(p), p]));
   const persistedById = new Map(persistedActionableMachine.map((p) => [pairId(p), p]));
-  const decidedIds = new Set(humanDecided.map(pairId));
+  const accountedIds = new Set(accountedNonMachine.map(pairId));
 
   const discoveredNotPersisted = [...discoveredById]
-    .filter(([id]) => !persistedById.has(id) && !decidedIds.has(id))
+    .filter(([id]) => !persistedById.has(id) && !accountedIds.has(id))
     .map(([, p]) => p);
   const persistedNotDiscovered = [...persistedById]
     .filter(([id]) => !discoveredById.has(id))

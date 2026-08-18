@@ -146,6 +146,9 @@ async function main(): Promise<void> {
     console.info(`    evidence refreshed    ${counts.candidatesEvidenceUpdated}`);
     console.info(`    already decided       ${counts.candidatesDecidedSkipped} (left untouched)`);
     console.info(
+      `    manual, not ours      ${counts.candidatesManualSkipped} (a reviewer's own pair — left byte-identical)`,
+    );
+    console.info(
       `    stood down            ${counts.candidatesSuperseded} (no current blocking rule)`,
     );
     console.info(`    reactivated           ${counts.candidatesReactivated} (evidence returned)`);

@@ -1,10 +1,17 @@
 /**
  * Persist entity-resolution EVIDENCE.
  *
- * What this writer may do, and nothing more:
+ * What this writer may do, and nothing more — all of it inside ITS OWN
+ * NAMESPACE, which is `candidate_kind = 'source_identity'` AND
+ * `match_method like 'blocking:%'`:
  *
  *   - insert `source_match_candidates` rows with `status = 'pending'`;
- *   - refresh the evidence on a PENDING row when the observations changed;
+ *   - refresh the evidence on a PENDING row IT CREATED, when the observations
+ *     changed. A pending row a reviewer created by hand is left byte-identical:
+ *     one pair is one row, so the insert conflicts with THEIRS, and without the
+ *     ownership guard the refresh would seize it — rewriting `manual_search` to
+ *     a blocking method, overwriting their evidence, and making the row
+ *     machine-supersedable afterwards;
  *   - stand down its OWN pending rows the current rules no longer support,
  *     `status = 'superseded'` + `superseded_reason = 'no_current_blocking_rule'`;
  *   - reactivate one of those same rows — and only one carrying that reason —
@@ -53,6 +60,8 @@ export interface MatchCounts {
   candidatesEvidenceUpdated: number;
   /** Rows left alone because a human had already decided them. */
   candidatesDecidedSkipped: number;
+  /** Pending rows left alone because a HUMAN created them, not the generator. */
+  candidatesManualSkipped: number;
   /** Machine rows stood down because no current blocking rule supports them. */
   candidatesSuperseded: number;
   /** Machine-superseded rows the evidence brought back. */
@@ -167,6 +176,7 @@ function emptyCounts(
     candidatesCreated: 0,
     candidatesEvidenceUpdated: 0,
     candidatesDecidedSkipped: 0,
+    candidatesManualSkipped: 0,
     candidatesSuperseded: 0,
     candidatesReactivated: 0,
     evidence: {
@@ -307,6 +317,19 @@ export async function generateCandidates(
         continue;
       }
 
+      // GENERATOR OWNERSHIP IS REQUIRED, not implied by "pending".
+      //
+      // One pair is one row, so when a reviewer has already created A↔B by hand
+      // the INSERT above conflicts with THEIR row — and without this guard the
+      // refresh would then take it: rewriting `manual_search` to
+      // `blocking:exact_domain`, overwriting the evidence they recorded, and
+      // leaving the generator free to machine-supersede it later. A human's pair
+      // would have been quietly converted into machine state.
+      //
+      // So the refresh matches only rows the generator itself created, and a
+      // manual row is left byte-identical. It does not need a machine row to
+      // exist: the pair IS in front of a reviewer, which is the only thing that
+      // mattered, and the sync gate counts it as accounted for.
       const updated = await client.query(
         `update public.source_match_candidates set
            match_method = $3, name_evidence = $4, domain_evidence = $5, address_evidence = $6,
@@ -315,6 +338,7 @@ export async function generateCandidates(
            and candidate_source_property_identity_id = $2
            and candidate_kind = 'source_identity'
            and status = 'pending'
+           and match_method like 'blocking:%'
            and (match_method, name_evidence, domain_evidence, address_evidence,
                 phone_evidence, brand_evidence, coordinate_distance_metres)
                is distinct from ($3,$4,$5,$6,$7,$8,$9::numeric)
@@ -323,14 +347,19 @@ export async function generateCandidates(
       );
       if ((updated.rowCount ?? 0) > 0) counts.candidatesEvidenceUpdated += 1;
       else {
-        const decided = await client.query(
-          `select 1 from public.source_match_candidates
+        const untouchable = await client.query<{ reason: string }>(
+          `select case when status <> 'pending' then 'decided' else 'manual' end as reason
+             from public.source_match_candidates
             where source_property_identity_id = $1
               and candidate_source_property_identity_id = $2
-              and candidate_kind = 'source_identity' and status <> 'pending'`,
+              and candidate_kind = 'source_identity'
+              and (status <> 'pending' or match_method not like 'blocking:%')`,
           [pair.leftIdentityId, pair.rightIdentityId],
         );
-        if ((decided.rowCount ?? 0) > 0) counts.candidatesDecidedSkipped += 1;
+        for (const row of untouchable.rows) {
+          if (row.reason === "decided") counts.candidatesDecidedSkipped += 1;
+          else counts.candidatesManualSkipped += 1;
+        }
       }
     }
     // STAND DOWN what the current evidence no longer supports.

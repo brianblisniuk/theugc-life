@@ -33,17 +33,21 @@ import {
   normalizePhone,
 } from "../../scripts/entity-resolution/normalize";
 import { compareRecords, type ComparableRecord } from "../../scripts/entity-resolution/evidence";
-import { discoverCandidates, matchMethodFor } from "../../scripts/entity-resolution/candidates";
+import {
+  discoverCandidates,
+  matchMethodFor,
+  type DiscoveryResult,
+} from "../../scripts/entity-resolution/candidates";
 import {
   compareMachinePairSync,
-  isMachineMatchMethod,
+  isGeneratorOwned,
   partitionForReview,
   type PairKey,
 } from "../../scripts/entity-resolution/queues";
 import {
   ACTIONABLE_COUNT_QUERY,
   CANDIDATE_QUERY,
-  loadDecidedPairs,
+  loadAccountedNonMachinePairs,
   loadPersistedMachinePairs,
   outOfSyncMessage,
 } from "../../scripts/entity-resolution/review";
@@ -1293,7 +1297,7 @@ d("pre-publication entity resolution (0030)", () => {
           source: SOURCE,
           environment: "evaluation",
         });
-        const decided = await loadDecidedPairs(client, {
+        const accounted = await loadAccountedNonMachinePairs(client, {
           source: SOURCE,
           environment: "evaluation",
         });
@@ -1302,7 +1306,7 @@ d("pre-publication entity resolution (0030)", () => {
           mine.size === 0
             ? pairs
             : pairs.filter((p) => mine.has(p.leftIdentityId) || mine.has(p.rightIdentityId));
-        return compareMachinePairSync(scope(discovery.pairs), scope(persisted), scope(decided));
+        return compareMachinePairSync(scope(discovery.pairs), scope(persisted), scope(accounted));
       } finally {
         await client.end();
       }
@@ -1419,7 +1423,12 @@ d("pre-publication entity resolution (0030)", () => {
       } finally {
         await client.end();
       }
-      expect(isMachineMatchMethod(row!.match_method as string)).toBe(false);
+      expect(
+        isGeneratorOwned({
+          candidateKind: row!.candidate_kind as string,
+          matchMethod: row!.match_method as string,
+        }),
+      ).toBe(false);
     });
 
     it("7. accepted / rejected / human-superseded rows are outside the machine sync set", async () => {
@@ -1530,6 +1539,358 @@ d("pre-publication entity resolution (0030)", () => {
       expect(drift.persistedNotDiscovered).toHaveLength(1);
 
       expect(compareMachinePairSync([], []).inSync).toBe(true);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // One pair is one row, so when a reviewer creates A↔B by hand the
+  // generator's INSERT conflicts with THEIR row. What happens next is the
+  // whole question: the generator must leave it alone rather than seize it.
+  describe("a MANUAL pending pair belongs to the human who made it", () => {
+    /** A reviewer's own pair, created the way a review tool would. */
+    async function manualPair(a: Fixture, b: Fixture, note = "reviewer found this") {
+      const [left, right] =
+        a.identityId < b.identityId ? [a.identityId, b.identityId] : [b.identityId, a.identityId];
+      const rows = await adminQuery<{ id: string }>(
+        `insert into public.source_match_candidates
+           (source, source_environment, source_property_identity_id,
+            candidate_source_property_identity_id, candidate_kind, match_method, status,
+            name_evidence, domain_evidence, address_evidence, phone_evidence, brand_evidence,
+            review_note)
+         values ($1,'evaluation',$2,$3,'source_identity','manual_search','pending',
+                 'none','unavailable','unavailable','unavailable','unavailable',$4)
+         returning id`,
+        [SOURCE, left, right, note],
+      );
+      return rows[0]!.id;
+    }
+
+    /** Every column that matters, so "byte-identical" is a real assertion. */
+    async function snapshot(id: string) {
+      const rows = await adminQuery<Record<string, unknown>>(
+        `select id::text, match_method, status, candidate_kind, superseded_reason,
+                resolved_at::text, review_note, name_evidence, domain_evidence,
+                address_evidence, phone_evidence, brand_evidence,
+                coordinate_distance_metres::text, agreeing_dimensions::text
+           from public.source_match_candidates where id = $1`,
+        [id],
+      );
+      return rows[0]!;
+    }
+
+    async function accountedFor(a: Fixture, b: Fixture) {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        const identities = await loadBlockableIdentities(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const discovery = discoverCandidates(identities);
+        const persisted = await loadPersistedMachinePairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const accounted = await loadAccountedNonMachinePairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        const mine = new Set([a.identityId, b.identityId]);
+        const scope = (pairs: readonly PairKey[]) =>
+          pairs.filter((p) => mine.has(p.leftIdentityId) || mine.has(p.rightIdentityId));
+        return compareMachinePairSync(scope(discovery.pairs), scope(persisted), scope(accounted));
+      } finally {
+        await client.end();
+      }
+    }
+
+    it("1. with no machine blocking rule, the matcher leaves it byte-identical", async () => {
+      const a = await identity({ name: `Manual Only Left ${uniq()}` });
+      const b = await identity({ name: `Manual Only Right ${uniq()}` });
+      const id = await manualPair(a, b);
+      const before = await snapshot(id);
+
+      await runMatcher();
+
+      expect(await snapshot(id)).toEqual(before);
+    });
+
+    it("2. once the SAME pair becomes machine-discoverable, the gate is satisfied", async () => {
+      const a = await identity({ name: `Overlap Left ${uniq()}` });
+      const b = await identity({ name: `Overlap Right ${uniq()}` });
+      await manualPair(a, b);
+      await runMatcher();
+
+      // The provider now gives both the same domain: discovery produces A↔B.
+      const key = `https://manual-overlap-${uniq()}.example.com`;
+      await addObservation(a, { name: `Overlap Left ${uniq()}`, website: key });
+      await addObservation(b, { name: `Overlap Right ${uniq()}`, website: key });
+
+      const sync = await accountedFor(a, b);
+      // The relationship IS in front of a reviewer. Demanding a machine row the
+      // unique-pair invariant forbids would be an alarm nothing could clear.
+      expect(sync.inSync, JSON.stringify(sync)).toBe(true);
+      expect(sync.discoveredNotPersisted).toHaveLength(0);
+    });
+
+    it("3. the matcher acquires NO ownership of it, on any number of runs", async () => {
+      const a = await identity({ name: `No Seize Left ${uniq()}` });
+      const b = await identity({ name: `No Seize Right ${uniq()}` });
+      const id = await manualPair(a, b);
+      const key = `https://manual-noseize-${uniq()}.example.com`;
+      await addObservation(a, { name: `No Seize Left ${uniq()}`, website: key });
+      await addObservation(b, { name: `No Seize Right ${uniq()}`, website: key });
+
+      const before = await snapshot(id);
+      const counts = await runMatcher();
+      expect(counts.candidatesManualSkipped).toBeGreaterThanOrEqual(1);
+
+      const after = await snapshot(id);
+      expect(after).toEqual(before);
+      expect(after.match_method).toBe("manual_search");
+      expect(after.status).toBe("pending");
+      expect(after.superseded_reason).toBeNull();
+
+      // And still exactly one row for the pair — no shadow machine candidate.
+      const rows = await adminQuery<{ n: string }>(
+        `select count(*)::text n from public.source_match_candidates
+          where candidate_kind = 'source_identity'
+            and (source_property_identity_id = $1 or candidate_source_property_identity_id = $1)`,
+        [a.identityId],
+      );
+      expect(rows[0]!.n).toBe("1");
+    });
+
+    it("4. when the machine evidence disappears, it is NOT superseded", async () => {
+      const a = await identity({ name: `No Standdown Left ${uniq()}` });
+      const b = await identity({ name: `No Standdown Right ${uniq()}` });
+      const id = await manualPair(a, b);
+      const key = `https://manual-nostanddown-${uniq()}.example.com`;
+      await addObservation(a, { name: `No Standdown Left ${uniq()}`, website: key });
+      await addObservation(b, { name: `No Standdown Right ${uniq()}`, website: key });
+      await runMatcher();
+
+      // The domain goes away again. A machine row would be stood down here.
+      await addObservation(a, { name: `No Standdown Left ${uniq()}` });
+      await runMatcher();
+
+      const after = await snapshot(id);
+      expect(after.status).toBe("pending");
+      expect(after.match_method).toBe("manual_search");
+      expect(after.superseded_reason).toBeNull();
+    });
+
+    it("5. once a human decides it, decided-pair accounting still holds", async () => {
+      const a = await identity({ name: `Manual Decided Left ${uniq()}` });
+      const b = await identity({ name: `Manual Decided Right ${uniq()}` });
+      const id = await manualPair(a, b);
+      const key = `https://manual-decided-${uniq()}.example.com`;
+      await addObservation(a, { name: `Manual Decided Left ${uniq()}`, website: key });
+      await addObservation(b, { name: `Manual Decided Right ${uniq()}`, website: key });
+      await runMatcher();
+
+      await adminQuery(
+        `update public.source_match_candidates set status = 'accepted', resolved_at = now(),
+                review_note = 'reviewer decided' where id = $1`,
+        [id],
+      );
+      const counts = await runMatcher();
+      expect(counts.candidatesDecidedSkipped).toBeGreaterThanOrEqual(1);
+      expect((await snapshot(id)).status).toBe("accepted");
+      expect((await accountedFor(a, b)).inSync).toBe(true);
+    });
+
+    it("6. an exact replay changes nothing", async () => {
+      const a = await identity({ name: `Manual Replay Left ${uniq()}` });
+      const b = await identity({ name: `Manual Replay Right ${uniq()}` });
+      const id = await manualPair(a, b);
+      const key = `https://manual-replay-${uniq()}.example.com`;
+      await addObservation(a, { name: `Manual Replay Left ${uniq()}`, website: key });
+      await addObservation(b, { name: `Manual Replay Right ${uniq()}`, website: key });
+      await runMatcher();
+
+      const before = await snapshot(id);
+      const replay = await runMatcher();
+      expect(replay.candidatesCreated).toBe(0);
+      expect(replay.candidatesEvidenceUpdated).toBe(0);
+      expect(replay.candidatesSuperseded).toBe(0);
+      expect(replay.candidatesReactivated).toBe(0);
+      expect(await snapshot(id)).toEqual(before);
+    });
+
+    it("generator ownership needs the KIND as well as the method", () => {
+      // A canonical_hotel row is not something generateCandidates produces, and
+      // a blocking-shaped match_method on one must not make it machine state.
+      expect(
+        isGeneratorOwned({
+          candidateKind: "canonical_hotel",
+          matchMethod: "blocking:exact_name_in_destination",
+        }),
+      ).toBe(false);
+      expect(
+        isGeneratorOwned({ candidateKind: "new_property", matchMethod: "blocking:exact_domain" }),
+      ).toBe(false);
+      expect(
+        isGeneratorOwned({ candidateKind: "source_identity", matchMethod: "manual_search" }),
+      ).toBe(false);
+      expect(
+        isGeneratorOwned({
+          candidateKind: "source_identity",
+          matchMethod: "blocking:exact_domain",
+        }),
+      ).toBe(true);
+    });
+
+    it("a canonical_hotel row with a blocking method is NOT machine state", async () => {
+      const f = await identity({ name: `Synthetic Canonical ${uniq()}` });
+      await adminQuery(
+        `insert into public.source_match_candidates
+           (source, source_environment, source_property_identity_id, candidate_hotel_id,
+            candidate_kind, match_method, status,
+            name_evidence, domain_evidence, address_evidence, phone_evidence, brand_evidence)
+         values ($1,'evaluation',$2,$3,'canonical_hotel','blocking:exact_name_in_destination',
+                 'pending','exact','unavailable','unavailable','unavailable','unavailable')`,
+        [SOURCE, f.identityId, HOTEL.bali],
+      );
+
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        // The sync gate reads source↔source pairs only, so a canonical_hotel row
+        // can never enter the machine set no matter how its method is spelled.
+        const persisted = await loadPersistedMachinePairs(client, {
+          source: SOURCE,
+          environment: "evaluation",
+        });
+        expect(
+          persisted.some(
+            (p) => p.leftIdentityId === f.identityId || p.rightIdentityId === f.identityId,
+          ),
+        ).toBe(false);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A key seen in more than one KNOWN destination is a fact about the KEY:
+  // `marriott.com` is not property-level identity evidence inside Bali just
+  // because the Dubai Marriotts sit in a different bucket.
+  describe("a cross-destination key contributes ZERO pairs, everywhere", () => {
+    const pairOf = (d: DiscoveryResult, a: Fixture, b: Fixture) =>
+      d.pairs.find(
+        (p) =>
+          (p.leftIdentityId === a.identityId && p.rightIdentityId === b.identityId) ||
+          (p.leftIdentityId === b.identityId && p.rightIdentityId === a.identityId),
+      );
+
+    async function discover() {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        return discoverCandidates(
+          await loadBlockableIdentities(client, { source: SOURCE, environment: "evaluation" }),
+        );
+      } finally {
+        await client.end();
+      }
+    }
+
+    it("1. two Bali + one Dubai on one domain → anomaly, and NO pair", async () => {
+      const key = `https://veto-basic-${uniq()}.example.com`;
+      const a = await identity({ website: key, destinationId: DEST.bali });
+      const b = await identity({ website: key, destinationId: DEST.bali });
+      await identity({ website: key, destinationId: DEST.ibiza });
+
+      const d = await discover();
+      const normalised = normalizeDomain(key);
+      expect(d.crossDestinationCollisions.some((c) => c.key === normalised)).toBe(true);
+      expect(pairOf(d, a, b)).toBeUndefined();
+    });
+
+    it("2. an INDEPENDENT destination-safe reason still stands on its own", async () => {
+      const key = `https://veto-survivor-${uniq()}.example.com`;
+      const phone = "+6236198765432";
+      const a = await identity({ website: key, phone, destinationId: DEST.bali });
+      const b = await identity({ website: key, phone, destinationId: DEST.bali });
+      await identity({ website: key, destinationId: DEST.ibiza });
+
+      const d = await discover();
+      const pair = pairOf(d, a, b);
+      expect(pair, "the phone pair must survive the domain veto").toBeDefined();
+      // The vetoed REASON is gone; the pair is not.
+      expect(pair!.reasons).toEqual(["exact_phone"]);
+      expect(matchMethodFor(pair!.reasons)).toBe("blocking:exact_phone");
+    });
+
+    it("3. two Bali + two Dubai → no pair in EITHER destination", async () => {
+      const key = `https://veto-both-${uniq()}.example.com`;
+      const a = await identity({ website: key, destinationId: DEST.bali });
+      const b = await identity({ website: key, destinationId: DEST.bali });
+      const c = await identity({ website: key, destinationId: DEST.ibiza });
+      const e = await identity({ website: key, destinationId: DEST.ibiza });
+
+      const d = await discover();
+      expect(pairOf(d, a, b)).toBeUndefined();
+      expect(pairOf(d, c, e)).toBeUndefined();
+      expect(d.crossDestinationCollisions.some((x) => x.key === normalizeDomain(key))).toBe(true);
+    });
+
+    it("4. three Bali + one Dubai → the CLUSTER survives, the pair never existed", async () => {
+      const key = `https://veto-cluster-${uniq()}.example.com`;
+      const a = await identity({ website: key, destinationId: DEST.bali });
+      const b = await identity({ website: key, destinationId: DEST.bali });
+      const c = await identity({ website: key, destinationId: DEST.bali });
+      await identity({ website: key, destinationId: DEST.ibiza });
+
+      const d = await discover();
+      const normalised = normalizeDomain(key);
+      // A cluster is not a pair, and "these three share a chain domain that also
+      // appears elsewhere" is a true and useful thing to show a reviewer.
+      const cluster = d.sharedKeyClusters.find((x) => x.key === normalised);
+      expect(cluster, "the Bali cluster must remain").toBeDefined();
+      expect(cluster!.identityIds.sort()).toEqual(
+        [a.identityId, b.identityId, c.identityId].sort(),
+      );
+      expect(d.crossDestinationCollisions.some((x) => x.key === normalised)).toBe(true);
+      expect(pairOf(d, a, b)).toBeUndefined();
+    });
+
+    it("5. exactly two in ONE destination still pairs normally", async () => {
+      const key = `https://veto-none-${uniq()}.example.com`;
+      const a = await identity({ website: key, destinationId: DEST.bali });
+      const b = await identity({ website: key, destinationId: DEST.bali });
+
+      const d = await discover();
+      const pair = pairOf(d, a, b);
+      expect(pair).toBeDefined();
+      expect(pair!.reasons).toEqual(["exact_domain"]);
+      expect(d.crossDestinationCollisions.some((x) => x.key === normalizeDomain(key))).toBe(false);
+    });
+
+    it("6. a NULL destination is not a second KNOWN destination, and vetoes nothing", async () => {
+      const runId = (
+        await adminQuery<{ id: string }>(
+          `insert into public.source_runs (source, source_environment, destination_id, run_mode, started_at)
+           values ($1,'evaluation',null,'evaluation', now()) returning id`,
+          [SOURCE],
+        )
+      )[0]!.id;
+      const key = `https://veto-null-${uniq()}.example.com`;
+      const a = await identity({ website: key, destinationId: DEST.bali });
+      const b = await identity({ website: key, destinationId: DEST.bali });
+      await identity({ website: key, runId });
+
+      const d = await discover();
+      const normalised = normalizeDomain(key);
+      expect(
+        d.crossDestinationCollisions.some((x) => x.key === normalised),
+        "unknown geography must not manufacture a cross-destination veto",
+      ).toBe(false);
+      const pair = pairOf(d, a, b);
+      expect(pair).toBeDefined();
+      expect(pair!.reasons).toEqual(["exact_domain"]);
     });
   });
 });
