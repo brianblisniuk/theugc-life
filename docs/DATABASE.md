@@ -598,7 +598,19 @@ assumption.
 
 ### source_property_issue_snapshots
 One row per observation whose provider issue list was extracted COMPLETELY,
-UNIQUE on `evidence_observation_id`. Its existence IS the completeness claim.
+UNIQUE on `evidence_observation_id`. Its existence IS the completeness claim, and
+`provider_issue_count` always equals the number of child rows — an entry the
+extractor cannot read produces NO snapshot rather than a complete-looking one
+missing a row. The evaluator re-checks that equality independently
+(`issue_count_mismatch`), because a hand-written row could create what the
+extractor cannot.
+
+`source_payload_digest` is NOT NULL and is the digest of the **whole** provider
+record, composite-FK'd to `(observation, digest)`. It is what makes the binding
+checkable: "which observation does this artifact record describe?" is a different
+question from "which observation is newest?", and re-extracting an OLD cached
+artifact after a NEWER run exists would otherwise move old issue evidence onto a
+new observation and change the current lifecycle answer.
 
 Without it, zero issue rows would mean either "the provider reported none" or
 "nobody extracted this" — evidence and ignorance behind one absence, and an
@@ -613,14 +625,18 @@ observation of its own property.
 
 ### source_property_issue_evidence
 The provider's structured fields, verbatim — `issue_code`, `issue_type`,
-`date_from`, `date_to`, `provider_order`, `alternative`. Lifecycle is never
-inferred from `description`, a hotel name or a destination label.
+`date_from_raw`, `date_to_raw`, `provider_order`, `alternative`. Lifecycle is
+never inferred from `description`, a hotel name or a destination label, and
+provider codes are stored and matched EXACTLY: `"HOTEL "` is not `HOTEL`.
 
-`date_from`/`date_to` are deliberately NULLABLE: a malformed provider interval is
-evidence of a problem and must survive, because it is what makes a mapped closure
-`unresolved` instead of silently clean. `evidence_digest` is `GENERATED ALWAYS`,
-with dates entering as integer day offsets — casting a date to text reads
-`DateStyle` and is only STABLE, which Postgres refuses in a generated column.
+**The date columns are `text`, not `date`.** A `date` column cannot keep the
+contract's promise that malformed evidence survives: `2026-02-31` has the shape
+of a date and is not one, so the cast rolls the whole extraction back; and
+`2026-08-31garbage` would have to be trimmed to fit, inventing a clean date the
+provider never sent. The bytes are kept whole and validation belongs to the
+evaluator, which distinguishes an ABSENT endpoint from a present-but-unreadable
+one and reports them as different reasons. `evidence_digest` is
+`GENERATED ALWAYS` over those raw values.
 
 ### Append-only
 Both evidence tables refuse UPDATE and DELETE by trigger. A snapshot is bound to

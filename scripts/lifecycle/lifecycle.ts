@@ -187,8 +187,11 @@ async function main(): Promise<void> {
   try {
     if (args.extract) {
       const extracted = [];
+      const extractionFailures = [];
       for (const destination of args.destinations) {
-        extracted.push(...(await extractDestinationIssues(destination, REPO_ROOT)));
+        const outcome = await extractDestinationIssues(destination, REPO_ROOT);
+        extracted.push(...outcome.snapshots);
+        extractionFailures.push(...outcome.failures);
       }
       const counts = await persistIssueEvidence(client, extracted, {
         source: args.provider,
@@ -200,7 +203,31 @@ async function main(): Promise<void> {
       console.info(`    snapshots created     ${counts.snapshotsCreated}`);
       console.info(`    snapshots already on  ${counts.snapshotsAlreadyPresent} (left untouched)`);
       console.info(`    issue rows created    ${counts.issuesCreated}`);
-      console.info(`    no ingested property  ${counts.unmatchedSourcePropertyIds.length}`);
+      console.info(
+        `    INCOMPLETE extraction ${extractionFailures.length}   <- no snapshot; evaluates unresolved`,
+      );
+      if (extractionFailures.length > 0) {
+        const byReason: Record<string, number> = {};
+        for (const f of extractionFailures) byReason[f.reason] = (byReason[f.reason] ?? 0) + 1;
+        table("reason", byReason);
+        for (const f of extractionFailures.slice(0, args.limit)) {
+          console.info(
+            `      ${f.sourcePropertyId ?? "(no id)"}  ${f.reason}` +
+              (f.issueIndex === null ? "" : `  entry #${f.issueIndex}`) +
+              (f.providerOrder === null ? "" : `  order=${f.providerOrder}`),
+          );
+        }
+      }
+      console.info(
+        `    PROVENANCE mismatch   ${counts.provenanceMismatches.length}   <- artifact record not tied to an observation`,
+      );
+      if (counts.provenanceMismatches.length > 0) {
+        const byReason: Record<string, number> = {};
+        for (const m of counts.provenanceMismatches) {
+          byReason[m.reason] = (byReason[m.reason] ?? 0) + 1;
+        }
+        table("reason", byReason);
+      }
       console.info("");
     }
 

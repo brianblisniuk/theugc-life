@@ -78,8 +78,8 @@ function snapshotOf(issues: IssueInput[]): IssueSnapshot {
     issues: issues.map((i) => ({
       issueCode: i.issueCode,
       issueType: i.issueType,
-      dateFrom: i.dateFrom ?? null,
-      dateTo: i.dateTo ?? null,
+      dateFromRaw: i.dateFrom ?? null,
+      dateToRaw: i.dateTo ?? null,
       providerOrder: i.providerOrder ?? null,
       alternative: i.alternative ?? null,
     })),
@@ -105,7 +105,7 @@ async function newRun(destinationId: string | null = DEST.bali): Promise<string>
 }
 
 /** One identity with one observation. */
-async function property(name = `Lifecycle ${uniq()}`): Promise<Fixture> {
+async function property(name = `Lifecycle ${uniq()}`, payloadDigest?: string): Promise<Fixture> {
   const runId = await newRun();
   const sourcePropertyId = uniq();
   const identity = await adminQuery<{ id: string }>(
@@ -117,21 +117,27 @@ async function property(name = `Lifecycle ${uniq()}`): Promise<Fixture> {
   const identityId = identity[0]!.id;
   const observation = await adminQuery<{ id: string }>(
     `insert into public.source_property_observations
-       (source_run_id, source_property_identity_id, source, source_environment, observed_at, source_name)
-     values ($1,$2,$3,'evaluation', now(), $4) returning id`,
-    [runId, identityId, SOURCE, name],
+       (source_run_id, source_property_identity_id, source, source_environment, observed_at,
+        source_name, source_payload_digest)
+     values ($1,$2,$3,'evaluation', now(), $4, $5) returning id`,
+    [runId, identityId, SOURCE, name, payloadDigest ?? `digest-${uniq()}`],
   );
   return { identityId, observationId: observation[0]!.id, sourcePropertyId };
 }
 
 /** A LATER observation for an existing identity. */
-async function laterObservation(f: Fixture, name = `Later ${uniq()}`): Promise<string> {
+async function laterObservation(
+  f: Fixture,
+  name = `Later ${uniq()}`,
+  payloadDigest?: string,
+): Promise<string> {
   const runId = await newRun();
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_observations
-       (source_run_id, source_property_identity_id, source, source_environment, observed_at, source_name)
-     values ($1,$2,$3,'evaluation', now() + interval '1 second', $4) returning id`,
-    [runId, f.identityId, SOURCE, name],
+       (source_run_id, source_property_identity_id, source, source_environment, observed_at,
+        source_name, source_payload_digest)
+     values ($1,$2,$3,'evaluation', now() + interval '1 second', $4, $5) returning id`,
+    [runId, f.identityId, SOURCE, name, payloadDigest ?? `digest-${uniq()}`],
   );
   return rows[0]!.id;
 }
@@ -141,21 +147,28 @@ async function persistSnapshot(
   f: Fixture,
   observationId: string,
   issues: IssueInput[],
+  providerIssueCount = issues.length,
 ): Promise<string> {
+  const digest = (
+    await adminQuery<{ source_payload_digest: string | null }>(
+      "select source_payload_digest from public.source_property_observations where id = $1",
+      [observationId],
+    )
+  )[0]!.source_payload_digest;
   const rows = await adminQuery<{ id: string }>(
     `insert into public.source_property_issue_snapshots
        (source_property_identity_id, source, source_environment, evidence_observation_id,
-        extraction_status, provider_issue_count, extraction_method)
-     values ($1,$2,'evaluation',$3,'complete',$4,'test') returning id`,
-    [f.identityId, SOURCE, observationId, issues.length],
+        extraction_status, provider_issue_count, source_payload_digest, extraction_method)
+     values ($1,$2,'evaluation',$3,'complete',$4,$5,'test') returning id`,
+    [f.identityId, SOURCE, observationId, providerIssueCount, digest],
   );
   const snapshotId = rows[0]!.id;
   for (const issue of issues) {
     await adminQuery(
       `insert into public.source_property_issue_evidence
-         (snapshot_id, source_property_identity_id, issue_code, issue_type, date_from, date_to,
-          provider_order, alternative)
-       values ($1,$2,$3,$4,$5::date,$6::date,$7,$8)`,
+         (snapshot_id, source_property_identity_id, issue_code, issue_type,
+          date_from_raw, date_to_raw, provider_order, alternative)
+       values ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [
         snapshotId,
         f.identityId,
@@ -555,9 +568,10 @@ d("pre-publication lifecycle evidence (0031)", () => {
         "mapped_closure_missing_date_to",
       ],
       [
+        // Present and unreadable, which is NOT the same fact as absent.
         "impossible date",
         { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-02-31", dateTo: "2026-12-31" },
-        "mapped_closure_missing_date_from",
+        "mapped_closure_invalid_date_from",
       ],
       [
         "inverted range",
@@ -604,13 +618,13 @@ d("pre-publication lifecycle evidence (0031)", () => {
       await persistSnapshot(f, f.observationId, [
         { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: null, dateTo: null },
       ]);
-      const rows = await adminQuery<{ date_from: string | null; date_to: string | null }>(
-        `select date_from, date_to from public.source_property_issue_evidence
+      const rows = await adminQuery<{ date_from_raw: string | null; date_to_raw: string | null }>(
+        `select date_from_raw, date_to_raw from public.source_property_issue_evidence
           where source_property_identity_id = $1`,
         [f.identityId],
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0]!.date_from).toBeNull();
+      expect(rows[0]!.date_from_raw).toBeNull();
       const evaluation = await evaluateFromDb(f, "2026-08-17");
       expect(evaluation.outcome).toBe("unresolved");
     });
@@ -834,17 +848,23 @@ d("pre-publication lifecycle evidence (0031)", () => {
   describe("26. extraction is idempotent, and reads only cached bytes", () => {
     it("a replay creates no duplicate snapshot and no duplicate issue", async () => {
       const f = await property();
+      const digest = (
+        await adminQuery<{ source_payload_digest: string }>(
+          "select source_payload_digest from public.source_property_observations where id = $1",
+          [f.observationId],
+        )
+      )[0]!.source_payload_digest;
       const extracted = [
         {
           sourcePropertyId: f.sourcePropertyId,
           providerIssueCount: 2,
-          payloadDigest: "digest-1",
+          wholeRecordPayloadDigest: digest,
           issues: [
             {
               issueCode: "HOTEL",
               issueType: "CLOSED",
-              dateFrom: "2026-01-01",
-              dateTo: "2026-12-31",
+              dateFromRaw: "2026-01-01",
+              dateToRaw: "2026-12-31",
               providerOrder: 1,
               alternative: false,
               description: null,
@@ -852,8 +872,8 @@ d("pre-publication lifecycle evidence (0031)", () => {
             {
               issueCode: "SPA",
               issueType: "CLOSED",
-              dateFrom: "2026-02-01",
-              dateTo: "2026-03-01",
+              dateFromRaw: "2026-02-01",
+              dateToRaw: "2026-03-01",
               providerOrder: 2,
               alternative: true,
               description: null,
@@ -902,14 +922,15 @@ d("pre-publication lifecycle evidence (0031)", () => {
             {
               sourcePropertyId: `ghost-${uniq()}`,
               providerIssueCount: 0,
-              payloadDigest: "d",
+              wholeRecordPayloadDigest: "d",
               issues: [],
             },
           ],
           { source: SOURCE, environment: "evaluation", apply: true },
         );
         expect(counts.snapshotsCreated).toBe(0);
-        expect(counts.unmatchedSourcePropertyIds).toHaveLength(1);
+        expect(counts.provenanceMismatches).toHaveLength(1);
+        expect(counts.provenanceMismatches[0]!.reason).toBe("no_ingested_property");
       } finally {
         await client.end();
       }
@@ -926,20 +947,23 @@ d("pre-publication lifecycle evidence (0031)", () => {
   // -----------------------------------------------------------------------
   describe("the extractor reads the provider's shape honestly", () => {
     it("a MISSING issues key is a complete answer of zero", () => {
-      const snapshot = extractIssuesFromRecord({ code: "1", name: "x" });
-      expect(snapshot).not.toBeNull();
+      const { snapshot, failure } = extractIssuesFromRecord({ code: "1", name: "x" });
+      expect(failure).toBeNull();
       expect(snapshot!.providerIssueCount).toBe(0);
       expect(snapshot!.issues).toHaveLength(0);
     });
 
     it("an UNREADABLE issues value produces NO snapshot at all", () => {
       // Better to be unresolved than confidently zero.
-      expect(extractIssuesFromRecord({ code: "1", issues: "oops" })).toBeNull();
-      expect(extractIssuesFromRecord({ code: "1", issues: 42 })).toBeNull();
+      for (const issues of ["oops", 42, { a: 1 }]) {
+        const { snapshot, failure } = extractIssuesFromRecord({ code: "1", issues });
+        expect(snapshot).toBeNull();
+        expect(failure!.reason).toBe("issues_not_an_array");
+      }
     });
 
-    it("structured fields survive, and malformed dates become null", () => {
-      const snapshot = extractIssuesFromRecord({
+    it("structured fields survive, and provider date bytes are kept VERBATIM", () => {
+      const { snapshot } = extractIssuesFromRecord({
         code: "639426",
         issues: [
           {
@@ -957,23 +981,409 @@ d("pre-publication lifecycle evidence (0031)", () => {
       expect(snapshot!.issues[0]).toMatchObject({
         issueCode: "HOTEL",
         issueType: "CLOSED",
-        dateFrom: "2026-05-31",
-        dateTo: "2026-08-31",
+        dateFromRaw: "2026-05-31",
+        dateToRaw: "2026-08-31",
         providerOrder: 2,
         alternative: false,
       });
-      expect(snapshot!.issues[1]!.dateFrom).toBeNull();
+      // NOT normalised to null: the provider said something, and what it said
+      // survives so the evaluator can call it invalid rather than absent.
+      expect(snapshot!.issues[1]!.dateFromRaw).toBe("not-a-date");
+      expect(snapshot!.issues[1]!.dateToRaw).toBeNull();
     });
 
-    it("the count reports what the PROVIDER sent, not what we parsed", () => {
-      // Two entries, one unusable. The difference must stay visible rather than
-      // silently becoming a count of one.
-      const snapshot = extractIssuesFromRecord({
+    it("a date longer than ten characters is NOT sliced into a clean one", () => {
+      const { snapshot } = extractIssuesFromRecord({
         code: "1",
-        issues: [{ issueCode: "HOTEL", issueType: "CLOSED" }, { nonsense: true }],
+        issues: [{ issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-08-31garbage" }],
       });
-      expect(snapshot!.providerIssueCount).toBe(2);
-      expect(snapshot!.issues).toHaveLength(1);
+      expect(snapshot!.issues[0]!.dateFromRaw).toBe("2026-08-31garbage");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A snapshot is COMPLETE only if every provider entry was represented. The
+  // failure mode this closes: provider count 1, child rows 0, snapshot
+  // "complete" — and an evaluator answering `no_known_closure` about a property
+  // whose only issue nobody could read.
+  describe("a complete snapshot cannot contain an incomplete parse", () => {
+    it("1. one valid + one unreadable entry produces NO complete snapshot", () => {
+      const unreadable = [
+        { label: "non-object entry", entry: 42, reason: "unreadable_issue_entry" },
+        { label: "null entry", entry: null, reason: "unreadable_issue_entry" },
+        { label: "no issueCode", entry: { issueType: "CLOSED" }, reason: "unreadable_issue_code" },
+        {
+          label: "empty issueCode",
+          entry: { issueCode: "", issueType: "CLOSED" },
+          reason: "unreadable_issue_code",
+        },
+        { label: "no issueType", entry: { issueCode: "HOTEL" }, reason: "unreadable_issue_type" },
+      ];
+      for (const { label, entry, reason } of unreadable) {
+        const { snapshot, failure } = extractIssuesFromRecord({
+          code: "639426",
+          issues: [{ issueCode: "SPA", issueType: "CLOSED", order: 1 }, entry],
+        });
+        expect(snapshot, label).toBeNull();
+        expect(failure!.reason, label).toBe(reason);
+        expect(failure!.sourcePropertyId, label).toBe("639426");
+        // The provider's own position in the array, so a reviewer can find it.
+        expect(failure!.issueIndex, label).toBe(1);
+      }
+    });
+
+    it("the failure reports the provider's own order when it supplied one", () => {
+      const { failure } = extractIssuesFromRecord({
+        code: "1",
+        issues: [{ issueType: "CLOSED", order: 7 }],
+      });
+      expect(failure!.providerOrder).toBe(7);
+      expect(failure!.issueIndex).toBe(0);
+    });
+
+    it("a readable record always satisfies count == represented", () => {
+      const { snapshot } = extractIssuesFromRecord({
+        code: "1",
+        issues: [
+          { issueCode: "HOTEL", issueType: "CLOSED" },
+          { issueCode: "SPA", issueType: "CLOSED" },
+          { issueCode: "WATERPARK", issueType: "REFURBISHMENT" },
+        ],
+      });
+      expect(snapshot!.providerIssueCount).toBe(3);
+      expect(snapshot!.issues).toHaveLength(snapshot!.providerIssueCount);
+    });
+
+    it("2. provider count > loaded rows evaluates UNRESOLVED", async () => {
+      // Defence in depth: the extractor cannot produce this, so it is written
+      // directly — exactly as a future writer or a hand-edit might.
+      const f = await property("Count mismatch");
+      await persistSnapshot(
+        f,
+        f.observationId,
+        [{ issueCode: "SPA", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" }],
+        2,
+      );
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toContain("issue_count_mismatch");
+    });
+
+    it("a mismatch wins even when the present rows look clean", () => {
+      // The unaccounted issue may BE the closure, so the readable ones cannot
+      // settle the question.
+      const snapshot = snapshotOf([{ issueCode: "SPA", issueType: "CLOSED" }]);
+      snapshot.providerIssueCount = 2;
+      const evaluation = evaluateLifecycle({ snapshot, policy: APPROVED, asOf: "2026-08-17" });
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toEqual(["issue_count_mismatch"]);
+    });
+
+    it("3. provider count 0 with zero rows is still a valid NO_KNOWN_CLOSURE", async () => {
+      const f = await property("Genuinely no issues");
+      await persistSnapshot(f, f.observationId, []);
+      expect((await evaluateFromDb(f, "2026-08-17")).outcome).toBe("no_known_closure");
+    });
+
+    it("4. provider count N with N rows evaluates normally", async () => {
+      const f = await property("Complete and closed");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+        { issueCode: "SPA", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-02-01" },
+      ]);
+      expect((await evaluateFromDb(f, "2026-08-17")).outcome).toBe("known_closed");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // The contract promises malformed evidence is PRESERVED. A `date` column
+  // cannot keep that promise: `2026-02-31` rolls the transaction back, and
+  // anything longer than ten characters would have to be trimmed to fit.
+  describe("malformed provider dates survive persistence VERBATIM", () => {
+    it("6. an impossible date round-trips through the real DB and is UNRESOLVED", async () => {
+      const f = await property("Impossible date");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-02-31", dateTo: "2026-12-31" },
+      ]);
+
+      const rows = await adminQuery<{ date_from_raw: string | null }>(
+        `select date_from_raw from public.source_property_issue_evidence
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      // The transaction succeeded AND the bad value is still queryable.
+      expect(rows[0]!.date_from_raw).toBe("2026-02-31");
+
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toContain("mapped_closure_invalid_date_from");
+      // NOT called "missing": the provider said something.
+      expect(evaluation.unresolvedReasons).not.toContain("mapped_closure_missing_date_from");
+    });
+
+    it("7. trailing garbage round-trips, and is never read as a clean date", async () => {
+      const f = await property("Trailing garbage");
+      await persistSnapshot(f, f.observationId, [
+        {
+          issueCode: "HOTEL",
+          issueType: "CLOSED",
+          dateFrom: "2026-08-31garbage",
+          dateTo: "2026-12-31",
+        },
+      ]);
+
+      const rows = await adminQuery<{ date_from_raw: string | null }>(
+        `select date_from_raw from public.source_property_issue_evidence
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(rows[0]!.date_from_raw).toBe("2026-08-31garbage");
+      expect(rows[0]!.date_from_raw).not.toBe("2026-08-31");
+
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toContain("mapped_closure_invalid_date_from");
+      expect(evaluation.activeClosureWindows).toHaveLength(0);
+    });
+
+    it("an absent endpoint and an unreadable one are DIFFERENT reasons", () => {
+      const absent = evaluateLifecycle({
+        snapshot: snapshotOf([
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: null, dateTo: "2026-12-31" },
+        ]),
+        policy: APPROVED,
+        asOf: "2026-08-17",
+      });
+      expect(absent.unresolvedReasons).toEqual(["mapped_closure_missing_date_from"]);
+
+      const unreadable = evaluateLifecycle({
+        snapshot: snapshotOf([
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "not-a-date", dateTo: "2026-12-31" },
+        ]),
+        policy: APPROVED,
+        asOf: "2026-08-17",
+      });
+      expect(unreadable.unresolvedReasons).toEqual(["mapped_closure_invalid_date_from"]);
+    });
+
+    it("an unreadable dateTo is reported as invalid, not missing", () => {
+      const evaluation = evaluateLifecycle({
+        snapshot: snapshotOf([
+          { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-13-01" },
+        ]),
+        policy: APPROVED,
+        asOf: "2026-08-17",
+      });
+      expect(evaluation.unresolvedReasons).toEqual(["mapped_closure_invalid_date_to"]);
+    });
+
+    it("the raw columns are text, so no cast can reject the evidence", async () => {
+      const rows = await adminQuery<{ column_name: string; data_type: string }>(
+        `select column_name, data_type from information_schema.columns
+          where table_name = 'source_property_issue_evidence' and column_name like 'date%'`,
+      );
+      expect(rows).toHaveLength(2);
+      for (const r of rows) expect(r.data_type).toBe("text");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // "Which observation does this artifact record describe?" is not the same
+  // question as "which observation is newest?".
+  describe("issue evidence binds to the EXACT provider record", () => {
+    async function persistExtracted(
+      sourcePropertyId: string,
+      digest: string,
+      issues: IssueInput[],
+    ) {
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        return await persistIssueEvidence(
+          client,
+          [
+            {
+              sourcePropertyId,
+              providerIssueCount: issues.length,
+              wholeRecordPayloadDigest: digest,
+              issues: issues.map((i) => ({
+                issueCode: i.issueCode,
+                issueType: i.issueType,
+                dateFromRaw: i.dateFrom ?? null,
+                dateToRaw: i.dateTo ?? null,
+                providerOrder: i.providerOrder ?? null,
+                alternative: i.alternative ?? null,
+                description: null,
+              })),
+            },
+          ],
+          { source: SOURCE, environment: "evaluation", apply: true },
+        );
+      } finally {
+        await client.end();
+      }
+    }
+
+    it("10. an OLD artifact extracted after a NEWER observation binds to the old one", async () => {
+      const digestA = `AAA-${uniq()}`;
+      const digestB = `BBB-${uniq()}`;
+      const f = await property("Run A", digestA);
+      const observationB = await laterObservation(f, "Run B", digestB);
+
+      // Extract artifact A, which is now the OLDER record.
+      const counts = await persistExtracted(f.sourcePropertyId, digestA, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      expect(counts.snapshotsCreated).toBe(1);
+
+      const bound = await adminQuery<{ evidence_observation_id: string }>(
+        `select evidence_observation_id from public.source_property_issue_snapshots
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      // Bound to A, NOT to whichever observation happened to be newest.
+      expect(bound[0]!.evidence_observation_id).toBe(f.observationId);
+      expect(bound[0]!.evidence_observation_id).not.toBe(observationB);
+
+      // And because B has no snapshot, the CURRENT answer is unresolved — the
+      // old closure does not leak forward.
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("unresolved");
+      expect(evaluation.unresolvedReasons).toContain("no_complete_issue_snapshot");
+      expect(evaluation.observationId).toBe(observationB);
+    });
+
+    it("extracting the NEWER artifact then binds to it, and it becomes current", async () => {
+      const digestA = `AAA-${uniq()}`;
+      const digestB = `BBB-${uniq()}`;
+      const f = await property("Run A", digestA);
+      const observationB = await laterObservation(f, "Run B", digestB);
+      await persistExtracted(f.sourcePropertyId, digestA, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+      await persistExtracted(f.sourcePropertyId, digestB, []);
+
+      const bound = await adminQuery<{ evidence_observation_id: string }>(
+        `select evidence_observation_id from public.source_property_issue_snapshots
+          where source_property_identity_id = $1 order by created_at desc limit 1`,
+        [f.identityId],
+      );
+      expect(bound[0]!.evidence_observation_id).toBe(observationB);
+
+      const evaluation = await evaluateFromDb(f, "2026-08-17");
+      expect(evaluation.outcome).toBe("no_known_closure");
+      expect(evaluation.observationId).toBe(observationB);
+    });
+
+    it("11. a digest matching NO observation is refused, not best-effort attached", async () => {
+      const f = await property("Known property", `REAL-${uniq()}`);
+      const counts = await persistExtracted(f.sourcePropertyId, `UNKNOWN-${uniq()}`, [
+        { issueCode: "HOTEL", issueType: "CLOSED", dateFrom: "2026-01-01", dateTo: "2026-12-31" },
+      ]);
+
+      expect(counts.snapshotsCreated).toBe(0);
+      expect(counts.provenanceMismatches).toHaveLength(1);
+      // The property IS ingested — this is the "wrong record" case, kept
+      // distinct from "never ingested".
+      expect(counts.provenanceMismatches[0]!.reason).toBe("no_observation_with_this_payload");
+
+      const rows = await adminQuery<{ n: string }>(
+        `select count(*)::text n from public.source_property_issue_snapshots
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(rows[0]!.n).toBe("0");
+      expect((await evaluateFromDb(f, "2026-08-17")).outcome).toBe("unresolved");
+    });
+
+    it("the database refuses a snapshot whose digest is not that observation's", async () => {
+      // Application logic is the first layer; the composite FK is the second.
+      const f = await property("FK guard", `REAL-${uniq()}`);
+      await expect(
+        adminQuery(
+          `insert into public.source_property_issue_snapshots
+             (source_property_identity_id, source, source_environment, evidence_observation_id,
+              provider_issue_count, source_payload_digest, extraction_method)
+           values ($1,$2,'evaluation',$3,0,'SOME-OTHER-DIGEST','test')`,
+          [f.identityId, SOURCE, f.observationId],
+        ),
+      ).rejects.toThrow(/foreign key|violates/i);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // A provider code is an IDENTIFIER, not user text. Repairing one invents a
+  // provider statement — and the statement it would invent here is the single
+  // mapping that closes a property.
+  describe("8. provider codes are never silently repaired", () => {
+    const window = { dateFrom: "2026-01-01", dateTo: "2026-12-31" };
+
+    for (const [label, issueCode, issueType] of [
+      ["trailing space on the code", "HOTEL ", "CLOSED"],
+      ["leading space on the code", " HOTEL", "CLOSED"],
+      ["trailing space on the type", "HOTEL", "CLOSED "],
+      ["leading space on the type", "HOTEL", " CLOSED"],
+      ["both padded", "HOTEL ", " CLOSED"],
+      ["lower case", "hotel", "closed"],
+      ["inner padding", "HO TEL", "CLOSED"],
+    ] as const) {
+      it(`${label} does NOT acquire the approved mapping`, () => {
+        expect(outcomeOn([{ issueCode, issueType, ...window }], "2026-08-17")).toBe(
+          "no_known_closure",
+        );
+      });
+    }
+
+    it("the exact approved pair still matches", () => {
+      expect(
+        outcomeOn([{ issueCode: "HOTEL", issueType: "CLOSED", ...window }], "2026-08-17"),
+      ).toBe("known_closed");
+    });
+
+    it("the padded code survives in the evidence exactly as sent", () => {
+      const { snapshot } = extractIssuesFromRecord({
+        code: "1",
+        issues: [{ issueCode: "HOTEL ", issueType: " CLOSED" }],
+      });
+      expect(snapshot!.issues[0]!.issueCode).toBe("HOTEL ");
+      expect(snapshot!.issues[0]!.issueType).toBe(" CLOSED");
+    });
+
+    it("a padded code round-trips through the DB without being repaired", async () => {
+      const f = await property("Padded code");
+      await persistSnapshot(f, f.observationId, [
+        { issueCode: "HOTEL ", issueType: "CLOSED", ...window },
+      ]);
+      const rows = await adminQuery<{ issue_code: string }>(
+        `select issue_code from public.source_property_issue_evidence
+          where source_property_identity_id = $1`,
+        [f.identityId],
+      );
+      expect(rows[0]!.issue_code).toBe("HOTEL ");
+      expect((await evaluateFromDb(f, "2026-08-17")).outcome).toBe("no_known_closure");
+    });
+
+    it("no lifecycle source file trims a provider code", () => {
+      const code = readFileSync(
+        path.join(REPO_ROOT, "scripts", "lifecycle", "extract.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      // `providerCode` must contain no trim; the helper is the only place a
+      // code is read.
+      const helper = code.slice(code.indexOf("function providerCode"));
+      const body = helper.slice(0, helper.indexOf("\n}"));
+      expect(body).not.toMatch(/\.trim\(\)/);
+    });
+
+    it("padding cannot collide two distinct pairs into one key", () => {
+      // With a space separator, `"HOTEL " + "CLOSED"` and `"HOTEL" + " CLOSED"`
+      // would key identically and one of them would inherit the mapping.
+      expect(
+        outcomeOn([{ issueCode: "HOTEL ", issueType: "CLOSED", ...window }], "2026-08-17"),
+      ).toBe("no_known_closure");
+      expect(
+        outcomeOn([{ issueCode: "HOTEL", issueType: " CLOSED", ...window }], "2026-08-17"),
+      ).toBe("no_known_closure");
     });
   });
 

@@ -10,6 +10,12 @@ import type { Client } from "pg";
 import type { ExtractedIssueSnapshot } from "./extract";
 import type { IssueSnapshot, LifecyclePolicy } from "./policy";
 
+export interface ProvenanceMismatch {
+  sourcePropertyId: string;
+  reason: "no_ingested_property" | "no_observation_with_this_payload";
+  wholeRecordPayloadDigest: string;
+}
+
 export interface ExtractionCounts {
   /** Properties the artifact described. */
   extracted: number;
@@ -19,42 +25,67 @@ export interface ExtractionCounts {
   snapshotsAlreadyPresent: number;
   /** Issue rows actually INSERTED. */
   issuesCreated: number;
-  /** Provider ids in the artifact with no ingested observation. */
-  unmatchedSourcePropertyIds: string[];
+  /** Records whose exact provider record could not be tied to an observation. */
+  provenanceMismatches: ProvenanceMismatch[];
 }
 
 export const EXTRACTION_METHOD = "cached-artifact/hotelbeds/1.0.0" as const;
 
 /**
- * Resolve `provider id -> (identity, LATEST observation)` for one source.
+ * Resolve `(provider id, whole-record digest) -> (identity, THAT observation)`.
  *
- * The latest observation, because the snapshot describes what the provider says
- * NOW; an older observation is a different moment and already has, or does not
- * have, its own snapshot.
+ * THE BINDING IS THE POINT, so it is worth being explicit about what the
+ * previous version did wrong. It resolved `provider id -> LATEST observation`,
+ * which is not the same question at all: extracting a CACHED ARTIFACT tells you
+ * which provider RECORD you are reading, and "latest" tells you which record is
+ * newest in the database. Those coincide right up until they matter.
+ *
+ * Concretely: run A observes property 123 with a HOTEL/CLOSED issue; run B
+ * observes it later with different evidence. Re-extract artifact A afterwards
+ * and the old closure lands on run B's observation — the provenance is now a
+ * lie, and the CURRENT lifecycle answer changes because of a record that is not
+ * current.
+ *
+ * So the lookup is keyed on the digest of the WHOLE provider record, which the
+ * ingestion adapter already wrote to `source_payload_digest` for the observation
+ * that record produced. Same bytes, same observation. If no observation carries
+ * that digest, this artifact record was never ingested here and NO snapshot is
+ * written — reported as a provenance mismatch rather than attached to the
+ * closest available row.
  */
-async function latestObservations(
+async function observationsByPayload(
   client: Client,
   opts: { source: string; environment: string },
 ): Promise<Map<string, { identityId: string; observationId: string }>> {
   const res = await client.query<{
-    source_property_id: string;
+    key: string;
     identity_id: string;
     observation_id: string;
   }>(
-    `select distinct on (i.id)
-            i.source_property_id, i.id as identity_id, o.id as observation_id
+    `select i.source_property_id || ' ' || o.source_payload_digest as key,
+            i.id as identity_id, o.id as observation_id
        from public.source_property_identities i
        join public.source_property_observations o on o.source_property_identity_id = i.id
       where i.source = $1 and i.source_environment = $2
-      order by i.id, o.observed_at desc, o.id desc`,
+        and o.source_payload_digest is not null`,
     [opts.source, opts.environment],
   );
   return new Map(
-    res.rows.map((r) => [
-      r.source_property_id,
-      { identityId: r.identity_id, observationId: r.observation_id },
-    ]),
+    res.rows.map((r) => [r.key, { identityId: r.identity_id, observationId: r.observation_id }]),
   );
+}
+
+/** Provider ids that exist here at all, to tell "not ingested" from "wrong record". */
+async function knownSourcePropertyIds(
+  client: Client,
+  opts: { source: string; environment: string },
+): Promise<Set<string>> {
+  const res = await client.query<{ source_property_id: string }>(
+    `select source_property_id from public.source_property_identities
+      where source = $1 and source_environment = $2`,
+    [opts.source, opts.environment],
+  );
+  return new Set(res.rows.map((r) => r.source_property_id));
 }
 
 /**
@@ -70,24 +101,34 @@ export async function persistIssueEvidence(
   snapshots: readonly ExtractedIssueSnapshot[],
   opts: { source: string; environment: string; apply: boolean },
 ): Promise<ExtractionCounts> {
-  const byProviderId = await latestObservations(client, opts);
+  const byPayload = await observationsByPayload(client, opts);
+  const knownIds = await knownSourcePropertyIds(client, opts);
   const counts: ExtractionCounts = {
     extracted: snapshots.length,
     snapshotsCreated: 0,
     snapshotsAlreadyPresent: 0,
     issuesCreated: 0,
-    unmatchedSourcePropertyIds: [],
+    provenanceMismatches: [],
   };
 
   const matched: { snapshot: ExtractedIssueSnapshot; identityId: string; observationId: string }[] =
     [];
   for (const snapshot of snapshots) {
-    const target = byProviderId.get(snapshot.sourcePropertyId);
-    // No observation means this artifact record was never ingested here. It is
-    // reported, not invented: attaching evidence to a property we do not have
-    // would be a snapshot about nothing.
+    const target = byPayload.get(
+      `${snapshot.sourcePropertyId} ${snapshot.wholeRecordPayloadDigest}`,
+    );
     if (!target) {
-      counts.unmatchedSourcePropertyIds.push(snapshot.sourcePropertyId);
+      // Two different failures, kept apart because they mean different things:
+      // the property was never ingested here at all, or it was ingested from a
+      // DIFFERENT provider record than the one being extracted. Neither is a
+      // reason to attach the evidence to the nearest available observation.
+      counts.provenanceMismatches.push({
+        sourcePropertyId: snapshot.sourcePropertyId,
+        reason: knownIds.has(snapshot.sourcePropertyId)
+          ? "no_observation_with_this_payload"
+          : "no_ingested_property",
+        wholeRecordPayloadDigest: snapshot.wholeRecordPayloadDigest,
+      });
       continue;
     }
     matched.push({ snapshot, ...target });
@@ -122,7 +163,7 @@ export async function persistIssueEvidence(
           opts.environment,
           observationId,
           snapshot.providerIssueCount,
-          snapshot.payloadDigest,
+          snapshot.wholeRecordPayloadDigest,
           EXTRACTION_METHOD,
         ],
       );
@@ -138,8 +179,8 @@ export async function persistIssueEvidence(
         const row = await client.query(
           `insert into public.source_property_issue_evidence
              (snapshot_id, source_property_identity_id, issue_code, issue_type,
-              date_from, date_to, provider_order, alternative, description)
-           values ($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9)
+              date_from_raw, date_to_raw, provider_order, alternative, description)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            on conflict do nothing
            returning id`,
           [
@@ -147,8 +188,8 @@ export async function persistIssueEvidence(
             identityId,
             issue.issueCode,
             issue.issueType,
-            issue.dateFrom,
-            issue.dateTo,
+            issue.dateFromRaw,
+            issue.dateToRaw,
             issue.providerOrder,
             issue.alternative,
             issue.description,
@@ -266,14 +307,13 @@ export async function loadEvaluableProperties(
       snapshot_id: string;
       issue_code: string;
       issue_type: string;
-      date_from: string | null;
-      date_to: string | null;
+      date_from_raw: string | null;
+      date_to_raw: string | null;
       provider_order: number | null;
       alternative: boolean | null;
     }>(
       `select snapshot_id, issue_code, issue_type,
-              to_char(date_from, 'YYYY-MM-DD') as date_from,
-              to_char(date_to, 'YYYY-MM-DD') as date_to,
+              date_from_raw, date_to_raw,
               provider_order, alternative
          from public.source_property_issue_evidence
         where snapshot_id = any($1::uuid[])
@@ -285,8 +325,8 @@ export async function loadEvaluableProperties(
       list.push({
         issueCode: r.issue_code,
         issueType: r.issue_type,
-        dateFrom: r.date_from,
-        dateTo: r.date_to,
+        dateFromRaw: r.date_from_raw,
+        dateToRaw: r.date_to_raw,
         providerOrder: r.provider_order,
         alternative: r.alternative,
       });

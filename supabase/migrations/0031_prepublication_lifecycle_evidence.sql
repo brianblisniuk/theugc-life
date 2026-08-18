@@ -211,6 +211,13 @@ create trigger provider_lifecycle_issue_policy_mappings_freeze
 -- records have no such key. `provider_issue_count = 0` on a snapshot therefore
 -- means "the complete record carried no issues", which is a real provider
 -- statement; no snapshot at all means nobody looked.
+-- The FK below needs a unique target. `id` is already the primary key, so this
+-- adds no new uniqueness rule and cannot fail on existing data — it exists
+-- purely so `(observation, payload digest)` is referenceable. 0027 is untouched.
+alter table public.source_property_observations
+  add constraint source_property_observations_id_payload_uk
+  unique (id, source_payload_digest);
+
 create table public.source_property_issue_snapshots (
   id uuid primary key default gen_random_uuid(),
 
@@ -232,8 +239,22 @@ create table public.source_property_issue_snapshots (
   -- What the provider record actually carried. 0 is a statement, not a gap.
   provider_issue_count integer not null check (provider_issue_count >= 0),
 
-  -- Provenance of the exact bytes the count came from.
-  source_payload_digest text,
+  -- THE PROVENANCE BOUNDARY.
+  --
+  -- The digest of the WHOLE provider record this extraction read, which is the
+  -- same value `source_property_observations.source_payload_digest` carries for
+  -- the observation that record produced. Recording it is what makes the
+  -- binding checkable rather than assumed: without it, "extract cached artifact
+  -- A" and "attach to whichever observation is newest" are the same operation,
+  -- and re-running an OLD artifact after a NEWER run exists would silently move
+  -- old issue evidence onto a new observation and change the current lifecycle
+  -- answer.
+  --
+  -- A digest of `issues[]` alone would not do: two runs can agree about the
+  -- issues and disagree about everything else, so it does not identify the
+  -- record. NOT NULL, because a snapshot that cannot say which provider record
+  -- it came from is not provenance.
+  source_payload_digest text not null,
   extraction_method text not null,
   extracted_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -249,6 +270,15 @@ create table public.source_property_issue_snapshots (
   constraint source_property_issue_snapshots_evidence_fk
     foreign key (evidence_observation_id, source_property_identity_id)
     references public.source_property_observations (id, source_property_identity_id)
+    on delete restrict,
+  -- And the digest must be THAT observation's own. The composite FK above proves
+  -- the snapshot describes an observation of the right PROPERTY; this one proves
+  -- it describes the right MOMENT of that property. Both are needed: a property
+  -- observed twice has two observations that satisfy the first constraint and
+  -- only one that satisfies this.
+  constraint source_property_issue_snapshots_payload_fk
+    foreign key (evidence_observation_id, source_payload_digest)
+    references public.source_property_observations (id, source_payload_digest)
     on delete restrict,
   -- Needed by the child table below, so an issue row cannot attach itself to a
   -- snapshot belonging to a different identity.
@@ -284,11 +314,22 @@ create table public.source_property_issue_evidence (
   issue_code text not null,
   issue_type text not null,
 
-  -- Deliberately NULLABLE. A malformed provider interval is EVIDENCE OF A
-  -- PROBLEM and must survive; refusing to store it would delete the very fact
-  -- that makes the evaluation `unresolved` instead of "nothing known".
-  date_from date,
-  date_to date,
+  -- PROVIDER TEXT, NOT `date`. This is the column the contract's "malformed
+  -- evidence is preserved" promise actually rests on, and a `date` column
+  -- cannot keep that promise:
+  --
+  --   * `2026-02-31` matches the shape of a date and IS NOT ONE. Postgres
+  --     rejects the cast, so the whole extraction transaction rolls back and
+  --     the evidence that should have produced `unresolved` is lost entirely;
+  --   * `2026-08-31garbage` would have to be trimmed to fit, which invents a
+  --     clean date the provider never sent and turns unreadable evidence into a
+  --     confident closure window.
+  --
+  -- So the provider's bytes are stored verbatim and VALIDATION BELONGS TO THE
+  -- EVALUATOR, which can tell "absent" from "present and unreadable" and report
+  -- them as different reasons. NULL here means the provider omitted the field.
+  date_from_raw text,
+  date_to_raw text,
 
   provider_order integer,
   alternative boolean,
@@ -302,15 +343,13 @@ create table public.source_property_issue_evidence (
   -- Content identity, so a replay recognises a row it already wrote. The
   -- provider's own order is part of it: two issues identical in every other
   -- field are two statements, not one.
-  -- Dates enter the digest as INTEGER DAY OFFSETS rather than as text: casting
-  -- a date to text reads `DateStyle`, which makes the expression merely STABLE,
-  -- and Postgres refuses a non-immutable generated column. Subtracting an epoch
-  -- date yields a plain integer and is immutable.
+  -- Over the RAW persisted values, so two issues differing only in a malformed
+  -- date are two rows rather than one silently deduplicated one.
   evidence_digest text generated always as (
     md5(
       issue_code || '|' || issue_type || '|' ||
-      coalesce((date_from - date '1970-01-01')::text, '~null~') || '|' ||
-      coalesce((date_to - date '1970-01-01')::text, '~null~') || '|' ||
+      coalesce(date_from_raw, '~null~') || '|' ||
+      coalesce(date_to_raw, '~null~') || '|' ||
       coalesce(provider_order::text, '~null~') || '|' ||
       coalesce(alternative::text, '~null~')
     )
@@ -331,8 +370,8 @@ create index source_property_issue_evidence_code_type_idx
 
 comment on table public.source_property_issue_evidence is
   'Structured provider issue rows for one snapshot. A malformed date range is PRESERVED, because it is what makes an evaluation unresolved rather than silently clean.';
-comment on column public.source_property_issue_evidence.date_from is
-  'Provider dateFrom. NULL is kept deliberately: a mapped property-level closure missing an endpoint evaluates to unresolved, never to "no known closure".';
+comment on column public.source_property_issue_evidence.date_from_raw is
+  'Provider dateFrom VERBATIM, as text. Never coerced, never trimmed to fit. NULL = the provider omitted it; a non-NULL unreadable value is a DIFFERENT fact, and both make a mapped closure unresolved rather than "no known closure".';
 
 -- ===========================================================================
 -- 4. EVIDENCE IS APPEND-ONLY

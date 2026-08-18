@@ -36,8 +36,9 @@ import { HOTELBEDS_CACHED_SELECTIONS } from "../provider-ingestion/manifest";
 export interface ExtractedIssue {
   issueCode: string;
   issueType: string;
-  dateFrom: string | null;
-  dateTo: string | null;
+  /** The provider's bytes, VERBATIM. Never coerced, never trimmed to fit. */
+  dateFromRaw: string | null;
+  dateToRaw: string | null;
   providerOrder: number | null;
   alternative: boolean | null;
   description: string | null;
@@ -47,11 +48,37 @@ export interface ExtractedIssue {
 export interface ExtractedIssueSnapshot {
   sourcePropertyId: string;
   providerIssueCount: number;
-  payloadDigest: string;
+  /**
+   * Digest of the WHOLE provider record, matching what the ingestion adapter
+   * wrote to `source_property_observations.source_payload_digest`. This is the
+   * provenance boundary: it names the exact record, so the snapshot can be
+   * bound to the observation THAT record produced rather than to whichever
+   * observation happens to be newest.
+   */
+  wholeRecordPayloadDigest: string;
   issues: ExtractedIssue[];
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** Why one provider record could not be extracted completely. */
+export interface ExtractionFailure {
+  sourcePropertyId: string | null;
+  reason:
+    | "unreadable_record"
+    | "missing_source_property_id"
+    | "issues_not_an_array"
+    | "unreadable_issue_entry"
+    | "unreadable_issue_code"
+    | "unreadable_issue_type";
+  /** Index within the provider's own array, and its `order` when supplied. */
+  issueIndex: number | null;
+  providerOrder: number | null;
+}
+
+export interface ExtractionOutcome {
+  snapshots: ExtractedIssueSnapshot[];
+  /** Records that produced NO snapshot. Reported, never silently dropped. */
+  failures: ExtractionFailure[];
+}
 
 function asString(value: unknown): string | null {
   if (typeof value === "string" && value.trim() !== "") return value.trim();
@@ -60,18 +87,21 @@ function asString(value: unknown): string | null {
 }
 
 /**
- * A provider date, kept only when it is shaped like one.
+ * A provider date, kept EXACTLY as the provider sent it.
  *
- * A value that is not `YYYY-MM-DD` becomes NULL rather than being coerced —
- * and NULL on a MAPPED closure is exactly what makes the evaluation
- * `unresolved`. Nothing is discarded quietly: the row is still written, so the
- * defect stays visible.
+ * Nothing is validated, trimmed, sliced or coerced here, and that is the whole
+ * point. The previous version sliced anything longer than ten characters to its
+ * first ten, which turned `2026-08-31garbage` into a clean `2026-08-31` — a
+ * confident closure window built from a value the provider never sent in that
+ * form. And a shape check here would map `2026-02-31` to NULL, making an
+ * impossible date indistinguishable from an absent one.
+ *
+ * VALIDATION BELONGS TO THE EVALUATOR, which can tell "absent" from "present and
+ * unreadable" and report them as different reasons. A non-string is NULL because
+ * there are no bytes to keep; a string is kept whole.
  */
-function asProviderDate(value: unknown): string | null {
-  const s = asString(value);
-  if (s === null) return null;
-  const head = s.length > 10 ? s.slice(0, 10) : s;
-  return ISO_DATE.test(head) ? head : null;
+function providerDateRaw(value: unknown): string | null {
+  return typeof value === "string" ? value : value === null ? null : asString(value);
 }
 
 function asBoolean(value: unknown): boolean | null {
@@ -87,26 +117,69 @@ function asInteger(value: unknown): number | null {
 /**
  * Read a provider code that may be a bare string or a `{ code }` object.
  *
- * Hotelbeds returns `issueCode`/`issueType` as plain strings in the cached
- * payloads, but the same API renders several other vocabularies as objects, so
- * both shapes are accepted rather than assumed. An unreadable code is skipped:
- * an issue whose vocabulary we cannot name cannot be matched against a policy,
- * and inventing a placeholder would let it collide with a real code.
+ * A PROVIDER CODE IS AN IDENTIFIER, NOT USER TEXT, so it is NOT trimmed.
+ * Trimming would turn `"HOTEL "` — malformed, unreviewed provider evidence —
+ * into the approved `HOTEL`, and hand it the one mapping that closes a
+ * property. The same class of silent repair was already closed in star and
+ * scope resolution, and it is closed here for the same reason: repairing an
+ * identifier invents a provider statement.
+ *
+ * `"HOTEL "` therefore matches nothing, and stays visible in the evidence as
+ * exactly what the provider sent.
+ *
+ * Hotelbeds returns these as plain strings in the cached payloads, but the same
+ * API renders other vocabularies as `{ code }` objects, so both shapes are read
+ * rather than assumed. A value that is not a non-empty string is UNREADABLE,
+ * and an unreadable code makes the whole snapshot incomplete — see below.
  */
 function providerCode(value: unknown): string | null {
-  if (typeof value === "string") return value.trim() === "" ? null : value.trim();
+  if (typeof value === "string") return value === "" ? null : value;
   if (value !== null && typeof value === "object" && "code" in value) {
-    return asString((value as { code: unknown }).code);
+    const inner = (value as { code: unknown }).code;
+    if (typeof inner === "string") return inner === "" ? null : inner;
+    if (typeof inner === "number") return String(inner);
   }
   return null;
 }
 
-/** The one place that knows Hotelbeds' issue shape. */
-export function extractIssuesFromRecord(raw: unknown): ExtractedIssueSnapshot | null {
-  if (raw === null || typeof raw !== "object") return null;
+/**
+ * The one place that knows Hotelbeds' issue shape.
+ *
+ * Returns EITHER a complete snapshot OR a failure, never a partial snapshot.
+ *
+ * THE STRUCTURAL INVARIANT
+ * -----------------------
+ * A COMPLETE snapshot means every provider issue entry was structurally
+ * represented — `providerIssueCount` equals `issues.length`, always.
+ *
+ * The earlier version skipped entries it could not read and still called the
+ * result complete, which made this state representable: provider count 1, child
+ * rows 0, snapshot complete. The evaluator, seeing a complete snapshot with no
+ * mapped closure, would then answer `no_known_closure` about a property whose
+ * only provider issue nobody understood. If that unread entry was
+ * `HOTEL`/`CLOSED`, a closed hotel reads as clean.
+ *
+ * So the conservative rule that already governed a non-array `issues` value now
+ * governs malformed entries INSIDE the array: no snapshot, an explicit failure,
+ * and the property evaluates `unresolved`.
+ */
+export function extractIssuesFromRecord(
+  raw: unknown,
+):
+  | { snapshot: ExtractedIssueSnapshot; failure: null }
+  | { snapshot: null; failure: ExtractionFailure } {
+  const fail = (
+    reason: ExtractionFailure["reason"],
+    sourcePropertyId: string | null,
+    issueIndex: number | null = null,
+    providerOrder: number | null = null,
+  ) =>
+    ({ snapshot: null, failure: { sourcePropertyId, reason, issueIndex, providerOrder } }) as const;
+
+  if (raw === null || typeof raw !== "object") return fail("unreadable_record", null);
   const record = raw as Record<string, unknown>;
   const sourcePropertyId = asString(record.code);
-  if (sourcePropertyId === null) return null;
+  if (sourcePropertyId === null) return fail("missing_source_property_id", null);
 
   // A MISSING KEY IS A COMPLETE ANSWER, an unreadable one is not.
   //
@@ -115,35 +188,53 @@ export function extractIssuesFromRecord(raw: unknown): ExtractedIssueSnapshot | 
   // understand this record, so no snapshot is produced and the property stays
   // `unresolved` — the honest outcome, rather than a confident zero.
   const rawIssues = record.issues;
-  if (rawIssues !== undefined && !Array.isArray(rawIssues)) return null;
+  if (rawIssues !== undefined && !Array.isArray(rawIssues)) {
+    return fail("issues_not_an_array", sourcePropertyId);
+  }
   const list = Array.isArray(rawIssues) ? rawIssues : [];
 
   const issues: ExtractedIssue[] = [];
-  for (const entry of list) {
-    if (entry === null || typeof entry !== "object") continue;
+  for (const [index, entry] of list.entries()) {
+    if (entry === null || typeof entry !== "object") {
+      return fail("unreadable_issue_entry", sourcePropertyId, index);
+    }
     const issue = entry as Record<string, unknown>;
+    const order = asInteger(issue.order);
     const issueCode = providerCode(issue.issueCode ?? issue.code);
+    if (issueCode === null) {
+      return fail("unreadable_issue_code", sourcePropertyId, index, order);
+    }
     const issueType = providerCode(issue.issueType ?? issue.type);
-    if (issueCode === null || issueType === null) continue;
+    if (issueType === null) {
+      return fail("unreadable_issue_type", sourcePropertyId, index, order);
+    }
     issues.push({
       issueCode,
       issueType,
-      dateFrom: asProviderDate(issue.dateFrom),
-      dateTo: asProviderDate(issue.dateTo),
-      providerOrder: asInteger(issue.order),
+      dateFromRaw: providerDateRaw(issue.dateFrom),
+      dateToRaw: providerDateRaw(issue.dateTo),
+      providerOrder: order,
       alternative: asBoolean(issue.alternative),
       description: asString(issue.description),
     });
   }
 
   return {
-    sourcePropertyId,
-    // What the PROVIDER supplied, not what we successfully parsed. If those
-    // differ the count says so, and a reviewer can see that something was
-    // dropped instead of the difference vanishing.
-    providerIssueCount: list.length,
-    payloadDigest: digestValue(rawIssues ?? null),
-    issues,
+    snapshot: {
+      sourcePropertyId,
+      // Equal to `issues.length` by construction — every entry either produced a
+      // row or aborted the whole record above. The count is still carried
+      // separately so the database can be checked against it (see the
+      // evaluator's `issue_count_mismatch`), which is a defence against a row
+      // written by some future writer, or by hand.
+      providerIssueCount: list.length,
+      // The WHOLE record, not `issues[]`. Two provider runs can agree about the
+      // issues and differ everywhere else, so a digest of the issues alone does
+      // not identify the record this evidence came from.
+      wholeRecordPayloadDigest: digestValue(raw),
+      issues,
+    },
+    failure: null,
   };
 }
 
@@ -151,7 +242,7 @@ export function extractIssuesFromRecord(raw: unknown): ExtractedIssueSnapshot | 
 export async function extractDestinationIssues(
   destinationSlug: string,
   repoRoot: string,
-): Promise<ExtractedIssueSnapshot[]> {
+): Promise<ExtractionOutcome> {
   const selection = HOTELBEDS_CACHED_SELECTIONS[destinationSlug];
   if (!selection) {
     throw new Error(
@@ -163,16 +254,20 @@ export async function extractDestinationIssues(
     await readFile(path.resolve(repoRoot, selection.rawProperties), "utf8"),
   ) as unknown[];
 
-  const out: ExtractedIssueSnapshot[] = [];
+  const snapshots: ExtractedIssueSnapshot[] = [];
+  const failures: ExtractionFailure[] = [];
   const seen = new Set<string>();
   for (const raw of payloads) {
-    const snapshot = extractIssuesFromRecord(raw);
-    if (snapshot === null) continue;
+    const { snapshot, failure } = extractIssuesFromRecord(raw);
+    if (failure !== null) {
+      failures.push(failure);
+      continue;
+    }
     // The ingestion writer already treats a repeated provider id within one
     // artifact as one property; the same rule here keeps the two in step.
     if (seen.has(snapshot.sourcePropertyId)) continue;
     seen.add(snapshot.sourcePropertyId);
-    out.push(snapshot);
+    snapshots.push(snapshot);
   }
-  return out;
+  return { snapshots, failures };
 }

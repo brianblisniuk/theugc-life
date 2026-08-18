@@ -67,6 +67,13 @@ approved:
 |---|---|---|
 | `HOTEL` | `CLOSED` | `property_closed_window` |
 
+**Provider codes are identifiers, not user text**, and are matched EXACTLY.
+`"HOTEL "` does not match `HOTEL`, and neither does `" HOTEL"`, `"hotel"` or
+`"HO TEL"`. Trimming would repair malformed, unreviewed provider evidence into
+the one mapping that closes a property — the same silent-repair class already
+closed in star and scope resolution. The padded value survives in the evidence
+exactly as sent, and matches nothing.
+
 Everything else gets **no row**. Not a row saying it is harmless — no row —
 because an unreviewed pair and a reviewed-and-harmless pair must not look
 identical, and because nothing may map to "open": no provider issue is evidence
@@ -109,10 +116,56 @@ no such key, and not one has an empty one. "The array was empty" is therefore no
 an observable state, and `provider_issue_count = 0` on a snapshot is a real
 provider statement while *no snapshot* is nobody having looked.
 
+### 4.1 Complete means EVERY entry was represented
+
+`provider_issue_count` always equals the number of issue rows. A snapshot is
+complete only when every entry in the provider's array was structurally
+represented — and if any entry cannot be read, **no snapshot is created at all**.
+
+The state this forbids is `provider_issue_count = 1`, zero child rows, snapshot
+"complete": an evaluator would then see a complete snapshot with no mapped
+closure and answer `no_known_closure` about a property whose only provider issue
+nobody understood. If that unread entry was `HOTEL`/`CLOSED`, a closed hotel
+reads as clean.
+
+So the conservative rule that already governed a non-array `issues` value governs
+malformed entries **inside** the array too: skip nothing, create nothing, report
+the failure with the provider's own array index and `order`, and let the property
+evaluate `unresolved`.
+
+**Defence in depth.** The evaluator independently refuses any snapshot where
+`provider_issue_count` differs from the rows present — `issue_count_mismatch` —
+because a hand-written row, a future writer or a partially-failed load could
+create what the extractor cannot.
+
 ## 5. Dates
 
 `--as-of YYYY-MM-DD` is **required**. There is no default, and no code path in
 the decision logic reads a clock — a test reads the source files to prove it.
+
+### 5.1 Provider date bytes are stored VERBATIM
+
+`date_from_raw` and `date_to_raw` are **text**, not `date`, and nothing is
+trimmed, sliced, coerced or validated before persistence. A `date` column cannot
+keep the contract's promise that malformed evidence survives:
+
+- `2026-02-31` has the shape of a date and is not one. Postgres rejects the cast,
+  so the whole extraction rolls back and the evidence that should have produced
+  `unresolved` is lost entirely;
+- `2026-08-31garbage` would have to be trimmed to fit — inventing a clean
+  `2026-08-31` the provider never sent, and turning unreadable evidence into a
+  confident closure window.
+
+**Validation belongs to the evaluator**, which can tell the two apart:
+
+| provider value | reason |
+|---|---|
+| absent (NULL) | `mapped_closure_missing_date_from` / `_to` |
+| present, not a real date | `mapped_closure_invalid_date_from` / `_to` |
+| both real, `from > to` | `mapped_closure_inverted_range` |
+
+An invalid non-null string is never called "missing": the provider *said*
+something, and hiding that would misdirect whoever investigates.
 
 The reviewed Hotelbeds interpretation, recorded on the policy row as
 `inclusive_day_interval`:
@@ -207,7 +260,7 @@ issues is never laundered into `lifecycle = active`**. The `issues[]` evidence i
 a separate provider evidence source and is kept separate in schema, code and
 docs.
 
-## 12. Provenance
+## 12. Provenance — the EXACT provider record
 
 An evaluation is reconstructable from: source property identity → latest
 observation → complete issue snapshot → the exact structured issue rows →
@@ -215,9 +268,29 @@ the approved policy version → the explicit `as_of` date.
 
 It is never derived from a hotel name, a destination label, a free-text search, a
 generated summary string, or a historical issue detached from the latest
-observation. Composite foreign keys make the misattribution unrepresentable: a
-snapshot must cite an observation **of its own identity**, and an issue row must
-cite a snapshot **of its own identity**.
+observation.
+
+**Binding is by whole-record digest, not by recency.** "Which observation does
+this artifact record describe?" and "which observation is newest?" are different
+questions, and they diverge exactly when it matters: if run A observed a property
+with a `HOTEL`/`CLOSED` issue and run B observed it later with different
+evidence, extracting artifact A afterwards must not attach A's closure to B's
+observation. That would make the provenance false and change the *current*
+lifecycle answer using a record that is not current.
+
+So a snapshot carries `source_payload_digest` — the digest of the **whole**
+provider record, the same value the ingestion adapter wrote on the observation
+that record produced. A digest of `issues[]` alone would not identify the record:
+two runs can agree about the issues and differ everywhere else.
+
+If no observation carries that digest, **no snapshot is written**. The failure is
+reported as a provenance mismatch, distinguishing "this property was never
+ingested here" from "it was ingested from a different record", and the property
+evaluates `unresolved`. Nothing is attached best-effort.
+
+Three composite foreign keys make misattribution unrepresentable: a snapshot must
+cite an observation **of its own identity** and **of its own payload digest**,
+and an issue row must cite a snapshot **of its own identity**.
 
 ## 13. Future composition — D062 condition 4 (DOCUMENTED, NOT IMPLEMENTED)
 
