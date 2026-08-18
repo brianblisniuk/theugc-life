@@ -227,6 +227,9 @@ async function main(): Promise<void> {
           byReason[m.reason] = (byReason[m.reason] ?? 0) + 1;
         }
         table("reason", byReason);
+        for (const m of counts.provenanceMismatches.slice(0, args.limit)) {
+          console.info(`      ${m.sourcePropertyId}  run=${m.sourceRunId}  ${m.reason}`);
+        }
       }
       console.info("");
     }

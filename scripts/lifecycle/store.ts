@@ -13,6 +13,7 @@ import type { IssueSnapshot, LifecyclePolicy } from "./policy";
 export interface ProvenanceMismatch {
   sourcePropertyId: string;
   reason: "no_ingested_property" | "no_observation_with_this_payload";
+  sourceRunId: string;
   wholeRecordPayloadDigest: string;
 }
 
@@ -32,28 +33,29 @@ export interface ExtractionCounts {
 export const EXTRACTION_METHOD = "cached-artifact/hotelbeds/1.0.0" as const;
 
 /**
- * Resolve `(provider id, whole-record digest) -> (identity, THAT observation)`.
+ * Resolve `(source run, provider id, whole-record digest) -> THAT observation`.
  *
- * THE BINDING IS THE POINT, so it is worth being explicit about what the
- * previous version did wrong. It resolved `provider id -> LATEST observation`,
- * which is not the same question at all: extracting a CACHED ARTIFACT tells you
- * which provider RECORD you are reading, and "latest" tells you which record is
- * newest in the database. Those coincide right up until they matter.
+ * THE BINDING IS THE POINT, so it is worth being explicit about the two things
+ * that were wrong before.
  *
- * Concretely: run A observes property 123 with a HOTEL/CLOSED issue; run B
- * observes it later with different evidence. Re-extract artifact A afterwards
- * and the old closure lands on run B's observation — the provenance is now a
- * lie, and the CURRENT lifecycle answer changes because of a record that is not
- * current.
+ * First it resolved `provider id -> LATEST observation`, which answers "which
+ * observation is newest?" rather than "which observation did this artifact
+ * record produce?". Re-extracting an OLD cached artifact after a newer run
+ * existed would attach the old closure to the new observation.
  *
- * So the lookup is keyed on the digest of the WHOLE provider record, which the
- * ingestion adapter already wrote to `source_payload_digest` for the observation
- * that record produced. Same bytes, same observation. If no observation carries
- * that digest, this artifact record was never ingested here and NO snapshot is
- * written — reported as a provenance mismatch rather than attached to the
- * closest available row.
+ * Then it resolved `(provider id, whole-record digest)`, which is better and
+ * still ambiguous: TWO RUNS MAY LEGITIMATELY CONTAIN THE SAME UNCHANGED RECORD.
+ * Observations are unique per `(source_run_id, source_property_identity_id)`,
+ * NOT per digest, so `123 + D -> observation A` and `123 + D -> observation B`
+ * are both valid rows. A map keyed on `(id, digest)` cannot even represent both,
+ * and whichever survived would decide provenance by insertion order.
+ *
+ * A digest proves CONTENT equality. It does not name a run. So the key includes
+ * the SOURCE RUN, taken from the ingestion pipeline's own deterministic run
+ * identity, and an extraction from run A binds only to run A's observation —
+ * regardless of row order, map order, `observed_at`, or which is latest.
  */
-async function observationsByPayload(
+async function observationsByRunAndPayload(
   client: Client,
   opts: { source: string; environment: string },
 ): Promise<Map<string, { identityId: string; observationId: string }>> {
@@ -62,7 +64,8 @@ async function observationsByPayload(
     identity_id: string;
     observation_id: string;
   }>(
-    `select i.source_property_id || ' ' || o.source_payload_digest as key,
+    `select o.source_run_id::text || ' ' || i.source_property_id || ' ' || o.source_payload_digest
+              as key,
             i.id as identity_id, o.id as observation_id
        from public.source_property_identities i
        join public.source_property_observations o on o.source_property_identity_id = i.id
@@ -74,6 +77,13 @@ async function observationsByPayload(
     res.rows.map((r) => [r.key, { identityId: r.identity_id, observationId: r.observation_id }]),
   );
 }
+
+/** The key that names ONE observation. Run first: it is what disambiguates. */
+const provenanceKey = (s: {
+  sourceRunId: string;
+  sourcePropertyId: string;
+  wholeRecordPayloadDigest: string;
+}) => `${s.sourceRunId} ${s.sourcePropertyId} ${s.wholeRecordPayloadDigest}`;
 
 /** Provider ids that exist here at all, to tell "not ingested" from "wrong record". */
 async function knownSourcePropertyIds(
@@ -101,7 +111,7 @@ export async function persistIssueEvidence(
   snapshots: readonly ExtractedIssueSnapshot[],
   opts: { source: string; environment: string; apply: boolean },
 ): Promise<ExtractionCounts> {
-  const byPayload = await observationsByPayload(client, opts);
+  const byRunAndPayload = await observationsByRunAndPayload(client, opts);
   const knownIds = await knownSourcePropertyIds(client, opts);
   const counts: ExtractionCounts = {
     extracted: snapshots.length,
@@ -114,9 +124,7 @@ export async function persistIssueEvidence(
   const matched: { snapshot: ExtractedIssueSnapshot; identityId: string; observationId: string }[] =
     [];
   for (const snapshot of snapshots) {
-    const target = byPayload.get(
-      `${snapshot.sourcePropertyId} ${snapshot.wholeRecordPayloadDigest}`,
-    );
+    const target = byRunAndPayload.get(provenanceKey(snapshot));
     if (!target) {
       // Two different failures, kept apart because they mean different things:
       // the property was never ingested here at all, or it was ingested from a
@@ -127,6 +135,7 @@ export async function persistIssueEvidence(
         reason: knownIds.has(snapshot.sourcePropertyId)
           ? "no_observation_with_this_payload"
           : "no_ingested_property",
+        sourceRunId: snapshot.sourceRunId,
         wholeRecordPayloadDigest: snapshot.wholeRecordPayloadDigest,
       });
       continue;
@@ -153,8 +162,9 @@ export async function persistIssueEvidence(
       const inserted = await client.query<{ id: string }>(
         `insert into public.source_property_issue_snapshots
            (source_property_identity_id, source, source_environment, evidence_observation_id,
-            extraction_status, provider_issue_count, source_payload_digest, extraction_method)
-         values ($1,$2,$3,$4,'complete',$5,$6,$7)
+            evidence_source_run_id, extraction_status, provider_issue_count,
+            source_payload_digest, extraction_method)
+         values ($1,$2,$3,$4,$5,'complete',$6,$7,$8)
          on conflict (evidence_observation_id) do nothing
          returning id`,
         [
@@ -162,6 +172,7 @@ export async function persistIssueEvidence(
           opts.source,
           opts.environment,
           observationId,
+          snapshot.sourceRunId,
           snapshot.providerIssueCount,
           snapshot.wholeRecordPayloadDigest,
           EXTRACTION_METHOD,

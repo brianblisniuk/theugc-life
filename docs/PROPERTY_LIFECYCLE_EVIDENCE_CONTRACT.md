@@ -156,6 +156,24 @@ keep the contract's promise that malformed evidence survives:
   `2026-08-31` the provider never sent, and turning unreadable evidence into a
   confident closure window.
 
+### A provider date field has exactly three states
+
+| provider sent | extraction |
+|---|---|
+| nothing / `null` | persist `NULL` — the provider said nothing |
+| a **string** | keep it WHOLE, byte for byte — no trim, slice, coercion or validation |
+| anything **not a string** | the entry is structurally **unreadable**: no snapshot, explicit failure |
+
+The third row matters as much as the second. `dateFrom: 20260231` is not a date
+the provider omitted, and stringifying it to `"20260231"` would fabricate a
+statement it never made; nulling it would claim absence where there was a value.
+Neither is true, so §4.1 applies and the whole snapshot is withheld with
+`unreadable_issue_date_from` / `unreadable_issue_date_to`, carrying the property
+id, the provider array index and its `order`.
+
+`" 2026-08-31 "` and `""` are strings the provider chose to send. They survive
+verbatim, and the evaluator calls them **invalid** — never missing.
+
 **Validation belongs to the evaluator**, which can tell the two apart:
 
 | provider value | reason |
@@ -278,19 +296,44 @@ evidence, extracting artifact A afterwards must not attach A's closure to B's
 observation. That would make the provenance false and change the *current*
 lifecycle answer using a record that is not current.
 
-So a snapshot carries `source_payload_digest` — the digest of the **whole**
-provider record, the same value the ingestion adapter wrote on the observation
-that record produced. A digest of `issues[]` alone would not identify the record:
-two runs can agree about the issues and differ everywhere else.
+So a snapshot carries the digest of the **whole** provider record — the same
+value the ingestion adapter wrote on the observation that record produced. A
+digest of `issues[]` alone would not do: two runs can agree about the issues and
+differ everywhere else.
 
-If no observation carries that digest, **no snapshot is written**. The failure is
+**But a digest alone still does not name a run.** Observations are unique per
+`(source_run_id, source_property_identity_id)`, **not** per digest, so two runs
+that both saw an UNCHANGED property produce two valid observations carrying
+*identical* digests. A lookup keyed on `(property, digest)` selects both and
+keeps whichever row or map entry happened to be written last — provenance decided
+by accident of ordering.
+
+(For the avoidance of doubt: object-key order is **not** the issue.
+`digestValue` canonicalises through `canonicalJson`, which sorts keys at every
+depth before hashing, so re-serialisation cannot change a digest. The ambiguity
+is two legitimately different runs carrying the same content.)
+
+So the snapshot also carries `evidence_source_run_id`, and the lookup key is
+`(source, environment, source_run_id, source_property_id, whole-record digest)`.
+The run id is derived with the ingestion pipeline's own machinery —
+`deterministicUuid(runFingerprint(manifest))` — so it is the id already in the
+database, not a parallel run-identity scheme. **An extraction from artifact A
+binds only to observation A**, regardless of row order, map order, `observed_at`,
+or which observation is latest.
+
+`source_payload_digest` is deliberately **not** unique across observations:
+identical provider records across different runs are valid and must stay
+representable.
+
+If no observation matches, **no snapshot is written**. The failure is
 reported as a provenance mismatch, distinguishing "this property was never
 ingested here" from "it was ingested from a different record", and the property
 evaluates `unresolved`. Nothing is attached best-effort.
 
-Three composite foreign keys make misattribution unrepresentable: a snapshot must
-cite an observation **of its own identity** and **of its own payload digest**,
-and an issue row must cite a snapshot **of its own identity**.
+Four composite foreign keys make misattribution unrepresentable: a snapshot must
+cite an observation **of its own identity**, **of its own payload digest** and
+**of its own source run**, and an issue row must cite a snapshot **of its own
+identity**. Application logic is the first layer; the database is the second.
 
 ## 13. Future composition — D062 condition 4 (DOCUMENTED, NOT IMPLEMENTED)
 

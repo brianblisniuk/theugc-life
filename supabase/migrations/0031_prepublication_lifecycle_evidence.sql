@@ -211,12 +211,17 @@ create trigger provider_lifecycle_issue_policy_mappings_freeze
 -- records have no such key. `provider_issue_count = 0` on a snapshot therefore
 -- means "the complete record carried no issues", which is a real provider
 -- statement; no snapshot at all means nobody looked.
--- The FK below needs a unique target. `id` is already the primary key, so this
--- adds no new uniqueness rule and cannot fail on existing data — it exists
--- purely so `(observation, payload digest)` is referenceable. 0027 is untouched.
+-- The FKs below need unique targets. `id` is already the primary key, so neither
+-- of these adds a uniqueness rule or can fail on existing data — they exist
+-- purely so `(observation, payload digest)` and `(observation, run)` are
+-- referenceable. 0027 is untouched.
 alter table public.source_property_observations
   add constraint source_property_observations_id_payload_uk
   unique (id, source_payload_digest);
+
+alter table public.source_property_observations
+  add constraint source_property_observations_id_run_uk
+  unique (id, source_run_id);
 
 create table public.source_property_issue_snapshots (
   id uuid primary key default gen_random_uuid(),
@@ -255,6 +260,19 @@ create table public.source_property_issue_snapshots (
   -- record. NOT NULL, because a snapshot that cannot say which provider record
   -- it came from is not provenance.
   source_payload_digest text not null,
+
+  -- AND THE RUN, because a digest alone still does not name one.
+  --
+  -- Observations are unique per `(source_run_id, source_property_identity_id)`,
+  -- NOT per digest — so two runs that both saw an UNCHANGED property produce two
+  -- valid observations carrying the SAME digest. `(property, digest)` therefore
+  -- selects two rows and picks one by accident of ordering, which is not
+  -- provenance at all. A digest proves CONTENT equality; the run names WHICH
+  -- OBSERVATION.
+  --
+  -- Composite-FK'd below, so an extraction from run A physically cannot attach
+  -- itself to run B's observation even if the application logic were wrong.
+  evidence_source_run_id uuid not null,
   extraction_method text not null,
   extracted_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -280,6 +298,11 @@ create table public.source_property_issue_snapshots (
     foreign key (evidence_observation_id, source_payload_digest)
     references public.source_property_observations (id, source_payload_digest)
     on delete restrict,
+  -- The third leg: the observation must belong to the run the snapshot names.
+  constraint source_property_issue_snapshots_run_fk
+    foreign key (evidence_observation_id, evidence_source_run_id)
+    references public.source_property_observations (id, source_run_id)
+    on delete restrict,
   -- Needed by the child table below, so an issue row cannot attach itself to a
   -- snapshot belonging to a different identity.
   constraint source_property_issue_snapshots_identity_uk unique (id, source_property_identity_id)
@@ -292,6 +315,8 @@ create index source_property_issue_snapshots_source_idx
 
 comment on table public.source_property_issue_snapshots is
   'One row per source observation whose provider issue list was extracted COMPLETELY. Absence of a row is ignorance, not "no issues" — the evaluator returns unresolved.';
+comment on column public.source_property_issue_snapshots.evidence_source_run_id is
+  'The source run whose provider record this extraction read. Required because two runs may legitimately carry the SAME unchanged record and therefore the same payload digest — a digest proves content equality, the run names which observation.';
 comment on column public.source_property_issue_snapshots.provider_issue_count is
   'Issues the complete provider record carried. 0 means the provider reported none; it does NOT mean nobody looked.';
 

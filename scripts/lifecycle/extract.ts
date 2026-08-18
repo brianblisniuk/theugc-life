@@ -29,8 +29,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { digestValue } from "../provider-ingestion/digest";
-import { HOTELBEDS_CACHED_SELECTIONS } from "../provider-ingestion/manifest";
+import { deterministicUuid, digestValue } from "../provider-ingestion/digest";
+import {
+  buildManifest,
+  HOTELBEDS_CACHED_SELECTIONS,
+  runFingerprint,
+} from "../provider-ingestion/manifest";
 
 /** One provider issue, structurally, exactly as the provider stated it. */
 export interface ExtractedIssue {
@@ -47,6 +51,16 @@ export interface ExtractedIssue {
 /** One property's complete issue extraction, keyed by the provider's own id. */
 export interface ExtractedIssueSnapshot {
   sourcePropertyId: string;
+  /**
+   * The SOURCE RUN this artifact record belongs to.
+   *
+   * Derived with the ingestion pipeline's own machinery —
+   * `deterministicUuid(runFingerprint(manifest))` — so it is the SAME id the
+   * ingest wrote, not a parallel run-identity scheme. Extracting the same cached
+   * artifact yields the same run id, which is what makes the binding exact and
+   * the replay idempotent.
+   */
+  sourceRunId: string;
   providerIssueCount: number;
   /**
    * Digest of the WHOLE provider record, matching what the ingestion adapter
@@ -68,7 +82,15 @@ export interface ExtractionFailure {
     | "issues_not_an_array"
     | "unreadable_issue_entry"
     | "unreadable_issue_code"
-    | "unreadable_issue_type";
+    | "unreadable_issue_type"
+    /**
+     * The provider supplied a date that is NOT A STRING — a number, an object,
+     * a boolean. Coercing it would invent a provider statement (`20260231`
+     * becoming `"20260231"`), and nulling it would claim the provider omitted a
+     * field it actually sent. Neither is true, so the entry is unreadable.
+     */
+    | "unreadable_issue_date_from"
+    | "unreadable_issue_date_to";
   /** Index within the provider's own array, and its `order` when supplied. */
   issueIndex: number | null;
   providerOrder: number | null;
@@ -87,21 +109,30 @@ function asString(value: unknown): string | null {
 }
 
 /**
- * A provider date, kept EXACTLY as the provider sent it.
+ * A provider date field, in exactly three states.
  *
- * Nothing is validated, trimmed, sliced or coerced here, and that is the whole
- * point. The previous version sliced anything longer than ten characters to its
- * first ten, which turned `2026-08-31garbage` into a clean `2026-08-31` — a
- * confident closure window built from a value the provider never sent in that
- * form. And a shape check here would map `2026-02-31` to NULL, making an
- * impossible date indistinguishable from an absent one.
+ *   absent / null    -> `{ ok: true, value: null }`   the provider said nothing
+ *   a string         -> `{ ok: true, value }`         kept WHOLE, byte for byte
+ *   anything else    -> `{ ok: false }`               structurally unreadable
  *
- * VALIDATION BELONGS TO THE EVALUATOR, which can tell "absent" from "present and
- * unreadable" and report them as different reasons. A non-string is NULL because
- * there are no bytes to keep; a string is kept whole.
+ * Nothing is validated, trimmed, sliced or coerced, and that is the whole point.
+ * An earlier version sliced anything longer than ten characters to its first
+ * ten, turning `2026-08-31garbage` into a clean `2026-08-31` — a confident
+ * closure window built from a value the provider never sent in that form. A
+ * shape check here would map `2026-02-31` to NULL, making an impossible date
+ * indistinguishable from an absent one. `" 2026-08-31 "` and `""` are strings
+ * the provider chose to send, so they survive verbatim and the EVALUATOR calls
+ * them invalid.
+ *
+ * And a NON-STRING is neither of those two things. `dateFrom: 20260231` is not a
+ * date the provider omitted, and stringifying it to `"20260231"` would fabricate
+ * a statement it never made — so the entry is unreadable and, per §4.1, no
+ * snapshot is created at all.
  */
-function providerDateRaw(value: unknown): string | null {
-  return typeof value === "string" ? value : value === null ? null : asString(value);
+function providerDateRaw(value: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (typeof value === "string") return { ok: true, value };
+  return { ok: false };
 }
 
 function asBoolean(value: unknown): boolean | null {
@@ -165,6 +196,7 @@ function providerCode(value: unknown): string | null {
  */
 export function extractIssuesFromRecord(
   raw: unknown,
+  sourceRunId: string,
 ):
   | { snapshot: ExtractedIssueSnapshot; failure: null }
   | { snapshot: null; failure: ExtractionFailure } {
@@ -208,11 +240,19 @@ export function extractIssuesFromRecord(
     if (issueType === null) {
       return fail("unreadable_issue_type", sourcePropertyId, index, order);
     }
+    const dateFrom = providerDateRaw(issue.dateFrom);
+    if (!dateFrom.ok) {
+      return fail("unreadable_issue_date_from", sourcePropertyId, index, order);
+    }
+    const dateTo = providerDateRaw(issue.dateTo);
+    if (!dateTo.ok) {
+      return fail("unreadable_issue_date_to", sourcePropertyId, index, order);
+    }
     issues.push({
       issueCode,
       issueType,
-      dateFromRaw: providerDateRaw(issue.dateFrom),
-      dateToRaw: providerDateRaw(issue.dateTo),
+      dateFromRaw: dateFrom.value,
+      dateToRaw: dateTo.value,
       providerOrder: order,
       alternative: asBoolean(issue.alternative),
       description: asString(issue.description),
@@ -222,6 +262,7 @@ export function extractIssuesFromRecord(
   return {
     snapshot: {
       sourcePropertyId,
+      sourceRunId,
       // Equal to `issues.length` by construction — every entry either produced a
       // row or aborted the whole record above. The count is still carried
       // separately so the database can be checked against it (see the
@@ -250,6 +291,13 @@ export async function extractDestinationIssues(
         "already in the repository and makes no provider request.",
     );
   }
+  // The SAME manifest and the SAME fingerprint the ingestion adapter used, so
+  // the run id below is the run id already in the database. Building it here
+  // rather than inventing one is the whole point: two systems deriving run
+  // identity two ways is two answers to one question.
+  const manifest = await buildManifest(selection, repoRoot);
+  const sourceRunId = deterministicUuid(runFingerprint(manifest));
+
   const payloads = JSON.parse(
     await readFile(path.resolve(repoRoot, selection.rawProperties), "utf8"),
   ) as unknown[];
@@ -258,7 +306,7 @@ export async function extractDestinationIssues(
   const failures: ExtractionFailure[] = [];
   const seen = new Set<string>();
   for (const raw of payloads) {
-    const { snapshot, failure } = extractIssuesFromRecord(raw);
+    const { snapshot, failure } = extractIssuesFromRecord(raw, sourceRunId);
     if (failure !== null) {
       failures.push(failure);
       continue;

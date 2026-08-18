@@ -605,12 +605,22 @@ missing a row. The evaluator re-checks that equality independently
 (`issue_count_mismatch`), because a hand-written row could create what the
 extractor cannot.
 
-`source_payload_digest` is NOT NULL and is the digest of the **whole** provider
-record, composite-FK'd to `(observation, digest)`. It is what makes the binding
-checkable: "which observation does this artifact record describe?" is a different
-question from "which observation is newest?", and re-extracting an OLD cached
-artifact after a NEWER run exists would otherwise move old issue evidence onto a
-new observation and change the current lifecycle answer.
+`source_payload_digest` and `evidence_source_run_id` are both NOT NULL and both
+composite-FK'd to the observation — `(observation, digest)` and
+`(observation, run)`. Together they make the binding checkable: "which
+observation does this artifact record describe?" is a different question from
+"which observation is newest?", and re-extracting an OLD cached artifact after a
+NEWER run exists would otherwise move old issue evidence onto a new observation.
+
+The run is required because a digest alone does not name one. Observations are
+unique per `(source_run_id, source_property_identity_id)`, **not** per digest, so
+two runs that both saw an unchanged property carry identical digests and
+`(property, digest)` would select both — picking one by accident of ordering. The
+digest proves CONTENT equality; the run names WHICH OBSERVATION. It is derived
+with the ingestion pipeline's own `deterministicUuid(runFingerprint(manifest))`,
+so it is the id already in the database rather than a second scheme. Identical
+records across runs stay valid: `source_payload_digest` is deliberately not
+unique.
 
 Without it, zero issue rows would mean either "the provider reported none" or
 "nobody extracted this" — evidence and ignorance behind one absence, and an
