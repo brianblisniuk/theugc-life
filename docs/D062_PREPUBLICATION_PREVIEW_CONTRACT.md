@@ -13,7 +13,15 @@ npm run source:preview -- --source hotelbeds --environment evaluation \
 
 `--identity-id` is the alternative scope. `--environment` explicitly selects
 `evaluation` or `production`; production inspection remains read-only and does
-not implement production ingestion. There is no unscoped default and no `--apply`.
+not implement production ingestion. `--source` is mandatory; provider-native ids
+have no meaning outside their explicit source namespace. There is no unscoped
+default and no `--apply`.
+
+Every invocation reads all evidence inside one PostgreSQL `REPEATABLE READ`,
+`READ ONLY` transaction. The transaction begins before the first evidence query,
+commits on success, and rolls back on error. A hosted production database is a
+valid inspection target only through this read-only path; the separate ingestion
+resolver remains remote-write refusing.
 
 ## Vocabulary and composition
 
@@ -29,6 +37,10 @@ circular. Conditions 8–10 remain independent D062 coordinate requirements.
 Current observation means exactly the observation for the same identity and its
 `last_seen_run_id`. A missing pointer target holds the preview. Timestamp, UUID,
 creation time, and row order never select evidence; history is not a fallback.
+The human entity-review manifest uses the same pointer. Contradictory accepted
+canonical targets, or accepted NEW plus accepted canonical evidence, HOLD both
+identity and conflict conditions; ordering or choosing one row cannot resolve a
+contradiction.
 
 ## Evidence and fingerprint
 
@@ -38,7 +50,9 @@ explanation, immutable identifiers/policy fields, and condition-specific
 semantic bundle containing fingerprint schema version,
 identity/source/environment/current observation, explicit as-of, and every
 condition's stable number/key, status, machine reason, semantic evidence, and
-condition-specific as-of. Human-readable explanations/display copy are
+condition-specific as-of. It also binds the complete current human-review
+provenance and deterministic semantic snapshots of every supporting or
+contradicting accepted entity candidate. Human-readable explanations/display copy are
 explicitly excluded. Object keys are recursively sorted and set-like
 identifier/reason arrays are sorted. It reads no clock, creates no UUID, depends
 on no DB row order, and is not an authorization.

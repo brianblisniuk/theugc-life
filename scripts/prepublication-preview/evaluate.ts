@@ -32,13 +32,15 @@ export interface PreviewInput {
     destinationId: string | null;
     targetHotelId: string | null;
     decidedInRunId: string | null;
+    reviewerUserId: string | null;
+    reviewerLabel: string;
+    reviewedAt: string;
+    reviewNote: string | null;
   };
   destination: null | { id: string; slug: string };
   entity: {
     synchronized: boolean;
-    acceptedNewPropertyFindingId: string | null;
-    acceptedCanonicalCandidateId: string | null;
-    acceptedCanonicalHotelId: string | null;
+    acceptedCandidates: CandidateEvidence[];
     pendingCandidateIds: string[];
     currentAnomalyReasons: string[];
   };
@@ -72,6 +74,26 @@ export interface PreviewInput {
     policyVersion: string;
   };
   lifecycle: { snapshot: IssueSnapshot | null; policy: LifecyclePolicy };
+}
+
+export interface CandidateEvidence extends EvidenceRef {
+  id: string;
+  kind: "canonical_hotel" | "source_identity" | "new_property";
+  status: string;
+  candidateHotelId: string | null;
+  candidateSourcePropertyIdentityId: string | null;
+  sourceRunId: string | null;
+  matchMethod: string;
+  nameEvidence: string;
+  domainEvidence: string;
+  addressEvidence: string;
+  phoneEvidence: string;
+  brandEvidence: string;
+  coordinateDistanceMetres: string | null;
+  knownSourceMapping: boolean;
+  reviewNote: string | null;
+  resolvedAt: string | null;
+  supersededReason: string | null;
 }
 
 export interface PreviewResult {
@@ -158,19 +180,31 @@ export function buildFingerprintPayload(args: {
 export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResult {
   const current = input.identity.currentObservationId;
   const currentOk = current !== null;
+  const acceptedCandidates = [...input.entity.acceptedCandidates].sort((a, b) =>
+    `${a.kind}|${a.candidateHotelId ?? ""}|${a.candidateSourcePropertyIdentityId ?? ""}|${a.id}`.localeCompare(
+      `${b.kind}|${b.candidateHotelId ?? ""}|${b.candidateSourcePropertyIdentityId ?? ""}|${b.id}`,
+    ),
+  );
+  const canonicalCandidates = acceptedCandidates.filter((c) => c.kind === "canonical_hotel");
+  const newCandidates = acceptedCandidates.filter((c) => c.kind === "new_property");
+  const distinctCanonicalTargets = new Set(canonicalCandidates.map((c) => c.candidateHotelId));
+  const acceptedContradiction =
+    distinctCanonicalTargets.size > 1 ||
+    (canonicalCandidates.length > 0 && newCandidates.length > 0);
   const noConflict =
     currentOk &&
     input.entity.synchronized &&
+    !acceptedContradiction &&
     input.entity.pendingCandidateIds.length === 0 &&
     input.entity.currentAnomalyReasons.length === 0;
   const entityEvidence: EvidenceRef = {
     synchronized: input.entity.synchronized,
-    acceptedNewPropertyFindingId: input.entity.acceptedNewPropertyFindingId,
-    acceptedCanonicalCandidateId: input.entity.acceptedCanonicalCandidateId,
-    acceptedCanonicalHotelId: input.entity.acceptedCanonicalHotelId,
+    acceptedCandidates,
+    acceptedContradiction,
     pendingCandidateIds: [...input.entity.pendingCandidateIds].sort(),
     currentAnomalyReasons: [...input.entity.currentAnomalyReasons].sort(),
   };
+  const reviewEvidence: EvidenceRef = input.review ? { ...input.review } : { review: null };
 
   let c1: ConditionResult;
   if (!input.review || input.review.decision === "defer")
@@ -179,7 +213,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "UNRESOLVED",
       "identity_review_missing_or_deferred",
       "An explicit human identity decision is required; no machine finding is treated as NEW.",
-      { reviewId: input.review?.id ?? null, ...entityEvidence },
+      { ...reviewEvidence, ...entityEvidence },
     );
   else if (input.review.decision === "reject")
     c1 = result(
@@ -187,7 +221,15 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "FAIL",
       "identity_rejected",
       "The current human review rejects publication identity resolution.",
-      { reviewId: input.review.id, ...entityEvidence },
+      { ...reviewEvidence, ...entityEvidence },
+    );
+  else if (acceptedContradiction)
+    c1 = result(
+      1,
+      "UNRESOLVED",
+      "accepted_entity_evidence_inconsistent",
+      "Accepted entity decisions contradict one another and no row order may resolve them.",
+      { ...reviewEvidence, ...entityEvidence },
     );
   else if (!noConflict)
     c1 = result(
@@ -195,28 +237,28 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "UNRESOLVED",
       "entity_conflict_or_sync_hold",
       "The identity decision cannot pass while current entity evidence is conflicting or out of sync.",
-      { reviewId: input.review.id, ...entityEvidence },
+      { ...reviewEvidence, ...entityEvidence },
     );
-  else if (input.review.decision === "approve_create" && input.entity.acceptedNewPropertyFindingId)
+  else if (input.review.decision === "approve_create" && newCandidates.length === 1)
     c1 = result(
       1,
       "PASS",
       "reviewed_distinct_property",
       "Human approve_create is supported by an explicit accepted distinct-property finding.",
-      { reviewId: input.review.id, ...entityEvidence },
+      { ...reviewEvidence, ...entityEvidence },
     );
   else if (
     input.review.decision === "approve_match" &&
     input.review.targetHotelId &&
-    input.entity.acceptedCanonicalCandidateId &&
-    input.entity.acceptedCanonicalHotelId === input.review.targetHotelId
+    canonicalCandidates.length === 1 &&
+    canonicalCandidates[0]!.candidateHotelId === input.review.targetHotelId
   )
     c1 = result(
       1,
       "PASS",
       "reviewed_explicit_canonical_match",
       "Human approve_match names the same canonical target as accepted entity evidence.",
-      { reviewId: input.review.id, targetHotelId: input.review.targetHotelId, ...entityEvidence },
+      { ...reviewEvidence, ...entityEvidence },
     );
   else
     c1 = result(
@@ -224,7 +266,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "UNRESOLVED",
       "identity_decision_lacks_support",
       "The review is not backed by the required explicit entity-resolution finding.",
-      { reviewId: input.review.id, ...entityEvidence },
+      { ...reviewEvidence, ...entityEvidence },
     );
 
   const c2 =
@@ -235,7 +277,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           "reviewed_destination_supported",
           "The reviewed destination resolves to the canonical destination catalogue.",
           {
-            reviewId: input.review.id,
+            ...reviewEvidence,
             destinationId: input.destination.id,
             destinationSlug: input.destination.slug,
           },
@@ -246,7 +288,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           "reviewed_destination_missing_or_invalid",
           "No valid reviewed canonical destination can be established.",
           {
-            reviewId: input.review?.id ?? null,
+            ...reviewEvidence,
             reviewedDestinationId: input.review?.destinationId ?? null,
           },
         );
@@ -452,7 +494,11 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
     : result(
         11,
         "UNRESOLVED",
-        input.entity.synchronized ? "current_entity_conflict" : "entity_sync_gate_failed",
+        acceptedContradiction
+          ? "accepted_entity_evidence_inconsistent"
+          : input.entity.synchronized
+            ? "current_entity_conflict"
+            : "entity_sync_gate_failed",
         "Current entity evidence is conflicting or cannot safely establish absence of conflict.",
         entityEvidence,
       );

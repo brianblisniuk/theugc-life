@@ -1097,6 +1097,49 @@ d("pre-publication entity resolution (0030)", () => {
       }
     });
 
+    it("review manifest uses the same pointer and never shows unpointed or historical evidence", async () => {
+      const a = await identity({ name: "Manifest Pointed" });
+      const b = await identity({ name: "Manifest Right" });
+      await addObservation(a, { name: "Manifest Later Timestamp", advanceCurrent: false });
+      const [left, right] =
+        a.identityId < b.identityId ? [a.identityId, b.identityId] : [b.identityId, a.identityId];
+      await adminQuery(
+        `insert into public.source_match_candidates
+           (source,source_environment,source_property_identity_id,candidate_source_property_identity_id,
+            candidate_kind,match_method,status)
+         values ($1,'evaluation',$2,$3,'source_identity','manual_search','pending')`,
+        [SOURCE, left, right],
+      );
+      const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await client.connect();
+      try {
+        let queue = await client.query<{
+          left_identity: string;
+          left_name: string | null;
+          right_identity: string;
+          right_name: string | null;
+        }>(CANDIDATE_QUERY, [SOURCE, "evaluation", 1000, "pending"]);
+        let row = queue.rows.find(
+          (r) => r.left_identity === a.identityId || r.right_identity === a.identityId,
+        )!;
+        expect(row.left_identity === a.identityId ? row.left_name : row.right_name).toBe(
+          "Manifest Pointed",
+        );
+        const emptyRun = await newRun(DEST.bali);
+        await adminQuery(
+          `update public.source_property_identities set last_seen_run_id=$1 where id=$2`,
+          [emptyRun, a.identityId],
+        );
+        queue = await client.query(CANDIDATE_QUERY, [SOURCE, "evaluation", 1000, "pending"]);
+        row = queue.rows.find(
+          (r) => r.left_identity === a.identityId || r.right_identity === a.identityId,
+        )!;
+        expect(row.left_identity === a.identityId ? row.left_name : row.right_name).toBeNull();
+      } finally {
+        await client.end();
+      }
+    });
+
     it("UNKNOWN destination is not the SAME destination", () => {
       const make = (
         id: string,

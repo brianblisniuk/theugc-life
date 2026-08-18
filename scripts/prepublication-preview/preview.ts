@@ -8,10 +8,10 @@ import {
   type PairKey,
 } from "../entity-resolution/queues";
 import { loadBlockableIdentities } from "../entity-resolution/writer";
-import { resolveIngestionTarget } from "../provider-ingestion/db-target";
 import { loadEvaluableProperties, loadLifecyclePolicy } from "../lifecycle/store";
 import { isValidIsoDate } from "../lifecycle/policy";
 import { evaluatePreview, type PreviewInput } from "./evaluate";
+import { resolvePreviewTarget } from "./target";
 
 interface Args {
   source: string;
@@ -33,6 +33,8 @@ export function parseArgs(argv: readonly string[]): Args {
   const environment = get("environment");
   if (environment !== "evaluation" && environment !== "production")
     throw new Error("--environment must be explicit: evaluation or production.");
+  const source = get("source");
+  if (!source) throw new Error("--source <provider> is required and has no implicit default.");
   const identityId = get("identity-id");
   const sourcePropertyId = get("source-property-id");
   if (!identityId && !sourcePropertyId)
@@ -42,7 +44,7 @@ export function parseArgs(argv: readonly string[]): Args {
   if (identityId && sourcePropertyId)
     throw new Error("Use exactly one of --identity-id or --source-property-id.");
   return {
-    source: get("source") ?? "hotelbeds",
+    source,
     environment,
     asOf,
     identityId,
@@ -66,7 +68,7 @@ type BundleRow = {
 
 export const BUNDLE_QUERY = `
 select i.id identity_id, i.source, i.source_environment, i.source_property_id, o.id observation_id,
-  case when rv.id is null then null else jsonb_build_object('id',rv.id,'decision',rv.decision,'destinationId',rv.destination_id,'targetHotelId',rv.target_hotel_id,'decidedInRunId',rv.decided_in_run_id) end review,
+  case when rv.id is null then null else jsonb_build_object('id',rv.id,'decision',rv.decision,'destinationId',rv.destination_id,'targetHotelId',rv.target_hotel_id,'decidedInRunId',rv.decided_in_run_id,'reviewerUserId',rv.reviewer_user_id,'reviewerLabel',rv.reviewer_label,'reviewedAt',rv.reviewed_at,'reviewNote',rv.review_note) end review,
   case when d.id is null then null else jsonb_build_object('id',d.id,'slug',d.slug) end destination,
   case when sc.id is null then null else jsonb_build_object('revisionId',sc.id,'observationId',sc.evidence_observation_id,'outcome',sc.outcome,'policyProvider',sc.policy_provider,'policyVersion',sc.policy_version,'sourceValue',sc.source_value) end scope,
   case when st.id is null then null else jsonb_build_object('revisionId',st.id,'observationId',st.evidence_observation_id,'outcome',st.outcome,'resolvedStarValue',st.resolved_star_value,'conflictState',st.conflict_state,'policyProvider',st.policy_provider,'policyVersion',st.policy_version,'sourceValue',st.source_value) end star,
@@ -81,19 +83,23 @@ left join public.source_property_current_location_resolutions lo on lo.source_pr
 where i.source=$1 and i.source_environment=$2 and ($3::uuid is not null and i.id=$3 or $4::text is not null and i.source_property_id=$4)
 order by i.source_property_id limit $5`;
 
-export async function loadPreviewResults(client: Client, args: Args) {
-  const [bundleRows, properties, policy, identities] = await Promise.all([
-    client.query<BundleRow>(BUNDLE_QUERY, [
-      args.source,
-      args.environment,
-      args.identityId,
-      args.sourcePropertyId,
-      args.limit,
-    ]),
-    loadEvaluableProperties(client, { source: args.source, environment: args.environment }),
-    loadLifecyclePolicy(client, { provider: args.source }),
-    loadBlockableIdentities(client, { source: args.source, environment: args.environment }),
+async function composePreviewResults(client: Client, args: Args) {
+  const bundleRows = await client.query<BundleRow>(BUNDLE_QUERY, [
+    args.source,
+    args.environment,
+    args.identityId,
+    args.sourcePropertyId,
+    args.limit,
   ]);
+  const properties = await loadEvaluableProperties(client, {
+    source: args.source,
+    environment: args.environment,
+  });
+  const policy = await loadLifecyclePolicy(client, { provider: args.source });
+  const identities = await loadBlockableIdentities(client, {
+    source: args.source,
+    environment: args.environment,
+  });
   if (!policy) throw new Error(`No approved lifecycle policy exists for ${args.source}.`);
   if (bundleRows.rows.length === 0) throw new Error("No identity matched the explicit scope.");
 
@@ -107,10 +113,25 @@ export async function loadPreviewResults(client: Client, args: Args) {
     method: string;
     superseded_reason: string | null;
     candidate_hotel_id: string | null;
+    candidate_source_identity_id: string | null;
+    source_run_id: string | null;
+    name_evidence: string;
+    domain_evidence: string;
+    address_evidence: string;
+    phone_evidence: string;
+    brand_evidence: string;
+    coordinate_distance_metres: string | null;
+    known_source_mapping: boolean;
+    review_note: string | null;
+    resolved_at: string | null;
     id: string;
   }>(
     `select source_property_identity_id left_id, candidate_source_property_identity_id right_id,
-              status, candidate_kind kind, match_method method, superseded_reason, candidate_hotel_id, id
+              status, candidate_kind kind, match_method method, superseded_reason,
+              candidate_hotel_id, candidate_source_property_identity_id candidate_source_identity_id,
+              source_run_id, name_evidence, domain_evidence, address_evidence, phone_evidence,
+              brand_evidence, coordinate_distance_metres::text, known_source_mapping,
+              review_note, resolved_at::text, id
          from public.source_match_candidates
         where source = $1 and source_environment = $2`,
     [args.source, args.environment],
@@ -143,8 +164,32 @@ export async function loadPreviewResults(client: Client, args: Args) {
     const related = persisted.rows.filter(
       (c) => c.left_id === row.identity_id || c.right_id === row.identity_id,
     );
-    const newFinding = related.find((c) => c.kind === "new_property" && c.status === "accepted");
-    const canonical = related.find((c) => c.kind === "canonical_hotel" && c.status === "accepted");
+    const acceptedCandidates = related
+      .filter((c) => c.status === "accepted")
+      .map((c) => ({
+        id: c.id,
+        kind: c.kind as "canonical_hotel" | "source_identity" | "new_property",
+        status: c.status,
+        candidateHotelId: c.candidate_hotel_id,
+        candidateSourcePropertyIdentityId: c.candidate_source_identity_id,
+        sourceRunId: c.source_run_id,
+        matchMethod: c.method,
+        nameEvidence: c.name_evidence,
+        domainEvidence: c.domain_evidence,
+        addressEvidence: c.address_evidence,
+        phoneEvidence: c.phone_evidence,
+        brandEvidence: c.brand_evidence,
+        coordinateDistanceMetres: c.coordinate_distance_metres,
+        knownSourceMapping: c.known_source_mapping,
+        reviewNote: c.review_note,
+        resolvedAt: c.resolved_at,
+        supersededReason: c.superseded_reason,
+      }))
+      .sort((a, b) =>
+        `${a.kind}|${a.candidateHotelId ?? ""}|${a.candidateSourcePropertyIdentityId ?? ""}|${a.id}`.localeCompare(
+          `${b.kind}|${b.candidateHotelId ?? ""}|${b.candidateSourcePropertyIdentityId ?? ""}|${b.id}`,
+        ),
+      );
     const pending = related.filter((c) => c.status === "pending").map((c) => c.id);
     const anomalies = [
       ...(partitions.inSharedKeyClusters.has(row.identity_id) ? ["shared_key_cluster"] : []),
@@ -167,9 +212,7 @@ export async function loadPreviewResults(client: Client, args: Args) {
       location: row.location,
       entity: {
         synchronized: sync.inSync,
-        acceptedNewPropertyFindingId: newFinding?.id ?? null,
-        acceptedCanonicalCandidateId: canonical?.id ?? null,
-        acceptedCanonicalHotelId: canonical?.candidate_hotel_id ?? null,
+        acceptedCandidates,
         pendingCandidateIds: pending,
         currentAnomalyReasons: anomalies,
       },
@@ -179,9 +222,25 @@ export async function loadPreviewResults(client: Client, args: Args) {
   });
 }
 
+export async function inPreviewSnapshot<T>(client: Client, work: () => Promise<T>): Promise<T> {
+  await client.query("begin isolation level repeatable read read only");
+  try {
+    const result = await work();
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+}
+
+export function loadPreviewResults(client: Client, args: Args) {
+  return inPreviewSnapshot(client, () => composePreviewResults(client, args));
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const target = resolveIngestionTarget(process.env);
+  const target = resolvePreviewTarget(process.env);
   const client = new Client({ connectionString: target.url });
   await client.connect();
   try {

@@ -136,18 +136,18 @@ export const CANDIDATE_QUERY = `
          c.known_source_mapping, c.agreeing_dimensions, c.review_note, c.superseded_reason
     from public.source_match_candidates c
     join public.source_property_identities li on li.id = c.source_property_identity_id
-    join lateral (select o.source_name, o.source_run_id
+    left join lateral (select o.source_name, o.source_run_id
                     from public.source_property_observations o
                    where o.source_property_identity_id = li.id
-                   order by o.observed_at desc, o.id desc limit 1) lo on true
-    join public.source_runs lr on lr.id = lo.source_run_id
+                     and o.source_run_id = li.last_seen_run_id) lo on true
+    left join public.source_runs lr on lr.id = lo.source_run_id
     left join public.destinations ld on ld.id = lr.destination_id
     left join public.source_property_identities ri
            on ri.id = c.candidate_source_property_identity_id
     left join lateral (select o.source_name, o.source_run_id
                          from public.source_property_observations o
                         where o.source_property_identity_id = ri.id
-                        order by o.observed_at desc, o.id desc limit 1) ro on true
+                          and o.source_run_id = ri.last_seen_run_id) ro on true
     left join public.source_runs rr on rr.id = ro.source_run_id
     left join public.destinations rd on rd.id = rr.destination_id
    where c.source = $1 and c.source_environment = $2

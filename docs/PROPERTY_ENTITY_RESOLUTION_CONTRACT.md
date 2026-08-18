@@ -28,7 +28,7 @@ rewritten by discovery.
 ```
 source property identity
         ↓
-latest observation                    (evidence, never canonical — D065)
+pointer-current observation            (identity.last_seen_run_id; evidence, never canonical — D065)
         ↓
 candidate discovery / blocking        "is this pair worth COMPARING?"
         ↓
@@ -148,13 +148,16 @@ and every domain a chain: `movenpick.com`, `anantara.com` (twice), `hyatt.com`,
 
 ### 3.5 Geography comes from the observation being compared
 
-The destination is read from the run that produced the **latest observation**,
+The destination is read from the run named by the identity's
+`last_seen_run_id`, and from that run's observation for the same identity,
 not from the run that first saw the identity. Taking the name, domain and phone
 from a new observation and the geography from an old one describes a property
 that never existed: if a provider enumerates a property under destination A and
 a later run corrects it into B, that seam can manufacture pairs, miss real ones
-and invent a cross-destination anomaly out of nothing. The latest observation and
-its run's geography are **one current evidence unit**.
+and invent a cross-destination anomaly out of nothing. The pointer-current
+observation and its run's geography are **one current evidence unit**. Timestamp,
+UUID and row order never replace that pointer, and a broken pointer has no
+historical fallback.
 
 ## 4. Normalisation
 

@@ -7,9 +7,31 @@ import {
   type PreviewInput,
 } from "../scripts/prepublication-preview/evaluate";
 import { parseArgs } from "../scripts/prepublication-preview/preview";
+import { resolvePreviewTarget } from "../scripts/prepublication-preview/target";
+import { resolveIngestionTarget } from "../scripts/provider-ingestion/db-target";
 
 const AS_OF = "2026-08-17";
 const current = "00000000-0000-0000-0000-000000000010";
+const candidate = (over: Record<string, unknown> = {}) => ({
+  id: "finding-1",
+  kind: "new_property" as const,
+  status: "accepted",
+  candidateHotelId: null,
+  candidateSourcePropertyIdentityId: null,
+  sourceRunId: "run-1",
+  matchMethod: "manual_search",
+  nameEvidence: "none",
+  domainEvidence: "unavailable",
+  addressEvidence: "unavailable",
+  phoneEvidence: "unavailable",
+  brandEvidence: "unavailable",
+  coordinateDistanceMetres: null,
+  knownSourceMapping: false,
+  reviewNote: "reviewed distinct",
+  resolvedAt: "2026-08-17T00:00:00Z",
+  supersededReason: null,
+  ...over,
+});
 
 function valid(): PreviewInput {
   return {
@@ -25,13 +47,15 @@ function valid(): PreviewInput {
       destinationId: "destination-1",
       targetHotelId: null,
       decidedInRunId: "run-1",
+      reviewerUserId: "user-1",
+      reviewerLabel: "Reviewer",
+      reviewedAt: "2026-08-17T00:00:00Z",
+      reviewNote: "reviewed",
     },
     destination: { id: "destination-1", slug: "bali" },
     entity: {
       synchronized: true,
-      acceptedNewPropertyFindingId: "finding-1",
-      acceptedCanonicalCandidateId: null,
-      acceptedCanonicalHotelId: null,
+      acceptedCandidates: [candidate()],
       pendingCandidateIds: [],
       currentAnomalyReasons: [],
     },
@@ -112,7 +136,7 @@ describe("D062 pre-publication preview", () => {
   it("E/F: no review and unsupported approve_create never infer NEW", () => {
     const input = valid();
     input.review = null;
-    input.entity.acceptedNewPropertyFindingId = null;
+    input.entity.acceptedCandidates = [];
     expect(condition(evaluatePreview(input, AS_OF), 1).status).toBe("UNRESOLVED");
     input.review = valid().review;
     expect(condition(evaluatePreview(input, AS_OF), 1).reason).toBe(
@@ -128,10 +152,14 @@ describe("D062 pre-publication preview", () => {
       destinationId: "destination-1",
       targetHotelId: "hotel-1",
     };
-    input.entity.acceptedNewPropertyFindingId = null;
-    input.entity.acceptedCanonicalCandidateId = "candidate-1";
-    input.entity.acceptedCanonicalHotelId = "hotel-1";
+    input.entity.acceptedCandidates = [
+      candidate({ id: "candidate-1", kind: "canonical_hotel", candidateHotelId: "hotel-1" }),
+    ];
     expect(condition(evaluatePreview(input, AS_OF), 1).status).toBe("PASS");
+    input.review!.targetHotelId = "hotel-other";
+    expect(condition(evaluatePreview(input, AS_OF), 1).reason).toBe(
+      "identity_decision_lacks_support",
+    );
   });
 
   it("H/I: pending current conflict holds; superseded history is absent and does not block", () => {
@@ -269,5 +297,63 @@ describe("D062 pre-publication preview", () => {
       /evaluation or production/,
     );
     expect(() => parseArgs(base)).toThrow(/environment/);
+    expect(() =>
+      parseArgs(["--as-of", AS_OF, "--environment", "evaluation", "--source-property-id", "123"]),
+    ).toThrow(/source/);
+  });
+
+  it("holds contradictory accepted entity evidence independent of candidate order", () => {
+    const a = candidate({ id: "a", kind: "canonical_hotel", candidateHotelId: "hotel-a" });
+    const b = candidate({ id: "b", kind: "canonical_hotel", candidateHotelId: "hotel-b" });
+    const first = valid();
+    first.review = { ...first.review!, decision: "approve_match", targetHotelId: "hotel-a" };
+    first.entity.acceptedCandidates = [a, b];
+    const second = structuredClone(first);
+    second.entity.acceptedCandidates.reverse();
+    const p1 = evaluatePreview(first, AS_OF),
+      p2 = evaluatePreview(second, AS_OF);
+    expect(condition(p1, 1).reason).toBe("accepted_entity_evidence_inconsistent");
+    expect(condition(p1, 11).reason).toBe("accepted_entity_evidence_inconsistent");
+    expect(p2.fingerprint).toBe(p1.fingerprint);
+    const mixed = valid();
+    mixed.entity.acceptedCandidates.push(a);
+    expect(condition(evaluatePreview(mixed, AS_OF), 1).reason).toBe(
+      "accepted_entity_evidence_inconsistent",
+    );
+  });
+
+  it("binds review and accepted-candidate semantics into the fingerprint", () => {
+    const baseline = evaluatePreview(valid(), AS_OF).fingerprint;
+    for (const mutate of [
+      (x: PreviewInput) => {
+        x.review!.decidedInRunId = "run-2";
+      },
+      (x: PreviewInput) => {
+        x.review!.reviewNote = "different justification";
+      },
+      (x: PreviewInput) => {
+        x.review!.decision = "defer";
+      },
+      (x: PreviewInput) => {
+        x.review!.destinationId = "destination-2";
+      },
+      (x: PreviewInput) => {
+        x.entity.acceptedCandidates[0]!.matchMethod = "manual_registry_search";
+      },
+      (x: PreviewInput) => {
+        x.entity.acceptedCandidates[0]!.reviewNote = "different candidate evidence";
+      },
+    ]) {
+      const input = valid();
+      mutate(input);
+      expect(evaluatePreview(input, AS_OF).fingerprint).not.toBe(baseline);
+    }
+  });
+
+  it("allows remote read-only preview classification while ingestion still refuses it", () => {
+    const env = { DATABASE_URL: "postgresql://user:secret@db.example.com:5432/app" };
+    expect(resolvePreviewTarget(env).classification.isRemote).toBe(true);
+    expect(resolvePreviewTarget(env).classification.redactedTarget).not.toContain("secret");
+    expect(() => resolveIngestionTarget(env)).toThrow(/Refusing to ingest into a remote target/);
   });
 });
