@@ -200,7 +200,7 @@ async function promote(identityId: string, hotelId: string): Promise<void> {
 
 /** A match candidate. `source`/`source_environment` default to the identity's. */
 async function makeCandidate(
-  identityId: string,
+  identityIdInput: string,
   opts: {
     runId?: string;
     source?: string;
@@ -208,14 +208,31 @@ async function makeCandidate(
     columns?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
+  let identityId = identityIdInput;
+  let columns = opts.columns ?? {};
+  // 0030 requires ONE canonical orientation for a source-to-source pair, so the
+  // same pair cannot be recorded as two candidates. Fixtures state the pair; the
+  // helper puts it in the legal order — BEFORE reading the identity's own
+  // source/environment, which the composite FK requires to belong to whichever
+  // side ends up on the left.
+  const target = columns.candidate_source_property_identity_id as string | undefined;
+  if (columns.candidate_kind === "source_identity" && target && target < identityId) {
+    columns = { ...columns, candidate_source_property_identity_id: identityId };
+    identityId = target;
+  }
   const meta = await identityMeta(identityId);
+  // `candidate_kind` DEFAULTS to `new_property`, and 0030 requires such a row to
+  // carry the finding behind it. Fixtures that do not care about the kind get a
+  // note so the constraint under test is the one they meant to test.
+  const impliedKind = (columns.candidate_kind as string | undefined) ?? "new_property";
   const row: Record<string, unknown> = {
     source_property_identity_id: identityId,
     source: opts.source ?? meta.source,
     source_environment: opts.environment ?? meta.env,
     match_method: "synthetic_test",
+    ...(impliedKind === "new_property" ? { review_note: "synthetic explicit finding" } : {}),
     ...(opts.runId !== undefined ? { source_run_id: opts.runId } : {}),
-    ...(opts.columns ?? {}),
+    ...columns,
   };
   const names = Object.keys(row);
   await adminQuery(
@@ -1015,7 +1032,15 @@ d("property-content infrastructure (0027)", () => {
       const { identity, run } = await makeIdentityWithRun();
       await makeCandidate(identity, {
         runId: run,
-        columns: { candidate_kind: "new_property", match_method: "no_canonical_candidate" },
+        columns: {
+          candidate_kind: "new_property",
+          match_method: "manual_search",
+          // 0030 requires this: a `new_property` row must carry the finding
+          // behind it. `match_method: 'no_canonical_candidate'` — what this
+          // fixture said before — is the exact inference that rule forbids,
+          // because a sweep finding nothing is a fact about the sweep.
+          review_note: "Searched canonical inventory; no existing property. — editor:fixture",
+        },
       });
       const rows = await adminQuery<{ kind: string; hotel: string | null; target: string | null }>(
         `select candidate_kind as kind, candidate_hotel_id as hotel,
@@ -1050,11 +1075,16 @@ d("property-content infrastructure (0027)", () => {
       const rows = await adminQuery<{ kind: string; target: string; hotel: string | null }>(
         `select candidate_kind as kind, candidate_source_property_identity_id as target,
                 candidate_hotel_id as hotel
-         from public.source_match_candidates where source_property_identity_id = $1`,
-        [a],
+         from public.source_match_candidates
+         where source_property_identity_id in ($1,$2)
+           and candidate_source_property_identity_id in ($1,$2)`,
+        [a, b],
       );
+      // The pair is recorded in ONE canonical orientation (0030), so the test
+      // asserts the RELATIONSHIP rather than which side it happens to be on.
+      expect(rows).toHaveLength(1);
       expect(rows[0]!.kind).toBe("source_identity");
-      expect(rows[0]!.target).toBe(b);
+      expect([a, b]).toContain(rows[0]!.target);
       expect(rows[0]!.hotel).toBeNull();
 
       // Both remain coverage-critical. Recognising an equivalence is evidence,
@@ -1116,7 +1146,11 @@ d("property-content infrastructure (0027)", () => {
       // Claims NEW PROPERTY while pointing at a hotel.
       await expect(
         makeCandidate(a, {
-          columns: { candidate_kind: "new_property", candidate_hotel_id: HOTEL.bali },
+          columns: {
+            candidate_kind: "new_property",
+            candidate_hotel_id: HOTEL.bali,
+            review_note: "explicit finding, wrong target",
+          },
         }),
       ).rejects.toThrow(/target_shape/i);
 
@@ -1298,8 +1332,9 @@ d("property-content infrastructure (0027)", () => {
       });
       const dims = await adminQuery<{ dims: number }>(
         `select agreeing_dimensions as dims from public.source_match_candidates
-         where source_property_identity_id = $1`,
-        [identity],
+         where source_property_identity_id in ($1,$2)
+           and candidate_source_property_identity_id in ($1,$2)`,
+        [identity, other],
       );
       expect(dims[0]!.dims).toBe(6);
 

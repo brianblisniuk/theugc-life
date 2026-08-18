@@ -518,6 +518,57 @@ appends nothing.
 Head pointer, composite-FK'd so a head can only name a revision of its own
 candidate; and a `security_invoker` read model over it.
 
+## 5d. Entity-resolution evidence (migration 0030)
+
+**No new table.** 0027's `source_match_candidates` already models the candidate
+kinds, the evidence vocabulary, the generated `agreeing_dimensions` and the
+review status vocabulary, so 0030 adds no new concept — only the minimum
+lifecycle column (`superseded_reason`), constraints and indexes that CURRENT
+candidate semantics need and application code cannot keep on its own. Full
+contract:
+[`PROPERTY_ENTITY_RESOLUTION_CONTRACT.md`](PROPERTY_ENTITY_RESOLUTION_CONTRACT.md).
+
+### A candidate pair is ONE row
+A CHECK first: for `candidate_kind = 'source_identity'` the left identity must
+sort before the right. An index alone is DIRECTIONAL — it stops `A → B` twice but
+not `A → B` and `B → A`, which is the same pair recorded as two candidates for a
+reviewer to decide twice. Application code orienting pairs is a convention;
+a future writer, a Provider B workflow, a manual tool and psql are not bound by
+it. UUID ordering carries no meaning of its own, which makes it a safe canonical
+form.
+
+Then three partial unique indexes — `(identity, candidate_identity)` for
+`source_identity`, `(identity, candidate_hotel_id)` for `canonical_hotel`, and
+`(identity)` for `new_property` — which are genuinely unordered because only one
+orientation is legal. Without them, re-running discovery over unchanged evidence
+inserts a second row per pair; select-then-insert would be a race and a
+convention rather than a guarantee.
+
+### `superseded_reason`
+Set ONLY by candidate generation, and only to `no_current_blocking_rule`: no
+current blocking rule supports this pair any more. A pending candidate is a claim
+about CURRENT evidence, but `pending` alone does **not** establish generator
+ownership. The generator stands down only its own stale rows:
+`candidate_kind = 'source_identity'` AND `status = 'pending'` AND
+`match_method like 'blocking:%'`. It deletes nothing, rewrites no evidence, and
+reactivates only the same row it previously stood down if the evidence returns. A
+manual pending row or human decision is not generator-owned and carries no
+machine stand-down authority, which is exactly what stops a script seizing or
+overturning one.
+
+Keyed on the PAIR, not the pair plus the reason it surfaced: a pair found by
+both a shared domain and a shared phone is one candidate carrying both reasons in
+`match_method`, because a reviewer deciding the same pair twice is the duplicated
+work this queue exists to prevent.
+
+### `new_property` requires a finding
+`candidate_kind` DEFAULTS to `new_property` in 0027, so the constraint
+`source_match_candidates_new_property_requires_finding` requires such a row to
+carry a `review_note`. The inference it blocks is "the sweep produced no
+candidate, therefore this is a new property" — a statement about the RULES read
+as a statement about the world, which D062 would later treat as authorisation to
+publish. A sweep has no justification to write; a reviewer does.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -804,5 +855,8 @@ At minimum:
     resolution revisions, head pointers
 15. pre-publication physical-hospitality scope (0029) — the same shape applied to
     D062's condition 3; an INPUT to eligibility, never eligibility itself
+16. entity-resolution idempotency (0030) — no new table: a candidate pair is one
+    row, `new_property` must carry the finding behind it, and
+    `superseded_reason` separates a machine stand-down from a human decision
 
 Every migration must be reproducible from an empty database.
