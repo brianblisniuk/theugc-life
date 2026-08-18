@@ -569,6 +569,73 @@ candidate, therefore this is a new property" — a statement about the RULES rea
 as a statement about the world, which D062 would later treat as authorisation to
 publish. A sweep has no justification to write; a reviewer does.
 
+## 5e. Lifecycle / closure evidence (migration 0031)
+
+The evidence path for D062's condition 4, "the property is not known inactive /
+closed". Four tables, all editorial internals with the 0027–0030 posture:
+`service_role` plus admin/editor through RLS, **no anon grant**. Full contract:
+[`PROPERTY_LIFECYCLE_EVIDENCE_CONTRACT.md`](PROPERTY_LIFECYCLE_EVIDENCE_CONTRACT.md).
+
+### provider_lifecycle_issue_policies / _policy_mappings
+The 0028/0029 pattern again: the mapping from a provider's vocabulary to our
+semantics is a reviewed product decision, so it is data, and it freezes on
+approval. Draft while `approved_at` is NULL; immutable afterwards, both sides —
+a mapping can neither leave an approved version nor be inserted into one.
+
+The mapping key is the **PAIR** `(issue_code, issue_type)`, and that is the whole
+point. Hotelbeds documents `issues[]` as facility incidences, and in the real
+data 13 rows are `CLOSED` while only **2** are `HOTEL` + `CLOSED`; the other
+eleven are a water park, a restaurant, a spa and a car park. A rule keyed on
+`issue_type` alone would have closed eleven operating hotels. `outcome` has
+exactly one legal value, `property_closed_window` — there is deliberately no
+"open": no provider issue is evidence that a hotel is operating, and an
+unreviewed pair gets no row rather than a row saying it is harmless.
+
+`date_semantics` records the reviewed reading of the interval —
+`inclusive_day_interval`, `dateFrom <= as_of <= dateTo` — because "does dateTo
+include the last day?" changes real outcomes at a boundary and must not be an
+assumption.
+
+### source_property_issue_snapshots
+One row per observation whose provider issue list was extracted COMPLETELY,
+UNIQUE on `evidence_observation_id`. Its existence IS the completeness claim.
+
+Without it, zero issue rows would mean either "the provider reported none" or
+"nobody extracted this" — evidence and ignorance behind one absence, and an
+unextracted property would read as "no known closure". Hotelbeds makes this
+concrete: it OMITS the `issues` key entirely rather than sending an empty array,
+on 3,936 of 4,110 records, so "the array was empty" is not observable.
+`provider_issue_count = 0` is a provider statement; no snapshot at all is
+ignorance, and the evaluator returns `unresolved`.
+
+Composite-FK'd to `(observation, identity)` so a snapshot provably describes an
+observation of its own property.
+
+### source_property_issue_evidence
+The provider's structured fields, verbatim — `issue_code`, `issue_type`,
+`date_from`, `date_to`, `provider_order`, `alternative`. Lifecycle is never
+inferred from `description`, a hotel name or a destination label.
+
+`date_from`/`date_to` are deliberately NULLABLE: a malformed provider interval is
+evidence of a problem and must survive, because it is what makes a mapped closure
+`unresolved` instead of silently clean. `evidence_digest` is `GENERATED ALWAYS`,
+with dates entering as integer day offsets — casting a date to text reads
+`DateStyle` and is only STABLE, which Postgres refuses in a generated column.
+
+### Append-only
+Both evidence tables refuse UPDATE and DELETE by trigger. A snapshot is bound to
+an immutable observation, so rewriting it would change what the provider is
+recorded as having said at a moment that has passed. A newer statement is a new
+observation and a new snapshot.
+
+**No durable lifecycle status column exists anywhere.** A closure window changes
+its current meaning when the calendar moves and nobody said anything new, so the
+outcome is computed by an evaluator holding an explicit `as_of` date. Nothing
+here writes `hotels.active_status`, and
+`source_property_observations.source_lifecycle_status` — NULL on all 4,110
+current observations — is neither read nor written: absence of issues is never
+laundered into "lifecycle = active".
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -858,5 +925,8 @@ At minimum:
 16. entity-resolution idempotency (0030) — no new table: a candidate pair is one
     row, `new_property` must carry the finding behind it, and
     `superseded_reason` separates a machine stand-down from a human decision
+17. pre-publication lifecycle evidence (0031) — provider issue evidence,
+    extraction completeness as its own row, and a policy that refuses to read
+    `issueType` without its `issueCode`
 
 Every migration must be reproducible from an empty database.

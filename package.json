@@ -41,7 +41,8 @@
     "source:ingest": "tsx scripts/provider-ingestion/ingest.ts",
     "source:resolve": "tsx scripts/provider-resolution/resolve.ts",
     "source:match": "tsx scripts/entity-resolution/match.ts",
-    "source:match:review": "tsx scripts/entity-resolution/review.ts"
+    "source:match:review": "tsx scripts/entity-resolution/review.ts",
+    "source:lifecycle": "tsx scripts/lifecycle/lifecycle.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
