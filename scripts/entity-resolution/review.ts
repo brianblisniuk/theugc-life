@@ -15,7 +15,9 @@
  * all three queues are answered from it.
  *
  *   CANDIDATES            pairs AWAITING A DECISION — `status = 'pending'` and
- *                         nothing else. A machine-superseded row is history, an
+ *                         nothing else. Pending may be generator-owned or
+ *                         manual; each row is labelled `machine` or `MANUAL`.
+ *                         A machine-superseded row is history, an
  *                         accepted/rejected one is decided, and a
  *                         human-superseded one is decided too; none is
  *                         actionable, and showing them together would put four
@@ -37,17 +39,19 @@
  * THE SYNC GATE
  * -------------
  * ANOMALIES and NO MACHINE CANDIDATE are computed live, so they are current by
- * construction. CANDIDATES is not: it reads rows `source:match --apply` wrote at
- * some earlier moment, and between that moment and now a provider correction can
- * have removed the blocking relation behind a pending row, or created a pair
- * nothing has persisted yet. Either way the queue silently stops describing the
- * present, and nothing in the row itself shows it.
+ * construction. CANDIDATES is not: it reads persisted pending rows from an
+ * earlier moment. Between that moment and now a provider correction can remove
+ * the blocking relation behind a generator-owned pending row, or create a pair
+ * nothing has persisted or otherwise accounted for yet. Either way the queue can
+ * silently stop describing the present, and nothing in the row itself shows it.
  *
- * So the generator-owned pair set is compared against the live sweep, and a
- * disagreement STOPS the review with an instruction to run the generator. It is
- * deliberately not a filter: intersecting the two would hide a newly discovered
- * pair that was never persisted, and hide a stale pending row without recording
- * the supersession it is owed. Fail closed, and let the operator resynchronise.
+ * So the generator-owned pair set is compared against the live sweep, while
+ * human-decided and manual pending source-identity pairs count as accounted for
+ * on the discovered side. A disagreement STOPS the review with an instruction
+ * to run the generator. It is deliberately not a filter: intersecting the two
+ * would hide a newly discovered pair that was never persisted, and hide a stale
+ * machine pending row without recording the supersession it is owed. Fail
+ * closed, and let the operator resynchronise.
  *
  * This command still writes NOTHING. It reports the disagreement; it does not
  * fix it, and it does not run the generator for you.
@@ -336,8 +340,10 @@ async function main(): Promise<void> {
       console.info(`  not actionable (history): ${historyLine || "none"}\n`);
       for (const r of res.rows) {
         // A machine pair and a reviewer's own pair are both legitimate review
-        // work, and they carry different authority — only the first is covered
-        // by the sync gate above, so the reviewer is told which they are reading.
+        // work, and they carry different authority. Only the first is
+        // generator-owned; the sync gate treats machine state and accounted
+        // non-machine state differently, so the reviewer is told which row they
+        // are reading.
         const origin = isGeneratorOwned({
           candidateKind: r.candidate_kind,
           matchMethod: r.match_method,
