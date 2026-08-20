@@ -76,11 +76,12 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 | A01 | **DONE** (PR #26, merged) | Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution | Every provider type code reviewed once; scope ≠ final eligibility |
 | A02 | **DONE** (PR #27, merged) | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
 | A03 | **DONE** (PR #28, merged) | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
-| A04 | **CURRENT PR** | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
+| A04 | **DONE** (PR #29, merged `6cffa8b9`) | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
+| A04.5 | **BLOCKED** — contract not yet written | *scope not yet defined; see below* | pending a commercial decision |
 | A05 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
 **Base rounds:** 4 *(original estimate, preserved)*  
-**Cumulative future rounds:** 5
+**Cumulative future rounds:** 6
 
 **Why A03 exists.** It was not in the original four. The A01 provider evidence
 showed that D062's condition 4 — "the property is not known inactive / closed" —
@@ -91,6 +92,16 @@ the hotel itself; the other 11 are a water park, a restaurant, a spa and a car
 park. Building D062 Preview on that would have closed eleven operating hotels, so
 the lifecycle evidence layer was inserted ahead of it. The former A03 and A04 are
 now A04 and A05; their scope and gates are unchanged.
+
+**Why A04.5 exists.** A round is inserted between the D062 preview (A04) and the
+human authorization + atomic apply (A05). **Its contract has not been written and
+its scope is not yet defined**, because it depends on a commercial decision that
+has not been taken. Nothing about it is inferred here: this entry records only
+that the sequence is now `A04 → A04.5 → A05`, so that A05 is not started as if it
+followed A04 directly. A01–A04 keep their numbers; nothing is renumbered.
+
+Recording the sequence is **not** authorization to begin A04.5 or A05. Both remain
+blocked until their contracts exist and the owner opens the round.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 
@@ -414,16 +425,21 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-At this baseline, the next base implementation block is:
+At this baseline, Phase A's evidence and preview layers are closed:
 
-> **A03 — pre-publication lifecycle / closure evidence.**
+> **A01 (PR #26), A02 (PR #27), A03 (PR #28) and A04 (PR #29) are merged.**
+> A04 landed on `main` as merge commit `6cffa8b9`.
 
-A01 (PR #26) and A02 (PR #27) are merged. A03 is the current PR: it supplies the
-evidence D062's condition 4 needs, and deliberately stops short of composing it.
+The next base implementation block is:
 
-After A03 is externally audited and merged, continue A04 (D062 pre-publication
-preview) rather than jumping ahead to Gmail implementation. The canonical target
-spine must be reliable before historical communication outcomes are attached to
-it.
+> **A04.5 — contract not yet written, blocked by a pending commercial decision.**
 
-In parallel, business/technical research may prepare the Gmail contract so Phase B can begin immediately after the publication spine is closed.
+**No implementation round is open.** A04.5 cannot start until its contract exists,
+and A05 (human authorization + atomic D062 apply) comes after A04.5, not after
+A04. Nothing may be published on the strength of A04: it previews pre-publication
+evidence and authorizes nothing.
+
+The canonical target spine must still be closed before Gmail implementation
+begins. In parallel, business/technical research may prepare both the A04.5
+commercial decision and the Gmail contract, so Phase B can begin immediately after
+the publication spine is closed.

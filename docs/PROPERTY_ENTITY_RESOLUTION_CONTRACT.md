@@ -367,6 +367,30 @@ Migration 0030 makes this true **in the database**, not by convention:
   and phone is one candidate carrying both reasons in `match_method`, not two
   candidates for a reviewer to decide twice, possibly differently.
 
+### 8.1 Unordered means READERS must not read one column
+
+The canonical orientation is a storage rule, and it is the **only** thing UUID
+ordering decides. It carries no claim that the left identity is the subject of the
+pair and the right one its candidate — they are two endpoints of one symmetric
+relationship, and which lands in `source_property_identity_id` is an accident of
+identity generation.
+
+> **A consumer of `source_match_candidates` MUST match BOTH endpoints.**
+> Reading only `source_property_identity_id` silently sees a different population
+> than the pair set actually contains.
+
+This is not theoretical. Ingesting the same 4,110 cached Hotelbeds properties into
+three separate databases produced the identical set of 261 pairs every time, but
+**different orientations** in each, because each database generated its own
+identity UUIDs. A reader filtering on the left column alone would report a
+different candidate population per database from byte-identical provider evidence
+— and no error would be raised anywhere, because every individual row is valid.
+
+A04's preview reads the relationship correctly today: it selects a candidate when
+the identity matches `source_property_identity_id` **or**
+`candidate_source_property_identity_id`. Any future consumer — review surfaces,
+counts, exports, A05's apply path — is held to the same rule.
+
 ## 8a. A pending candidate is a claim about CURRENT evidence
 
 When the provider corrects a property so a pair shares no domain, no phone and no

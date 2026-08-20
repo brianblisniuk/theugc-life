@@ -76,6 +76,13 @@ explicit accepted `new_property` finding. `approve_match` requires an accepted
 canonical candidate naming exactly the reviewed target. No machine-candidate
 absence becomes NEW.
 
+A candidate belongs to an identity when it matches **either** endpoint —
+`source_property_identity_id` or `candidate_source_property_identity_id`. A pair
+is unordered, and which endpoint is stored on which side follows identity UUID
+ordering, which is meaningless across databases. See
+`PROPERTY_ENTITY_RESOLUTION_CONTRACT.md` §8.1; reading a single column would
+change the population under evaluation without raising any error.
+
 Lifecycle reuses A03 unchanged: explicit as-of, complete current snapshot,
 approved exact provider policy, property-level `HOTEL+CLOSED` only, and
 `NO_KNOWN_CLOSURE` never re-labelled active/open/operating.
