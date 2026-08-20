@@ -75,8 +75,8 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 |---|---|---|---|
 | A01 | **DONE** (PR #26, merged) | Hotelbeds hospitality-scope policy + immutable pre-publication physical-hospitality resolution | Every provider type code reviewed once; scope ≠ final eligibility |
 | A02 | **DONE** (PR #27, merged) | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
-| A03 | **CURRENT PR** | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
-| A04 | PLANNED | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
+| A03 | **DONE** (PR #28, merged) | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
+| A04 | **CURRENT PR** | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
 | A05 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
 **Base rounds:** 4 *(original estimate, preserved)*  

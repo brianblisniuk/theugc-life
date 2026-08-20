@@ -86,11 +86,11 @@ export interface MatchCounts {
 }
 
 /**
- * Load the latest observation per evaluation identity, with its destination.
+ * Load the current observation per evaluation identity, with its destination.
  *
- * The LATEST observation, because a candidate is about what the property looks
- * like now — and the destination comes from THAT observation's own run, not
- * from the run that first saw the identity.
+ * The CURRENT observation, named by the identity's `last_seen_run_id`, because
+ * a candidate is about what the property looks like now — and the destination
+ * comes from THAT observation's own run, not from timestamps or UUID ordering.
  *
  * Mixing the two would mix evidence from two different moments. If a provider
  * enumerated a property under destination A and a later run corrects it into
@@ -118,8 +118,7 @@ export async function loadBlockableIdentities(
     latitude: string | null;
     longitude: string | null;
   }>(
-    `select distinct on (i.id)
-            i.id as identity_id,
+    `select i.id as identity_id,
             o.id as observation_id,
             latest_run.destination_id,
             o.source_name, o.source_website_url, o.source_address,
@@ -128,10 +127,12 @@ export async function loadBlockableIdentities(
             case when o.source_coordinates_plausible then o.source_latitude::text end as latitude,
             case when o.source_coordinates_plausible then o.source_longitude::text end as longitude
        from public.source_property_identities i
-       join public.source_property_observations o on o.source_property_identity_id = i.id
+       join public.source_property_observations o
+         on o.source_property_identity_id = i.id
+        and o.source_run_id = i.last_seen_run_id
        join public.source_runs latest_run on latest_run.id = o.source_run_id
       where i.source = $1 and i.source_environment = $2
-      order by i.id, o.observed_at desc, o.id desc`,
+      order by i.id`,
     [opts.source, opts.environment],
   );
 
