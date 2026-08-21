@@ -39,6 +39,13 @@ export interface PreviewInput {
   };
   destination: null | { id: string; slug: string };
   targetHotel: null | { id: string; destinationId: string; destinationSlug: string };
+  /**
+   * The immutable A04.5 receipt for this identity's most recent human review, or
+   * null when none exists. A04 does not merely record that a decision happened:
+   * conditions 1 and 2 cite the receipt, and a receipt bound to a NON-CURRENT
+   * observation holds them rather than letting a stale judgement pass as current.
+   */
+  humanReview: null | HumanReviewReceiptEvidence;
   entity: {
     synchronized: boolean;
     acceptedCandidates: CandidateEvidence[];
@@ -75,6 +82,31 @@ export interface PreviewInput {
     policyVersion: string;
   };
   lifecycle: { snapshot: IssueSnapshot | null; policy: LifecyclePolicy };
+}
+
+export interface HumanReviewVerificationEvidence extends EvidenceRef {
+  dimension: string;
+  verdict: string;
+  note: string | null;
+}
+
+export interface HumanReviewReceiptEvidence extends EvidenceRef {
+  receiptId: string;
+  decision: string;
+  /** The observation the human actually reviewed. Compared to the CURRENT one. */
+  evidenceObservationId: string;
+  evidenceSourceRunId: string;
+  sourcePayloadDigest: string;
+  destinationId: string | null;
+  newPropertyFindingId: string | null;
+  reviewerUserId: string | null;
+  reviewerLabel: string;
+  reviewedAt: string;
+  prereviewFingerprint: string;
+  prereviewAsOf: string;
+  receiptDigest: string;
+  verifications: HumanReviewVerificationEvidence[];
+  evidenceReferenceCount: number;
 }
 
 export interface CandidateEvidence extends EvidenceRef {
@@ -230,6 +262,26 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
   };
   const reviewEvidence: EvidenceRef = input.review ? { ...input.review } : { review: null };
 
+  // THE RECEIPT, AND WHETHER IT IS ABOUT THE EVIDENCE IN FRONT OF US.
+  //
+  // A receipt is immutable and names the exact observation the human read. The
+  // identity's current observation may have moved since. When it has, the
+  // decision is not wrong — it is simply not a decision about today's evidence,
+  // and conditions 1 and 2 hold until a human looks again.
+  const receipt = input.humanReview;
+  const receiptCurrent =
+    receipt !== null && current !== null && receipt.evidenceObservationId === current;
+  const receiptEvidence: EvidenceRef = receipt
+    ? {
+        ...receipt,
+        verifications: [...receipt.verifications].sort((a, b) =>
+          compareStableStrings(a.dimension, b.dimension),
+        ),
+        receiptIsCurrent: receiptCurrent,
+        currentObservationId: current,
+      }
+    : { humanReviewReceipt: null, currentObservationId: current };
+
   let c1: ConditionResult;
   if (!input.review || input.review.decision === "defer")
     c1 = result(
@@ -264,13 +316,49 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       { ...reviewEvidence, ...entityEvidence },
     );
   else if (input.review.decision === "approve_create" && newCandidates.length === 1)
-    c1 = result(
-      1,
-      "PASS",
-      "reviewed_distinct_property",
-      "Human approve_create is supported by an explicit accepted distinct-property finding.",
-      { ...reviewEvidence, ...entityEvidence },
-    );
+    // A04.5: the decision and the finding are necessary but no longer sufficient.
+    // The durable receipt must exist, must be about the CURRENT observation, and
+    // must cite the same finding — otherwise "approved" is an assertion nobody
+    // can reconstruct.
+    c1 = !receipt
+      ? result(
+          1,
+          "UNRESOLVED",
+          "human_review_receipt_missing",
+          "The review has no durable A04.5 receipt, so what the human checked cannot be reconstructed.",
+          { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+        )
+      : receipt.decision !== "approve_create"
+        ? result(
+            1,
+            "UNRESOLVED",
+            "human_review_receipt_decision_mismatch",
+            "The durable receipt records a different decision from the current review row.",
+            { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+          )
+        : !receiptCurrent
+          ? result(
+              1,
+              "UNRESOLVED",
+              "human_review_receipt_not_current",
+              "The receipt is bound to an observation that is no longer current; the decision was about evidence that has since been replaced.",
+              { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+            )
+          : receipt.newPropertyFindingId !== newCandidates[0]!.id
+            ? result(
+                1,
+                "UNRESOLVED",
+                "human_review_receipt_finding_mismatch",
+                "The receipt cites a different distinct-property finding from the accepted one.",
+                { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+              )
+            : result(
+                1,
+                "PASS",
+                "reviewed_distinct_property",
+                "Human approve_create is supported by an explicit accepted distinct-property finding and a current durable receipt.",
+                { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+              );
   else if (
     input.review.decision === "approve_match" &&
     input.review.targetHotelId &&
@@ -327,17 +415,47 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
               destinationEvidence,
             )
       : input.review?.destinationId && input.destination?.id === input.review.destinationId
-        ? result(
-            2,
-            "PASS",
-            "reviewed_destination_supported",
-            "The reviewed destination resolves to the canonical destination catalogue.",
-            {
-              ...destinationEvidence,
-              destinationId: input.destination.id,
-              destinationSlug: input.destination.slug,
-            },
-          )
+        ? // A04.5: for approve_create the destination is a HUMAN decision, so it
+          // must be carried by the current receipt too. A review row alone is a
+          // mutable current-state record; the receipt is what makes the choice
+          // reconstructable, and a stale one is not a statement about today.
+          input.review.decision === "approve_create" && !receipt
+          ? result(
+              2,
+              "UNRESOLVED",
+              "human_review_receipt_missing",
+              "The reviewed destination has no durable A04.5 receipt behind it.",
+              { ...destinationEvidence, ...receiptEvidence },
+            )
+          : input.review.decision === "approve_create" && !receiptCurrent
+            ? result(
+                2,
+                "UNRESOLVED",
+                "human_review_receipt_not_current",
+                "The destination decision is bound to an observation that is no longer current.",
+                { ...destinationEvidence, ...receiptEvidence },
+              )
+            : input.review.decision === "approve_create" &&
+                receipt!.destinationId !== input.review.destinationId
+              ? result(
+                  2,
+                  "UNRESOLVED",
+                  "human_review_receipt_destination_mismatch",
+                  "The receipt records a different canonical destination from the current review row.",
+                  { ...destinationEvidence, ...receiptEvidence },
+                )
+              : result(
+                  2,
+                  "PASS",
+                  "reviewed_destination_supported",
+                  "The reviewed destination resolves to the canonical destination catalogue.",
+                  {
+                    ...destinationEvidence,
+                    destinationId: input.destination.id,
+                    destinationSlug: input.destination.slug,
+                    ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
+                  },
+                )
         : result(
             2,
             "UNRESOLVED",

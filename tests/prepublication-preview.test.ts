@@ -91,6 +91,28 @@ function valid(): PreviewInput {
       policyProvider: "hotelbeds",
       policyVersion: "location/1",
     },
+    // A04.5: an approve_create decision now needs its durable receipt, bound to
+    // the CURRENT observation, before conditions 1 and 2 may pass.
+    humanReview: {
+      receiptId: "receipt-1",
+      decision: "approve_create",
+      evidenceObservationId: current,
+      evidenceSourceRunId: "run-1",
+      sourcePayloadDigest: "digest-1",
+      destinationId: "destination-1",
+      newPropertyFindingId: "finding-1",
+      reviewerUserId: null,
+      reviewerLabel: "reviewer",
+      reviewedAt: "2026-08-17T00:00:00.000000Z",
+      prereviewFingerprint: "a".repeat(64),
+      prereviewAsOf: AS_OF,
+      receiptDigest: "b".repeat(64),
+      verifications: [
+        { dimension: "distinct_property", verdict: "supports", note: null },
+        { dimension: "destination_membership", verdict: "supports", note: null },
+      ],
+      evidenceReferenceCount: 1,
+    },
     lifecycle: {
       policy: {
         provider: "hotelbeds",

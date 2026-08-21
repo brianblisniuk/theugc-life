@@ -672,6 +672,83 @@ here writes `hotels.active_status`, and
 current observations — is neither read nor written: absence of issues is never
 laundered into "lifecycle = active".
 
+## 5f. Human pre-publication review evidence (migration 0032)
+
+The evidence path for D062's conditions 1 and 2 on the `approve_create` route:
+an explicit human decision that a source identity is a distinct property in a
+named supported destination. Three tables, same posture as 0027–0031 —
+`service_role` plus admin/editor through RLS, **no anon grant** — and all three
+are append-only by trigger *and* by grant: no role holds UPDATE or DELETE. Full
+contract:
+[`A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md`](A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md).
+
+0032 also adds two additive unique constraints that carry no new data and exist
+only so the receipt's composite foreign keys can be declared:
+`source_property_observations (id, source_property_identity_id)` and
+`source_match_candidates (id, source_property_identity_id)`.
+
+### source_property_review_receipts
+One immutable row per human decision, binding identity · source · environment ·
+provider id · the **current** observation · that observation's source run · its
+`source_payload_digest` · the decision · the reviewed destination · the accepted
+human-owned finding · reviewer · `reviewed_at` · the A04 pre-review fingerprint
+and its as-of date · a `receipt_digest`.
+
+`decision` is exactly `approve_create` or `defer`. `approve_match` and `reject`
+are absent from the vocabulary **at the database level**, not merely
+unimplemented — a final exclusion and a match to an existing canonical hotel are
+different decisions with different consequences, and this pilot implements
+neither. A shape CHECK enforces the difference: `approve_create` must carry both
+a destination and a finding; `defer` must carry neither and must carry a note.
+
+Five composite foreign keys make misattribution unrepresentable rather than
+merely discouraged. A receipt cannot cite another identity's observation, a
+payload digest that observation never carried, a run that did not produce it, or
+a finding belonging to a different identity. `(source_property_identity_id,
+evidence_observation_id)` is unique, so one identity gets one decision per
+observation; a new observation is new evidence and may be reviewed afresh.
+
+`prereview_fingerprint` is the A04 preview fingerprint at review time. It is a
+`^[0-9a-f]{64}$` CHECK with an explicit algorithm column pinned to `sha256`, in
+the shape 0031 established for `source_payload_digest` — `timestamptz` has no
+immutable text cast, so the digest is computed in the application and stored.
+
+`receipt_digest` covers the decision's semantics and deliberately **excludes**
+`reviewed_at`, so replaying an identical manifest is not called "different"
+merely because the clock moved.
+
+### source_property_review_verifications
+Six dimensions per `approve_create` receipt — `distinct_property`, `name`,
+`city_locality`, `address`, `coordinates`, `destination_membership` — each a
+separate row with verdict `supports` | `contradicts` | `unavailable`, unique per
+`(receipt, dimension)`.
+
+`unavailable` is never silently promoted to `supports`: a provider not supplying
+an address is not evidence that the address agrees. A dimension may not be
+omitted because its field is NULL — it is recorded as `unavailable`. A
+`contradicts` verdict is legal and a CHECK requires it to carry the reviewer's
+written explanation, so a lower dimension may contradict while the destination
+judgement stays affirmative without the contradiction becoming invisible.
+
+### source_property_review_evidence_references
+What the reviewer actually read: `reference_kind`, `locator`, the dimensions it
+`bears_on`, a stance and an optional note. At least one is required for
+`approve_create`. This is not a source count — one authoritative reference may
+establish several facts, but zero establishes none. **Nothing in the apply path
+ever fetches a locator**; a review is the human's assertion about what they read,
+and a machine re-fetch would be a different claim made at a different time.
+
+### Completeness is enforced at COMMIT
+The `approve_create` rules span rows, so no CHECK can express them. A **deferred
+constraint trigger** (`DEFERRABLE INITIALLY DEFERRED`) runs at COMMIT, when the
+receipt and its children are all visible, and fails the whole transaction unless
+the receipt has all six verification dimensions, an affirmative
+`distinct_property`, an affirmative `destination_membership`, and at least one
+evidence reference.
+
+**0032 writes nothing canonical.** No `hotels` row, no `hotel_source_identities`
+link, no `resolution_state` transition. Publication remains A05.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -964,5 +1041,9 @@ At minimum:
 17. pre-publication lifecycle evidence (0031) — provider issue evidence,
     extraction completeness as its own row, and a policy that refuses to read
     `issueType` without its `issueCode`
+18. human pre-publication review evidence (0032) — the immutable receipt behind
+    an `approve_create`, its structured verification dimensions and evidence
+    references, plus the two additive uniques its composite FKs require;
+    append-only by trigger and by grant, and canonical-write-free
 
 Every migration must be reproducible from an empty database.

@@ -77,7 +77,7 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 | A02 | **DONE** (PR #27, merged) | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
 | A03 | **DONE** (PR #28, merged) | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
 | A04 | **DONE** (PR #29, merged `6cffa8b9`) | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
-| A04.5 | **BLOCKED** — contract not yet written | *scope not yet defined; see below* | pending a commercial decision |
+| A04.5 | **IN REVIEW** — open PR, not merged | human identity + destination review evidence pilot | an explicit human `approve_create` becomes durable, append-only, current-evidence-bound evidence that D062's conditions 1 and 2 cite; nothing canonical is written |
 | A05 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
 **Base rounds:** 4 *(original estimate, preserved)*  
@@ -94,14 +94,22 @@ the lifecycle evidence layer was inserted ahead of it. The former A03 and A04 ar
 now A04 and A05; their scope and gates are unchanged.
 
 **Why A04.5 exists.** A round is inserted between the D062 preview (A04) and the
-human authorization + atomic apply (A05). **Its contract has not been written and
-its scope is not yet defined**, because it depends on a commercial decision that
-has not been taken. Nothing about it is inferred here: this entry records only
-that the sequence is now `A04 → A04.5 → A05`, so that A05 is not started as if it
-followed A04 directly. A01–A04 keep their numbers; nothing is renumbered.
+human authorization + atomic apply (A05), because A04 exposed a missing layer.
+The preview holds conditions 1 and 2 pending a human decision, but there was
+nowhere for that decision to live: no durable, auditable, evidence-bound record
+that a source identity is a distinct property in a named supported destination.
+A05 would otherwise have had to invent one while also performing the atomic
+apply. A01–A04 keep their numbers; nothing is renumbered.
 
-Recording the sequence is **not** authorization to begin A04.5 or A05. Both remain
-blocked until their contracts exist and the owner opens the round.
+Its contract is
+[`A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md`](A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md),
+implemented by migration `0032` and `scripts/human-review/*`. The pilot proves
+`approve_create` end to end **without publishing a hotel**: no `hotels` insert,
+no `hotel_source_identities` link, no `resolution_state` transition, and review
+writes restricted to a local disposable evaluation database with no override.
+
+A04.5 is **not DONE** — it is an open PR awaiting external audit and the human
+merge gate. A05 remains PLANNED and is not authorized by this entry.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 
@@ -430,16 +438,17 @@ At this baseline, Phase A's evidence and preview layers are closed:
 > **A01 (PR #26), A02 (PR #27), A03 (PR #28) and A04 (PR #29) are merged.**
 > A04 landed on `main` as merge commit `6cffa8b9`.
 
-The next base implementation block is:
+The open implementation block is:
 
-> **A04.5 — contract not yet written, blocked by a pending commercial decision.**
+> **A04.5 — human identity + destination review evidence pilot. Open PR, not
+> merged, awaiting external audit and the human merge gate.**
 
-**No implementation round is open.** A04.5 cannot start until its contract exists,
-and A05 (human authorization + atomic D062 apply) comes after A04.5, not after
-A04. Nothing may be published on the strength of A04: it previews pre-publication
-evidence and authorizes nothing.
+A04.5 is the only round open. A05 (human authorization + atomic D062 apply) comes
+after A04.5 merges, not after A04, and is not started by this entry. Nothing may
+be published on the strength of A04 or A04.5: A04 previews pre-publication
+evidence and A04.5 records a human decision about it. Neither authorizes
+publication, and neither writes a canonical row.
 
 The canonical target spine must still be closed before Gmail implementation
-begins. In parallel, business/technical research may prepare both the A04.5
-commercial decision and the Gmail contract, so Phase B can begin immediately after
-the publication spine is closed.
+begins. In parallel, business/technical research may prepare the Gmail contract,
+so Phase B can begin immediately after the publication spine is closed.

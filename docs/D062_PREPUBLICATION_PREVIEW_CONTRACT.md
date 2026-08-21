@@ -76,6 +76,31 @@ explicit accepted `new_property` finding. `approve_match` requires an accepted
 canonical candidate naming exactly the reviewed target. No machine-candidate
 absence becomes NEW.
 
+## Human review receipt (A04.5)
+
+For `approve_create`, conditions 1 and 2 additionally cite the immutable
+`source_property_review_receipts` row recorded by A04.5. The receipt is checked
+for **currentness**, not merely existence: it must cite this identity's current
+observation. A decision taken against superseded evidence is not a decision about
+today's evidence, so it holds rather than passes. `approve_match` receipts are
+not part of this layer's vocabulary and conditions 1 and 2 evaluate that path
+exactly as before.
+
+| condition | hold reason |
+|---|---|
+| 1 | `human_review_receipt_missing` — no receipt for the identity |
+| 1 | `human_review_receipt_decision_mismatch` — the receipt is a `defer` |
+| 1 | `human_review_receipt_not_current` — the receipt cites a superseded observation |
+| 1 | `human_review_receipt_finding_mismatch` — the receipt's finding is not an accepted current `new_property` finding for this identity |
+| 2 | `human_review_receipt_missing` / `human_review_receipt_not_current` |
+| 2 | `human_review_receipt_destination_mismatch` — the receipt names a different destination than the review row |
+
+When condition 1 passes on this path its machine reason is
+`reviewed_distinct_property`. Because conditions 1 and 2 now read the receipt,
+the preview fingerprint changes when a review is applied; see
+`A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md` §9 for why the review apply path must
+therefore check idempotency before it checks fingerprint staleness.
+
 A candidate belongs to an identity when it matches **either** endpoint —
 `source_property_identity_id` or `candidate_source_property_identity_id`. A pair
 is unordered, and which endpoint is stored on which side follows identity UUID
