@@ -43,7 +43,9 @@
     "source:match": "tsx scripts/entity-resolution/match.ts",
     "source:match:review": "tsx scripts/entity-resolution/review.ts",
     "source:lifecycle": "tsx scripts/lifecycle/lifecycle.ts",
-    "source:preview": "tsx scripts/prepublication-preview/preview.ts"
+    "source:preview": "tsx scripts/prepublication-preview/preview.ts",
+    "source:human-review:prepare": "tsx scripts/human-review/prepare.ts",
+    "source:human-review:apply": "tsx scripts/human-review/review.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
