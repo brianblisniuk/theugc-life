@@ -308,6 +308,7 @@ claim confirmed against successive evidence.
 |---|---|
 | `existing_new_property_finding_incompatible` | a `new_property` row exists that is not the accepted `human_review:distinct_property` finding for this identity/source/environment. It is never overwritten, re-owned, or have its `match_method` rewritten — converting a machine finding into a human one is not a review. |
 | `existing_review_decision_incompatible` | the current projection holds a decision this pilot has no authority to supersede (`approve_match`, `reject`, …). |
+| `defer_after_existing_review_unsupported` | a `defer` arrived while a current projection already exists; see §10. |
 
 A previous A04.5 `approve_create` on an **older observation** is explicitly *not*
 an incompatible state — that is the supported fresh-observation path. Every
@@ -331,6 +332,43 @@ refusal after an INSERT would leave an orphan behind.
 
 Uncertainty remains uncertainty. A defer is not evidence that the property is
 outside V1.
+
+### An INITIAL defer is supported; a defer after a review is refused
+
+Writing no `source_property_reviews` row is right when there is no current
+decision yet. It becomes wrong the moment one exists, because the two
+current-decision surfaces would then contradict each other:
+
+```
+current receipt      = defer
+current projection   = approve_create   ← from an earlier observation
+```
+
+A04 fails closed on that mismatch, which is safe — but safe is not coherent, and
+this layer must not knowingly store a state its own §9 model calls impossible.
+
+| | |
+|---|---|
+| no current projection exists | **supported.** Receipt only, exactly as above. |
+| a `source_property_reviews` row already exists | **REFUSED** — `defer_after_existing_review_unsupported` |
+
+The refusal is evaluated **before any write** and writes nothing: the existing
+review row, every earlier receipt and the human `new_property` finding are left
+byte-unchanged. A refused item does not abort the transaction — the rest of the
+manifest still commits — so the refusing path has to be write-free on its own
+rather than rely on a rollback that never comes.
+
+**Why the projection is not simply updated to `defer`.** That looks smaller than
+it is. It would create a transition model — defer, then a later observation,
+then `approve_create` again — which forces the question of whether and how an
+approval may supersede a defer. That is correction/supersession semantics, and
+it is deliberately future work. V1 draws the narrow line instead, and the
+identity stays held by `human_review_receipt_not_current` until that workflow
+exists.
+
+Ordering: the exact-receipt idempotency check runs **first**, so replaying an
+already-applied defer still returns `already_applied` rather than becoming this
+refusal.
 
 ---
 

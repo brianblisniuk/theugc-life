@@ -450,6 +450,36 @@ async function applyOne(
     };
 
   if (item.decision === "defer") {
+    // A defer writes a receipt and never a `source_property_reviews` row. That
+    // is right when there is no current decision yet — uncertainty is not a
+    // placement — but it means a defer taken AFTER an earlier review would
+    // leave this layer's two current-decision surfaces contradicting each
+    // other: a current defer receipt beside a stale `approve_create`
+    // projection. A04 fails closed on that mismatch, which is safe, but safe is
+    // not the same as coherent, and this layer must not knowingly store it.
+    //
+    // Replacing the projection is NOT the fix. It would create a transition
+    // model — defer, then a later observation, then approve_create again —
+    // which is correction/supersession, and that is deliberately future work.
+    // So V1 draws the narrow line: an INITIAL defer is supported; a defer once
+    // a durable projection exists is refused.
+    //
+    // Checked here, after the exact-receipt idempotency check above, so an
+    // exact replay of an already-applied defer still returns `already_applied`
+    // rather than turning into this refusal. Nothing has been written for this
+    // item at this point, and nothing is written on the refusing path.
+    const currentProjection = await client.query<{ id: string; decision: string }>(
+      "select id, decision from public.source_property_reviews where source_property_identity_id = $1",
+      [item.identityId],
+    );
+    if (currentProjection.rows.length > 0)
+      return {
+        ...id,
+        state: "refused",
+        refusal: "defer_after_existing_review_unsupported",
+        detail: `Identity already carries a durable current review projection ('${currentProjection.rows[0]!.decision}', row ${currentProjection.rows[0]!.id}). Recording a defer beside it would leave the current receipt and the current projection disagreeing, and replacing it would require an explicit correction/supersession transition that A04.5 V1 does not implement. Nothing was written: the existing review, its receipts and its finding are untouched, and A04 continues to hold this identity while its receipt is not current.`,
+      };
+
     const receiptId = await insertReceipt(client, item, current, digest, null, null);
     return { ...id, state: "would_apply", receiptId };
   }

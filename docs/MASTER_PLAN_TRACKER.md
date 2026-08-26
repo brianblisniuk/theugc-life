@@ -122,6 +122,12 @@ are correct and unchanged. The finding is now **reused** as the entity-level
 claim it is, the current review row **advances in place**, and the immutable
 per-observation history lives in the receipts. No new migration.
 
+**Amendment #3 (external audit).** A `defer` taken after an earlier review wrote
+a current `defer` receipt beside a stale `approve_create` projection — the two
+current-decision surfaces disagreeing. An initial defer stays supported; a defer
+once a projection exists is now refused, because replacing it would require the
+correction/supersession workflow that remains future work.
+
 A04.5 is **not DONE** — it is an open PR awaiting re-audit and the human merge
 gate. A05 remains PLANNED and is not authorized by this entry.
 

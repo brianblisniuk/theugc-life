@@ -1715,6 +1715,175 @@ d("A04.5 human review evidence (0032)", () => {
       expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
     });
 
+    it("51. approve A -> observation B -> defer B is refused, leaving no contradiction", async () => {
+      // The two current-decision surfaces must never be stored disagreeing: a
+      // current `defer` receipt beside a stale `approve_create` projection.
+      const f = await readyProperty();
+      await apply([await manifestFor(f)], { apply: true });
+      expect((await preview(f.sourcePropertyId)).overall).toBe("PASS");
+
+      const snapshot = async () => ({
+        receipt: (
+          await adminQuery<Record<string, string>>(
+            "select id, decision, evidence_observation_id, receipt_digest, new_property_finding_id, reviewed_at::text from public.source_property_review_receipts where source_property_identity_id=$1",
+            [f.identityId],
+          )
+        )[0]!,
+        review: (
+          await adminQuery<Record<string, string>>(
+            "select id, decision, destination_id, decided_in_run_id, reviewer_label, review_note, reviewed_at::text, updated_at::text from public.source_property_reviews where source_property_identity_id=$1",
+            [f.identityId],
+          )
+        )[0]!,
+        finding: (
+          await adminQuery<Record<string, string>>(
+            "select id, match_method, status, review_note, resolved_at::text from public.source_match_candidates where source_property_identity_id=$1 and candidate_kind='new_property'",
+            [f.identityId],
+          )
+        )[0]!,
+        counts: await artefactCounts(f.identityId),
+      });
+      const before = await snapshot();
+      expect(before.review.decision).toBe("approve_create");
+
+      // Ingestion advances; the identity becomes review-ready again under B.
+      const b = await advanceToNewObservation(f);
+      const stale = await preview(f.sourcePropertyId);
+      expect(statusOf(stale, 1)).toBe("UNRESOLVED");
+      expect(reasonOf(stale, 1)).toBe("human_review_receipt_not_current");
+      expect(statusOf(stale, 2)).toBe("UNRESOLVED");
+      expect(stale.overall).not.toBe("PASS");
+      expect(readinessOf(stale).ready).toBe(true);
+      expect((await snapshot()).receipt).toEqual(before.receipt);
+
+      // The reviewer looks at B and cannot establish the facts.
+      const deferB: ReviewedItem = {
+        ...(await manifestFor(f)),
+        currentObservationId: b.observationId,
+        currentSourceRunId: b.runId,
+        sourcePayloadDigest: b.digest,
+        prereviewFingerprint: stale.fingerprint,
+        decision: "defer",
+        canonicalDestinationSlug: null,
+        humanNote: "Cannot establish from observation B whether this is still the same property.",
+        verifications: [],
+        evidenceReferences: [],
+      };
+      const report = await apply([deferB], { apply: true });
+      const o = report.outcomes[0]!;
+      expect(o.state).toBe("refused");
+      if (o.state === "refused") expect(o.refusal).toBe("defer_after_existing_review_unsupported");
+
+      // Nothing written, nothing mutated. No receipt B at all.
+      const after = await snapshot();
+      expect(after.counts).toEqual(before.counts);
+      expect(after.counts.receipts).toBe(1);
+      expect(after.counts.reviews).toBe(1);
+      expect(after.counts.findings).toBe(1);
+      expect(after.receipt).toEqual(before.receipt);
+      expect(after.review).toEqual(before.review);
+      expect(after.finding).toEqual(before.finding);
+
+      // Still held closed: the old approve_create cannot serve observation B.
+      const final = await preview(f.sourcePropertyId);
+      expect(final.overall).not.toBe("PASS");
+      expect(statusOf(final, 1)).toBe("UNRESOLVED");
+      expect(reasonOf(final, 1)).toBe("human_review_receipt_not_current");
+      expect(statusOf(final, 2)).toBe("UNRESOLVED");
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
+    it("52. an INITIAL defer is still fully supported, and replays idempotently", async () => {
+      // The refusal above must not have disabled defer itself.
+      const f = await readyProperty();
+      const deferItem: ReviewedItem = {
+        ...(await manifestFor(f)),
+        decision: "defer",
+        canonicalDestinationSlug: null,
+        humanNote: "Provider evidence is too thin to establish a distinct property.",
+        verifications: [],
+        evidenceReferences: [],
+      };
+
+      const first = await apply([deferItem], { apply: true });
+      expect(first.outcomes[0]!.state).toBe("applied");
+
+      const counts = await artefactCounts(f.identityId);
+      expect(counts.receipts).toBe(1);
+      expect(counts.reviews).toBe(0); // a defer is never a placement
+      expect(counts.findings).toBe(0); // and never an entity finding
+      const receipt = (
+        await adminQuery<Record<string, string>>(
+          "select id, decision, destination_id, new_property_finding_id, receipt_digest, reviewed_at::text from public.source_property_review_receipts where source_property_identity_id=$1",
+          [f.identityId],
+        )
+      )[0]!;
+      expect(receipt.decision).toBe("defer");
+      expect(receipt.destination_id).toBeNull();
+      expect(receipt.new_property_finding_id).toBeNull();
+
+      const held = await preview(f.sourcePropertyId);
+      expect(statusOf(held, 1)).toBe("UNRESOLVED");
+      expect(held.overall).not.toBe("PASS");
+
+      // Exact replay: idempotent, and NOT the new refusal.
+      const replay = await apply([deferItem], { apply: true });
+      expect(replay.outcomes[0]!.state).toBe("already_applied");
+      expect(await artefactCounts(f.identityId)).toEqual(counts);
+      expect(
+        (
+          await adminQuery<Record<string, string>>(
+            "select id, decision, destination_id, new_property_finding_id, receipt_digest, reviewed_at::text from public.source_property_review_receipts where source_property_identity_id=$1",
+            [f.identityId],
+          )
+        )[0]!,
+      ).toEqual(receipt);
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
+    it("53. a refused defer in a MULTI-ITEM manifest leaves no orphan behind", async () => {
+      // A refused item does not abort the transaction — the other items still
+      // commit — so the refusing path must be write-free on its own, not rely on
+      // a rollback that never comes.
+      const reviewed = await readyProperty();
+      await apply([await manifestFor(reviewed)], { apply: true });
+      const b = await advanceToNewObservation(reviewed);
+      const staleReviewed = await preview(reviewed.sourcePropertyId);
+
+      const fresh = await readyProperty();
+      const goodItem = await manifestFor(fresh);
+      const badDefer: ReviewedItem = {
+        ...(await manifestFor(reviewed)),
+        currentObservationId: b.observationId,
+        currentSourceRunId: b.runId,
+        sourcePayloadDigest: b.digest,
+        prereviewFingerprint: staleReviewed.fingerprint,
+        decision: "defer",
+        canonicalDestinationSlug: null,
+        humanNote: "Cannot establish the facts for observation B.",
+        verifications: [],
+        evidenceReferences: [],
+      };
+
+      const report = await apply([badDefer, goodItem], { apply: true });
+      const refused = report.outcomes.find((x) => x.identityId === reviewed.identityId)!;
+      const applied = report.outcomes.find((x) => x.identityId === fresh.identityId)!;
+      expect(refused.state).toBe("refused");
+      if (refused.state === "refused")
+        expect(refused.refusal).toBe("defer_after_existing_review_unsupported");
+      // The healthy sibling committed — which is exactly why the refusal must
+      // not have written anything of its own.
+      expect(applied.state).toBe("applied");
+
+      const orphans = await artefactCounts(reviewed.identityId);
+      expect(orphans.receipts).toBe(1); // only receipt A
+      expect(orphans.verifications).toBe(REVIEW_DIMENSIONS.length);
+      expect(orphans.references).toBe(1);
+      expect(orphans.findings).toBe(1);
+      expect(orphans.reviews).toBe(1);
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
     it("50. two concurrent applies of the SAME fresh-B manifest yield one decision", async () => {
       const f = await readyProperty();
       await apply([await manifestFor(f)], { apply: true });
