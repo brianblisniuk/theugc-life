@@ -36,6 +36,14 @@ export interface PreviewInput {
     reviewerLabel: string;
     reviewedAt: string;
     reviewNote: string | null;
+    /**
+     * A04.6. Whether this decision is currently AUTHORIZED, which is a separate
+     * question from what the human concluded. `revoked` means a human explicitly
+     * withdrew the approval; `decision` still records what was decided.
+     */
+    reviewStatus: "active" | "revoked";
+    /** The immutable receipt this projection currently represents. */
+    currentReceiptId: string | null;
   };
   destination: null | { id: string; slug: string };
   targetHotel: null | { id: string; destinationId: string; destinationSlug: string };
@@ -262,6 +270,11 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
   };
   const reviewEvidence: EvidenceRef = input.review ? { ...input.review } : { review: null };
 
+  // A04.6. `decision` says what the human concluded; `reviewStatus` says whether
+  // that conclusion is still authorized. They are different questions, so a
+  // revoked row legitimately keeps `decision = 'approve_create'`.
+  const reviewRevoked = input.review?.reviewStatus === "revoked";
+
   // THE RECEIPT, AND WHETHER IT IS ABOUT THE EVIDENCE IN FRONT OF US.
   //
   // A receipt is immutable and names the exact observation the human read. The
@@ -314,6 +327,23 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "entity_conflict_or_sync_hold",
       "The identity decision cannot pass while current entity evidence is conflicting or out of sync.",
       { ...reviewEvidence, ...entityEvidence },
+    );
+  else if (input.review.decision === "approve_create" && reviewRevoked)
+    // A04.6: checked BEFORE any approve_create can pass, and deliberately ahead
+    // of the receipt chain below. A withdrawn approval must stay withdrawn even
+    // when everything else still lines up — the accepted finding still exists,
+    // the receipt is still current, the destination still agrees. That is the
+    // entire point of an emergency brake.
+    //
+    // UNRESOLVED rather than FAIL: a revocation does not assert "this property
+    // is wrong", only "this approval is no longer valid authorization". A fresh
+    // review of fresh evidence can legitimately restore it.
+    c1 = result(
+      1,
+      "UNRESOLVED",
+      "human_review_revoked",
+      "A human explicitly withdrew this approval; it no longer authorizes publication. The decision is not asserted to be wrong — it is no longer valid authorization.",
+      { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
     );
   else if (input.review.decision === "approve_create" && newCandidates.length === 1)
     // A04.5: the decision and the finding are necessary but no longer sufficient.
@@ -419,43 +449,54 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           // must be carried by the current receipt too. A review row alone is a
           // mutable current-state record; the receipt is what makes the choice
           // reconstructable, and a stale one is not a statement about today.
-          input.review.decision === "approve_create" && !receipt
-          ? result(
+          input.review.decision === "approve_create" && reviewRevoked
+          ? // A04.6: a withdrawn approval carries its destination judgement with
+            // it. The destination may still be perfectly valid; what is gone is
+            // the human authorization to act on it.
+            result(
               2,
               "UNRESOLVED",
-              "human_review_receipt_missing",
-              "The reviewed destination has no durable A04.5 receipt behind it.",
+              "human_review_revoked",
+              "A human explicitly withdrew this approval, so its destination judgement no longer authorizes publication.",
               { ...destinationEvidence, ...receiptEvidence },
             )
-          : input.review.decision === "approve_create" && !receiptCurrent
+          : input.review.decision === "approve_create" && !receipt
             ? result(
                 2,
                 "UNRESOLVED",
-                "human_review_receipt_not_current",
-                "The destination decision is bound to an observation that is no longer current.",
+                "human_review_receipt_missing",
+                "The reviewed destination has no durable A04.5 receipt behind it.",
                 { ...destinationEvidence, ...receiptEvidence },
               )
-            : input.review.decision === "approve_create" &&
-                receipt!.destinationId !== input.review.destinationId
+            : input.review.decision === "approve_create" && !receiptCurrent
               ? result(
                   2,
                   "UNRESOLVED",
-                  "human_review_receipt_destination_mismatch",
-                  "The receipt records a different canonical destination from the current review row.",
+                  "human_review_receipt_not_current",
+                  "The destination decision is bound to an observation that is no longer current.",
                   { ...destinationEvidence, ...receiptEvidence },
                 )
-              : result(
-                  2,
-                  "PASS",
-                  "reviewed_destination_supported",
-                  "The reviewed destination resolves to the canonical destination catalogue.",
-                  {
-                    ...destinationEvidence,
-                    destinationId: input.destination.id,
-                    destinationSlug: input.destination.slug,
-                    ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
-                  },
-                )
+              : input.review.decision === "approve_create" &&
+                  receipt!.destinationId !== input.review.destinationId
+                ? result(
+                    2,
+                    "UNRESOLVED",
+                    "human_review_receipt_destination_mismatch",
+                    "The receipt records a different canonical destination from the current review row.",
+                    { ...destinationEvidence, ...receiptEvidence },
+                  )
+                : result(
+                    2,
+                    "PASS",
+                    "reviewed_destination_supported",
+                    "The reviewed destination resolves to the canonical destination catalogue.",
+                    {
+                      ...destinationEvidence,
+                      destinationId: input.destination.id,
+                      destinationSlug: input.destination.slug,
+                      ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
+                    },
+                  )
         : result(
             2,
             "UNRESOLVED",

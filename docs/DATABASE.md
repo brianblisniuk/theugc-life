@@ -778,6 +778,57 @@ abort is **never retried**; it is surfaced as a refusal and nothing is written.
 **0032 writes nothing canonical.** No `hotels` row, no `hotel_source_identities`
 link, no `resolution_state` transition. Publication remains A05.
 
+### source_property_review_revocations (0033)
+One immutable row meaning exactly: *this receipt's approval was withdrawn by this
+reviewer, at this time, for this stated reason.* It is a new fact, not an edit of
+an old one, which is why the receipt it revokes stays byte-identical.
+
+`revocation_note` is NOT NULL and non-empty: a withdrawal with no stated reason
+is not auditable. `revoked_receipt_id` is composite-FK'd as
+`(revoked_receipt_id, source_property_identity_id)`, so a revocation cannot cite
+another identity's approval, and `unique (revoked_receipt_id)` means a second
+withdrawal of the same approval is refused by the database, not only by the
+application. Append-only by trigger **and** by grant, with the 0027–0032 RLS
+posture: admin/editor plus `service_role`, no anon grant, and no UPDATE or DELETE
+for any role.
+
+### review_status and current_receipt_id (0033)
+0033 adds two columns to `source_property_reviews` because `decision` and
+`review_status` answer different questions:
+
+| column | question |
+|---|---|
+| `decision` | what the human **concluded** |
+| `review_status` | whether that conclusion is **currently authorized for use** |
+
+A revoked row therefore stays `decision = 'approve_create'` with
+`review_status = 'revoked'`. Rewriting `decision` would destroy the record of
+what was decided, and reusing `decision = 'defer'` would claim the human said
+something they never said.
+
+`current_receipt_id` names the immutable receipt the projection currently
+represents, composite-FK'd to the same identity via the additive
+`source_property_review_receipts (id, source_property_identity_id)` unique. NULL
+is honest for legacy or hand-made rows that have no receipt at all; those rows
+are excluded from the revocation pack rather than bound to a guess.
+
+The backfill joins `source_property_reviews.decided_in_run_id` to
+`source_property_review_receipts.evidence_source_run_id` — real provenance
+columns both sides already carried — and **not** `order by reviewed_at desc limit
+1`, which would silently bind the wrong receipt if two were written in one
+transaction or a clock moved. A `do $$ … $$` block then fails the migration with
+`data_exception` if any projection could bind to more than one receipt, rather
+than picking one. That guard is unreachable on a schema-valid database — two
+receipts for one identity sharing a run would need two observations of that
+identity inside one run, which `source_property_observations_unique_per_run`
+refuses — and it exists anyway, because "impossible today" is not "safe to guess
+tomorrow".
+
+**0033 writes nothing canonical either.** A revocation removes authorization; it
+never publishes, unpublishes, deletes or rewrites history, and there is no
+un-revoke. Authorization returns only through a fresh human review of a fresh
+observation.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -1074,5 +1125,10 @@ At minimum:
     an `approve_create`, its structured verification dimensions and evidence
     references, plus the two additive uniques its composite FKs require;
     append-only by trigger and by grant, and canonical-write-free
+19. human review revocation (0033) — `review_status` and `current_receipt_id` on
+    the current projection, plus the append-only revocation event that withdraws
+    a previous `approve_create` without touching the receipt it revokes;
+    backfilled on run provenance rather than wall-clock recency, and
+    canonical-write-free
 
 Every migration must be reproducible from an empty database.

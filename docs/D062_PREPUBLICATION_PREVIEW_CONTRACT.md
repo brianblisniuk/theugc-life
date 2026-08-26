@@ -101,6 +101,25 @@ the preview fingerprint changes when a review is applied; see
 `A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md` §9 for why the review apply path must
 therefore check idempotency before it checks fingerprint staleness.
 
+## Human review revocation (A04.6)
+
+Conditions 1 and 2 read **two** things about the current review: what the human
+concluded (`decision`) and whether that conclusion is still authorized
+(`review_status`). A withdrawn approval is checked **first**, ahead of every
+other `approve_create` test, because a revoked review is not a weaker form of
+approval — it is not an approval at all.
+
+| condition | hold reason |
+|---|---|
+| 1 | `human_review_revoked` — a human explicitly withdrew this approval |
+| 2 | `human_review_revoked` — same withdrawal, same effect |
+
+Both hold as UNRESOLVED rather than FAIL: withdrawing an approval is not a
+finding that the property is ineligible, and condition 5 stops passing because it
+derives from 1 and 2. The verdict stops being PASS on the next evaluation, with
+no backfill or recompute step in between. See
+`A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`.
+
 A candidate belongs to an identity when it matches **either** endpoint —
 `source_property_identity_id` or `candidate_source_property_identity_id`. A pair
 is unordered, and which endpoint is stored on which side follows identity UUID

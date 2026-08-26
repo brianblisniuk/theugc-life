@@ -53,6 +53,8 @@ function valid(): PreviewInput {
       reviewerLabel: "Reviewer",
       reviewedAt: "2026-08-17T00:00:00Z",
       reviewNote: "reviewed",
+      reviewStatus: "active",
+      currentReceiptId: "receipt-1",
     },
     destination: { id: "destination-1", slug: "bali" },
     targetHotel: null,

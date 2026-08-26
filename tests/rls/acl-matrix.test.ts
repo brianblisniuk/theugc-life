@@ -123,6 +123,11 @@ const CONTRACT: Record<string, Expected> = {
   source_property_review_verifications: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_property_review_evidence_references: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // A04.6 revocation (0033): the same posture. A revocation records that a human
+  // withdrew authorization at a moment that has passed, so editing it would
+  // change what is recorded as having happened. There is no un-revoke, and
+  // therefore no UPDATE or DELETE for anyone.
+  source_property_review_revocations: { anon: "", authenticated: "SI", serviceRole: "SI" },
 
   // Pre-publication resolution (0028), in two layers with deliberately different
   // grants.
