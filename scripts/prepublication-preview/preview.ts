@@ -65,6 +65,7 @@ type BundleRow = {
   scope: PreviewInput["scope"];
   star: PreviewInput["star"];
   location: PreviewInput["location"];
+  human_review: PreviewInput["humanReview"];
 };
 
 export const BUNDLE_QUERY = `
@@ -74,7 +75,8 @@ select i.id identity_id, i.source, i.source_environment, i.source_property_id, o
   case when th.id is null then null else jsonb_build_object('id',th.id,'destinationId',th.destination_id,'destinationSlug',td.slug) end target_hotel,
   case when sc.id is null then null else jsonb_build_object('revisionId',sc.id,'observationId',sc.evidence_observation_id,'outcome',sc.outcome,'policyProvider',sc.policy_provider,'policyVersion',sc.policy_version,'sourceValue',sc.source_value) end scope,
   case when st.id is null then null else jsonb_build_object('revisionId',st.id,'observationId',st.evidence_observation_id,'outcome',st.outcome,'resolvedStarValue',st.resolved_star_value,'conflictState',st.conflict_state,'policyProvider',st.policy_provider,'policyVersion',st.policy_version,'sourceValue',st.source_value) end star,
-  case when lo.id is null then null else jsonb_build_object('revisionId',lo.id,'observationId',lo.evidence_observation_id,'outcome',lo.outcome,'latitude',lo.resolved_latitude::text,'longitude',lo.resolved_longitude::text,'conflictState',lo.conflict_state,'unresolvedReason',lo.unresolved_reason,'policyProvider',lo.policy_provider,'policyVersion',lo.policy_version) end location
+  case when lo.id is null then null else jsonb_build_object('revisionId',lo.id,'observationId',lo.evidence_observation_id,'outcome',lo.outcome,'latitude',lo.resolved_latitude::text,'longitude',lo.resolved_longitude::text,'conflictState',lo.conflict_state,'unresolvedReason',lo.unresolved_reason,'policyProvider',lo.policy_provider,'policyVersion',lo.policy_version) end location,
+  case when hr.id is null then null else jsonb_build_object('receiptId',hr.id,'decision',hr.decision,'evidenceObservationId',hr.evidence_observation_id,'evidenceSourceRunId',hr.evidence_source_run_id,'sourcePayloadDigest',hr.source_payload_digest,'destinationId',hr.destination_id,'newPropertyFindingId',hr.new_property_finding_id,'reviewerUserId',hr.reviewer_user_id,'reviewerLabel',hr.reviewer_label,'reviewedAt',to_char(hr.reviewed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'prereviewFingerprint',hr.prereview_fingerprint,'prereviewAsOf',to_char(hr.prereview_as_of,'YYYY-MM-DD'),'receiptDigest',hr.receipt_digest,'evidenceReferenceCount',coalesce(hrr.n,0),'verifications',coalesce(hrv.rows,'[]'::jsonb)) end human_review
 from public.source_property_identities i
 left join public.source_property_observations o on o.source_property_identity_id=i.id and o.source_run_id=i.last_seen_run_id
 left join public.source_property_reviews rv on rv.source_property_identity_id=i.id
@@ -84,17 +86,52 @@ left join public.destinations td on td.id=th.destination_id
 left join public.source_property_current_scope_resolutions sc on sc.source_property_identity_id=i.id
 left join public.source_property_current_star_resolutions st on st.source_property_identity_id=i.id
 left join public.source_property_current_location_resolutions lo on lo.source_property_identity_id=i.id
+left join lateral (
+  select r.* from public.source_property_review_receipts r
+   where r.source_property_identity_id=i.id
+   -- A fresh-observation re-review is a SUPPORTED state, so one identity can
+   -- legitimately hold several receipts. The receipt about the CURRENT
+   -- observation is picked first and explicitly, rather than trusting wall-clock
+   -- recency to imply it: conditions 1 and 2 ask "is there a current decision?",
+   -- and that question is answered by the observation, not by a timestamp. When
+   -- no receipt is current the newest is still surfaced, so A04 can report
+   -- \`human_review_receipt_not_current\` instead of pretending none exists.
+   order by coalesce(r.evidence_observation_id = o.id, false) desc,
+            r.reviewed_at desc, r.id desc limit 1) hr on true
+left join lateral (
+  select count(*) n from public.source_property_review_evidence_references x where x.receipt_id=hr.id) hrr on true
+left join lateral (
+  select jsonb_agg(jsonb_build_object('dimension',v.dimension,'verdict',v.verdict,'note',v.note)
+                   order by v.dimension) rows
+    from public.source_property_review_verifications v where v.receipt_id=hr.id) hrv on true
 where i.source=$1 and i.source_environment=$2 and ($3::uuid is not null and i.id=$3 or $4::text is not null and i.source_property_id=$4)
 order by i.source_property_id limit $5`;
 
-async function composePreviewResults(client: Client, args: Args) {
-  const bundleRows = await client.query<BundleRow>(BUNDLE_QUERY, [
-    args.source,
-    args.environment,
-    args.identityId,
-    args.sourcePropertyId,
-    args.limit,
-  ]);
+/**
+ * The population variant of BUNDLE_QUERY. Byte-for-byte the same projection and
+ * the same joins — including the `last_seen_run_id` currentness join — with the
+ * explicit-scope predicate removed.
+ *
+ * It exists so A04.5 readiness can be computed for a whole source/environment
+ * through the REAL evaluator instead of a SQL re-derivation of the eleven
+ * conditions. A SQL shortcut cannot reproduce condition 11: its anomaly half is
+ * the live discovery sweep, and a query that omitted it called 1,141 identities
+ * ready where the evaluator says 867.
+ *
+ * The one-property CLI contract is unchanged: `parseArgs` still requires
+ * `--identity-id` or `--source-property-id`, and there is still no unscoped
+ * default on the command line.
+ */
+export const BUNDLE_QUERY_ALL = BUNDLE_QUERY.replace(
+  "and ($3::uuid is not null and i.id=$3 or $4::text is not null and i.source_property_id=$4)\norder by i.source_property_id limit $5",
+  "order by i.source_property_id",
+);
+
+async function composeFromBundleRows(
+  client: Client,
+  bundleRows: BundleRow[],
+  args: { source: string; environment: "evaluation" | "production"; asOf: string },
+) {
   const properties = await loadEvaluableProperties(client, {
     source: args.source,
     environment: args.environment,
@@ -105,7 +142,6 @@ async function composePreviewResults(client: Client, args: Args) {
     environment: args.environment,
   });
   if (!policy) throw new Error(`No approved lifecycle policy exists for ${args.source}.`);
-  if (bundleRows.rows.length === 0) throw new Error("No identity matched the explicit scope.");
 
   const discovery = discoverCandidates(identities);
   const partitions = partitionForReview(identities, discovery);
@@ -163,7 +199,7 @@ async function composePreviewResults(client: Client, args: Args) {
   const sync = compareMachinePairSync(discovery.pairs, machinePending, accounted);
   const byIdentity = new Map(properties.map((p) => [p.identityId, p]));
 
-  return bundleRows.rows.map((row) => {
+  return bundleRows.map((row) => {
     const p = byIdentity.get(row.identity_id);
     const related = persisted.rows.filter(
       (c) => c.left_id === row.identity_id || c.right_id === row.identity_id,
@@ -223,10 +259,34 @@ async function composePreviewResults(client: Client, args: Args) {
         pendingCandidateIds: pending,
         currentAnomalyReasons: anomalies,
       },
+      humanReview: row.human_review,
       lifecycle: { snapshot: p?.snapshot ?? null, policy },
     };
     return evaluatePreview(input, args.asOf);
   });
+}
+
+async function composePreviewResults(client: Client, args: Args) {
+  const bundleRows = await client.query<BundleRow>(BUNDLE_QUERY, [
+    args.source,
+    args.environment,
+    args.identityId,
+    args.sourcePropertyId,
+    args.limit,
+  ]);
+  if (bundleRows.rows.length === 0) throw new Error("No identity matched the explicit scope.");
+  return composeFromBundleRows(client, bundleRows.rows, args);
+}
+
+async function composeAllPreviewResults(
+  client: Client,
+  args: { source: string; environment: "evaluation" | "production"; asOf: string },
+) {
+  const bundleRows = await client.query<BundleRow>(BUNDLE_QUERY_ALL, [
+    args.source,
+    args.environment,
+  ]);
+  return composeFromBundleRows(client, bundleRows.rows, args);
 }
 
 export async function inPreviewSnapshot<T>(client: Client, work: () => Promise<T>): Promise<T> {
@@ -243,6 +303,36 @@ export async function inPreviewSnapshot<T>(client: Client, work: () => Promise<T
 
 export function loadPreviewResults(client: Client, args: Args) {
   return inPreviewSnapshot(client, () => composePreviewResults(client, args));
+}
+
+/**
+ * Every identity for one source/environment, through the SAME evaluator the
+ * single-property CLI uses. A04.5 readiness is derived from these results; it is
+ * never re-derived in SQL.
+ */
+export function loadAllPreviewResults(
+  client: Client,
+  args: { source: string; environment: "evaluation" | "production"; asOf: string },
+) {
+  return inPreviewSnapshot(client, () => composeAllPreviewResults(client, args));
+}
+
+/**
+ * Same composition, run inside whatever transaction the CALLER has already
+ * opened. It establishes no snapshot and no isolation level of its own.
+ *
+ * The name says so explicitly because the previous name — `…InSnapshot` —
+ * asserted a guarantee this function does not provide, and a caller that
+ * believed it (A04.5's apply path) ran the multi-statement evaluator under READ
+ * COMMITTED, where every statement gets its own snapshot. The isolation level is
+ * the caller's responsibility: `inPreviewSnapshot` for read-only work,
+ * `begin isolation level serializable` for a transaction that writes.
+ */
+export function composeAllPreviewResultsInCallerTransaction(
+  client: Client,
+  args: { source: string; environment: "evaluation" | "production"; asOf: string },
+) {
+  return composeAllPreviewResults(client, args);
 }
 
 async function main(): Promise<void> {

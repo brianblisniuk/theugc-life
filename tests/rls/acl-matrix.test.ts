@@ -117,6 +117,11 @@ const CONTRACT: Record<string, Expected> = {
   // service_role included — holds UPDATE or DELETE.
   source_property_issue_snapshots: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_property_issue_evidence: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  // A04.5 human review evidence: append-only internal operational provenance.
+  // No anon grant, and no UPDATE/DELETE for any role including service_role.
+  source_property_review_receipts: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  source_property_review_verifications: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  source_property_review_evidence_references: { anon: "", authenticated: "SI", serviceRole: "SI" },
   source_property_reviews: { anon: "", authenticated: "SIUD", serviceRole: "all" },
 
   // Pre-publication resolution (0028), in two layers with deliberately different

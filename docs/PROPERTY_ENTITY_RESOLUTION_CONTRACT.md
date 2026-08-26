@@ -230,6 +230,27 @@ material about every one of them.
 In the real run **3,002** of 4,110 identities have no machine finding of any
 kind, and **zero** `new_property` rows exist.
 
+### 6.2 A human-owned `new_property` finding (A04.5)
+
+The only writer of a `new_property` row is a human decision, recorded by the
+A04.5 review apply path. Such a finding carries:
+
+- `match_method = 'human_review:distinct_property'` — it may **never** use the
+  `blocking:*` namespace. That namespace is the generator's, and §1's stand-down
+  sweep only touches `blocking:%` rows; a human decision placed there would later
+  be superseded as though it were a stale machine guess.
+- `status = 'accepted'`, with the reviewer's `review_note`, as 0030 requires.
+- 0027's honest defaults for evidence no machine produced: `name_evidence` is
+  `'none'`, the four other dimensions `'unavailable'`, `agreeing_dimensions` is
+  `0`, `coordinate_distance_metres` is NULL, and `source_run_id` is NULL — which
+  0027 already documents as "NULL when the candidate was not produced by a run
+  (a reviewer's own finding)".
+
+Nothing is fabricated to satisfy a NOT NULL column. A human-owned finding is a
+claim about the world made by a person, and its evidence columns say exactly
+that no machine evidence stands behind it. What stands behind it is the receipt
+(§8b).
+
 ## 7. Review
 
 Status vocabulary is 0027's: `pending` | `accepted` | `rejected` | `superseded`.
@@ -433,6 +454,15 @@ decision receipt must be able to reconstruct the exact evidence snapshot, the
 reviewer and the time the decision was made — the same guarantee 0028/0029 give
 star, location and scope through immutable revisions. That is a named
 prerequisite for the promotion block, not a gap in candidate discovery.
+
+Migration 0032 supplies that receipt for the **`approve_create` / `defer`** paths
+only (`source_property_review_receipts`; see
+`A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md`). It binds the identity, the exact
+current observation, its source run, its payload digest, the A04 pre-review
+fingerprint, the reviewer and the human-owned finding of §6.2, and it is
+append-only by trigger and by grant. `approve_match` has no receipt yet, so a
+D062 apply may **not** rely on an accepted canonical-target decision; that
+remains open.
 
 ## 9. Not in this layer
 
