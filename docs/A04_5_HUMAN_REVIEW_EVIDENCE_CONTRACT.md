@@ -186,8 +186,36 @@ different time.
 
 The review pack PINS identity, current observation, current run, payload digest
 and the A04 pre-review fingerprint. At apply time every pin is re-checked inside
-one transaction, with the identity locked, and readiness is recomputed from the
-real evaluator.
+one **SERIALIZABLE** transaction, with the identity locked, and readiness is
+recomputed from the real evaluator.
+
+### The isolation level is the guarantee
+
+Readiness is not one row. The evaluator composes the identity and its current
+observation, the star/scope/location head revisions, lifecycle evidence,
+`source_property_reviews`, `source_match_candidates`, the live entity-resolution
+discovery sweep and the receipts — across many statements.
+
+| | |
+|---|---|
+| `begin` (READ COMMITTED) | **Insufficient.** Every statement gets its own snapshot, so the evaluator can compose a view that never existed at any instant, and evidence can move between the verdict and the write. |
+| locking `source_property_identities` | **Insufficient.** It freezes one row. The resolution, candidate, review and lifecycle tables the verdict actually depends on are untouched. |
+| `repeatable read` | **Insufficient.** One stable snapshot, but this transaction *reads* evidence and *inserts* elsewhere — textbook write skew, which REPEATABLE READ permits. |
+| `serializable` | **What is used.** SSI tracks the read/write dependencies across every table the evaluator touched. A commit that could not have been reached in any serial order aborts with `40001` instead. |
+
+There is deliberately **no retry**. Retrying would re-run the same human
+manifest against newer evidence — the silent rebase this block exists to
+prevent. A serialization abort is surfaced as the refusal
+`evidence_changed_concurrently`, and it leaves **nothing**: no receipt, no
+verification, no evidence reference, no human-owned finding, no
+`source_property_reviews` row, no canonical write. The reviewer prepares again
+and reviews the new evidence.
+
+What SERIALIZABLE does *not* claim: it does not freeze the world. If evidence
+drifts after this transaction's serialization point, the commit still succeeds
+and is correct — the receipt is bound to the evidence that genuinely was current
+when the decision serialized. From then on §8's currentness rules govern, and
+the drifted state is A04's problem to hold, not this receipt's to absorb.
 
 Any drift is **REFUSED**, never rebased:
 
@@ -197,6 +225,7 @@ Any drift is **REFUSED**, never rebased:
 | `stale_run` / `stale_payload_digest` | the current evidence is not what was reviewed |
 | `stale_prereview_fingerprint` | star, location, scope or entity state moved without the observation changing |
 | `not_review_ready` | a non-review condition stopped passing |
+| `evidence_changed_concurrently` | a concurrent transaction made this decision unserializable (`40001`/`40P01`) |
 
 There is no best-effort apply, no silent rebase, and no substituting the newest
 observation. The reviewer must inspect the new evidence.

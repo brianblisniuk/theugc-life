@@ -108,8 +108,14 @@ implemented by migration `0032` and `scripts/human-review/*`. The pilot proves
 no `hotel_source_identities` link, no `resolution_state` transition, and review
 writes restricted to a local disposable evaluation database with no override.
 
-A04.5 is **not DONE** — it is an open PR awaiting external audit and the human
-merge gate. A05 remains PLANNED and is not authorized by this entry.
+**Amendment #1 (external audit).** The apply path opened a plain `begin`, so the
+multi-statement evaluator ran under READ COMMITTED and the "one consistent read"
+claim was stronger than the transaction actually delivered. The write
+transaction is now `SERIALIZABLE`, a serialization abort is refused rather than
+retried, and the guarantee is proven by deterministic multi-connection tests.
+
+A04.5 is **not DONE** — it is an open PR awaiting re-audit and the human merge
+gate. A05 remains PLANNED and is not authorized by this entry.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 

@@ -13,7 +13,7 @@
 import type { Client } from "pg";
 
 import {
-  composeAllPreviewResultsInSnapshot,
+  composeAllPreviewResultsInCallerTransaction,
   inPreviewSnapshot,
 } from "../prepublication-preview/preview";
 import { partitionByReadiness } from "./readiness";
@@ -140,7 +140,9 @@ export async function buildReviewPack(
   // carrying the fingerprint of observation A — and apply would accept it,
   // because every individual check would pass.
   return inPreviewSnapshot(client, async () => {
-    const population = partitionByReadiness(await composeAllPreviewResultsInSnapshot(client, args));
+    const population = partitionByReadiness(
+      await composeAllPreviewResultsInCallerTransaction(client, args),
+    );
 
     const provider = await client.query<ProviderRow>(
       `select i.id identity_id, i.source_property_id, o.id observation_id,

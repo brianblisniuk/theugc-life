@@ -744,7 +744,21 @@ constraint trigger** (`DEFERRABLE INITIALLY DEFERRED`) runs at COMMIT, when the
 receipt and its children are all visible, and fails the whole transaction unless
 the receipt has all six verification dimensions, an affirmative
 `distinct_property`, an affirmative `destination_membership`, and at least one
-evidence reference.
+evidence reference. Because it fires at COMMIT, a childless receipt INSERTs
+without error and the transaction dies at the end — taking the receipt, its
+children, the human-owned finding and the `source_property_reviews` row with it.
+There is no half-decision.
+
+### The writer runs SERIALIZABLE
+The A04.5 apply path opens `begin isolation level serializable`, not a plain
+`begin`. Readiness is composed from nine evidence surfaces across many
+statements; under READ COMMITTED each statement gets its own snapshot, so the
+evaluator could compose a view that never existed and evidence could move
+between the verdict and the write. Locking `source_property_identities` does not
+help — it freezes one row, not the resolution, candidate, review or lifecycle
+tables. REPEATABLE READ would give one snapshot but still permit write skew,
+since this transaction reads evidence and inserts elsewhere. A serialization
+abort is **never retried**; it is surfaced as a refusal and nothing is written.
 
 **0032 writes nothing canonical.** No `hotels` row, no `hotel_source_identities`
 link, no `resolution_state` transition. Publication remains A05.

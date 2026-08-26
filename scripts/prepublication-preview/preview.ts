@@ -309,8 +309,18 @@ export function loadAllPreviewResults(
   return inPreviewSnapshot(client, () => composeAllPreviewResults(client, args));
 }
 
-/** Same composition, for a caller that already holds the read-only snapshot. */
-export function composeAllPreviewResultsInSnapshot(
+/**
+ * Same composition, run inside whatever transaction the CALLER has already
+ * opened. It establishes no snapshot and no isolation level of its own.
+ *
+ * The name says so explicitly because the previous name — `…InSnapshot` —
+ * asserted a guarantee this function does not provide, and a caller that
+ * believed it (A04.5's apply path) ran the multi-statement evaluator under READ
+ * COMMITTED, where every statement gets its own snapshot. The isolation level is
+ * the caller's responsibility: `inPreviewSnapshot` for read-only work,
+ * `begin isolation level serializable` for a transaction that writes.
+ */
+export function composeAllPreviewResultsInCallerTransaction(
   client: Client,
   args: { source: string; environment: "evaluation" | "production"; asOf: string },
 ) {

@@ -344,6 +344,166 @@ async function apply(items: ReviewedItem[], opts: { apply: boolean }) {
   }
 }
 
+/* =====================================================================
+ * DETERMINISTIC CONCURRENCY HARNESS
+ *
+ * No sleeps and no timing assumptions. The apply runs on its own connection
+ * behind a proxy that blocks at a named STATEMENT BOUNDARY, so the test decides
+ * the interleaving exactly: the apply stops, the test commits a concurrent
+ * change on a different connection, and only then is the apply released.
+ * ===================================================================== */
+
+interface PausedApply {
+  /** Resolves once the apply has stopped at the requested statement. */
+  reached: Promise<void>;
+  /** Lets the apply continue from that statement. */
+  release: () => void;
+  /** The apply's own connection, usable for probes while it is paused. */
+  connection: Client;
+  settled: Promise<
+    | { ok: true; report: Awaited<ReturnType<typeof applyReviewedManifest>> }
+    | { ok: false; error: unknown }
+  >;
+  end: () => Promise<void>;
+}
+
+/**
+ * Start an apply and pause it immediately BEFORE the first statement matching
+ * `pauseBefore`. Every statement the apply issues — the evaluator's reads, the
+ * inserts and the final COMMIT — goes through this proxy.
+ */
+function startPausedApply(
+  c: Client,
+  items: ReviewedItem[],
+  pauseBefore: RegExp,
+  opts: { apply: boolean } = { apply: true },
+): PausedApply {
+  let signalReached!: () => void;
+  const reached = new Promise<void>((r) => (signalReached = r));
+  let signalRelease!: () => void;
+  const gate = new Promise<void>((r) => (signalRelease = r));
+  let armed = true;
+
+  const proxy = {
+    query: async (...args: unknown[]) => {
+      const first = args[0];
+      const sql = typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+      if (armed && pauseBefore.test(sql)) {
+        armed = false;
+        signalReached();
+        await gate;
+      }
+      return (c.query as (...a: unknown[]) => Promise<unknown>)(...args);
+    },
+  } as unknown as Client;
+
+  const settled = applyReviewedManifest(proxy, items, {
+    source: SOURCE,
+    environment: "evaluation",
+    asOf: AS_OF,
+    apply: opts.apply,
+  }).then(
+    (report) => ({ ok: true as const, report }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+
+  // If the apply finishes without ever hitting the pause point, unblock the
+  // waiter so a mismatched pattern fails as an assertion rather than a hang.
+  void settled.then(() => signalReached());
+
+  return { reached, release: () => signalRelease(), connection: c, settled, end: () => c.end() };
+}
+
+/** Every A04.5 artefact this identity could possibly have. */
+async function artefactCounts(identityId: string) {
+  const [row] = await adminQuery<{
+    receipts: string;
+    verifications: string;
+    references: string;
+    findings: string;
+    reviews: string;
+  }>(
+    `select
+       (select count(*) from public.source_property_review_receipts
+         where source_property_identity_id = $1)::text receipts,
+       (select count(*) from public.source_property_review_verifications v
+          join public.source_property_review_receipts r on r.id = v.receipt_id
+         where r.source_property_identity_id = $1)::text verifications,
+       (select count(*) from public.source_property_review_evidence_references e
+          join public.source_property_review_receipts r on r.id = e.receipt_id
+         where r.source_property_identity_id = $1)::text references,
+       (select count(*) from public.source_match_candidates
+         where source_property_identity_id = $1 and candidate_kind = 'new_property'
+           and status = 'accepted')::text findings,
+       (select count(*) from public.source_property_reviews
+         where source_property_identity_id = $1)::text reviews`,
+    [identityId],
+  );
+  return {
+    receipts: Number(row!.receipts),
+    verifications: Number(row!.verifications),
+    references: Number(row!.references),
+    findings: Number(row!.findings),
+    reviews: Number(row!.reviews),
+  };
+}
+
+/**
+ * Introduce a real entity-resolution conflict for `f`: a pending machine pair
+ * against a second ready identity. 0030 stores a pair in ONE orientation, keyed
+ * by identity UUID ordering, so the endpoints are sorted the way discovery does.
+ * Returns a cleanup that removes it again.
+ */
+async function driftPendingPair(f: Fixture): Promise<() => Promise<void>> {
+  const partner = await readyProperty();
+  const [lo, hi] = f.identityId < partner.identityId ? [f, partner] : [partner, f];
+  const [row] = await adminQuery<{ id: string }>(
+    `insert into public.source_match_candidates
+       (source_property_identity_id, source, source_environment, candidate_kind,
+        candidate_source_property_identity_id, match_method, status)
+     values ($1,$2,'evaluation','source_identity',$3,'blocking:exact_phone','pending')
+     returning id`,
+    [lo.identityId, SOURCE, hi.identityId],
+  );
+  return async () => {
+    await adminQuery("delete from public.source_match_candidates where id = $1", [row!.id]);
+  };
+}
+
+/**
+ * Block until backend `pid` is actually waiting on a lock. This is a condition
+ * barrier read from `pg_stat_activity`, not a timing guess: the test proceeds
+ * the moment the database reports the wait, and fails loudly if it never comes.
+ */
+async function awaitBlockedOnLock(pid: number): Promise<void> {
+  for (let i = 0; i < 600; i += 1) {
+    const [row] = await adminQuery<{ waiting: boolean }>(
+      `select (wait_event_type = 'Lock') waiting from pg_stat_activity where pid = $1`,
+      [pid],
+    );
+    if (row?.waiting) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`backend ${pid} never blocked on a lock`);
+}
+
+/** Canonical tables A04.5 must never touch, whatever happens concurrently. */
+async function canonicalWriteCounts() {
+  const [row] = await adminQuery<{ links: string; promoted: string; terminal: string }>(
+    `select
+       (select count(*) from public.hotel_source_identities)::text links,
+       (select count(*) from public.source_property_identities
+         where promoted_hotel_id is not null)::text promoted,
+       (select count(*) from public.source_property_identities
+         where resolution_state <> 'unresolved')::text terminal`,
+  );
+  return {
+    links: Number(row!.links),
+    promoted: Number(row!.promoted),
+    terminal: Number(row!.terminal),
+  };
+}
+
 d("A04.5 human review evidence (0032)", () => {
   beforeAll(async () => {
     await setupDatabase();
@@ -1317,6 +1477,336 @@ d("A04.5 human review evidence (0032)", () => {
       // receipt, and a review row supplies neither.
       expect(readinessOf(p).ready).toBe(true);
       expect(reviewRowOnlyEligible([p])).toHaveLength(0);
+    });
+  });
+
+  // =====================================================================
+  // A04.5 AMENDMENT #1 — the apply must hold a consistent WRITE snapshot.
+  //
+  // Readiness is composed from ~10 evidence surfaces across many statements.
+  // Under READ COMMITTED each statement gets its own snapshot, so the evaluator
+  // could compose a view that never existed, and evidence could move between
+  // the verdict and the write. Locking the identity row does not fix that: it
+  // freezes one row, not the resolution, candidate, review or lifecycle tables.
+  // =====================================================================
+  describe("concurrency: the write transaction holds one consistent snapshot", () => {
+    it("40. the apply transaction really runs at SERIALIZABLE, not READ COMMITTED", async () => {
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      const c = await client();
+      const run = startPausedApply(c, [item], /insert into public\.source_match_candidates/);
+      try {
+        await run.reached;
+        const isolation = (
+          await c.query<{ transaction_isolation: string }>("show transaction_isolation")
+        ).rows[0]!.transaction_isolation;
+        expect(isolation).toBe("serializable");
+      } finally {
+        run.release();
+        await run.settled;
+        await run.end();
+      }
+    });
+
+    it("41. evidence committed by another connection mid-apply is invisible to the apply", async () => {
+      // The defect this amendment fixes, proven directly: after the evaluator
+      // has read the evidence, a DIFFERENT connection commits a change to an
+      // evidence table. Under READ COMMITTED the apply's later statements would
+      // see it — a torn view. Under SERIALIZABLE they must not.
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      // Paused after the evaluator has read everything and BEFORE the identity
+      // lock, so the concurrent writer is not queued behind a row lock — this
+      // must prove snapshot isolation, not lock blocking.
+      const c = await client();
+      const run = startPausedApply(c, [item], /for update of i/);
+      let cleanup = async () => {};
+      try {
+        await run.reached;
+
+        // Every evidence surface D062 readiness is composed from, not one
+        // hand-picked table.
+        const SURFACES = [
+          "source_property_identities",
+          "source_property_observations",
+          "source_runs",
+          "source_match_candidates",
+          "source_property_star_resolution_revisions",
+          "source_property_scope_resolution_revisions",
+          "source_property_location_resolution_revisions",
+          "source_property_issue_snapshots",
+          "source_property_reviews",
+        ] as const;
+        const counts = async (conn: "apply" | "other") => {
+          const sql = SURFACES.map((t) => `(select count(*) from public.${t})::text "${t}"`).join(
+            ", ",
+          );
+          const rows =
+            conn === "apply"
+              ? (await c.query<Record<string, string>>(`select ${sql}`)).rows
+              : await adminQuery<Record<string, string>>(`select ${sql}`);
+          return rows[0]!;
+        };
+
+        const insideBefore = await counts("apply");
+
+        // Concurrent and COMMITTED on other connections: a whole new ready
+        // property (identity, run, observation, three resolution revisions and
+        // head pointers, lifecycle snapshot) plus a pending candidate pair.
+        cleanup = await driftPendingPair(f);
+
+        const outside = await counts("other");
+        const changed = SURFACES.filter((t) => outside[t] !== insideBefore[t]);
+        expect(changed.length).toBeGreaterThan(0); // the drift really landed
+
+        // …and NONE of it is visible to the transaction that already decided.
+        expect(await counts("apply")).toEqual(insideBefore);
+      } finally {
+        run.release();
+        await run.settled;
+        await run.end();
+        await cleanup();
+      }
+    });
+
+    it("42. evidence that drifts mid-apply cannot make the old decision authorize publication", async () => {
+      // Case A. Evidence changes while the apply is in flight, AFTER its
+      // snapshot. SERIALIZABLE permits that commit — it is equivalent to the
+      // serial order (review, then drift), and the review really is bound to the
+      // evidence current at its serialization point. What must never happen is
+      // the decision surviving as authorization under the drifted state.
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      const c = await client();
+      const run = startPausedApply(c, [item], /for update of i/);
+      let outcome: Awaited<PausedApply["settled"]>;
+      let cleanup = async () => {};
+      try {
+        await run.reached;
+        cleanup = await driftPendingPair(f);
+      } finally {
+        run.release();
+        outcome = await run.settled;
+        await run.end();
+      }
+
+      const after = await preview(f.sourcePropertyId);
+      // Whatever the race did, D062 must NOT pass against the drifted evidence.
+      expect(statusOf(after, 11)).not.toBe("PASS");
+      expect(after.overall).not.toBe("PASS");
+
+      const counts = await artefactCounts(f.identityId);
+      if (outcome.ok) {
+        // Applied against state A: one whole decision, never a fragment.
+        expect(counts.receipts).toBe(1);
+        expect(counts.verifications).toBe(REVIEW_DIMENSIONS.length);
+        expect(counts.references).toBe(1);
+        expect(counts.findings).toBe(1);
+        expect(counts.reviews).toBe(1);
+        const [receipt] = await adminQuery<{ prereview_fingerprint: string }>(
+          "select prereview_fingerprint from public.source_property_review_receipts where source_property_identity_id = $1",
+          [f.identityId],
+        );
+        // Bound to the PRE-drift fingerprint, never silently rebased onto B.
+        expect(receipt!.prereview_fingerprint).toBe(item.prereviewFingerprint);
+        expect(receipt!.prereview_fingerprint).not.toBe(after.fingerprint);
+      } else {
+        // Refused: nothing at all survives.
+        expect(outcome.error).toBeInstanceOf(ReviewRefusal);
+        expect(counts).toEqual({
+          receipts: 0,
+          verifications: 0,
+          references: 0,
+          findings: 0,
+          reviews: 0,
+        });
+      }
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+      await cleanup();
+    });
+
+    it("43. two concurrent applies of the same identity produce exactly ONE decision", async () => {
+      // The genuinely non-serializable direction, and the one SSI exists for.
+      // Whoever loses must leave nothing behind — no second receipt, no orphan
+      // finding, no duplicate review row.
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      const c1 = await client();
+      const c2 = await client();
+      const bPid = (await c2.query<{ pid: number }>("select pg_backend_pid() pid")).rows[0]!.pid;
+
+      // A: has read the evidence and holds the identity lock, about to write.
+      const a = startPausedApply(c1, [item], /insert into public\.source_match_candidates/);
+      // B: has read the SAME evidence in its own snapshot, about to take the
+      // identity lock A already holds.
+      const b = startPausedApply(c2, [item], /for update of i/);
+      let ra: Awaited<PausedApply["settled"]>;
+      let rb: Awaited<PausedApply["settled"]>;
+      try {
+        await a.reached;
+        await b.reached;
+
+        b.release();
+        await awaitBlockedOnLock(bPid); // B is now genuinely queued behind A.
+
+        a.release();
+        ra = await a.settled; // A commits its whole decision.
+        rb = await b.settled; // B wakes onto a world it did not read.
+      } finally {
+        await a.end();
+        await b.end();
+      }
+
+      const counts = await artefactCounts(f.identityId);
+      expect(counts.receipts).toBe(1);
+      expect(counts.findings).toBe(1);
+      expect(counts.reviews).toBe(1);
+      expect(counts.verifications).toBe(REVIEW_DIMENSIONS.length);
+      expect(counts.references).toBe(1);
+
+      // A won outright.
+      expect(ra.ok).toBe(true);
+      if (ra.ok) expect(ra.report.outcomes[0]!.state).toBe("applied");
+
+      // B must not have written a second decision. Its snapshot predates A's
+      // commit, so it either loses to SSI (a refusal) or discovers the receipt —
+      // never a silent duplicate and never a partial write.
+      const bWroteADecision =
+        rb.ok && (rb.report.outcomes[0]!.state as string) === "applied" ? 1 : 0;
+      expect(bWroteADecision).toBe(0);
+      if (!rb.ok) expect(rb.error).toBeInstanceOf(ReviewRefusal);
+
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
+    it("44. entity evidence that appears before the apply's snapshot blocks the approval", async () => {
+      // Case B. Condition 11 stops passing before the apply takes its snapshot,
+      // so readiness is recomputed against the new evidence and the approval is
+      // refused rather than granted on the earlier no-conflict view.
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      const c = await client();
+      // Pause before the FIRST statement, so the drift lands before the
+      // transaction's snapshot is taken.
+      const run = startPausedApply(c, [item], /select/i);
+      let outcome: Awaited<PausedApply["settled"]>;
+      let cleanup = async () => {};
+      try {
+        await run.reached;
+        cleanup = await driftPendingPair(f);
+      } finally {
+        run.release();
+        outcome = await run.settled;
+        await run.end();
+      }
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        const o = outcome.report.outcomes[0]!;
+        expect(o.state).toBe("refused");
+        // Either guard is correct and both are drift refusals; which one fires
+        // follows the externally approved ordering inside applyOne, where the
+        // fingerprint is checked before readiness is recomputed.
+        if (o.state === "refused")
+          expect(["stale_prereview_fingerprint", "not_review_ready"]).toContain(o.refusal);
+      }
+      expect(await artefactCounts(f.identityId)).toEqual({
+        receipts: 0,
+        verifications: 0,
+        references: 0,
+        findings: 0,
+        reviews: 0,
+      });
+
+      await cleanup();
+    });
+
+    it("45. an observation that advances before the apply's snapshot is refused as stale", async () => {
+      // Case C. The existing stale-observation guarantee, exercised in a race:
+      // a review of observation A must never become a receipt for observation B.
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      const c = await client();
+      const run = startPausedApply(c, [item], /select/i);
+      let outcome: Awaited<PausedApply["settled"]>;
+      try {
+        await run.reached;
+        await advanceToNewObservation(f);
+      } finally {
+        run.release();
+        outcome = await run.settled;
+        await run.end();
+      }
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        const o = outcome.report.outcomes[0]!;
+        expect(o.state).toBe("refused");
+        if (o.state === "refused") expect(o.refusal).toBe("stale_observation");
+      }
+      expect(await artefactCounts(f.identityId)).toEqual({
+        receipts: 0,
+        verifications: 0,
+        references: 0,
+        findings: 0,
+        reviews: 0,
+      });
+    });
+
+    it("46. a serialization abort becomes a refusal, applies nothing, and is never retried", async () => {
+      // A 40001 can be raised at COMMIT, after every statement succeeded. The
+      // handler must translate it into a refusal that sends the reviewer back to
+      // the new evidence — never into a retry of the same human manifest against
+      // a snapshot the human never saw.
+      const f = await readyProperty();
+      const item = await manifestFor(f);
+      const c = await client();
+
+      let commits = 0;
+      const proxy = {
+        query: async (...args: unknown[]) => {
+          const first = args[0];
+          const sql =
+            typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+          if (/^\s*commit/i.test(sql)) {
+            commits += 1;
+            // Exactly what PostgreSQL raises when SSI aborts at commit time.
+            const err = Object.assign(new Error("could not serialize access"), {
+              code: "40001",
+            });
+            await c.query("rollback");
+            throw err;
+          }
+          return (c.query as (...a: unknown[]) => Promise<unknown>)(...args);
+        },
+      } as unknown as Client;
+
+      try {
+        await expect(
+          applyReviewedManifest(proxy, [item], {
+            source: SOURCE,
+            environment: "evaluation",
+            asOf: AS_OF,
+            apply: true,
+          }),
+        ).rejects.toMatchObject({
+          name: "ReviewRefusal",
+          refusal: "evidence_changed_concurrently",
+        });
+      } finally {
+        await c.end();
+      }
+
+      // Attempted once. A retry loop would show up here as commits > 1.
+      expect(commits).toBe(1);
+      expect(await artefactCounts(f.identityId)).toEqual({
+        receipts: 0,
+        verifications: 0,
+        references: 0,
+        findings: 0,
+        reviews: 0,
+      });
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
     });
   });
 });

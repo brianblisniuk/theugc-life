@@ -11,14 +11,17 @@
  * decision with no supporting entity evidence, and a finding without a review is
  * a claim nobody signed.
  *
- * Everything below happens inside ONE transaction. If any step fails the whole
- * thing rolls back — no orphan finding, no review row without its receipt, no
- * receipt claiming a decision that did not become current.
+ * Everything below happens inside ONE SERIALIZABLE transaction. If any step
+ * fails — including the deferred completeness trigger at COMMIT, or a
+ * serialization abort caused by concurrent evidence drift — the whole thing
+ * rolls back: no orphan finding, no review row without its receipt, no receipt
+ * claiming a decision that did not become current. See `applyReviewedManifest`
+ * for why READ COMMITTED and REPEATABLE READ are both insufficient here.
  */
 import { createHash } from "node:crypto";
 import type { Client } from "pg";
 
-import { composeAllPreviewResultsInSnapshot } from "../prepublication-preview/preview";
+import { composeAllPreviewResultsInCallerTransaction } from "../prepublication-preview/preview";
 import type { PreviewResult } from "../prepublication-preview/evaluate";
 import { readinessOf } from "./readiness";
 import { REVIEW_DIMENSIONS, type ReviewDimension, type ReviewVerdict } from "./pack";
@@ -219,10 +222,51 @@ interface CurrentState {
   payloadDigest: string;
 }
 
+/** PostgreSQL SQLSTATEs that mean "this transaction lost a concurrency race". */
+const SERIALIZATION_FAILURE = "40001";
+const DEADLOCK_DETECTED = "40P01";
+
+function isConcurrencyAbort(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === SERIALIZATION_FAILURE || code === DEADLOCK_DETECTED;
+}
+
 /**
  * Apply one reviewed manifest. Dry-run unless `apply` is true — and in dry-run
  * the transaction is rolled back, so the same code path proves the same things
  * without leaving anything behind.
+ *
+ * ---- WHY SERIALIZABLE, AND NOT MERELY `begin` ----
+ *
+ * A04.5's whole claim is that a human decision is bound to the EXACT evidence
+ * that human reviewed. Readiness is not one row: the evaluator composes the
+ * identity and its current observation, the star/scope/location head revisions,
+ * lifecycle evidence, `source_property_reviews`, `source_match_candidates`, the
+ * live entity-resolution discovery sweep and the review receipts — across many
+ * statements.
+ *
+ * Under READ COMMITTED (a plain `begin`) every one of those statements gets its
+ * OWN snapshot, so the evaluator can compose a view that never existed at any
+ * single instant, and evidence can move between the check and the write.
+ * Locking `source_property_identities` does not help: it freezes one row, not
+ * the resolution, candidate, review or lifecycle tables the verdict depends on.
+ *
+ * REPEATABLE READ would fix the first half — one stable snapshot — but not the
+ * second. This transaction READS the evidence and INSERTS elsewhere; it never
+ * updates the evidence rows. That is textbook write skew, which REPEATABLE READ
+ * permits: a concurrent transaction could invalidate condition 6 or 11 and both
+ * transactions would commit happily, leaving a receipt that claims readiness
+ * nobody ever had.
+ *
+ * SERIALIZABLE closes both. SSI tracks the read/write dependencies across every
+ * table the evaluator touched, and if a concurrent commit means this decision
+ * could not have been reached in ANY serial order, the transaction aborts with
+ * 40001 rather than committing a mixed view.
+ *
+ * There is deliberately NO RETRY. Retrying would re-run the same human manifest
+ * against newer evidence, which is precisely the silent rebase this block
+ * exists to prevent. A serialization abort means: nothing was applied, and the
+ * reviewer must look at the new evidence.
  */
 export async function applyReviewedManifest(
   client: Client,
@@ -232,12 +276,12 @@ export async function applyReviewedManifest(
   for (const item of items) validateReviewedItem(item);
 
   const outcomes: ApplyOutcome[] = [];
-  await client.query("begin");
+  await client.query("begin isolation level serializable");
   try {
-    // Recompute the CURRENT preview inside this transaction. Everything the
-    // manifest pinned is compared against what is true right now, in one
-    // consistent read, so nothing can move between the check and the write.
-    const results = await composeAllPreviewResultsInSnapshot(client, opts);
+    // Recompute the CURRENT preview inside this SERIALIZABLE transaction. Every
+    // evidence read below is tracked by SSI, so the pins, the readiness verdict
+    // and the writes are all one indivisible view of the world.
+    const results = await composeAllPreviewResultsInCallerTransaction(client, opts);
     const byIdentity = new Map(results.map((r) => [r.identityId, r]));
 
     for (const item of items) {
@@ -249,10 +293,21 @@ export async function applyReviewedManifest(
     // thing that actually differs between the two runs.
     if (opts.apply) for (const o of outcomes) if (o.state === "would_apply") o.state = "applied";
 
+    // COMMIT is where both SSI and the deferred completeness trigger fire, so
+    // this call can still fail after every statement above succeeded.
     if (opts.apply) await client.query("commit");
     else await client.query("rollback");
   } catch (error) {
-    await client.query("rollback");
+    // The transaction is already aborted on a 40001; the rollback is what makes
+    // the connection usable again. Either way NOTHING from this manifest
+    // survives: no receipt, no verification, no evidence reference, no
+    // human-owned finding, no `source_property_reviews` row.
+    await client.query("rollback").catch(() => undefined);
+    if (isConcurrencyAbort(error))
+      throw new ReviewRefusal(
+        "evidence_changed_concurrently",
+        "Evidence that this decision depends on was changed by a concurrent transaction, so the review could not be committed against the state it was made against. NOTHING was applied. Re-run prepare and review the new evidence; this pilot deliberately does not retry a human decision against a snapshot the human never saw.",
+      );
     throw error;
   }
   return {

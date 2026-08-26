@@ -17,7 +17,7 @@
 import type { Client } from "pg";
 
 import {
-  composeAllPreviewResultsInSnapshot,
+  composeAllPreviewResultsInCallerTransaction,
   inPreviewSnapshot,
 } from "../prepublication-preview/preview";
 import type {
@@ -96,7 +96,7 @@ export async function loadReadyPopulation(
   args: { source: string; environment: "evaluation" | "production"; asOf: string },
 ): Promise<ReadyPopulation> {
   return inPreviewSnapshot(client, async () => {
-    const results = await composeAllPreviewResultsInSnapshot(client, args);
+    const results = await composeAllPreviewResultsInCallerTransaction(client, args);
     return partitionByReadiness(results);
   });
 }
