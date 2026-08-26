@@ -242,7 +242,7 @@ async function setCompleteLifecycleSnapshot(
 /** A LATER observation, advancing last_seen_run_id the way ingestion does. */
 async function advanceToNewObservation(
   f: Fixture,
-): Promise<{ observationId: string; runId: string }> {
+): Promise<{ observationId: string; runId: string; digest: string }> {
   const runId = await newRun(f.destinationId, 3600);
   const digest = `digest-${uniq()}`;
   const rows = await adminQuery<{ id: string }>(
@@ -271,7 +271,7 @@ async function advanceToNewObservation(
   await setScope(f.identityId, observationId, "physical_hospitality");
   await setLocation(f.identityId, observationId, true);
   await setCompleteLifecycleSnapshot(f.identityId, observationId, runId, digest);
-  return { observationId, runId };
+  return { observationId, runId, digest };
 }
 
 async function preview(sourcePropertyId: string) {
@@ -1477,6 +1477,291 @@ d("A04.5 human review evidence (0032)", () => {
       // receipt, and a review row supplies neither.
       expect(readinessOf(p).ready).toBe(true);
       expect(reviewRowOnlyEligible([p])).toHaveLength(0);
+    });
+  });
+
+  // =====================================================================
+  // A04.5 AMENDMENT #2 — a fresh observation must be re-reviewable.
+  //
+  // The contract says "same identity, NEW observation → a fresh review of fresh
+  // evidence, and permitted". Two existing uniqueness invariants made that
+  // impossible to persist, and both are CORRECT and stay:
+  //
+  //   0030  one `new_property` row per identity  — the finding is entity-level
+  //   0027  source_property_reviews identity UNIQUE — one CURRENT decision
+  //
+  // So the finding is reused, the projection advances, and the immutable
+  // per-observation history lives in the receipts.
+  // =====================================================================
+  describe("fresh-observation re-review", () => {
+    it("47. A -> stale -> B: the full lifecycle reaches 11/11 again on new evidence", async () => {
+      const f = await readyProperty();
+
+      // ---------- PHASE A ----------
+      const manifestA = await manifestFor(f);
+      const dry = await apply([manifestA], { apply: false });
+      expect(dry.outcomes[0]!.state).toBe("would_apply");
+      expect(await artefactCounts(f.identityId)).toEqual({
+        receipts: 0,
+        verifications: 0,
+        references: 0,
+        findings: 0,
+        reviews: 0,
+      });
+
+      const appliedA = await apply([manifestA], { apply: true });
+      expect(appliedA.outcomes[0]!.state).toBe("applied");
+      expect((await preview(f.sourcePropertyId)).overall).toBe("PASS");
+
+      const receiptA = (
+        await adminQuery<Record<string, string>>(
+          "select id, evidence_observation_id, evidence_source_run_id, source_payload_digest, receipt_digest, new_property_finding_id, reviewed_at::text, prereview_fingerprint from public.source_property_review_receipts where source_property_identity_id=$1",
+          [f.identityId],
+        )
+      )[0]!;
+      const findingA = (
+        await adminQuery<Record<string, string>>(
+          "select id, match_method, status, candidate_kind, review_note, resolved_at::text from public.source_match_candidates where source_property_identity_id=$1 and candidate_kind='new_property'",
+          [f.identityId],
+        )
+      )[0]!;
+      const reviewA = (
+        await adminQuery<Record<string, string>>(
+          "select id, decision, destination_id, decided_in_run_id, reviewed_at::text from public.source_property_reviews where source_property_identity_id=$1",
+          [f.identityId],
+        )
+      )[0]!;
+      expect(receiptA.evidence_observation_id).toBe(f.observationId);
+      expect(findingA.match_method).toBe(HUMAN_NEW_PROPERTY_METHOD);
+
+      // ---------- INGESTION ADVANCES TO OBSERVATION B ----------
+      const b = await advanceToNewObservation(f);
+      expect(b.observationId).not.toBe(f.observationId);
+
+      // Receipt A survives untouched and is simply no longer current.
+      const receiptAStill = (
+        await adminQuery<Record<string, string>>(
+          "select id, evidence_observation_id, evidence_source_run_id, source_payload_digest, receipt_digest, new_property_finding_id, reviewed_at::text, prereview_fingerprint from public.source_property_review_receipts where id=$1",
+          [receiptA.id],
+        )
+      )[0]!;
+      expect(receiptAStill).toEqual(receiptA);
+
+      const stale = await preview(f.sourcePropertyId);
+      expect(statusOf(stale, 1)).toBe("UNRESOLVED");
+      expect(reasonOf(stale, 1)).toBe("human_review_receipt_not_current");
+      expect(statusOf(stale, 2)).toBe("UNRESOLVED");
+      expect(stale.overall).not.toBe("PASS");
+      // Every non-human condition passes again, so a human CAN review B.
+      expect(readinessOf(stale).ready).toBe(true);
+
+      // ---------- PHASE B ----------
+      const manifestB: ReviewedItem = {
+        ...(await manifestFor(f)),
+        currentObservationId: b.observationId,
+        currentSourceRunId: b.runId,
+        sourcePayloadDigest: b.digest,
+        prereviewFingerprint: stale.fingerprint,
+        humanNote: "Re-verified against the official property site after re-ingestion.",
+      };
+      const appliedB = await apply([manifestB], { apply: true });
+      expect(appliedB.outcomes[0]!.state).toBe("applied");
+
+      // Two receipts, ONE projection, ONE finding.
+      const counts = await artefactCounts(f.identityId);
+      expect(counts.receipts).toBe(2);
+      expect(counts.reviews).toBe(1);
+      expect(counts.findings).toBe(1);
+      expect(counts.verifications).toBe(REVIEW_DIMENSIONS.length * 2);
+      expect(counts.references).toBe(2);
+
+      // Receipt A is byte-unchanged, children included.
+      expect(
+        (
+          await adminQuery<Record<string, string>>(
+            "select id, evidence_observation_id, evidence_source_run_id, source_payload_digest, receipt_digest, new_property_finding_id, reviewed_at::text, prereview_fingerprint from public.source_property_review_receipts where id=$1",
+            [receiptA.id],
+          )
+        )[0]!,
+      ).toEqual(receiptA);
+
+      // Receipt B cites B's evidence, and BOTH cite the same human finding.
+      const receiptB = (
+        await adminQuery<Record<string, string>>(
+          "select id, evidence_observation_id, evidence_source_run_id, source_payload_digest, new_property_finding_id from public.source_property_review_receipts where source_property_identity_id=$1 and id<>$2",
+          [f.identityId, receiptA.id],
+        )
+      )[0]!;
+      expect(receiptB.evidence_observation_id).toBe(b.observationId);
+      expect(receiptB.evidence_source_run_id).toBe(b.runId);
+      expect(receiptB.source_payload_digest).toBe(b.digest);
+      expect(receiptB.new_property_finding_id).toBe(receiptA.new_property_finding_id);
+
+      // The finding itself was reused, not rewritten.
+      expect(
+        (
+          await adminQuery<Record<string, string>>(
+            "select id, match_method, status, candidate_kind, review_note, resolved_at::text from public.source_match_candidates where source_property_identity_id=$1 and candidate_kind='new_property'",
+            [f.identityId],
+          )
+        )[0]!,
+      ).toEqual(findingA);
+
+      // The projection ADVANCED to B: same row id, new evidence run and note.
+      const reviewB = (
+        await adminQuery<Record<string, string>>(
+          "select id, decision, destination_id, decided_in_run_id, reviewed_at::text from public.source_property_reviews where source_property_identity_id=$1",
+          [f.identityId],
+        )
+      )[0]!;
+      expect(reviewB.id).toBe(reviewA.id);
+      expect(reviewB.decision).toBe("approve_create");
+      expect(reviewB.decided_in_run_id).toBe(b.runId);
+      expect(reviewB.decided_in_run_id).not.toBe(reviewA.decided_in_run_id);
+
+      // A04 is whole again under observation B.
+      const after = await preview(f.sourcePropertyId);
+      expect(after.overall).toBe("PASS");
+      expect(reasonOf(after, 1)).toBe("reviewed_distinct_property");
+      // §9: the receipt A04 evaluates is B's, chosen by the CURRENT observation,
+      // not by wall-clock recency. A cannot become current again.
+      const c1Evidence = after.conditions.find((c) => c.number === 1)!.evidence;
+      expect(c1Evidence.receiptId).toBe(receiptB.id);
+      expect(c1Evidence.receiptIsCurrent).toBe(true);
+      expect(c1Evidence.evidenceObservationId).toBe(b.observationId);
+
+      // Exact replay of B changes nothing.
+      const replay = await apply([manifestB], { apply: true });
+      expect(replay.outcomes[0]!.state).toBe("already_applied");
+      expect(await artefactCounts(f.identityId)).toEqual(counts);
+      expect(
+        (
+          await adminQuery<Record<string, string>>(
+            "select id, decision, destination_id, decided_in_run_id, reviewed_at::text from public.source_property_reviews where source_property_identity_id=$1",
+            [f.identityId],
+          )
+        )[0]!,
+      ).toEqual(reviewB);
+
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
+    it("48. an incompatible existing new_property finding is refused, never re-owned", async () => {
+      const f = await readyProperty();
+      // Accepted, so readiness is unaffected and the refusal under test is the
+      // one that actually fires — but owned by an analyst workflow, not by the
+      // A04.5 human-review path, so it is NOT reusable.
+      await adminQuery(
+        `insert into public.source_match_candidates
+           (source_property_identity_id, source, source_environment, candidate_kind, match_method,
+            status, review_note, resolved_at)
+         values ($1,$2,'evaluation','new_property','manual:analyst','accepted','not an A04.5 finding', now())`,
+        [f.identityId, SOURCE],
+      );
+      const before = (
+        await adminQuery<Record<string, string>>(
+          "select id, match_method, status, review_note from public.source_match_candidates where source_property_identity_id=$1 and candidate_kind='new_property'",
+          [f.identityId],
+        )
+      )[0]!;
+
+      const report = await apply([await manifestFor(f)], { apply: true });
+      const o = report.outcomes[0]!;
+      expect(o.state).toBe("refused");
+      if (o.state === "refused")
+        expect(o.refusal).toBe("existing_new_property_finding_incompatible");
+
+      // Untouched: not overwritten, not re-owned, not duplicated.
+      const after = await adminQuery<Record<string, string>>(
+        "select id, match_method, status, review_note from public.source_match_candidates where source_property_identity_id=$1 and candidate_kind='new_property'",
+        [f.identityId],
+      );
+      expect(after).toHaveLength(1);
+      expect(after[0]!).toEqual(before);
+      expect(await artefactCounts(f.identityId)).toMatchObject({ receipts: 0, reviews: 0 });
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
+    it("49. an incompatible current review decision is refused, never superseded", async () => {
+      const f = await readyProperty();
+      // A decision this pilot has no authority to supersede.
+      await adminQuery(
+        `insert into public.source_property_reviews
+           (source_property_identity_id, source, source_environment, decision, reviewer_label, review_note)
+         values ($1,$2,'evaluation','reject','prior-reviewer','excluded earlier')`,
+        [f.identityId, SOURCE],
+      );
+      const before = (
+        await adminQuery<Record<string, string>>(
+          "select id, decision, reviewer_label, review_note, updated_at::text from public.source_property_reviews where source_property_identity_id=$1",
+          [f.identityId],
+        )
+      )[0]!;
+
+      const report = await apply([await manifestFor(f)], { apply: true });
+      const o = report.outcomes[0]!;
+      expect(o.state).toBe("refused");
+      if (o.state === "refused") expect(o.refusal).toBe("existing_review_decision_incompatible");
+
+      expect(
+        (
+          await adminQuery<Record<string, string>>(
+            "select id, decision, reviewer_label, review_note, updated_at::text from public.source_property_reviews where source_property_identity_id=$1",
+            [f.identityId],
+          )
+        )[0]!,
+      ).toEqual(before);
+      expect(await artefactCounts(f.identityId)).toMatchObject({ receipts: 0, findings: 0 });
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
+    });
+
+    it("50. two concurrent applies of the SAME fresh-B manifest yield one decision", async () => {
+      const f = await readyProperty();
+      await apply([await manifestFor(f)], { apply: true });
+      const b = await advanceToNewObservation(f);
+      const stale = await preview(f.sourcePropertyId);
+      const manifestB: ReviewedItem = {
+        ...(await manifestFor(f)),
+        currentObservationId: b.observationId,
+        currentSourceRunId: b.runId,
+        sourcePayloadDigest: b.digest,
+        prereviewFingerprint: stale.fingerprint,
+      };
+
+      const c1 = await client();
+      const c2 = await client();
+      const bPid = (await c2.query<{ pid: number }>("select pg_backend_pid() pid")).rows[0]!.pid;
+      const first = startPausedApply(
+        c1,
+        [manifestB],
+        /insert into public\.source_match_candidates|for update$/m,
+      );
+      const second = startPausedApply(c2, [manifestB], /for update of i/);
+      let r1: Awaited<PausedApply["settled"]>;
+      let r2: Awaited<PausedApply["settled"]>;
+      try {
+        await first.reached;
+        await second.reached;
+        second.release();
+        await awaitBlockedOnLock(bPid);
+        first.release();
+        r1 = await first.settled;
+        r2 = await second.settled;
+      } finally {
+        await first.end();
+        await second.end();
+      }
+
+      const counts = await artefactCounts(f.identityId);
+      expect(counts.receipts).toBe(2); // A and exactly one B
+      expect(counts.reviews).toBe(1);
+      expect(counts.findings).toBe(1);
+      const wroteB = [r1, r2].filter(
+        (r) => r.ok && (r.report.outcomes[0]!.state as string) === "applied",
+      ).length;
+      expect(wroteB).toBe(1);
+      for (const r of [r1, r2]) if (!r.ok) expect(r.error).toBeInstanceOf(ReviewRefusal);
+      expect(await canonicalWriteCounts()).toEqual({ links: 0, promoted: 0, terminal: 0 });
     });
   });
 

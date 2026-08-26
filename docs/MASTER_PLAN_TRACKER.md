@@ -114,6 +114,14 @@ claim was stronger than the transaction actually delivered. The write
 transaction is now `SERIALIZABLE`, a serialization abort is refused rather than
 retried, and the guarantee is proven by deterministic multi-connection tests.
 
+**Amendment #2 (external audit).** The contract permits re-reviewing a NEW
+observation, but the apply path could not persist one: it inserted a second
+`new_property` finding (0030 allows one per identity) and a second
+`source_property_reviews` row (0027 makes the identity UNIQUE). Both constraints
+are correct and unchanged. The finding is now **reused** as the entity-level
+claim it is, the current review row **advances in place**, and the immutable
+per-observation history lives in the receipts. No new migration.
+
 A04.5 is **not DONE** — it is an open PR awaiting re-audit and the human merge
 gate. A05 remains PLANNED and is not authorized by this entry.
 

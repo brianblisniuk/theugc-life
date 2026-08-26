@@ -717,6 +717,21 @@ immutable text cast, so the digest is computed in the application and stored.
 `reviewed_at`, so replaying an identical manifest is not called "different"
 merely because the clock moved.
 
+**One identity may hold several receipts** — one per evidence observation. That
+is the point: when ingestion advances an identity, the old receipt stops being
+current, the reviewer looks at the new observation, and a NEW receipt records
+that fresh decision while the old one stays byte-unchanged. The two neighbouring
+tables have different lifetimes and must not be confused with this history:
+
+- `source_property_reviews` (0027) has `source_property_identity_id` **UNIQUE**.
+  It is the ONE CURRENT decision — a projection, not a log. A fresh-observation
+  `approve_create` **advances that row in place**; it never appends a second.
+- the `human_review:distinct_property` `new_property` finding (0030, one per
+  identity) is **entity-level and reused** across later confirmations. 0030 is
+  right that a second row "is not new information", so several receipts may cite
+  the same finding id. A `new_property` row that is not that exact accepted
+  human finding is **refused**, never re-owned or rewritten.
+
 ### source_property_review_verifications
 Six dimensions per `approve_create` receipt — `distinct_property`, `name`,
 `city_locality`, `address`, `coordinates`, `destination_membership` — each a

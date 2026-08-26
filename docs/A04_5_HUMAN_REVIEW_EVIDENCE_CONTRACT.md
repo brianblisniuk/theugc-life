@@ -230,6 +230,16 @@ Any drift is **REFUSED**, never rebased:
 There is no best-effort apply, no silent rebase, and no substituting the newest
 observation. The reviewer must inspect the new evidence.
 
+### Which receipt A04 reads
+
+One identity can legitimately hold several receipts, so the selection is bound
+to the **current observation** rather than to wall-clock recency: A04 prefers the
+receipt whose `evidence_observation_id` is the identity's current observation,
+falling back to the newest (`reviewed_at`, then `id`) only so that a non-current
+decision is still *visible* — which is what lets conditions 1 and 2 say
+`human_review_receipt_not_current` instead of pretending no review exists. A
+superseded receipt can never become current again, and none are hidden.
+
 ### A04 holds a non-current receipt
 
 After A04.5, conditions 1 and 2 cite the receipt. When the receipt's observation
@@ -265,6 +275,45 @@ exact replay as stale — turning idempotency into a guaranteed failure.
 
 A correction/supersession workflow is **future work**. This pilot refuses rather
 than inventing one.
+
+### Three tables, three different lifetimes
+
+The last row of that table — a fresh review of a NEW observation — is the whole
+point of currentness, and it only works because these three things are *not* the
+same kind of record:
+
+| | lifetime | uniqueness |
+|---|---|---|
+| `source_property_review_receipts` | **immutable review-event history** | one per identity **+ evidence observation** |
+| `source_property_reviews` | **the one CURRENT decision** (a projection, not history) | `source_property_identity_id` UNIQUE (0027) |
+| the human `new_property` finding | **entity-level**, reused | one per identity (0030) |
+
+So when ingestion advances an identity and the reviewer looks again:
+
+- a **NEW receipt** is written for observation B — the old receipt stays
+  byte-unchanged, children included;
+- the **same** `human_review:distinct_property` finding is **reused**, because
+  "this is a distinct property" is a claim about the entity, not about one
+  observation of it. 0030 is right that a second row "is not new information";
+- the **current projection advances** in place to B's destination, run,
+  reviewer, note and time.
+
+One finding may therefore be cited by several receipts from different
+observations of the same identity. That is not duplication; it is one entity
+claim confirmed against successive evidence.
+
+### What is refused rather than repurposed
+
+| | |
+|---|---|
+| `existing_new_property_finding_incompatible` | a `new_property` row exists that is not the accepted `human_review:distinct_property` finding for this identity/source/environment. It is never overwritten, re-owned, or have its `match_method` rewritten — converting a machine finding into a human one is not a review. |
+| `existing_review_decision_incompatible` | the current projection holds a decision this pilot has no authority to supersede (`approve_match`, `reject`, …). |
+
+A previous A04.5 `approve_create` on an **older observation** is explicitly *not*
+an incompatible state — that is the supported fresh-observation path. Every
+refusal above is evaluated **before any write**, because a refused item does not
+abort the transaction: the other items in the manifest still commit, so a
+refusal after an INSERT would leave an orphan behind.
 
 ---
 

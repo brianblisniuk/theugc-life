@@ -454,44 +454,134 @@ async function applyOne(
     return { ...id, state: "would_apply", receiptId };
   }
 
-  // ---- 6. THE HUMAN-OWNED FINDING, then the receipt, then the decision. ----
-  const finding = await client.query<{ id: string }>(
-    `insert into public.source_match_candidates
-       (source_property_identity_id, source, source_environment, candidate_kind, match_method, status,
-        review_note, resolved_at)
-     values ($1, $2, $3, 'new_property', $4, 'accepted', $5, now())
-     returning id`,
-    [
-      item.identityId,
-      current.source,
-      current.environment,
-      HUMAN_NEW_PROPERTY_METHOD,
-      item.humanNote && item.humanNote.trim() !== ""
-        ? item.humanNote
-        : `Human review by ${item.reviewerLabel}: distinct property established against observation ${current.observationId}.`,
-    ],
+  // ---- 6. THE HUMAN-OWNED FINDING — entity-level, reused, never duplicated. ----
+  //
+  // 0030 allows exactly ONE `new_property` row per identity, on the grounds that
+  // "a second one is not new information; it is the same finding recorded
+  // twice". That is right, and it is why re-reviewing a FRESH observation must
+  // reuse the finding rather than insert another: "this is a distinct property"
+  // is a claim about the ENTITY, not about one observation of it. What is
+  // per-observation is the receipt.
+  const priorFinding = await client.query<{
+    id: string;
+    candidate_kind: string;
+    match_method: string;
+    status: string;
+    source: string;
+    source_environment: string;
+  }>(
+    `select id, candidate_kind, match_method, status, source, source_environment
+       from public.source_match_candidates
+      where source_property_identity_id = $1 and candidate_kind = 'new_property'
+      for update`,
+    [item.identityId],
   );
-  const findingId = finding.rows[0]!.id;
+
+  // ---- 7. THE CURRENT REVIEW PROJECTION — one row per identity. ----
+  //
+  // 0027 makes `source_property_identity_id` UNIQUE here: this table is the
+  // CURRENT decision, not review history. History is the immutable receipts.
+  // A fresh-observation approve_create therefore ADVANCES this row; it does not
+  // append a second one.
+  //
+  // Read and vetted BEFORE anything is written. A refused item does not abort
+  // the transaction — the other items in the manifest still commit — so a
+  // refusal that happened after an INSERT would leave an orphan behind.
+  // Every check in this function precedes every write, deliberately.
+  const priorReview = await client.query<{ id: string; decision: string }>(
+    `select id, decision from public.source_property_reviews
+      where source_property_identity_id = $1 for update`,
+    [item.identityId],
+  );
+  if (priorReview.rows.length > 0 && priorReview.rows[0]!.decision !== "approve_create")
+    return {
+      ...id,
+      state: "refused",
+      refusal: "existing_review_decision_incompatible",
+      detail: `Identity already carries a current '${priorReview.rows[0]!.decision}' review decision. This pilot may only advance a previous approve_create onto fresher evidence; superseding any other decision is a correction workflow, which is future work.`,
+    };
+
+  const reusable = priorFinding.rows[0] ?? null;
+  if (reusable) {
+    // Reuse ONLY an exactly compatible human finding. Anything else is refused
+    // outright: repurposing a row by rewriting its match_method or status would
+    // forge human ownership onto evidence a human never produced.
+    const compatible =
+      reusable.candidate_kind === "new_property" &&
+      reusable.match_method === HUMAN_NEW_PROPERTY_METHOD &&
+      reusable.status === "accepted" &&
+      reusable.source === current.source &&
+      reusable.source_environment === current.environment;
+    if (!compatible)
+      return {
+        ...id,
+        state: "refused",
+        refusal: "existing_new_property_finding_incompatible",
+        detail: `Identity already carries a new_property finding (${reusable.id}) that is not the accepted ${HUMAN_NEW_PROPERTY_METHOD} finding this path may reuse (kind=${reusable.candidate_kind}, method=${reusable.match_method}, status=${reusable.status}, source=${reusable.source}/${reusable.source_environment}). It is not overwritten, re-owned or duplicated; 0030 permits one new_property row per identity, and converting a machine finding into a human one is not a review.`,
+      };
+  }
+
+  // ---- 8. WRITES. Nothing above this line has touched the database. ----
+  let findingId: string;
+  if (reusable) {
+    findingId = reusable.id;
+  } else {
+    const created = await client.query<{ id: string }>(
+      `insert into public.source_match_candidates
+         (source_property_identity_id, source, source_environment, candidate_kind, match_method, status,
+          review_note, resolved_at)
+       values ($1, $2, $3, 'new_property', $4, 'accepted', $5, now())
+       returning id`,
+      [
+        item.identityId,
+        current.source,
+        current.environment,
+        HUMAN_NEW_PROPERTY_METHOD,
+        item.humanNote && item.humanNote.trim() !== ""
+          ? item.humanNote
+          : `Human review by ${item.reviewerLabel}: distinct property established against observation ${current.observationId}.`,
+      ],
+    );
+    findingId = created.rows[0]!.id;
+  }
 
   const receiptId = await insertReceipt(client, item, current, digest, destinationId, findingId);
 
-  // The current-state review row points at the SAME semantics as the receipt.
-  await client.query(
-    `insert into public.source_property_reviews
-       (source_property_identity_id, source, source_environment, decision, destination_id,
-        reviewer_user_id, reviewer_label, review_note, decided_in_run_id, reviewed_at)
-     values ($1, $2, $3, 'approve_create', $4, $5, $6, $7, $8, now())`,
-    [
-      item.identityId,
-      current.source,
-      current.environment,
-      destinationId,
-      item.reviewerUserId ?? null,
-      item.reviewerLabel,
-      item.humanNote,
-      current.runId,
-    ],
-  );
+  // The current projection and the newest current receipt agree after commit.
+  if (priorReview.rows.length > 0) {
+    await client.query(
+      `update public.source_property_reviews
+          set decision = 'approve_create', target_hotel_id = null, destination_id = $2,
+              reviewer_user_id = $3, reviewer_label = $4, review_note = $5,
+              decided_in_run_id = $6, reviewed_at = now()
+        where source_property_identity_id = $1`,
+      [
+        item.identityId,
+        destinationId,
+        item.reviewerUserId ?? null,
+        item.reviewerLabel,
+        item.humanNote,
+        current.runId,
+      ],
+    );
+  } else {
+    await client.query(
+      `insert into public.source_property_reviews
+         (source_property_identity_id, source, source_environment, decision, destination_id,
+          reviewer_user_id, reviewer_label, review_note, decided_in_run_id, reviewed_at)
+       values ($1, $2, $3, 'approve_create', $4, $5, $6, $7, $8, now())`,
+      [
+        item.identityId,
+        current.source,
+        current.environment,
+        destinationId,
+        item.reviewerUserId ?? null,
+        item.reviewerLabel,
+        item.humanNote,
+        current.runId,
+      ],
+    );
+  }
 
   return { ...id, state: "would_apply", receiptId };
 }

@@ -89,7 +89,15 @@ left join public.source_property_current_location_resolutions lo on lo.source_pr
 left join lateral (
   select r.* from public.source_property_review_receipts r
    where r.source_property_identity_id=i.id
-   order by r.reviewed_at desc, r.id desc limit 1) hr on true
+   -- A fresh-observation re-review is a SUPPORTED state, so one identity can
+   -- legitimately hold several receipts. The receipt about the CURRENT
+   -- observation is picked first and explicitly, rather than trusting wall-clock
+   -- recency to imply it: conditions 1 and 2 ask "is there a current decision?",
+   -- and that question is answered by the observation, not by a timestamp. When
+   -- no receipt is current the newest is still surfaced, so A04 can report
+   -- \`human_review_receipt_not_current\` instead of pretending none exists.
+   order by coalesce(r.evidence_observation_id = o.id, false) desc,
+            r.reviewed_at desc, r.id desc limit 1) hr on true
 left join lateral (
   select count(*) n from public.source_property_review_evidence_references x where x.receipt_id=hr.id) hrr on true
 left join lateral (
