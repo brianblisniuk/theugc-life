@@ -447,6 +447,55 @@ describe("D062 pre-publication preview", () => {
     }
   });
 
+  /*
+   * A04.6 AMENDMENT #1 — the current projection must CLAIM the receipt it is
+   * evaluated against. D062 is the publication gate, so it fails closed on its
+   * own evidence, without assuming 0033's trigger held upstream.
+   */
+  it("A04.6: conditions 1 and 2 hold when the projection names a DIFFERENT receipt", () => {
+    const input = valid();
+    // The loader picked the receipt about the current observation (receipt-1);
+    // the projection says the current approval is a different one.
+    input.review!.currentReceiptId = "receipt-from-an-older-run";
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).status).toBe("UNRESOLVED");
+    expect(condition(p, 1).reason).toBe("human_review_projection_receipt_mismatch");
+    expect(condition(p, 2).status).toBe("UNRESOLVED");
+    expect(condition(p, 2).reason).toBe("human_review_projection_receipt_mismatch");
+    expect(condition(p, 5).status).not.toBe("PASS");
+    expect(p.overall).not.toBe("PASS");
+  });
+
+  it("A04.6: a projection naming NO receipt may not borrow one that happens to exist", () => {
+    const input = valid();
+    input.review!.currentReceiptId = null;
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).reason).toBe("human_review_projection_receipt_missing");
+    expect(condition(p, 2).reason).toBe("human_review_projection_receipt_missing");
+    expect(p.overall).not.toBe("PASS");
+  });
+
+  it("A04.6: a revocation stays the visible reason, ahead of any pointer diagnostic", () => {
+    const input = valid();
+    input.review!.reviewStatus = "revoked";
+    // Incoherent AND revoked. The brake must remain the reason a human sees.
+    input.review!.currentReceiptId = "receipt-from-an-older-run";
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).reason).toBe("human_review_revoked");
+    expect(condition(p, 2).reason).toBe("human_review_revoked");
+    expect(p.overall).not.toBe("PASS");
+  });
+
+  it("A04.6: a coherent, current, active projection still passes", () => {
+    const p = evaluatePreview(valid(), AS_OF);
+    expect(condition(p, 1).status).toBe("PASS");
+    expect(condition(p, 2).status).toBe("PASS");
+    expect(p.overall).toBe("PASS");
+  });
+
   it("uses locale-independent fingerprint ordering and schema v2", () => {
     expect(
       buildFingerprintPayload({

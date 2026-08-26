@@ -137,6 +137,9 @@ interface CurrentReview {
   decision: string;
   review_status: string;
   current_receipt_id: string | null;
+  /** A04.6 amendment #1: read so the pointer can be proven coherent, not assumed. */
+  destination_id: string | null;
+  decided_in_run_id: string | null;
   source: string;
   source_environment: string;
   source_property_id: string;
@@ -202,6 +205,7 @@ async function revokeOne(
   // approval this manifest says it is withdrawing.
   const locked = await client.query<CurrentReview>(
     `select rv.id, rv.decision, rv.review_status, rv.current_receipt_id,
+            rv.destination_id, rv.decided_in_run_id,
             rv.source, rv.source_environment, i.source_property_id
        from public.source_property_reviews rv
        join public.source_property_identities i on i.id = rv.source_property_identity_id
@@ -284,8 +288,11 @@ async function revokeOne(
     decision: string;
     receipt_digest: string;
     evidence_observation_id: string;
+    destination_id: string | null;
+    evidence_source_run_id: string;
   }>(
-    `select id, decision, receipt_digest, evidence_observation_id
+    `select id, decision, receipt_digest, evidence_observation_id,
+            destination_id, evidence_source_run_id
        from public.source_property_review_receipts
       where id = $1 and source_property_identity_id = $2`,
     [item.expectedCurrentReceiptId, item.identityId],
@@ -318,6 +325,40 @@ async function revokeOne(
       state: "refused",
       refusal: "receipt_mismatch",
       detail: "The pinned receipt cites a different evidence observation than the manifest.",
+    };
+
+  // ---- 3b. THE PROJECTION MUST ACTUALLY BE THIS RECEIPT. ----
+  //
+  // A04.6 amendment #1. Everything above proved the manifest still describes the
+  // projection and the receipt it names. This proves the projection and that
+  // receipt describe the SAME decision — same kind, same destination, same run
+  // of evidence.
+  //
+  // 0033's trigger makes an incoherent projection unrepresentable, and the pack
+  // refuses to emit one. This is the third layer, and it is the one that matters
+  // most: a revocation aimed at a receipt that does not represent the current
+  // approval would record that the wrong approval was withdrawn while leaving the
+  // real one authorized. Failing closed here costs an operator one re-prepare;
+  // failing open would leave a revoked-looking identity still authorizing D062.
+  //
+  // Deliberately NOT a currentness check. A stale provider approval — one whose
+  // observation has been superseded — remains fully revocable; provider
+  // currentness is irrelevant to withdrawing human authorization.
+  const incoherent =
+    review.decision !== "approve_create" ||
+    r.decision !== "approve_create" ||
+    (r.destination_id ?? null) !== (review.destination_id ?? null) ||
+    (r.evidence_source_run_id as string | null) !== (review.decided_in_run_id ?? null);
+  if (incoherent)
+    return {
+      ...id,
+      state: "refused",
+      refusal: "review_projection_receipt_mismatch",
+      detail:
+        `The current projection does not semantically represent receipt ${item.expectedCurrentReceiptId}: ` +
+        `projection(decision=${review.decision}, destination=${review.destination_id}, run=${review.decided_in_run_id}) ` +
+        `vs receipt(decision=${r.decision}, destination=${r.destination_id}, run=${r.evidence_source_run_id}). ` +
+        "Refusing to withdraw an approval the current review does not claim. Nothing was written.",
     };
 
   // ---- 4. WRITES. Nothing above this line has touched the database. ----

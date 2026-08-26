@@ -151,6 +151,15 @@ is currently authorized* (`review_status`), and records the withdrawal as a new
 append-only fact. There is no un-revoke — authorization returns only through a
 fresh human review of a fresh observation.
 
+**Amendment #1 (external audit).** `current_receipt_id` was FK'd to the same
+identity but not to the same *decision*. An identity legitimately holds one
+receipt per reviewed observation, so a projection advanced onto run B could be
+pointed back at receipt A while A04 still evaluated — and passed — receipt B. A
+database trigger now requires the projection and its receipt to agree on
+decision, destination and evidence run; the backfill binds on that same full
+predicate and refuses ambiguity **before** choosing; and D062 independently holds
+conditions 1 and 2 when the projection names no receipt or a different one.
+
 A04.6 is **not DONE** — it is an open PR awaiting external audit and the human
 merge gate. A05 remains PLANNED and is not authorized by this entry.
 

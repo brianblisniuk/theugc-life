@@ -50,6 +50,13 @@ export interface RevocationPack {
     activeApprovals: number;
     revocable: number;
     withoutReceipt: number;
+    /**
+     * A04.6 amendment #1. Active approvals whose `current_receipt_id` does not
+     * semantically represent the projection. Excluded from `items` and reported,
+     * never silently skipped.
+     */
+    incoherentProjections: number;
+    incoherentIdentityIds: string[];
   };
   items: RevocationCandidate[];
 }
@@ -74,8 +81,19 @@ const CANDIDATE_QUERY = `
          cur.id                         as current_observation_id,
          cur.source_name                as provider_name,
          d.slug                         as destination_slug,
+         r.id                           as receipt_id,
          r.receipt_digest,
-         r.evidence_observation_id
+         r.evidence_observation_id,
+         -- A04.6 amendment #1. The pointed receipt must SEMANTICALLY represent
+         -- this projection, not merely belong to the same identity. Computed
+         -- here rather than joined away, so an incoherent row is visible as a
+         -- diagnostic instead of vanishing from the pack without explanation.
+         (r.id is not null
+            and rv.decision = 'approve_create'
+            and r.decision = 'approve_create'
+            and r.destination_id is not distinct from rv.destination_id
+            and r.evidence_source_run_id is not distinct from rv.decided_in_run_id)
+                                        as receipt_coherent
     from public.source_property_reviews rv
     join public.source_property_identities i
       on i.id = rv.source_property_identity_id
@@ -105,8 +123,10 @@ interface CandidateRow {
   current_observation_id: string | null;
   provider_name: string | null;
   destination_slug: string | null;
+  receipt_id: string | null;
   receipt_digest: string | null;
   evidence_observation_id: string | null;
+  receipt_coherent: boolean | null;
 }
 
 export async function buildRevocationPack(
@@ -124,6 +144,9 @@ export async function buildRevocationPack(
   const { rows } = await client.query<CandidateRow>(sql, params);
 
   const withoutReceipt = rows.filter((row) => row.current_receipt_id === null).length;
+  const incoherent = rows.filter(
+    (row) => row.current_receipt_id !== null && row.receipt_coherent !== true,
+  );
   const items: RevocationCandidate[] = [];
   for (const row of rows) {
     if (
@@ -132,6 +155,12 @@ export async function buildRevocationPack(
       row.evidence_observation_id === null
     )
       continue;
+    // Excluded, and COUNTED. Emitting an item here would hand a human a manifest
+    // aimed at a receipt the current projection does not represent, and the
+    // resulting revocation would withdraw the wrong approval. Silently dropping
+    // it would be almost as bad: the operator would see a shorter pack and no
+    // reason, so `incoherentProjections` is reported and the CLI prints it.
+    if (row.receipt_coherent !== true) continue;
     items.push({
       identityId: row.identity_id,
       sourcePropertyId: row.source_property_id,
@@ -166,6 +195,8 @@ export async function buildRevocationPack(
       activeApprovals: rows.length,
       revocable: items.length,
       withoutReceipt,
+      incoherentProjections: incoherent.length,
+      incoherentIdentityIds: incoherent.map((row) => row.identity_id).sort(),
     },
     items,
   };

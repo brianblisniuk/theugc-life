@@ -188,9 +188,21 @@ a **fact**, not a guess.
 `order by reviewed_at desc limit 1` was rejected: two receipts written in the
 same transaction, or a clock that moved, would silently bind the wrong one.
 
-Section 4 of the migration then **proves** the mapping rather than assuming it —
-it raises `data_exception` and fails the migration if any projection could bind
-to more than one receipt, rather than picking one.
+The predicate is the **full** coherence predicate above — identity, decision,
+destination and run — not the run alone. A receipt that agrees on the run but
+records a different destination does not represent the projection, so it is not
+bound, and the projection keeps `current_receipt_id = NULL`.
+
+The ambiguity guard runs **before** the backfill, not after it. "UPDATE first,
+discover the ambiguity afterwards" would be safe only because the migration
+happens to be transactional; the contract is fail-**before**-choice, so a binding
+nobody can prove is never computed at all. It raises `data_exception` if any
+projection could bind to more than one compatible receipt, and refuses to break
+the tie on `reviewed_at`.
+
+One definition of "this receipt represents this projection" is used in all three
+places — the trigger, the ambiguity guard and the backfill. A second definition
+is how the two drift apart.
 
 > That guard is unreachable on a schema-valid database, and this was verified
 > rather than assumed: two receipts for one identity sharing a run would require
@@ -203,6 +215,43 @@ to more than one receipt, rather than picking one.
 projection has no receipt at all. Those rows are **excluded** from the revocation
 pack — with no receipt there is no specific approval to pin, and V1 will not
 invent one.
+
+### The pointer must name the receipt this projection IS
+
+*(Amendment #1.)* The composite FK proves the pointed receipt belongs to the same
+**identity**. That is necessary and it is not sufficient, because an identity
+legitimately accumulates one receipt per reviewed observation:
+
+```
+observation A -> receipt A        observation B -> receipt B
+projection advances to B, decided_in_run_id = run B
+...current_receipt_id pointed back at receipt A
+```
+
+Both receipts belong to the identity, so the FK is satisfied and the row is
+schema-valid — yet the projection would claim to be represented by a receipt
+describing a different decision about different evidence, and A05 could consume
+authorization from one while the current human record named the other.
+
+`enforce_review_projection_receipt_coherence()` therefore fires **before every
+INSERT and every UPDATE** on `source_property_reviews` and, for a non-NULL
+pointer, requires:
+
+| requirement | why |
+|---|---|
+| projection `decision = 'approve_create'` | this pilot owns no other receipt-backed authorization |
+| receipt `decision = 'approve_create'` | a `defer` receipt authorizes nothing |
+| `receipt.destination_id` = `review.destination_id` | the destination is a human decision, so the receipt must carry the same one |
+| `receipt.evidence_source_run_id` = `review.decided_in_run_id` | **the** distinction between receipt A and receipt B for one identity |
+
+Comparisons are `is distinct from`, so NULL is compared honestly rather than
+passing silently. `reviewed_at` appears nowhere in the predicate. The trigger
+fires on every UPDATE rather than only when the pointer column changes, because
+moving `decision`, `destination_id` or `decided_in_run_id` while leaving the
+pointer alone breaks the invariant just as effectively.
+
+`review_status` is deliberately **not** part of the predicate: a `revoked`
+projection must keep pointing at the receipt that was withdrawn.
 
 ---
 
@@ -230,6 +279,31 @@ RLS matches 0027–0032: admin/editor through `public.is_admin_or_editor()`, plu
 The overall verdict stops being PASS immediately, on the next evaluation, with no
 migration, backfill or recompute step in between.
 
+### D062 also fails closed on an incoherent pointer
+
+*(Amendment #1.)* A04's loader picks the receipt about the identity's **current
+observation**; the projection's `current_receipt_id` says which approval is
+**current**. Those are two different questions, and D062 must not pass while they
+disagree. Before any receipt-supported PASS, an active `approve_create` requires:
+
+| situation | conditions 1 and 2 |
+|---|---|
+| projection names no receipt, but one exists | UNRESOLVED, `human_review_projection_receipt_missing` |
+| projection names a different receipt from the one evaluated | UNRESOLVED, `human_review_projection_receipt_mismatch` |
+
+"A receipt exists" is not authorization. The current projection must explicitly
+identify **which** approval authorizes this identity, and a legacy row that never
+named one may not borrow one.
+
+This is a second, independent layer. 0033's trigger makes the incoherent row
+unrepresentable; D062 is the publication gate and fails closed on its own
+evidence without assuming any constraint upstream held.
+
+**Revocation keeps precedence.** A revoked projection reports
+`human_review_revoked` on both conditions even when the pointer is also
+incoherent. The brake must stay the visible reason; a pointer diagnostic must
+never obscure the fact that a human withdrew the approval.
+
 ---
 
 ## 11. Commands
@@ -252,6 +326,26 @@ npm run source:review:revoke:apply -- \
 `prepare` emits `reviewerLabel` and `revocationNote` **empty**; an unedited pack
 is refused, because nobody decided anything. `apply` is dry-run without
 `--apply`, and the dry-run rolls back after exercising every pin and constraint.
+
+*(Amendment #1.)* Both ends defend the coherence invariant independently of the
+database:
+
+- **`prepare`** emits no item for a projection whose pointer does not
+  semantically represent it. Those are counted as `incoherentProjections`, listed
+  by identity, and printed as a warning — excluded, never silently skipped.
+- **`apply`** re-reads the receipt's decision, destination and evidence run and
+  compares them to the locked projection. On disagreement it refuses with
+  **`review_projection_receipt_mismatch`** before any write: no revocation row,
+  no status change, no timestamp change, no canonical write.
+
+Revoking a receipt the current projection does not represent would record that
+the wrong approval was withdrawn while leaving the real one authorized. Failing
+closed costs an operator one re-prepare; failing open leaves a revoked-looking
+identity still authorizing D062.
+
+Neither check requires D062 readiness, and neither requires the receipt's
+observation to still be current. A **stale** provider approval remains fully
+revocable.
 
 Write-target safety is A04.5's, unchanged and reused: evaluation only,
 local/disposable database only, remote refused, private-network refused,

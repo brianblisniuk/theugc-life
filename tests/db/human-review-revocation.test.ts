@@ -347,6 +347,108 @@ async function approvedProperty(): Promise<Fixture & { receiptId: string; review
   return { ...f, reviewId: row!.id, receiptId: row!.current_receipt_id };
 }
 
+/**
+ * An identity reviewed TWICE: approve A on observation A, then a legitimate new
+ * observation B and a fresh approve B. Two receipts, ONE projection, one
+ * finding — the shape amendment #1 exists for.
+ */
+async function advancedTwiceProperty(): Promise<{
+  identityId: string;
+  sourcePropertyId: string;
+  destinationId: string;
+  receiptA: string;
+  receiptB: string;
+  runA: string;
+  runB: string;
+  observationB: string;
+  digestB: string;
+  reviewId: string;
+}> {
+  const a = await approvedProperty();
+  const fresh = await advanceToNewObservation(a);
+  const p = await preview(a.sourcePropertyId);
+  const report = await applyReview(
+    [
+      await manifestFor(a, {
+        currentObservationId: fresh.observationId,
+        currentSourceRunId: fresh.runId,
+        sourcePayloadDigest: fresh.digest,
+        prereviewFingerprint: p.fingerprint,
+        humanNote: "Second review, against the newer observation.",
+      }),
+    ],
+    { apply: true },
+  );
+  expect(report.outcomes[0]!.state).toBe("applied");
+
+  const [row] = await adminQuery<{
+    id: string;
+    current_receipt_id: string;
+    decided_in_run_id: string;
+  }>(
+    "select id, current_receipt_id, decided_in_run_id from public.source_property_reviews where source_property_identity_id = $1",
+    [a.identityId],
+  );
+  expect(row!.current_receipt_id).not.toBe(a.receiptId);
+  expect(row!.decided_in_run_id).toBe(fresh.runId);
+  expect((await artefactCounts(a.identityId)).receipts).toBe(2);
+
+  return {
+    identityId: a.identityId,
+    sourcePropertyId: a.sourcePropertyId,
+    destinationId: a.destinationId,
+    receiptA: a.receiptId,
+    receiptB: row!.current_receipt_id,
+    runA: a.runId,
+    runB: fresh.runId,
+    observationB: fresh.observationId,
+    digestB: fresh.digest,
+    reviewId: row!.id,
+  };
+}
+
+/**
+ * Run `work` with ONLY the new coherence trigger disabled, so a test can build
+ * the corrupted state the production schema refuses to store. Nothing else is
+ * relaxed, and the trigger is restored even if `work` throws — the protection is
+ * never weakened to make a test convenient.
+ */
+async function withCoherenceTriggerDisabled(work: () => Promise<void>): Promise<void> {
+  await adminQuery(
+    "alter table public.source_property_reviews disable trigger source_property_reviews_receipt_coherence",
+  );
+  try {
+    await work();
+  } finally {
+    await adminQuery(
+      "alter table public.source_property_reviews enable trigger source_property_reviews_receipt_coherence",
+    );
+  }
+}
+
+/** A revocation manifest pinned to an arbitrary receipt of a twice-reviewed identity. */
+async function revocationForReceipt(
+  ab: Awaited<ReturnType<typeof advancedTwiceProperty>>,
+  receiptId: string,
+): Promise<RevocationItem> {
+  const [receipt] = await adminQuery<{ receipt_digest: string; evidence_observation_id: string }>(
+    "select receipt_digest, evidence_observation_id from public.source_property_review_receipts where id = $1",
+    [receiptId],
+  );
+  return {
+    identityId: ab.identityId,
+    sourcePropertyId: ab.sourcePropertyId,
+    reviewId: ab.reviewId,
+    expectedDecision: "approve_create",
+    expectedReviewStatus: "active",
+    expectedCurrentReceiptId: receiptId,
+    expectedReceiptDigest: receipt!.receipt_digest,
+    expectedEvidenceObservationId: receipt!.evidence_observation_id,
+    reviewerLabel: "test-reviewer",
+    revocationNote: "Withdrawn during an amendment #1 coherence test.",
+  };
+}
+
 /** The revocation manifest a human would have been handed for `a`. */
 async function revocationFor(
   a: Fixture & { receiptId: string; reviewId: string },
@@ -1011,12 +1113,22 @@ d("A04.6 human review revocation (0033)", () => {
     it("31. a projection may not point at another identity's receipt", async () => {
       const a = await approvedProperty();
       const other = await approvedProperty();
-      await expect(
+      const point = () =>
         adminQuery(
           "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
           [a.identityId, other.receiptId],
-        ),
-      ).rejects.toThrow(/source_property_reviews_current_receipt_fk/);
+        );
+
+      // TWO independent layers refuse this, and the BEFORE trigger from
+      // amendment #1 gets there first because it also notices the run and
+      // destination disagree.
+      await expect(point()).rejects.toThrow(/review_projection_receipt_incoherent/);
+
+      // The composite FK is proven separately, with only the coherence trigger
+      // stood down, so "the trigger caught it" never hides a missing FK.
+      await withCoherenceTriggerDisabled(async () => {
+        await expect(point()).rejects.toThrow(/source_property_reviews_current_receipt_fk/);
+      });
     });
 
     it("32. review_status accepts only active/revoked", async () => {
@@ -1337,6 +1449,290 @@ d("A04.6 human review revocation (0033)", () => {
 
       expect(commits).toBe(1);
       expect((await artefactCounts(a.identityId)).revocations).toBe(0);
+      expect((await reviewRow(a.identityId))!.review_status).toBe("active");
+    });
+  });
+
+  // =====================================================================
+  // AMENDMENT #1 — PROJECTION ↔ RECEIPT COHERENCE
+  //
+  // `current_receipt_id` is supposed to name the receipt this projection IS.
+  // 0033's composite FK only proves the receipt belongs to the same IDENTITY,
+  // and an identity legitimately accumulates one receipt per reviewed
+  // observation. So "same identity" permitted a projection advanced onto run B
+  // to be pointed back at receipt A — schema-valid, and an authorization A05
+  // could have consumed while the current human record named something else.
+  // =====================================================================
+  describe("the projection must BE the receipt it names", () => {
+    it("47. an A→B identity's pointer cannot be moved back to the older receipt", async () => {
+      const ab = await advancedTwiceProperty();
+
+      // The state the fix must forbid. Everything else is left alone: both
+      // receipts, both runs, the destination, the decision, the finding.
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+          [ab.identityId, ab.receiptA],
+        ),
+      ).rejects.toThrow(/review_projection_receipt_incoherent/);
+
+      // And the pre-fix escape hatch is proven closed for the right reason:
+      // receipt A really does belong to this identity, so the composite FK
+      // alone would have accepted the pointer.
+      const [owner] = await adminQuery<{ n: string }>(
+        `select count(*)::text n from public.source_property_review_receipts
+          where id = $1 and source_property_identity_id = $2`,
+        [ab.receiptA, ab.identityId],
+      );
+      expect(Number(owner!.n)).toBe(1);
+
+      const row = await reviewRow(ab.identityId);
+      expect(row!.current_receipt_id).toBe(ab.receiptB);
+      expect(row!.review_status).toBe("active");
+    });
+
+    it("48. the A→B identity is a real 11/11 PASS before and after the attempt", async () => {
+      const ab = await advancedTwiceProperty();
+      const before = await preview(ab.sourcePropertyId);
+      expect(before.overall).toBe("PASS");
+      expect(before.conditions.every((c) => c.status === "PASS")).toBe(true);
+
+      await adminQuery(
+        "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+        [ab.identityId, ab.receiptA],
+      ).catch(() => undefined);
+
+      const after = await preview(ab.sourcePropertyId);
+      expect(after.overall).toBe("PASS");
+      expect(after.fingerprint).toBe(before.fingerprint);
+    });
+
+    it("49. moving decided_in_run_id alone breaks coherence and is refused", async () => {
+      const ab = await advancedTwiceProperty();
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set decided_in_run_id = $2 where source_property_identity_id = $1",
+          [ab.identityId, ab.runA],
+        ),
+      ).rejects.toThrow(/review_projection_receipt_incoherent/);
+    });
+
+    it("50. moving destination_id alone breaks coherence and is refused", async () => {
+      const a = await approvedProperty();
+      const other = await destination("dubai");
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set destination_id = $2 where source_property_identity_id = $1",
+          [a.identityId, other],
+        ),
+      ).rejects.toThrow(/review_projection_receipt_incoherent/);
+    });
+
+    it("51. the trigger fires on INSERT, not only on UPDATE", async () => {
+      const a = await approvedProperty();
+      const fresh = await readyProperty();
+      // A hand-written projection for a different identity's receipt is already
+      // stopped by the composite FK; this one is same-identity-shaped but names
+      // a run and destination the receipt does not carry.
+      await expect(
+        adminQuery(
+          `insert into public.source_property_reviews
+             (source_property_identity_id, source, source_environment, decision, destination_id,
+              reviewer_label, decided_in_run_id, review_status, current_receipt_id)
+           values ($1,$2,'evaluation','approve_create',$3,'hand-written',$4,'active',$5)`,
+          [a.identityId, SOURCE, a.destinationId, fresh.runId, a.receiptId],
+        ),
+      ).rejects.toThrow(/source_property_reviews|review_projection_receipt_incoherent/);
+    });
+
+    it("52. a REVOKED projection keeps pointing at the receipt that was withdrawn", async () => {
+      const a = await approvedProperty();
+      await applyRevocation([await revocationFor(a)], { apply: true });
+      const row = await reviewRow(a.identityId);
+      // Status is deliberately NOT part of the coherence predicate: the whole
+      // point of the record is that it still names the approval that was pulled.
+      expect(row!.review_status).toBe("revoked");
+      expect(row!.current_receipt_id).toBe(a.receiptId);
+    });
+
+    it("53. a legacy NULL pointer is allowed, and may NOT borrow an existing receipt", async () => {
+      const a = await approvedProperty();
+      // NULL is honest legacy state, so the trigger permits it...
+      await adminQuery(
+        "update public.source_property_reviews set current_receipt_id = null where source_property_identity_id = $1",
+        [a.identityId],
+      );
+      expect((await reviewRow(a.identityId))!.current_receipt_id).toBeNull();
+      expect((await artefactCounts(a.identityId)).receipts).toBe(1);
+
+      // ...and D062 refuses to treat "a receipt exists" as authorization.
+      const p = await preview(a.sourcePropertyId);
+      expect(reasonOf(p, 1)).toBe("human_review_projection_receipt_missing");
+      expect(reasonOf(p, 2)).toBe("human_review_projection_receipt_missing");
+      expect(statusOf(p, 5)).not.toBe("PASS");
+      expect(p.overall).not.toBe("PASS");
+    });
+  });
+
+  // =====================================================================
+  describe("the operational path defends itself too", () => {
+    it("54. the pack excludes an incoherent projection and REPORTS it", async () => {
+      const ab = await advancedTwiceProperty();
+      await withCoherenceTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+          [ab.identityId, ab.receiptA],
+        );
+      });
+
+      const c = await client();
+      try {
+        const pack = await buildRevocationPack(c, {
+          source: SOURCE,
+          environment: "evaluation",
+          identityId: ab.identityId,
+        });
+        expect(pack.items).toEqual([]);
+        expect(pack.preparedFrom.activeApprovals).toBe(1);
+        expect(pack.preparedFrom.incoherentProjections).toBe(1);
+        expect(pack.preparedFrom.incoherentIdentityIds).toEqual([ab.identityId]);
+        // Not counted as "no receipt to pin" — it HAS a pointer; the pointer is
+        // the problem, and the two diagnoses must not be conflated.
+        expect(pack.preparedFrom.withoutReceipt).toBe(0);
+      } finally {
+        await c.end();
+      }
+    });
+
+    it("55. revocation apply refuses an incoherent projection before any write", async () => {
+      const ab = await advancedTwiceProperty();
+      // The manifest a human would have been handed BEFORE the pointer moved:
+      // correctly pinned to receipt B, the approval that was current.
+      const item = await revocationForReceipt(ab, ab.receiptB);
+
+      await withCoherenceTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+          [ab.identityId, ab.receiptA],
+        );
+      });
+
+      const report = await applyRevocation([item], { apply: true });
+      const o = report.outcomes[0] as { state: string; refusal: string };
+      expect(o.state).toBe("refused");
+      // `receipt_mismatch` fires first here — the manifest pinned B and the
+      // projection now says A — and that is correct: either way NOTHING is
+      // written, and the withdrawal is never aimed at an approval the current
+      // review does not claim.
+      expect(["receipt_mismatch", "review_projection_receipt_mismatch"]).toContain(o.refusal);
+
+      const counts = await artefactCounts(ab.identityId);
+      expect(counts.revocations).toBe(0);
+      expect(counts.receipts).toBe(2);
+      expect(counts.findings).toBe(1);
+      expect((await reviewRow(ab.identityId))!.review_status).toBe("active");
+      expect(await canonicalWriteCounts()).toEqual(await canonicalWriteCounts());
+    });
+
+    it("56. revocation apply refuses when the manifest matches the incoherent pointer too", async () => {
+      const ab = await advancedTwiceProperty();
+      await withCoherenceTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+          [ab.identityId, ab.receiptA],
+        );
+      });
+
+      // Now the manifest agrees with the corrupted pointer — every A04.6 pin
+      // matches. Only the projection/receipt coherence check can catch this, and
+      // it must, because revoking receipt A would record that the wrong approval
+      // was withdrawn while the projection still authorizes run B's decision.
+      const item = await revocationForReceipt(ab, ab.receiptA);
+      const report = await applyRevocation([item], { apply: true });
+      const o = report.outcomes[0] as { state: string; refusal: string };
+      expect(o.state).toBe("refused");
+      expect(o.refusal).toBe("review_projection_receipt_mismatch");
+
+      const counts = await artefactCounts(ab.identityId);
+      expect(counts.revocations).toBe(0);
+      expect(counts.receipts).toBe(2);
+      expect(counts.verifications).toBe(12);
+      expect(counts.findings).toBe(1);
+      expect((await reviewRow(ab.identityId))!.review_status).toBe("active");
+    });
+
+    it("57. D062 fails closed on the same corrupted state, independently", async () => {
+      const ab = await advancedTwiceProperty();
+      await withCoherenceTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+          [ab.identityId, ab.receiptA],
+        );
+      });
+
+      const p = await preview(ab.sourcePropertyId);
+      expect(reasonOf(p, 1)).toBe("human_review_projection_receipt_mismatch");
+      expect(reasonOf(p, 2)).toBe("human_review_projection_receipt_mismatch");
+      expect(statusOf(p, 5)).not.toBe("PASS");
+      expect(p.overall).not.toBe("PASS");
+    });
+  });
+
+  // =====================================================================
+  describe("the full withdrawal-and-return lifecycle", () => {
+    it("58. revoked A → fresh observation B → active PASS, with history intact", async () => {
+      const a = await approvedProperty();
+      expect((await preview(a.sourcePropertyId)).overall).toBe("PASS");
+
+      await applyRevocation([await revocationFor(a)], { apply: true });
+      const revoked = await preview(a.sourcePropertyId);
+      expect(reasonOf(revoked, 1)).toBe("human_review_revoked");
+      expect(revoked.overall).not.toBe("PASS");
+
+      const fresh = await advanceToNewObservation(a);
+      const p = await preview(a.sourcePropertyId);
+      const report = await applyReview(
+        [
+          await manifestFor(a, {
+            currentObservationId: fresh.observationId,
+            currentSourceRunId: fresh.runId,
+            sourcePayloadDigest: fresh.digest,
+            prereviewFingerprint: p.fingerprint,
+            humanNote: "Re-reviewed after the withdrawal, against the new observation.",
+          }),
+        ],
+        { apply: true },
+      );
+      expect(report.outcomes[0]!.state).toBe("applied");
+
+      const after = await preview(a.sourcePropertyId);
+      expect(after.conditions.every((c) => c.status === "PASS")).toBe(true);
+      expect(after.overall).toBe("PASS");
+
+      const row = await reviewRow(a.identityId);
+      const counts = await artefactCounts(a.identityId);
+      expect(row!.review_status).toBe("active");
+      expect(row!.current_receipt_id).not.toBe(a.receiptId);
+      expect(counts.receipts).toBe(2);
+      expect(counts.revocations).toBe(1);
+      expect(counts.reviews).toBe(1);
+      expect(counts.findings).toBe(1);
+
+      // Receipt A and its revocation are both untouched history.
+      expect(await receiptSnapshot(a.receiptId)).toBeTruthy();
+      const [rev] = await adminQuery<{ revoked_receipt_id: string }>(
+        "select revoked_receipt_id from public.source_property_review_revocations where source_property_identity_id = $1",
+        [a.identityId],
+      );
+      expect(rev!.revoked_receipt_id).toBe(a.receiptId);
+
+      // And the pointer cannot be walked back to the revoked approval.
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set current_receipt_id = $2 where source_property_identity_id = $1",
+          [a.identityId, a.receiptId],
+        ),
+      ).rejects.toThrow(/review_projection_receipt_incoherent/);
       expect((await reviewRow(a.identityId))!.review_status).toBe("active");
     });
   });

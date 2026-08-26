@@ -295,6 +295,31 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       }
     : { humanReviewReceipt: null, currentObservationId: current };
 
+  // A04.6 AMENDMENT #1: DOES THE CURRENT PROJECTION ACTUALLY CLAIM THIS RECEIPT?
+  //
+  // The receipt above is chosen by the LOADER, which prefers the receipt about
+  // the identity's current observation. `currentReceiptId` is chosen by the
+  // human review projection, which says which approval is current. Those are two
+  // different questions, and D062 must not pass while they disagree.
+  //
+  // An identity legitimately holds several receipts, so "a receipt exists and
+  // looks current" is not authorization. Authorization is: THIS projection names
+  // THIS receipt. Without that, a projection advanced onto run B could be pointed
+  // back at receipt A while the evaluator happily read B, and A05 would consume
+  // an authorization the current human record does not claim.
+  //
+  // 0033's trigger makes the incoherent row unrepresentable. This check is the
+  // independent second layer: D062 is the publication gate and must fail closed
+  // on its own evidence, without assuming any constraint upstream held.
+  const projectionReceiptId = input.review?.currentReceiptId ?? null;
+  const projectionClaimsNoReceipt = receipt !== null && projectionReceiptId === null;
+  const projectionClaimsOtherReceipt =
+    receipt !== null && projectionReceiptId !== null && projectionReceiptId !== receipt.receiptId;
+  const projectionPointerEvidence: EvidenceRef = {
+    projectionCurrentReceiptId: projectionReceiptId,
+    evaluatedReceiptId: receipt?.receiptId ?? null,
+  };
+
   let c1: ConditionResult;
   if (!input.review || input.review.decision === "defer")
     c1 = result(
@@ -358,37 +383,67 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           "The review has no durable A04.5 receipt, so what the human checked cannot be reconstructed.",
           { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
         )
-      : receipt.decision !== "approve_create"
-        ? result(
+      : projectionClaimsNoReceipt
+        ? // A04.6 amendment #1: a receipt exists for this identity, but the
+          // current projection does not name it. "Some receipt exists" is not
+          // authorization — the projection must say WHICH approval is current,
+          // and a legacy row that never named one may not borrow one.
+          result(
             1,
             "UNRESOLVED",
-            "human_review_receipt_decision_mismatch",
-            "The durable receipt records a different decision from the current review row.",
-            { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+            "human_review_projection_receipt_missing",
+            "The current review projection names no receipt, so no specific human approval authorizes this identity.",
+            {
+              ...reviewEvidence,
+              ...entityEvidence,
+              ...receiptEvidence,
+              ...projectionPointerEvidence,
+            },
           )
-        : !receiptCurrent
+        : projectionClaimsOtherReceipt
           ? result(
               1,
               "UNRESOLVED",
-              "human_review_receipt_not_current",
-              "The receipt is bound to an observation that is no longer current; the decision was about evidence that has since been replaced.",
-              { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+              "human_review_projection_receipt_mismatch",
+              "The current review projection names a different receipt from the one this evidence supports; authorization is incoherent and cannot be relied on.",
+              {
+                ...reviewEvidence,
+                ...entityEvidence,
+                ...receiptEvidence,
+                ...projectionPointerEvidence,
+              },
             )
-          : receipt.newPropertyFindingId !== newCandidates[0]!.id
+          : receipt.decision !== "approve_create"
             ? result(
                 1,
                 "UNRESOLVED",
-                "human_review_receipt_finding_mismatch",
-                "The receipt cites a different distinct-property finding from the accepted one.",
+                "human_review_receipt_decision_mismatch",
+                "The durable receipt records a different decision from the current review row.",
                 { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
               )
-            : result(
-                1,
-                "PASS",
-                "reviewed_distinct_property",
-                "Human approve_create is supported by an explicit accepted distinct-property finding and a current durable receipt.",
-                { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
-              );
+            : !receiptCurrent
+              ? result(
+                  1,
+                  "UNRESOLVED",
+                  "human_review_receipt_not_current",
+                  "The receipt is bound to an observation that is no longer current; the decision was about evidence that has since been replaced.",
+                  { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+                )
+              : receipt.newPropertyFindingId !== newCandidates[0]!.id
+                ? result(
+                    1,
+                    "UNRESOLVED",
+                    "human_review_receipt_finding_mismatch",
+                    "The receipt cites a different distinct-property finding from the accepted one.",
+                    { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+                  )
+                : result(
+                    1,
+                    "PASS",
+                    "reviewed_distinct_property",
+                    "Human approve_create is supported by an explicit accepted distinct-property finding and a current durable receipt.",
+                    { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+                  );
   else if (
     input.review.decision === "approve_match" &&
     input.review.targetHotelId &&
@@ -468,35 +523,54 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
                 "The reviewed destination has no durable A04.5 receipt behind it.",
                 { ...destinationEvidence, ...receiptEvidence },
               )
-            : input.review.decision === "approve_create" && !receiptCurrent
-              ? result(
+            : input.review.decision === "approve_create" && projectionClaimsNoReceipt
+              ? // A04.6 amendment #1: the same authorization gate as condition 1.
+                // The destination is a human decision, so it is authorized by a
+                // NAMED approval or by nothing at all.
+                result(
                   2,
                   "UNRESOLVED",
-                  "human_review_receipt_not_current",
-                  "The destination decision is bound to an observation that is no longer current.",
-                  { ...destinationEvidence, ...receiptEvidence },
+                  "human_review_projection_receipt_missing",
+                  "The current review projection names no receipt, so its destination judgement is not backed by a specific human approval.",
+                  { ...destinationEvidence, ...receiptEvidence, ...projectionPointerEvidence },
                 )
-              : input.review.decision === "approve_create" &&
-                  receipt!.destinationId !== input.review.destinationId
+              : input.review.decision === "approve_create" && projectionClaimsOtherReceipt
                 ? result(
                     2,
                     "UNRESOLVED",
-                    "human_review_receipt_destination_mismatch",
-                    "The receipt records a different canonical destination from the current review row.",
-                    { ...destinationEvidence, ...receiptEvidence },
+                    "human_review_projection_receipt_mismatch",
+                    "The current review projection names a different receipt from the one this destination evidence supports; authorization is incoherent.",
+                    { ...destinationEvidence, ...receiptEvidence, ...projectionPointerEvidence },
                   )
-                : result(
-                    2,
-                    "PASS",
-                    "reviewed_destination_supported",
-                    "The reviewed destination resolves to the canonical destination catalogue.",
-                    {
-                      ...destinationEvidence,
-                      destinationId: input.destination.id,
-                      destinationSlug: input.destination.slug,
-                      ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
-                    },
-                  )
+                : input.review.decision === "approve_create" && !receiptCurrent
+                  ? result(
+                      2,
+                      "UNRESOLVED",
+                      "human_review_receipt_not_current",
+                      "The destination decision is bound to an observation that is no longer current.",
+                      { ...destinationEvidence, ...receiptEvidence },
+                    )
+                  : input.review.decision === "approve_create" &&
+                      receipt!.destinationId !== input.review.destinationId
+                    ? result(
+                        2,
+                        "UNRESOLVED",
+                        "human_review_receipt_destination_mismatch",
+                        "The receipt records a different canonical destination from the current review row.",
+                        { ...destinationEvidence, ...receiptEvidence },
+                      )
+                    : result(
+                        2,
+                        "PASS",
+                        "reviewed_destination_supported",
+                        "The reviewed destination resolves to the canonical destination catalogue.",
+                        {
+                          ...destinationEvidence,
+                          destinationId: input.destination.id,
+                          destinationSlug: input.destination.slug,
+                          ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
+                        },
+                      )
         : result(
             2,
             "UNRESOLVED",

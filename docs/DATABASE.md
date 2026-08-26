@@ -812,13 +812,29 @@ represents, composite-FK'd to the same identity via the additive
 is honest for legacy or hand-made rows that have no receipt at all; those rows
 are excluded from the revocation pack rather than bound to a guess.
 
-The backfill joins `source_property_reviews.decided_in_run_id` to
-`source_property_review_receipts.evidence_source_run_id` — real provenance
-columns both sides already carried — and **not** `order by reviewed_at desc limit
-1`, which would silently bind the wrong receipt if two were written in one
-transaction or a clock moved. A `do $$ … $$` block then fails the migration with
-`data_exception` if any projection could bind to more than one receipt, rather
-than picking one. That guard is unreachable on a schema-valid database — two
+The FK proves same **identity**, which is not enough: an identity legitimately
+holds one receipt per reviewed observation, so a projection advanced onto run B
+could be pointed back at receipt A and still satisfy it.
+`enforce_review_projection_receipt_coherence()` closes that, firing before every
+INSERT and every UPDATE on `source_property_reviews` — not only when the pointer
+column changes, because moving `decision`, `destination_id` or `decided_in_run_id`
+breaks the invariant just as effectively. For a non-NULL pointer it requires both
+sides to be `approve_create`, the destinations to agree, and
+`receipt.evidence_source_run_id` to equal `review.decided_in_run_id` — the
+load-bearing distinction between receipt A and receipt B for one identity.
+Comparisons use `is distinct from`; `reviewed_at` is not part of the predicate;
+and `review_status` deliberately is not either, because a `revoked` projection
+must keep pointing at the receipt that was withdrawn.
+
+The backfill binds on the **same full predicate the trigger enforces** — identity,
+both decisions, destination and `decided_in_run_id = evidence_source_run_id` —
+and **not** `order by reviewed_at desc limit 1`, which would silently bind the
+wrong receipt if two were written in one transaction or a clock moved. Nor the
+run alone: a receipt agreeing on the run but recording a different destination
+does not represent the projection, so the pointer stays NULL. The `do $$ … $$`
+ambiguity guard runs **before** the UPDATE, so a binding nobody can prove is never
+computed rather than merely rolled back, and it fails the migration with
+`data_exception` rather than breaking a tie on `reviewed_at`. That guard is unreachable on a schema-valid database — two
 receipts for one identity sharing a run would need two observations of that
 identity inside one run, which `source_property_observations_unique_per_run`
 refuses — and it exists anyway, because "impossible today" is not "safe to guess

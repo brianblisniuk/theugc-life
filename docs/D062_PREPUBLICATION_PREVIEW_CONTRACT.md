@@ -117,8 +117,25 @@ approval — it is not an approval at all.
 Both hold as UNRESOLVED rather than FAIL: withdrawing an approval is not a
 finding that the property is ineligible, and condition 5 stops passing because it
 derives from 1 and 2. The verdict stops being PASS on the next evaluation, with
-no backfill or recompute step in between. See
-`A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`.
+no backfill or recompute step in between.
+
+### The projection must claim the receipt being evaluated
+
+A04's loader chooses the receipt about the identity's **current observation**.
+`source_property_reviews.current_receipt_id` says which approval the current
+human projection **is**. An identity legitimately holds several receipts, so
+those are two different questions, and an active `approve_create` may not reach a
+receipt-supported PASS while they disagree:
+
+| condition | hold reason |
+|---|---|
+| 1 / 2 | `human_review_projection_receipt_missing` — the projection names no receipt |
+| 1 / 2 | `human_review_projection_receipt_mismatch` — the projection names a different receipt from the one evaluated |
+
+"Some receipt exists" is not authorization; the projection must identify **which**
+approval authorizes this identity. Revocation keeps precedence — a revoked
+projection still reports `human_review_revoked`, so a pointer diagnostic can never
+obscure the brake. See `A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`.
 
 A candidate belongs to an identity when it matches **either** endpoint —
 `source_property_identity_id` or `candidate_source_property_identity_id`. A pair

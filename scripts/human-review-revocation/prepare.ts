@@ -62,9 +62,23 @@ async function main(): Promise<void> {
       `\n[review:revoke:prepare] ${pack.preparedFrom.activeApprovals} active approve_create review(s)\n` +
         `  revocable (receipt-pinned)   ${pack.preparedFrom.revocable}\n` +
         `  skipped (no receipt to pin)  ${pack.preparedFrom.withoutReceipt}\n` +
+        `  skipped (INCOHERENT pointer) ${pack.preparedFrom.incoherentProjections}\n` +
         (args.out ? `  written to ${args.out}\n` : "") +
         "  reviewerLabel and revocationNote are EMPTY. This command withdraws nothing.\n",
     );
+    // Loud, not a footnote. An incoherent projection means the current review
+    // names a receipt that does not represent it, so nobody can say which
+    // approval is actually authorizing D062 for that identity. 0033's trigger
+    // should make this impossible; if it is ever non-zero, the invariant was
+    // bypassed and an operator needs to know before they revoke anything.
+    if (pack.preparedFrom.incoherentProjections > 0)
+      console.warn(
+        `  !! ${pack.preparedFrom.incoherentProjections} active approval(s) have a current_receipt_id that does not\n` +
+          "     semantically represent the projection, and were EXCLUDED rather than aimed at the\n" +
+          "     wrong receipt. Investigate before revoking:\n" +
+          pack.preparedFrom.incoherentIdentityIds.map((id) => `       ${id}`).join("\n") +
+          "\n",
+      );
   } finally {
     await client.end();
   }
