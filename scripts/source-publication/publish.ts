@@ -51,6 +51,26 @@ import { D062_CONDITION_NUMBERS, allElevenPass } from "./pack";
  */
 export const PUBLICATION_MATCH_METHOD = "human_review:d062_approve_create" as const;
 
+/**
+ * The canonical trim A05 applies to provider text before publishing it.
+ *
+ * `public.canonical_published_text()` in 0034 is the SAME function in SQL, and
+ * the database compares the published `hotels.name` and `hotels.address` against
+ * it — so the two must agree character for character. Both trim exactly the
+ * ASCII whitespace set (space, tab, newline, carriage return, form feed,
+ * vertical tab) and collapse an empty result to NULL, because a canonical field
+ * that is present but blank is not a fact.
+ *
+ * Deliberately NOT `String.prototype.trim()`: it also strips Unicode spaces that
+ * `btrim` does not, so a name ending in a non-breaking space would produce a
+ * value the database then refused — failing closed on a legitimate publication.
+ */
+export function canonicalPublishedText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, "");
+  return trimmed === "" ? null : trimmed;
+}
+
 /** One publication decision: the prepared pins, plus the human authorization. */
 export interface PublicationItem {
   sourcePropertyIdentityId: string;
@@ -658,7 +678,7 @@ async function publishOne(
       "publication_name_not_human_supported",
       `The human review records name = \`${nameVerdict ?? "missing"}\`. A canonical hotel requires a name, the only name available is the provider's, and A05 has no corrected-name field — so a name the reviewer did not affirm is not publishable. Absence of evidence is not agreement.`,
     );
-  const name = current.sourceName?.trim();
+  const name = canonicalPublishedText(current.sourceName);
   if (!name)
     return refuse(
       "publication_name_missing",
@@ -670,7 +690,8 @@ async function publishOne(
   // while its address contradicts; publishing that address anyway would silently
   // overrule the reviewer.
   const addressVerdict = verdictOf("address");
-  const address = addressVerdict === "supports" ? (current.sourceAddress?.trim() ?? null) : null;
+  const address =
+    addressVerdict === "supports" ? canonicalPublishedText(current.sourceAddress) : null;
 
   const starRating = head.star_value === null ? null : Number(head.star_value);
   if (head.star_outcome !== "exact_four" && head.star_outcome !== "exact_five")

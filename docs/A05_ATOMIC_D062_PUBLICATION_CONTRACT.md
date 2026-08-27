@@ -172,21 +172,73 @@ claim to have created the same canonical row.
 ### The receipt's claim is checked, not assumed
 
 The FKs prove **which** rows are cited. `enforce_publication_receipt_evidence()`
-(BEFORE INSERT) proves **what they say**, so the canonical field policy in §6 is a
-property of the database and not only of one writer:
+(BEFORE INSERT) proves **what they say**, and **whether they still authorize
+anything**, so §6's canonical field policy is a property of the database and not
+only of one writer.
 
-- the cited review receipt is an `approve_create`;
-- it reviewed the observation being published;
+*(Amendment #1.)* The first three bullets below were the missing half. The
+original trigger read the immutable review receipt and never asked whether that
+receipt is still the authorization in force — which is not the same question, and
+is exactly the question A04.6 exists to answer. So `approve A → revoke A` left A
+looking, to this trigger, precisely as it had before, and a direct INSERT could
+publish an approval a human had explicitly taken back.
+
+**The approval must be current, active and unwithdrawn:**
+
+- a current `source_property_reviews` projection exists for the identity, with
+  `decision = 'approve_create'`;
+- its `current_receipt_id` **is** the cited review receipt — a historical receipt
+  of the same identity is not the authorization in force, which is what makes
+  `approve A → fresh observation → approve B` leave A unusable forever without
+  deleting or editing it;
+- **no immutable revocation** exists for that receipt, and `review_status` is
+  `active`. The two are read as an OR, exactly as D062 and the writer read them:
+  `review_status` sits on a table admin/editor hold UPDATE on, and a revocation
+  is an append-only fact, so either alone withdraws authorization.
+
+**The evidence must be current:**
+
+- the cited receipt is an `approve_create` that reviewed the observation being
+  published, and the projection and the receipt name the same destination;
+- that observation is **still** the identity's current observation — the
+  observation of `last_seen_run_id`, never a timestamp and never UUID order;
 - the finding is the accepted, human-owned `new_property` finding
   (`human_review:distinct_property`);
+- each cited revision is that identity's **current head** revision.
+
+**The canonical row must say what the evidence says:**
+
 - the hotel's destination is the reviewed destination;
-- each cited revision is that identity's **current head** revision;
-- the hotel's star equals the star revision's resolved value, and the outcome is
-  `exact_four` or `exact_five`;
-- the hotel's coordinates equal the location revision's resolved coordinates, and
-  the outcome is `resolved`;
+- its star equals the star revision's resolved value, with outcome `exact_four`
+  or `exact_five`;
+- its coordinates equal the location revision's resolved coordinates, with
+  outcome `resolved`;
 - the scope revision is `physical_hospitality`;
-- the hotel's `active_status` is `unknown`.
+- its **name** is the affirmed provider name, and the human's `name` verification
+  says `supports`;
+- its **address** is the affirmed provider address when the human's `address`
+  verification says `supports`, and **NULL** when it says `unavailable` or
+  `contradicts`;
+- its **country_code** is exactly the canonical destination's, NULL included;
+- `active_status` is `unknown`;
+- `editorial_verification_status` is `unverified` with a NULL
+  `editorial_verified_at`, and `website_url`, `instagram_url`,
+  `description_short`, `hotel_type` and `brand_id` are all NULL — the fields A05
+  deliberately does not own.
+
+### One definition of the published text
+
+`public.canonical_published_text()` (0034) and `canonicalPublishedText()`
+(`scripts/source-publication/publish.ts`) are the same function in two languages,
+and the database compares the published name and address against the SQL one. Both
+trim exactly the ASCII whitespace set — space, tab, newline, carriage return, form
+feed, vertical tab — and collapse an empty result to NULL, because a canonical
+field that is present but blank is not a fact.
+
+Neither uses its language's default: `btrim(value)` trims spaces only, and
+JavaScript's `String.prototype.trim()` also strips Unicode spaces `btrim` does
+not. Either default would make the two disagree on some real provider string and
+refuse a legitimate publication.
 
 ### Append-only, in two layers
 
@@ -297,24 +349,104 @@ published, look at the new evidence.
 ### The deferred invariant, enforced from both tables
 
 0027 already refuses `resolved_eligible` without an ACTIVE canonical link to the
-named hotel. 0034 closes the other direction:
+named hotel. That is necessary and — *amendment #1* — was not sufficient, because
+it says nothing about **who authorized the publication**. This sequence committed:
 
-> a publication receipt exists **IFF** its identity is `resolved_eligible`
-> against that same hotel, and carries no `resolution_reason`.
+```sql
+insert hotel  →  insert ACTIVE link  →  set resolved_eligible + promoted_hotel_id
+                 -- and no publication receipt at all
+```
+
+0027 accepted it because every one of its own requirements was met. 0034's
+original trigger accepted it because it returned early when no receipt existed.
+So a canonical hotel could exist through the source-publication lifecycle with no
+immutable human authorization behind it — which is the entire thing A05 was
+written to require. The "IFF" was one-way.
+
+The invariant is **two-sided**, and the second direction is the one that was
+missing:
+
+| | |
+|---|---|
+| **A** | `receipt(identity, hotel)` → the identity is `resolved_eligible`, `promoted_hotel_id = receipt.hotel_id`, and `resolution_reason IS NULL` |
+| **B** | the identity is `resolved_eligible` → a publication receipt exists for it, with `receipt.hotel_id = promoted_hotel_id` |
+
+`unique (source_property_identity_id)` on the receipt table is what makes "a
+receipt" in B mean **exactly one** receipt.
 
 `DEFERRABLE INITIALLY DEFERRED`, because the legitimate write order leaves the
 receipt existing while the identity is still `unresolved` for a few statements.
 An immediate check would make the correct application path impossible; what must
-be coherent is the state that survives COMMIT.
+be coherent is the state that survives COMMIT. That is also why the function
+re-reads **both rows fresh** rather than trusting the row image queued when it
+fired: by commit time either side may have moved again, and a transaction that
+promoted an identity and then rolled the state back must not be judged on the
+intermediate value.
 
-Registered on **both** tables, for the reason A04.6's amendment #3 established: an
-invariant enforced from one side can be broken from the other. The identity-side
-trigger carries a WHEN clause so it fires only when `resolution_state`,
-`promoted_hotel_id` or `resolution_reason` actually move — ordinary ingestion,
-which touches `last_seen_run_id` and `observation_count`, never enqueues it.
+Registered on **both** write origins, for the reason A04.6's amendment #3
+established: an invariant enforced from one side can be broken from the other,
+and here the unguarded side was the one that mattered. The identity-side triggers
+carry WHEN clauses so they fire only when `resolution_state`,
+`promoted_hotel_id` or `resolution_reason` actually move (or when a row is
+inserted already terminal) — ordinary ingestion, which touches `last_seen_run_id`
+and `observation_count` and inserts every identity as `unresolved`, never
+enqueues them.
 
 `resolution_reason` is D061 §9 EXCLUSION vocabulary. A published property is the
 opposite of an exclusion, so holding both at once is refused.
+
+### The migration refuses rather than inventing history
+
+Every publication receipt is created after 0034, so any source identity ALREADY
+carrying `resolved_eligible` when 0034 runs would be a publication nobody can
+account for — no authorizing human, no stated reason, no cited evidence. The only
+two ways forward would be to invent receipts for those rows or to install an
+invariant the migration knows to be false on the very database it is being
+installed on.
+
+0034 does neither. A guard at the top raises `data_exception` and names the
+offending identities, **before anything is created** — 0033's fail-before-choice
+rule, applied to a migration rather than a backfill. On every current database it
+counts zero; it exists because "provably empty today" and "safe to guess
+tomorrow" are not the same statement.
+
+---
+
+## 7b. What the DATABASE proves, and what the WRITER proves
+
+*(Amendment #1.)* Stated exactly, because an overstated guarantee is worse than a
+narrow one: a reader who believes the database checks everything stops checking
+the writer.
+
+**PostgreSQL does NOT recompute D062.** The eleven-condition verdict and the
+semantic fingerprint are composed across a live entity-resolution discovery
+sweep, lifecycle evaluation against an explicit as-of date, and the candidate
+matrix — none of which is expressible in a trigger, and none of which 0034
+attempts. Those remain the writer's responsibility, recomputed inside the
+publication transaction under SERIALIZABLE.
+
+| fact | proved by |
+|---|---|
+| production `source_environment` | **database** (0027 CHECKs + 0034 CHECK, all composite-FK'd to the identity) + writer |
+| a current, ACTIVE `approve_create` projection naming the cited receipt | **database** + writer |
+| no immutable revocation for that receipt; `review_status = 'active'` | **database** + writer |
+| the cited receipt reviewed the observation being published | **database** + writer |
+| that observation is still the identity's CURRENT observation | **database** + writer |
+| the accepted human-owned `new_property` finding | **database** + writer |
+| star / location / scope revisions are the identity's CURRENT heads | **database** + writer |
+| the canonical field policy (§6) in full | **database** + writer |
+| an ACTIVE canonical link for this identity to this hotel | **database** (0027 FK + 0034 FK) |
+| receipt ⇔ terminal-state coherence, both directions | **database** (deferred, both tables) |
+| append-only receipt; RLS/ACL posture | **database** (grant + trigger) |
+| **all eleven D062 conditions PASS** | **writer only** |
+| **the prepared fingerprint still matches** | **writer only** |
+| **the observation / run / payload-digest pins** | **writer only** |
+| **explicit human publication authorization present and non-empty** | writer (shape) + **database** (NOT NULL, non-empty CHECKs) |
+| **SERIALIZABLE isolation and the no-retry rule** | **writer only** |
+
+The database cannot make a publication *correct*. It makes a specific set of
+wrong publications **unrepresentable**, and that set is the table above — nothing
+more.
 
 ---
 

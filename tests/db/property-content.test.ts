@@ -23,6 +23,7 @@
  *
  * All fixtures are synthetic. No real provider data appears here.
  */
+import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "./harness";
@@ -185,17 +186,46 @@ async function link(
 }
 
 /**
- * The whole promotion sequence, as the future apply step will run it: publish,
- * link, then mark eligible. Anything less does not satisfy §8.1.
+ * Link and promote an identity INSIDE one transaction, hand the open transaction
+ * to `work`, and always roll back.
+ *
+ * `resolved_eligible` used to be commit-able on 0027's rules alone. A05's
+ * migration 0034 added the other half of that invariant — a promoted identity
+ * must also carry an immutable publication receipt naming the human who
+ * authorized it — and that check is a DEFERRED constraint trigger, so it speaks
+ * at COMMIT, not per statement. Autocommit statements therefore cannot express
+ * "0027 accepts this"; a transaction can, and the tests below say explicitly
+ * which layer is answering.
  */
-async function promote(identityId: string, hotelId: string): Promise<void> {
-  await link(hotelId, identityId);
-  await adminQuery(
-    `update public.source_property_identities
-       set resolution_state = 'resolved_eligible', promoted_hotel_id = $2
-     where id = $1`,
-    [identityId, hotelId],
-  );
+async function withPromoted(
+  identityId: string,
+  hotelId: string,
+  work: (q: Client["query"]) => Promise<void>,
+): Promise<void> {
+  const meta = await identityMeta(identityId);
+  const c = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+  await c.connect();
+  const q = c.query.bind(c) as Client["query"];
+  try {
+    await q("begin");
+    await q(
+      `insert into public.hotel_source_identities
+         (hotel_id, source_property_identity_id, source, source_environment,
+          source_property_id, match_method, link_status)
+       values ($1, $2, $3, $4, $5, 'synthetic_test', 'active')`,
+      [hotelId, identityId, meta.source, meta.env, meta.pid],
+    );
+    await q(
+      `update public.source_property_identities
+         set resolution_state = 'resolved_eligible', promoted_hotel_id = $2
+       where id = $1`,
+      [identityId, hotelId],
+    );
+    await work(q);
+  } finally {
+    await q("rollback").catch(() => undefined);
+    await c.end();
+  }
 }
 
 /** A match candidate. `source`/`source_environment` default to the identity's. */
@@ -931,33 +961,63 @@ d("property-content infrastructure (0027)", () => {
 
     it("ACCEPTS `resolved_eligible` for the identity that actually produced the hotel", async () => {
       // The valid relationship: publish, link, then mark eligible — the order
-      // the future apply step runs inside one transaction.
+      // A05's apply step runs inside one transaction.
       const identity = await makeProductionIdentity();
-      await promote(identity, HOTEL.bali);
+      await withPromoted(identity, HOTEL.bali, async (q) => {
+        const res = await q(
+          `select spi.resolution_state as state, spi.promoted_hotel_id as hotel
+           from public.source_property_identities spi
+           join public.hotel_source_identities hsi
+             on hsi.source_property_identity_id = spi.id and hsi.hotel_id = spi.promoted_hotel_id
+           where spi.id = $1 and hsi.link_status = 'active'`,
+          [identity],
+        );
+        const rows = res.rows as { state: string; hotel: string }[];
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.state).toBe("resolved_eligible");
+        expect(rows[0]!.hotel).toBe(HOTEL.bali);
+      });
+    });
 
-      const rows = await adminQuery<{ state: string; hotel: string }>(
-        `select spi.resolution_state as state, spi.promoted_hotel_id as hotel
-         from public.source_property_identities spi
-         join public.hotel_source_identities hsi
-           on hsi.source_property_identity_id = spi.id and hsi.hotel_id = spi.promoted_hotel_id
-         where spi.id = $1 and hsi.link_status = 'active'`,
-        [identity],
-      );
-      expect(rows).toHaveLength(1);
-      expect(rows[0]!.state).toBe("resolved_eligible");
-      expect(rows[0]!.hotel).toBe(HOTEL.bali);
+    it("...but 0034 refuses to COMMIT it without a publication receipt", async () => {
+      // The interaction, stated where both halves are visible. 0027 asks "does
+      // this identity's own ACTIVE link produce this hotel?" and the answer above
+      // is yes. A05 asks a further question 0027 never could — "which human
+      // authorized publishing it, against which evidence?" — and a promotion with
+      // no answer to that is refused at commit. Neither rule is weakened; the
+      // second is simply added.
+      const identity = await makeProductionIdentity();
+      let outcome = "";
+      await withPromoted(identity, HOTEL.bali, async (q) => {
+        try {
+          await q("set constraints all immediate");
+          outcome = "accepted";
+        } catch (error) {
+          outcome = (error as Error).message;
+        }
+      });
+      expect(outcome).toMatch(/NO publication receipt|nobody signed/);
     });
 
     it("refuses to demote the canonical link out from under a resolved identity", async () => {
+      // 0027's own trigger, and it fires IMMEDIATELY — before A05's deferred
+      // publication check ever gets a turn, which is why the transaction is still
+      // open when this refusal arrives.
       const identity = await makeProductionIdentity();
-      await promote(identity, HOTEL.ibiza);
-      await expect(
-        adminQuery(
-          `update public.hotel_source_identities set link_status = 'rejected'
-           where source_property_identity_id = $1`,
-          [identity],
-        ),
-      ).rejects.toThrow(/cannot leave `active`/i);
+      let message = "";
+      await withPromoted(identity, HOTEL.ibiza, async (q) => {
+        try {
+          await q(
+            `update public.hotel_source_identities set link_status = 'rejected'
+             where source_property_identity_id = $1`,
+            [identity],
+          );
+          message = "ACCEPTED";
+        } catch (error) {
+          message = (error as Error).message;
+        }
+      });
+      expect(message).toMatch(/cannot leave `active`/i);
     });
 
     it("refuses `duplicate_matched` with no auditable match target", async () => {

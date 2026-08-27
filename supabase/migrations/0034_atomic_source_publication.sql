@@ -39,6 +39,40 @@
 -- PASS identities — migrates with hotels still 0 and links still 0.
 
 -- ===========================================================================
+-- 0. FAIL BEFORE CHOICE — NO PRE-EXISTING PUBLICATION MAY BE ASSUMED
+-- ===========================================================================
+-- §5 below makes `resolved_eligible` require a publication receipt. Every
+-- receipt is created after this migration, so ANY source identity already
+-- carrying `resolved_eligible` would be a publication nobody can account for —
+-- no authorizing human, no stated reason, no cited evidence.
+--
+-- The only two ways to proceed would be to invent receipts for those rows or to
+-- leave the invariant false on the very database it was written for. Both are
+-- worse than refusing, so this raises BEFORE anything is created, following
+-- 0033's ambiguity guard: fail before choice, never choose and explain later.
+--
+-- On every current database this counts zero. It exists because "provably empty
+-- today" and "safe to guess tomorrow" are not the same statement.
+do $$
+declare
+  offenders text;
+  n integer;
+begin
+  select count(*), string_agg(format('%s/%s/%s (%s)', source, source_environment,
+                                     source_property_id, id), ', ' order by source_property_id)
+    into n, offenders
+    from public.source_property_identities
+   where resolution_state = 'resolved_eligible';
+
+  if n > 0 then
+    raise exception
+      '0034 refuses to migrate: % source identit% already `resolved_eligible` with no publication receipt to account for them — %. A publication receipt names the human who authorized an irreversible action and the evidence they authorized it against; this migration will not invent one, and will not install an invariant it knows to be false. Resolve these rows deliberately first.',
+      n, case when n = 1 then 'y is' else 'ies are' end, offenders
+      using errcode = 'data_exception';
+  end if;
+end $$;
+
+-- ===========================================================================
 -- 1. ADDITIVE UNIQUE TARGET FOR COMPOSITE PROVENANCE
 -- ===========================================================================
 -- Every other binding this receipt needs already has a target: 0028 made the
@@ -238,32 +272,128 @@ revoke all on function public.forbid_publication_receipt_mutation() from public;
 create trigger source_property_publication_receipts_append_only
   before update or delete on public.source_property_publication_receipts
   for each row execute function public.forbid_publication_receipt_mutation();
-
 -- ===========================================================================
 -- 4. THE CANONICAL ROW MUST BE SUPPORTED BY THE EVIDENCE THE RECEIPT CITES
 -- ===========================================================================
 -- Every composite FK above proves the cited evidence BELONGS to this identity.
--- None of them proves the published hotel says what that evidence says — a
--- writer could cite the real star revision and still publish 3 stars, cite the
--- real location revision and still publish the raw provider coordinates, or
--- publish into a destination the human never named.
+-- None of them proves that the evidence still AUTHORIZES anything, or that the
+-- published hotel says what that evidence says. A writer could cite a real
+-- review receipt a human has since withdrawn, cite a real star revision and
+-- still publish 3 stars, or publish a name the reviewer never affirmed.
 --
--- That is exactly the class of bug the A05 canonical field policy exists to
--- prevent, so the policy is enforced here as well as in the writer. The writer
--- is one program; this is a property of the database.
+-- The A05 writer refuses all of that. The writer is one program, reached through
+-- one CLI, and 0024's ACL contract deliberately gives admin/editor and
+-- `service_role` real write access to these tables — so "the writer checks it"
+-- is a statement about one code path, not about the database. Everything below
+-- is what the DATABASE proves, independently, at the moment a publication
+-- receipt is written.
+--
+-- What it deliberately does NOT prove: the full D062 semantic fingerprint. That
+-- is composed across a live entity-resolution discovery sweep and eleven
+-- conditions, and PostgreSQL does not recompute it here. The fingerprint pin and
+-- the eleven-condition verdict remain the writer's responsibility, recomputed
+-- inside the publication transaction. See the contract §7 boundary table.
+
+-- ---------------------------------------------------------------------------
+-- ONE definition of "the canonical text A05 publishes from provider evidence".
+-- ---------------------------------------------------------------------------
+-- The writer computes the published name and address in TypeScript; this
+-- function is what the database compares them against, so the two must agree
+-- character for character. It trims exactly the ASCII whitespace set the
+-- writer's `canonicalPublishedText()` trims — space, tab, newline, carriage
+-- return, form feed, vertical tab — and collapses an empty result to NULL,
+-- because a canonical field that is present but blank is not a fact.
+--
+-- Deliberately NOT `btrim(value)`: the bare form trims spaces only, so a name
+-- ending in a tab would compare unequal and refuse a legitimate publication.
+create or replace function public.canonical_published_text(value text)
+returns text
+language sql
+immutable
+as $$ select nullif(btrim(value, E' \t\n\r\f\x0B'), '') $$;
+
+comment on function public.canonical_published_text(text) is
+  'The canonical trim A05 applies to provider text before publishing it. Mirrored exactly by canonicalPublishedText() in scripts/source-publication/publish.ts.';
+
 create or replace function public.enforce_publication_receipt_evidence()
 returns trigger
 language plpgsql
 as $$
 declare
+  projection record;
   review record;
   finding record;
   star record;
   loc record;
   scope record;
   hotel record;
+  destination record;
+  observation record;
+  current_observation_id uuid;
+  revocation_id uuid;
+  name_verdict text;
+  address_verdict text;
+  expected_name text;
+  expected_address text;
   head_id uuid;
 begin
+  -- ---- A. THE APPROVAL MUST BE THE CURRENT, ACTIVE, UNWITHDRAWN ONE --------
+  --
+  -- Amendment #1 blocker B. The original trigger read the historical review
+  -- receipt and never asked whether that receipt is still the authorization in
+  -- force. It is not the same question: a receipt is immutable history, and
+  -- A04.6 exists precisely so a human can withdraw the authorization behind one
+  -- without touching it. So `approve_create receipt A -> revoke A` left A
+  -- looking, to this trigger, exactly as it had before — and a direct INSERT
+  -- could publish an approval a human had explicitly taken back.
+  select rv.id, rv.decision, rv.review_status, rv.current_receipt_id, rv.destination_id
+    into projection
+    from public.source_property_reviews rv
+   where rv.source_property_identity_id = new.source_property_identity_id;
+
+  if projection.id is null then
+    raise exception
+      'publication receipt for identity % has no current human review projection. A05 publishes a human decision; there is nothing here to publish.',
+      new.source_property_identity_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if projection.decision is distinct from 'approve_create' then
+    raise exception
+      'publication receipt for identity % has a current human decision of %. Only approve_create authorizes creating a canonical property; approve_match has no receipt model in A04.5 and is not implemented.',
+      new.source_property_identity_id, projection.decision
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- THE POINTER. `current_receipt_id` says WHICH approval the current human
+  -- record is. A historical receipt of the same identity is not it — which is
+  -- what makes `approve A -> fresh observation -> approve B` leave A unusable
+  -- for publication forever, without deleting or editing A.
+  if projection.current_receipt_id is distinct from new.human_review_receipt_id then
+    raise exception
+      'publication receipt for identity % cites review receipt %, but the current human projection represents %. A historical approval is not the authorization in force.',
+      new.source_property_identity_id, new.human_review_receipt_id,
+      coalesce(projection.current_receipt_id::text, 'no receipt')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- THE IMMUTABLE EVENT DOMINATES THE MUTABLE COLUMN, exactly as D062 and the
+  -- A05 writer read it: `review_status` sits on a table admin/editor hold UPDATE
+  -- on, and a revocation is an append-only fact. Either one alone withdraws
+  -- authorization.
+  select rvk.id into revocation_id
+    from public.source_property_review_revocations rvk
+   where rvk.revoked_receipt_id = projection.current_receipt_id;
+
+  if revocation_id is not null or projection.review_status is distinct from 'active' then
+    raise exception
+      'publication receipt for identity % cites an approval that is not authorized: review_status=%, revocation=%. A withdrawn approval is not a weaker approval; it is not an approval. Authorization returns only through a fresh human review of fresh evidence.',
+      new.source_property_identity_id, projection.review_status,
+      coalesce(revocation_id::text, 'none')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- ---- B. THE RECEIPT ITSELF ----------------------------------------------
   select r.decision, r.destination_id, r.evidence_observation_id
     into review
     from public.source_property_review_receipts r
@@ -279,14 +409,40 @@ begin
       using errcode = 'integrity_constraint_violation';
   end if;
 
+  if projection.destination_id is distinct from review.destination_id then
+    raise exception
+      'publication receipt for identity %: the current review projection names destination % while the cited receipt names %. The two current-decision surfaces must agree before either authorizes publication.',
+      new.source_property_identity_id, coalesce(projection.destination_id::text, 'null'),
+      coalesce(review.destination_id::text, 'null')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
   -- The human reviewed THIS observation. A receipt about superseded evidence is
-  -- not a decision about what is being published; D062 already holds conditions
-  -- 1 and 2 in that case, and the database says so independently.
+  -- not a decision about what is being published.
   if review.evidence_observation_id is distinct from new.evidence_observation_id then
     raise exception
       'publication receipt for identity % publishes observation % while the cited human review receipt % reviewed observation %. A decision about superseded evidence is not authorization for today''s evidence.',
       new.source_property_identity_id, new.evidence_observation_id,
       new.human_review_receipt_id, review.evidence_observation_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- ...and that observation must STILL be the identity's current one. `current`
+  -- means the observation of `last_seen_run_id` — never a timestamp, never UUID
+  -- order, exactly as D062 defines it.
+  select o.id, o.source_name, o.source_address
+    into observation
+    from public.source_property_identities i
+    join public.source_property_observations o
+      on o.source_property_identity_id = i.id and o.source_run_id = i.last_seen_run_id
+   where i.id = new.source_property_identity_id;
+  current_observation_id := observation.id;
+
+  if current_observation_id is distinct from new.evidence_observation_id then
+    raise exception
+      'publication receipt for identity % publishes observation %, which is no longer that identity''s current observation (%). Ingestion has advanced the property since the human reviewed it.',
+      new.source_property_identity_id, new.evidence_observation_id,
+      coalesce(current_observation_id::text, 'none')
       using errcode = 'integrity_constraint_violation';
   end if;
 
@@ -307,13 +463,17 @@ begin
       using errcode = 'integrity_constraint_violation';
   end if;
 
-  select h.destination_id, h.star_rating, h.latitude, h.longitude, h.active_status
+  -- ---- C. THE CANONICAL ROW MUST SAY WHAT THE EVIDENCE SAYS ----------------
+  select h.name, h.destination_id, h.country_code, h.address, h.star_rating,
+         h.latitude, h.longitude, h.active_status, h.website_url, h.instagram_url,
+         h.description_short, h.hotel_type, h.brand_id,
+         h.editorial_verification_status, h.editorial_verified_at
     into hotel
     from public.hotels h
    where h.id = new.hotel_id;
 
-  -- The destination is a HUMAN decision (A04.5 §11): never inferred from
-  -- provider geography, and therefore never diverging from the receipt either.
+  -- DESTINATION. A human decision (A04.5 §11): never inferred from provider
+  -- geography, and therefore never diverging from the receipt either.
   if hotel.destination_id is distinct from review.destination_id then
     raise exception
       'publication receipt for identity % published hotel % into destination % while the human reviewed destination %. The canonical destination is the human decision, not the writer''s.',
@@ -390,6 +550,74 @@ begin
       using errcode = 'integrity_constraint_violation';
   end if;
 
+  -- NAME. Amendment #1 blocker C. A canonical hotel requires a name, the only
+  -- name available is the provider's, and A05 has no corrected-name field — so
+  -- the human must have affirmatively said the provider is right, AND the
+  -- published name must actually be that name. `unavailable` is not `supports`;
+  -- the provider supplying nothing is not evidence that the name agrees.
+  select v.verdict into name_verdict
+    from public.source_property_review_verifications v
+   where v.receipt_id = new.human_review_receipt_id and v.dimension = 'name';
+
+  if name_verdict is distinct from 'supports' then
+    raise exception
+      'publication receipt for identity %: the human review records name = %. A canonical hotel requires a name, the only name available is the provider''s, and A05 has no corrected-name field — so a name the reviewer did not affirm is not publishable.',
+      new.source_property_identity_id, coalesce(name_verdict, 'missing')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  expected_name := public.canonical_published_text(observation.source_name);
+  if expected_name is null then
+    raise exception
+      'publication receipt for identity %: the current observation carries no provider name to publish, and A05 never invents one.',
+      new.source_property_identity_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+  if hotel.name is distinct from expected_name then
+    raise exception
+      'publication receipt for identity % published the name "%" while the affirmed provider name is "%". The human affirmed the PROVIDER''s name; publishing a different one records an approval that was never given.',
+      new.source_property_identity_id, hotel.name, expected_name
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- ADDRESS. A human CONTRADICTION may never be normalized away, by the writer
+  -- or by direct SQL. The A04.7 pilot proved a property can validly reach 11/11
+  -- while its address contradicts; publishing that address anyway would silently
+  -- overrule the reviewer.
+  select v.verdict into address_verdict
+    from public.source_property_review_verifications v
+   where v.receipt_id = new.human_review_receipt_id and v.dimension = 'address';
+
+  if address_verdict = 'supports' then
+    expected_address := public.canonical_published_text(observation.source_address);
+    if hotel.address is distinct from expected_address then
+      raise exception
+        'publication receipt for identity % published the address "%" while the affirmed provider address is "%".',
+        new.source_property_identity_id, coalesce(hotel.address, 'null'),
+        coalesce(expected_address, 'null')
+        using errcode = 'integrity_constraint_violation';
+    end if;
+  elsif hotel.address is not null then
+    raise exception
+      'publication receipt for identity % published an address while the human review records address = %. A dimension the reviewer marked % is published as NULL; a contradiction is preserved, never normalized away.',
+      new.source_property_identity_id, coalesce(address_verdict, 'missing'),
+      coalesce(address_verdict, 'missing')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- COUNTRY is canonical geography, never a provider country string. NULL is
+  -- compared honestly with `is distinct from`: when the destination records no
+  -- country, unknown stays unknown and a fabricated code is refused.
+  select d.country_code into destination
+    from public.destinations d where d.id = review.destination_id;
+  if hotel.country_code is distinct from destination.country_code then
+    raise exception
+      'publication receipt for identity % published country_code % while canonical destination % records %. Country is derived from canonical geography, never from a provider country string.',
+      new.source_property_identity_id, coalesce(hotel.country_code, 'null'),
+      review.destination_id, coalesce(destination.country_code, 'null')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
   -- A03's `no_known_closure` is evidence of no KNOWN closure, never evidence of
   -- being active/open/operating. A newly published canonical row therefore says
   -- `unknown`, and this refuses to let it say anything stronger.
@@ -397,6 +625,35 @@ begin
     raise exception
       'publication receipt for identity % published hotel % with active_status %. A03 lifecycle evidence establishes at most "no known closure", which is not evidence of being open; a newly published canonical row says unknown.',
       new.source_property_identity_id, new.hotel_id, hotel.active_status
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- THE FIELDS A05 DELIBERATELY DOES NOT SET. Publication is safe identity, not
+  -- enrichment: A05 has no policy for website, Instagram, description, type or
+  -- brand, and records no editorial verification. Asserting them empty AT
+  -- PUBLICATION TIME is what makes "A05 publishes identity only" checkable
+  -- rather than merely stated.
+  --
+  -- This constrains the row at the instant it is published, not forever. Later
+  -- editorial enrichment is a different workflow and is not blocked by this.
+  if hotel.website_url is not null or hotel.instagram_url is not null
+     or hotel.description_short is not null or hotel.hotel_type is not null
+     or hotel.brand_id is not null then
+    raise exception
+      'publication receipt for identity % published enrichment A05 does not own (website=%, instagram=%, description=%, hotel_type=%, brand=%). A05 publishes safe identity; every one of these fields belongs to a workflow that has not been contracted yet.',
+      new.source_property_identity_id,
+      coalesce(hotel.website_url, 'null'), coalesce(hotel.instagram_url, 'null'),
+      coalesce(hotel.description_short, 'null'), coalesce(hotel.hotel_type, 'null'),
+      coalesce(hotel.brand_id::text, 'null')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if hotel.editorial_verification_status is distinct from 'unverified'
+     or hotel.editorial_verified_at is not null then
+    raise exception
+      'publication receipt for identity % published editorial_verification_status=% (verified_at=%). A05 performs no editorial verification, so claiming one would be a fabricated fact.',
+      new.source_property_identity_id, hotel.editorial_verification_status,
+      coalesce(hotel.editorial_verified_at::text, 'null')
       using errcode = 'integrity_constraint_violation';
   end if;
 
@@ -414,24 +671,45 @@ create trigger source_property_publication_receipts_evidence
 -- 5. THE RECEIPT AND THE TERMINAL STATE ARE ONE FACT
 -- ===========================================================================
 -- 0027 already refuses `resolved_eligible` without an active canonical link to
--- the named hotel. The remaining gap runs the other way: a publication receipt
--- could exist while the identity never reached `resolved_eligible`, or could be
--- left behind by a later demotion — a receipt claiming a publication that the
--- database no longer reflects.
+-- the named hotel. That is necessary and, as amendment #1 found, not sufficient:
+-- it says nothing about WHO authorized the publication, so this sequence
+-- committed happily —
 --
---   receipt exists  IFF  identity is resolved_eligible against that same hotel
+--   insert hotel -> insert ACTIVE link -> set resolved_eligible + promoted_hotel_id
+--
+-- with no publication receipt at all. 0027 accepted it because every one of its
+-- own requirements was met; 0034's original trigger accepted it because it
+-- returned early when no receipt existed. A canonical hotel could therefore
+-- exist through the source-publication lifecycle with no immutable human
+-- authorization behind it — which is the entire thing A05 was written to
+-- require.
+--
+-- The invariant is TWO-SIDED, and the second direction is the one that was
+-- missing:
+--
+--   A) receipt(identity, hotel)
+--        -> identity.resolution_state = 'resolved_eligible'
+--        AND identity.promoted_hotel_id = receipt.hotel_id
+--        AND identity.resolution_reason IS NULL
+--
+--   B) identity.resolution_state = 'resolved_eligible'
+--        -> a publication receipt exists for that identity
+--        AND receipt.hotel_id = identity.promoted_hotel_id
+--
+-- `unique (source_property_identity_id)` on the receipt table is what makes
+-- "a receipt" in B mean "exactly one receipt".
 --
 -- DEFERRED, because the legitimate write order is
 -- `hotel -> link -> receipt -> promote identity`, so for a few statements the
 -- receipt exists while the identity is still `unresolved`. An immediate check
 -- would make the correct application path impossible. What must be coherent is
--- the state that survives COMMIT.
+-- the state that survives COMMIT — which is also why the function below reads
+-- BOTH rows fresh rather than trusting the OLD/NEW image queued when the trigger
+-- fired: by commit time either side may have moved again.
 --
--- Registered on BOTH tables, for the reason 0033's amendment #3 established: an
--- invariant enforced from only one side is an invariant that can be broken from
--- the other. The identity-side trigger carries a WHEN clause so it fires only
--- when the two columns it cares about actually move — ordinary ingestion, which
--- touches `last_seen_run_id` and `observation_count`, never enqueues it.
+-- Registered on BOTH write origins, for the reason 0033's amendment #3
+-- established: an invariant enforced from one side can be broken from the other,
+-- and here the unguarded side was the one that mattered.
 create or replace function public.assert_publication_state_coherent()
 returns trigger
 language plpgsql
@@ -450,18 +728,36 @@ begin
     identity_id := new.id;
   end if;
 
+  -- FINAL state, read now — not the row image captured when this trigger was
+  -- queued. A transaction that promoted an identity and then rolled the state
+  -- back must not be judged on the intermediate value.
+  select i.resolution_state, i.promoted_hotel_id, i.resolution_reason into identity
+    from public.source_property_identities i
+   where i.id = identity_id;
+
+  if identity.resolution_state is null then
+    -- The identity was deleted in this transaction; there is nothing to be
+    -- coherent with, and the receipt's FK would have refused it anyway.
+    return null;
+  end if;
+
   select p.id, p.hotel_id into receipt
     from public.source_property_publication_receipts p
    where p.source_property_identity_id = identity_id;
+
+  -- ---- DIRECTION B: resolved_eligible REQUIRES a publication receipt -------
+  if identity.resolution_state = 'resolved_eligible' and receipt.id is null then
+    raise exception
+      'source identity % is `resolved_eligible` against hotel % with NO publication receipt. Under the source-publication lifecycle a canonical property exists because a human explicitly authorized it against a D062 PASS; a terminal state with no immutable authorization behind it is a published hotel nobody signed.',
+      identity_id, coalesce(identity.promoted_hotel_id::text, 'null')
+      using errcode = 'integrity_constraint_violation';
+  end if;
 
   if receipt.id is null then
     return null;
   end if;
 
-  select i.resolution_state, i.promoted_hotel_id, i.resolution_reason into identity
-    from public.source_property_identities i
-   where i.id = identity_id;
-
+  -- ---- DIRECTION A: a receipt REQUIRES the terminal promotion --------------
   if identity.resolution_state is distinct from 'resolved_eligible'
      or identity.promoted_hotel_id is distinct from receipt.hotel_id then
     raise exception
@@ -493,7 +789,19 @@ create constraint trigger source_property_publication_receipts_state
   deferrable initially deferred
   for each row execute function public.assert_publication_state_coherent();
 
-create constraint trigger source_property_identities_publication_state
+-- Direction B fires from the IDENTITY side. The WHEN clauses keep it off the
+-- ingestion hot path: an ordinary run touches `last_seen_run_id` and
+-- `observation_count`, never these three columns, and inserts every identity as
+-- `unresolved`.
+create constraint trigger source_property_identities_publication_state_ins
+  after insert on public.source_property_identities
+  deferrable initially deferred
+  for each row
+  when (new.resolution_state is distinct from 'unresolved'
+        or new.promoted_hotel_id is not null)
+  execute function public.assert_publication_state_coherent();
+
+create constraint trigger source_property_identities_publication_state_upd
   after update on public.source_property_identities
   deferrable initially deferred
   for each row
