@@ -12,8 +12,7 @@ import type { ContactRecord, EvidenceRecord, PropertyRecord } from "./contract";
 import { computeBatchApprovalState } from "./review";
 import { finalContactInclusion, finalEvidenceInclusion, type ChildDecision } from "./childPolicy";
 import { acquireBatchLock, loadBatchData, releaseBatchLock, type BatchRow } from "./db";
-import { sha256Hex } from "./fingerprint";
-import { foldForMatch } from "./normalize";
+import { generateSlug, slugifyName } from "../canonical/slug";
 
 type Db = Client | PoolClient;
 
@@ -56,40 +55,9 @@ interface PropertyReviewRow {
   destination_id: string | null;
 }
 
-function slugifyName(name: string): string {
-  return foldForMatch(name).replace(/\s+/g, "-").slice(0, 80) || "hotel";
-}
-
 function toDateOrNull(s: string | null): string | null {
   if (!s) return null;
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s : null;
-}
-
-async function slugExists(db: Db, slug: string): Promise<boolean> {
-  const r = await db.query("select 1 from public.hotels where slug = $1", [slug]);
-  return r.rows.length > 0;
-}
-
-/** Deterministic, collision-safe slug (destination-derived or short hash). */
-async function generateSlug(
-  db: Db,
-  name: string,
-  destinationSlug: string | null,
-  sourcePropertyKey: string,
-): Promise<string> {
-  const base = slugifyName(name);
-  if (!(await slugExists(db, base))) return base;
-  if (destinationSlug) {
-    const withDest = `${base}-${destinationSlug}`;
-    if (!(await slugExists(db, withDest))) return withDest;
-  }
-  const hash = sha256Hex(sourcePropertyKey).slice(0, 6);
-  let candidate = `${base}-${hash}`;
-  let n = 2;
-  while (await slugExists(db, candidate)) {
-    candidate = `${base}-${hash}-${n++}`;
-  }
-  return candidate;
 }
 
 async function existingLinkEntity(
