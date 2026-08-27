@@ -1122,8 +1122,26 @@ ROW leaves the reservation standing: the owner still exists, it is still their
 claim, and they may reconnect — only a stranger is kept out. Erasing the USER
 drops it with the rest of their private plane, because a reservation that
 outlived its human would ban a Google account permanently with nothing left in
-the product to protect. The FK also refuses releasing a reservation while any
-mail account still references it, so a retired row keeps the claim alive.
+the product to protect.
+
+**Erasing the owner is the ONLY release.** `forbid_provider_account_owner_release()`
+is a BEFORE DELETE trigger that refuses whenever the owning `users` row still
+exists — which is precisely the condition that distinguishes a direct delete from
+the referential action of erasing that user, since PostgreSQL removes the parent
+before applying the cascade. It is deliberately not `pg_trigger_depth()`, for the
+reason amendment #1 established about the consent-receipt guard.
+
+The FK from `mail_accounts` is a second, narrower layer: it refuses while any
+mailbox still references the reservation. It is not sufficient on its own,
+because it stops meaning anything once the last such row is physically removed —
+which was enough to move a Google account between app users in three ordinary
+statements, with the owner untouched.
+
+`service_role` therefore holds `SELECT, INSERT, UPDATE` and **no DELETE**:
+directly removing a reservation is not a supported operation, and a referential
+action needs no privilege on the referencing table. The withheld grant is the
+first layer; the trigger is the one that matters, because a privilege cannot stop
+the table owner or a superuser and the invariant holds against them too.
 
 RLS is owner-only, like the rest of the plane: "which app user owns Google
 subject X" would otherwise let anyone probe whether a given Gmail account is

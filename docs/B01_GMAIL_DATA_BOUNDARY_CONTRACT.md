@@ -382,7 +382,18 @@ not open.
 | Editing a mail account's owner or provider subject | **refused** — that is a transfer in one UPDATE, and it would re-point a whole consent history at a different human or Google account |
 | Editing the registry's `owner_user_id` | **refused** — the same transfer, one table over |
 | Deleting a mail account ROW while its owner exists | reservation stands; it is still that human's claim and they may reconnect |
+| Deleting the reservation itself while its owner exists | **refused** — by the trusted role, by the table owner, by anyone, and whether or not any mailbox still references it |
 | Erasing the USER entirely | reservation is released with the rest of their private plane |
+
+Erasing the user is the one deliberate release, and it is the ONLY one. The FK
+from `mail_accounts` alone was not enough: it refuses while a mailbox references
+the reservation and stops meaning anything the moment the last such row is
+physically removed, which was enough to move a Google account between app users
+in three ordinary statements with the owner untouched. A BEFORE DELETE guard now
+refuses whenever the owning user still exists — the state that distinguishes a
+direct delete from the cascade, since PostgreSQL removes the parent first —
+and `service_role` holds no DELETE on the registry at all, because direct removal
+is not a supported operation.
 
 That last row is the one deliberate release. A reservation that outlived its
 human would ban a Google account permanently with nothing left in the product to

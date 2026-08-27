@@ -249,6 +249,21 @@ async function connectDisconnectRetire(account: Account): Promise<void> {
   await retireAccount(account);
 }
 
+/** Who the registry currently says owns a durable provider identity. */
+async function registryOwner(subject: string): Promise<string> {
+  const rows = await adminQuery<{ owner_user_id: string }>(
+    `select owner_user_id from public.mail_provider_account_owners
+      where provider = 'gmail' and provider_account_subject = $1`,
+    [subject],
+  );
+  return rows[0]?.owner_user_id ?? "(none)";
+}
+
+async function userExists(id: string): Promise<boolean> {
+  const rows = await adminQuery("select 1 from public.users where id = $1", [id]);
+  return rows.length > 0;
+}
+
 /** The one definition of "may we?", asked exactly as a future caller would. */
 async function hasConsent(account: Account, kind: string): Promise<boolean> {
   const [row] = await adminQuery<{ granted: boolean }>(
@@ -2049,7 +2064,12 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
           [subject],
         );
       });
-      expect(error).toMatch(/provider_owner_fk|still referenced|foreign key/i);
+      // Two layers stand here now. The release guard is the outer one and
+      // answers first, because the reservation belongs to the USER — the FK
+      // underneath still refuses too, and amendment #3's H3/H4 pin both.
+      expect(error).toMatch(
+        /cannot have its ownership reservation removed|provider_owner_fk|still referenced/i,
+      );
     });
 
     it("G14. the registry is owner-only, and invisible to everyone else", async () => {
@@ -2121,6 +2141,225 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
       // Erasing the human is the other case, and no reservation may survive it —
       // there would be nothing left in the product for it to protect, and it
       // would ban a Google account permanently.
+      const stranded = await adminQuery<{ provider_account_subject: string }>(
+        `select o.provider_account_subject from public.mail_provider_account_owners o
+          where not exists (select 1 from public.users u where u.id = o.owner_user_id)`,
+      );
+      expect(stranded).toEqual([]);
+    });
+  });
+
+  // =====================================================================
+  // AMENDMENT #3 — an ownership reservation is released only by erasing its
+  // owner.
+  //
+  // Amendment #2 put the durable provider identity's owner in a registry and
+  // made every mail account agree with it. The FK refuses deleting a reservation
+  // while a mailbox still references it — which stops meaning anything the
+  // moment the last such row is physically removed:
+  //
+  //   USER A owns subject S, with no live mailbox for it
+  //     -> delete A's mail_accounts rows for S, while A remains
+  //     -> delete the reservation (nothing references it any more)
+  //     -> USER B inserts a mailbox for S, and the claim trigger registers B
+  //
+  // Cross-tenant transfer in three ordinary statements, with USER A untouched —
+  // and `service_role` had been granted DELETE outright, so it was a supported
+  // path rather than a corner. The reservation is a durable claim of the USER,
+  // so its lifetime is now tied to the user rather than to whatever happens to
+  // reference it.
+  // =====================================================================
+  describe("amendment #3: a reservation is released only by erasing its owner", () => {
+    const deleteReservation = `delete from public.mail_provider_account_owners
+                                where provider = 'gmail' and provider_account_subject = $1`;
+
+    it("H1. no mailbox rows left, owner still there: the reservation holds", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await pendingAccount(owner, subject);
+      await adminQuery("delete from public.mail_accounts where id = $1", [account.id]);
+
+      const [before] = await adminQuery<{
+        accounts: string;
+        owners: string;
+        user_present: boolean;
+      }>(
+        `select (select count(*)::text from public.mail_accounts
+                  where provider_account_subject = $1) accounts,
+                (select count(*)::text from public.mail_provider_account_owners
+                  where provider_account_subject = $1) owners,
+                exists (select 1 from public.users where id = $2) user_present`,
+        [subject, owner],
+      );
+      expect(before).toEqual({ accounts: "0", owners: "1", user_present: true });
+
+      // Nothing references the reservation, so the FK has no opinion. The guard
+      // is the only thing standing here — and it runs as the table owner, so
+      // this also proves a privilege grant is not what is doing the work.
+      const error = await inTransaction(async (q) => {
+        await q(deleteReservation, [subject]);
+      });
+      expect(error).toMatch(/cannot have its ownership reservation removed while app user/);
+      expect(await registryOwner(subject)).toBe(owner);
+    });
+
+    it("H2. service_role holds no DELETE on the registry, and is refused", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await pendingAccount(owner, subject);
+      await adminQuery("delete from public.mail_accounts where id = $1", [account.id]);
+
+      const attempted = await queryAs({ role: "service_role" }, deleteReservation, [subject]);
+      expect(attempted.error).not.toBeNull();
+      expect(attempted.error!.message).toMatch(/permission denied/i);
+      expect(await registryOwner(subject)).toBe(owner);
+
+      // The privilege is the first layer only. It is withheld deliberately, and
+      // asserted so a future grant cannot quietly re-open the path.
+      const grants = await adminQuery<{ privilege_type: string }>(
+        `select privilege_type from information_schema.role_table_grants
+          where table_schema = 'public'
+            and table_name = 'mail_provider_account_owners'
+            and grantee = 'service_role' order by privilege_type`,
+      );
+      expect(grants.map((g) => g.privilege_type)).toEqual(["INSERT", "SELECT", "UPDATE"]);
+    });
+
+    it("H3. a LIVE mailbox holding the reservation keeps it", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      await connectedAccount(owner, [GMAIL_READONLY], subject);
+      const error = await inTransaction(async (q) => {
+        await q(deleteReservation, [subject]);
+      });
+      expect(error).toMatch(
+        /cannot have its ownership reservation removed|provider_owner_fk|still referenced/i,
+      );
+      expect(await registryOwner(subject)).toBe(owner);
+    });
+
+    it("H4. a RETIRED historical mailbox keeps it too", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await connectDisconnectRetire(account);
+      expect((await accountRow(account.id)).connection_state).toBe("deleted");
+
+      const error = await inTransaction(async (q) => {
+        await q(deleteReservation, [subject]);
+      });
+      expect(error).toMatch(
+        /cannot have its ownership reservation removed|provider_owner_fk|still referenced/i,
+      );
+      expect(await registryOwner(subject)).toBe(owner);
+    });
+
+    it("H5. the whole transfer sequence, end to end, is closed", async () => {
+      // The reproduction itself, as a test: three ordinary statements that used
+      // to move a Google account between app users with USER A untouched.
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await pendingAccount(owner, subject);
+
+      await adminQuery("delete from public.mail_accounts where id = $1", [account.id]);
+      const released = await inTransaction(async (q) => {
+        await q(deleteReservation, [subject]);
+      });
+      expect(released).not.toBeNull();
+
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [stranger, subject],
+        ),
+      ).rejects.toThrow(/is already owned by app user/);
+
+      expect(await registryOwner(subject)).toBe(owner);
+      expect(await userExists(owner)).toBe(true);
+    });
+
+    it("H6. erasing the owner still releases it, and takes the plane with it", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      await connectDisconnectRetire(account);
+
+      // The guard must not block the cascade it exists to be the exception for.
+      await expect(
+        adminQuery("delete from public.users where id = $1", [owner]),
+      ).resolves.toBeDefined();
+
+      const [after] = await adminQuery<{
+        accounts: string;
+        receipts: string;
+        consents: string;
+        deletions: string;
+        owners: string;
+      }>(
+        `select (select count(*)::text from public.mail_accounts where user_id = $1) accounts,
+                (select count(*)::text from public.mail_account_consent_receipts
+                  where user_id = $1) receipts,
+                (select count(*)::text from public.mail_account_consents where user_id = $1) consents,
+                (select count(*)::text from public.mail_account_deletion_requests
+                  where user_id = $1) deletions,
+                (select count(*)::text from public.mail_provider_account_owners
+                  where owner_user_id = $1) owners`,
+        [owner],
+      );
+      expect(after).toEqual({
+        accounts: "0",
+        receipts: "0",
+        consents: "0",
+        deletions: "0",
+        owners: "0",
+      });
+    });
+
+    it("H7. and only then may a different human claim that Google account", async () => {
+      const owner = await throwawayUser();
+      const newcomer = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await pendingAccount(owner, subject);
+      await adminQuery("delete from public.mail_accounts where id = $1", [account.id]);
+
+      // Still refused while the owner exists...
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [newcomer, subject],
+        ),
+      ).rejects.toThrow(/is already owned by app user/);
+
+      // ...and permitted once nothing of theirs remains.
+      await adminQuery("delete from public.users where id = $1", [owner]);
+      const claimed = await pendingAccount(newcomer, subject);
+      expect(claimed.id).toBeTruthy();
+      expect(await registryOwner(subject)).toBe(newcomer);
+    });
+
+    it("H8. the owner of a reservation still cannot be edited", async () => {
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      await pendingAccount(owner, subject);
+      await expect(
+        adminQuery(
+          `update public.mail_provider_account_owners set owner_user_id = $2
+            where provider='gmail' and provider_account_subject = $1`,
+          [subject, stranger],
+        ),
+      ).rejects.toThrow(/ownership reservation is not editable/);
+      expect(await registryOwner(subject)).toBe(owner);
+    });
+
+    it("H9. no reservation anywhere has lost its owner", async () => {
+      // A sweep over the whole table: whatever every test above left behind, a
+      // reservation without a live owning user must not exist — that would be
+      // the orphan that bans a Google account forever.
       const stranded = await adminQuery<{ provider_account_subject: string }>(
         `select o.provider_account_subject from public.mail_provider_account_owners o
           where not exists (select 1 from public.users u where u.id = o.owner_user_id)`,

@@ -1911,7 +1911,12 @@ Two consequences are decisions, not details. A creator may always reconnect thei
 own Google account, as a NEW mail account inheriting no consent and no history.
 And erasing an app user releases the reservation along with the rest of their
 private plane — a reservation that outlived its human would ban a Google account
-permanently with nothing left in the product to protect.
+permanently with nothing left in the product to protect. That erasure is the
+ONLY release: while the owning user exists the reservation cannot be removed by
+anyone, including the trusted server role and the database owner, whether or not
+any mailbox still references it. Otherwise deleting a mailbox row and then its
+reservation would move a Google account between app users with the owner
+untouched, which is the transfer this decision refuses.
 
 ### Disconnect is not delete, and deletion is terminal
 
@@ -1943,6 +1948,10 @@ Consequence:
 B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
+
+External audit amendment #3 (2026-08-27) added the release rule above, after the
+same cross-owner transfer proved reachable at amendment #2's head by deleting a
+mailbox row and then its ownership reservation, with the owning user untouched.
 
 External audit amendment #2 (2026-08-27) added the durable-provider-identity
 paragraphs above. Amendment #1's terminality work had traded the full uniqueness

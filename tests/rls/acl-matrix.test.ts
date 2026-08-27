@@ -28,10 +28,11 @@ interface Expected {
   anon: Privs;
   authenticated: Privs;
   /** Every application relation is fully available to the trusted role, except
-   *  the read-only projections and the append-only evidence table — the trusted
-   *  boundary is not exempt from an invariant that exists to keep evidence
-   *  citable. */
-  serviceRole: "all" | "S" | "SI";
+   *  the read-only projections, the append-only evidence table, and the
+   *  ownership registry whose rows are released only by a user-erasure cascade —
+   *  the trusted boundary is not exempt from an invariant that exists to keep
+   *  evidence citable, or a durable claim its owner's. */
+  serviceRole: "all" | "S" | "SI" | "SIU";
 }
 
 /**
@@ -187,7 +188,9 @@ const CONTRACT: Record<string, Expected> = {
   // and writes nothing — every write is a server action behind an OAuth flow or
   // a deletion job. `anon` holds no privilege at all, and consent history is
   // append-only for the trusted role too.
-  mail_provider_account_owners: { anon: "", authenticated: "S", serviceRole: "all" },
+  // No DELETE: releasing an ownership reservation is not a supported operation.
+  // It goes with the cascade from erasing its owner, which needs no privilege.
+  mail_provider_account_owners: { anon: "", authenticated: "S", serviceRole: "SIU" },
   mail_accounts: { anon: "", authenticated: "S", serviceRole: "all" },
   mail_account_consent_receipts: { anon: "", authenticated: "S", serviceRole: "SI" },
   mail_account_consents: { anon: "", authenticated: "S", serviceRole: "all" },

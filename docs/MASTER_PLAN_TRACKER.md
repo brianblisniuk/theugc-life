@@ -609,8 +609,8 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B01 — mail account, consent and the private communication boundary. Open PR,
-> not merged, external audit amendments #1 and #2 applied, awaiting re-audit and
-> the human merge gate.**
+> not merged, external audit amendments #1, #2 and #3 applied, awaiting re-audit
+> and the human merge gate.**
 
 **Phase A's code gate is closed.** A05 merged as `ed857f0b`, and with it the
 canonical property spine: preview (A04), human decision (A04.5), withdrawal
@@ -629,6 +629,13 @@ now terminal, consent events carry a database-owned ordinal, and the scope
 snapshot is checked against the account rather than accepted from the writer. The
 migration was amended IN PLACE — `0035` is unmerged, so there is no history to
 correct with an `0036`.
+
+External audit amendment #3 (2026-08-27) closed the last opening in that model:
+the ownership reservation could be deleted outright while its owner still
+existed, so the same cross-owner transfer was reachable by removing a mailbox row
+and then its reservation. Releasing a reservation is now possible only as part of
+erasing the owning user, and the trusted role no longer holds DELETE on the
+registry.
 
 External audit amendment #2 (2026-08-27) closed a regression amendment #1 had
 introduced. Making `deleted` terminal meant a creator reconnecting their own

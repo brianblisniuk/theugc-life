@@ -193,6 +193,55 @@ create trigger mail_provider_account_owners_immutable
   before update on public.mail_provider_account_owners
   for each row execute function public.forbid_provider_account_owner_mutation();
 
+-- ---------------------------------------------------------------------------
+-- A RESERVATION IS RELEASED ONLY BY ERASING ITS OWNER
+-- ---------------------------------------------------------------------------
+-- The FK from `mail_accounts` refuses deleting a reservation while any mailbox
+-- still references it. That is necessary and not sufficient, because it stops
+-- meaning anything the moment the last such row is physically removed:
+--
+--   USER A owns subject S, with no live mailbox for it
+--     -> delete A's mail_accounts rows for S, while A remains
+--     -> delete the reservation (nothing references it any more)
+--     -> USER B inserts a mailbox for S, and the claim trigger registers B
+--
+-- Cross-tenant transfer, achieved without erasing USER A, in three ordinary
+-- statements. The reservation is a durable claim of the USER, not of any one
+-- mail_accounts row, so its lifetime has to be tied to the user rather than to
+-- whatever currently references it.
+--
+-- WHAT THIS TESTS, precisely: the owning `users` row is already gone. That is
+-- true exactly when this DELETE is the referential action from erasing that
+-- user, because PostgreSQL removes the parent row before applying the cascade.
+-- A direct delete — by the trusted role, by the table owner, by anyone — leaves
+-- the user in place and is refused.
+--
+-- It is deliberately NOT `pg_trigger_depth() > 1`, which is true of any nested
+-- trigger context and would prove nothing about a cascade. The B01 receipt
+-- guard learned that in amendment #1; this is the same lesson, stated the same
+-- way, about a different table.
+create or replace function public.forbid_provider_account_owner_release()
+returns trigger
+language plpgsql
+as $$
+begin
+  if not exists (select 1 from public.users u where u.id = old.owner_user_id) then
+    return old;
+  end if;
+
+  raise exception
+    'provider account %/% cannot have its ownership reservation removed while app user % still exists. The reservation is that human''s durable claim on the Google account, not a property of any one mailbox row: releasing it early would let a different app user take the identity without the owner ever being erased. It goes when they do.',
+    old.provider, old.provider_account_subject, old.owner_user_id
+    using errcode = 'restrict_violation';
+end;
+$$;
+
+revoke all on function public.forbid_provider_account_owner_release() from public;
+
+create trigger mail_provider_account_owners_release_guard
+  before delete on public.mail_provider_account_owners
+  for each row execute function public.forbid_provider_account_owner_release();
+
 create table public.mail_accounts (
   id uuid primary key default gen_random_uuid(),
 
@@ -1365,19 +1414,28 @@ to authenticated;
 
 -- No anon grant of any kind.
 
--- The registry needs INSERT because the claim trigger runs with the privileges
--- of whoever inserts the mail account, and the server is the only writer here.
--- DELETE is granted for completeness; in practice the reservation is released by
--- the cascade from an erased user, and the FK refuses any delete that would
--- orphan a mail account. UPDATE is granted and then refused by the immutability
--- trigger, so an attempted transfer fails loudly rather than silently lacking a
--- privilege.
 grant select, insert, update, delete on
-  public.mail_provider_account_owners,
   public.mail_accounts,
   public.mail_account_consents,
   public.mail_account_deletion_requests
 to service_role;
+
+-- THE OWNERSHIP REGISTRY IS NARROWER, and deliberately so.
+--
+-- INSERT, because the claim trigger runs with the privileges of whoever inserts
+-- the mail account, and the server is the only writer here.
+--
+-- UPDATE is granted so that an attempted transfer meets the immutability trigger
+-- and fails with a reason, rather than dying on a missing privilege that says
+-- nothing about why it is wrong.
+--
+-- NO DELETE. Directly removing a reservation is not a supported operation: it is
+-- released by the cascade from erasing its owner, and referential actions do not
+-- need the deleting role to hold DELETE on the referencing table. Withholding
+-- the privilege is the first layer; the release guard above is the one that
+-- matters, because a privilege cannot be relied on to stop the table owner or a
+-- superuser, and the invariant has to hold against them too.
+grant select, insert, update on public.mail_provider_account_owners to service_role;
 
 -- Append-only: not even the trusted role holds UPDATE or DELETE on consent
 -- history. The trigger in §2 is the second layer, not the only one.
