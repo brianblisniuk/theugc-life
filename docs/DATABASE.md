@@ -1017,6 +1017,260 @@ one carrying the A04.7 pilot's eight evaluation 11/11 PASS identities — migrat
 with hotels still 0, links still 0 and every D062 verdict and fingerprint
 byte-identical.
 
+## 5h. Mail account, consent and the private communication boundary (migration 0035)
+
+Phase B's first table set, and the posture is **deliberately unlike everything in
+0027–0034**. Those are editorial internals that admin/editor read through
+`public.is_admin_or_editor()` because reviewing hotel data is staff work. A
+creator's mailbox is private correspondence; that function appears **nowhere**
+here. Full contract:
+[`B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`](B01_GMAIL_DATA_BOUNDARY_CONTRACT.md);
+closed decision: D067.
+
+**No OAuth credential exists in this plane.** No access token, no refresh token,
+no client secret, no authorization code — in any table, under any name. B02 keeps
+credentials in server-side secret storage; `granted_scopes` is scope METADATA and
+nothing more.
+
+### mail_accounts
+One connected mailbox: `user_id` (cascade — deleting a user takes their private
+plane with it), `provider` (Gmail only in V1), `provider_account_subject` (the
+DURABLE identity — Google's stable subject, never the address, which can be
+renamed or reassigned to a different human), `email_address` (display/routing
+only), `connection_state`, `granted_scopes`, and the connection timestamps.
+
+`mail_accounts_provider_account_uidx`, a unique index on
+`(provider, provider_account_subject)` **where `connection_state <> 'deleted'`** —
+a durable provider identity has at most ONE LIVE mailbox record. Two live rows
+would be two simultaneous connections with two consent histories, and no reader
+could say which one governs. Retired records are excluded because `deleted` is
+terminal: a creator who deletes their mailbox data and later reconnects the same
+Google account gets a NEW row, since the old one asserts their data was removed
+and may never be revived. A full unique index would have turned terminality into
+"you can never reconnect this address", which is a bug wearing a privacy
+guarantee's clothes.
+
+**This index does not decide ownership, and must not be read as doing so** — see
+`mail_provider_account_owners` below. It governs the live present of a durable
+identity; ownership spans its whole history, retired rows included.
+
+`mail_accounts_provider_owner_fk`, a composite FK on
+`(provider, provider_account_subject, user_id)` into the ownership registry, is
+what binds every mail account — live or retired — to the one app user that owns
+its durable provider identity.
+
+`unique (id, user_id)` is the **provenance spine**: every future Gmail-origin or
+Gmail-derived table composite-FKs the PAIR, so no such row can lose the account
+and owner it must be deleted with. Deletion-addressability is a restricted-scope
+obligation, not a convenience.
+
+`granted_scopes` carries an allow-list CHECK calling
+`public.approved_gmail_scopes()`, which names exactly `gmail.readonly`
+(restricted, required for historical analysis), `gmail.send` (sensitive,
+requested later through incremental authorization) and the identity scopes.
+`gmail.modify`, `gmail.compose`, `gmail.insert`, `gmail.metadata`,
+`mail.google.com` and the settings scopes are refused by the database — a scope
+contract that lives only in a document is one a script can break. The allow-list
+is a FUNCTION rather than two array literals so the account side and the consent
+side cannot drift apart; `public.canonical_scope_set()` normalises every scope
+array on write to sorted-distinct form, which is what lets scope sets be compared
+as SETS with `=`.
+
+`connection_state` is `pending_authorization` · `connected` · `reauth_required` ·
+`disconnected` · `deletion_pending` · `deleted`. CHECKs require a `connected` row
+to name when it connected, to hold at least one scope, and to hold
+**`gmail.readonly` specifically** — `openid` plus `gmail.send` is a mailbox we may
+write to and may not read, which is not a Gmail connection in this product's
+sense. Every disconnected/deleting state must record `disconnected_at` with an
+EMPTY scope set — the metadata half of revocation, which does not substitute for
+revoking at Google.
+
+`current_deletion_request_id` names the specific deletion a `deletion_pending` or
+`deleted` state rests on, composite-FK'd as `(current_deletion_request_id, id)` so
+it must be THIS mailbox's request. CHECKs require the pointer in those two states
+and forbid it in every other, so the field always means what it says.
+
+### mail_provider_account_owners
+**One durable provider identity, one owning app user.** `(provider,
+provider_account_subject)` is the primary key; `owner_user_id` cascades from
+`users`. Shared-inbox ownership, agency delegation and cross-tenant transfer are
+all future work requiring explicit authorization, not a row edit — a trigger
+refuses UPDATE outright, because editing `owner_user_id` would BE that transfer,
+performed in one statement.
+
+Ownership needs its own table because neither shape of index on `mail_accounts`
+can express it. A FULL unique index on the subject forbids same-owner
+reconnection, which terminal `deleted` makes necessary. A PARTIAL index over live
+rows permits that reconnection but stops seeing retired rows entirely — so user A
+could retire a mailbox and user B claim the same Google account while A's consent
+receipts, consent projections and deletion request were still on file and still
+A's. The registry separates the two questions the single index was being asked to
+answer: **who owns a durable identity** (registry, whole history) and **how many
+live connections it may have** (partial index, present only).
+
+The primary key is also the **serialization point**. A trigger that merely
+SELECTed for an existing owner would let two concurrent transactions both find
+nothing and both proceed, since neither sees the other's uncommitted row.
+`claim_provider_account_owner()` instead does an `insert … on conflict do
+nothing` on `mail_accounts` INSERT: the second claimant blocks on the index until
+the first commits, then reads the winner and is refused. The composite FK is the
+declarative backstop — if the trigger were removed, no registry row would be
+created and every insert would fail closed rather than open.
+
+**Release semantics are deliberate and asymmetric.** Deleting a `mail_accounts`
+ROW leaves the reservation standing: the owner still exists, it is still their
+claim, and they may reconnect — only a stranger is kept out. Erasing the USER
+drops it with the rest of their private plane, because a reservation that
+outlived its human would ban a Google account permanently with nothing left in
+the product to protect.
+
+**Erasing the owner is the ONLY release.** `forbid_provider_account_owner_release()`
+is a BEFORE DELETE trigger that refuses whenever the owning `users` row still
+exists — which is precisely the condition that distinguishes a direct delete from
+the referential action of erasing that user, since PostgreSQL removes the parent
+before applying the cascade. It is deliberately not `pg_trigger_depth()`, for the
+reason amendment #1 established about the consent-receipt guard.
+
+The FK from `mail_accounts` is a second, narrower layer: it refuses while any
+mailbox still references the reservation. It is not sufficient on its own,
+because it stops meaning anything once the last such row is physically removed —
+which was enough to move a Google account between app users in three ordinary
+statements, with the owner untouched.
+
+`service_role` therefore holds `SELECT, INSERT, UPDATE` and **no DELETE**:
+directly removing a reservation is not a supported operation, and a referential
+action needs no privilege on the referencing table. The withheld grant is the
+first layer; the trigger is the one that matters, because a privilege cannot stop
+the table owner or a superuser and the invariant holds against them too.
+
+RLS is owner-only, like the rest of the plane: "which app user owns Google
+subject X" would otherwise let anyone probe whether a given Gmail account is
+connected here and to whom.
+
+### mail_account_consent_receipts (append-only)
+Immutable history of what a human agreed to: the permission, the decision, the
+policy version, a **digest of the exact text shown**, and the scopes in force at
+the time — because consent given against read-only access is not consent to a
+later, wider grant. Append-only by trigger and by grant; a withdrawal is a NEW
+receipt, never an edit. `decided_by_user_id = user_id` is CHECKed, so
+acting-on-behalf-of is unrepresentable rather than merely unimplemented.
+
+`event_seq` is a `generated always as identity` ordinal and is **the** order of
+consent events. It exists because none of the alternatives is an ordering:
+`decided_at` is caller-supplied and can be back-dated (deliberately or by clock
+skew); `created_at` is `now()`, which is transaction start time and identical for
+two receipts written together; and a random UUID's lexical order is not chronology
+at all. `generated ALWAYS` means a writer cannot supply or override it.
+
+`granted_scopes_at_decision` is **evidence, not narration**: a deferred check
+requires it to equal the account's actual scope set at COMMIT of the transaction
+that created the receipt, and an allow-list CHECK stops a forbidden scope entering
+through the consent side after being refused on the account side. It is never
+rewritten when scopes later change — each receipt stays true about its own moment.
+A writer that wants to record "withdrew while holding gmail.readonly" writes the
+withdrawal receipt BEFORE clearing the account's scopes.
+
+The DELETE guard permits removal only when the receipt's mailbox row or its user
+row is already gone, which is precisely the state an FK cascade from either parent
+produces (PostgreSQL removes the parent before applying the referential action).
+Both parents are checked because `users` cascades to `mail_accounts` and to these
+receipts through two separate constraints and does not promise an order. The
+earlier `pg_trigger_depth() > 1` test was replaced: it is true of ANY nested
+trigger context, so it did not prove the cascade it was documented as proving.
+
+### mail_account_consents
+The CURRENT answer, one row per (mailbox, permission), composite-FK'd to its
+receipt on `(id, mail_account_id, consent_kind, decision, event_seq)`. A
+projection that says `granted` while naming a withdrawal, that borrows another
+mailbox's or another permission's decision, or whose `current_event_seq`
+disagrees with the receipt it names, is **unrepresentable** — declaratively, not
+by trigger.
+
+Three layers make the current consent the LATEST consent:
+
+1. the composite FK above — the projection agrees with the receipt it names;
+2. a BEFORE UPDATE trigger — `current_event_seq` never decreases, so a projection
+   cannot be re-pointed at a grant the human already withdrew. Re-granting after
+   a withdrawal happens ONLY through a new granted receipt, which carries a
+   higher ordinal by construction;
+3. `assert_mail_consent_projection_dominant()`, deferred and registered on
+   **receipt INSERT and projection INSERT/UPDATE/DELETE** — for every (mailbox,
+   permission) with any history, exactly one projection exists and it names the
+   receipt with the greatest `event_seq`.
+
+Layer 3 is registered on both origins for the reason A04.6 amendment #3
+established: the same broken state is reachable from either side — append a
+withdrawal and stop, or move the projection off the latest decision — so both
+sides have to refuse it. Without it a withdrawal could be recorded and never take
+effect, and `mail_account_has_consent()` (which every future G1/G2 caller reads)
+would keep answering `true` about a permission that had been taken back.
+
+Two permissions: `private_gmail_processing` (required for the product to do
+anything) and `network_intelligence_contribution` (**separate, explicit,
+revocable, default NOT granted**). `public.mail_account_has_consent()` is the
+single definition of "may we?", and **no row means NOT granted** — one function,
+because a second reading of "no row" is how a default-false permission becomes
+accidentally true.
+
+### mail_account_deletion_requests
+**Disconnect is not delete.** Stopping provider access and removing stored data
+are different acts; a disconnected mailbox with no request is the first, a
+request row is the second. `scope` records how much was asked for at request
+time, and `network_contributions_invalidated_at` exists so a later phase can
+PROVE a withdrawal reached the aggregate layer. Owner-initiated only; one open
+request per mailbox.
+
+### The state labels mean something (0035)
+`assert_mail_account_state_coherent()` is `DEFERRABLE INITIALLY DEFERRED` and
+registered on all four write origins (accounts, consents, consent receipts,
+deletion requests):
+
+- `connected` requires a granted `private_gmail_processing` consent — holding
+  access and being permitted to use it are different facts;
+- `connected` requires the account's scope set to EQUAL the snapshot on its
+  current private-processing receipt. Incremental authorization can widen access
+  after the fact, and Google's screen asks about ACCESS, not about what this
+  product may do with the data — so widening (or narrowing) requires a NEW
+  private-processing receipt naming the new set. Documentation and database now
+  say the same thing;
+- `deletion_pending` requires the request the account NAMES to be outstanding;
+- `deleted` requires the request the account NAMES to be `completed` **and**
+  scoped `account_and_gmail_derived_data`. A completed `gmail_derived_data`
+  request means the opposite — derived data goes, the record is KEPT so the
+  connection stays auditable — so letting it retire the record would delete
+  something nobody asked to delete and then read back as evidence that they had.
+
+`enforce_mail_account_state_transition()` is a BEFORE UPDATE trigger and holds
+the rules a deferred check structurally cannot, because a deferred check only
+ever sees where a transaction ended up:
+
+- entering `deletion_pending` requires the named request to exist and be running
+  AT THAT MOMENT. Otherwise a writer could pass through `deletion_pending`
+  pointing at a request that finished long ago and land on `deleted` in the same
+  transaction — the end state looks perfect and the waiting never happened;
+- `deleted` is reachable only FROM `deletion_pending`, on the same request, so
+  the request that ran is the request that is credited;
+- **`deleted` is terminal.** No transition out, to any state, and the request it
+  names cannot be swapped afterwards. A revived row would make the assertion
+  "your data was removed" false while still carrying the completed deletion as
+  its evidence;
+- **owner and provider identity are immutable.** `user_id`, `provider` and
+  `provider_account_subject` cannot change after creation. Every consent receipt
+  and deletion request on a mailbox is about THIS human and THIS Google account;
+  re-pointing the row would make all of them describe something else — a transfer
+  performed in one UPDATE.
+
+### Access
+Owner reads their own rows; that is the entire client surface, because every
+write is a server action behind an OAuth flow or a deletion job. Another creator
+sees nothing. **Admin/editor see nothing through a client session.** `anon` holds
+no privilege at all. `service_role` is the trusted server path — a capability,
+never a user-facing permission — and does not hold UPDATE or DELETE on consent
+history either.
+
+**0035 creates no message, thread, attachment, sync or job table, connects no
+mailbox, infers no consent, enrols no user and stores no token.**
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -1334,5 +1588,12 @@ At minimum:
     neither can exist without the other. The migration refuses to run against a
     database that already carries an unaccountable `resolved_eligible` identity,
     and publishes nothing itself
+21. mail account, consent and the private communication boundary (0035) — the
+    Phase-B privacy plane: one owning user per provider account, an append-only
+    consent history with a separate default-OFF network-contribution permission,
+    a current projection composite-FK'd to the decision it represents, an
+    explicit deletion request distinct from disconnecting, and an RLS posture
+    that deliberately gives admin/editor NOTHING. No OAuth credential column
+    exists, and the migration connects no mailbox and infers no consent
 
 Every migration must be reproducible from an empty database.

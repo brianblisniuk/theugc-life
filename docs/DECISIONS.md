@@ -1808,3 +1808,164 @@ explicit reviewed code mapping — see
 `docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md` — and the PR #21 finding that
 `simpleCode` alone is unusable is **preserved**, because the mapping is on the
 category code, never on `simpleCode`.
+
+## D067 — Gmail is a private communication plane with two separate consents
+Status: Accepted — closes the primary-source Gmail/OAuth/privacy contract
+MASTER_PLAN §5.7 required before historical import
+
+Phase B connects creator mailboxes. That data is not provider inventory and must
+not be modelled as if it were.
+
+### Scopes are a contract, not a preference
+
+Historical intelligence requires
+`https://www.googleapis.com/auth/gmail.readonly`, a Google **restricted** scope.
+`gmail.metadata` is rejected: it exposes no message body, it disables the
+`q` search parameter the import depends on, and it is *also* restricted — it
+would buy the same verification burden and deliver a product that cannot answer
+the question.
+
+Sending, when it exists, uses `https://www.googleapis.com/auth/gmail.send`
+(**sensitive**), requested **later through incremental authorization**, never
+bundled into the initial connection. `mail.google.com`, `gmail.modify`,
+`gmail.compose`, `gmail.insert` and the settings scopes are **not requested**
+without a new decision; they trade a marginally simpler implementation for the
+ability to alter and delete a human's mail.
+
+Restricted-scope verification, Limited Use, the applicable security assessment,
+deletion capability and accurate public disclosures are **product constraints**,
+not implementation details.
+
+### Limited Use follows the data, including what is derived from it
+
+Google's Limited Use rules apply to data aggregated, anonymized or derived from
+Gmail. A reply classification, response time, offer value or negotiation outcome
+**remains Gmail-derived** when Gmail was its origin. Discarding the body does not
+launder the obligation, and no code path may model
+`raw Gmail → extracted fact → ordinary global data`.
+
+### Two consents, and the second is optional
+
+`private_gmail_processing` ("process my mailbox to provide MY OWN workflow and
+intelligence") is required for the product to function at all.
+
+`network_intelligence_contribution` ("let eligible privacy-safe derived signals
+contribute to aggregated features") is **separate, explicit, revocable and
+default NOT granted**. Connecting a mailbox must deliver real private value with
+it false, or the second consent is a dark pattern. The absence of a receipt is
+never consent.
+
+D019's dataset moat and D009/D050's aggregation privacy rules are unchanged —
+this decides *how a contribution becomes eligible*, not whether aggregates are
+valuable.
+
+### Staff hold no private mail access by role
+
+`public.is_admin_or_editor()` governs editorial and provider evidence because
+reviewing hotel data is staff work. It governs **nothing** in the private
+communication plane. Support inspection, abuse investigation and legal
+compulsion require a separately contracted, audited mechanism.
+
+### Consent state is the LATEST decision, and the database owns the order
+
+"May we?" is answered by the most recent thing the human decided, which requires
+the database to know which decision is most recent. `decided_at` is supplied by
+the caller and can be back-dated; `created_at` is transaction start time and is
+identical for two receipts written together; a random UUID's lexical order is not
+chronology. So consent receipts carry a database-generated monotonic ordinal, the
+current-consent projection names the receipt holding the greatest one, and the
+projection may never move backwards. Re-granting after a withdrawal happens ONLY
+through a new granted decision — never by pointing at the old one again.
+
+A recorded withdrawal that does not take effect is the failure this closes, and
+it is worse than a withdrawal that was never offered: the receipt makes the
+product look compliant while the permission stays on.
+
+### Consent is scoped to the access that actually existed
+
+A consent receipt records the scopes in force when the human decided, and that
+snapshot is checked against the mailbox rather than accepted from the writer.
+Incremental authorization can widen access later; Google's screen asks about
+ACCESS, not about what this product may do with the data. So a change to the
+scope set — widening or narrowing — requires a new `private_gmail_processing`
+receipt naming the new set before the mailbox may be `connected` again.
+
+### A durable provider identity has one app owner
+
+`(provider, provider_account_subject)` — Google's stable subject, never the email
+address — identifies a real Google account. It belongs to exactly ONE app user
+for as long as any of its mail-account history exists in the product, retired
+records included. Shared inboxes, agency delegation and cross-tenant transfer are
+not implemented, and none of them is reachable by editing a column.
+
+The subtlety is that this cannot be a uniqueness rule on the mailbox table.
+Making it full forbids the same-owner reconnection that terminal deletion
+requires; restricting it to live rows permits that reconnection but stops the
+database seeing retired ones, so a second app user could claim a Google account
+whose previous owner's consent receipts and deletion record are still on file.
+Ownership therefore lives in its own registry keyed by the durable identity,
+spanning a mailbox's whole history, while a separate live-row rule keeps a single
+usable connection at a time.
+
+Two consequences are decisions, not details. A creator may always reconnect their
+own Google account, as a NEW mail account inheriting no consent and no history.
+And erasing an app user releases the reservation along with the rest of their
+private plane — a reservation that outlived its human would ban a Google account
+permanently with nothing left in the product to protect. That erasure is the
+ONLY release: while the owning user exists the reservation cannot be removed by
+anyone, including the trusted server role and the database owner, whether or not
+any mailbox still references it. Otherwise deleting a mailbox row and then its
+reservation would move a Google account between app users with the owner
+untouched, which is the transfer this decision refuses.
+
+### Disconnect is not delete, and deletion is terminal
+
+Stopping provider access and deleting stored data are different acts with
+different consequences, and the model represents both. `deleted` requires a
+completed deletion request **that asked for the record to be retired** — a
+completed `gmail_derived_data` request means the opposite, that derived data goes
+and the account record is kept so the connection stays auditable.
+
+`deleted` is terminal. The record asserts that stored Gmail data was removed; a
+revived row would make that assertion false while still carrying the completed
+deletion as its evidence. A returning creator reconnects as a NEW mail account
+with a new authorization and a new consent, which is the honest record of a
+second, separate grant of access.
+
+### Deletion must stay addressable
+
+Every Gmail-origin or Gmail-derived row must be traceable to its mail account AND
+its owner. A derived record whose owner provenance is lost cannot be deleted on
+request, which is an obligation rather than a preference.
+
+Reason:
+Gmail data is the one place where a modelling shortcut is simultaneously a
+compliance failure, a trust failure and a product failure. The boundary is
+therefore fixed before the first message is stored, rather than discovered during
+verification.
+
+Consequence:
+B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
+migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
+under it, and the C-phase intelligence may consume only what G3 admits.
+
+External audit amendment #3 (2026-08-27) added the release rule above, after the
+same cross-owner transfer proved reachable at amendment #2's head by deleting a
+mailbox row and then its ownership reservation, with the owning user untouched.
+
+External audit amendment #2 (2026-08-27) added the durable-provider-identity
+paragraphs above. Amendment #1's terminality work had traded the full uniqueness
+on `(provider, provider_account_subject)` for a live-rows-only index in order to
+permit same-owner reconnection, and that silently allowed one Google account to
+move between app owners; it too was reproduced as a real committed state before
+being closed.
+
+External audit amendment #1 (2026-08-27) added the event-ordering, scope-snapshot
+and deletion-terminality paragraphs above after all four were reproduced as real
+committed states on PostgreSQL using nothing but direct SQL. They are stated as
+decisions, not implementation notes, because each one changes what a writer is
+allowed to do: B02 must record a mailbox's scopes and its consent in one
+transaction, must renew private-processing consent when it adds `gmail.send`, and
+must treat a retired mail account as gone rather than reusable, and must handle a
+refused connection when the Google account is already owned by a different app
+user.

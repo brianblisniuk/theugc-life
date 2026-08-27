@@ -79,7 +79,7 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 | A04 | **DONE** (PR #29, merged `6cffa8b9`) | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
 | A04.5 | **DONE** (PR #30, head `d09231e96762a51b0af7398931037507b805e9ac`, merged `bbd0d887e6c15b7dea881b77667213b8ef5232a2`) | human identity + destination review evidence pilot | an explicit human `approve_create` becomes durable, append-only, current-evidence-bound evidence that D062's conditions 1 and 2 cite; nothing canonical is written |
 | A04.6 | **DONE** (PR #31, final audited head `4a6ae0432810df05a8aa176b7d8a0cd4b2b8edc0`, merged `da968185fb3125b33b3b965e63f153ada0ad552f`) | human review revocation | a human can withdraw a previous `approve_create` so it immediately stops authorizing D062, without touching the immutable receipt, deleting history, or publishing anything |
-| A05 | **IN PROGRESS** — open PR, not merged | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
+| A05 | **DONE** (PR #32, final audited head `463b0e32afdb94b7c4a0ffff999468829f89ccce`, merged `ed857f0ba38013772b5a94d488ed9295123676fb`) | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
 **Base rounds:** 4 *(original estimate, preserved)*  
 **Cumulative future rounds:** 6
@@ -220,9 +220,44 @@ transaction, with immutable publication provenance. Its contract is
 [`A05_ATOMIC_D062_PUBLICATION_CONTRACT.md`](A05_ATOMIC_D062_PUBLICATION_CONTRACT.md),
 implemented by migration `0034` and `scripts/source-publication/*`.
 
-A05 is **not DONE** — it is an open PR awaiting external audit and the human
-merge gate. No real production publication has been performed, no canonical hotel
-exists, and the eight A04.7 evaluation PASS identities remain unpublished.
+**Amendment #1 (external audit).** Three database-integrity blockers, all
+reproduced on real PostgreSQL before being fixed. The claimed publication IFF was
+one-way, so `hotel → ACTIVE link → resolved_eligible` with **no publication
+receipt at all** committed happily — a canonical hotel through the
+source-publication lifecycle with no human authorization behind it. A REVOKED
+approval was still publishable by direct SQL, because the receipt trigger read
+the immutable review receipt and never asked whether it was still the
+authorization in force. And the canonical field policy was writer-only for name,
+address and country, so direct SQL could publish a name nobody affirmed, an
+address the human explicitly CONTRADICTED, or a fabricated country code. The
+invariant is now two-sided and enforced from both write origins; the cited
+approval must be the current, active, unwithdrawn one about the current
+observation; and the full field policy is a database property. 0034 was amended
+in place, and the migration refuses to run against a database already carrying an
+unaccountable `resolved_eligible` identity rather than inventing history.
+
+A05 merged as PR #32 (final audited head
+`463b0e32afdb94b7c4a0ffff999468829f89ccce`, merge commit
+`ed857f0ba38013772b5a94d488ed9295123676fb`) — **FINAL PASS**. At that head:
+
+- **1,750 tests** across 59 files, CI green on the exact head;
+- a true **publication receipt ↔ `resolved_eligible`** invariant, both
+  directions, deferred to COMMIT and registered on both write origins;
+- publication requires a **current, active, non-revoked** human approval about
+  the **current** observation;
+- the canonical field policy — destination, star, coordinates, scope, name,
+  address, country, `active_status`, and the fields A05 does not own — enforced
+  by the writer **and** by the database;
+- **evaluation identities permanently unpublishable**, with the A04.7 pilot's
+  eight real 11/11 PASS provider ids as the committed regression;
+- **no real production hotel published**, and none exists.
+
+**PHASE A CODE GATE COMPLETE.** A real source property can reach a
+human-reviewable canonical publication decision, and an explicitly authorized one
+can become canonical inventory, without hidden assumptions or direct
+provider-to-canonical shortcuts. What remains open in Phase A is operational, not
+structural: no production provider ingestion exists yet, so nothing has been
+published.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 
@@ -234,9 +269,24 @@ exists, and the eight A04.7 evaluation PASS identities remain unpublished.
 
 **Before B01:** ChatGPT performs a current primary-source Gmail/OAuth/privacy/technical contract. Do not let CC invent scopes, retention or shared-data semantics.
 
+**That contract is closed.** The architecture owner performed the primary-source
+research on 2026-08-27; it is recorded as **D067** and implemented as
+[`B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`](B01_GMAIL_DATA_BOUNDARY_CONTRACT.md) plus
+migration `0035`. Headline inputs: `gmail.readonly` (RESTRICTED) is required and
+`gmail.metadata` is insufficient — no message body, and the `q` search parameter
+is unavailable under it; `gmail.send` (SENSITIVE) is requested later through
+incremental authorization; Limited Use follows **derived** data, so a reply
+classification remains Gmail-derived; and network contribution is a **separate,
+explicit, revocable, default-OFF** consent rather than something a blanket
+"connect Gmail" click can imply.
+
+**B01 is schema, contract and RLS only. Gmail OAuth is NOT implemented** — no
+client id, no callback, no API call, no token stored, no mailbox connected. That
+is B02.
+
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| B01 | GATED | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
+| B01 | **IN PROGRESS** — open PR, not merged | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
 | B02 | GATED | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
 | B03 | GATED | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
@@ -546,28 +596,63 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-At this baseline, Phase A's evidence, preview and human-decision layers are
-closed:
+At this baseline, Phase A is closed at the code gate:
 
-> **A01 (PR #26), A02 (PR #27), A03 (PR #28), A04 (PR #29), A04.5 (PR #30) and
-> A04.6 (PR #31) are merged.** A04 landed on `main` as merge commit `6cffa8b9`;
-> A04.5 as `bbd0d887e6c15b7dea881b77667213b8ef5232a2`; A04.6 as
-> `da968185fb3125b33b3b965e63f153ada0ad552f`.
+> **A01 (PR #26), A02 (PR #27), A03 (PR #28), A04 (PR #29), A04.5 (PR #30),
+> A04.6 (PR #31) and A05 (PR #32) are all merged.** A04 landed on `main` as merge
+> commit `6cffa8b9`; A04.5 as `bbd0d887e6c15b7dea881b77667213b8ef5232a2`; A04.6
+> as `da968185fb3125b33b3b965e63f153ada0ad552f`; A05 as
+> `ed857f0ba38013772b5a94d488ed9295123676fb`.
 
 > **A04.6 (PR #31) is merged as `da968185fb3125b33b3b965e63f153ada0ad552f`.**
 
 The open implementation block is:
 
-> **A05 — human authorization + atomic D062 publication apply. Open PR, not
-> merged, awaiting external audit and the human merge gate.**
+> **B01 — mail account, consent and the private communication boundary. Open PR,
+> not merged, external audit amendments #1, #2 and #3 applied, awaiting re-audit
+> and the human merge gate.**
 
-A05 is the only round open, and it is the first block that can write a canonical
-row at all. Nothing has been published on the strength of A04, A04.5, A04.6 or
-A04.7: A04 previews pre-publication evidence, A04.5 records a human decision
-about it, A04.6 withdraws one, and A04.7 exercised all three on real evaluation
-evidence without a single canonical write. A05 adds the separate, explicit
-publication authorization — and a D062 PASS remains necessary and never
-sufficient.
+**Phase A's code gate is closed.** A05 merged as `ed857f0b`, and with it the
+canonical property spine: preview (A04), human decision (A04.5), withdrawal
+(A04.6), a real ten-property pilot on evaluation evidence (A04.7) and atomic
+authorized publication (A05). No canonical hotel has been published, because no
+production provider ingestion exists yet — that is operational work, not a
+missing structure.
+
+External audit amendment #1 (2026-08-27) closed four integrity blockers in `0035`
+before any of it was merged, each first reproduced as a real committed state on
+PostgreSQL using nothing but direct SQL: a withdrawal that could be recorded
+without taking effect, a current consent that could be rewound to a grant already
+withdrawn, a `deleted` mailbox produced by a deletion nobody asked for, and a
+consent receipt that could describe a mailbox that never existed. `deleted` is
+now terminal, consent events carry a database-owned ordinal, and the scope
+snapshot is checked against the account rather than accepted from the writer. The
+migration was amended IN PLACE — `0035` is unmerged, so there is no history to
+correct with an `0036`.
+
+External audit amendment #3 (2026-08-27) closed the last opening in that model:
+the ownership reservation could be deleted outright while its owner still
+existed, so the same cross-owner transfer was reachable by removing a mailbox row
+and then its reservation. Releasing a reservation is now possible only as part of
+erasing the owning user, and the trusted role no longer holds DELETE on the
+registry.
+
+External audit amendment #2 (2026-08-27) closed a regression amendment #1 had
+introduced. Making `deleted` terminal meant a creator reconnecting their own
+Gmail account needed a new row, which required relaxing the provider-subject
+uniqueness to live rows only — and that stopped the database seeing retired rows
+at all, so a second app user could claim a Google account whose previous owner's
+consent receipts and deletion record were still on file. Ownership of a durable
+provider identity now lives in its own registry spanning a mailbox's whole
+history, with the live-row rule left to govern only the present. Reproduced
+first, as a real committed cross-owner state, then closed.
+
+B01 opens Phase B on a deliberately different footing. Everything Phase A built
+is provider evidence reviewed by staff whose job is to review it; a creator's
+mailbox is private correspondence, and under Google's restricted-scope rules the
+obligations follow the data including what is derived from it. So the boundary is
+fixed before the first message exists, and `public.is_admin_or_editor()` — which
+governs every Phase-A evidence table — governs nothing in the new plane.
 
 The canonical target spine must still be closed before Gmail implementation
 begins. In parallel, business/technical research may prepare the Gmail contract,
