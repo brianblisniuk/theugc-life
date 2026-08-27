@@ -27,6 +27,76 @@
 -- no mailbox, infers no consent, enrols no user and stores no token.
 
 -- ===========================================================================
+-- 0. THE SCOPE VOCABULARY — ONE DEFINITION, USED EVERYWHERE
+-- ===========================================================================
+-- Two places have to agree about Google scopes: what a mailbox currently holds,
+-- and what a consent receipt says the human was told they were agreeing to. If
+-- each carries its own copy of the allow-list, the two drift and the receipt
+-- stops being evidence about the account. So the allow-list is a function, and
+-- both CHECKs call it.
+create or replace function public.approved_gmail_scopes()
+returns text[]
+language sql
+immutable
+as $$
+  select array[
+    -- RESTRICTED. Historical analysis needs message bodies; `gmail.metadata`
+    -- cannot return them and cannot be searched with `q`, so it is not a
+    -- lighter-touch substitute — it is a different, insufficient capability.
+    'https://www.googleapis.com/auth/gmail.readonly',
+    -- SENSITIVE, and requested LATER through incremental authorization, only
+    -- when a human activates a feature that sends mail on their behalf.
+    'https://www.googleapis.com/auth/gmail.send',
+    -- Sign-in identity. Not mailbox access.
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile'
+  ]::text[];
+$$;
+
+comment on function public.approved_gmail_scopes() is
+  'B01: the ONLY definition of the Google scopes this product may hold. Everything broader — gmail.modify, gmail.compose, gmail.insert, mail.google.com, the settings scopes — is absent deliberately.';
+
+-- Scopes are a SET. Google may return them in any order, may repeat one, and a
+-- writer may assemble them from several places. Comparing `text[]` with `=` is
+-- order-sensitive and duplicate-sensitive, so every scope array in this schema
+-- is normalised on write to sorted-distinct form and compared as stored. That is
+-- what makes "the receipt's snapshot equals the account's scopes" a set equality
+-- rather than an accident of ordering.
+create or replace function public.canonical_scope_set(value text[])
+returns text[]
+language sql
+immutable
+as $$
+  select coalesce(
+    (select array_agg(s order by s)
+       from (select distinct btrim(x) as s
+               from unnest(coalesce(value, '{}'::text[])) as x
+              where btrim(coalesce(x, '')) <> '') d),
+    '{}'::text[]
+  );
+$$;
+
+comment on function public.canonical_scope_set(text[]) is
+  'B01: normalises a scope array to sorted-distinct form so scope sets can be compared with `=`. Applied on write to mail_accounts.granted_scopes and to consent receipt snapshots.';
+
+create or replace function public.normalize_gmail_scope_column()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_argv[0] = 'granted_scopes' then
+    new.granted_scopes := public.canonical_scope_set(new.granted_scopes);
+  else
+    new.granted_scopes_at_decision := public.canonical_scope_set(new.granted_scopes_at_decision);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.normalize_gmail_scope_column() from public;
+
+-- ===========================================================================
 -- 1. THE CONNECTED MAILBOX
 -- ===========================================================================
 -- G0 in the boundary contract: account and authorization METADATA. It says a
@@ -92,13 +162,7 @@ create table public.mail_accounts (
   -- convenience" is not something a future writer can do quietly.
   granted_scopes text[] not null default '{}'
     constraint mail_accounts_scope_allowlist check (
-      granted_scopes <@ array[
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.send',
-        'openid',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile'
-      ]::text[]
+      granted_scopes <@ public.approved_gmail_scopes()
     ),
 
   connected_at timestamptz,
@@ -107,11 +171,22 @@ create table public.mail_accounts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
-  -- ONE PROVIDER ACCOUNT, ONE OWNING APP USER. Without this, two app users could
-  -- both claim the same Google account and each would appear to own its history.
-  -- Shared-inbox ownership and agency delegation are deliberately future work
-  -- and will need explicit authorization, not a second row.
-  constraint mail_accounts_provider_account_uk unique (provider, provider_account_subject),
+  -- THE DELETION THIS RECORD'S RETIREMENT RESTS ON.
+  --
+  -- `deletion_pending` and `deleted` are claims about a specific request, not
+  -- about the mailbox's history in general. Naming the request makes the claim
+  -- checkable: without this pointer, any completed request ever filed — for a
+  -- narrower scope, from years earlier, already superseded — would satisfy a
+  -- present-tense state, and "your account was deleted" would be provable by an
+  -- unrelated event. The composite FK in §4 also forces the request to belong to
+  -- THIS mailbox, so one account's deletion cannot retire another's.
+  --
+  -- No `on delete` action: the requests cascade when the account row goes, and
+  -- by then this row no longer exists to reference them.
+  current_deletion_request_id uuid,
+
+  -- ONE PROVIDER ACCOUNT, ONE OWNING APP USER — enforced by the partial unique
+  -- index below rather than a table constraint, for a reason worth stating.
 
   -- THE PROVENANCE SPINE. Every future Gmail-origin or Gmail-derived table
   -- composite-FKs `(mail_account_id, owner_user_id)` against this pair, so no
@@ -127,20 +202,174 @@ create table public.mail_accounts (
     or (connected_at is not null and cardinality(granted_scopes) > 0)
   ),
 
+  -- CONNECTED MEANS WE CAN ACTUALLY READ. A non-empty scope set is not enough:
+  -- `openid` plus `gmail.send` is a mailbox we may write to and may not read,
+  -- which is not a Gmail connection in this product's sense at all. Every G1/G2
+  -- capability the roadmap describes starts from reading messages, so the base
+  -- read grant is what the state word `connected` is allowed to assert.
+  constraint mail_accounts_connected_requires_read check (
+    connection_state <> 'connected'
+    or granted_scopes @> array['https://www.googleapis.com/auth/gmail.readonly']::text[]
+  ),
+
   -- ACCESS HAS STOPPED, and the row says so rather than merely implying it.
   -- Emptying `granted_scopes` is the metadata half of revocation; B02 revokes at
   -- Google and destroys the credential, and neither substitutes for the other.
   constraint mail_accounts_disconnected_shape check (
     connection_state not in ('disconnected', 'deletion_pending', 'deleted')
     or (disconnected_at is not null and cardinality(granted_scopes) = 0)
+  ),
+
+  -- A DELETION STATE MUST NAME ITS DELETION. The pointer's target is validated
+  -- in §4 (same mailbox) and §5 (right status, right scope); this row-local
+  -- CHECK is the part that can be immediate, so the pointer can never simply be
+  -- left behind when the state is set.
+  constraint mail_accounts_deletion_state_has_request check (
+    connection_state not in ('deletion_pending', 'deleted')
+    or current_deletion_request_id is not null
+  ),
+
+  -- ...and a mailbox that is NOT in a deletion state must not carry a stale
+  -- pointer, so the field always means "the deletion this state rests on".
+  constraint mail_accounts_non_deletion_state_has_no_request check (
+    connection_state in ('deletion_pending', 'deleted')
+    or current_deletion_request_id is null
   )
 );
+
+-- ONE PROVIDER ACCOUNT, ONE LIVE MAILBOX RECORD. Without this, two app users
+-- could both claim the same Google account and each would appear to own its
+-- history. Shared-inbox ownership and agency delegation are deliberately future
+-- work and will need explicit authorization, not a second row.
+--
+-- RETIRED RECORDS ARE EXCLUDED, and this is a direct consequence of `deleted`
+-- being terminal (see the trigger below). A creator who deletes their mailbox
+-- data and later reconnects the same Google account must get a NEW row: the old
+-- one asserts that their data was removed and may never be revived. If this
+-- index covered retired rows, terminality would silently mean "you can never
+-- reconnect this address", which is not a privacy guarantee, just a bug. What
+-- the index still forbids is the thing that matters — two LIVE records for one
+-- Google account, in any state a connection can actually be used from.
+create unique index mail_accounts_provider_account_uidx
+  on public.mail_accounts (provider, provider_account_subject)
+  where connection_state <> 'deleted';
 
 create index mail_accounts_user_idx on public.mail_accounts (user_id, connection_state);
 
 create trigger mail_accounts_set_updated_at
   before update on public.mail_accounts
   for each row execute function public.set_updated_at();
+
+create trigger mail_accounts_normalize_scopes
+  before insert or update on public.mail_accounts
+  for each row execute function public.normalize_gmail_scope_column('granted_scopes');
+
+-- ---------------------------------------------------------------------------
+-- `deleted` IS TERMINAL
+-- ---------------------------------------------------------------------------
+-- Every other connection state is a stage in a mailbox's life and may be left.
+-- `deleted` is not a stage: it is the assertion that the stored Gmail data is
+-- gone and the record is retired. Reviving that row would reattach a live
+-- mailbox to a completed deletion request — the user is told their data was
+-- removed while the same row starts accumulating again, and the evidence trail
+-- says the deletion succeeded. A returning creator gets a NEW mail_accounts row
+-- through a fresh authorization and a fresh consent; that is not a hardship,
+-- it is the correct record of a second, separate grant of access.
+create or replace function public.enforce_mail_account_state_transition()
+returns trigger
+language plpgsql
+as $$
+declare
+  request_status text;
+begin
+  -- TERMINALITY FIRST, so that a retired record answers with the reason it is
+  -- refusing everything rather than with whatever rule happens to be tested next.
+  if old.connection_state = 'deleted' then
+    if new.connection_state <> 'deleted' then
+      raise exception
+        'mail account % is `deleted` and cannot become `%`. Deletion is terminal: the record asserts that stored Gmail data was removed, and a revived row would make that assertion false while still carrying the completed deletion request as its evidence. Reconnecting is a NEW mail account with a NEW authorization and a NEW consent.',
+        old.id, new.connection_state
+        using errcode = 'restrict_violation';
+    end if;
+
+    -- The pointer is frozen with the state: swapping the request afterwards
+    -- would let the account keep the word `deleted` while the deletion it names
+    -- changes underneath.
+    if new.current_deletion_request_id is distinct from old.current_deletion_request_id then
+      raise exception
+        'mail account % is `deleted`; the deletion request it rests on cannot be replaced. The evidence for a completed deletion is fixed at the moment the state was set.',
+        old.id
+        using errcode = 'restrict_violation';
+    end if;
+
+    return new;
+  end if;
+
+  -- ENTERING `deletion_pending` MEANS WAITING ON A DELETION THAT IS RUNNING NOW.
+  --
+  -- This one is checked IMMEDIATELY rather than at COMMIT, and the difference is
+  -- the whole point. A deferred check only ever sees where the transaction ended
+  -- up, so a writer could pass through `deletion_pending` pointing at a request
+  -- that finished long ago and land on `deleted` in the same transaction — the
+  -- end state looks perfect and the waiting never happened. Testing the pointer
+  -- at the moment it is set is what makes "the request that ran is the request
+  -- that is credited" true rather than merely usual.
+  if new.connection_state = 'deletion_pending'
+     and (old.connection_state is distinct from 'deletion_pending'
+          or new.current_deletion_request_id is distinct from old.current_deletion_request_id) then
+    select r.status into request_status
+      from public.mail_account_deletion_requests r
+     where r.id = new.current_deletion_request_id;
+
+    if not found then
+      raise exception
+        'mail account % cannot become `deletion_pending` naming a deletion request that does not exist yet. Record the request first: the state is a claim that specific work is under way.',
+        old.id
+        using errcode = 'restrict_violation';
+    end if;
+
+    if request_status not in ('requested', 'in_progress') then
+      raise exception
+        'mail account % cannot start waiting on a deletion request that is already `%`. A finished request is history; a present-tense state needs work that is actually running.',
+        old.id, request_status
+        using errcode = 'restrict_violation';
+    end if;
+  end if;
+
+  -- ENTERING `deleted` IS THE END OF A DELETION THIS ROW WAS ALREADY WAITING ON.
+  --
+  -- §5 requires the named request to be completed and account-scoped, but on its
+  -- own that still lets a request completed long ago — one the mailbox was never
+  -- retired for, perhaps from a connection two authorizations back — be picked up
+  -- later as the evidence for a fresh `deleted`. Requiring the transition to come
+  -- out of `deletion_pending` on the SAME request removes the possibility rather
+  -- than testing for it: the pointer can only be set while the request is still
+  -- open (§5 again), so a stale completed request can never be pointed at at all.
+  if new.connection_state = 'deleted' and old.connection_state <> 'deleted' then
+    if old.connection_state <> 'deletion_pending' then
+      raise exception
+        'mail account % cannot go from `%` straight to `deleted`. A retirement is the end of a deletion this record was waiting on: it passes through `deletion_pending` on the request that is running, so the completed request it finally rests on is the one it actually waited for.',
+        old.id, old.connection_state
+        using errcode = 'restrict_violation';
+    end if;
+
+    if new.current_deletion_request_id is distinct from old.current_deletion_request_id then
+      raise exception
+        'mail account % became `deleted` naming a different deletion request than the one it was pending on. The request that ran must be the request that is credited.',
+        old.id
+        using errcode = 'restrict_violation';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.enforce_mail_account_state_transition() from public;
+
+create trigger mail_accounts_state_transition
+  before update on public.mail_accounts
+  for each row execute function public.enforce_mail_account_state_transition();
 
 comment on table public.mail_accounts is
   'B01 G0: a connected mailbox as ACCOUNT METADATA. Private communication plane — never editorial data, never network-visible, and it holds no OAuth credential. See B01_GMAIL_DATA_BOUNDARY_CONTRACT.md.';
@@ -162,6 +391,28 @@ comment on column public.mail_accounts.granted_scopes is
 -- the record of what was once agreed.
 create table public.mail_account_consent_receipts (
   id uuid primary key default gen_random_uuid(),
+
+  -- THE ORDER OF EVENTS, OWNED BY THE DATABASE.
+  --
+  -- "Which decision is the latest one?" has to have exactly one answer, and none
+  -- of the obvious candidates gives it:
+  --
+  --   decided_at   is supplied by the caller. A writer that passes a stale or
+  --                clock-skewed timestamp — or an attacker who passes one on
+  --                purpose — would make a withdrawal sort before the grant it
+  --                revokes.
+  --   created_at   is `now()`, which in PostgreSQL is transaction start time.
+  --                Two receipts written in one transaction share it exactly, and
+  --                a long transaction can stamp a receipt earlier than one a
+  --                short later transaction already committed.
+  --   id           is a random UUID. Lexical order over v4 UUIDs is not
+  --                chronology in any sense; it only looks like an ordering.
+  --
+  -- An identity column is generated by the database at INSERT, is strictly
+  -- increasing, and cannot be supplied or overridden by the writer (`generated
+  -- ALWAYS`). Gaps from rolled-back transactions are irrelevant: dominance is
+  -- "greatest sequence that exists", never "sequence + 1".
+  event_seq bigint generated always as identity,
 
   mail_account_id uuid not null,
   -- Denormalised and CONSTRAINED to the account's own owner by the composite FK
@@ -192,9 +443,27 @@ create table public.mail_account_consent_receipts (
   consent_text_digest_algorithm text not null default 'sha256'
     check (consent_text_digest_algorithm = 'sha256'),
 
-  -- The scopes in force when the human decided. A consent given against
-  -- read-only access is not consent to a later, wider grant.
-  granted_scopes_at_decision text[] not null default '{}',
+  -- THE SCOPES IN FORCE WHEN THE HUMAN DECIDED — a snapshot, and evidence.
+  --
+  -- A consent given against read-only access is not consent to a later, wider
+  -- grant, so this column is what makes "what were they agreeing about?"
+  -- answerable years later. That only works if it is TRUE, which means two
+  -- things the database has to hold rather than trust:
+  --
+  --   * it must equal the mailbox's ACTUAL granted scopes at the moment the
+  --     receipt was written (§5, R1) — a caller cannot narrate a narrower or
+  --     wider grant than the one that existed;
+  --   * it must never contain a scope this product is not allowed to hold, so a
+  --     forbidden scope cannot enter the schema through the consent side after
+  --     being refused on the account side (the CHECK below).
+  --
+  -- And it is never rewritten. When account scopes change later, the fix is a
+  -- NEW receipt; editing this one would replace what a human actually saw with
+  -- what is convenient now.
+  granted_scopes_at_decision text[] not null default '{}'
+    constraint mail_account_consent_receipts_scope_allowlist check (
+      granted_scopes_at_decision <@ public.approved_gmail_scopes()
+    ),
 
   -- WHO ACTED. In B01 this must be the owner: there is no agency delegation, no
   -- staff-acting-for-user, and no server deciding on a human's behalf. Widening
@@ -217,16 +486,26 @@ create table public.mail_account_consent_receipts (
     references public.mail_accounts (id, user_id) on delete cascade,
 
   -- Reference targets so the CURRENT projection in §3 can be composite-FK'd to a
-  -- receipt that agrees with it on every field that matters. `id` is already the
-  -- primary key, so these add targets and no restriction.
+  -- receipt that agrees with it on every field that matters — including its
+  -- position in the event order. `id` is already the primary key, so these add
+  -- targets and no restriction.
   constraint mail_account_consent_receipts_projection_uk
-    unique (id, mail_account_id, consent_kind, decision)
+    unique (id, mail_account_id, consent_kind, decision, event_seq),
+
+  constraint mail_account_consent_receipts_event_seq_uk unique (event_seq)
 );
 
+-- Ordered by EVENT_SEQ, not by `decided_at`. An index on a caller-supplied
+-- timestamp would quietly invite `order by decided_at desc limit 1` to be
+-- treated as "the current decision", which is the defect this amendment closes.
 create index mail_account_consent_receipts_account_idx
-  on public.mail_account_consent_receipts (mail_account_id, consent_kind, decided_at desc);
+  on public.mail_account_consent_receipts (mail_account_id, consent_kind, event_seq desc);
 create index mail_account_consent_receipts_user_idx
   on public.mail_account_consent_receipts (user_id);
+
+create trigger mail_account_consent_receipts_normalize_scopes
+  before insert on public.mail_account_consent_receipts
+  for each row execute function public.normalize_gmail_scope_column('granted_scopes_at_decision');
 
 comment on table public.mail_account_consent_receipts is
   'B01: APPEND-ONLY history of what a human consented to about their mailbox. A withdrawal is a new receipt; the record of what was once agreed is never edited.';
@@ -261,14 +540,34 @@ returns trigger
 language plpgsql
 as $$
 begin
-  -- A cascade from the account or the user is the deletion path and is allowed;
-  -- `pg_trigger_depth() > 1` is true exactly when this DELETE was caused by
-  -- another table's referential action rather than issued directly.
-  if pg_trigger_depth() > 1 then
+  -- WHAT IS ACTUALLY BEING TESTED. The permitted deletion path is the cascade
+  -- from this receipt's mailbox or from its owning user, and the test is a
+  -- statement about the state those cascades produce, not about how the DELETE
+  -- was reached:
+  --
+  --   PostgreSQL applies a referential action AFTER removing the parent row, so
+  --   when this BEFORE DELETE fires inside such a cascade, the parent — the
+  --   mail_accounts row, or the users row when `on delete cascade` reaches these
+  --   receipts directly — is already gone in this transaction's snapshot.
+  --
+  -- A direct `delete from mail_account_consent_receipts` leaves both parents in
+  -- place, so it fails this test and is refused. Checking BOTH parents matters:
+  -- deleting a user cascades to mail_accounts and to these receipts through two
+  -- separate constraints, and PostgreSQL does not promise which fires first, so
+  -- a check that named only the mailbox would intermittently block a legitimate
+  -- user deletion.
+  --
+  -- The earlier version of this guard used `pg_trigger_depth() > 1`. That is
+  -- true of ANY nested trigger context — an FK cascade, but equally a BEFORE
+  -- trigger on some other table issuing this DELETE itself — so it did not
+  -- prove what it was documented as proving.
+  if not exists (select 1 from public.mail_accounts m where m.id = old.mail_account_id)
+     or not exists (select 1 from public.users u where u.id = old.user_id) then
     return old;
   end if;
+
   raise exception
-    'DELETE on % is refused: consent history is removed only by deleting the mailbox or the user it belongs to. Deleting one receipt would leave a consent record that disagrees with the decisions that produced it.',
+    'DELETE on % is refused: consent history is removed only by deleting the mailbox or the user it belongs to, which cascades all of it at once. Deleting one receipt would leave a consent record that disagrees with the decisions that produced it.',
     tg_table_name
     using errcode = 'restrict_violation';
 end;
@@ -297,6 +596,13 @@ create table public.mail_account_consents (
   state text not null check (state in ('granted', 'withdrawn')),
   current_receipt_id uuid not null,
 
+  -- The named receipt's position in the event order, carried here so that
+  -- "this projection never moves backwards" is a comparison between two values
+  -- in the row being updated rather than a subquery that a concurrent writer
+  -- could race. The composite FK below makes it impossible for this number to
+  -- disagree with the receipt it is copied from.
+  current_event_seq bigint not null,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
@@ -316,8 +622,9 @@ create table public.mail_account_consents (
   -- RESTRICT, not CASCADE: the receipt a projection currently represents cannot
   -- be removed out from under it.
   constraint mail_account_consents_receipt_fk
-    foreign key (current_receipt_id, mail_account_id, consent_kind, state)
-    references public.mail_account_consent_receipts (id, mail_account_id, consent_kind, decision)
+    foreign key (current_receipt_id, mail_account_id, consent_kind, state, current_event_seq)
+    references public.mail_account_consent_receipts
+      (id, mail_account_id, consent_kind, decision, event_seq)
     on delete restrict
 );
 
@@ -326,6 +633,49 @@ create index mail_account_consents_user_idx on public.mail_account_consents (use
 create trigger mail_account_consents_set_updated_at
   before update on public.mail_account_consents
   for each row execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- A PROJECTION MOVES FORWARD ONLY
+-- ---------------------------------------------------------------------------
+-- Consent state is reached by living through events, not by choosing which past
+-- event to stand on. Re-pointing this row at an earlier receipt would resurrect
+-- a permission the human already took back — and it would do so without any new
+-- decision by them, because the grant being pointed at is one they made before
+-- the withdrawal. The only route from `withdrawn` back to `granted` is a NEW
+-- granted receipt, which by construction carries a higher `event_seq`.
+--
+-- This is the immediate, row-local half of the rule; §5 adds the deferred half
+-- that also requires the projection to sit on the LATEST event, not merely a
+-- later one than before.
+create or replace function public.forbid_mail_consent_projection_rewind()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.current_event_seq < old.current_event_seq then
+    raise exception
+      'consent projection for mail account % / % cannot move back from event % to event %. A projection follows the consent history forward; re-granting after a withdrawal requires a NEW granted receipt, never a second use of the one that was already withdrawn.',
+      old.mail_account_id, old.consent_kind, old.current_event_seq, new.current_event_seq
+      using errcode = 'restrict_violation';
+  end if;
+
+  if new.mail_account_id is distinct from old.mail_account_id
+     or new.consent_kind is distinct from old.consent_kind then
+    raise exception
+      'consent projection for mail account % / % cannot be re-pointed at a different mailbox or permission. Moving the row is how one permission''s history would come to answer for another''s.',
+      old.mail_account_id, old.consent_kind
+      using errcode = 'restrict_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.forbid_mail_consent_projection_rewind() from public;
+
+create trigger mail_account_consents_no_rewind
+  before update on public.mail_account_consents
+  for each row execute function public.forbid_mail_consent_projection_rewind();
 
 comment on table public.mail_account_consents is
   'B01: the CURRENT answer to "may we do this with this mailbox?", per permission. Composite-FK''d to the receipt it represents, so projection and history cannot disagree. ABSENCE MEANS NOT GRANTED.';
@@ -424,8 +774,23 @@ create table public.mail_account_deletion_requests (
     (status <> 'completed' or completed_at is not null)
     and (status <> 'failed' or (failure_reason is not null and length(btrim(failure_reason)) > 0))
     and (status in ('completed', 'failed') or completed_at is null)
-  )
+  ),
+
+  -- Reference target for the account's `current_deletion_request_id` pointer.
+  -- `id` is already the primary key, so this adds a target and no restriction —
+  -- what it buys is that the pointer must name a request belonging to THE SAME
+  -- mailbox, declaratively.
+  constraint mail_account_deletion_requests_id_account_uk unique (id, mail_account_id)
 );
+
+-- THE POINTER, now that its target exists. NOT deferrable: the state-transition
+-- trigger already requires the request to exist and be running before an account
+-- may start waiting on it, so there is no legitimate window in which this
+-- reference is allowed to dangle.
+alter table public.mail_accounts
+  add constraint mail_accounts_current_deletion_request_fk
+  foreign key (current_deletion_request_id, id)
+  references public.mail_account_deletion_requests (id, mail_account_id);
 
 -- ONE open request per mailbox. Two concurrent deletions of the same data is not
 -- a second decision, it is a race.
@@ -461,21 +826,27 @@ as $$
 declare
   account_id uuid;
   account record;
-  open_requests integer;
-  completed_requests integer;
+  request_status text;
+  request_scope text;
+  consent_scopes text[];
 begin
+  -- OLD and NEW are each unassigned outside their own operations, so the row
+  -- image has to be chosen by operation rather than coalesced.
   if tg_table_name = 'mail_accounts' then
     account_id := new.id;
+  elsif tg_op = 'DELETE' then
+    account_id := old.mail_account_id;
   else
     account_id := new.mail_account_id;
   end if;
 
   -- FINAL state, read now rather than trusting the row image queued when this
   -- trigger fired: by commit time either side may have moved again.
-  select m.connection_state, m.user_id into account
+  select m.connection_state, m.user_id, m.granted_scopes, m.current_deletion_request_id
+    into account
     from public.mail_accounts m where m.id = account_id;
 
-  if account.connection_state is null then
+  if not found then
     -- The mailbox was deleted in this transaction; the children cascaded with
     -- it, and there is nothing left to be coherent with.
     return null;
@@ -493,29 +864,85 @@ begin
       using errcode = 'integrity_constraint_violation';
   end if;
 
-  select count(*) filter (where status in ('requested', 'in_progress')),
-         count(*) filter (where status = 'completed')
-    into open_requests, completed_requests
-    from public.mail_account_deletion_requests r
-   where r.mail_account_id = account_id;
+  -- 2. THE SCOPES A CONNECTED MAILBOX HOLDS ARE THE SCOPES ITS CURRENT CONSENT
+  --    WAS GIVEN ABOUT.
+  --
+  --    Incremental authorization means the set can grow after the fact: a
+  --    creator who agreed to read-only analysis can later be asked for
+  --    `gmail.send`. Google's screen asks about ACCESS. It does not ask again
+  --    about what this product may do with the data, and the receipt on file
+  --    describes a narrower mailbox than the one now connected — so silently
+  --    keeping it would leave the documentation saying "consent is scoped to
+  --    what was granted" while the database happily widened the grant without a
+  --    human. Widening therefore requires a NEW private-processing receipt whose
+  --    snapshot names the new set; the projection advances to it, and the
+  --    account and its consent describe the same mailbox again.
+  --
+  --    Narrowing is the same rule for the same reason, and disconnecting is not
+  --    an exception to it: a disconnected mailbox is not `connected`, so this
+  --    check does not apply to it and no consent has to be re-collected to stop.
+  if account.connection_state = 'connected' then
+    select r.granted_scopes_at_decision into consent_scopes
+      from public.mail_account_consents c
+      join public.mail_account_consent_receipts r on r.id = c.current_receipt_id
+     where c.mail_account_id = account_id
+       and c.consent_kind = 'private_gmail_processing';
 
-  -- 2. `deletion_pending` MEANS a deletion is genuinely outstanding. A state
+    if consent_scopes is distinct from public.canonical_scope_set(account.granted_scopes) then
+      raise exception
+        'mail account % is `connected` holding scopes % while its current private_gmail_processing consent was given about %. A change to what Google lets us do is not itself a decision by the human about what we may do with the data: record a NEW consent receipt for the current scope set.',
+        account_id,
+        public.canonical_scope_set(account.granted_scopes),
+        coalesce(consent_scopes::text, 'no scopes at all')
+        using errcode = 'integrity_constraint_violation';
+    end if;
+  end if;
+
+  -- THE DELETION THE STATE RESTS ON — the specific one, read through the
+  -- account's own pointer. Counting requests would let any completed request
+  -- ever filed satisfy a present-tense claim.
+  if account.current_deletion_request_id is not null then
+    select r.status, r.scope into request_status, request_scope
+      from public.mail_account_deletion_requests r
+     where r.id = account.current_deletion_request_id;
+  end if;
+
+  -- 3. `deletion_pending` MEANS a deletion is genuinely outstanding. A state
   --    that merely looks like work in progress, with no request behind it, is a
-  --    promise to the user that nothing is keeping.
-  if account.connection_state = 'deletion_pending' and open_requests = 0 then
+  --    promise to the user that nothing is keeping. A request that already
+  --    finished or failed does not keep it either.
+  if account.connection_state = 'deletion_pending'
+     and coalesce(request_status, '') not in ('requested', 'in_progress') then
     raise exception
-      'mail account % is `deletion_pending` with no outstanding deletion request. The state claims work is under way that nothing recorded asked for.',
-      account_id
+      'mail account % is `deletion_pending` but the deletion request it names is %. The state claims work is under way that nothing recorded is actually doing.',
+      account_id, coalesce(request_status, 'absent')
       using errcode = 'integrity_constraint_violation';
   end if;
 
-  -- 3. `deleted` MEANS a deletion actually completed. This is the difference
-  --    between telling a human their data is gone and being able to show it.
-  if account.connection_state = 'deleted' and completed_requests = 0 then
-    raise exception
-      'mail account % is `deleted` with no COMPLETED deletion request. Disconnecting is not deleting, and a state label is not evidence that data was removed.',
-      account_id
-      using errcode = 'integrity_constraint_violation';
+  -- 4. `deleted` MEANS THIS MAILBOX'S RECORD WAS RETIRED BY A DELETION THAT
+  --    ASKED FOR EXACTLY THAT.
+  --
+  --    Two separate things had to be true and neither was checkable before:
+  --    the named request must have COMPLETED, and its scope must have been
+  --    `account_and_gmail_derived_data`. A completed `gmail_derived_data`
+  --    request means the opposite — the human asked for their Gmail-derived data
+  --    to go while the account record is KEPT, precisely so the connection stays
+  --    auditable. Letting that retire the record would delete something nobody
+  --    asked to delete, and would then read back as evidence that they had.
+  if account.connection_state = 'deleted' then
+    if coalesce(request_status, '') <> 'completed' then
+      raise exception
+        'mail account % is `deleted` but the deletion request it names is %. Disconnecting is not deleting, and a state label is not evidence that data was removed.',
+        account_id, coalesce(request_status, 'absent')
+        using errcode = 'integrity_constraint_violation';
+    end if;
+
+    if request_scope <> 'account_and_gmail_derived_data' then
+      raise exception
+        'mail account % is `deleted` on the strength of a `%` request. That request asked for Gmail-derived data to be removed while the account record is KEPT; retiring the record anyway deletes something the human did not ask to delete.',
+        account_id, request_scope
+        using errcode = 'integrity_constraint_violation';
+    end if;
   end if;
 
   return null;
@@ -529,8 +956,15 @@ create constraint trigger mail_accounts_state_coherent
   deferrable initially deferred
   for each row execute function public.assert_mail_account_state_coherent();
 
+-- DELETE included on the projection: removing the current consent row is
+-- otherwise a way to un-consent a `connected` mailbox with no trigger watching.
 create constraint trigger mail_account_consents_state_coherent
-  after insert or update on public.mail_account_consents
+  after insert or update or delete on public.mail_account_consents
+  deferrable initially deferred
+  for each row execute function public.assert_mail_account_state_coherent();
+
+create constraint trigger mail_account_consent_receipts_state_coherent
+  after insert on public.mail_account_consent_receipts
   deferrable initially deferred
   for each row execute function public.assert_mail_account_state_coherent();
 
@@ -538,6 +972,155 @@ create constraint trigger mail_account_deletion_requests_state_coherent
   after insert or update on public.mail_account_deletion_requests
   deferrable initially deferred
   for each row execute function public.assert_mail_account_state_coherent();
+
+-- ---------------------------------------------------------------------------
+-- THE CURRENT CONSENT IS THE LATEST CONSENT
+-- ---------------------------------------------------------------------------
+-- The composite FK in §3 makes the projection agree with the receipt it names.
+-- It says nothing about whether that receipt is the one that should be named,
+-- and that gap is the whole defect: a withdrawal could be appended to history
+-- while the projection stayed on the earlier grant, so `mail_account_has_consent`
+-- kept answering `true` about a permission the human had taken back — and every
+-- future G1/G2 caller reads exactly that function.
+--
+-- The rule: for each (mailbox, permission) that has any history at all, exactly
+-- one projection exists, and it names the receipt with the greatest `event_seq`.
+-- Withdrawal therefore cannot be recorded without taking effect, and effect
+-- cannot be claimed without a decision to point at.
+--
+-- Deferred, because a legitimate transaction writes the receipt and advances
+-- the projection in two statements and is momentarily inconsistent between them.
+--
+-- REGISTERED ON BOTH ORIGINS — receipt INSERT and projection INSERT/UPDATE/
+-- DELETE. This is the lesson A04.6 amendment #3 paid for: an invariant hung off
+-- one side is not an invariant, it is a habit of whoever writes that side. Here
+-- the same broken state is reachable from either direction (append a receipt
+-- and stop; or move the projection off the latest one), so both directions have
+-- to be able to refuse it.
+create or replace function public.assert_mail_consent_projection_dominant()
+returns trigger
+language plpgsql
+as $$
+declare
+  target_account uuid;
+  target_kind text;
+  latest record;
+  projection record;
+begin
+  if tg_op = 'DELETE' then
+    target_account := old.mail_account_id;
+    target_kind := old.consent_kind;
+  else
+    target_account := new.mail_account_id;
+    target_kind := new.consent_kind;
+  end if;
+
+  if not exists (select 1 from public.mail_accounts m where m.id = target_account) then
+    -- The mailbox went in this transaction and took its consent plane with it.
+    return null;
+  end if;
+
+  select r.id, r.event_seq, r.decision into latest
+    from public.mail_account_consent_receipts r
+   where r.mail_account_id = target_account
+     and r.consent_kind = target_kind
+   order by r.event_seq desc
+   limit 1;
+
+  if not found then
+    -- No history for this permission. A projection cannot exist without one —
+    -- its FK names a receipt — so there is nothing to compare.
+    return null;
+  end if;
+
+  select c.current_receipt_id, c.current_event_seq, c.state into projection
+    from public.mail_account_consents c
+   where c.mail_account_id = target_account
+     and c.consent_kind = target_kind;
+
+  if not found then
+    raise exception
+      'mail account % has % consent history for `%` but no current consent row. A decision that is recorded and not projected is a decision that never takes effect — most dangerously a withdrawal.',
+      target_account, latest.decision, target_kind
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if projection.current_event_seq <> latest.event_seq then
+    raise exception
+      'current consent for mail account % / `%` names event % (%), but the latest recorded decision is event % (%). The current answer to "may we?" must be the human''s most recent decision, not an earlier one that is still convenient.',
+      target_account, target_kind,
+      projection.current_event_seq, projection.state,
+      latest.event_seq, latest.decision
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke all on function public.assert_mail_consent_projection_dominant() from public;
+
+create constraint trigger mail_account_consent_receipts_projection_dominant
+  after insert on public.mail_account_consent_receipts
+  deferrable initially deferred
+  for each row execute function public.assert_mail_consent_projection_dominant();
+
+create constraint trigger mail_account_consents_projection_dominant
+  after insert or update or delete on public.mail_account_consents
+  deferrable initially deferred
+  for each row execute function public.assert_mail_consent_projection_dominant();
+
+-- ---------------------------------------------------------------------------
+-- A RECEIPT'S SCOPE SNAPSHOT IS EVIDENCE, NOT NARRATION
+-- ---------------------------------------------------------------------------
+-- `granted_scopes_at_decision` is the only durable record of what the mailbox
+-- could actually do when a human agreed to something. If the writer may put any
+-- value there, it records what the writer wished were true — including a
+-- narrower set than was really held, which is how a broad grant gets documented
+-- as a modest one.
+--
+-- So it must equal the account's scope set as that set stands when the receipt's
+-- transaction commits. "At commit" is the only definition available and it is
+-- the right one: it is the state the receipt was actually written against, and
+-- it is what a reader would reconstruct.
+--
+-- A consequence worth stating: a transaction that clears scopes and records a
+-- withdrawal together produces a snapshot of `{}`. To preserve "withdrew while
+-- holding gmail.readonly", write the withdrawal receipt in its own transaction
+-- BEFORE clearing the account's scopes. The constraint never rewrites an old
+-- receipt when scopes later change — history is a series of snapshots, and each
+-- one stays true about its own moment.
+create or replace function public.assert_mail_consent_receipt_scopes_actual()
+returns trigger
+language plpgsql
+as $$
+declare
+  account_scopes text[];
+begin
+  select public.canonical_scope_set(m.granted_scopes) into account_scopes
+    from public.mail_accounts m where m.id = new.mail_account_id;
+
+  if not found then
+    return null;
+  end if;
+
+  if new.granted_scopes_at_decision is distinct from account_scopes then
+    raise exception
+      'consent receipt % records scopes % but mail account % actually holds %. The snapshot is evidence about a moment, so it is taken from the mailbox rather than accepted from the caller.',
+      new.id, new.granted_scopes_at_decision, new.mail_account_id, account_scopes
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke all on function public.assert_mail_consent_receipt_scopes_actual() from public;
+
+create constraint trigger mail_account_consent_receipts_scopes_actual
+  after insert on public.mail_account_consent_receipts
+  deferrable initially deferred
+  for each row execute function public.assert_mail_consent_receipt_scopes_actual();
 
 -- ===========================================================================
 -- 6. RLS AND GRANTS — THE PRIVATE COMMUNICATION PLANE

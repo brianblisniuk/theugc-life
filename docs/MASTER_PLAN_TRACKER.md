@@ -609,7 +609,8 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B01 — mail account, consent and the private communication boundary. Open PR,
-> not merged, awaiting external audit and the human merge gate.**
+> not merged, external audit amendment #1 applied, awaiting re-audit and the
+> human merge gate.**
 
 **Phase A's code gate is closed.** A05 merged as `ed857f0b`, and with it the
 canonical property spine: preview (A04), human decision (A04.5), withdrawal
@@ -617,6 +618,17 @@ canonical property spine: preview (A04), human decision (A04.5), withdrawal
 authorized publication (A05). No canonical hotel has been published, because no
 production provider ingestion exists yet — that is operational work, not a
 missing structure.
+
+External audit amendment #1 (2026-08-27) closed four integrity blockers in `0035`
+before any of it was merged, each first reproduced as a real committed state on
+PostgreSQL using nothing but direct SQL: a withdrawal that could be recorded
+without taking effect, a current consent that could be rewound to a grant already
+withdrawn, a `deleted` mailbox produced by a deletion nobody asked for, and a
+consent receipt that could describe a mailbox that never existed. `deleted` is
+now terminal, consent events carry a database-owned ordinal, and the scope
+snapshot is checked against the account rather than accepted from the writer. The
+migration was amended IN PLACE — `0035` is unmerged, so there is no history to
+correct with an `0036`.
 
 B01 opens Phase B on a deliberately different footing. Everything Phase A built
 is provider evidence reviewed by staff whose job is to review it; a creator's

@@ -66,53 +66,153 @@ async function pendingAccount(userId: string = USERS.pro): Promise<Account> {
   return { id: row!.id, userId, subject };
 }
 
-/** Record one consent decision and advance the current projection onto it. */
+const RECEIPT_INSERT = `insert into public.mail_account_consent_receipts
+   (mail_account_id, user_id, consent_kind, decision, policy_version,
+    consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
+    decided_at, receipt_digest)
+ values ($1,$2,$3,$4,$5,$6,$7,$2, now(), $8) returning id, event_seq`;
+
+const PROJECTION_UPSERT = `insert into public.mail_account_consents
+   (mail_account_id, user_id, consent_kind, state, current_receipt_id, current_event_seq)
+ values ($1,$2,$3,$4,$5,$6)
+ on conflict (mail_account_id, consent_kind)
+   do update set state = excluded.state,
+                 current_receipt_id = excluded.current_receipt_id,
+                 current_event_seq = excluded.current_event_seq`;
+
+function receiptParams(
+  account: Account,
+  kind: string,
+  decision: string,
+  scopes: string[],
+): unknown[] {
+  return [
+    account.id,
+    account.userId,
+    kind,
+    decision,
+    POLICY_VERSION,
+    digest(`${kind}|${decision}|${POLICY_VERSION}`),
+    scopes,
+    digest(`${account.id}|${kind}|${decision}|${uniq()}`),
+  ];
+}
+
+/**
+ * Record one consent decision and advance the current projection onto it — in
+ * ONE transaction, because after the amendment the two halves are a single act:
+ * a receipt the projection never reaches is a decision that never takes effect.
+ */
 async function decideConsent(
   account: Account,
   kind: "private_gmail_processing" | "network_intelligence_contribution",
   decision: "granted" | "withdrawn",
   opts: { scopes?: string[] } = {},
 ): Promise<string> {
-  const [receipt] = await adminQuery<{ id: string }>(
-    `insert into public.mail_account_consent_receipts
-       (mail_account_id, user_id, consent_kind, decision, policy_version,
-        consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
-        decided_at, receipt_digest)
-     values ($1,$2,$3,$4,$5,$6,$7,$2, now(), $8) returning id`,
-    [
-      account.id,
-      account.userId,
-      kind,
-      decision,
-      POLICY_VERSION,
-      digest(`${kind}|${decision}|${POLICY_VERSION}`),
-      opts.scopes ?? [GMAIL_READONLY],
-      digest(`${account.id}|${kind}|${decision}|${uniq()}`),
-    ],
-  );
-  await adminQuery(
-    `insert into public.mail_account_consents
-       (mail_account_id, user_id, consent_kind, state, current_receipt_id)
-     values ($1,$2,$3,$4,$5)
-     on conflict (mail_account_id, consent_kind)
-       do update set state = excluded.state, current_receipt_id = excluded.current_receipt_id`,
-    [account.id, account.userId, kind, decision, receipt!.id],
-  );
-  return receipt!.id;
+  let receiptId = "";
+  await txOk(async (q) => {
+    const inserted = await q(
+      RECEIPT_INSERT,
+      receiptParams(account, kind, decision, opts.scopes ?? [GMAIL_READONLY]),
+    );
+    const row = inserted.rows[0] as { id: string; event_seq: string };
+    receiptId = row.id;
+    await q(PROJECTION_UPSERT, [account.id, account.userId, kind, decision, row.id, row.event_seq]);
+  });
+  return receiptId;
 }
 
-/** A fully connected mailbox: private-processing consent granted, then connected. */
-async function connectedAccount(userId: string = USERS.pro): Promise<Account> {
+/**
+ * A fully connected mailbox: scopes, private-processing consent and the
+ * `connected` state established together. They have to be one transaction now:
+ * the receipt's scope snapshot is checked against the account's ACTUAL scopes at
+ * COMMIT, so a fixture that granted consent first and widened access afterwards
+ * would be recording a consent about a mailbox that did not yet exist.
+ */
+async function connectedAccount(
+  userId: string = USERS.pro,
+  scopes: string[] = [GMAIL_READONLY],
+): Promise<Account> {
   const account = await pendingAccount(userId);
-  await decideConsent(account, "private_gmail_processing", "granted");
+  await txOk(async (q) => {
+    await q(
+      `update public.mail_accounts
+          set connection_state = 'connected', connected_at = now(),
+              granted_scopes = $2::text[], last_state_change_at = now()
+        where id = $1`,
+      [account.id, scopes],
+    );
+    const inserted = await q(
+      RECEIPT_INSERT,
+      receiptParams(account, "private_gmail_processing", "granted", scopes),
+    );
+    const row = inserted.rows[0] as { id: string; event_seq: string };
+    await q(PROJECTION_UPSERT, [
+      account.id,
+      account.userId,
+      "private_gmail_processing",
+      "granted",
+      row.id,
+      row.event_seq,
+    ]);
+  });
+  return account;
+}
+
+/** Stop provider access. Stored data is untouched — that is the whole point. */
+async function disconnectAccount(account: Account): Promise<void> {
   await adminQuery(
     `update public.mail_accounts
-        set connection_state = 'connected', connected_at = now(),
-            granted_scopes = array[$2]::text[], last_state_change_at = now()
+        set connection_state = 'disconnected', disconnected_at = now(),
+            granted_scopes = '{}', last_state_change_at = now()
       where id = $1`,
-    [account.id, GMAIL_READONLY],
+    [account.id],
   );
-  return account;
+}
+
+async function openDeletionRequest(
+  account: Account,
+  scope: "gmail_derived_data" | "account_and_gmail_derived_data",
+): Promise<string> {
+  const [row] = await adminQuery<{ id: string }>(
+    `insert into public.mail_account_deletion_requests
+       (mail_account_id, user_id, scope, requested_by_user_id, requested_at)
+     values ($1,$2,$3,$2, now()) returning id`,
+    [account.id, account.userId, scope],
+  );
+  return row!.id;
+}
+
+/**
+ * The whole legitimate retirement, as a writer would perform it: the account
+ * waits on the request it will later be retired by, and only then is it
+ * `deleted`.
+ */
+async function retireAccount(account: Account): Promise<string> {
+  let requestId = "";
+  await txOk(async (q) => {
+    const opened = await q(
+      `insert into public.mail_account_deletion_requests
+         (mail_account_id, user_id, scope, requested_by_user_id, requested_at)
+       values ($1,$2,'account_and_gmail_derived_data',$2, now()) returning id`,
+      [account.id, account.userId],
+    );
+    requestId = (opened.rows[0] as { id: string }).id;
+    await q(
+      `update public.mail_accounts
+          set connection_state = 'deletion_pending', current_deletion_request_id = $2
+        where id = $1`,
+      [account.id, requestId],
+    );
+    await q(
+      "update public.mail_account_deletion_requests set status='completed', completed_at=now() where id=$1",
+      [requestId],
+    );
+    await q("update public.mail_accounts set connection_state = 'deleted' where id = $1", [
+      account.id,
+    ]);
+  });
+  return requestId;
 }
 
 async function accountRow(id: string) {
@@ -125,6 +225,30 @@ async function accountRow(id: string) {
     `select connection_state, granted_scopes, connected_at, disconnected_at
        from public.mail_accounts where id = $1`,
     [id],
+  );
+  return row!;
+}
+
+/** The one definition of "may we?", asked exactly as a future caller would. */
+async function hasConsent(account: Account, kind: string): Promise<boolean> {
+  const [row] = await adminQuery<{ granted: boolean }>(
+    "select public.mail_account_has_consent($1,$2) granted",
+    [account.id, kind],
+  );
+  return row!.granted;
+}
+
+async function currentReceipt(account: Account, kind: string) {
+  const [row] = await adminQuery<{
+    id: string;
+    event_seq: string;
+    granted_scopes_at_decision: string[];
+  }>(
+    `select r.id, r.event_seq, r.granted_scopes_at_decision
+       from public.mail_account_consents c
+       join public.mail_account_consent_receipts r on r.id = c.current_receipt_id
+      where c.mail_account_id = $1 and c.consent_kind = $2`,
+    [account.id, kind],
   );
   return row!;
 }
@@ -144,6 +268,12 @@ async function inTransaction(work: (q: Client["query"]) => Promise<void>): Promi
   } finally {
     await c.end();
   }
+}
+
+/** The same, for setup that is expected to succeed: a refusal fails the test loudly. */
+async function txOk(work: (q: Client["query"]) => Promise<void>): Promise<void> {
+  const message = await inTransaction(work);
+  if (message !== null) throw new Error(`fixture transaction was refused: ${message}`);
 }
 
 d("B01 mail account, consent and the private communication boundary (0035)", () => {
@@ -251,7 +381,7 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
            values ($1, 'gmail', $2)`,
           [USERS.free, account.subject],
         ),
-      ).rejects.toThrow(/provider_account_uk|duplicate key/i);
+      ).rejects.toThrow(/provider_account_uidx|duplicate key/i);
     });
 
     it("14. the trusted server path remains possible", async () => {
@@ -392,10 +522,14 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
         [b.id],
       );
 
-      // Wrong mailbox.
+      // Wrong mailbox. The event ordinal is carried across too, so what refuses
+      // is the FK and not merely a missing column.
       await expect(
         adminQuery(
-          `update public.mail_account_consents set current_receipt_id = $2
+          `update public.mail_account_consents
+              set current_receipt_id = $2,
+                  current_event_seq = (select event_seq
+                                         from public.mail_account_consent_receipts where id = $2)
             where mail_account_id = $1 and consent_kind = 'private_gmail_processing'`,
           [a.id, bReceipt!.id],
         ),
@@ -403,41 +537,48 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
 
       // Wrong permission: a private-processing receipt cannot back a network
       // contribution projection.
-      const [aReceipt] = await adminQuery<{ id: string }>(
-        `select id from public.mail_account_consent_receipts
+      const [aReceipt] = await adminQuery<{ id: string; event_seq: string }>(
+        `select id, event_seq from public.mail_account_consent_receipts
           where mail_account_id = $1 and consent_kind = 'private_gmail_processing'`,
         [a.id],
       );
       await expect(
         adminQuery(
           `insert into public.mail_account_consents
-             (mail_account_id, user_id, consent_kind, state, current_receipt_id)
-           values ($1,$2,'network_intelligence_contribution','granted',$3)`,
-          [a.id, a.userId, aReceipt!.id],
+             (mail_account_id, user_id, consent_kind, state, current_receipt_id, current_event_seq)
+           values ($1,$2,'network_intelligence_contribution','granted',$3,$4)`,
+          [a.id, a.userId, aReceipt!.id, aReceipt!.event_seq],
         ),
       ).rejects.toThrow(/consents_receipt_fk|foreign key/i);
     });
 
     it("8b. the projection cannot disagree with the decision it represents", async () => {
       const account = await connectedAccount();
-      const withdrawn = await adminQuery<{ id: string }>(
-        `insert into public.mail_account_consent_receipts
-           (mail_account_id, user_id, consent_kind, decision, policy_version,
-            consent_text_digest, decided_by_user_id, decided_at, receipt_digest)
-         values ($1,$2,'network_intelligence_contribution','withdrawn',$3,$4,$2, now(), $5)
-         returning id`,
-        [account.id, account.userId, POLICY_VERSION, digest("x"), digest(uniq())],
-      );
-      // `granted` while naming a withdrawal is unrepresentable, not merely
-      // unlikely: the composite FK carries the decision itself.
-      await expect(
-        adminQuery(
+      // In ONE transaction, because a receipt with no projection is now itself
+      // refused: the point under test is the composite FK, so nothing else may
+      // be what fails.
+      const error = await inTransaction(async (q) => {
+        const withdrawn = await q(
+          `insert into public.mail_account_consent_receipts
+             (mail_account_id, user_id, consent_kind, decision, policy_version,
+              consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
+              decided_at, receipt_digest)
+           values ($1,$2,'network_intelligence_contribution','withdrawn',$3,$4,
+                   array[$6]::text[],$2, now(), $5)
+           returning id, event_seq`,
+          [account.id, account.userId, POLICY_VERSION, digest("x"), digest(uniq()), GMAIL_READONLY],
+        );
+        const row = withdrawn.rows[0] as { id: string; event_seq: string };
+        // `granted` while naming a withdrawal is unrepresentable, not merely
+        // unlikely: the composite FK carries the decision itself.
+        await q(
           `insert into public.mail_account_consents
-             (mail_account_id, user_id, consent_kind, state, current_receipt_id)
-           values ($1,$2,'network_intelligence_contribution','granted',$3)`,
-          [account.id, account.userId, withdrawn[0]!.id],
-        ),
-      ).rejects.toThrow(/consents_receipt_fk|foreign key/i);
+             (mail_account_id, user_id, consent_kind, state, current_receipt_id, current_event_seq)
+           values ($1,$2,'network_intelligence_contribution','granted',$3,$4)`,
+          [account.id, account.userId, row.id, row.event_seq],
+        );
+      });
+      expect(error).toMatch(/consents_receipt_fk|foreign key/i);
     });
 
     it("4b. a consent receipt cannot be attributed to the wrong owner", async () => {
@@ -487,16 +628,19 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
         const r = await q(
           `insert into public.mail_account_consent_receipts
              (mail_account_id, user_id, consent_kind, decision, policy_version,
-              consent_text_digest, decided_by_user_id, decided_at, receipt_digest)
-           values ($1,$2,'private_gmail_processing','withdrawn',$3,$4,$2, now(), $5)
-           returning id`,
-          [account.id, account.userId, POLICY_VERSION, digest("x"), digest(uniq())],
+              consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
+              decided_at, receipt_digest)
+           values ($1,$2,'private_gmail_processing','withdrawn',$3,$4,
+                   array[$6]::text[],$2, now(), $5)
+           returning id, event_seq`,
+          [account.id, account.userId, POLICY_VERSION, digest("x"), digest(uniq()), GMAIL_READONLY],
         );
+        const row = r.rows[0] as { id: string; event_seq: string };
         await q(
           `update public.mail_account_consents
-              set state = 'withdrawn', current_receipt_id = $2
+              set state = 'withdrawn', current_receipt_id = $2, current_event_seq = $3
             where mail_account_id = $1 and consent_kind = 'private_gmail_processing'`,
-          [account.id, (r.rows[0] as { id: string }).id],
+          [account.id, row.id, row.event_seq],
         );
       });
       expect(error).toMatch(/cannot be `connected` without a granted private_gmail_processing/);
@@ -506,14 +650,9 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
 
   // =====================================================================
   describe("scopes are a contract, not a preference", () => {
-    it("gmail.readonly and gmail.send are permitted", async () => {
-      const account = await connectedAccount();
-      await expect(
-        adminQuery(
-          "update public.mail_accounts set granted_scopes = array[$2,$3]::text[] where id = $1",
-          [account.id, GMAIL_READONLY, GMAIL_SEND],
-        ),
-      ).resolves.toBeDefined();
+    it("gmail.readonly and gmail.send are both permitted, together", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY, GMAIL_SEND]);
+      expect((await accountRow(account.id)).granted_scopes).toEqual([GMAIL_READONLY, GMAIL_SEND]);
     });
 
     it("the broader Gmail scopes are refused by the database", async () => {
@@ -641,29 +780,37 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
       );
 
       // A label with nothing behind it is a promise to the user that nothing is
-      // keeping.
+      // keeping. The pointer is what makes the promise checkable, so a deletion
+      // state that names no request cannot even be written.
       const pendingWithoutRequest = await inTransaction(async (q) => {
         await q(
           "update public.mail_accounts set connection_state = 'deletion_pending' where id = $1",
           [account.id],
         );
       });
-      expect(pendingWithoutRequest).toMatch(/no outstanding deletion request/);
+      expect(pendingWithoutRequest).toMatch(/naming a deletion request that does not exist yet/);
 
       const deletedWithoutCompletion = await inTransaction(async (q) => {
-        await q(
+        const r = await q(
           `insert into public.mail_account_deletion_requests
              (mail_account_id, user_id, scope, requested_by_user_id, requested_at)
-           values ($1,$2,'account_and_gmail_derived_data',$2, now())`,
+           values ($1,$2,'account_and_gmail_derived_data',$2, now()) returning id`,
           [account.id, account.userId],
+        );
+        const requestId = (r.rows[0] as { id: string }).id;
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deletion_pending', current_deletion_request_id = $2
+            where id = $1`,
+          [account.id, requestId],
         );
         await q("update public.mail_accounts set connection_state = 'deleted' where id = $1", [
           account.id,
         ]);
       });
-      expect(deletedWithoutCompletion).toMatch(/no COMPLETED deletion request/);
+      expect(deletedWithoutCompletion).toMatch(/the deletion request it names is requested/);
 
-      // The legitimate path: request -> complete -> deleted, in one transaction.
+      // The legitimate path: request -> pending on it -> complete -> deleted.
       const ok = await inTransaction(async (q) => {
         const r = await q(
           `insert into public.mail_account_deletion_requests
@@ -671,12 +818,20 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
            values ($1,$2,'account_and_gmail_derived_data',$2, now()) returning id`,
           [account.id, account.userId],
         );
+        const requestId = (r.rows[0] as { id: string }).id;
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deletion_pending', current_deletion_request_id = $2,
+                  last_state_change_at = now()
+            where id = $1`,
+          [account.id, requestId],
+        );
         await q(
           `update public.mail_account_deletion_requests
               set status = 'completed', completed_at = now(),
                   network_contributions_invalidated_at = now()
             where id = $1`,
-          [(r.rows[0] as { id: string }).id],
+          [requestId],
         );
         await q(
           `update public.mail_accounts set connection_state = 'deleted', last_state_change_at = now()
@@ -692,27 +847,8 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
       // `deleted` and `connected` are values of one column, so the two cannot be
       // held at once; and returning to `connected` needs consent all over again.
       const account = await connectedAccount();
-      await adminQuery(
-        `update public.mail_accounts
-            set connection_state = 'disconnected', disconnected_at = now(), granted_scopes = '{}'
-          where id = $1`,
-        [account.id],
-      );
-      await inTransaction(async (q) => {
-        const r = await q(
-          `insert into public.mail_account_deletion_requests
-             (mail_account_id, user_id, scope, requested_by_user_id, requested_at)
-           values ($1,$2,'account_and_gmail_derived_data',$2, now()) returning id`,
-          [account.id, account.userId],
-        );
-        await q(
-          "update public.mail_account_deletion_requests set status='completed', completed_at=now() where id=$1",
-          [(r.rows[0] as { id: string }).id],
-        );
-        await q("update public.mail_accounts set connection_state='deleted' where id=$1", [
-          account.id,
-        ]);
-      });
+      await disconnectAccount(account);
+      await retireAccount(account);
       const row = await accountRow(account.id);
       expect(row.connection_state).toBe("deleted");
       expect(row.connection_state).not.toBe("connected");
@@ -856,6 +992,665 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
       // nothing at all.
       expect([...new Set(client.map((c) => c.grantee))]).toEqual(["authenticated"]);
       expect([...new Set(client.map((c) => c.privilege_type))]).toEqual(["SELECT"]);
+    });
+  });
+
+  // =====================================================================
+  // AMENDMENT #1 — the four blockers an external audit found in the head at
+  // 47a198d3, each reproduced on real PostgreSQL before it was fixed.
+  //
+  // What connects them is that all four let the DATABASE hold a state the
+  // DOCUMENTATION said was impossible: consent that had been withdrawn still
+  // reading as granted, a deletion that never happened reading as done, a
+  // retired record coming back to life, and a consent receipt describing a
+  // mailbox that never existed. None of them needed a bug in an application
+  // writer — there is no writer for this plane yet. Direct SQL was enough.
+  // =====================================================================
+  describe("amendment: the current consent is the LATEST consent", () => {
+    it("A1. a withdrawal the projection never reaches cannot commit", async () => {
+      const account = await connectedAccount();
+      const error = await inTransaction(async (q) => {
+        await q(
+          RECEIPT_INSERT,
+          receiptParams(account, "private_gmail_processing", "withdrawn", [GMAIL_READONLY]),
+        );
+      });
+      // Before the amendment this committed, and mail_account_has_consent kept
+      // answering `true` about a permission the human had taken back.
+      expect(error).toMatch(/the latest recorded decision is event/);
+      expect(await hasConsent(account, "private_gmail_processing")).toBe(true);
+    });
+
+    it("A2. the projection cannot be re-pointed at a historical grant", async () => {
+      const account = await connectedAccount();
+      const grantA = await decideConsent(account, "network_intelligence_contribution", "granted");
+      await decideConsent(account, "network_intelligence_contribution", "withdrawn");
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_account_consents
+              set state = 'granted', current_receipt_id = $2,
+                  current_event_seq = (select event_seq
+                                         from public.mail_account_consent_receipts where id = $2)
+            where mail_account_id = $1 and consent_kind = 'network_intelligence_contribution'`,
+          [account.id, grantA],
+        );
+      });
+      expect(error).toMatch(/cannot move back from event/);
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+    });
+
+    it("A3. re-granting after a withdrawal works — through a NEW decision", async () => {
+      const account = await connectedAccount();
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      await decideConsent(account, "network_intelligence_contribution", "withdrawn");
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(true);
+
+      // Three receipts, in order, none of them edited.
+      const history = await adminQuery<{ decision: string }>(
+        `select decision from public.mail_account_consent_receipts
+          where mail_account_id = $1 and consent_kind = 'network_intelligence_contribution'
+          order by event_seq`,
+        [account.id],
+      );
+      expect(history.map((h) => h.decision)).toEqual(["granted", "withdrawn", "granted"]);
+    });
+
+    it("A4. the withdrawal takes effect the moment it commits", async () => {
+      const account = await connectedAccount();
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(true);
+      await decideConsent(account, "network_intelligence_contribution", "withdrawn");
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+    });
+
+    it("A5. deleting the projection cannot un-record a decision", async () => {
+      const account = await connectedAccount();
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      const error = await inTransaction(async (q) => {
+        await q(
+          `delete from public.mail_account_consents
+            where mail_account_id = $1 and consent_kind = 'network_intelligence_contribution'`,
+          [account.id],
+        );
+      });
+      expect(error).toMatch(/no current consent row/);
+    });
+
+    it("A6. the FIRST decision must be projected too", async () => {
+      const account = await connectedAccount();
+      const error = await inTransaction(async (q) => {
+        await q(
+          RECEIPT_INSERT,
+          receiptParams(account, "network_intelligence_contribution", "granted", [GMAIL_READONLY]),
+        );
+      });
+      expect(error).toMatch(/no current consent row/);
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+    });
+
+    it("A7/A8. the same broken state is refused from EITHER write origin", async () => {
+      // The A04.6 amendment #3 lesson: an invariant hung off one side is not an
+      // invariant, it is a habit of whoever writes that side. Both origins have
+      // to refuse the same end state.
+      const account = await connectedAccount();
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      const grant = await currentReceipt(account, "network_intelligence_contribution");
+
+      // Origin 1 — the RECEIPT side: append a withdrawal and stop.
+      const fromReceiptSide = await inTransaction(async (q) => {
+        await q(
+          RECEIPT_INSERT,
+          receiptParams(account, "network_intelligence_contribution", "withdrawn", [
+            GMAIL_READONLY,
+          ]),
+        );
+      });
+      expect(fromReceiptSide).toMatch(/the latest recorded decision is event/);
+
+      // Origin 2 — the PROJECTION side. Withdraw properly first, then rebuild
+      // the projection onto the old grant by DELETE + INSERT, which the
+      // forward-only UPDATE trigger never sees. Only the dominance invariant,
+      // registered on this side too, is left to refuse it.
+      await decideConsent(account, "network_intelligence_contribution", "withdrawn");
+      const fromProjectionSide = await inTransaction(async (q) => {
+        await q(
+          `delete from public.mail_account_consents
+            where mail_account_id = $1 and consent_kind = 'network_intelligence_contribution'`,
+          [account.id],
+        );
+        await q(PROJECTION_UPSERT, [
+          account.id,
+          account.userId,
+          "network_intelligence_contribution",
+          "granted",
+          grant.id,
+          grant.event_seq,
+        ]);
+      });
+      expect(fromProjectionSide).toMatch(/the latest recorded decision is event/);
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+    });
+
+    it("A9. the event ordinal is the database's, not the caller's", async () => {
+      const account = await connectedAccount();
+      await expect(
+        adminQuery(
+          `insert into public.mail_account_consent_receipts
+             (event_seq, mail_account_id, user_id, consent_kind, decision, policy_version,
+              consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
+              decided_at, receipt_digest)
+           values (1,$1,$2,'network_intelligence_contribution','granted',$3,$4,
+                   array[$6]::text[],$2, now(),$5)`,
+          [account.id, account.userId, POLICY_VERSION, digest("x"), digest(uniq()), GMAIL_READONLY],
+        ),
+      ).rejects.toThrow(/cannot insert a non-DEFAULT value|GENERATED ALWAYS/i);
+    });
+
+    it("A10. ordering is the ordinal, NOT the caller-supplied decided_at", async () => {
+      // The decisive case: a withdrawal back-dated to before the grant. If
+      // `decided_at` ordered events, this would read as an old withdrawal that
+      // the grant superseded — and the mailbox would stay authorized.
+      const account = await connectedAccount();
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      await txOk(async (q) => {
+        const r = await q(
+          `insert into public.mail_account_consent_receipts
+             (mail_account_id, user_id, consent_kind, decision, policy_version,
+              consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
+              decided_at, receipt_digest)
+           values ($1,$2,'network_intelligence_contribution','withdrawn',$3,$4,
+                   array[$6]::text[],$2, now() - interval '10 years', $5)
+           returning id, event_seq`,
+          [account.id, account.userId, POLICY_VERSION, digest("x"), digest(uniq()), GMAIL_READONLY],
+        );
+        const row = r.rows[0] as { id: string; event_seq: string };
+        await q(PROJECTION_UPSERT, [
+          account.id,
+          account.userId,
+          "network_intelligence_contribution",
+          "withdrawn",
+          row.id,
+          row.event_seq,
+        ]);
+      });
+      expect(await hasConsent(account, "network_intelligence_contribution")).toBe(false);
+
+      const [ordering] = await adminQuery<{ oldest_is_latest: boolean }>(
+        `select (select decision from public.mail_account_consent_receipts
+                  where mail_account_id = $1 and consent_kind = 'network_intelligence_contribution'
+                  order by decided_at desc limit 1) = 'granted' oldest_is_latest
+         from public.mail_accounts where id = $1`,
+        [account.id],
+      );
+      // Sorting by decided_at genuinely gives the WRONG answer here, which is
+      // why nothing in this schema does.
+      expect(ordering!.oldest_is_latest).toBe(true);
+    });
+
+    it("A11. dominance is per (mailbox, permission), not global", async () => {
+      const a = await connectedAccount(USERS.pro);
+      const b = await connectedAccount(USERS.free);
+      // b's grant carries a HIGHER global ordinal than a's; then a withdraws,
+      // taking a higher one still. b must be unaffected.
+      await decideConsent(a, "network_intelligence_contribution", "granted");
+      await decideConsent(b, "network_intelligence_contribution", "granted");
+      await decideConsent(a, "network_intelligence_contribution", "withdrawn");
+      expect(await hasConsent(a, "network_intelligence_contribution")).toBe(false);
+      expect(await hasConsent(b, "network_intelligence_contribution")).toBe(true);
+    });
+
+    it("A12. the projection's ordinal cannot lie about its receipt", async () => {
+      const account = await connectedAccount();
+      const grant = await currentReceipt(account, "private_gmail_processing");
+      await expect(
+        adminQuery(
+          `update public.mail_account_consents set current_event_seq = $2
+            where mail_account_id = $1 and consent_kind = 'private_gmail_processing'`,
+          [account.id, Number(grant.event_seq) + 1000],
+        ),
+      ).rejects.toThrow(/consents_receipt_fk|foreign key/i);
+    });
+  });
+
+  // =====================================================================
+  describe("amendment: a deletion state names the deletion it rests on", () => {
+    it("B1. a completed `gmail_derived_data` request cannot retire the record", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      const error = await inTransaction(async (q) => {
+        const r = await q(
+          `insert into public.mail_account_deletion_requests
+             (mail_account_id, user_id, scope, requested_by_user_id, requested_at)
+           values ($1,$2,'gmail_derived_data',$2, now()) returning id`,
+          [account.id, account.userId],
+        );
+        const id = (r.rows[0] as { id: string }).id;
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deletion_pending', current_deletion_request_id = $2
+            where id = $1`,
+          [account.id, id],
+        );
+        await q(
+          "update public.mail_account_deletion_requests set status='completed', completed_at=now() where id=$1",
+          [id],
+        );
+        await q("update public.mail_accounts set connection_state='deleted' where id=$1", [
+          account.id,
+        ]);
+      });
+      // That request asked for derived data to go while the RECORD is kept.
+      expect(error).toMatch(/on the strength of a `gmail_derived_data` request/);
+      expect((await accountRow(account.id)).connection_state).toBe("disconnected");
+    });
+
+    it("B2. `deleted` cannot be reached without waiting on the deletion", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      const error = await inTransaction(async (q) => {
+        const r = await q(
+          `insert into public.mail_account_deletion_requests
+             (mail_account_id, user_id, scope, requested_by_user_id, requested_at, status,
+              completed_at)
+           values ($1,$2,'account_and_gmail_derived_data',$2, now(),'completed', now())
+           returning id`,
+          [account.id, account.userId],
+        );
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deleted', current_deletion_request_id = $2
+            where id = $1`,
+          [account.id, (r.rows[0] as { id: string }).id],
+        );
+      });
+      expect(error).toMatch(/straight to `deleted`/);
+    });
+
+    it("B3. an unrelated completed request cannot be adopted as evidence later", async () => {
+      // The audit's clause in full: a present-tense claim must not be satisfied
+      // by an old event. Pointing at a finished request is impossible because
+      // the pointer can only be set while the request is still open.
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      const stale = await openDeletionRequest(account, "account_and_gmail_derived_data");
+      await adminQuery(
+        "update public.mail_account_deletion_requests set status='completed', completed_at=now() where id=$1",
+        [stale],
+      );
+
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deletion_pending', current_deletion_request_id = $2
+            where id = $1`,
+          [account.id, stale],
+        );
+        await q("update public.mail_accounts set connection_state='deleted' where id=$1", [
+          account.id,
+        ]);
+      });
+      expect(error).toMatch(
+        /cannot start waiting on a deletion request that is already `completed`/,
+      );
+      expect((await accountRow(account.id)).connection_state).toBe("disconnected");
+    });
+
+    it("B4. `deletion_pending` must name a request that is actually running", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      const done = await openDeletionRequest(account, "gmail_derived_data");
+      await adminQuery(
+        "update public.mail_account_deletion_requests set status='failed', failure_reason='provider timeout' where id=$1",
+        [done],
+      );
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deletion_pending', current_deletion_request_id = $2
+            where id = $1`,
+          [account.id, done],
+        );
+      });
+      expect(error).toMatch(/cannot start waiting on a deletion request that is already `failed`/);
+    });
+
+    it("B5. the pointer must name THIS mailbox's request", async () => {
+      const mine = await connectedAccount(USERS.pro);
+      const theirs = await connectedAccount(USERS.free);
+      await disconnectAccount(mine);
+      const theirRequest = await openDeletionRequest(theirs, "account_and_gmail_derived_data");
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'deletion_pending', current_deletion_request_id = $2
+            where id = $1`,
+          [mine.id, theirRequest],
+        );
+      });
+      expect(error).toMatch(/current_deletion_request_fk|foreign key/i);
+    });
+
+    it("B6. a mailbox that is not being deleted carries no deletion pointer", async () => {
+      const account = await connectedAccount();
+      const request = await openDeletionRequest(account, "gmail_derived_data");
+      await expect(
+        adminQuery(
+          "update public.mail_accounts set current_deletion_request_id = $2 where id = $1",
+          [account.id, request],
+        ),
+      ).rejects.toThrow(/non_deletion_state_has_no_request/);
+    });
+
+    it("B7. the legitimate retirement is still possible, and only that one", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      const request = await retireAccount(account);
+      const row = await accountRow(account.id);
+      expect(row.connection_state).toBe("deleted");
+      const [pointer] = await adminQuery<{ current_deletion_request_id: string }>(
+        "select current_deletion_request_id from public.mail_accounts where id = $1",
+        [account.id],
+      );
+      expect(pointer!.current_deletion_request_id).toBe(request);
+    });
+
+    it("B8. the request a retired record rests on cannot be removed", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      const request = await retireAccount(account);
+      const error = await inTransaction(async (q) => {
+        await q("delete from public.mail_account_deletion_requests where id = $1", [request]);
+      });
+      expect(error).toMatch(/current_deletion_request_fk|foreign key|still referenced/i);
+    });
+  });
+
+  // =====================================================================
+  describe("amendment: `deleted` is terminal", () => {
+    it("C1. a retired mailbox cannot be reconnected", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      await retireAccount(account);
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_accounts
+              set connection_state = 'connected', connected_at = now(),
+                  granted_scopes = array[$2]::text[]
+            where id = $1`,
+          [account.id, GMAIL_READONLY],
+        );
+      });
+      expect(error).toMatch(/is `deleted` and cannot become `connected`/);
+    });
+
+    it("C2. no state at all is reachable out of `deleted`", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      await retireAccount(account);
+      for (const state of [
+        "pending_authorization",
+        "connected",
+        "reauth_required",
+        "disconnected",
+        "deletion_pending",
+      ]) {
+        const error = await inTransaction(async (q) => {
+          await q("update public.mail_accounts set connection_state = $2 where id = $1", [
+            account.id,
+            state,
+          ]);
+        });
+        expect(error, state).toMatch(/is `deleted` and cannot become/);
+      }
+      expect((await accountRow(account.id)).connection_state).toBe("deleted");
+    });
+
+    it("C3. the evidence a retired record names cannot be swapped", async () => {
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      await retireAccount(account);
+      const other = await openDeletionRequest(account, "account_and_gmail_derived_data");
+      const error = await inTransaction(async (q) => {
+        await q("update public.mail_accounts set current_deletion_request_id = $2 where id = $1", [
+          account.id,
+          other,
+        ]);
+      });
+      expect(error).toMatch(/cannot be replaced/);
+    });
+
+    it("C4. a returning creator reconnects as a NEW mailbox record", async () => {
+      // Terminality would be a bug rather than a guarantee if it meant "you may
+      // never use this address again". The old row keeps its deletion evidence;
+      // the new one is a separate authorization and a separate consent.
+      const account = await connectedAccount();
+      await disconnectAccount(account);
+      await retireAccount(account);
+
+      const [again] = await adminQuery<{ id: string }>(
+        `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+         values ($1,'gmail',$2) returning id`,
+        [account.userId, account.subject],
+      );
+      expect(again!.id).not.toBe(account.id);
+
+      // ...but two LIVE records for one Google account remain impossible.
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [account.userId, account.subject],
+        ),
+      ).rejects.toThrow(/provider_account_uidx|duplicate key/i);
+    });
+  });
+
+  // =====================================================================
+  describe("amendment: consent scopes are evidence about the mailbox", () => {
+    it("D1. a receipt cannot claim scopes the mailbox does not hold", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY]);
+      const error = await inTransaction(async (q) => {
+        const r = await q(
+          RECEIPT_INSERT,
+          receiptParams(account, "network_intelligence_contribution", "granted", []),
+        );
+        const row = r.rows[0] as { id: string; event_seq: string };
+        await q(PROJECTION_UPSERT, [
+          account.id,
+          account.userId,
+          "network_intelligence_contribution",
+          "granted",
+          row.id,
+          row.event_seq,
+        ]);
+      });
+      expect(error).toMatch(/records scopes .* but mail account .* actually holds/s);
+    });
+
+    it("D2. a forbidden scope cannot enter through the consent side either", async () => {
+      const account = await connectedAccount();
+      for (const scope of [
+        "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/gmail.metadata",
+      ]) {
+        await expect(
+          adminQuery(
+            RECEIPT_INSERT,
+            receiptParams(account, "private_gmail_processing", "granted", [scope]),
+          ),
+          scope,
+        ).rejects.toThrow(/consent_receipts_scope_allowlist/);
+      }
+    });
+
+    it("D3. scopes are compared as SETS, not as arrays", async () => {
+      const account = await connectedAccount(USERS.pro, [
+        GMAIL_SEND,
+        GMAIL_READONLY,
+        GMAIL_READONLY,
+      ]);
+      expect((await accountRow(account.id)).granted_scopes).toEqual([GMAIL_READONLY, GMAIL_SEND]);
+      const snapshot = await currentReceipt(account, "private_gmail_processing");
+      expect(snapshot.granted_scopes_at_decision).toEqual([GMAIL_READONLY, GMAIL_SEND]);
+    });
+
+    it("D4. widening to gmail.send without renewing consent is refused", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY]);
+      const error = await inTransaction(async (q) => {
+        await q(
+          "update public.mail_accounts set granted_scopes = array[$2,$3]::text[] where id = $1",
+          [account.id, GMAIL_READONLY, GMAIL_SEND],
+        );
+      });
+      // The documented contract and the database now say the same thing.
+      expect(error).toMatch(/record a NEW consent receipt for the current scope set/);
+      expect((await accountRow(account.id)).granted_scopes).toEqual([GMAIL_READONLY]);
+    });
+
+    it("D5. widening WITH a renewed consent is accepted", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY]);
+      await txOk(async (q) => {
+        await q(
+          "update public.mail_accounts set granted_scopes = array[$2,$3]::text[] where id = $1",
+          [account.id, GMAIL_READONLY, GMAIL_SEND],
+        );
+        const r = await q(
+          RECEIPT_INSERT,
+          receiptParams(account, "private_gmail_processing", "granted", [
+            GMAIL_READONLY,
+            GMAIL_SEND,
+          ]),
+        );
+        const row = r.rows[0] as { id: string; event_seq: string };
+        await q(PROJECTION_UPSERT, [
+          account.id,
+          account.userId,
+          "private_gmail_processing",
+          "granted",
+          row.id,
+          row.event_seq,
+        ]);
+      });
+      expect((await accountRow(account.id)).granted_scopes).toEqual([GMAIL_READONLY, GMAIL_SEND]);
+    });
+
+    it("D6. narrowing without renewing consent is refused for the same reason", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY, GMAIL_SEND]);
+      const error = await inTransaction(async (q) => {
+        await q(
+          "update public.mail_accounts set granted_scopes = array[$2]::text[] where id = $1",
+          [account.id, GMAIL_READONLY],
+        );
+      });
+      expect(error).toMatch(/record a NEW consent receipt for the current scope set/);
+    });
+
+    it("D7. a historical receipt is NOT rewritten when scopes later change", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY]);
+      const first = await currentReceipt(account, "private_gmail_processing");
+      await txOk(async (q) => {
+        await q(
+          "update public.mail_accounts set granted_scopes = array[$2,$3]::text[] where id = $1",
+          [account.id, GMAIL_READONLY, GMAIL_SEND],
+        );
+        const r = await q(
+          RECEIPT_INSERT,
+          receiptParams(account, "private_gmail_processing", "granted", [
+            GMAIL_READONLY,
+            GMAIL_SEND,
+          ]),
+        );
+        const row = r.rows[0] as { id: string; event_seq: string };
+        await q(PROJECTION_UPSERT, [
+          account.id,
+          account.userId,
+          "private_gmail_processing",
+          "granted",
+          row.id,
+          row.event_seq,
+        ]);
+      });
+      const [unchanged] = await adminQuery<{ granted_scopes_at_decision: string[] }>(
+        "select granted_scopes_at_decision from public.mail_account_consent_receipts where id = $1",
+        [first.id],
+      );
+      expect(unchanged!.granted_scopes_at_decision).toEqual([GMAIL_READONLY]);
+    });
+  });
+
+  // =====================================================================
+  describe("amendment: `connected` means we can actually read", () => {
+    it("E1. `connected` without gmail.readonly is refused", async () => {
+      const account = await pendingAccount();
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_accounts
+              set connection_state='connected', connected_at=now(),
+                  granted_scopes=array['openid',$2]::text[]
+            where id = $1`,
+          [account.id, GMAIL_SEND],
+        );
+      });
+      expect(error).toMatch(/mail_accounts_connected_requires_read/);
+    });
+
+    it("E2. gmail.readonly is what makes the state assertable", async () => {
+      const account = await connectedAccount(USERS.pro, [GMAIL_READONLY, GMAIL_SEND]);
+      expect((await accountRow(account.id)).connection_state).toBe("connected");
+    });
+  });
+
+  // =====================================================================
+  describe("amendment: what the delete guard actually proves", () => {
+    it("F1. one receipt cannot be deleted while its mailbox exists", async () => {
+      const account = await connectedAccount();
+      const receipt = await currentReceipt(account, "private_gmail_processing");
+      const error = await inTransaction(async (q) => {
+        await q("delete from public.mail_account_consent_receipts where id = $1", [receipt.id]);
+      });
+      expect(error).toMatch(/consent history is removed only by deleting the mailbox or the user/);
+    });
+
+    it("F2. deleting the mailbox removes its consent history", async () => {
+      const account = await connectedAccount();
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      await adminQuery("delete from public.mail_accounts where id = $1", [account.id]);
+      const left = await adminQuery<{ n: string }>(
+        `select (select count(*) from public.mail_account_consent_receipts
+                  where mail_account_id = $1)::text n`,
+        [account.id],
+      );
+      expect(left[0]!.n).toBe("0");
+    });
+
+    it("F3. deleting the user removes it through the OTHER cascade too", async () => {
+      // `decided_by_user_id` cascades from users directly to receipts, and
+      // PostgreSQL does not promise it fires after the mail_accounts cascade.
+      // A guard that only asked about the mailbox would block user deletion
+      // intermittently; this is the test that would have caught it.
+      const [user] = await adminQuery<{ id: string }>(
+        `insert into public.users (id, email, role) values (gen_random_uuid(), $1, 'creator')
+         returning id`,
+        [`amend-${uniq()}@example.invalid`],
+      );
+      const account = await connectedAccount(user!.id);
+      await decideConsent(account, "network_intelligence_contribution", "granted");
+      await expect(
+        adminQuery("delete from public.users where id = $1", [user!.id]),
+      ).resolves.toBeDefined();
+      const left = await adminQuery<{ accounts: string; receipts: string }>(
+        `select (select count(*) from public.mail_accounts where user_id = $1)::text accounts,
+                (select count(*) from public.mail_account_consent_receipts
+                  where user_id = $1)::text receipts`,
+        [user!.id],
+      );
+      expect(left[0]).toEqual({ accounts: "0", receipts: "0" });
     });
   });
 });

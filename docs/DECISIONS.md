@@ -1866,11 +1866,43 @@ reviewing hotel data is staff work. It governs **nothing** in the private
 communication plane. Support inspection, abuse investigation and legal
 compulsion require a separately contracted, audited mechanism.
 
-### Disconnect is not delete
+### Consent state is the LATEST decision, and the database owns the order
+
+"May we?" is answered by the most recent thing the human decided, which requires
+the database to know which decision is most recent. `decided_at` is supplied by
+the caller and can be back-dated; `created_at` is transaction start time and is
+identical for two receipts written together; a random UUID's lexical order is not
+chronology. So consent receipts carry a database-generated monotonic ordinal, the
+current-consent projection names the receipt holding the greatest one, and the
+projection may never move backwards. Re-granting after a withdrawal happens ONLY
+through a new granted decision — never by pointing at the old one again.
+
+A recorded withdrawal that does not take effect is the failure this closes, and
+it is worse than a withdrawal that was never offered: the receipt makes the
+product look compliant while the permission stays on.
+
+### Consent is scoped to the access that actually existed
+
+A consent receipt records the scopes in force when the human decided, and that
+snapshot is checked against the mailbox rather than accepted from the writer.
+Incremental authorization can widen access later; Google's screen asks about
+ACCESS, not about what this product may do with the data. So a change to the
+scope set — widening or narrowing — requires a new `private_gmail_processing`
+receipt naming the new set before the mailbox may be `connected` again.
+
+### Disconnect is not delete, and deletion is terminal
 
 Stopping provider access and deleting stored data are different acts with
 different consequences, and the model represents both. `deleted` requires a
-completed deletion request, not a state label.
+completed deletion request **that asked for the record to be retired** — a
+completed `gmail_derived_data` request means the opposite, that derived data goes
+and the account record is kept so the connection stays auditable.
+
+`deleted` is terminal. The record asserts that stored Gmail data was removed; a
+revived row would make that assertion false while still carrying the completed
+deletion as its evidence. A returning creator reconnects as a NEW mail account
+with a new authorization and a new consent, which is the honest record of a
+second, separate grant of access.
 
 ### Deletion must stay addressable
 
@@ -1888,3 +1920,11 @@ Consequence:
 B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
+
+External audit amendment #1 (2026-08-27) added the event-ordering, scope-snapshot
+and deletion-terminality paragraphs above after all four were reproduced as real
+committed states on PostgreSQL using nothing but direct SQL. They are stated as
+decisions, not implementation notes, because each one changes what a writer is
+allowed to do: B02 must record a mailbox's scopes and its consent in one
+transaction, must renew private-processing consent when it adds `gmail.send`, and
+must treat a retired mail account as gone rather than reusable.

@@ -1039,27 +1039,46 @@ DURABLE identity — Google's stable subject, never the address, which can be
 renamed or reassigned to a different human), `email_address` (display/routing
 only), `connection_state`, `granted_scopes`, and the connection timestamps.
 
-`unique (provider, provider_account_subject)` — one provider account has exactly
-ONE owning app user. Shared-inbox ownership and agency delegation are future work
-requiring explicit authorization, not a second row.
+`mail_accounts_provider_account_uidx`, a unique index on
+`(provider, provider_account_subject)` **where `connection_state <> 'deleted'`** —
+one provider account has exactly ONE LIVE owning record. Shared-inbox ownership
+and agency delegation are future work requiring explicit authorization, not a
+second row. Retired records are excluded because `deleted` is terminal: a creator
+who deletes their mailbox data and later reconnects the same Google account gets
+a NEW row, since the old one asserts their data was removed and may never be
+revived. A full unique index would have turned terminality into "you can never
+reconnect this address", which is a bug wearing a privacy guarantee's clothes.
 
 `unique (id, user_id)` is the **provenance spine**: every future Gmail-origin or
 Gmail-derived table composite-FKs the PAIR, so no such row can lose the account
 and owner it must be deleted with. Deletion-addressability is a restricted-scope
 obligation, not a convenience.
 
-`granted_scopes` carries an allow-list CHECK naming exactly `gmail.readonly`
+`granted_scopes` carries an allow-list CHECK calling
+`public.approved_gmail_scopes()`, which names exactly `gmail.readonly`
 (restricted, required for historical analysis), `gmail.send` (sensitive,
 requested later through incremental authorization) and the identity scopes.
 `gmail.modify`, `gmail.compose`, `gmail.insert`, `gmail.metadata`,
 `mail.google.com` and the settings scopes are refused by the database — a scope
-contract that lives only in a document is one a script can break.
+contract that lives only in a document is one a script can break. The allow-list
+is a FUNCTION rather than two array literals so the account side and the consent
+side cannot drift apart; `public.canonical_scope_set()` normalises every scope
+array on write to sorted-distinct form, which is what lets scope sets be compared
+as SETS with `=`.
 
 `connection_state` is `pending_authorization` · `connected` · `reauth_required` ·
 `disconnected` · `deletion_pending` · `deleted`. CHECKs require a `connected` row
-to name when it connected and to hold at least one scope, and require every
-disconnected/deleting state to record `disconnected_at` with an EMPTY scope set —
-the metadata half of revocation, which does not substitute for revoking at Google.
+to name when it connected, to hold at least one scope, and to hold
+**`gmail.readonly` specifically** — `openid` plus `gmail.send` is a mailbox we may
+write to and may not read, which is not a Gmail connection in this product's
+sense. Every disconnected/deleting state must record `disconnected_at` with an
+EMPTY scope set — the metadata half of revocation, which does not substitute for
+revoking at Google.
+
+`current_deletion_request_id` names the specific deletion a `deletion_pending` or
+`deleted` state rests on, composite-FK'd as `(current_deletion_request_id, id)` so
+it must be THIS mailbox's request. CHECKs require the pointer in those two states
+and forbid it in every other, so the field always means what it says.
 
 ### mail_account_consent_receipts (append-only)
 Immutable history of what a human agreed to: the permission, the decision, the
@@ -1069,12 +1088,55 @@ later, wider grant. Append-only by trigger and by grant; a withdrawal is a NEW
 receipt, never an edit. `decided_by_user_id = user_id` is CHECKed, so
 acting-on-behalf-of is unrepresentable rather than merely unimplemented.
 
+`event_seq` is a `generated always as identity` ordinal and is **the** order of
+consent events. It exists because none of the alternatives is an ordering:
+`decided_at` is caller-supplied and can be back-dated (deliberately or by clock
+skew); `created_at` is `now()`, which is transaction start time and identical for
+two receipts written together; and a random UUID's lexical order is not chronology
+at all. `generated ALWAYS` means a writer cannot supply or override it.
+
+`granted_scopes_at_decision` is **evidence, not narration**: a deferred check
+requires it to equal the account's actual scope set at COMMIT of the transaction
+that created the receipt, and an allow-list CHECK stops a forbidden scope entering
+through the consent side after being refused on the account side. It is never
+rewritten when scopes later change — each receipt stays true about its own moment.
+A writer that wants to record "withdrew while holding gmail.readonly" writes the
+withdrawal receipt BEFORE clearing the account's scopes.
+
+The DELETE guard permits removal only when the receipt's mailbox row or its user
+row is already gone, which is precisely the state an FK cascade from either parent
+produces (PostgreSQL removes the parent before applying the referential action).
+Both parents are checked because `users` cascades to `mail_accounts` and to these
+receipts through two separate constraints and does not promise an order. The
+earlier `pg_trigger_depth() > 1` test was replaced: it is true of ANY nested
+trigger context, so it did not prove the cascade it was documented as proving.
+
 ### mail_account_consents
 The CURRENT answer, one row per (mailbox, permission), composite-FK'd to its
-receipt on `(id, mail_account_id, consent_kind, decision)`. A projection that
-says `granted` while naming a withdrawal, or that borrows another mailbox's or
-another permission's decision, is **unrepresentable** — declaratively, not by
-trigger.
+receipt on `(id, mail_account_id, consent_kind, decision, event_seq)`. A
+projection that says `granted` while naming a withdrawal, that borrows another
+mailbox's or another permission's decision, or whose `current_event_seq`
+disagrees with the receipt it names, is **unrepresentable** — declaratively, not
+by trigger.
+
+Three layers make the current consent the LATEST consent:
+
+1. the composite FK above — the projection agrees with the receipt it names;
+2. a BEFORE UPDATE trigger — `current_event_seq` never decreases, so a projection
+   cannot be re-pointed at a grant the human already withdrew. Re-granting after
+   a withdrawal happens ONLY through a new granted receipt, which carries a
+   higher ordinal by construction;
+3. `assert_mail_consent_projection_dominant()`, deferred and registered on
+   **receipt INSERT and projection INSERT/UPDATE/DELETE** — for every (mailbox,
+   permission) with any history, exactly one projection exists and it names the
+   receipt with the greatest `event_seq`.
+
+Layer 3 is registered on both origins for the reason A04.6 amendment #3
+established: the same broken state is reachable from either side — append a
+withdrawal and stop, or move the projection off the latest decision — so both
+sides have to refuse it. Without it a withdrawal could be recorded and never take
+effect, and `mail_account_has_consent()` (which every future G1/G2 caller reads)
+would keep answering `true` about a permission that had been taken back.
 
 Two permissions: `private_gmail_processing` (required for the product to do
 anything) and `network_intelligence_contribution` (**separate, explicit,
@@ -1093,14 +1155,38 @@ request per mailbox.
 
 ### The state labels mean something (0035)
 `assert_mail_account_state_coherent()` is `DEFERRABLE INITIALLY DEFERRED` and
-registered on all three write origins:
+registered on all four write origins (accounts, consents, consent receipts,
+deletion requests):
 
 - `connected` requires a granted `private_gmail_processing` consent — holding
   access and being permitted to use it are different facts;
-- `deletion_pending` requires an outstanding request — a state that looks like
-  work in progress with nothing behind it is a promise nothing is keeping;
-- `deleted` requires a COMPLETED one — the difference between telling a human
-  their data is gone and being able to show it.
+- `connected` requires the account's scope set to EQUAL the snapshot on its
+  current private-processing receipt. Incremental authorization can widen access
+  after the fact, and Google's screen asks about ACCESS, not about what this
+  product may do with the data — so widening (or narrowing) requires a NEW
+  private-processing receipt naming the new set. Documentation and database now
+  say the same thing;
+- `deletion_pending` requires the request the account NAMES to be outstanding;
+- `deleted` requires the request the account NAMES to be `completed` **and**
+  scoped `account_and_gmail_derived_data`. A completed `gmail_derived_data`
+  request means the opposite — derived data goes, the record is KEPT so the
+  connection stays auditable — so letting it retire the record would delete
+  something nobody asked to delete and then read back as evidence that they had.
+
+`enforce_mail_account_state_transition()` is a BEFORE UPDATE trigger and holds
+the rules a deferred check structurally cannot, because a deferred check only
+ever sees where a transaction ended up:
+
+- entering `deletion_pending` requires the named request to exist and be running
+  AT THAT MOMENT. Otherwise a writer could pass through `deletion_pending`
+  pointing at a request that finished long ago and land on `deleted` in the same
+  transaction — the end state looks perfect and the waiting never happened;
+- `deleted` is reachable only FROM `deletion_pending`, on the same request, so
+  the request that ran is the request that is credited;
+- **`deleted` is terminal.** No transition out, to any state, and the request it
+  names cannot be swapped afterwards. A revived row would make the assertion
+  "your data was removed" false while still carrying the completed deletion as
+  its evidence.
 
 ### Access
 Owner reads their own rows; that is the entire client surface, because every

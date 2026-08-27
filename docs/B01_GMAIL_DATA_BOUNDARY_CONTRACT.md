@@ -212,9 +212,79 @@ grant, and a consent record that cannot reproduce what was on the screen is an
 assertion rather than evidence.
 
 The projection is composite-FK'd to the receipt on `(id, mail_account_id,
-consent_kind, decision)`, so a projection that says `granted` while naming a
-withdrawal, or that borrows another mailbox's or another permission's decision,
-is **unrepresentable** — not merely unlikely, and not left to a trigger.
+consent_kind, decision, event_seq)`, so a projection that says `granted` while
+naming a withdrawal, or that borrows another mailbox's or another permission's
+decision, is **unrepresentable** — not merely unlikely, and not left to a trigger.
+
+### The current consent is the LATEST consent
+
+The composite FK makes the projection agree with the receipt it names. It says
+nothing about whether that is the receipt that SHOULD be named, and that gap is
+where the worst failure in this layer lives: a withdrawal appended to history
+while the projection stays on the earlier grant. The receipt makes the product
+look compliant while the permission stays on, and `mail_account_has_consent()` —
+which every future G1/G2 caller reads — keeps answering `true`.
+
+Answering "which decision is most recent?" needs an ordering the database owns.
+None of the obvious candidates is one:
+
+| candidate | why not |
+|---|---|
+| `decided_at` | supplied by the caller; a stale, skewed or hostile value sorts a withdrawal before the grant it revokes |
+| `created_at` | `now()` is transaction START time — identical for two receipts written together, and a long transaction can stamp earlier than a short later one that already committed |
+| `id` | lexical order over random UUIDs is not chronology; it only resembles one |
+
+So each receipt carries `event_seq`, a `generated always as identity` ordinal the
+writer cannot supply or override. Three layers use it:
+
+1. the composite FK — the projection's ordinal cannot disagree with its receipt;
+2. a BEFORE UPDATE trigger — the projection's ordinal never decreases. **A
+   projection can never move backwards to a historical receipt.** Re-granting
+   after a withdrawal is allowed ONLY through a new granted receipt, which
+   carries a higher ordinal by construction;
+3. a deferred invariant — for every (mailbox, permission) with any history,
+   exactly one projection exists and it names the receipt with the greatest
+   ordinal.
+
+Layer 3 is registered on **both** write origins, receipt INSERT and projection
+INSERT/UPDATE/DELETE. This is the A04.6 amendment #3 lesson: the same broken
+state is reachable from either side — append a withdrawal and stop, or move the
+projection off the latest decision — so an invariant hung off one side is not an
+invariant, it is a habit of whoever writes that side.
+
+### The scope snapshot is evidence, not narration
+
+`granted_scopes_at_decision` is the only durable record of what a mailbox could
+actually do when a human agreed to something, so it is taken from the mailbox
+rather than accepted from the caller: a deferred check requires it to equal the
+account's actual scope set at COMMIT of the transaction that created the receipt,
+and an allow-list CHECK stops a forbidden scope entering through the consent side
+after being refused on the account side.
+
+It is **never rewritten** when account scopes change later. History is a series of
+snapshots and each stays true about its own moment; the fix for a changed scope
+set is a new receipt. One consequence worth stating: a transaction that clears
+scopes and records a withdrawal together snapshots `{}`, so a writer that wants to
+record "withdrew while holding `gmail.readonly`" writes the withdrawal receipt
+before clearing the account's scopes.
+
+### Widening access requires renewing consent
+
+Incremental authorization means the scope set can grow after the fact — a creator
+who agreed to read-only analysis can later be asked for `gmail.send`. Google's
+screen asks about **access**. It does not ask again about what this product may
+do with the data, and the receipt on file describes a narrower mailbox than the
+one now connected.
+
+So a `connected` mailbox's scope set must EQUAL the snapshot on its current
+`private_gmail_processing` receipt, checked at COMMIT. Widening — and narrowing,
+for the same reason — requires a new private-processing receipt naming the new
+set. Disconnecting is not an exception: a disconnected mailbox is not
+`connected`, so no consent has to be re-collected in order to stop.
+
+This is stated here because the alternative was leaving the documentation saying
+consent is scoped to what was granted while the database quietly permitted the
+grant to widen without a human.
 
 ### No processing without consent
 
@@ -348,14 +418,56 @@ than decided later by whoever runs the job.
 
 Deferred constraint triggers make the state labels mean something:
 
-- `deletion_pending` requires an **outstanding** request — a state that looks
-  like work in progress with nothing behind it is a promise nothing is keeping;
-- `deleted` requires a **completed** one — the difference between telling a human
-  their data is gone and being able to show it;
+- `deletion_pending` requires the request the account **names** to be outstanding
+  — a state that looks like work in progress with nothing behind it is a promise
+  nothing is keeping;
+- `deleted` requires the request the account **names** to be completed **and**
+  scoped `account_and_gmail_derived_data` — the difference between telling a
+  human their data is gone and being able to show it, and between deleting what
+  they asked for and deleting more;
 - `disconnected` / `deletion_pending` / `deleted` all require
   `disconnected_at is not null` and an **empty scope set**, which is the metadata
   half of revocation. B02 revokes at Google and destroys the credential, and
   neither substitutes for the other.
+
+### The state names the deletion it rests on
+
+A deletion state is a claim about a **specific** request, so `mail_accounts`
+carries `current_deletion_request_id`, composite-FK'd so the request must belong
+to that mailbox. Counting requests instead would let any completed request ever
+filed satisfy a present-tense claim — a narrower one, an older one, one from a
+connection two authorizations back — and "your account was deleted" would be
+provable by an unrelated event.
+
+Two rules are checked IMMEDIATELY rather than at COMMIT, because a deferred check
+only ever sees where a transaction ended up:
+
+- entering `deletion_pending` requires the named request to exist and be running
+  **at that moment**. Otherwise a writer could pass through `deletion_pending`
+  pointing at a request that finished long ago and land on `deleted` in the same
+  transaction: the end state looks perfect and the waiting never happened;
+- `deleted` is reachable only **from** `deletion_pending`, on the same request.
+  The request that ran is the request that is credited.
+
+A completed `gmail_derived_data` request may never retire the record. That
+request asked for the opposite — derived data removed, the account record KEPT so
+the connection stays auditable — and retiring it anyway would delete something
+nobody asked to delete, then read back as evidence that they had.
+
+### `deleted` is terminal
+
+Every other connection state is a stage in a mailbox's life and may be left.
+`deleted` is not a stage: it is the assertion that the stored Gmail data is gone
+and the record retired. It may not become `pending_authorization`, `connected`,
+`reauth_required`, `disconnected` or `deletion_pending`, and the request it names
+cannot be swapped afterwards. A revived row would make the assertion false while
+still carrying the completed deletion as its evidence.
+
+A returning creator therefore reconnects as a **new** `mail_accounts` row, with a
+new authorization and a new consent — which is the honest record of a second,
+separate grant of access. The provider-subject uniqueness index excludes retired
+rows for exactly this reason; if it did not, terminality would silently mean "you
+may never reconnect this address", which is not a privacy guarantee, just a bug.
 
 `network_contributions_invalidated_at` exists so a later phase can **prove** the
 withdrawal reached the aggregate layer rather than assuming it. It is NULL in
@@ -392,12 +504,18 @@ code-shaped estimate.
 
 | object | |
 |---|---|
-| `mail_accounts` | the connected mailbox as G0 metadata: owner, provider subject, connection state, granted scopes. No credential. |
-| `mail_account_consent_receipts` | APPEND-ONLY history of what a human agreed to, with policy version, consent-text digest and scopes at decision |
-| `mail_account_consents` | the CURRENT answer per (mailbox, permission), composite-FK'd to the receipt it represents |
+| `approved_gmail_scopes()` | the ONE definition of the permitted scope set, called by both allow-list CHECKs so the account side and the consent side cannot drift |
+| `canonical_scope_set()` | sorted-distinct normalisation applied on write, so scope sets compare as SETS rather than as arrays |
+| `mail_accounts` | the connected mailbox as G0 metadata: owner, provider subject, connection state, granted scopes, and the deletion request a retirement rests on. No credential. |
+| `mail_account_consent_receipts` | APPEND-ONLY history of what a human agreed to, with policy version, consent-text digest, a database-owned `event_seq` and the scopes actually held at decision |
+| `mail_account_consents` | the CURRENT answer per (mailbox, permission), composite-FK'd to the receipt it represents including its ordinal |
 | `mail_account_deletion_requests` | an explicit, owner-initiated request to DELETE stored Gmail data, distinct from disconnecting |
 | `mail_account_has_consent()` | the single definition of "may we?"; no row = NOT granted |
-| `assert_mail_account_state_coherent()` | deferred to COMMIT, on all three write origins: no `connected` without consent, no `deletion_pending` without an open request, no `deleted` without a completed one |
+| `assert_mail_account_state_coherent()` | deferred to COMMIT, on all four write origins: no `connected` without consent, no `connected` whose scopes outrun its consent, no `deletion_pending` without the named request running, no `deleted` without the named request completed at account scope |
+| `assert_mail_consent_projection_dominant()` | deferred, on receipt INSERT and projection INSERT/UPDATE/DELETE: the current consent is the latest decision |
+| `assert_mail_consent_receipt_scopes_actual()` | deferred, on receipt INSERT: the scope snapshot equals what the mailbox really held |
+| `enforce_mail_account_state_transition()` | immediate: `deletion_pending` waits on a running request, `deleted` comes only from it, and `deleted` is terminal |
+| `forbid_mail_consent_projection_rewind()` | immediate: a projection never moves back to an earlier decision |
 
 Migrations `0001`–`0034` are not modified. **0035 connects no mailbox, infers no
 consent, enrols no user and stores no token.**
