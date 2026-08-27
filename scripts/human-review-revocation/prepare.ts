@@ -63,14 +63,26 @@ async function main(): Promise<void> {
         `  revocable (receipt-pinned)   ${pack.preparedFrom.revocable}\n` +
         `  skipped (no receipt to pin)  ${pack.preparedFrom.withoutReceipt}\n` +
         `  skipped (INCOHERENT pointer) ${pack.preparedFrom.incoherentProjections}\n` +
+        `  skipped (ALREADY revoked)    ${pack.preparedFrom.revocationStateIncoherent}\n` +
         (args.out ? `  written to ${args.out}\n` : "") +
         "  reviewerLabel and revocationNote are EMPTY. This command withdraws nothing.\n",
     );
-    // Loud, not a footnote. An incoherent projection means the current review
-    // names a receipt that does not represent it, so nobody can say which
-    // approval is actually authorizing D062 for that identity. 0033's trigger
-    // should make this impossible; if it is ever non-zero, the invariant was
-    // bypassed and an operator needs to know before they revoke anything.
+    // Loud, not footnotes. Both counts should be structurally impossible — 0033
+    // refuses to store either state — so a non-zero value means the invariant
+    // was bypassed some other way, and an operator needs to know that BEFORE
+    // they withdraw anything.
+    if (pack.preparedFrom.revocationStateIncoherent > 0)
+      console.warn(
+        `  !! ${pack.preparedFrom.revocationStateIncoherent} active approval(s) name a receipt that ALREADY carries an\n` +
+          "     immutable revocation. History says withdrawn; the projection says active. The database\n" +
+          "     refuses to store that, so something wrote it another way. Investigate before revoking:\n" +
+          pack.preparedFrom.revocationStateIncoherentIdentityIds
+            .map((id) => `       ${id}`)
+            .join("\n") +
+          "\n",
+      );
+    // A different diagnosis: here the pointer itself does not represent the
+    // projection, so nobody can say which approval authorizes D062 at all.
     if (pack.preparedFrom.incoherentProjections > 0)
       console.warn(
         `  !! ${pack.preparedFrom.incoherentProjections} active approval(s) have a current_receipt_id that does not\n` +

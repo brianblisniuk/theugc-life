@@ -57,6 +57,14 @@ export interface RevocationPack {
      */
     incoherentProjections: number;
     incoherentIdentityIds: string[];
+    /**
+     * A04.6 amendment #3. Active approvals whose CURRENT receipt already carries
+     * an immutable revocation — a state the database refuses to store, and a
+     * separate diagnosis from `incoherentProjections`. Excluded from `items` and
+     * reported.
+     */
+    revocationStateIncoherent: number;
+    revocationStateIncoherentIdentityIds: string[];
   };
   items: RevocationCandidate[];
 }
@@ -93,7 +101,14 @@ const CANDIDATE_QUERY = `
             and r.decision = 'approve_create'
             and r.destination_id is not distinct from rv.destination_id
             and r.evidence_source_run_id is not distinct from rv.decided_in_run_id)
-                                        as receipt_coherent
+                                        as receipt_coherent,
+         -- A04.6 amendment #3. An INDEPENDENT question from the pointer above:
+         -- does the receipt this projection names already carry an immutable
+         -- revocation? The review_status column alone cannot answer it, and the
+         -- pack must never hand an operator a manifest for an approval that
+         -- history already records as withdrawn.
+         (rvk.id is null)                as revocation_state_coherent,
+         rvk.id                          as existing_revocation_id
     from public.source_property_reviews rv
     join public.source_property_identities i
       on i.id = rv.source_property_identity_id
@@ -104,6 +119,8 @@ const CANDIDATE_QUERY = `
     left join public.source_property_review_receipts r
       on r.id = rv.current_receipt_id
      and r.source_property_identity_id = rv.source_property_identity_id
+    left join public.source_property_review_revocations rvk
+      on rvk.revoked_receipt_id = rv.current_receipt_id
    where rv.source = $1
      and rv.source_environment = $2
      and rv.decision = 'approve_create'
@@ -127,6 +144,8 @@ interface CandidateRow {
   receipt_digest: string | null;
   evidence_observation_id: string | null;
   receipt_coherent: boolean | null;
+  revocation_state_coherent: boolean | null;
+  existing_revocation_id: string | null;
 }
 
 export async function buildRevocationPack(
@@ -147,6 +166,9 @@ export async function buildRevocationPack(
   const incoherent = rows.filter(
     (row) => row.current_receipt_id !== null && row.receipt_coherent !== true,
   );
+  const revocationIncoherent = rows.filter(
+    (row) => row.current_receipt_id !== null && row.revocation_state_coherent !== true,
+  );
   const items: RevocationCandidate[] = [];
   for (const row of rows) {
     if (
@@ -161,6 +183,13 @@ export async function buildRevocationPack(
     // it would be almost as bad: the operator would see a shorter pack and no
     // reason, so `incoherentProjections` is reported and the CLI prints it.
     if (row.receipt_coherent !== true) continue;
+    // A04.6 amendment #3, and a DIFFERENT failure from the one above. Here the
+    // pointer is fine; what is wrong is that history already records this exact
+    // approval as withdrawn while the mutable column still says `active`.
+    // Emitting an item would invite an operator to "withdraw" something already
+    // withdrawn, and the apply would then have to explain itself at the worst
+    // possible moment. Excluded, counted, and named separately.
+    if (row.revocation_state_coherent !== true) continue;
     items.push({
       identityId: row.identity_id,
       sourcePropertyId: row.source_property_id,
@@ -197,6 +226,10 @@ export async function buildRevocationPack(
       withoutReceipt,
       incoherentProjections: incoherent.length,
       incoherentIdentityIds: incoherent.map((row) => row.identity_id).sort(),
+      revocationStateIncoherent: revocationIncoherent.length,
+      revocationStateIncoherentIdentityIds: revocationIncoherent
+        .map((row) => row.identity_id)
+        .sort(),
     },
     items,
   };

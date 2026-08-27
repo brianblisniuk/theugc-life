@@ -264,6 +264,28 @@ async function revokeOne(
     // So it is refused instead, and the operator prepares a new pack against B
     // if withdrawing B is what they actually mean. Nothing here revokes B,
     // touches receipt A, or deletes revocation A.
+    // AMENDMENT #3. Two different wrongnesses, told apart rather than merged.
+    //
+    // If the projection still NAMES this receipt but does not say `revoked`, the
+    // event and the current decision disagree — a state 0033 refuses to store,
+    // so reaching it means something wrote around the database. The one thing
+    // this path must never do is treat it as a fresh, valid withdrawal to
+    // perform: the immutable event already exists, and inserting a second one is
+    // both impossible (unique) and meaningless.
+    if (review.current_receipt_id === item.expectedCurrentReceiptId)
+      if (review.review_status !== "revoked")
+        return {
+          ...id,
+          state: "refused",
+          refusal: "revocation_state_incoherent",
+          detail:
+            `Receipt ${item.expectedCurrentReceiptId} already carries an immutable revocation (${prior.id}), ` +
+            `but the current projection says '${review.review_status}'. History and the current decision disagree, ` +
+            "and this path will not paper over that by writing a second withdrawal. Nothing was written; " +
+            "the state itself needs investigating.",
+        };
+
+    // Otherwise the projection has legitimately moved on to another approval.
     const stillRepresentsThisReceipt =
       review.current_receipt_id === item.expectedCurrentReceiptId &&
       review.review_status === "revoked";

@@ -429,3 +429,154 @@ revoke all on function public.enforce_review_status_matches_revocation() from pu
 create trigger source_property_reviews_revocation_status
   before insert or update on public.source_property_reviews
   for each row execute function public.enforce_review_status_matches_revocation();
+
+-- ===========================================================================
+-- 10. THE REVOCATION SIDE OF THE SAME INVARIANT
+-- ===========================================================================
+-- §9 enforces the IFF from `source_property_reviews`. That is only half of it,
+-- because §8 grants INSERT on the revocation table to `authenticated`
+-- (admin/editor through RLS) and to `service_role`, and §7's trigger forbids
+-- only UPDATE and DELETE. So a supported editorial writer could do:
+--
+--   insert into source_property_review_revocations (... receipt A ...)
+--
+-- ...and no projection trigger fires at all. The immutable event exists, the
+-- projection stays `active`, and the "IFF" the contract states is simply false.
+-- D062 still refuses to publish, because §9's evaluator half reads the event —
+-- but "publication happens to be safe" is not the same claim as "the database
+-- cannot hold an incoherent current decision", and only the second one is worth
+-- writing down.
+--
+-- Two rules, deliberately split by WHEN they can be answered.
+--
+-- FIRST, IMMEDIATELY: a revocation may only withdraw the approval the projection
+-- CURRENTLY represents. A04.6 V1 withdraws the current active approval; it has
+-- no historical-revocation semantic. Without this, a writer could file a
+-- revocation against superseded receipt A while receipt B is live, and the
+-- deferred check below would then see `revoked(B) = false, status = active` and
+-- happily pass — leaving an event that reads like a withdrawal of an identity
+-- that is, in fact, still authorized.
+--
+-- Status is deliberately NOT checked here: the apply path inserts the event
+-- while the projection is still `active` and flips the status immediately
+-- afterwards, and that ordering is correct.
+create or replace function public.enforce_revocation_targets_current_receipt()
+returns trigger
+language plpgsql
+as $$
+declare
+  rv record;
+begin
+  select review_status, current_receipt_id into rv
+    from public.source_property_reviews
+   where source_property_identity_id = new.source_property_identity_id;
+
+  if not found then
+    raise exception
+      'revocation_target_not_current_receipt: identity % has no current review projection, so there is no approval for this revocation to withdraw.',
+      new.source_property_identity_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if rv.current_receipt_id is distinct from new.revoked_receipt_id then
+    raise exception
+      'revocation_target_not_current_receipt: this revocation names receipt %, but the current projection represents %. A04.6 withdraws the CURRENT approval; a receipt the projection has already moved past is history, and withdrawing it would misrepresent what is authorized now.',
+      new.revoked_receipt_id, rv.current_receipt_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.enforce_revocation_targets_current_receipt() from public;
+
+create trigger source_property_review_revocations_target_current
+  before insert on public.source_property_review_revocations
+  for each row execute function public.enforce_revocation_targets_current_receipt();
+
+-- ===========================================================================
+-- 11. AND THE IFF IS CHECKED AT COMMIT, FROM BOTH SIDES
+-- ===========================================================================
+-- SECOND, AT TRANSACTION END: whichever table was written, the FINAL state must
+-- satisfy the invariant.
+--
+--   revocation exists for current_receipt_id  <->  review_status = 'revoked'
+--
+-- DEFERRABLE INITIALLY DEFERRED is the whole point. The legitimate transaction
+-- is: lock the projection, INSERT the immutable event, THEN move the status. For
+-- a few statements in the middle of that transaction the event exists while the
+-- projection still says `active`, and an immediate check would make the correct
+-- application path impossible. What matters is not the intermediate state but
+-- the state that survives COMMIT.
+--
+-- Registered on BOTH tables, because the invariant can be broken from either:
+-- an UPDATE that moves the status or the pointer, and an INSERT that creates the
+-- event. A direct revocation INSERT with no accompanying projection update now
+-- has exactly one outcome — the transaction is refused at commit.
+--
+-- SERIALIZABLE is unchanged and nothing retries. A refused commit means nothing
+-- was withdrawn.
+create or replace function public.assert_review_revocation_state_coherent()
+returns trigger
+language plpgsql
+as $$
+declare
+  rv record;
+  has_revocation boolean;
+begin
+  select review_status, current_receipt_id into rv
+    from public.source_property_reviews
+   where source_property_identity_id = new.source_property_identity_id;
+
+  -- No current projection means nothing currently authorizes anything for this
+  -- identity, so there is no current decision to be incoherent. History is
+  -- allowed to outlive the projection that produced it.
+  if not found then
+    return null;
+  end if;
+
+  if rv.current_receipt_id is null then
+    if rv.review_status <> 'active' then
+      raise exception
+        'review_revocation_state_incoherent: review_status is ''%'' but the projection names no receipt, so no revocation event could stand behind it.',
+        rv.review_status
+        using errcode = 'integrity_constraint_violation';
+    end if;
+    return null;
+  end if;
+
+  select exists (
+    select 1 from public.source_property_review_revocations
+     where revoked_receipt_id = rv.current_receipt_id
+  ) into has_revocation;
+
+  if has_revocation and rv.review_status <> 'revoked' then
+    raise exception
+      'review_revocation_state_incoherent: receipt % carries an immutable revocation, but this transaction leaves review_status = ''%''. A withdrawal recorded in history and a projection that still says authorized cannot both be the truth.',
+      rv.current_receipt_id, rv.review_status
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if not has_revocation and rv.review_status = 'revoked' then
+    raise exception
+      'review_revocation_state_incoherent: review_status is ''revoked'' but no revocation event exists for receipt %. A withdrawal is an append-only fact, not a column value.',
+      rv.current_receipt_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke all on function public.assert_review_revocation_state_coherent() from public;
+
+create constraint trigger source_property_reviews_revocation_state
+  after insert or update on public.source_property_reviews
+  deferrable initially deferred
+  for each row execute function public.assert_review_revocation_state_coherent();
+
+create constraint trigger source_property_review_revocations_state
+  after insert on public.source_property_review_revocations
+  deferrable initially deferred
+  for each row execute function public.assert_review_revocation_state_coherent();

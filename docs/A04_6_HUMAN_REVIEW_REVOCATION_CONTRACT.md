@@ -196,6 +196,48 @@ projection with `current_receipt_id = NULL` may be `active` and may never claim
 `current_receipt_id` is **not** part of this one; the two triggers answer
 different questions and both fire on every INSERT and UPDATE.
 
+### The same invariant, from the revocation table
+
+*(Amendment #3.)* Enforcing the IFF only from `source_property_reviews` left the
+other half open. §8 grants INSERT on `source_property_review_revocations` to
+`authenticated` (admin/editor through RLS) and to `service_role`, and its
+append-only trigger forbids only UPDATE and DELETE. So a supported editorial
+writer could insert the immutable event with the projection never touched, no
+projection trigger firing, and the "IFF" simply false — the event recorded, the
+projection still `active`.
+
+D062 still refused to publish, because the evaluator half reads the event. But
+*"publication happens to be safe"* is a weaker claim than *"the database cannot
+hold an incoherent current decision"*, and only the second one is worth writing
+down.
+
+Two rules close it, split by **when** they can be answered:
+
+| rule | timing | refusal |
+|---|---|---|
+| a revocation may only withdraw the approval the projection **currently** represents | immediate, `before insert` | `revocation_target_not_current_receipt` |
+| the IFF must hold in the **final** state, whichever table was written | `deferrable initially deferred`, at COMMIT | `review_revocation_state_incoherent` |
+
+The deferred timing is the whole point. The legitimate transaction is *lock the
+projection → INSERT the event → move the status*, so for a few statements the
+event exists while the projection still says `active`. An immediate check would
+make the correct application path impossible. What must be coherent is the state
+that survives COMMIT — and the constraint triggers are registered on **both**
+tables, because the invariant can be broken from either.
+
+A bare direct INSERT therefore has exactly one outcome: the transaction is
+refused at commit. Nothing is silently mutated on the writer's behalf.
+
+**V1 has no historical-revocation semantic.** After `revoke A → fresh review →
+approve B`, receipt A is history and B is the live approval; filing a revocation
+against A at that point is refused outright rather than recorded, because an
+event that reads like a withdrawal while the identity is in fact authorized would
+misrepresent the current decision. Status is deliberately **not** checked by that
+rule — only the pointer — so the apply path's ordering stays legal.
+
+SERIALIZABLE is unchanged and nothing retries. A refused commit means nothing was
+withdrawn.
+
 **D062 asks the same question independently.** The evaluator reads whether the
 **current** receipt carries a revocation, and treats `human_review_revoked` as the
 OR of the event and the column. So an upstream write that bypassed the database
@@ -231,6 +273,8 @@ An initial **defer** after a revocation is still refused
 | `source_property_review_revocations` | the immutable revocation event |
 | `enforce_review_projection_receipt_coherence()` | the pointer must name the receipt this projection **is** |
 | `enforce_review_status_matches_revocation()` | `review_status` must match the immutable revocation record |
+| `enforce_revocation_targets_current_receipt()` | a revocation may only withdraw the approval the projection currently represents |
+| `assert_review_revocation_state_coherent()` | deferred to COMMIT, on **both** tables: the final state must satisfy the IFF |
 
 `revocation_note` is **NOT NULL and non-empty**. A withdrawal with no stated
 reason is not auditable.
@@ -392,6 +436,16 @@ database:
 - **`prepare`** emits no item for a projection whose pointer does not
   semantically represent it. Those are counted as `incoherentProjections`, listed
   by identity, and printed as a warning — excluded, never silently skipped.
+- *(Amendment #3.)* `prepare` also asks a **separate** question: does the receipt
+  this projection names already carry an immutable revocation? `review_status`
+  alone cannot answer it. Those rows are counted as `revocationStateIncoherent`,
+  listed and warned about under their own heading — a different diagnosis from a
+  bad pointer, and never conflated with one.
+- *(Amendment #3.)* `apply` distinguishes the two failures too. When the
+  projection still names the pinned receipt but does not say `revoked`, it
+  refuses with **`revocation_state_incoherent`** rather than writing a second
+  withdrawal; when the projection has legitimately moved on, it refuses with
+  `revocation_manifest_no_longer_current`.
 - **`apply`** re-reads the receipt's decision, destination and evidence run and
   compares them to the locked projection. On disagreement it refuses with
   **`review_projection_receipt_mismatch`** before any write: no revocation row,

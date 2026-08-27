@@ -171,6 +171,16 @@ same question independently and treats the event as dominating the column; and a
 revocation manifest whose approval has since been superseded is refused rather
 than reported as already satisfied.
 
+**Amendment #3 (external audit).** The `revoked` ⇔ event equivalence was enforced
+only from `source_property_reviews`, while 0033 grants INSERT on the revocation
+table to admin/editor and `service_role` — so the immutable event could be filed
+with the projection never touched and no projection trigger firing. D062 still
+refused to publish, but the database contract was false. A `deferrable initially
+deferred` constraint trigger now re-checks the final state at COMMIT from **both**
+tables, and a revocation may only withdraw the approval the projection currently
+represents. The pack and the apply path each gained an independent, separately
+named diagnosis for the same state.
+
 A04.6 is **not DONE** — it is an open PR awaiting external audit and the human
 merge gate. A05 remains PLANNED and is not authorized by this entry.
 

@@ -863,6 +863,28 @@ table was rejected: it would break the legitimate advance this layer depends on.
 The semantic transition is protected instead, and the invariant binds trusted
 writers exactly as it binds untrusted ones.
 
+### The IFF holds from both tables (0033)
+
+A trigger on `source_property_reviews` alone covers only one direction of a
+two-table invariant. `source_property_review_revocations` grants INSERT to
+`authenticated` (admin/editor via RLS) and `service_role`, and its append-only
+trigger forbids only UPDATE and DELETE — so the immutable event could be created
+with the projection never touched and no projection trigger firing.
+
+`enforce_revocation_targets_current_receipt()` (immediate, `before insert`)
+requires a revocation to name the receipt the projection **currently** represents:
+V1 withdraws the current approval and has no historical-revocation semantic.
+Status is deliberately not checked there, because the apply path inserts the
+event while the projection is still `active`.
+
+`assert_review_revocation_state_coherent()` is a `deferrable initially deferred`
+**constraint trigger registered on both tables**, checking at COMMIT that
+`revocation exists for current_receipt_id` ⇔ `review_status = 'revoked'`. Deferred
+timing is load-bearing: the legitimate transaction is lock → INSERT event → move
+status, so an immediate check would forbid the correct path. What must be
+coherent is the state that survives COMMIT. A bare direct INSERT is therefore
+refused at commit rather than silently repaired.
+
 **0033 writes nothing canonical either.** A revocation removes authorization; it
 never publishes, unpublishes, deletes or rewrites history, and there is no
 un-revoke. Authorization returns only through a fresh human review of a fresh
@@ -1168,8 +1190,10 @@ At minimum:
     the current projection, plus the append-only revocation event that withdraws
     a previous `approve_create` without touching the receipt it revokes;
     backfilled on run provenance rather than wall-clock recency, and
-    canonical-write-free; two semantic triggers keep the mutable projection
-    honest — its pointer must name the receipt it IS, and its `review_status`
-    must match the immutable revocation record for that receipt
+    canonical-write-free; semantic triggers keep the mutable projection honest —
+    its pointer must name the receipt it IS, its `review_status` must match the
+    immutable revocation record for that receipt, a revocation may only withdraw
+    the approval the projection currently represents, and a deferred constraint
+    trigger on BOTH tables re-checks that equivalence at COMMIT
 
 Every migration must be reproducible from an empty database.
