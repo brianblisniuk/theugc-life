@@ -102,6 +102,97 @@ revoke all on function public.normalize_gmail_scope_column() from public;
 -- G0 in the boundary contract: account and authorization METADATA. It says a
 -- mailbox is connected and in what state; it holds no message content and no
 -- credential.
+--
+-- ---------------------------------------------------------------------------
+-- 1a. WHO OWNS A DURABLE PROVIDER ACCOUNT
+-- ---------------------------------------------------------------------------
+-- `(provider, provider_account_subject)` is the durable identity of a real
+-- Google account. The contract is that it has EXACTLY ONE owning app user:
+-- shared inboxes, agency delegation and cross-tenant transfer are all future
+-- work needing explicit authorization, not a second row.
+--
+-- Stating that as a unique constraint on `mail_accounts` alone cannot work, and
+-- the reason is worth writing down because getting it wrong is what this
+-- registry exists to fix:
+--
+--   * A FULL unique index on (provider, provider_account_subject) forbids
+--     same-owner reconnection. A creator who deletes their Gmail data and later
+--     reconnects the same account must get a NEW row, because the old one is
+--     `deleted` and terminal — a full index would make deletion mean "you may
+--     never reconnect this address".
+--   * A PARTIAL unique index over live rows only allows that reconnection, but
+--     it stops seeing retired rows entirely. User A retires their mailbox, and
+--     user B can then claim the same Google account, while A's consent receipts,
+--     consent projections and deletion requests are all still on file, owned by
+--     A. One durable provider identity, two app owners.
+--
+-- So ownership lives in its own table, keyed by the durable identity, and every
+-- mail account — live or retired — must agree with it:
+--
+--   registry PK              one owner per durable provider identity, and the
+--                            SERIALIZATION POINT: two transactions racing to
+--                            claim a previously unseen subject contend on this
+--                            index, so exactly one can win. No trigger that
+--                            merely reads before writing could promise that.
+--   mail_accounts FK         (provider, subject, user_id) must match the
+--                            registry's (provider, subject, owner_user_id).
+--                            Declarative: a mail account owned by anyone else is
+--                            unrepresentable rather than merely refused.
+--
+-- The reservation is released ONLY when the owning user is erased (see the
+-- cascade below), because a reservation that outlived its user would ban a
+-- Google account forever with nothing left in the product to protect.
+create table public.mail_provider_account_owners (
+  provider text not null check (provider in ('gmail')),
+  provider_account_subject text not null check (length(btrim(provider_account_subject)) > 0),
+
+  -- Cascade for the same reason the mailbox does: when a user is erased their
+  -- entire private communication plane goes, and nothing about them should
+  -- remain to keep a Google account reserved. After that erasure a different,
+  -- genuinely authenticated human may connect that account as a new identity —
+  -- there is no longer any of A's private history for them to inherit.
+  owner_user_id uuid not null references public.users(id) on delete cascade,
+
+  first_claimed_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+
+  constraint mail_provider_account_owners_pkey
+    primary key (provider, provider_account_subject),
+
+  -- Reference target for the mail_accounts FK below. The primary key already
+  -- makes this unique, so it adds a target and no restriction.
+  constraint mail_provider_account_owners_owner_uk
+    unique (provider, provider_account_subject, owner_user_id)
+);
+
+create index mail_provider_account_owners_user_idx
+  on public.mail_provider_account_owners (owner_user_id);
+
+comment on table public.mail_provider_account_owners is
+  'B01: which app user owns a durable provider account identity. One owner per (provider, provider_account_subject), for as long as ANY of that identity''s mail-account history exists. Released only by erasing the owner.';
+
+-- A reservation is created and released, never edited. Editing `owner_user_id`
+-- would BE the cross-tenant transfer this table exists to prevent, performed in
+-- one statement; if the product ever needs real transfer, that is a new contract
+-- with its own authorization, deletion and privacy semantics.
+create or replace function public.forbid_provider_account_owner_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception
+    'UPDATE on % is refused: a provider-account ownership reservation is not editable. Changing the owner would move a durable Google identity — and the consent history bound to it — between app users, which B01 does not implement.',
+    tg_table_name
+    using errcode = 'restrict_violation';
+end;
+$$;
+
+revoke all on function public.forbid_provider_account_owner_mutation() from public;
+
+create trigger mail_provider_account_owners_immutable
+  before update on public.mail_provider_account_owners
+  for each row execute function public.forbid_provider_account_owner_mutation();
+
 create table public.mail_accounts (
   id uuid primary key default gen_random_uuid(),
 
@@ -185,8 +276,21 @@ create table public.mail_accounts (
   -- by then this row no longer exists to reference them.
   current_deletion_request_id uuid,
 
-  -- ONE PROVIDER ACCOUNT, ONE OWNING APP USER — enforced by the partial unique
-  -- index below rather than a table constraint, for a reason worth stating.
+  -- ONE PROVIDER ACCOUNT, ONE OWNING APP USER. This row must agree with the
+  -- registry in §1a about who owns its durable provider identity — live rows and
+  -- retired ones alike, which is precisely what a partial unique index over live
+  -- rows could not see.
+  --
+  -- Declarative rather than a trigger, so a mail account belonging to anyone but
+  -- the registered owner is unrepresentable. The BEFORE INSERT trigger below
+  -- claims the reservation on a writer's behalf; this constraint is what makes
+  -- the claim binding even if that trigger were removed (in which case no
+  -- registry row would be created and every insert would fail — closed, not
+  -- open).
+  constraint mail_accounts_provider_owner_fk
+    foreign key (provider, provider_account_subject, user_id)
+    references public.mail_provider_account_owners
+      (provider, provider_account_subject, owner_user_id),
 
   -- THE PROVENANCE SPINE. Every future Gmail-origin or Gmail-derived table
   -- composite-FKs `(mail_account_id, owner_user_id)` against this pair, so no
@@ -237,24 +341,89 @@ create table public.mail_accounts (
   )
 );
 
--- ONE PROVIDER ACCOUNT, ONE LIVE MAILBOX RECORD. Without this, two app users
--- could both claim the same Google account and each would appear to own its
--- history. Shared-inbox ownership and agency delegation are deliberately future
--- work and will need explicit authorization, not a second row.
+-- ONE LIVE MAILBOX RECORD PER PROVIDER ACCOUNT. The registry in §1a settles WHO
+-- owns a durable provider identity; this settles HOW MANY usable connections it
+-- may have at once, which is one. Two live rows for a single Google account —
+-- even under the same owner — would be two simultaneous connections with two
+-- separate consent histories, and no reader could say which one governs.
 --
 -- RETIRED RECORDS ARE EXCLUDED, and this is a direct consequence of `deleted`
 -- being terminal (see the trigger below). A creator who deletes their mailbox
 -- data and later reconnects the same Google account must get a NEW row: the old
 -- one asserts that their data was removed and may never be revived. If this
 -- index covered retired rows, terminality would silently mean "you can never
--- reconnect this address", which is not a privacy guarantee, just a bug. What
--- the index still forbids is the thing that matters — two LIVE records for one
--- Google account, in any state a connection can actually be used from.
+-- reconnect this address", which is not a privacy guarantee, just a bug.
+--
+-- What the exclusion must NOT do is stop seeing retired rows for the purposes of
+-- OWNERSHIP. That is exactly the gap the registry closes, and the two work as a
+-- pair: the registry spans a durable identity's whole history, the index governs
+-- only its live present.
 create unique index mail_accounts_provider_account_uidx
   on public.mail_accounts (provider, provider_account_subject)
   where connection_state <> 'deleted';
 
 create index mail_accounts_user_idx on public.mail_accounts (user_id, connection_state);
+
+-- ---------------------------------------------------------------------------
+-- CLAIMING THE DURABLE IDENTITY
+-- ---------------------------------------------------------------------------
+-- Auto-claim, so no writer can create a mail account and forget to register its
+-- ownership; the FK above is the guarantee, and this is what makes satisfying it
+-- the default rather than a step someone remembers.
+--
+-- THE RACE IS IMPOSSIBLE, NOT UNLIKELY. A trigger that merely SELECTed for an
+-- existing owner and refused a different one would let two transactions both
+-- find nothing and both proceed, since neither sees the other's uncommitted row.
+-- The INSERT below contends on the registry's primary-key index instead: the
+-- second transaction blocks there until the first commits, then takes no action
+-- and reads the winner in the next statement's snapshot. One owner wins; the
+-- loser fails the ownership test below, or — under an isolation level where the
+-- winner's row stays invisible — fails the FK. Every path is closed.
+create or replace function public.claim_provider_account_owner()
+returns trigger
+language plpgsql
+as $$
+declare
+  registered_owner uuid;
+begin
+  insert into public.mail_provider_account_owners
+    (provider, provider_account_subject, owner_user_id)
+  values (new.provider, new.provider_account_subject, new.user_id)
+  on conflict (provider, provider_account_subject) do nothing;
+
+  select o.owner_user_id into registered_owner
+    from public.mail_provider_account_owners o
+   where o.provider = new.provider
+     and o.provider_account_subject = new.provider_account_subject;
+
+  if registered_owner is null then
+    -- The claim neither inserted nor found a row: a concurrent claim committed
+    -- but is not visible to this transaction's snapshot. Refusing is the only
+    -- safe answer, and the FK would refuse anyway.
+    raise exception
+      'provider account %/% could not be claimed for user %: a concurrent claim is in flight. Retry the connection.',
+      new.provider, new.provider_account_subject, new.user_id
+      using errcode = 'serialization_failure';
+  end if;
+
+  if registered_owner <> new.user_id then
+    raise exception
+      'provider account %/% is already owned by app user %, so user % cannot hold a mailbox for it. A Google account''s durable identity belongs to one app user for as long as any of its history exists here — including a retired mail account, whose consent receipts and deletion record remain bound to that owner. Moving it is a transfer, and B01 implements none.',
+      new.provider, new.provider_account_subject, registered_owner, new.user_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.claim_provider_account_owner() from public;
+
+-- INSERT only: the identity columns are immutable after creation (see the
+-- state-transition trigger), so there is no UPDATE that could need re-claiming.
+create trigger mail_accounts_claim_provider_account
+  before insert on public.mail_accounts
+  for each row execute function public.claim_provider_account_owner();
 
 create trigger mail_accounts_set_updated_at
   before update on public.mail_accounts
@@ -282,7 +451,23 @@ as $$
 declare
   request_status text;
 begin
-  -- TERMINALITY FIRST, so that a retired record answers with the reason it is
+  -- THE ROW'S IDENTITY IS FIXED AT CREATION. Owner, provider and provider
+  -- subject are what every consent receipt and deletion request on this mailbox
+  -- is about; editing them would silently re-point a whole private history at a
+  -- different human or a different Google account, which is a transfer performed
+  -- in one UPDATE. The registry FK already makes a cross-owner result
+  -- unrepresentable — this refuses the attempt at its source, and with a message
+  -- that says what was actually being done.
+  if new.user_id is distinct from old.user_id
+     or new.provider is distinct from old.provider
+     or new.provider_account_subject is distinct from old.provider_account_subject then
+    raise exception
+      'mail account % cannot change owner or provider identity. The consent receipts and deletion records attached to a mailbox are about THIS human and THIS Google account; re-pointing the row would make all of them describe something else.',
+      old.id
+      using errcode = 'restrict_violation';
+  end if;
+
+  -- TERMINALITY, so that a retired record answers with the reason it is
   -- refusing everything rather than with whatever rule happens to be tested next.
   if old.connection_state = 'deleted' then
     if new.connection_state <> 'deleted' then
@@ -1145,11 +1330,18 @@ create constraint trigger mail_account_consent_receipts_scopes_actual
 --   ANON             nothing. Not "no rows" — no privilege at all.
 --   SERVICE ROLE     the trusted server path. A capability, never a user-facing
 --                    permission.
+alter table public.mail_provider_account_owners enable row level security;
 alter table public.mail_accounts enable row level security;
 alter table public.mail_account_consent_receipts enable row level security;
 alter table public.mail_account_consents enable row level security;
 alter table public.mail_account_deletion_requests enable row level security;
 
+-- The ownership registry is part of the private plane, not a public directory:
+-- "which app user owns Google subject X" would let anyone probe whether a given
+-- Gmail account is connected here and to whom. Owners see only their own
+-- reservations, on the same terms as everything else in this plane.
+create policy mail_provider_account_owners_select_own on public.mail_provider_account_owners
+  for select using (owner_user_id = auth.uid());
 create policy mail_accounts_select_own on public.mail_accounts
   for select using (user_id = auth.uid());
 create policy mail_account_consent_receipts_select_own on public.mail_account_consent_receipts
@@ -1164,6 +1356,7 @@ create policy mail_account_deletion_requests_select_own on public.mail_account_d
 -- behind an OAuth flow or a deletion job, and neither is something a browser
 -- should be able to assert directly.
 grant select on
+  public.mail_provider_account_owners,
   public.mail_accounts,
   public.mail_account_consent_receipts,
   public.mail_account_consents,
@@ -1172,7 +1365,15 @@ to authenticated;
 
 -- No anon grant of any kind.
 
+-- The registry needs INSERT because the claim trigger runs with the privileges
+-- of whoever inserts the mail account, and the server is the only writer here.
+-- DELETE is granted for completeness; in practice the reservation is released by
+-- the cascade from an erased user, and the FK refuses any delete that would
+-- orphan a mail account. UPDATE is granted and then refused by the immutability
+-- trigger, so an attempted transfer fails loudly rather than silently lacking a
+-- privilege.
 grant select, insert, update, delete on
+  public.mail_provider_account_owners,
   public.mail_accounts,
   public.mail_account_consents,
   public.mail_account_deletion_requests

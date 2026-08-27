@@ -55,8 +55,8 @@ interface Account {
  * A mailbox in `pending_authorization` — the state a connection starts in,
  * before Google's consent screen has been completed.
  */
-async function pendingAccount(userId: string = USERS.pro): Promise<Account> {
-  const subject = `google-sub-${uniq()}`;
+async function pendingAccount(userId: string = USERS.pro, fixedSubject?: string): Promise<Account> {
+  const subject = fixedSubject ?? `google-sub-${uniq()}`;
   const [row] = await adminQuery<{ id: string }>(
     `insert into public.mail_accounts
        (user_id, provider, provider_account_subject, email_address)
@@ -132,8 +132,9 @@ async function decideConsent(
 async function connectedAccount(
   userId: string = USERS.pro,
   scopes: string[] = [GMAIL_READONLY],
+  fixedSubject?: string,
 ): Promise<Account> {
-  const account = await pendingAccount(userId);
+  const account = await pendingAccount(userId, fixedSubject);
   await txOk(async (q) => {
     await q(
       `update public.mail_accounts
@@ -227,6 +228,25 @@ async function accountRow(id: string) {
     [id],
   );
   return row!;
+}
+
+/**
+ * A user created for this test alone. The seeded users are shared, and the
+ * erasure scenarios below delete their subject outright.
+ */
+async function throwawayUser(): Promise<string> {
+  const [row] = await adminQuery<{ id: string }>(
+    `insert into public.users (id, email, role)
+     values (gen_random_uuid(), $1, 'creator') returning id`,
+    [`amend2-${uniq()}@example.invalid`],
+  );
+  return row!.id;
+}
+
+/** Retire a mailbox the long way round, leaving its history in place. */
+async function connectDisconnectRetire(account: Account): Promise<void> {
+  await disconnectAccount(account);
+  await retireAccount(account);
 }
 
 /** The one definition of "may we?", asked exactly as a future caller would. */
@@ -355,7 +375,8 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
       // ...and the policies genuinely do not mention the staff helper.
       const policies = await adminQuery<{ qual: string | null }>(
         `select qual from pg_policies
-          where schemaname = 'public' and tablename like 'mail_account%'`,
+          where schemaname = 'public'
+            and (tablename like 'mail_account%' or tablename = 'mail_provider_account_owners')`,
       );
       expect(policies.length).toBeGreaterThan(0);
       for (const p of policies) expect(p.qual ?? "").not.toMatch(/is_admin_or_editor/);
@@ -381,7 +402,7 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
            values ($1, 'gmail', $2)`,
           [USERS.free, account.subject],
         ),
-      ).rejects.toThrow(/provider_account_uidx|duplicate key/i);
+      ).rejects.toThrow(/is already owned by app user/);
     });
 
     it("14. the trusted server path remains possible", async () => {
@@ -985,7 +1006,8 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
 
       const client = await adminQuery<{ grantee: string; privilege_type: string }>(
         `select grantee, privilege_type from information_schema.role_table_grants
-          where table_schema = 'public' and table_name like 'mail_account%'
+          where table_schema = 'public'
+            and (table_name like 'mail_account%' or table_name = 'mail_provider_account_owners')
             and grantee in ('anon', 'authenticated') order by grantee, privilege_type`,
       );
       // `authenticated` reads its own rows and writes nothing; `anon` holds
@@ -1439,7 +1461,9 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
       );
       expect(again!.id).not.toBe(account.id);
 
-      // ...but two LIVE records for one Google account remain impossible.
+      // ...but two LIVE records for one Google account remain impossible, even
+      // for the owner: that would be two simultaneous connections with two
+      // consent histories, and no reader could say which one governs.
       await expect(
         adminQuery(
           `insert into public.mail_accounts (user_id, provider, provider_account_subject)
@@ -1651,6 +1675,457 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
         [user!.id],
       );
       expect(left[0]).toEqual({ accounts: "0", receipts: "0" });
+    });
+  });
+
+  // =====================================================================
+  // AMENDMENT #2 — durable provider account ownership.
+  //
+  // Amendment #1 made `deleted` terminal, which is right, and then had to let a
+  // creator reconnect the same Google account as a NEW row, which is also right.
+  // The way it bought that — replacing the full uniqueness on
+  // (provider, provider_account_subject) with one restricted to live rows —
+  // stopped the database seeing retired rows at all. So user A could retire a
+  // mailbox and user B could then claim the same Google account, while A's
+  // consent receipts, consent projections and deletion request were all still on
+  // file and still owned by A. One durable provider identity, two app owners.
+  //
+  // The fix separates the two questions the single index was being asked to
+  // answer at once: WHO owns a durable provider identity (the registry, spanning
+  // its whole history) and HOW MANY live connections it may have (the partial
+  // index, governing only the present).
+  // =====================================================================
+  describe("amendment #2: one durable provider identity, one app owner", () => {
+    it("G1. a LIVE subject cannot be claimed by a second app user", async () => {
+      const subject = `google-sub-${uniq()}`;
+      await pendingAccount(USERS.pro, subject);
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [USERS.free, subject],
+        ),
+      ).rejects.toThrow(/is already owned by app user/);
+    });
+
+    it("G2. a RETIRED subject can be reconnected by its own owner", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const first = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await connectDisconnectRetire(first);
+      expect((await accountRow(first.id)).connection_state).toBe("deleted");
+
+      const second = await pendingAccount(owner, subject);
+      expect(second.id).not.toBe(first.id);
+      expect((await accountRow(second.id)).connection_state).toBe("pending_authorization");
+    });
+
+    it("G3. a RETIRED subject cannot be claimed by a different app user", async () => {
+      // The blocker itself. A's evidence is still on file and still A's, so the
+      // durable identity it describes is not available to anyone else.
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const first = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await connectDisconnectRetire(first);
+
+      const evidence = await adminQuery<{ receipts: string; consents: string; deletions: string }>(
+        `select (select count(*)::text from public.mail_account_consent_receipts
+                  where mail_account_id = $1) receipts,
+                (select count(*)::text from public.mail_account_consents
+                  where mail_account_id = $1) consents,
+                (select count(*)::text from public.mail_account_deletion_requests
+                  where mail_account_id = $1) deletions`,
+        [first.id],
+      );
+      expect(evidence[0]).toEqual({ receipts: "1", consents: "1", deletions: "1" });
+
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [stranger, subject],
+        ),
+      ).rejects.toThrow(/is already owned by app user/);
+    });
+
+    it("G4. nor after the owner has reconnected it", async () => {
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const first = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await connectDisconnectRetire(first);
+      await pendingAccount(owner, subject);
+
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [stranger, subject],
+        ),
+      ).rejects.toThrow(/is already owned by app user/);
+    });
+
+    it("G5. a reconnected mailbox inherits NO consent and NO history", async () => {
+      // Nothing from the old row can satisfy the new one, because every receipt,
+      // projection and deletion request is bound to a mail_account_id.
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const first = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await decideConsent(first, "network_intelligence_contribution", "granted");
+      await connectDisconnectRetire(first);
+
+      const second = await pendingAccount(owner, subject);
+      const [fresh] = await adminQuery<{
+        receipts: string;
+        consents: string;
+        deletions: string;
+        priv: boolean;
+        net: boolean;
+      }>(
+        `select (select count(*)::text from public.mail_account_consent_receipts
+                  where mail_account_id = $1) receipts,
+                (select count(*)::text from public.mail_account_consents
+                  where mail_account_id = $1) consents,
+                (select count(*)::text from public.mail_account_deletion_requests
+                  where mail_account_id = $1) deletions,
+                public.mail_account_has_consent($1,'private_gmail_processing') priv,
+                public.mail_account_has_consent($1,'network_intelligence_contribution') net`,
+        [second.id],
+      );
+      expect(fresh!.receipts).toBe("0");
+      expect(fresh!.consents).toBe("0");
+      expect(fresh!.deletions).toBe("0");
+      expect(fresh!.priv).toBe(false);
+      expect(fresh!.net).toBe(false);
+
+      // ...and it cannot be connected on the strength of the old decision.
+      const error = await inTransaction(async (q) => {
+        await q(
+          `update public.mail_accounts
+              set connection_state='connected', connected_at=now(),
+                  granted_scopes=array[$2]::text[]
+            where id = $1`,
+          [second.id, GMAIL_READONLY],
+        );
+      });
+      expect(error).toMatch(/cannot be `connected` without a granted private_gmail_processing/);
+
+      // The old row's history is untouched by any of this.
+      const [old] = await adminQuery<{ receipts: string }>(
+        `select count(*)::text receipts from public.mail_account_consent_receipts
+          where mail_account_id = $1`,
+        [first.id],
+      );
+      expect(old!.receipts).toBe("2");
+    });
+
+    it("G6. erasing the owner releases the reservation with everything else", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const first = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await decideConsent(first, "network_intelligence_contribution", "granted");
+      await connectDisconnectRetire(first);
+      await pendingAccount(owner, subject);
+
+      const [before] = await adminQuery<{ owners: string }>(
+        `select count(*)::text owners from public.mail_provider_account_owners
+          where provider = 'gmail' and provider_account_subject = $1`,
+        [subject],
+      );
+      expect(before!.owners).toBe("1");
+
+      await adminQuery("delete from public.users where id = $1", [owner]);
+
+      const [after] = await adminQuery<{
+        accounts: string;
+        receipts: string;
+        consents: string;
+        deletions: string;
+        owners: string;
+      }>(
+        `select (select count(*)::text from public.mail_accounts where user_id = $1) accounts,
+                (select count(*)::text from public.mail_account_consent_receipts
+                  where user_id = $1) receipts,
+                (select count(*)::text from public.mail_account_consents where user_id = $1) consents,
+                (select count(*)::text from public.mail_account_deletion_requests
+                  where user_id = $1) deletions,
+                (select count(*)::text from public.mail_provider_account_owners
+                  where owner_user_id = $1) owners`,
+        [owner],
+      );
+      expect(after).toEqual({
+        accounts: "0",
+        receipts: "0",
+        consents: "0",
+        deletions: "0",
+        owners: "0",
+      });
+    });
+
+    it("G7. after full erasure a different human may connect that Google account", async () => {
+      // A reservation that outlived its user would ban a Google account forever
+      // with nothing left in the product to protect — a privacy guarantee that
+      // protects nobody and blocks someone real.
+      const owner = await throwawayUser();
+      const newcomer = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const first = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await connectDisconnectRetire(first);
+      await adminQuery("delete from public.users where id = $1", [owner]);
+
+      const claimed = await pendingAccount(newcomer, subject);
+      expect(claimed.id).toBeTruthy();
+      const [registry] = await adminQuery<{ owner_user_id: string }>(
+        `select owner_user_id from public.mail_provider_account_owners
+          where provider='gmail' and provider_account_subject = $1`,
+        [subject],
+      );
+      expect(registry!.owner_user_id).toBe(newcomer);
+    });
+
+    it("G8. two users racing for one unseen subject: exactly one wins", async () => {
+      // A trigger that only SELECTed for an existing owner would let both find
+      // nothing and both proceed. The registry's primary key is the
+      // serialization point, so the second claimant blocks on it and then loses.
+      const a = await throwawayUser();
+      const b = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const insert = `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+                      values ($1,'gmail',$2)`;
+
+      const c1 = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      const c2 = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await c1.connect();
+      await c2.connect();
+      let secondSurvived = false;
+      let secondError = "";
+      try {
+        await c1.query("begin");
+        await c2.query("begin");
+        await c1.query(insert, [a, subject]);
+        const raced = c2.query(insert, [b, subject]).then(
+          () => null,
+          (e: Error) => e,
+        );
+        await c1.query("commit");
+        const failure = await raced;
+        if (failure === null) {
+          try {
+            await c2.query("commit");
+            secondSurvived = true;
+          } catch (e) {
+            secondError = (e as Error).message;
+          }
+        } else {
+          secondError = failure.message;
+        }
+      } finally {
+        await c2.query("rollback").catch(() => undefined);
+        await c1.end();
+        await c2.end();
+      }
+
+      expect(secondSurvived).toBe(false);
+      expect(secondError).toMatch(
+        /is already owned by app user|duplicate key|could not serialize/i,
+      );
+
+      const owners = await adminQuery<{ user_id: string }>(
+        "select distinct user_id from public.mail_accounts where provider_account_subject = $1",
+        [subject],
+      );
+      expect(owners).toHaveLength(1);
+      expect(owners[0]!.user_id).toBe(a);
+    });
+
+    it("G9. two live rows for one subject stay impossible, even for the owner", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const insert = `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+                      values ($1,'gmail',$2)`;
+      await pendingAccount(owner, subject);
+      await expect(adminQuery(insert, [owner, subject])).rejects.toThrow(
+        /provider_account_uidx|duplicate key/i,
+      );
+
+      const c1 = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      const c2 = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await c1.connect();
+      await c2.connect();
+      const other = `google-sub-${uniq()}`;
+      let bothSurvived = false;
+      try {
+        await c1.query("begin");
+        await c2.query("begin");
+        await c1.query(insert, [owner, other]);
+        const raced = c2.query(insert, [owner, other]).then(
+          () => null,
+          (e: Error) => e,
+        );
+        await c1.query("commit");
+        if ((await raced) === null) {
+          try {
+            await c2.query("commit");
+            bothSurvived = true;
+          } catch {
+            /* refused at COMMIT, which is the point */
+          }
+        }
+      } finally {
+        await c2.query("rollback").catch(() => undefined);
+        await c1.end();
+        await c2.end();
+      }
+      expect(bothSurvived).toBe(false);
+    });
+
+    it("G10. no durable provider identity has two app owners, anywhere", async () => {
+      // A sweep over the whole table rather than a scenario: whatever every test
+      // above left behind, this must still hold.
+      const split = await adminQuery<{ provider_account_subject: string }>(
+        `select provider_account_subject
+           from public.mail_accounts
+          group by provider, provider_account_subject
+         having count(distinct user_id) > 1`,
+      );
+      expect(split).toEqual([]);
+
+      // ...and every mail account agrees with the registry, live or retired.
+      const disagreeing = await adminQuery<{ id: string }>(
+        `select m.id from public.mail_accounts m
+           left join public.mail_provider_account_owners o
+             on o.provider = m.provider
+            and o.provider_account_subject = m.provider_account_subject
+          where o.owner_user_id is distinct from m.user_id`,
+      );
+      expect(disagreeing).toEqual([]);
+    });
+
+    it("G11. a reservation cannot be edited — that would BE the transfer", async () => {
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      await pendingAccount(owner, subject);
+      await expect(
+        adminQuery(
+          `update public.mail_provider_account_owners set owner_user_id = $2
+            where provider='gmail' and provider_account_subject = $1`,
+          [subject, stranger],
+        ),
+      ).rejects.toThrow(/ownership reservation is not editable/);
+    });
+
+    it("G12. a mail account cannot change owner or provider identity", async () => {
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const account = await pendingAccount(owner);
+      for (const [column, value] of [
+        ["user_id", stranger],
+        ["provider_account_subject", `google-sub-${uniq()}`],
+      ] as const) {
+        const error = await inTransaction(async (q) => {
+          await q(`update public.mail_accounts set ${column} = $2 where id = $1`, [
+            account.id,
+            value,
+          ]);
+        });
+        expect(error, column).toMatch(/cannot change owner or provider identity/);
+      }
+    });
+
+    it("G13. a reservation cannot be released while a mailbox still needs it", async () => {
+      const owner = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await connectedAccount(owner, [GMAIL_READONLY], subject);
+      await connectDisconnectRetire(account);
+
+      // Even the retired row keeps the reservation alive, which is exactly the
+      // property the partial index could not provide.
+      const error = await inTransaction(async (q) => {
+        await q(
+          `delete from public.mail_provider_account_owners
+            where provider='gmail' and provider_account_subject = $1`,
+          [subject],
+        );
+      });
+      expect(error).toMatch(/provider_owner_fk|still referenced|foreign key/i);
+    });
+
+    it("G14. the registry is owner-only, and invisible to everyone else", async () => {
+      const account = await connectedAccount(USERS.pro);
+      const owner = await queryAs(
+        { role: "authenticated", sub: USERS.pro },
+        "select owner_user_id from public.mail_provider_account_owners where provider_account_subject = $1",
+        [account.subject],
+      );
+      expect(owner.error).toBeNull();
+      expect(owner.rows).toHaveLength(1);
+
+      // Another creator cannot probe whether a given Google account is connected
+      // here, or to whom.
+      const other = await queryAs(
+        { role: "authenticated", sub: USERS.free },
+        "select owner_user_id from public.mail_provider_account_owners where provider_account_subject = $1",
+        [account.subject],
+      );
+      expect(other.error).toBeNull();
+      expect(other.rows).toHaveLength(0);
+
+      // Admin through a client session gets nothing either — holding an internal
+      // role is not a reason to learn whose mailbox this is.
+      const admin = await queryAs(
+        { role: "authenticated", sub: USERS.admin },
+        "select owner_user_id from public.mail_provider_account_owners where provider_account_subject = $1",
+        [account.subject],
+      );
+      expect(admin.error).toBeNull();
+      expect(admin.rows).toHaveLength(0);
+
+      const anon = await queryAs(
+        { role: "anon", sub: null },
+        "select * from public.mail_provider_account_owners limit 1",
+      );
+      expect(anon.error).not.toBeNull();
+    });
+
+    it("G15. a reservation outlives a deleted mailbox ROW, but never its owner", async () => {
+      // Two different things, and the distinction is the whole design.
+      //
+      // Removing a mail_accounts row while its owner still exists leaves the
+      // reservation standing, and should: it is still that human's claim on that
+      // Google account, and they may reconnect it. Nobody is banned — the owner
+      // can come straight back, and only a stranger is kept out.
+      const owner = await throwawayUser();
+      const stranger = await throwawayUser();
+      const subject = `google-sub-${uniq()}`;
+      const account = await pendingAccount(owner, subject);
+      await adminQuery("delete from public.mail_accounts where id = $1", [account.id]);
+
+      const [held] = await adminQuery<{ owner_user_id: string }>(
+        `select owner_user_id from public.mail_provider_account_owners
+          where provider='gmail' and provider_account_subject = $1`,
+        [subject],
+      );
+      expect(held!.owner_user_id).toBe(owner);
+      await expect(
+        adminQuery(
+          `insert into public.mail_accounts (user_id, provider, provider_account_subject)
+           values ($1,'gmail',$2)`,
+          [stranger, subject],
+        ),
+      ).rejects.toThrow(/is already owned by app user/);
+      const back = await pendingAccount(owner, subject);
+      expect(back.id).toBeTruthy();
+
+      // Erasing the human is the other case, and no reservation may survive it —
+      // there would be nothing left in the product for it to protect, and it
+      // would ban a Google account permanently.
+      const stranded = await adminQuery<{ provider_account_subject: string }>(
+        `select o.provider_account_subject from public.mail_provider_account_owners o
+          where not exists (select 1 from public.users u where u.id = o.owner_user_id)`,
+      );
+      expect(stranded).toEqual([]);
     });
   });
 });

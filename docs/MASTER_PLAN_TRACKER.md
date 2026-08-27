@@ -609,8 +609,8 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B01 — mail account, consent and the private communication boundary. Open PR,
-> not merged, external audit amendment #1 applied, awaiting re-audit and the
-> human merge gate.**
+> not merged, external audit amendments #1 and #2 applied, awaiting re-audit and
+> the human merge gate.**
 
 **Phase A's code gate is closed.** A05 merged as `ed857f0b`, and with it the
 canonical property spine: preview (A04), human decision (A04.5), withdrawal
@@ -629,6 +629,16 @@ now terminal, consent events carry a database-owned ordinal, and the scope
 snapshot is checked against the account rather than accepted from the writer. The
 migration was amended IN PLACE — `0035` is unmerged, so there is no history to
 correct with an `0036`.
+
+External audit amendment #2 (2026-08-27) closed a regression amendment #1 had
+introduced. Making `deleted` terminal meant a creator reconnecting their own
+Gmail account needed a new row, which required relaxing the provider-subject
+uniqueness to live rows only — and that stopped the database seeing retired rows
+at all, so a second app user could claim a Google account whose previous owner's
+consent receipts and deletion record were still on file. Ownership of a durable
+provider identity now lives in its own registry spanning a mailbox's whole
+history, with the live-row rule left to govern only the present. Reproduced
+first, as a real committed cross-owner state, then closed.
 
 B01 opens Phase B on a deliberately different footing. Everything Phase A built
 is provider evidence reviewed by staff whose job is to review it; a creator's

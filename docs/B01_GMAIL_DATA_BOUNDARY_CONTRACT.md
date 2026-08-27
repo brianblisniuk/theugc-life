@@ -342,9 +342,57 @@ with the public/editorial admin data next to it.
 **One app user → zero or many mailboxes.** A creator legitimately runs a personal
 and a business address.
 
-**One provider account → exactly ONE owning app user**, enforced by
-`unique (provider, provider_account_subject)`. Shared-inbox ownership is not
-implemented.
+**One provider account → exactly ONE owning app user**, for as long as any of
+that identity's mail-account history exists here. Shared-inbox ownership,
+agency delegation and cross-tenant transfer are not implemented.
+
+This is enforced by a dedicated registry, `mail_provider_account_owners`, keyed
+`(provider, provider_account_subject)` with an `owner_user_id`, plus a composite
+FK from `mail_accounts (provider, provider_account_subject, user_id)` into it.
+Not by a unique index on `mail_accounts`, because neither shape of index can
+express the rule:
+
+| | |
+|---|---|
+| **FULL** unique index on the subject | forbids same-owner reconnection, which terminal `deleted` makes necessary. Deletion would come to mean "you may never reconnect this address". |
+| **PARTIAL** index over live rows only | permits reconnection but stops seeing retired rows. User A retires a mailbox; user B claims the same Google account while A's consent receipts, consent projections and deletion request are still on file and still A's. One durable identity, two app owners. |
+
+The registry separates the two questions one index was being asked to answer at
+once: **who owns a durable provider identity** — the registry, spanning its whole
+history — and **how many live connections it may have** — the partial index,
+governing only the present, which remains in place at one.
+
+**The race is impossible, not unlikely.** A trigger that read for an existing
+owner and refused a different one would let two concurrent transactions both find
+nothing and both proceed, because neither sees the other's uncommitted row. The
+registry's primary key is the serialization point: claiming is an
+`insert … on conflict do nothing`, so the second claimant blocks on the index
+until the first commits, then reads the winner and is refused. The composite FK
+is the declarative backstop; remove the claim trigger and inserts fail closed,
+not open.
+
+**What this permits, and what it refuses.**
+
+| | |
+|---|---|
+| A retires mailbox S, A reconnects S as a NEW row | permitted — new authorization, new scopes, new consent, new history, new `mail_account_id`. Nothing carries across, because every receipt and projection is bound to a `mail_account_id`. |
+| A retires mailbox S, B claims S | **refused** — A's private-plane evidence still exists and is still A's |
+| A holds S live, B claims S | **refused** |
+| A holds S live, A creates a second live row for S | **refused** — two simultaneous connections, two consent histories, no way to say which governs |
+| Editing a mail account's owner or provider subject | **refused** — that is a transfer in one UPDATE, and it would re-point a whole consent history at a different human or Google account |
+| Editing the registry's `owner_user_id` | **refused** — the same transfer, one table over |
+| Deleting a mail account ROW while its owner exists | reservation stands; it is still that human's claim and they may reconnect |
+| Erasing the USER entirely | reservation is released with the rest of their private plane |
+
+That last row is the one deliberate release. A reservation that outlived its
+human would ban a Google account permanently with nothing left in the product to
+protect, so after full erasure a different, genuinely authenticated person may
+connect that account as a new identity — there is no longer any of A's private
+history for them to inherit.
+
+If the product ever needs real transfer of a Gmail account between app users,
+that is a NEW contract with its own authorization, deletion and privacy
+semantics. It is not something a writer can reach by editing a column.
 
 **No agency delegation.** An agency managing a creator gets **no** automatic
 access to that creator's mailbox. Delegation is future work and will require
@@ -506,6 +554,7 @@ code-shaped estimate.
 |---|---|
 | `approved_gmail_scopes()` | the ONE definition of the permitted scope set, called by both allow-list CHECKs so the account side and the consent side cannot drift |
 | `canonical_scope_set()` | sorted-distinct normalisation applied on write, so scope sets compare as SETS rather than as arrays |
+| `mail_provider_account_owners` | which app user owns a durable provider identity, for as long as any of its history exists. One owner per `(provider, provider_account_subject)`; released only by erasing that user |
 | `mail_accounts` | the connected mailbox as G0 metadata: owner, provider subject, connection state, granted scopes, and the deletion request a retirement rests on. No credential. |
 | `mail_account_consent_receipts` | APPEND-ONLY history of what a human agreed to, with policy version, consent-text digest, a database-owned `event_seq` and the scopes actually held at decision |
 | `mail_account_consents` | the CURRENT answer per (mailbox, permission), composite-FK'd to the receipt it represents including its ordinal |
@@ -514,7 +563,8 @@ code-shaped estimate.
 | `assert_mail_account_state_coherent()` | deferred to COMMIT, on all four write origins: no `connected` without consent, no `connected` whose scopes outrun its consent, no `deletion_pending` without the named request running, no `deleted` without the named request completed at account scope |
 | `assert_mail_consent_projection_dominant()` | deferred, on receipt INSERT and projection INSERT/UPDATE/DELETE: the current consent is the latest decision |
 | `assert_mail_consent_receipt_scopes_actual()` | deferred, on receipt INSERT: the scope snapshot equals what the mailbox really held |
-| `enforce_mail_account_state_transition()` | immediate: `deletion_pending` waits on a running request, `deleted` comes only from it, and `deleted` is terminal |
+| `claim_provider_account_owner()` | on mail-account INSERT: claims the durable identity for its owner through the registry's primary key, so concurrent first claims serialize and exactly one wins |
+| `enforce_mail_account_state_transition()` | immediate: `deletion_pending` waits on a running request, `deleted` comes only from it, `deleted` is terminal, and a mailbox's owner and provider identity are immutable |
 | `forbid_mail_consent_projection_rewind()` | immediate: a projection never moves back to an earlier decision |
 
 Migrations `0001`–`0034` are not modified. **0035 connects no mailbox, infers no

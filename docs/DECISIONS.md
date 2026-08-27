@@ -1890,6 +1890,29 @@ ACCESS, not about what this product may do with the data. So a change to the
 scope set — widening or narrowing — requires a new `private_gmail_processing`
 receipt naming the new set before the mailbox may be `connected` again.
 
+### A durable provider identity has one app owner
+
+`(provider, provider_account_subject)` — Google's stable subject, never the email
+address — identifies a real Google account. It belongs to exactly ONE app user
+for as long as any of its mail-account history exists in the product, retired
+records included. Shared inboxes, agency delegation and cross-tenant transfer are
+not implemented, and none of them is reachable by editing a column.
+
+The subtlety is that this cannot be a uniqueness rule on the mailbox table.
+Making it full forbids the same-owner reconnection that terminal deletion
+requires; restricting it to live rows permits that reconnection but stops the
+database seeing retired ones, so a second app user could claim a Google account
+whose previous owner's consent receipts and deletion record are still on file.
+Ownership therefore lives in its own registry keyed by the durable identity,
+spanning a mailbox's whole history, while a separate live-row rule keeps a single
+usable connection at a time.
+
+Two consequences are decisions, not details. A creator may always reconnect their
+own Google account, as a NEW mail account inheriting no consent and no history.
+And erasing an app user releases the reservation along with the rest of their
+private plane — a reservation that outlived its human would ban a Google account
+permanently with nothing left in the product to protect.
+
 ### Disconnect is not delete, and deletion is terminal
 
 Stopping provider access and deleting stored data are different acts with
@@ -1921,10 +1944,19 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+External audit amendment #2 (2026-08-27) added the durable-provider-identity
+paragraphs above. Amendment #1's terminality work had traded the full uniqueness
+on `(provider, provider_account_subject)` for a live-rows-only index in order to
+permit same-owner reconnection, and that silently allowed one Google account to
+move between app owners; it too was reproduced as a real committed state before
+being closed.
+
 External audit amendment #1 (2026-08-27) added the event-ordering, scope-snapshot
 and deletion-terminality paragraphs above after all four were reproduced as real
 committed states on PostgreSQL using nothing but direct SQL. They are stated as
 decisions, not implementation notes, because each one changes what a writer is
 allowed to do: B02 must record a mailbox's scopes and its consent in one
 transaction, must renew private-processing consent when it adds `gmail.send`, and
-must treat a retired mail account as gone rather than reusable.
+must treat a retired mail account as gone rather than reusable, and must handle a
+refused connection when the Google account is already owned by a different app
+user.

@@ -1041,13 +1041,23 @@ only), `connection_state`, `granted_scopes`, and the connection timestamps.
 
 `mail_accounts_provider_account_uidx`, a unique index on
 `(provider, provider_account_subject)` **where `connection_state <> 'deleted'`** —
-one provider account has exactly ONE LIVE owning record. Shared-inbox ownership
-and agency delegation are future work requiring explicit authorization, not a
-second row. Retired records are excluded because `deleted` is terminal: a creator
-who deletes their mailbox data and later reconnects the same Google account gets
-a NEW row, since the old one asserts their data was removed and may never be
-revived. A full unique index would have turned terminality into "you can never
-reconnect this address", which is a bug wearing a privacy guarantee's clothes.
+a durable provider identity has at most ONE LIVE mailbox record. Two live rows
+would be two simultaneous connections with two consent histories, and no reader
+could say which one governs. Retired records are excluded because `deleted` is
+terminal: a creator who deletes their mailbox data and later reconnects the same
+Google account gets a NEW row, since the old one asserts their data was removed
+and may never be revived. A full unique index would have turned terminality into
+"you can never reconnect this address", which is a bug wearing a privacy
+guarantee's clothes.
+
+**This index does not decide ownership, and must not be read as doing so** — see
+`mail_provider_account_owners` below. It governs the live present of a durable
+identity; ownership spans its whole history, retired rows included.
+
+`mail_accounts_provider_owner_fk`, a composite FK on
+`(provider, provider_account_subject, user_id)` into the ownership registry, is
+what binds every mail account — live or retired — to the one app user that owns
+its durable provider identity.
 
 `unique (id, user_id)` is the **provenance spine**: every future Gmail-origin or
 Gmail-derived table composite-FKs the PAIR, so no such row can lose the account
@@ -1079,6 +1089,45 @@ revoking at Google.
 `deleted` state rests on, composite-FK'd as `(current_deletion_request_id, id)` so
 it must be THIS mailbox's request. CHECKs require the pointer in those two states
 and forbid it in every other, so the field always means what it says.
+
+### mail_provider_account_owners
+**One durable provider identity, one owning app user.** `(provider,
+provider_account_subject)` is the primary key; `owner_user_id` cascades from
+`users`. Shared-inbox ownership, agency delegation and cross-tenant transfer are
+all future work requiring explicit authorization, not a row edit — a trigger
+refuses UPDATE outright, because editing `owner_user_id` would BE that transfer,
+performed in one statement.
+
+Ownership needs its own table because neither shape of index on `mail_accounts`
+can express it. A FULL unique index on the subject forbids same-owner
+reconnection, which terminal `deleted` makes necessary. A PARTIAL index over live
+rows permits that reconnection but stops seeing retired rows entirely — so user A
+could retire a mailbox and user B claim the same Google account while A's consent
+receipts, consent projections and deletion request were still on file and still
+A's. The registry separates the two questions the single index was being asked to
+answer: **who owns a durable identity** (registry, whole history) and **how many
+live connections it may have** (partial index, present only).
+
+The primary key is also the **serialization point**. A trigger that merely
+SELECTed for an existing owner would let two concurrent transactions both find
+nothing and both proceed, since neither sees the other's uncommitted row.
+`claim_provider_account_owner()` instead does an `insert … on conflict do
+nothing` on `mail_accounts` INSERT: the second claimant blocks on the index until
+the first commits, then reads the winner and is refused. The composite FK is the
+declarative backstop — if the trigger were removed, no registry row would be
+created and every insert would fail closed rather than open.
+
+**Release semantics are deliberate and asymmetric.** Deleting a `mail_accounts`
+ROW leaves the reservation standing: the owner still exists, it is still their
+claim, and they may reconnect — only a stranger is kept out. Erasing the USER
+drops it with the rest of their private plane, because a reservation that
+outlived its human would ban a Google account permanently with nothing left in
+the product to protect. The FK also refuses releasing a reservation while any
+mail account still references it, so a retired row keeps the claim alive.
+
+RLS is owner-only, like the rest of the plane: "which app user owns Google
+subject X" would otherwise let anyone probe whether a given Gmail account is
+connected here and to whom.
 
 ### mail_account_consent_receipts (append-only)
 Immutable history of what a human agreed to: the permission, the decision, the
@@ -1186,7 +1235,12 @@ ever sees where a transaction ended up:
 - **`deleted` is terminal.** No transition out, to any state, and the request it
   names cannot be swapped afterwards. A revived row would make the assertion
   "your data was removed" false while still carrying the completed deletion as
-  its evidence.
+  its evidence;
+- **owner and provider identity are immutable.** `user_id`, `provider` and
+  `provider_account_subject` cannot change after creation. Every consent receipt
+  and deletion request on a mailbox is about THIS human and THIS Google account;
+  re-pointing the row would make all of them describe something else — a transfer
+  performed in one UPDATE.
 
 ### Access
 Owner reads their own rows; that is the entire client surface, because every

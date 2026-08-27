@@ -187,6 +187,7 @@ const CONTRACT: Record<string, Expected> = {
   // and writes nothing — every write is a server action behind an OAuth flow or
   // a deletion job. `anon` holds no privilege at all, and consent history is
   // append-only for the trusted role too.
+  mail_provider_account_owners: { anon: "", authenticated: "S", serviceRole: "all" },
   mail_accounts: { anon: "", authenticated: "S", serviceRole: "all" },
   mail_account_consent_receipts: { anon: "", authenticated: "S", serviceRole: "SI" },
   mail_account_consents: { anon: "", authenticated: "S", serviceRole: "all" },
