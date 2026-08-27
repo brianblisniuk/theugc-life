@@ -53,6 +53,10 @@ function valid(): PreviewInput {
       reviewerLabel: "Reviewer",
       reviewedAt: "2026-08-17T00:00:00Z",
       reviewNote: "reviewed",
+      reviewStatus: "active",
+      currentReceiptId: "receipt-1",
+      currentReceiptRevoked: false,
+      currentReceiptRevocationId: null,
     },
     destination: { id: "destination-1", slug: "bali" },
     targetHotel: null,
@@ -443,6 +447,106 @@ describe("D062 pre-publication preview", () => {
         evaluatePreview(left, AS_OF).fingerprint,
       );
     }
+  });
+
+  /*
+   * A04.6 AMENDMENT #1 — the current projection must CLAIM the receipt it is
+   * evaluated against. D062 is the publication gate, so it fails closed on its
+   * own evidence, without assuming 0033's trigger held upstream.
+   */
+  it("A04.6: conditions 1 and 2 hold when the projection names a DIFFERENT receipt", () => {
+    const input = valid();
+    // The loader picked the receipt about the current observation (receipt-1);
+    // the projection says the current approval is a different one.
+    input.review!.currentReceiptId = "receipt-from-an-older-run";
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).status).toBe("UNRESOLVED");
+    expect(condition(p, 1).reason).toBe("human_review_projection_receipt_mismatch");
+    expect(condition(p, 2).status).toBe("UNRESOLVED");
+    expect(condition(p, 2).reason).toBe("human_review_projection_receipt_mismatch");
+    expect(condition(p, 5).status).not.toBe("PASS");
+    expect(p.overall).not.toBe("PASS");
+  });
+
+  it("A04.6: a projection naming NO receipt may not borrow one that happens to exist", () => {
+    const input = valid();
+    input.review!.currentReceiptId = null;
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).reason).toBe("human_review_projection_receipt_missing");
+    expect(condition(p, 2).reason).toBe("human_review_projection_receipt_missing");
+    expect(p.overall).not.toBe("PASS");
+  });
+
+  it("A04.6: a revocation stays the visible reason, ahead of any pointer diagnostic", () => {
+    const input = valid();
+    input.review!.reviewStatus = "revoked";
+    // Incoherent AND revoked. The brake must remain the reason a human sees.
+    input.review!.currentReceiptId = "receipt-from-an-older-run";
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).reason).toBe("human_review_revoked");
+    expect(condition(p, 2).reason).toBe("human_review_revoked");
+    expect(p.overall).not.toBe("PASS");
+  });
+
+  /*
+   * A04.6 AMENDMENT #2 — the immutable revocation event dominates the mutable
+   * `review_status` column. `source_property_reviews` is legitimately writable
+   * by admin/editor and service_role, so D062 must not trust its status alone.
+   */
+  it("A04.6: a revoked CURRENT receipt beats review_status = active", () => {
+    const input = valid();
+    // Exactly the corrupted state a single-column UPDATE produces: the
+    // revocation still exists for the receipt the projection names, but the
+    // status was flipped back.
+    input.review!.reviewStatus = "active";
+    input.review!.currentReceiptRevoked = true;
+    input.review!.currentReceiptRevocationId = "revocation-1";
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).reason).toBe("human_review_revoked");
+    expect(condition(p, 2).reason).toBe("human_review_revoked");
+    expect(condition(p, 5).status).not.toBe("PASS");
+    expect(p.overall).not.toBe("PASS");
+    expect(condition(p, 1).evidence.revocationStateCoherent).toBe(false);
+    expect(condition(p, 1).evidence.currentReceiptRevocationId).toBe("revocation-1");
+  });
+
+  it("A04.6: status = revoked with NO event behind it also fails closed", () => {
+    const input = valid();
+    input.review!.reviewStatus = "revoked";
+    input.review!.currentReceiptRevoked = false;
+    const p = evaluatePreview(input, AS_OF);
+
+    // A mutable column may not invent historical evidence either. The brake
+    // stays on and the disagreement is visible rather than silently resolved.
+    expect(condition(p, 1).reason).toBe("human_review_revoked");
+    expect(condition(p, 2).reason).toBe("human_review_revoked");
+    expect(p.overall).not.toBe("PASS");
+    expect(condition(p, 1).evidence.revocationStateCoherent).toBe(false);
+  });
+
+  it("A04.6: a fresh receipt with no revocation of its own is authorized", () => {
+    const input = valid();
+    // The identity's history may contain revocations; what matters is that THIS
+    // receipt carries none. Asking "was this identity ever revoked?" would brick
+    // every re-reviewed property forever.
+    input.review!.reviewStatus = "active";
+    input.review!.currentReceiptRevoked = false;
+    const p = evaluatePreview(input, AS_OF);
+    expect(condition(p, 1).status).toBe("PASS");
+    expect(condition(p, 2).status).toBe("PASS");
+    expect(p.overall).toBe("PASS");
+    expect(condition(p, 1).evidence.revocationStateCoherent).toBe(true);
+  });
+
+  it("A04.6: a coherent, current, active projection still passes", () => {
+    const p = evaluatePreview(valid(), AS_OF);
+    expect(condition(p, 1).status).toBe("PASS");
+    expect(condition(p, 2).status).toBe("PASS");
+    expect(p.overall).toBe("PASS");
   });
 
   it("uses locale-independent fingerprint ordering and schema v2", () => {

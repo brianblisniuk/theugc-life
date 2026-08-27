@@ -778,6 +778,118 @@ abort is **never retried**; it is surfaced as a refusal and nothing is written.
 **0032 writes nothing canonical.** No `hotels` row, no `hotel_source_identities`
 link, no `resolution_state` transition. Publication remains A05.
 
+### source_property_review_revocations (0033)
+One immutable row meaning exactly: *this receipt's approval was withdrawn by this
+reviewer, at this time, for this stated reason.* It is a new fact, not an edit of
+an old one, which is why the receipt it revokes stays byte-identical.
+
+`revocation_note` is NOT NULL and non-empty: a withdrawal with no stated reason
+is not auditable. `revoked_receipt_id` is composite-FK'd as
+`(revoked_receipt_id, source_property_identity_id)`, so a revocation cannot cite
+another identity's approval, and `unique (revoked_receipt_id)` means a second
+withdrawal of the same approval is refused by the database, not only by the
+application. Append-only by trigger **and** by grant, with the 0027–0032 RLS
+posture: admin/editor plus `service_role`, no anon grant, and no UPDATE or DELETE
+for any role.
+
+### review_status and current_receipt_id (0033)
+0033 adds two columns to `source_property_reviews` because `decision` and
+`review_status` answer different questions:
+
+| column | question |
+|---|---|
+| `decision` | what the human **concluded** |
+| `review_status` | whether that conclusion is **currently authorized for use** |
+
+A revoked row therefore stays `decision = 'approve_create'` with
+`review_status = 'revoked'`. Rewriting `decision` would destroy the record of
+what was decided, and reusing `decision = 'defer'` would claim the human said
+something they never said.
+
+`current_receipt_id` names the immutable receipt the projection currently
+represents, composite-FK'd to the same identity via the additive
+`source_property_review_receipts (id, source_property_identity_id)` unique. NULL
+is honest for legacy or hand-made rows that have no receipt at all; those rows
+are excluded from the revocation pack rather than bound to a guess.
+
+The FK proves same **identity**, which is not enough: an identity legitimately
+holds one receipt per reviewed observation, so a projection advanced onto run B
+could be pointed back at receipt A and still satisfy it.
+`enforce_review_projection_receipt_coherence()` closes that, firing before every
+INSERT and every UPDATE on `source_property_reviews` — not only when the pointer
+column changes, because moving `decision`, `destination_id` or `decided_in_run_id`
+breaks the invariant just as effectively. For a non-NULL pointer it requires both
+sides to be `approve_create`, the destinations to agree, and
+`receipt.evidence_source_run_id` to equal `review.decided_in_run_id` — the
+load-bearing distinction between receipt A and receipt B for one identity.
+Comparisons use `is distinct from`; `reviewed_at` is not part of the predicate;
+and `review_status` deliberately is not either, because a `revoked` projection
+must keep pointing at the receipt that was withdrawn.
+
+The backfill binds on the **same full predicate the trigger enforces** — identity,
+both decisions, destination and `decided_in_run_id = evidence_source_run_id` —
+and **not** `order by reviewed_at desc limit 1`, which would silently bind the
+wrong receipt if two were written in one transaction or a clock moved. Nor the
+run alone: a receipt agreeing on the run but recording a different destination
+does not represent the projection, so the pointer stays NULL. The `do $$ … $$`
+ambiguity guard runs **before** the UPDATE, so a binding nobody can prove is never
+computed rather than merely rolled back, and it fails the migration with
+`data_exception` rather than breaking a tie on `reviewed_at`. That guard is unreachable on a schema-valid database — two
+receipts for one identity sharing a run would need two observations of that
+identity inside one run, which `source_property_observations_unique_per_run`
+refuses — and it exists anyway, because "impossible today" is not "safe to guess
+tomorrow".
+
+### review_status must match the revocation record (0033)
+
+The pointer being honest is not enough if the STATUS can lie.
+`source_property_reviews` is deliberately mutable — a fresh review advances it,
+so 0024 gives `authenticated` SIUD and `service_role` all — while a revocation is
+append-only history. One statement was therefore enough to undo the brake:
+`update source_property_reviews set review_status = 'active'`, touching nothing
+else, restored a 11/11 PASS with the identical pre-revocation fingerprint.
+
+`enforce_review_status_matches_revocation()` fires before every INSERT and UPDATE
+and requires, for a receipt-backed projection, that `review_status = 'revoked'`
+**iff** an immutable revocation exists for the receipt the projection currently
+represents. Both directions matter: the first stops an un-revoke, the second
+stops a column manufacturing a withdrawal no human made. A projection with
+`current_receipt_id = NULL` may be `active` and may never claim `revoked`.
+
+The predicate names the CURRENT receipt only. A historical revocation of receipt
+A must not follow the identity forever — a fresh review produces receipt B, B
+carries no revocation, and B is legitimately active. Removing UPDATE from the
+table was rejected: it would break the legitimate advance this layer depends on.
+The semantic transition is protected instead, and the invariant binds trusted
+writers exactly as it binds untrusted ones.
+
+### The IFF holds from both tables (0033)
+
+A trigger on `source_property_reviews` alone covers only one direction of a
+two-table invariant. `source_property_review_revocations` grants INSERT to
+`authenticated` (admin/editor via RLS) and `service_role`, and its append-only
+trigger forbids only UPDATE and DELETE — so the immutable event could be created
+with the projection never touched and no projection trigger firing.
+
+`enforce_revocation_targets_current_receipt()` (immediate, `before insert`)
+requires a revocation to name the receipt the projection **currently** represents:
+V1 withdraws the current approval and has no historical-revocation semantic.
+Status is deliberately not checked there, because the apply path inserts the
+event while the projection is still `active`.
+
+`assert_review_revocation_state_coherent()` is a `deferrable initially deferred`
+**constraint trigger registered on both tables**, checking at COMMIT that
+`revocation exists for current_receipt_id` ⇔ `review_status = 'revoked'`. Deferred
+timing is load-bearing: the legitimate transaction is lock → INSERT event → move
+status, so an immediate check would forbid the correct path. What must be
+coherent is the state that survives COMMIT. A bare direct INSERT is therefore
+refused at commit rather than silently repaired.
+
+**0033 writes nothing canonical either.** A revocation removes authorization; it
+never publishes, unpublishes, deletes or rewrites history, and there is no
+un-revoke. Authorization returns only through a fresh human review of a fresh
+observation.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -1074,5 +1186,14 @@ At minimum:
     an `approve_create`, its structured verification dimensions and evidence
     references, plus the two additive uniques its composite FKs require;
     append-only by trigger and by grant, and canonical-write-free
+19. human review revocation (0033) — `review_status` and `current_receipt_id` on
+    the current projection, plus the append-only revocation event that withdraws
+    a previous `approve_create` without touching the receipt it revokes;
+    backfilled on run provenance rather than wall-clock recency, and
+    canonical-write-free; semantic triggers keep the mutable projection honest —
+    its pointer must name the receipt it IS, its `review_status` must match the
+    immutable revocation record for that receipt, a revocation may only withdraw
+    the approval the projection currently represents, and a deferred constraint
+    trigger on BOTH tables re-checks that equivalence at COMMIT
 
 Every migration must be reproducible from an empty database.

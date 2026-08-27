@@ -101,6 +101,64 @@ the preview fingerprint changes when a review is applied; see
 `A04_5_HUMAN_REVIEW_EVIDENCE_CONTRACT.md` §9 for why the review apply path must
 therefore check idempotency before it checks fingerprint staleness.
 
+## Human review revocation (A04.6)
+
+Conditions 1 and 2 read **two** things about the current review: what the human
+concluded (`decision`) and whether that conclusion is still authorized
+(`review_status`). A withdrawn approval is checked **first**, ahead of every
+other `approve_create` test, because a revoked review is not a weaker form of
+approval — it is not an approval at all.
+
+| condition | hold reason |
+|---|---|
+| 1 | `human_review_revoked` — a human explicitly withdrew this approval |
+| 2 | `human_review_revoked` — same withdrawal, same effect |
+
+Both hold as UNRESOLVED rather than FAIL: withdrawing an approval is not a
+finding that the property is ineligible, and condition 5 stops passing because it
+derives from 1 and 2. The verdict stops being PASS on the next evaluation, with
+no backfill or recompute step in between.
+
+### The projection must claim the receipt being evaluated
+
+A04's loader chooses the receipt about the identity's **current observation**.
+`source_property_reviews.current_receipt_id` says which approval the current
+human projection **is**. An identity legitimately holds several receipts, so
+those are two different questions, and an active `approve_create` may not reach a
+receipt-supported PASS while they disagree:
+
+| condition | hold reason |
+|---|---|
+| 1 / 2 | `human_review_projection_receipt_missing` — the projection names no receipt |
+| 1 / 2 | `human_review_projection_receipt_mismatch` — the projection names a different receipt from the one evaluated |
+
+"Some receipt exists" is not authorization; the projection must identify **which**
+approval authorizes this identity. Revocation keeps precedence — a revoked
+projection still reports `human_review_revoked`, so a pointer diagnostic can never
+obscure the brake.
+
+### The immutable revocation event outranks `review_status`
+
+`review_status` is a mutable column on a table admin/editor and `service_role`
+legitimately hold UPDATE on. A revocation is an append-only fact. D062 therefore
+reads both and treats `human_review_revoked` as their **OR**:
+
+| state | conditions 1 and 2 |
+|---|---|
+| current receipt has a revocation, status says `active` | UNRESOLVED, `human_review_revoked` |
+| status says `revoked`, no event behind it | UNRESOLVED, `human_review_revoked` |
+| current receipt has no revocation, status `active` | eligible to PASS |
+
+Both corruptions fail closed and carry `revocationStateCoherent: false` in the
+evidence; a coherent PASS carries `revocationStateCoherent: true`, so the verdict
+A05 consumes records that authorization was checked against the immutable record
+and agreed.
+
+The question is asked of the **current** receipt only — never "has this identity
+ever been revoked", which would permanently brick every re-reviewed property and
+close the only route back from a withdrawal. See
+`A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`.
+
 A candidate belongs to an identity when it matches **either** endpoint —
 `source_property_identity_id` or `candidate_source_property_identity_id`. A pair
 is unordered, and which endpoint is stored on which side follows identity UUID

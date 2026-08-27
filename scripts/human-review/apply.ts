@@ -397,6 +397,60 @@ async function applyOne(
 
   const digest = receiptDigestOf(item, destinationId);
 
+  // ---- 3b. A REVOKED APPROVAL IS NOT RE-APPLIABLE FROM THE SAME EVIDENCE. ----
+  //
+  // A04.6. If a human withdrew this approval, replaying the ORIGINAL manifest is
+  // the single most dangerous thing anyone can do here: the receipt still exists
+  // with the same digest, so the idempotency check below would answer
+  // `already_applied` — literally true, but read by an operator as "the approval
+  // is back". It is not, and it must not silently become so.
+  //
+  // Deliberately BEFORE the idempotency check for exactly that reason, and
+  // scoped to the SAME observation the revoked receipt cites. A genuinely FRESH
+  // observation is a different situation: that is a new human decision about new
+  // evidence, which the fresh-observation advance path already handles, and which
+  // is the only route back to `active`. There is no un-revoke.
+  //
+  // Nothing has been written for this item at this point, and nothing is written
+  // on this path: the revocation row, the receipt and the projection are all left
+  // exactly as they are.
+  if (item.decision === "approve_create") {
+    const revoked = await client.query<{
+      review_id: string;
+      current_receipt_id: string | null;
+      revoked_observation_id: string | null;
+    }>(
+      `select rv.id as review_id,
+              rv.current_receipt_id,
+              r.evidence_observation_id as revoked_observation_id
+         from public.source_property_reviews rv
+         left join public.source_property_review_receipts r
+           on r.id = rv.current_receipt_id
+          and r.source_property_identity_id = rv.source_property_identity_id
+        where rv.source_property_identity_id = $1
+          and rv.review_status = 'revoked'`,
+      [item.identityId],
+    );
+    if (revoked.rows.length > 0) {
+      const row = revoked.rows[0]!;
+      // A revoked projection with no pinned receipt cannot prove that this
+      // manifest's evidence is fresher than what was withdrawn, so it refuses
+      // too. Failing closed is the whole point of a safety brake.
+      if (
+        row.revoked_observation_id === null ||
+        row.revoked_observation_id === item.currentObservationId
+      )
+        return {
+          ...id,
+          state: "refused",
+          refusal: "review_revoked_requires_fresh_observation",
+          detail:
+            `A human revoked the approval on this identity (review row ${row.review_id}` +
+            `${row.current_receipt_id ? `, receipt ${row.current_receipt_id}` : ""}). Re-applying the same manifest would re-assert authorization a human explicitly withdrew, so it is refused. The revocation is permanent for THIS evidence; authorization can only return through a fresh human review of a fresh observation. Nothing was written: the revocation, the receipt and the projection are untouched.`,
+        };
+    }
+  }
+
   // ---- 4. IDEMPOTENCY, checked BEFORE the fingerprint. ----
   //
   // Applying a review CHANGES the preview fingerprint: the receipt becomes part
@@ -580,10 +634,15 @@ async function applyOne(
   // The current projection and the newest current receipt agree after commit.
   if (priorReview.rows.length > 0) {
     await client.query(
+      // A04.6: the projection also names the receipt it now represents, and
+      // returns to `active`. A fresh review of fresh evidence is exactly how a
+      // revoked identity legitimately regains authorization — the revocation
+      // event itself stays immutable, so the history still shows what happened.
       `update public.source_property_reviews
           set decision = 'approve_create', target_hotel_id = null, destination_id = $2,
               reviewer_user_id = $3, reviewer_label = $4, review_note = $5,
-              decided_in_run_id = $6, reviewed_at = now()
+              decided_in_run_id = $6, reviewed_at = now(),
+              review_status = 'active', current_receipt_id = $7
         where source_property_identity_id = $1`,
       [
         item.identityId,
@@ -592,14 +651,16 @@ async function applyOne(
         item.reviewerLabel,
         item.humanNote,
         current.runId,
+        receiptId,
       ],
     );
   } else {
     await client.query(
       `insert into public.source_property_reviews
          (source_property_identity_id, source, source_environment, decision, destination_id,
-          reviewer_user_id, reviewer_label, review_note, decided_in_run_id, reviewed_at)
-       values ($1, $2, $3, 'approve_create', $4, $5, $6, $7, $8, now())`,
+          reviewer_user_id, reviewer_label, review_note, decided_in_run_id, reviewed_at,
+          review_status, current_receipt_id)
+       values ($1, $2, $3, 'approve_create', $4, $5, $6, $7, $8, now(), 'active', $9)`,
       [
         item.identityId,
         current.source,
@@ -609,6 +670,7 @@ async function applyOne(
         item.reviewerLabel,
         item.humanNote,
         current.runId,
+        receiptId,
       ],
     );
   }

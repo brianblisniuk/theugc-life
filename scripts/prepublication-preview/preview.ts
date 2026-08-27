@@ -70,7 +70,7 @@ type BundleRow = {
 
 export const BUNDLE_QUERY = `
 select i.id identity_id, i.source, i.source_environment, i.source_property_id, o.id observation_id,
-  case when rv.id is null then null else jsonb_build_object('id',rv.id,'decision',rv.decision,'destinationId',rv.destination_id,'targetHotelId',rv.target_hotel_id,'decidedInRunId',rv.decided_in_run_id,'reviewerUserId',rv.reviewer_user_id,'reviewerLabel',rv.reviewer_label,'reviewedAt',to_char(rv.reviewed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'reviewNote',rv.review_note) end review,
+  case when rv.id is null then null else jsonb_build_object('id',rv.id,'decision',rv.decision,'destinationId',rv.destination_id,'targetHotelId',rv.target_hotel_id,'decidedInRunId',rv.decided_in_run_id,'reviewerUserId',rv.reviewer_user_id,'reviewerLabel',rv.reviewer_label,'reviewedAt',to_char(rv.reviewed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'reviewNote',rv.review_note,'reviewStatus',rv.review_status,'currentReceiptId',rv.current_receipt_id,'currentReceiptRevocationId',rvk.id,'currentReceiptRevoked',rvk.id is not null) end review,
   case when d.id is null then null else jsonb_build_object('id',d.id,'slug',d.slug) end destination,
   case when th.id is null then null else jsonb_build_object('id',th.id,'destinationId',th.destination_id,'destinationSlug',td.slug) end target_hotel,
   case when sc.id is null then null else jsonb_build_object('revisionId',sc.id,'observationId',sc.evidence_observation_id,'outcome',sc.outcome,'policyProvider',sc.policy_provider,'policyVersion',sc.policy_version,'sourceValue',sc.source_value) end scope,
@@ -80,6 +80,7 @@ select i.id identity_id, i.source, i.source_environment, i.source_property_id, o
 from public.source_property_identities i
 left join public.source_property_observations o on o.source_property_identity_id=i.id and o.source_run_id=i.last_seen_run_id
 left join public.source_property_reviews rv on rv.source_property_identity_id=i.id
+left join public.source_property_review_revocations rvk on rvk.revoked_receipt_id=rv.current_receipt_id
 left join public.destinations d on d.id=rv.destination_id
 left join public.hotels th on th.id=rv.target_hotel_id
 left join public.destinations td on td.id=th.destination_id

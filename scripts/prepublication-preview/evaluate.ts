@@ -36,6 +36,21 @@ export interface PreviewInput {
     reviewerLabel: string;
     reviewedAt: string;
     reviewNote: string | null;
+    /**
+     * A04.6. Whether this decision is currently AUTHORIZED, which is a separate
+     * question from what the human concluded. `revoked` means a human explicitly
+     * withdrew the approval; `decision` still records what was decided.
+     */
+    reviewStatus: "active" | "revoked";
+    /** The immutable receipt this projection currently represents. */
+    currentReceiptId: string | null;
+    /**
+     * A04.6 amendment #2. Whether an IMMUTABLE revocation event exists for the
+     * receipt this projection currently represents. `reviewStatus` is a mutable
+     * column; this is historical fact, and it wins.
+     */
+    currentReceiptRevoked: boolean;
+    currentReceiptRevocationId: string | null;
   };
   destination: null | { id: string; slug: string };
   targetHotel: null | { id: string; destinationId: string; destinationSlug: string };
@@ -262,6 +277,41 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
   };
   const reviewEvidence: EvidenceRef = input.review ? { ...input.review } : { review: null };
 
+  // A04.6. `decision` says what the human concluded; `reviewStatus` says whether
+  // that conclusion is still authorized. They are different questions, so a
+  // revoked row legitimately keeps `decision = 'approve_create'`.
+  //
+  // AMENDMENT #2 — THE IMMUTABLE EVENT DOMINATES THE MUTABLE COLUMN.
+  //
+  // `review_status` lives on `source_property_reviews`, which is deliberately a
+  // MUTABLE current projection: a fresh-observation review has to advance it, so
+  // admin/editor and `service_role` legitimately hold UPDATE. A revocation, by
+  // contrast, is an append-only historical fact about one exact receipt.
+  //
+  // If those two disagree, the column is the thing that can be wrong. A single
+  // `set review_status = 'active'` — changing nothing else, not the pointer, not
+  // the receipt, not the revocation — must NEVER hand authorization back, or
+  // "there is no un-revoke" is only a statement about one CLI.
+  //
+  // So the brake is the OR of the two sources, and the question asked of the
+  // event is deliberately narrow: has THIS projection's CURRENT receipt been
+  // revoked? Asking "has this identity ever had a revocation?" would brick every
+  // identity forever, and the whole point of A04.6 is that a fresh human review
+  // of fresh evidence is the way back.
+  const revokedByEvent = input.review?.currentReceiptRevoked === true;
+  const revokedByStatus = input.review?.reviewStatus === "revoked";
+  // The inverse corruption — `revoked` with no event behind it — also fails
+  // closed, because a mutable status may not invent historical evidence either.
+  const reviewRevoked = revokedByEvent || revokedByStatus;
+  const revocationEvidence: EvidenceRef = {
+    reviewStatus: input.review?.reviewStatus ?? null,
+    currentReceiptRevoked: revokedByEvent,
+    currentReceiptRevocationId: input.review?.currentReceiptRevocationId ?? null,
+    // Surfaced rather than hidden: a disagreement means something upstream wrote
+    // a state the database is supposed to refuse, and an auditor should see it.
+    revocationStateCoherent: revokedByEvent === revokedByStatus,
+  };
+
   // THE RECEIPT, AND WHETHER IT IS ABOUT THE EVIDENCE IN FRONT OF US.
   //
   // A receipt is immutable and names the exact observation the human read. The
@@ -281,6 +331,31 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
         currentObservationId: current,
       }
     : { humanReviewReceipt: null, currentObservationId: current };
+
+  // A04.6 AMENDMENT #1: DOES THE CURRENT PROJECTION ACTUALLY CLAIM THIS RECEIPT?
+  //
+  // The receipt above is chosen by the LOADER, which prefers the receipt about
+  // the identity's current observation. `currentReceiptId` is chosen by the
+  // human review projection, which says which approval is current. Those are two
+  // different questions, and D062 must not pass while they disagree.
+  //
+  // An identity legitimately holds several receipts, so "a receipt exists and
+  // looks current" is not authorization. Authorization is: THIS projection names
+  // THIS receipt. Without that, a projection advanced onto run B could be pointed
+  // back at receipt A while the evaluator happily read B, and A05 would consume
+  // an authorization the current human record does not claim.
+  //
+  // 0033's trigger makes the incoherent row unrepresentable. This check is the
+  // independent second layer: D062 is the publication gate and must fail closed
+  // on its own evidence, without assuming any constraint upstream held.
+  const projectionReceiptId = input.review?.currentReceiptId ?? null;
+  const projectionClaimsNoReceipt = receipt !== null && projectionReceiptId === null;
+  const projectionClaimsOtherReceipt =
+    receipt !== null && projectionReceiptId !== null && projectionReceiptId !== receipt.receiptId;
+  const projectionPointerEvidence: EvidenceRef = {
+    projectionCurrentReceiptId: projectionReceiptId,
+    evaluatedReceiptId: receipt?.receiptId ?? null,
+  };
 
   let c1: ConditionResult;
   if (!input.review || input.review.decision === "defer")
@@ -315,6 +390,23 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "The identity decision cannot pass while current entity evidence is conflicting or out of sync.",
       { ...reviewEvidence, ...entityEvidence },
     );
+  else if (input.review.decision === "approve_create" && reviewRevoked)
+    // A04.6: checked BEFORE any approve_create can pass, and deliberately ahead
+    // of the receipt chain below. A withdrawn approval must stay withdrawn even
+    // when everything else still lines up — the accepted finding still exists,
+    // the receipt is still current, the destination still agrees. That is the
+    // entire point of an emergency brake.
+    //
+    // UNRESOLVED rather than FAIL: a revocation does not assert "this property
+    // is wrong", only "this approval is no longer valid authorization". A fresh
+    // review of fresh evidence can legitimately restore it.
+    c1 = result(
+      1,
+      "UNRESOLVED",
+      "human_review_revoked",
+      "A human explicitly withdrew this approval; it no longer authorizes publication. The decision is not asserted to be wrong — it is no longer valid authorization.",
+      { ...reviewEvidence, ...entityEvidence, ...receiptEvidence, ...revocationEvidence },
+    );
   else if (input.review.decision === "approve_create" && newCandidates.length === 1)
     // A04.5: the decision and the finding are necessary but no longer sufficient.
     // The durable receipt must exist, must be about the CURRENT observation, and
@@ -328,37 +420,76 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           "The review has no durable A04.5 receipt, so what the human checked cannot be reconstructed.",
           { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
         )
-      : receipt.decision !== "approve_create"
-        ? result(
+      : projectionClaimsNoReceipt
+        ? // A04.6 amendment #1: a receipt exists for this identity, but the
+          // current projection does not name it. "Some receipt exists" is not
+          // authorization — the projection must say WHICH approval is current,
+          // and a legacy row that never named one may not borrow one.
+          result(
             1,
             "UNRESOLVED",
-            "human_review_receipt_decision_mismatch",
-            "The durable receipt records a different decision from the current review row.",
-            { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+            "human_review_projection_receipt_missing",
+            "The current review projection names no receipt, so no specific human approval authorizes this identity.",
+            {
+              ...reviewEvidence,
+              ...entityEvidence,
+              ...receiptEvidence,
+              ...projectionPointerEvidence,
+            },
           )
-        : !receiptCurrent
+        : projectionClaimsOtherReceipt
           ? result(
               1,
               "UNRESOLVED",
-              "human_review_receipt_not_current",
-              "The receipt is bound to an observation that is no longer current; the decision was about evidence that has since been replaced.",
-              { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+              "human_review_projection_receipt_mismatch",
+              "The current review projection names a different receipt from the one this evidence supports; authorization is incoherent and cannot be relied on.",
+              {
+                ...reviewEvidence,
+                ...entityEvidence,
+                ...receiptEvidence,
+                ...projectionPointerEvidence,
+              },
             )
-          : receipt.newPropertyFindingId !== newCandidates[0]!.id
+          : receipt.decision !== "approve_create"
             ? result(
                 1,
                 "UNRESOLVED",
-                "human_review_receipt_finding_mismatch",
-                "The receipt cites a different distinct-property finding from the accepted one.",
+                "human_review_receipt_decision_mismatch",
+                "The durable receipt records a different decision from the current review row.",
                 { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
               )
-            : result(
-                1,
-                "PASS",
-                "reviewed_distinct_property",
-                "Human approve_create is supported by an explicit accepted distinct-property finding and a current durable receipt.",
-                { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
-              );
+            : !receiptCurrent
+              ? result(
+                  1,
+                  "UNRESOLVED",
+                  "human_review_receipt_not_current",
+                  "The receipt is bound to an observation that is no longer current; the decision was about evidence that has since been replaced.",
+                  { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+                )
+              : receipt.newPropertyFindingId !== newCandidates[0]!.id
+                ? result(
+                    1,
+                    "UNRESOLVED",
+                    "human_review_receipt_finding_mismatch",
+                    "The receipt cites a different distinct-property finding from the accepted one.",
+                    { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+                  )
+                : result(
+                    1,
+                    "PASS",
+                    "reviewed_distinct_property",
+                    "Human approve_create is supported by an explicit accepted distinct-property finding and a current durable receipt.",
+                    {
+                      ...reviewEvidence,
+                      ...entityEvidence,
+                      ...receiptEvidence,
+                      // Carried on the PASS too, not only on the refusals: A05
+                      // consumes this verdict, and "this authorization was
+                      // checked against the immutable revocation record and
+                      // agreed" is the part that matters most when it does.
+                      ...revocationEvidence,
+                    },
+                  );
   else if (
     input.review.decision === "approve_match" &&
     input.review.targetHotelId &&
@@ -419,43 +550,75 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
           // must be carried by the current receipt too. A review row alone is a
           // mutable current-state record; the receipt is what makes the choice
           // reconstructable, and a stale one is not a statement about today.
-          input.review.decision === "approve_create" && !receipt
-          ? result(
+          input.review.decision === "approve_create" && reviewRevoked
+          ? // A04.6: a withdrawn approval carries its destination judgement with
+            // it. The destination may still be perfectly valid; what is gone is
+            // the human authorization to act on it.
+            result(
               2,
               "UNRESOLVED",
-              "human_review_receipt_missing",
-              "The reviewed destination has no durable A04.5 receipt behind it.",
-              { ...destinationEvidence, ...receiptEvidence },
+              "human_review_revoked",
+              "A human explicitly withdrew this approval, so its destination judgement no longer authorizes publication.",
+              { ...destinationEvidence, ...receiptEvidence, ...revocationEvidence },
             )
-          : input.review.decision === "approve_create" && !receiptCurrent
+          : input.review.decision === "approve_create" && !receipt
             ? result(
                 2,
                 "UNRESOLVED",
-                "human_review_receipt_not_current",
-                "The destination decision is bound to an observation that is no longer current.",
+                "human_review_receipt_missing",
+                "The reviewed destination has no durable A04.5 receipt behind it.",
                 { ...destinationEvidence, ...receiptEvidence },
               )
-            : input.review.decision === "approve_create" &&
-                receipt!.destinationId !== input.review.destinationId
-              ? result(
+            : input.review.decision === "approve_create" && projectionClaimsNoReceipt
+              ? // A04.6 amendment #1: the same authorization gate as condition 1.
+                // The destination is a human decision, so it is authorized by a
+                // NAMED approval or by nothing at all.
+                result(
                   2,
                   "UNRESOLVED",
-                  "human_review_receipt_destination_mismatch",
-                  "The receipt records a different canonical destination from the current review row.",
-                  { ...destinationEvidence, ...receiptEvidence },
+                  "human_review_projection_receipt_missing",
+                  "The current review projection names no receipt, so its destination judgement is not backed by a specific human approval.",
+                  { ...destinationEvidence, ...receiptEvidence, ...projectionPointerEvidence },
                 )
-              : result(
-                  2,
-                  "PASS",
-                  "reviewed_destination_supported",
-                  "The reviewed destination resolves to the canonical destination catalogue.",
-                  {
-                    ...destinationEvidence,
-                    destinationId: input.destination.id,
-                    destinationSlug: input.destination.slug,
-                    ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
-                  },
-                )
+              : input.review.decision === "approve_create" && projectionClaimsOtherReceipt
+                ? result(
+                    2,
+                    "UNRESOLVED",
+                    "human_review_projection_receipt_mismatch",
+                    "The current review projection names a different receipt from the one this destination evidence supports; authorization is incoherent.",
+                    { ...destinationEvidence, ...receiptEvidence, ...projectionPointerEvidence },
+                  )
+                : input.review.decision === "approve_create" && !receiptCurrent
+                  ? result(
+                      2,
+                      "UNRESOLVED",
+                      "human_review_receipt_not_current",
+                      "The destination decision is bound to an observation that is no longer current.",
+                      { ...destinationEvidence, ...receiptEvidence },
+                    )
+                  : input.review.decision === "approve_create" &&
+                      receipt!.destinationId !== input.review.destinationId
+                    ? result(
+                        2,
+                        "UNRESOLVED",
+                        "human_review_receipt_destination_mismatch",
+                        "The receipt records a different canonical destination from the current review row.",
+                        { ...destinationEvidence, ...receiptEvidence },
+                      )
+                    : result(
+                        2,
+                        "PASS",
+                        "reviewed_destination_supported",
+                        "The reviewed destination resolves to the canonical destination catalogue.",
+                        {
+                          ...destinationEvidence,
+                          destinationId: input.destination.id,
+                          destinationSlug: input.destination.slug,
+                          ...(input.review.decision === "approve_create"
+                            ? { ...receiptEvidence, ...revocationEvidence }
+                            : {}),
+                        },
+                      )
         : result(
             2,
             "UNRESOLVED",

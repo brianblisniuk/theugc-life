@@ -77,7 +77,8 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 | A02 | **DONE** (PR #27, merged) | entity-resolution evidence + candidate matching/review model | conservative MATCH / REVIEW / NEW; no universal threshold |
 | A03 | **DONE** (PR #28, merged) | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
 | A04 | **DONE** (PR #29, merged `6cffa8b9`) | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
-| A04.5 | **IN REVIEW** — open PR, not merged | human identity + destination review evidence pilot | an explicit human `approve_create` becomes durable, append-only, current-evidence-bound evidence that D062's conditions 1 and 2 cite; nothing canonical is written |
+| A04.5 | **DONE** (PR #30, head `d09231e96762a51b0af7398931037507b805e9ac`, merged `bbd0d887e6c15b7dea881b77667213b8ef5232a2`) | human identity + destination review evidence pilot | an explicit human `approve_create` becomes durable, append-only, current-evidence-bound evidence that D062's conditions 1 and 2 cite; nothing canonical is written |
+| A04.6 | **IN PROGRESS** — open PR, not merged | human review revocation | a human can withdraw a previous `approve_create` so it immediately stops authorizing D062, without touching the immutable receipt, deleting history, or publishing anything |
 | A05 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
 **Base rounds:** 4 *(original estimate, preserved)*  
@@ -128,8 +129,60 @@ current-decision surfaces disagreeing. An initial defer stays supported; a defer
 once a projection exists is now refused, because replacing it would require the
 correction/supersession workflow that remains future work.
 
-A04.5 is **not DONE** — it is an open PR awaiting re-audit and the human merge
-gate. A05 remains PLANNED and is not authorized by this entry.
+A04.5 merged as PR #30 (head `d09231e96762a51b0af7398931037507b805e9ac`, merge
+commit `bbd0d887e6c15b7dea881b77667213b8ef5232a2`) after the three amendments
+above. At that head: 63 A04.5 database tests, 1,593 tests total, CI green, a
+4,110/4,110 read-only stress with 100% fingerprint replay, **zero canonical
+writes** and **zero decisions applied to the 867 real review-ready identities**.
+
+**Why A04.6 exists.** A04.5 deliberately refused correction and supersession,
+which was right for a pilot that publishes nothing. A05 turns an authorized D062
+PASS into a canonical hotel, so a human needs an emergency brake **before**
+publication exists: a way to withdraw a previous `approve_create` that takes
+effect immediately, without editing the immutable receipt and without deleting
+history. A01–A05 keep their numbers; nothing is renumbered.
+
+Its contract is
+[`A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`](A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md),
+implemented by migration `0033` and `scripts/human-review-revocation/*`. A
+revocation is not a rejection, not a deletion and not a publication action: it
+separates *what the human concluded* (`decision`) from *whether that conclusion
+is currently authorized* (`review_status`), and records the withdrawal as a new
+append-only fact. There is no un-revoke — authorization returns only through a
+fresh human review of a fresh observation.
+
+**Amendment #1 (external audit).** `current_receipt_id` was FK'd to the same
+identity but not to the same *decision*. An identity legitimately holds one
+receipt per reviewed observation, so a projection advanced onto run B could be
+pointed back at receipt A while A04 still evaluated — and passed — receipt B. A
+database trigger now requires the projection and its receipt to agree on
+decision, destination and evidence run; the backfill binds on that same full
+predicate and refuses ambiguity **before** choosing; and D062 independently holds
+conditions 1 and 2 when the projection names no receipt or a different one.
+
+**Amendment #2 (external audit).** "There is no un-revoke" held only in the
+revocation CLI. `review_status` is a mutable column on a table admin/editor and
+`service_role` legitimately hold UPDATE on, so a single
+`set review_status = 'active'` — touching nothing else — restored a 11/11 PASS
+with the identical pre-revocation fingerprint while the immutable revocation sat
+unread. A database trigger now requires `revoked` **iff** an immutable revocation
+exists for the projection's current receipt, in both directions; D062 asks the
+same question independently and treats the event as dominating the column; and a
+revocation manifest whose approval has since been superseded is refused rather
+than reported as already satisfied.
+
+**Amendment #3 (external audit).** The `revoked` ⇔ event equivalence was enforced
+only from `source_property_reviews`, while 0033 grants INSERT on the revocation
+table to admin/editor and `service_role` — so the immutable event could be filed
+with the projection never touched and no projection trigger firing. D062 still
+refused to publish, but the database contract was false. A `deferrable initially
+deferred` constraint trigger now re-checks the final state at COMMIT from **both**
+tables, and a revocation may only withdraw the approval the projection currently
+represents. The pack and the apply path each gained an independent, separately
+named diagnosis for the same state.
+
+A04.6 is **not DONE** — it is an open PR awaiting external audit and the human
+merge gate. A05 remains PLANNED and is not authorized by this entry.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 
@@ -455,19 +508,21 @@ After every 5–8 merged base rounds:
 
 At this baseline, Phase A's evidence and preview layers are closed:
 
-> **A01 (PR #26), A02 (PR #27), A03 (PR #28) and A04 (PR #29) are merged.**
-> A04 landed on `main` as merge commit `6cffa8b9`.
+> **A01 (PR #26), A02 (PR #27), A03 (PR #28), A04 (PR #29) and A04.5 (PR #30)
+> are merged.** A04 landed on `main` as merge commit `6cffa8b9`; A04.5 as
+> `bbd0d887e6c15b7dea881b77667213b8ef5232a2`.
 
 The open implementation block is:
 
-> **A04.5 — human identity + destination review evidence pilot. Open PR, not
-> merged, awaiting external audit and the human merge gate.**
+> **A04.6 — human review revocation. Open PR, not merged, awaiting external
+> audit and the human merge gate.**
 
-A04.5 is the only round open. A05 (human authorization + atomic D062 apply) comes
-after A04.5 merges, not after A04, and is not started by this entry. Nothing may
-be published on the strength of A04 or A04.5: A04 previews pre-publication
-evidence and A04.5 records a human decision about it. Neither authorizes
-publication, and neither writes a canonical row.
+A04.6 is the only round open. A05 (human authorization + atomic D062 apply) comes
+after A04.6 merges, not after A04.5, and is not started by this entry. Nothing
+may be published on the strength of A04, A04.5 or A04.6: A04 previews
+pre-publication evidence, A04.5 records a human decision about it, and A04.6
+withdraws one. None of them authorizes publication, and none writes a canonical
+row.
 
 The canonical target spine must still be closed before Gmail implementation
 begins. In parallel, business/technical research may prepare the Gmail contract,
