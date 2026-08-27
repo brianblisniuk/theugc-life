@@ -1808,3 +1808,83 @@ explicit reviewed code mapping — see
 `docs/PROPERTY_SOURCE_CLASSIFICATION_POLICY.md` — and the PR #21 finding that
 `simpleCode` alone is unusable is **preserved**, because the mapping is on the
 category code, never on `simpleCode`.
+
+## D067 — Gmail is a private communication plane with two separate consents
+Status: Accepted — closes the primary-source Gmail/OAuth/privacy contract
+MASTER_PLAN §5.7 required before historical import
+
+Phase B connects creator mailboxes. That data is not provider inventory and must
+not be modelled as if it were.
+
+### Scopes are a contract, not a preference
+
+Historical intelligence requires
+`https://www.googleapis.com/auth/gmail.readonly`, a Google **restricted** scope.
+`gmail.metadata` is rejected: it exposes no message body, it disables the
+`q` search parameter the import depends on, and it is *also* restricted — it
+would buy the same verification burden and deliver a product that cannot answer
+the question.
+
+Sending, when it exists, uses `https://www.googleapis.com/auth/gmail.send`
+(**sensitive**), requested **later through incremental authorization**, never
+bundled into the initial connection. `mail.google.com`, `gmail.modify`,
+`gmail.compose`, `gmail.insert` and the settings scopes are **not requested**
+without a new decision; they trade a marginally simpler implementation for the
+ability to alter and delete a human's mail.
+
+Restricted-scope verification, Limited Use, the applicable security assessment,
+deletion capability and accurate public disclosures are **product constraints**,
+not implementation details.
+
+### Limited Use follows the data, including what is derived from it
+
+Google's Limited Use rules apply to data aggregated, anonymized or derived from
+Gmail. A reply classification, response time, offer value or negotiation outcome
+**remains Gmail-derived** when Gmail was its origin. Discarding the body does not
+launder the obligation, and no code path may model
+`raw Gmail → extracted fact → ordinary global data`.
+
+### Two consents, and the second is optional
+
+`private_gmail_processing` ("process my mailbox to provide MY OWN workflow and
+intelligence") is required for the product to function at all.
+
+`network_intelligence_contribution` ("let eligible privacy-safe derived signals
+contribute to aggregated features") is **separate, explicit, revocable and
+default NOT granted**. Connecting a mailbox must deliver real private value with
+it false, or the second consent is a dark pattern. The absence of a receipt is
+never consent.
+
+D019's dataset moat and D009/D050's aggregation privacy rules are unchanged —
+this decides *how a contribution becomes eligible*, not whether aggregates are
+valuable.
+
+### Staff hold no private mail access by role
+
+`public.is_admin_or_editor()` governs editorial and provider evidence because
+reviewing hotel data is staff work. It governs **nothing** in the private
+communication plane. Support inspection, abuse investigation and legal
+compulsion require a separately contracted, audited mechanism.
+
+### Disconnect is not delete
+
+Stopping provider access and deleting stored data are different acts with
+different consequences, and the model represents both. `deleted` requires a
+completed deletion request, not a state label.
+
+### Deletion must stay addressable
+
+Every Gmail-origin or Gmail-derived row must be traceable to its mail account AND
+its owner. A derived record whose owner provenance is lost cannot be deleted on
+request, which is an obligation rather than a preference.
+
+Reason:
+Gmail data is the one place where a modelling shortcut is simultaneously a
+compliance failure, a trust failure and a product failure. The boundary is
+therefore fixed before the first message is stored, rather than discovered during
+verification.
+
+Consequence:
+B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
+migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
+under it, and the C-phase intelligence may consume only what G3 admits.

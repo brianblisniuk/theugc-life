@@ -181,6 +181,17 @@ const CONTRACT: Record<string, Expected> = {
   contact_signals: { anon: "", authenticated: "SI", serviceRole: "all" },
   verification_events: { anon: "", authenticated: "SI", serviceRole: "all" },
 
+  // B01 private communication plane (0035). DELIBERATELY UNLIKE every table
+  // above: no `is_admin_or_editor()` anywhere, because reviewing hotel data is a
+  // job and reading a stranger's mailbox is not. The client SELECTs its own rows
+  // and writes nothing — every write is a server action behind an OAuth flow or
+  // a deletion job. `anon` holds no privilege at all, and consent history is
+  // append-only for the trusted role too.
+  mail_accounts: { anon: "", authenticated: "S", serviceRole: "all" },
+  mail_account_consent_receipts: { anon: "", authenticated: "S", serviceRole: "SI" },
+  mail_account_consents: { anon: "", authenticated: "S", serviceRole: "all" },
+  mail_account_deletion_requests: { anon: "", authenticated: "S", serviceRole: "all" },
+
   // Growth. No client write surface exists.
   milestones: { anon: "", authenticated: "S", serviceRole: "all" },
   public_creator_profile_views: { anon: "", authenticated: "S", serviceRole: "all" },
