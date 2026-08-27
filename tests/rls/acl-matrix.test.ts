@@ -128,6 +128,11 @@ const CONTRACT: Record<string, Expected> = {
   // change what is recorded as having happened. There is no un-revoke, and
   // therefore no UPDATE or DELETE for anyone.
   source_property_review_revocations: { anon: "", authenticated: "SI", serviceRole: "SI" },
+  // A05 publication (0034): the canonical `hotels` row this receipt produced is
+  // public; the provenance behind it is editorial internals. Append-only —
+  // publication is irreversible in V1, so there is no un-publish for an UPDATE
+  // or DELETE to describe.
+  source_property_publication_receipts: { anon: "", authenticated: "SI", serviceRole: "SI" },
 
   // Pre-publication resolution (0028), in two layers with deliberately different
   // grants.

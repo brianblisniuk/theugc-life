@@ -890,6 +890,89 @@ never publishes, unpublishes, deletes or rewrites history, and there is no
 un-revoke. Authorization returns only through a fresh human review of a fresh
 observation.
 
+## 5g. Atomic source publication (migration 0034)
+
+The first migration in this chain that *does* write canonical rows — not itself,
+but by making the write representable. Full contract:
+[`A05_ATOMIC_D062_PUBLICATION_CONTRACT.md`](A05_ATOMIC_D062_PUBLICATION_CONTRACT.md).
+
+0034 also adds one additive unique constraint carrying no new data, so a
+publication receipt can composite-FK the review receipt's own accepted finding:
+`source_property_review_receipts (id, new_property_finding_id)`.
+
+### source_property_publication_receipts
+One immutable row per publication, meaning exactly: *this exact production source
+identity, against this exact D062 PASS and this exact human review authorization,
+created this canonical hotel — because this human explicitly authorized
+publication, at this time, for this stated reason.*
+
+It binds identity · source · environment · provider id · **hotel** · the
+published observation · the human review receipt · that receipt's accepted
+`new_property` finding · the star, location and scope revisions · the preview
+as-of, schema version and fingerprint · the authorizing user, label, note and
+time · a `publication_digest`.
+
+**A D062 PASS is necessary and is not authorization**, which is why the
+authorization columns exist at all. `authorization_note` is NOT NULL and
+non-empty, for 0033's reason: an irreversible action with no stated reason is not
+auditable. `--apply` is a flag, not a person.
+
+`source_environment` is CHECKed `= 'production'` and the composite identity FK
+makes that CHECK true of the IDENTITY rather than of this row's label —
+**evaluation data never becomes canonical data**, a third independent layer
+beside 0027's `hotel_source_identities_production_only` and
+`source_property_identities_eligible_is_production`.
+
+`unique (source_property_identity_id)` means one source identity creates at most
+ONE canonical hotel on this path; `unique (hotel_id)` means two identities cannot
+both claim to have created the same canonical row. Nine composite FKs make it
+impossible to cite another identity's observation, approval, finding or
+resolution revision, to cite a finding the named approval does not rest on, or to
+name a hotel this identity never linked to.
+
+Append-only by trigger **and** by grant, with the 0027–0033 RLS posture:
+admin/editor plus `service_role`, no anon grant, and no UPDATE or DELETE for any
+role. The canonical `hotels` row is public; the provenance behind it is editorial
+internals. No provider payload is stored here.
+
+### The receipt's claim is checked, not assumed (0034)
+The composite FKs prove WHICH rows are cited.
+`enforce_publication_receipt_evidence()` (BEFORE INSERT) proves WHAT they say, so
+the canonical field policy is a property of the database and not only of one
+writer: the cited review receipt must be an `approve_create` that reviewed the
+observation being published; the finding must be the accepted human-owned
+`new_property` finding; the hotel's destination must be the reviewed destination;
+each cited revision must be that identity's CURRENT head; the hotel's star must
+equal the star revision's resolved value with outcome `exact_four`/`exact_five`;
+its coordinates must equal the location revision's resolved coordinates with
+outcome `resolved`; the scope revision must be `physical_hospitality`; and
+`active_status` must be `unknown`, because A03's `no_known_closure` is not
+evidence of being open.
+
+### Receipt and terminal state are one fact (0034)
+0027 already refuses `resolved_eligible` without an ACTIVE canonical link to the
+named hotel. 0034 closes the other direction:
+
+> a publication receipt exists **IFF** its identity is `resolved_eligible`
+> against that same hotel, and carries no `resolution_reason`.
+
+`assert_publication_state_coherent()` is `DEFERRABLE INITIALLY DEFERRED` because
+the legitimate write order — hotel → link → receipt → promote — leaves the
+receipt existing while the identity is still `unresolved` for a few statements.
+An immediate check would make the correct path impossible; what must be coherent
+is the state that survives COMMIT. It is registered on **both** tables, for the
+reason 0033's amendment #3 established, and the identity-side trigger carries a
+WHEN clause so ordinary ingestion never enqueues it.
+
+`resolution_reason` is D061 §9 EXCLUSION vocabulary, so a published property may
+not carry one.
+
+**0034 itself publishes nothing.** It creates structure: no `hotels` row, no
+link, no `resolution_state` transition. A populated pre-0034 database — including
+one carrying the A04.7 pilot's eight evaluation 11/11 PASS identities — migrates
+with hotels still 0, links still 0 and every D062 verdict and fingerprint
+byte-identical.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -1195,5 +1278,13 @@ At minimum:
     immutable revocation record for that receipt, a revocation may only withdraw
     the approval the projection currently represents, and a deferred constraint
     trigger on BOTH tables re-checks that equivalence at COMMIT
+20. atomic source publication (0034) — the append-only publication receipt that
+    binds one production source identity, one 11/11 D062 PASS and one explicit
+    human publication authorization to one canonical hotel; production-only by
+    CHECK made true of the identity by composite FK, one hotel per identity and
+    one identity per hotel, evidence claims verified at INSERT rather than
+    assumed, and a deferred constraint trigger on BOTH tables requiring the
+    receipt and the identity's `resolved_eligible` promotion to be one fact.
+    The migration itself publishes nothing
 
 Every migration must be reproducible from an empty database.

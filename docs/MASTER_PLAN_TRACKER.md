@@ -78,8 +78,8 @@ The round IDs are stable planning IDs. GitHub PR numbers may differ.
 | A03 | **DONE** (PR #28, merged) | pre-publication lifecycle / closure evidence | property-level closure only, evaluated AS OF an explicit date; absence of evidence is never "active" |
 | A04 | **DONE** (PR #29, merged `6cffa8b9`) | D062 pre-publication preview | every publication condition explicit, evidence-linked, non-circular |
 | A04.5 | **DONE** (PR #30, head `d09231e96762a51b0af7398931037507b805e9ac`, merged `bbd0d887e6c15b7dea881b77667213b8ef5232a2`) | human identity + destination review evidence pilot | an explicit human `approve_create` becomes durable, append-only, current-evidence-bound evidence that D062's conditions 1 and 2 cite; nothing canonical is written |
-| A04.6 | **IN PROGRESS** — open PR, not merged | human review revocation | a human can withdraw a previous `approve_create` so it immediately stops authorizing D062, without touching the immutable receipt, deleting history, or publishing anything |
-| A05 | PLANNED | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
+| A04.6 | **DONE** (PR #31, final audited head `4a6ae0432810df05a8aa176b7d8a0cd4b2b8edc0`, merged `da968185fb3125b33b3b965e63f153ada0ad552f`) | human review revocation | a human can withdraw a previous `approve_create` so it immediately stops authorizing D062, without touching the immutable receipt, deleting history, or publishing anything |
+| A05 | **IN PROGRESS** — open PR, not merged | human authorization + atomic D062 apply | canonical hotel/source link created atomically; publication provenance immutable |
 
 **Base rounds:** 4 *(original estimate, preserved)*  
 **Cumulative future rounds:** 6
@@ -181,8 +181,48 @@ tables, and a revocation may only withdraw the approval the projection currently
 represents. The pack and the apply path each gained an independent, separately
 named diagnosis for the same state.
 
-A04.6 is **not DONE** — it is an open PR awaiting external audit and the human
-merge gate. A05 remains PLANNED and is not authorized by this entry.
+A04.6 merged as PR #31 (final audited head
+`4a6ae0432810df05a8aa176b7d8a0cd4b2b8edc0`, merge commit
+`da968185fb3125b33b3b965e63f153ada0ad552f`) after the three amendments above.
+
+**A04.7 — the real human review pilot (operational, no roadmap round).** Run on
+the merged A04.6 code against the real 4,110-property cached Hotelbeds
+*evaluation* corpus, in two stages. Stage 1 prepared ten deterministic identities
+(5 Bali, 5 Dubai) with every human-decision field empty and nothing applied.
+Stage 2 executed the project owner's explicit authorization of 2026-08-27:
+
+- **8 `approve_create` + 2 `defer`**, applied through the real A04.5 path;
+- **8 real evaluation identities reached a genuine 11/11 D062 PASS**;
+- the corpus moved `1677 FAIL / 2433 UNRESOLVED / 0 PASS` →
+  `1677 FAIL / 2425 UNRESOLVED / 8 PASS`, recomputed on both sides;
+- `review_ready` unchanged at **867** — it derives only from the non-review
+  conditions 3,4,6,7,8,9,10,11, so human decisions do not reduce it;
+- **0 non-pilot drift**: exactly the eight approved identities changed `overall`
+  or fingerprint, out of 4,110;
+- exact replay returned **10/10 `already_applied`** with a byte-identical
+  artefact-state checksum;
+- **0 canonical writes**: 0 hotels, 0 `hotel_source_identities`, 0
+  `hotel_contacts`, 0 terminal `resolution_state`.
+
+A04.7 is deliberately **not** numbered as a roadmap round. It contracted no new
+behaviour and changed no product code; it is an operational exercise of A04.5 and
+A04.6 on real evidence, and this tracker counts implementation blocks. The eight
+identities it produced are `source_environment = 'evaluation'` and are therefore
+**permanently unpublishable** — they are the population A05's hard wall exists
+for, and A05 carries the regression that keeps them unpublished.
+
+**Why A05 is open.** A04 previews, A04.5 records the human decision, A04.6
+withdraws it — and none of them writes a canonical row. A05 crosses the
+irreversible boundary: an explicitly publication-authorized, PRODUCTION source
+identity with a current 11/11 D062 PASS becomes a canonical hotel, an ACTIVE
+canonical source link and a `resolved_eligible` source identity in one atomic
+transaction, with immutable publication provenance. Its contract is
+[`A05_ATOMIC_D062_PUBLICATION_CONTRACT.md`](A05_ATOMIC_D062_PUBLICATION_CONTRACT.md),
+implemented by migration `0034` and `scripts/source-publication/*`.
+
+A05 is **not DONE** — it is an open PR awaiting external audit and the human
+merge gate. No real production publication has been performed, no canonical hotel
+exists, and the eight A04.7 evaluation PASS identities remain unpublished.
 
 **Milestone A gate:** a real source property can reach a human-reviewable canonical publication decision without hidden assumptions or direct provider-to-canonical shortcuts.
 
@@ -506,23 +546,28 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-At this baseline, Phase A's evidence and preview layers are closed:
+At this baseline, Phase A's evidence, preview and human-decision layers are
+closed:
 
-> **A01 (PR #26), A02 (PR #27), A03 (PR #28), A04 (PR #29) and A04.5 (PR #30)
-> are merged.** A04 landed on `main` as merge commit `6cffa8b9`; A04.5 as
-> `bbd0d887e6c15b7dea881b77667213b8ef5232a2`.
+> **A01 (PR #26), A02 (PR #27), A03 (PR #28), A04 (PR #29), A04.5 (PR #30) and
+> A04.6 (PR #31) are merged.** A04 landed on `main` as merge commit `6cffa8b9`;
+> A04.5 as `bbd0d887e6c15b7dea881b77667213b8ef5232a2`; A04.6 as
+> `da968185fb3125b33b3b965e63f153ada0ad552f`.
+
+> **A04.6 (PR #31) is merged as `da968185fb3125b33b3b965e63f153ada0ad552f`.**
 
 The open implementation block is:
 
-> **A04.6 — human review revocation. Open PR, not merged, awaiting external
-> audit and the human merge gate.**
+> **A05 — human authorization + atomic D062 publication apply. Open PR, not
+> merged, awaiting external audit and the human merge gate.**
 
-A04.6 is the only round open. A05 (human authorization + atomic D062 apply) comes
-after A04.6 merges, not after A04.5, and is not started by this entry. Nothing
-may be published on the strength of A04, A04.5 or A04.6: A04 previews
-pre-publication evidence, A04.5 records a human decision about it, and A04.6
-withdraws one. None of them authorizes publication, and none writes a canonical
-row.
+A05 is the only round open, and it is the first block that can write a canonical
+row at all. Nothing has been published on the strength of A04, A04.5, A04.6 or
+A04.7: A04 previews pre-publication evidence, A04.5 records a human decision
+about it, A04.6 withdraws one, and A04.7 exercised all three on real evaluation
+evidence without a single canonical write. A05 adds the separate, explicit
+publication authorization — and a D062 PASS remains necessary and never
+sufficient.
 
 The canonical target spine must still be closed before Gmail implementation
 begins. In parallel, business/technical research may prepare the Gmail contract,
