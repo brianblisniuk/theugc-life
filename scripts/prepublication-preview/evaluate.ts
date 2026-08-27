@@ -44,6 +44,13 @@ export interface PreviewInput {
     reviewStatus: "active" | "revoked";
     /** The immutable receipt this projection currently represents. */
     currentReceiptId: string | null;
+    /**
+     * A04.6 amendment #2. Whether an IMMUTABLE revocation event exists for the
+     * receipt this projection currently represents. `reviewStatus` is a mutable
+     * column; this is historical fact, and it wins.
+     */
+    currentReceiptRevoked: boolean;
+    currentReceiptRevocationId: string | null;
   };
   destination: null | { id: string; slug: string };
   targetHotel: null | { id: string; destinationId: string; destinationSlug: string };
@@ -273,7 +280,37 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
   // A04.6. `decision` says what the human concluded; `reviewStatus` says whether
   // that conclusion is still authorized. They are different questions, so a
   // revoked row legitimately keeps `decision = 'approve_create'`.
-  const reviewRevoked = input.review?.reviewStatus === "revoked";
+  //
+  // AMENDMENT #2 — THE IMMUTABLE EVENT DOMINATES THE MUTABLE COLUMN.
+  //
+  // `review_status` lives on `source_property_reviews`, which is deliberately a
+  // MUTABLE current projection: a fresh-observation review has to advance it, so
+  // admin/editor and `service_role` legitimately hold UPDATE. A revocation, by
+  // contrast, is an append-only historical fact about one exact receipt.
+  //
+  // If those two disagree, the column is the thing that can be wrong. A single
+  // `set review_status = 'active'` — changing nothing else, not the pointer, not
+  // the receipt, not the revocation — must NEVER hand authorization back, or
+  // "there is no un-revoke" is only a statement about one CLI.
+  //
+  // So the brake is the OR of the two sources, and the question asked of the
+  // event is deliberately narrow: has THIS projection's CURRENT receipt been
+  // revoked? Asking "has this identity ever had a revocation?" would brick every
+  // identity forever, and the whole point of A04.6 is that a fresh human review
+  // of fresh evidence is the way back.
+  const revokedByEvent = input.review?.currentReceiptRevoked === true;
+  const revokedByStatus = input.review?.reviewStatus === "revoked";
+  // The inverse corruption — `revoked` with no event behind it — also fails
+  // closed, because a mutable status may not invent historical evidence either.
+  const reviewRevoked = revokedByEvent || revokedByStatus;
+  const revocationEvidence: EvidenceRef = {
+    reviewStatus: input.review?.reviewStatus ?? null,
+    currentReceiptRevoked: revokedByEvent,
+    currentReceiptRevocationId: input.review?.currentReceiptRevocationId ?? null,
+    // Surfaced rather than hidden: a disagreement means something upstream wrote
+    // a state the database is supposed to refuse, and an auditor should see it.
+    revocationStateCoherent: revokedByEvent === revokedByStatus,
+  };
 
   // THE RECEIPT, AND WHETHER IT IS ABOUT THE EVIDENCE IN FRONT OF US.
   //
@@ -368,7 +405,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
       "UNRESOLVED",
       "human_review_revoked",
       "A human explicitly withdrew this approval; it no longer authorizes publication. The decision is not asserted to be wrong — it is no longer valid authorization.",
-      { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+      { ...reviewEvidence, ...entityEvidence, ...receiptEvidence, ...revocationEvidence },
     );
   else if (input.review.decision === "approve_create" && newCandidates.length === 1)
     // A04.5: the decision and the finding are necessary but no longer sufficient.
@@ -442,7 +479,16 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
                     "PASS",
                     "reviewed_distinct_property",
                     "Human approve_create is supported by an explicit accepted distinct-property finding and a current durable receipt.",
-                    { ...reviewEvidence, ...entityEvidence, ...receiptEvidence },
+                    {
+                      ...reviewEvidence,
+                      ...entityEvidence,
+                      ...receiptEvidence,
+                      // Carried on the PASS too, not only on the refusals: A05
+                      // consumes this verdict, and "this authorization was
+                      // checked against the immutable revocation record and
+                      // agreed" is the part that matters most when it does.
+                      ...revocationEvidence,
+                    },
                   );
   else if (
     input.review.decision === "approve_match" &&
@@ -513,7 +559,7 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
               "UNRESOLVED",
               "human_review_revoked",
               "A human explicitly withdrew this approval, so its destination judgement no longer authorizes publication.",
-              { ...destinationEvidence, ...receiptEvidence },
+              { ...destinationEvidence, ...receiptEvidence, ...revocationEvidence },
             )
           : input.review.decision === "approve_create" && !receipt
             ? result(
@@ -568,7 +614,9 @@ export function evaluatePreview(input: PreviewInput, asOf: string): PreviewResul
                           ...destinationEvidence,
                           destinationId: input.destination.id,
                           destinationSlug: input.destination.slug,
-                          ...(input.review.decision === "approve_create" ? receiptEvidence : {}),
+                          ...(input.review.decision === "approve_create"
+                            ? { ...receiptEvidence, ...revocationEvidence }
+                            : {}),
                         },
                       )
         : result(

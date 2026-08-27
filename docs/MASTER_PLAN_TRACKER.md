@@ -160,6 +160,17 @@ decision, destination and evidence run; the backfill binds on that same full
 predicate and refuses ambiguity **before** choosing; and D062 independently holds
 conditions 1 and 2 when the projection names no receipt or a different one.
 
+**Amendment #2 (external audit).** "There is no un-revoke" held only in the
+revocation CLI. `review_status` is a mutable column on a table admin/editor and
+`service_role` legitimately hold UPDATE on, so a single
+`set review_status = 'active'` — touching nothing else — restored a 11/11 PASS
+with the identical pre-revocation fingerprint while the immutable revocation sat
+unread. A database trigger now requires `revoked` **iff** an immutable revocation
+exists for the projection's current receipt, in both directions; D062 asks the
+same question independently and treats the event as dominating the column; and a
+revocation manifest whose approval has since been superseded is refused rather
+than reported as already satisfied.
+
 A04.6 is **not DONE** — it is an open PR awaiting external audit and the human
 merge gate. A05 remains PLANNED and is not authorized by this entry.
 

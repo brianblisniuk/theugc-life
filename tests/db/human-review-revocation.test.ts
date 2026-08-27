@@ -426,6 +426,25 @@ async function withCoherenceTriggerDisabled(work: () => Promise<void>): Promise<
   }
 }
 
+/**
+ * Run `work` with ONLY the amendment #2 revocation-status trigger disabled, so a
+ * test can build the corrupted state production refuses to store. The
+ * projection/receipt coherence trigger from amendment #1 stays armed, and this
+ * one is restored even if `work` throws.
+ */
+async function withRevocationStatusTriggerDisabled(work: () => Promise<void>): Promise<void> {
+  await adminQuery(
+    "alter table public.source_property_reviews disable trigger source_property_reviews_revocation_status",
+  );
+  try {
+    await work();
+  } finally {
+    await adminQuery(
+      "alter table public.source_property_reviews enable trigger source_property_reviews_revocation_status",
+    );
+  }
+}
+
 /** A revocation manifest pinned to an arbitrary receipt of a twice-reviewed identity. */
 async function revocationForReceipt(
   ab: Awaited<ReturnType<typeof advancedTwiceProperty>>,
@@ -1606,6 +1625,7 @@ d("A04.6 human review revocation (0033)", () => {
 
     it("55. revocation apply refuses an incoherent projection before any write", async () => {
       const ab = await advancedTwiceProperty();
+      const canonicalBefore = await canonicalWriteCounts();
       // The manifest a human would have been handed BEFORE the pointer moved:
       // correctly pinned to receipt B, the approval that was current.
       const item = await revocationForReceipt(ab, ab.receiptB);
@@ -1631,7 +1651,9 @@ d("A04.6 human review revocation (0033)", () => {
       expect(counts.receipts).toBe(2);
       expect(counts.findings).toBe(1);
       expect((await reviewRow(ab.identityId))!.review_status).toBe("active");
-      expect(await canonicalWriteCounts()).toEqual(await canonicalWriteCounts());
+      // Compared against a snapshot taken BEFORE the attempt. Comparing the
+      // database to itself at one instant proves nothing at all.
+      expect(await canonicalWriteCounts()).toEqual(canonicalBefore);
     });
 
     it("56. revocation apply refuses when the manifest matches the incoherent pointer too", async () => {
@@ -1734,6 +1756,286 @@ d("A04.6 human review revocation (0033)", () => {
         ),
       ).rejects.toThrow(/review_projection_receipt_incoherent/);
       expect((await reviewRow(a.identityId))!.review_status).toBe("active");
+    });
+  });
+
+  // =====================================================================
+  // AMENDMENT #2 — THE IMMUTABLE EVENT DOMINATES THE MUTABLE COLUMN
+  //
+  // `review_status` is a column on a table admin/editor and service_role
+  // legitimately hold UPDATE on, because a fresh review has to advance the
+  // projection. A revocation is an append-only historical fact. When the two
+  // disagree, the column is the thing that can be wrong — and before this
+  // amendment a single `set review_status = 'active'` handed authorization back
+  // with the identical pre-revocation fingerprint.
+  // =====================================================================
+  describe("there is no un-revoke, at the database level", () => {
+    it("59. flipping review_status back to active is refused by the database", async () => {
+      const a = await approvedProperty();
+      expect((await preview(a.sourcePropertyId)).overall).toBe("PASS");
+      await applyRevocation([await revocationFor(a)], { apply: true });
+
+      const canonicalBefore = await canonicalWriteCounts();
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set review_status = 'active' where source_property_identity_id = $1",
+          [a.identityId],
+        ),
+      ).rejects.toThrow(/review_projection_revocation_incoherent/);
+
+      // Nothing moved, and the brake is still on.
+      const row = await reviewRow(a.identityId);
+      const counts = await artefactCounts(a.identityId);
+      expect(row!.review_status).toBe("revoked");
+      expect(row!.current_receipt_id).toBe(a.receiptId);
+      expect(counts.revocations).toBe(1);
+      expect(counts.receipts).toBe(1);
+      expect(counts.findings).toBe(1);
+      expect(reasonOf(await preview(a.sourcePropertyId), 1)).toBe("human_review_revoked");
+      expect(await canonicalWriteCounts()).toEqual(canonicalBefore);
+    });
+
+    it("60. an authenticated EDITOR cannot un-revoke either", async () => {
+      const a = await approvedProperty();
+      await applyRevocation([await revocationFor(a)], { apply: true });
+
+      // The ACL contract genuinely gives an editor UPDATE on this table, and RLS
+      // lets them through. The semantic trigger is what stops them — the
+      // invariant binds trusted writers, not just untrusted ones.
+      const editor = await queryAs(
+        { role: "authenticated", sub: USERS.editor },
+        "update public.source_property_reviews set review_status = 'active' where source_property_identity_id = $1",
+        [a.identityId],
+      );
+      expect(editor.error?.message ?? "").toMatch(/review_projection_revocation_incoherent/);
+
+      // `service_role` holds UPDATE on this table in the real ACL contract, but
+      // the Supabase-compat bootstrap shim grants it no USAGE on `public`, so it
+      // cannot be driven through `queryAs` here. It does not need to be: test 59
+      // performs the same UPDATE as the TABLE OWNER, which outranks
+      // `service_role`, and triggers fire for owners and `service_role` alike —
+      // `bypassrls` bypasses row security, never a BEFORE trigger.
+      const [priv] = await adminQuery<{ has_update: boolean; has_schema: boolean }>(
+        `select has_table_privilege('service_role','public.source_property_reviews','UPDATE') has_update,
+                has_schema_privilege('service_role','public','USAGE') has_schema`,
+      );
+      expect(priv!.has_update).toBe(true);
+      expect(priv!.has_schema).toBe(false);
+
+      // And an ordinary creator never gets that far: RLS gives them no row.
+      const creator = await queryAs(
+        { role: "authenticated", sub: USERS.free },
+        "update public.source_property_reviews set review_status = 'active' where source_property_identity_id = $1",
+        [a.identityId],
+      );
+      expect(creator.error).toBeNull();
+
+      expect((await reviewRow(a.identityId))!.review_status).toBe("revoked");
+    });
+
+    it("61. D062 fails closed even if the database were bypassed", async () => {
+      const a = await approvedProperty();
+      await applyRevocation([await revocationFor(a)], { apply: true });
+
+      await withRevocationStatusTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set review_status = 'active' where source_property_identity_id = $1",
+          [a.identityId],
+        );
+      });
+
+      // The forbidden state now exists: revocation present, pointer unchanged,
+      // status active. The evaluator must not be fooled by the column.
+      const row = await reviewRow(a.identityId);
+      expect(row!.review_status).toBe("active");
+      expect(row!.current_receipt_id).toBe(a.receiptId);
+      expect((await artefactCounts(a.identityId)).revocations).toBe(1);
+
+      const p = await preview(a.sourcePropertyId);
+      expect(reasonOf(p, 1)).toBe("human_review_revoked");
+      expect(reasonOf(p, 2)).toBe("human_review_revoked");
+      expect(statusOf(p, 5)).not.toBe("PASS");
+      expect(p.overall).not.toBe("PASS");
+    });
+
+    it("62. status = revoked with no revocation event is unstorable", async () => {
+      const a = await approvedProperty();
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set review_status = 'revoked' where source_property_identity_id = $1",
+          [a.identityId],
+        ),
+      ).rejects.toThrow(/review_projection_revocation_incoherent/);
+      expect((await reviewRow(a.identityId))!.review_status).toBe("active");
+    });
+
+    it("63. and if it were stored anyway, D062 still refuses to PASS", async () => {
+      const a = await approvedProperty();
+      await withRevocationStatusTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set review_status = 'revoked' where source_property_identity_id = $1",
+          [a.identityId],
+        );
+      });
+      const p = await preview(a.sourcePropertyId);
+      // A mutable column may not invent historical evidence either. Fail closed.
+      expect(reasonOf(p, 1)).toBe("human_review_revoked");
+      expect(p.overall).not.toBe("PASS");
+    });
+
+    it("64. a legacy NULL-pointer projection may not claim revoked", async () => {
+      const a = await approvedProperty();
+      await withRevocationStatusTriggerDisabled(async () => {
+        await adminQuery(
+          "update public.source_property_reviews set current_receipt_id = null where source_property_identity_id = $1",
+          [a.identityId],
+        );
+      });
+      await expect(
+        adminQuery(
+          "update public.source_property_reviews set review_status = 'revoked' where source_property_identity_id = $1",
+          [a.identityId],
+        ),
+      ).rejects.toThrow(/review_projection_revocation_incoherent/);
+    });
+
+    it("65. the normal revocation write order still satisfies the invariant", async () => {
+      // Guards the ordering the apply path depends on: the immutable event is
+      // INSERTed before the projection status moves, so the trigger sees it.
+      const a = await approvedProperty();
+      const report = await applyRevocation([await revocationFor(a)], { apply: true });
+      expect(report.outcomes[0]!.state).toBe("revoked");
+      expect((await reviewRow(a.identityId))!.review_status).toBe("revoked");
+    });
+
+    it("66. a fresh receipt B is NOT blocked by the historical revocation of A", async () => {
+      const a = await approvedProperty();
+      await applyRevocation([await revocationFor(a)], { apply: true });
+      const fresh = await advanceToNewObservation(a);
+      const p = await preview(a.sourcePropertyId);
+
+      const report = await applyReview(
+        [
+          await manifestFor(a, {
+            currentObservationId: fresh.observationId,
+            currentSourceRunId: fresh.runId,
+            sourcePayloadDigest: fresh.digest,
+            prereviewFingerprint: p.fingerprint,
+            humanNote: "Fresh review after the withdrawal.",
+          }),
+        ],
+        { apply: true },
+      );
+      expect(report.outcomes[0]!.state).toBe("applied");
+
+      // The check is against the CURRENT receipt only. "Has this identity ever
+      // been revoked?" would brick every re-reviewed property forever.
+      const after = await preview(a.sourcePropertyId);
+      expect(after.conditions.every((c) => c.status === "PASS")).toBe(true);
+      expect(after.overall).toBe("PASS");
+
+      const row = await reviewRow(a.identityId);
+      const counts = await artefactCounts(a.identityId);
+      expect(row!.review_status).toBe("active");
+      expect(row!.current_receipt_id).not.toBe(a.receiptId);
+      expect(counts.receipts).toBe(2);
+      expect(counts.revocations).toBe(1);
+      expect(counts.reviews).toBe(1);
+      expect(counts.findings).toBe(1);
+    });
+  });
+
+  // =====================================================================
+  describe("a revocation manifest expires when the approval it names does", () => {
+    it("67. the old revoke-A manifest is refused once B is the current approval", async () => {
+      const a = await approvedProperty();
+      // Saved BEFORE anything moves, exactly as an operator's file would be.
+      const revokeA = await revocationFor(a);
+      const canonicalBefore = await canonicalWriteCounts();
+
+      await applyRevocation([revokeA], { apply: true });
+      const fresh = await advanceToNewObservation(a);
+      const p = await preview(a.sourcePropertyId);
+      await applyReview(
+        [
+          await manifestFor(a, {
+            currentObservationId: fresh.observationId,
+            currentSourceRunId: fresh.runId,
+            sourcePayloadDigest: fresh.digest,
+            prereviewFingerprint: p.fingerprint,
+            humanNote: "Fresh review after the withdrawal.",
+          }),
+        ],
+        { apply: true },
+      );
+      expect((await preview(a.sourcePropertyId)).overall).toBe("PASS");
+
+      const replay = await applyRevocation([revokeA], { apply: true });
+      const o = replay.outcomes[0] as { state: string; refusal: string };
+      // NOT `already_revoked`: that would tell an operator the current approval
+      // is withdrawn when B is live and authorizing publication right now.
+      expect(o.state).toBe("refused");
+      expect(o.refusal).toBe("revocation_manifest_no_longer_current");
+
+      const row = await reviewRow(a.identityId);
+      const counts = await artefactCounts(a.identityId);
+      expect(row!.review_status).toBe("active");
+      expect(row!.current_receipt_id).not.toBe(a.receiptId);
+      expect(counts.receipts).toBe(2);
+      expect(counts.revocations).toBe(1);
+      expect(counts.reviews).toBe(1);
+      expect(counts.findings).toBe(1);
+      expect((await preview(a.sourcePropertyId)).overall).toBe("PASS");
+      expect(await canonicalWriteCounts()).toEqual(canonicalBefore);
+    });
+
+    it("68. the simple same-receipt replay is still idempotent", async () => {
+      const a = await approvedProperty();
+      const item = await revocationFor(a);
+      const first = await applyRevocation([item], { apply: true });
+      const firstId = (first.outcomes[0] as { revocationId: string }).revocationId;
+
+      // No fresh review happened, so the projection still represents receipt A
+      // and the withdrawal this manifest asks for genuinely IS satisfied.
+      const second = await applyRevocation([item], { apply: true });
+      expect(second.outcomes[0]!.state).toBe("already_revoked");
+      expect((second.outcomes[0] as { revocationId: string }).revocationId).toBe(firstId);
+      expect((await artefactCounts(a.identityId)).revocations).toBe(1);
+    });
+
+    it("69. after re-review the pack emits B, never historical A", async () => {
+      const a = await approvedProperty();
+      await applyRevocation([await revocationFor(a)], { apply: true });
+      const fresh = await advanceToNewObservation(a);
+      const p = await preview(a.sourcePropertyId);
+      await applyReview(
+        [
+          await manifestFor(a, {
+            currentObservationId: fresh.observationId,
+            currentSourceRunId: fresh.runId,
+            sourcePayloadDigest: fresh.digest,
+            prereviewFingerprint: p.fingerprint,
+            humanNote: "Fresh review after the withdrawal.",
+          }),
+        ],
+        { apply: true },
+      );
+
+      const c = await client();
+      try {
+        const pack = await buildRevocationPack(c, {
+          source: SOURCE,
+          environment: "evaluation",
+          identityId: a.identityId,
+        });
+        expect(pack.items.length).toBe(1);
+        const item = pack.items[0]!;
+        expect(item.expectedCurrentReceiptId).not.toBe(a.receiptId);
+        expect(item.expectedEvidenceObservationId).toBe(fresh.observationId);
+        expect(pack.preparedFrom.incoherentProjections).toBe(0);
+      } finally {
+        await c.end();
+      }
     });
   });
 });

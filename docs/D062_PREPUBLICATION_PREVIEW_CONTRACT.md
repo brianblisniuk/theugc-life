@@ -135,7 +135,29 @@ receipt-supported PASS while they disagree:
 "Some receipt exists" is not authorization; the projection must identify **which**
 approval authorizes this identity. Revocation keeps precedence — a revoked
 projection still reports `human_review_revoked`, so a pointer diagnostic can never
-obscure the brake. See `A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`.
+obscure the brake.
+
+### The immutable revocation event outranks `review_status`
+
+`review_status` is a mutable column on a table admin/editor and `service_role`
+legitimately hold UPDATE on. A revocation is an append-only fact. D062 therefore
+reads both and treats `human_review_revoked` as their **OR**:
+
+| state | conditions 1 and 2 |
+|---|---|
+| current receipt has a revocation, status says `active` | UNRESOLVED, `human_review_revoked` |
+| status says `revoked`, no event behind it | UNRESOLVED, `human_review_revoked` |
+| current receipt has no revocation, status `active` | eligible to PASS |
+
+Both corruptions fail closed and carry `revocationStateCoherent: false` in the
+evidence; a coherent PASS carries `revocationStateCoherent: true`, so the verdict
+A05 consumes records that authorization was checked against the immutable record
+and agreed.
+
+The question is asked of the **current** receipt only — never "has this identity
+ever been revoked", which would permanently brick every re-reviewed property and
+close the only route back from a withdrawal. See
+`A04_6_HUMAN_REVIEW_REVOCATION_CONTRACT.md`.
 
 A candidate belongs to an identity when it matches **either** endpoint —
 `source_property_identity_id` or `candidate_source_property_identity_id`. A pair

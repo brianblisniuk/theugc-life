@@ -840,6 +840,29 @@ identity inside one run, which `source_property_observations_unique_per_run`
 refuses — and it exists anyway, because "impossible today" is not "safe to guess
 tomorrow".
 
+### review_status must match the revocation record (0033)
+
+The pointer being honest is not enough if the STATUS can lie.
+`source_property_reviews` is deliberately mutable — a fresh review advances it,
+so 0024 gives `authenticated` SIUD and `service_role` all — while a revocation is
+append-only history. One statement was therefore enough to undo the brake:
+`update source_property_reviews set review_status = 'active'`, touching nothing
+else, restored a 11/11 PASS with the identical pre-revocation fingerprint.
+
+`enforce_review_status_matches_revocation()` fires before every INSERT and UPDATE
+and requires, for a receipt-backed projection, that `review_status = 'revoked'`
+**iff** an immutable revocation exists for the receipt the projection currently
+represents. Both directions matter: the first stops an un-revoke, the second
+stops a column manufacturing a withdrawal no human made. A projection with
+`current_receipt_id = NULL` may be `active` and may never claim `revoked`.
+
+The predicate names the CURRENT receipt only. A historical revocation of receipt
+A must not follow the identity forever — a fresh review produces receipt B, B
+carries no revocation, and B is legitimately active. Removing UPDATE from the
+table was rejected: it would break the legitimate advance this layer depends on.
+The semantic transition is protected instead, and the invariant binds trusted
+writers exactly as it binds untrusted ones.
+
 **0033 writes nothing canonical either.** A revocation removes authorization; it
 never publishes, unpublishes, deletes or rewrites history, and there is no
 un-revoke. Authorization returns only through a fresh human review of a fresh
@@ -1145,6 +1168,8 @@ At minimum:
     the current projection, plus the append-only revocation event that withdraws
     a previous `approve_create` without touching the receipt it revokes;
     backfilled on run provenance rather than wall-clock recency, and
-    canonical-write-free
+    canonical-write-free; two semantic triggers keep the mutable projection
+    honest — its pointer must name the receipt it IS, and its `review_status`
+    must match the immutable revocation record for that receipt
 
 Every migration must be reproducible from an empty database.

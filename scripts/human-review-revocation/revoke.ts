@@ -250,6 +250,35 @@ async function revokeOne(
   );
   if (existing.rows.length > 0) {
     const prior = existing.rows[0]!;
+
+    // AMENDMENT #2. Idempotency answers "is the withdrawal this manifest asks
+    // for already satisfied?", and that is only true while the projection STILL
+    // represents the receipt the manifest pinned.
+    //
+    // After `revoke A -> fresh observation -> approve B`, the identity is
+    // legitimately authorized again by receipt B. Replaying the old revoke-A
+    // manifest writes nothing either way, so it is mechanically safe — but
+    // answering `already_revoked` tells an operator that the current approval is
+    // withdrawn when it is not. They would walk away believing the brake is on.
+    //
+    // So it is refused instead, and the operator prepares a new pack against B
+    // if withdrawing B is what they actually mean. Nothing here revokes B,
+    // touches receipt A, or deletes revocation A.
+    const stillRepresentsThisReceipt =
+      review.current_receipt_id === item.expectedCurrentReceiptId &&
+      review.review_status === "revoked";
+    if (!stillRepresentsThisReceipt)
+      return {
+        ...id,
+        state: "refused",
+        refusal: "revocation_manifest_no_longer_current",
+        detail:
+          `Receipt ${item.expectedCurrentReceiptId} was already revoked (${prior.id}), but the current projection ` +
+          `now represents receipt ${review.current_receipt_id} with status '${review.review_status}'. ` +
+          "This manifest no longer describes the approval that is currently authorized, so it is not treated as satisfied. " +
+          "Prepare a fresh revocation pack if the current approval is the one to withdraw. Nothing was written.",
+      };
+
     if (prior.revocation_digest === digest)
       return { ...id, state: "already_revoked", revocationId: prior.id };
     return {

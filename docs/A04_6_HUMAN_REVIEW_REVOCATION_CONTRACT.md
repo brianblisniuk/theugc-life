@@ -136,10 +136,21 @@ database carries `unique (revoked_receipt_id)` and the application answers:
 
 | case | outcome |
 |---|---|
-| identical manifest replayed | `already_revoked`, nothing written |
+| identical manifest replayed, projection still represents that revoked receipt | `already_revoked`, nothing written |
 | materially different reason for the same receipt | `conflicting_revocation_exists` |
+| the projection has since advanced to a fresh receipt | `revocation_manifest_no_longer_current` |
 
 The stated reason is part of the record and is never silently rewritten.
+
+*(Amendment #2.)* The third row exists because idempotency answers *"is the
+withdrawal this manifest asks for already satisfied?"*, and after
+`revoke A → fresh observation → approve B` the answer is no: the identity is
+authorized again, by receipt B. Replaying the old revoke-A manifest writes
+nothing either way, so it is mechanically safe — but answering `already_revoked`
+would tell an operator the current approval is withdrawn while B is live. They
+would walk away believing the brake is on. It is refused instead; nothing revokes
+B, touches receipt A, or deletes revocation A, and the operator prepares a fresh
+pack if B is what they mean to withdraw.
 
 ### Replaying the original approve manifest is REFUSED
 
@@ -150,6 +161,52 @@ literally true, and read by an operator as *"the approval is back"*.
 The apply path therefore refuses first, with
 **`review_revoked_requires_fresh_observation`**. It does not reactivate the
 projection, does not delete the revocation, and writes nothing.
+
+### The immutable event dominates the mutable column
+
+*(Amendment #2.)* `review_status` is a column on `source_property_reviews`, which
+is deliberately a **mutable** current projection — a fresh-observation review has
+to advance it, so 0024's ACL contract gives `authenticated` SIUD and
+`service_role` all, with RLS narrowing that to admin/editor. A revocation, by
+contrast, is an append-only historical fact about one exact receipt.
+
+Before this amendment, one statement undid the brake:
+
+```sql
+update public.source_property_reviews set review_status = 'active' where …
+```
+
+Nothing else moved — not the pointer, not the receipt, not the revocation — and
+D062 returned to 11/11 PASS with the **identical pre-revocation fingerprint**.
+"There is no un-revoke" was a property of one CLI, not of the system.
+
+The fix is not to remove UPDATE; that would break the legitimate advance this
+layer depends on. The **semantic transition** is protected instead. For a
+receipt-backed projection, `enforce_review_status_matches_revocation()` requires:
+
+> `review_status = 'revoked'` **iff** an immutable revocation exists for the
+> receipt this projection **currently** represents.
+
+Both directions are load-bearing. Left to right stops the un-revoke above. Right
+to left stops a mutable column manufacturing a withdrawal no human ever made — a
+projection with `current_receipt_id = NULL` may be `active` and may never claim
+`revoked`, because there would be no event behind the claim.
+
+`review_status` is **not** part of §8's projection↔receipt predicate and
+`current_receipt_id` is **not** part of this one; the two triggers answer
+different questions and both fire on every INSERT and UPDATE.
+
+**D062 asks the same question independently.** The evaluator reads whether the
+**current** receipt carries a revocation, and treats `human_review_revoked` as the
+OR of the event and the column. So an upstream write that bypassed the database
+still cannot turn a withdrawn approval into publication authorization, and the
+inverse corruption (`revoked` with no event) also fails closed, with
+`revocationStateCoherent: false` in the evidence either way.
+
+The question asked is deliberately narrow — *does this projection's current
+receipt have a revocation?* — never *has this identity ever been revoked?* The
+second would brick every re-reviewed property forever and close the only route
+back.
 
 ### Authorization returns only through fresh evidence
 
@@ -172,6 +229,8 @@ An initial **defer** after a revocation is still refused
 | `source_property_reviews.review_status` | `active` / `revoked`, default `active` |
 | `source_property_reviews.current_receipt_id` | the receipt this projection represents, composite-FK'd to the same identity |
 | `source_property_review_revocations` | the immutable revocation event |
+| `enforce_review_projection_receipt_coherence()` | the pointer must name the receipt this projection **is** |
+| `enforce_review_status_matches_revocation()` | `review_status` must match the immutable revocation record |
 
 `revocation_note` is **NOT NULL and non-empty**. A withdrawal with no stated
 reason is not auditable.

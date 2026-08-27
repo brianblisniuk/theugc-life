@@ -336,3 +336,96 @@ create policy source_property_review_revocations_admin
 
 grant select, insert on public.source_property_review_revocations to authenticated;
 grant select, insert on public.source_property_review_revocations to service_role;
+
+-- ===========================================================================
+-- 9. THE IMMUTABLE EVENT DOMINATES THE MUTABLE COLUMN
+-- ===========================================================================
+-- §3 made the projection's POINTER honest. This makes its STATUS honest, and it
+-- is the difference between "there is no un-revoke" being an invariant and being
+-- a property of one CLI.
+--
+-- `source_property_reviews` is deliberately a MUTABLE current projection — a
+-- fresh-observation review has to advance it — so 0024's ACL contract gives
+-- `authenticated` SIUD and `service_role` all. RLS narrows that to admin/editor,
+-- but admin/editor is a real, supported writer. So this is not a hypothetical
+-- schema-owner attack:
+--
+--   revoke A                      -- immutable event written, status -> revoked
+--   update source_property_reviews
+--      set review_status = 'active'   -- one column, nothing else touched
+--
+-- ...and D062 authorized again, with the identical pre-revocation fingerprint.
+-- The revocation was still sitting there, unread.
+--
+-- The fix is NOT to take UPDATE away: that would break the legitimate
+-- fresh-review advance this layer depends on. The SEMANTIC TRANSITION is what
+-- gets protected. For a receipt-backed projection:
+--
+--   review_status = 'revoked'  IFF  an immutable revocation exists for the
+--                                   receipt this projection CURRENTLY represents
+--
+-- Both directions matter. Left to right stops the un-revoke above. Right to left
+-- stops a mutable column manufacturing a withdrawal that no human ever made.
+--
+-- The question is asked of the CURRENT receipt only, never "has this identity
+-- ever been revoked". A historical revocation of receipt A must not follow the
+-- identity forever: a fresh human review of fresh evidence produces receipt B,
+-- B carries no revocation, and B is legitimately active. That is the entire
+-- route back, and it stays open.
+--
+-- Created here, after §6, because it reads the revocation table.
+create or replace function public.enforce_review_status_matches_revocation()
+returns trigger
+language plpgsql
+as $$
+declare
+  has_revocation boolean;
+begin
+  -- A legacy/manual projection with no receipt has no withdrawal to represent.
+  -- It may be `active`; it may NOT claim `revoked`, because there would be no
+  -- immutable event behind that claim and nothing for an auditor to read.
+  if new.current_receipt_id is null then
+    if new.review_status <> 'active' then
+      raise exception
+        'review_projection_revocation_incoherent: review_status is ''%'' but this projection names no receipt, so there is no revocation event it could represent.',
+        new.review_status
+        using errcode = 'integrity_constraint_violation';
+    end if;
+    return new;
+  end if;
+
+  select exists (
+    select 1 from public.source_property_review_revocations
+     where revoked_receipt_id = new.current_receipt_id
+  ) into has_revocation;
+
+  if has_revocation and new.review_status <> 'revoked' then
+    raise exception
+      'review_projection_revocation_incoherent: receipt % carries an immutable revocation, so review_status may not be ''%''. There is no un-revoke; authorization returns only through a fresh human review of a fresh observation.',
+      new.current_receipt_id, new.review_status
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if not has_revocation and new.review_status = 'revoked' then
+    raise exception
+      'review_projection_revocation_incoherent: review_status is ''revoked'' but no revocation event exists for receipt %. A withdrawal is an append-only fact, not a column value.',
+      new.current_receipt_id
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.enforce_review_status_matches_revocation() from public;
+
+-- Fires on every INSERT and UPDATE, for the same reason §3's does: the invariant
+-- can be broken by moving `review_status` OR by moving `current_receipt_id`, and
+-- a `when (...)` clause naming one column would miss the other.
+--
+-- The A04.6 apply path already writes in a compatible order — lock the
+-- projection, INSERT the immutable revocation, THEN update the status — so by
+-- the time the row changes the event it must represent already exists.
+create trigger source_property_reviews_revocation_status
+  before insert or update on public.source_property_reviews
+  for each row execute function public.enforce_review_status_matches_revocation();

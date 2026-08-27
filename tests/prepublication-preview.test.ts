@@ -55,6 +55,8 @@ function valid(): PreviewInput {
       reviewNote: "reviewed",
       reviewStatus: "active",
       currentReceiptId: "receipt-1",
+      currentReceiptRevoked: false,
+      currentReceiptRevocationId: null,
     },
     destination: { id: "destination-1", slug: "bali" },
     targetHotel: null,
@@ -487,6 +489,57 @@ describe("D062 pre-publication preview", () => {
     expect(condition(p, 1).reason).toBe("human_review_revoked");
     expect(condition(p, 2).reason).toBe("human_review_revoked");
     expect(p.overall).not.toBe("PASS");
+  });
+
+  /*
+   * A04.6 AMENDMENT #2 — the immutable revocation event dominates the mutable
+   * `review_status` column. `source_property_reviews` is legitimately writable
+   * by admin/editor and service_role, so D062 must not trust its status alone.
+   */
+  it("A04.6: a revoked CURRENT receipt beats review_status = active", () => {
+    const input = valid();
+    // Exactly the corrupted state a single-column UPDATE produces: the
+    // revocation still exists for the receipt the projection names, but the
+    // status was flipped back.
+    input.review!.reviewStatus = "active";
+    input.review!.currentReceiptRevoked = true;
+    input.review!.currentReceiptRevocationId = "revocation-1";
+    const p = evaluatePreview(input, AS_OF);
+
+    expect(condition(p, 1).reason).toBe("human_review_revoked");
+    expect(condition(p, 2).reason).toBe("human_review_revoked");
+    expect(condition(p, 5).status).not.toBe("PASS");
+    expect(p.overall).not.toBe("PASS");
+    expect(condition(p, 1).evidence.revocationStateCoherent).toBe(false);
+    expect(condition(p, 1).evidence.currentReceiptRevocationId).toBe("revocation-1");
+  });
+
+  it("A04.6: status = revoked with NO event behind it also fails closed", () => {
+    const input = valid();
+    input.review!.reviewStatus = "revoked";
+    input.review!.currentReceiptRevoked = false;
+    const p = evaluatePreview(input, AS_OF);
+
+    // A mutable column may not invent historical evidence either. The brake
+    // stays on and the disagreement is visible rather than silently resolved.
+    expect(condition(p, 1).reason).toBe("human_review_revoked");
+    expect(condition(p, 2).reason).toBe("human_review_revoked");
+    expect(p.overall).not.toBe("PASS");
+    expect(condition(p, 1).evidence.revocationStateCoherent).toBe(false);
+  });
+
+  it("A04.6: a fresh receipt with no revocation of its own is authorized", () => {
+    const input = valid();
+    // The identity's history may contain revocations; what matters is that THIS
+    // receipt carries none. Asking "was this identity ever revoked?" would brick
+    // every re-reviewed property forever.
+    input.review!.reviewStatus = "active";
+    input.review!.currentReceiptRevoked = false;
+    const p = evaluatePreview(input, AS_OF);
+    expect(condition(p, 1).status).toBe("PASS");
+    expect(condition(p, 2).status).toBe("PASS");
+    expect(p.overall).toBe("PASS");
+    expect(condition(p, 1).evidence.revocationStateCoherent).toBe(true);
   });
 
   it("A04.6: a coherent, current, active projection still passes", () => {
