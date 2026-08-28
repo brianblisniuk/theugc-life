@@ -90,7 +90,7 @@ d("B02 credential boundary (0036)", () => {
       const functions = [
         "public.gmail_oauth_begin(uuid,text,text,text,text,text,text,text,uuid,text[],text,integer)",
         "public.gmail_oauth_consume_transaction(uuid,text)",
-        "public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,bigint,text)",
+        "public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,bigint,text,bigint)",
         "public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)",
         "public.gmail_credential_load(uuid)",
         "public.gmail_credential_load_for_owner(uuid,uuid)",
@@ -99,6 +99,7 @@ d("B02 credential boundary (0036)", () => {
         "public.gmail_mark_reauth_required(uuid,bigint)",
         "public.gmail_disconnect_prepare(uuid,uuid)",
         "public.gmail_disconnect_finalize(uuid,uuid)",
+        "public.gmail_record_superseded_disconnect_credential(uuid,uuid,text,bigint,text,text,text,text)",
         "public.gmail_connection_status(uuid)",
       ];
       for (const fn of functions) {
@@ -126,7 +127,7 @@ d("B02 credential boundary (0036)", () => {
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.proname like 'gmail\\_%'
       `);
-      expect(res.rows.length).toBe(12);
+      expect(res.rows.length).toBe(13);
       for (const row of res.rows) {
         expect(row.prosecdef, row.proname).toBe(true);
         expect(

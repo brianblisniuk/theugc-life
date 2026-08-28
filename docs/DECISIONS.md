@@ -1949,6 +1949,57 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #6 (2026-08-28) settled that **a lifecycle fence
+must cover every OAuth flow, including the ones with no target, and that the
+protocol steps are enforced by the database rather than remembered by callers.**
+
+FIRST, **ordering of checks is a security property.** Amendment #5's
+supersession test ran after the "is this state reconnectable?" refusal, and that
+refusal answers `account_mismatch` for `disconnecting` — so the `disconnecting`
+half of the condition was unreachable, in exactly the window where a live,
+freshly-created grant is most likely to exist. The refusal that discards
+information cannot run before the question that needs it. The order is now
+identity, then supersession, then the ordinary lifecycle refusals. No state was
+made writable that was not writable before; they simply get a truthful answer
+about why they are refused.
+
+SECOND, **the fence has to work before the Google account is known.** A revision
+is a version of one known mailbox, so only a flow with a target can pin one. A
+generic CONNECT has no target and nothing for a Disconnect to cancel, so a
+"Connect another Gmail" begun before a Disconnect could come back with the
+disconnected identity, exchange its code, and be waved through as an ordinary
+refusal while Google's grant was active again. B02 therefore keeps two clocks
+with two jobs: `authorization_revision` for the exact-version CAS on a known
+target, and a shared monotonic `mail_account_lifecycle_intent_seq` drawn by every
+OAuth transaction at its start and by every Disconnect at prepare, which makes
+"did this flow begin before that Disconnect?" a single comparison available to
+targeted and generic flows alike. A sequence, not a timestamp.
+
+THIRD, **the one revocation B02 performs on a refused callback must be durable.**
+It is a network call, and the only thing that can remove the grant is the token
+that callback just received. Losing it on a transient failure could leave the
+mailbox `disconnected`, no credential anywhere, and the authorization ACTIVE
+forever. So the fresh credential is stored first — sealed, in `disconnecting`,
+where no read path will use it — and revoked second, with the mailbox returning
+to `disconnecting` if a Disconnect had already reported completion. A newer
+successful Reconnect refuses both the store and the revoke: the human changed
+their mind, and an older callback does not get to overrule that.
+
+FOURTH, **`invalid_token` is evidence about one token.** On the token a
+superseded callback just received it proves that grant's newest artifact is
+unusable. On an older stored token it proves nothing about a newer concurrent
+grant, and B02 does not infer otherwise — the newer grant is handled by the flow
+that created it.
+
+FIFTH, **a protocol is only a protocol if the database enforces its steps.**
+`gmail_disconnect_finalize` now consumes only `disconnecting`, so nothing can go
+from `connected` to `disconnected` without a recorded intent and a provider call;
+and `gmail_grant_private_processing_consent` may connect only from
+`consent_required`, so a consent form submitted before a Disconnect cannot land
+after it and undo the newer decision. Both were reachable precisely because
+amendment #5 deliberately retains the credential while `disconnecting`.
+`service_role` is a capability, not proof that a caller followed the protocol.
+
 B02 external audit amendment #5 (2026-08-28) settled that **Disconnect dominates
 the provider, and a deletion owns the lifecycle while it runs.**
 

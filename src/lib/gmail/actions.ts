@@ -53,6 +53,14 @@ export async function grantGmailConsentAction(
         status: "error",
         message: "That mailbox was deleted. Connect the Google account again to start fresh.",
       };
+    case "consent_not_applicable":
+      // The mailbox is not waiting on this decision any more — most often
+      // because the person pressed Disconnect after opening this form. The newer
+      // decision stands, and nothing was recorded.
+      return {
+        status: "error",
+        message: "That mailbox is no longer waiting for this permission. Nothing was changed.",
+      };
     default:
       return { status: "error", message: "Could not record your consent. Please try again." };
   }

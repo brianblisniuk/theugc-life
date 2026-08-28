@@ -609,8 +609,45 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #5, awaiting re-audit and the human merge
+> merged, on external audit amendment #6, awaiting re-audit and the human merge
 > gate.**
+
+**B02 external audit amendment #6 (2026-08-28)** closed five findings against
+head `967a0fb`, all reproduced first:
+
+- **the supersession branch was unreachable while `disconnecting`.** The
+  reconnectable-state gate ran first and answered `account_mismatch` for exactly
+  the state in which a live, freshly-created grant is most likely to exist. The
+  checks are now ordered by meaning — identity, then supersession, then the
+  ordinary lifecycle refusals — and no state was made writable that was not
+  writable before;
+- **a superseded revocation that failed lost the token.** Reproduced:
+  `state_changed`, zero credentials, and `GOOGLE GRANT STILL ACTIVE? true` with
+  nothing left to retry with. The fresh credential is now stored sealed and
+  first, in `disconnecting`, and revoked second; a failure answers
+  `disconnect_incomplete` and a retry finishes the job. A newer successful
+  Reconnect refuses both the store and the revoke;
+- **`gmail_disconnect_finalize` could bypass prepare and Google entirely.**
+  Reproduced by direct SQL: `connected` with a live credential, one call, result
+  `ok`, state `disconnected`, nothing said to Google. It now consumes only
+  `disconnecting` and answers `prepare_required` otherwise;
+- **a stale consent could revive a `disconnecting` mailbox.** Reproduced:
+  `disconnecting` → the consent form the human submitted before pressing
+  Disconnect lands → new receipt, state `connected`. Consent may now connect only
+  from `consent_required`, checked inside the lock it already holds, and writes
+  nothing on refusal;
+- **generic CONNECT flows had no fence at all.** Reproduced: "Connect another
+  Gmail" begun before a Disconnect, chooser returns the disconnected identity,
+  `reconnect_required`, and `GOOGLE GRANT ACTIVE AGAIN? true`. A generic flow has
+  no target, so there is no revision to pin and nothing for `prepare` to cancel.
+
+The fence for the last one is a shared monotonic
+`mail_account_lifecycle_intent_seq`: every OAuth transaction draws a position
+when it begins, every Disconnect draws one at prepare, and the comparison works
+before any Google identity is known. `authorization_revision` is kept for the
+exact-version CAS on a known target — two clocks, two questions. Also settled:
+`invalid_token` is evidence about one token, never proof that a newer concurrent
+grant has disappeared.
 
 **B02 external audit amendment #5 (2026-08-28)** closed two findings against
 head `16cdea0`:

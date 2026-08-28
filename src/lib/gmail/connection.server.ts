@@ -190,6 +190,14 @@ export type CallbackOutcome =
    */
   | { result: "state_changed"; returnPath: string | null }
   /**
+   * This flow was superseded by an explicit Disconnect, the grant it obtained
+   * had to be revoked, and the revocation did NOT succeed. The freshly-issued
+   * refresh token is stored — encrypted, in `disconnecting`, unusable for
+   * processing — solely so a Disconnect retry can revoke it. The human is not
+   * told they are disconnected, because they are not.
+   */
+  | { result: "disconnect_incomplete"; mailAccountId: string; returnPath: string | null }
+  /**
    * A generic connect landed on a Google account that already has a live, not
    * currently connected mailbox here. Reconnecting it is an explicit action that
    * pins the mailbox's lifecycle revision, so this flow persists nothing and
@@ -216,6 +224,12 @@ interface TransactionRow {
   target_mail_account_id?: string | null;
   /** The lifecycle revision the target had when this flow started. */
   target_authorization_revision?: number | string | null;
+  /**
+   * Where this flow sits in the lifecycle's shared order of events. Present for
+   * EVERY transaction, including a generic connect that has no target — which is
+   * the point: it is the only fence a targetless flow has.
+   */
+  oauth_intent_seq?: number | string | null;
   return_path?: string | null;
 }
 
@@ -287,6 +301,13 @@ export async function completeGmailAuthorization(
 
   const returnPath = safeReturnPath(tx.return_path);
 
+  // This flow's position in the lifecycle's shared order of events, carried from
+  // the transaction the database stamped when the flow BEGAN. Every downstream
+  // question of the form "did this start before the human disconnected?" is
+  // answered with it — including for a generic connect, which has no target
+  // mailbox and therefore no revision to pin.
+  const intentSeq = tx.oauth_intent_seq == null ? null : Number(tx.oauth_intent_seq);
+
   let tokens;
   try {
     tokens = await deps.google.exchangeCode({ code: input.code, codeVerifier });
@@ -337,21 +358,64 @@ export async function completeGmailAuthorization(
    * account superseded this flow. Everywhere else, revoking would destroy
    * something the person still wants — which is exactly what amendment #2 fixed.
    */
-  const revokeSupersededGrant = async () => {
+  const revokeSupersededGrant = async (): Promise<"revoked" | "pending"> => {
+    // THE TOKEN THIS CALLBACK JUST RECEIVED, and deliberately nothing else.
+    //
+    // `invalid_token` is only evidence about the token it was returned for. On
+    // THIS token — minted seconds ago by the grant we are trying to remove — it
+    // means that grant's newest artifact is already unusable, which is the
+    // outcome we were asking for. On an older, superseded token it would mean
+    // nothing at all about a newer concurrent grant, so this function is given
+    // the fresh one and no fallback to anything stored.
     const token = tokens.refreshToken ?? tokens.accessToken;
-    if (!token) return;
+    if (!token) return "revoked";
     try {
       await deps.google.revoke({ token });
+      return "revoked";
     } catch (revokeError) {
       const code = revokeError instanceof GoogleAdapterError ? revokeError.code : "unknown";
-      // Already unusable is the outcome we wanted. Anything else is logged as a
-      // sanitized security event — a code, never the credential — because the
+      if (code === "invalid_token") return "revoked";
+      // Sanitized security event — a code, never the credential — because the
       // human believes they are disconnected and this is the one path that could
-      // leave them wrong.
-      if (code !== "invalid_token") {
-        console.warn("[gmail] revoke of a superseded grant failed", { code });
-      }
+      // leave them wrong. The caller keeps the token durably and retries.
+      console.warn("[gmail] revoke of a superseded grant failed", { code });
+      return "pending";
     }
+  };
+
+  /**
+   * Make the freshly-issued credential durable BEFORE trying to revoke it.
+   *
+   * Same ordering as prepare/revoke/finalize, and for the same reason: a network
+   * call can fail, and the only thing that can revoke this grant is the token it
+   * produced. Amendment #5 attempted the revoke and let the token fall out of
+   * memory on failure, which could end with the mailbox `disconnected`, no
+   * credential anywhere, and an ACTIVE Google grant that nothing could ever
+   * remove.
+   *
+   * The database re-checks every precondition under its own lock and may refuse
+   * — most importantly when a newer successful Reconnect has made the mailbox
+   * live again, in which case this old callback must neither store nor revoke.
+   */
+  const storeSupersededRetryMaterial = async (
+    mailAccountId: string,
+    subject: string,
+  ): Promise<"stored" | "refused" | "failed"> => {
+    const { data, error: storeError } = await deps.db.rpc(
+      "gmail_record_superseded_disconnect_credential",
+      {
+        p_user_id: input.userId,
+        p_mail_account_id: mailAccountId,
+        p_provider_account_subject: subject,
+        p_oauth_intent_seq: intentSeq,
+        p_refresh_ciphertext: sealed.ciphertext,
+        p_refresh_iv: sealed.iv,
+        p_refresh_auth_tag: sealed.authTag,
+        p_key_version: sealed.keyVersion,
+      },
+    );
+    if (storeError) return "failed";
+    return ((data ?? {}) as { result?: string }).result === "ok" ? "stored" : "refused";
   };
 
   // OFFLINE ACCESS OR NOTHING. B03 syncs while the human is away, so a
@@ -424,6 +488,11 @@ export async function completeGmailAuthorization(
     p_expected_target_revision:
       tx.target_authorization_revision == null ? null : Number(tx.target_authorization_revision),
     p_consent_policy_version: PRIVATE_PROCESSING_POLICY_VERSION,
+    // The universal fence. Unlike the revision above it is present for a generic
+    // connect too, so the database can tell an in-flight flow from work the
+    // human started after their Disconnect — once it knows, from the verified
+    // subject, which mailbox this callback is actually about.
+    p_oauth_intent_seq: intentSeq,
   });
 
   if (persistError) {
@@ -461,7 +530,7 @@ export async function completeGmailAuthorization(
       // authorized since.
       discardWithoutRevoking();
       return { result: "state_changed", returnPath };
-    case "superseded_by_disconnect":
+    case "superseded_by_disconnect": {
       // THE ONE REFUSAL THAT REVOKES, and it is not cleanup.
       //
       // The human explicitly disconnected THIS Google account after this flow
@@ -469,14 +538,48 @@ export async function completeGmailAuthorization(
       // `disconnected` here and still authorized at Google — the opposite of
       // what they asked for. Revoking is carrying out the newer instruction.
       //
-      // The database established all of it before answering: an explicit
-      // reconnect, the target owned by this user, the verified Google subject
-      // equal to that target's, a disconnect intent NEWER than the revision this
-      // flow pinned, and no legitimate re-authorization since. None of the
-      // ordinary refusals — `account_mismatch`, `owned_by_other_user`,
-      // `reconnect_required`, `already_connected` — can reach this branch.
-      await revokeSupersededGrant();
+      // The database established all of it before answering: the mailbox owned
+      // by this user, the verified Google subject equal to that mailbox's, this
+      // flow's position in the lifecycle EARLIER than the human's Disconnect,
+      // and that Disconnect still standing. None of the ordinary refusals —
+      // `account_mismatch`, `owned_by_other_user`, `reconnect_required`,
+      // `already_connected` — can reach this branch. It is reached by an
+      // explicit Reconnect and by a generic Connect alike, because the fence
+      // does not need a target.
+      const mailAccountId = outcome.mail_account_id!;
+
+      // DURABLE FIRST, REVOKE SECOND. The database re-checks the supersession
+      // under its own lock; `refused` means the world changed in a way that
+      // makes revoking wrong — a newer successful Reconnect above all — so the
+      // token is discarded and Google is left alone.
+      const stored = await storeSupersededRetryMaterial(mailAccountId, identity.subject);
+      if (stored === "refused") {
+        discardWithoutRevoking();
+        return { result: "state_changed", returnPath };
+      }
+
+      const revocation = await revokeSupersededGrant();
+
+      if (revocation === "pending") {
+        // The grant is still live and the token that can remove it is stored.
+        // If the store itself failed there is nothing to retry with, which is a
+        // worse outcome and is reported as the same honest one: not disconnected.
+        if (stored === "failed") {
+          console.warn("[gmail] superseded grant could not be revoked or retained", {
+            mail_account_id: mailAccountId,
+          });
+        }
+        return { result: "disconnect_incomplete", mailAccountId, returnPath };
+      }
+
+      // Revoked — or proven unusable. Finish the Disconnect the human asked for
+      // rather than leaving the mailbox sitting in `disconnecting`.
+      await deps.db.rpc("gmail_disconnect_finalize", {
+        p_user_id: input.userId,
+        p_mail_account_id: mailAccountId,
+      });
       return { result: "state_changed", returnPath };
+    }
     case "reconnect_required":
       // A generic connect cannot pin a lifecycle revision for a mailbox whose
       // identity was unknown when it started, so it does not get to revive one.
@@ -626,6 +729,21 @@ export async function disconnectGmailAccount(
         console.warn("[gmail] revoke failed during disconnect", { code });
         return { result: "provider_unavailable" };
       }
+      // WHAT `invalid_token` DOES AND DOES NOT PROVE HERE.
+      //
+      // It proves THIS STORED TOKEN is unusable, which is what revocation was
+      // trying to achieve for it, and destroying it is right. It does NOT prove
+      // that no other grant exists for this Google account: an OAuth flow that
+      // was in the air can have obtained a newer one seconds ago, and Google
+      // would answer `invalid_token` about our old token while that newer grant
+      // is perfectly alive.
+      //
+      // B02 does not paper over that with an inference. The newer grant is
+      // handled where it actually exists — the callback that created it is
+      // refused with `superseded_by_disconnect`, stores its token durably and
+      // revokes it, returning the mailbox to `disconnecting` if that revocation
+      // has not succeeded. So the guarantee comes from the flow that holds the
+      // newer token, never from a claim made on the strength of an old one.
     }
   }
 
@@ -641,6 +759,9 @@ export async function disconnectGmailAccount(
   const outcome = (finalized ?? {}) as { result?: string };
   if (outcome.result === "not_found") return { result: "not_found" };
   if (outcome.result === "deletion_in_progress") return { result: "deletion_in_progress" };
+  // `prepare_required` means the mailbox left `disconnecting` between our
+  // prepare and our finalize — a concurrent decision won. Reporting
+  // `disconnected` would be claiming an outcome this call did not produce.
   if (outcome.result !== "ok") return { result: "provider_unavailable" };
   return { result: "disconnected" };
 }

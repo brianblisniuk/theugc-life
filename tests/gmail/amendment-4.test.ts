@@ -248,11 +248,23 @@ d("amendment #4 — the revision is reserved, not merely inspected", () => {
       expect((persisted.rows[0].r as { result: string }).result).toBe("consent_required");
 
       // The human's Disconnect arrives while that transaction is open, through
-      // the REAL finalize RPC, and WAITS on the same row lock.
-      const waiting = lifecycle.query(
-        "select public.gmail_disconnect_finalize($1::uuid, $2::uuid) as r",
-        [userId, mailAccountId],
-      );
+      // the REAL RPCs, and WAITS on the same row lock. Both steps, in one
+      // transaction: since amendment #6 `gmail_disconnect_finalize` refuses a
+      // mailbox that has no recorded Disconnect intent, so the protocol IS the
+      // operation — `prepare` is what takes the lock and waits here.
+      const waiting = (async () => {
+        await lifecycle.query("begin");
+        await lifecycle.query("select public.gmail_disconnect_prepare($1::uuid, $2::uuid)", [
+          userId,
+          mailAccountId,
+        ]);
+        const finalize = await lifecycle.query(
+          "select public.gmail_disconnect_finalize($1::uuid, $2::uuid) as r",
+          [userId, mailAccountId],
+        );
+        await lifecycle.query("commit");
+        return finalize;
+      })();
       await sleep(400);
 
       await callback.query("commit");

@@ -274,7 +274,101 @@ alter table public.mail_accounts
   add column disconnect_requested_revision bigint;
 
 comment on column public.mail_accounts.disconnect_requested_revision is
-  'B02: the authorization_revision created by the most recent explicit Disconnect intent. Lets a stale reconnect callback tell "superseded by a Disconnect" (revoke the grant it just obtained) from "superseded by something else" (drop it silently).';
+  'B02: the authorization_revision created by the most recent explicit Disconnect intent. Descriptive: it records WHICH VERSION of the mailbox the human disconnected. The supersession DECISION is made by disconnect_intent_seq, because that comparison also works for a flow with no target — see the fence below.';
+
+-- ---------------------------------------------------------------------------
+-- THE FENCE THAT WORKS BEFORE THE GOOGLE ACCOUNT IS KNOWN
+-- ---------------------------------------------------------------------------
+-- `authorization_revision` is a version of ONE KNOWN MAILBOX, so a flow can only
+-- pin it if it already knows which mailbox it is about. A generic CONNECT does
+-- not: it learns the Google identity from the callback, minutes later. That left
+-- a whole class of flow outside the fence, and the gap was reachable:
+--
+--   1. the creator has mailbox S connected;
+--   2. they press "Connect another Gmail" — a generic flow, no target, nothing
+--      to pin;
+--   3. before the callback returns, they explicitly DISCONNECT S;
+--   4. the account chooser hands back... S. The code is exchanged, so Google's
+--      grant for S is ACTIVE again;
+--   5. the generic path sees a live `disconnected` row for S and answers
+--      `reconnect_required`, which correctly persists nothing — and correctly
+--      revokes nothing, because ordinary refusals must not revoke.
+--
+-- Local state `disconnected`, Google state ACTIVE. The same defect amendment #5
+-- closed for explicit Reconnect, arriving through the door that had no lock.
+--
+-- So the fence needs a clock that exists at the moment a flow STARTS, before any
+-- identity is known, and that the same lifecycle can be compared against once
+-- the identity IS known. One sequence, drawn by both sides:
+--
+--   every OAuth transaction  -> oauth_intent_seq     (at BEGIN, generic included)
+--   every explicit Disconnect -> disconnect_intent_seq (at PREPARE)
+--
+-- Then, once the callback has a VERIFIED subject and the database has resolved
+-- which mailbox that subject is, the question "did this flow start before the
+-- human disconnected that mailbox?" is a single comparison of two values from
+-- ONE monotonic domain. A flow started AFTER the Disconnect draws a higher
+-- number and is correctly treated as new work rather than as stale work.
+--
+-- A sequence, not a timestamp: equal timestamps collide and clock order is not
+-- causal order — amendment #2 settled that and it is settled here too. And a
+-- SHARED sequence rather than two, because two sequences are two clocks and
+-- comparing them would mean nothing.
+--
+-- This does NOT replace `authorization_revision`. They answer different
+-- questions and both are needed:
+--
+--   authorization_revision  is this the exact version of the target mailbox
+--                           that my reconnect was authorized against? (CAS)
+--   *_intent_seq            did my flow begin before the human's Disconnect?
+--                           (chronology, and it works with no target at all)
+create sequence if not exists public.mail_account_lifecycle_intent_seq;
+
+revoke all on sequence public.mail_account_lifecycle_intent_seq from public;
+revoke all on sequence public.mail_account_lifecycle_intent_seq from anon, authenticated;
+grant usage, select on sequence public.mail_account_lifecycle_intent_seq to service_role;
+
+alter table public.mail_accounts
+  add column disconnect_intent_seq bigint;
+
+comment on column public.mail_accounts.disconnect_intent_seq is
+  'B02: position in public.mail_account_lifecycle_intent_seq of the most recent explicit Disconnect intent for this mailbox. Compared against an OAuth transaction''s oauth_intent_seq to fence flows that began before it — including generic CONNECT flows, which have no target mailbox to pin a revision against.';
+
+-- THE SUPERSESSION TEST, WRITTEN ONCE.
+--
+-- Three call sites ask exactly this question — the targeted-reconnect branch of
+-- `gmail_connection_persist`, its generic-CONNECT branch, and the RPC that
+-- stores retry material when the resulting revocation fails — and three copies
+-- of a security predicate is three chances for them to drift apart. It lives in
+-- `private` for the same reason the credential table does: nothing outside the
+-- definer surface has any business calling it.
+--
+-- Every clause is load-bearing:
+--
+--   the flow HAS a position          a caller that supplied none is not proven
+--                                    to predate anything, so it is not superseded
+--   the mailbox HAS a disconnect     nobody asked to stop; ordinary rules apply
+--   the flow began BEFORE it         a flow started afterwards is new work, not
+--                                    stale work, and must not be revoked
+--   the disconnect still stands      `disconnecting` or `disconnected` only. A
+--                                    newer successful Reconnect makes the row
+--                                    `connected`/`consent_required`, and revoking
+--                                    then would destroy the authorization the
+--                                    human most recently asked for
+create or replace function private.gmail_flow_superseded_by_disconnect(
+  p_account public.mail_accounts,
+  p_oauth_intent_seq bigint
+)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select p_oauth_intent_seq is not null
+     and p_account.disconnect_intent_seq is not null
+     and p_oauth_intent_seq < p_account.disconnect_intent_seq
+     and p_account.connection_state in ('disconnecting', 'disconnected');
+$$;
 
 comment on column public.mail_accounts.authorization_revision is
   'B02: the lifecycle revision an in-flight OAuth flow pins. Advances whenever a change invalidates an authorization started against the older state — a connection-state transition or a scope-set change. Database-owned and not caller-settable.';
@@ -384,6 +478,20 @@ create table private.gmail_oauth_transactions (
   -- be reconnectable again and quietly undo their decision. Written by
   -- `gmail_oauth_begin` from the row itself — never supplied by a caller.
   target_authorization_revision bigint,
+
+  -- WHERE THIS FLOW SITS IN THE LIFECYCLE'S ORDER OF EVENTS.
+  --
+  -- Assigned by the DEFAULT, so it is drawn at INSERT for every transaction
+  -- including a generic CONNECT that has no target and will not know its Google
+  -- identity until the callback. That is the whole point: a fence that only
+  -- applies to flows with a target leaves the targetless ones unfenced, which is
+  -- how a generic "Connect another Gmail" could reauthorize a Google account the
+  -- human disconnected while it was in the air.
+  --
+  -- Same sequence as `mail_accounts.disconnect_intent_seq`, so the two are
+  -- comparable. Not caller-supplied: `gmail_oauth_begin` does not accept it.
+  oauth_intent_seq bigint not null
+    default nextval('public.mail_account_lifecycle_intent_seq'),
 
   -- What we asked Google for. Recorded to compare against what Google actually
   -- grants — B01 §11's rule is that the granted set is authoritative and the
@@ -604,6 +712,14 @@ begin
     -- has nothing to keep. What `disconnecting` asserts is that the human has
     -- decided and the provider side is unfinished — not that a usable
     -- authorization is held, which is why no access token is issued from it.
+    --
+    -- The credential here is REVOCATION RETRY MATERIAL, and that is the whole
+    -- of its purpose. It may be the token the Disconnect loaded, or — when a
+    -- superseded callback obtained a newer grant and could not revoke it — the
+    -- fresher token stored by `gmail_record_superseded_disconnect_credential`.
+    -- Either way `gmail_credential_load` refuses this state, so nothing can
+    -- process the mailbox with it, and finalize destroys it the moment the
+    -- provider side is resolved.
     if credential_count > 1 then
       raise exception
         'mail account % is `disconnecting` with % stored credentials; there is at most one per mailbox.',
@@ -855,6 +971,10 @@ begin
     'purpose', v_row.purpose,
     'target_mail_account_id', v_row.target_mail_account_id,
     'target_authorization_revision', v_row.target_authorization_revision,
+    -- Returned so the callback can carry the flow's position in the lifecycle's
+    -- order of events into `gmail_connection_persist`. It is the only fence a
+    -- generic CONNECT has, because that flow has no target to pin a revision on.
+    'oauth_intent_seq', v_row.oauth_intent_seq,
     'requested_scopes', to_jsonb(v_row.requested_scopes),
     'return_path', v_row.return_path
   );
@@ -897,7 +1017,8 @@ create or replace function public.gmail_connection_persist(
   p_provider_refresh_expires_at timestamptz,
   p_expected_mail_account_id uuid,
   p_expected_target_revision bigint,
-  p_consent_policy_version text
+  p_consent_policy_version text,
+  p_oauth_intent_seq bigint default null
 )
 returns jsonb
 language plpgsql
@@ -969,18 +1090,55 @@ begin
       return jsonb_build_object('result', 'account_retired');
     end if;
 
-    if v_target.connection_state not in
-       ('disconnected', 'reauth_required', 'pending_authorization', 'consent_required') then
-      -- `disconnecting` is excluded deliberately: the human has already decided
-      -- to stop, and starting or landing a reconnect against that decision would
-      -- be racing them.
+    -- THE BINDING ITSELF, and it comes BEFORE the state gate on purpose.
+    --
+    -- The human was shown "reconnect this mailbox"; if the account picker
+    -- produced a different Google identity, the only truthful answer is that
+    -- this is not that mailbox. Never a silent connect.
+    --
+    -- It runs first because supersession is a statement about THIS Google
+    -- account, so the identity has to be settled before that question can even
+    -- be asked. Nothing is weakened by the move: a subject that does not match
+    -- was answered `account_mismatch` before and is answered `account_mismatch`
+    -- now, whatever state the row is in.
+    if v_target.provider_account_subject <> p_provider_account_subject then
       return jsonb_build_object('result', 'account_mismatch');
     end if;
 
-    -- THE BINDING ITSELF. The human was shown "reconnect this mailbox"; if the
-    -- account picker produced a different Google identity, the only truthful
-    -- answer is that this is not that mailbox. Never a silent connect.
-    if v_target.provider_account_subject <> p_provider_account_subject then
+    -- WAS THIS FLOW SUPERSEDED BY AN EXPLICIT DISCONNECT?
+    --
+    -- Asked BEFORE the "is this state reconnectable?" refusal, because that
+    -- refusal destroys the very information this question needs. Amendment #5
+    -- put the supersession test after the state gate, and the gate answers
+    -- `account_mismatch` for `disconnecting` — so the `disconnecting` half of
+    -- the supersession condition could never be reached. Reproducibly: a
+    -- Disconnect whose provider revocation had not yet resolved left the mailbox
+    -- `disconnecting`, and the stale callback that arrived during exactly that
+    -- window — the window where a live grant it had just created was most likely
+    -- to exist — got `account_mismatch` and revoked nothing.
+    --
+    -- The ordering rule, stated once: identity first, then whether the human
+    -- ended this authorization, then the ordinary lifecycle refusals. This is
+    -- ordering, NOT a widening of the states a credential may be persisted into.
+    -- `connected`, `deletion_pending`, `deleted` and `disconnecting` remain
+    -- states no callback may write a credential into; they simply get a truthful
+    -- answer about WHY.
+    if private.gmail_flow_superseded_by_disconnect(v_target, p_oauth_intent_seq) then
+      return jsonb_build_object(
+        'result', 'superseded_by_disconnect',
+        'connection_state', v_target.connection_state,
+        'mail_account_id', v_target.id
+      );
+    end if;
+
+    if v_target.connection_state not in
+       ('disconnected', 'reauth_required', 'pending_authorization', 'consent_required') then
+      -- `disconnecting` is excluded deliberately: the human has already decided
+      -- to stop, and landing a reconnect against that decision would be racing
+      -- them. Reaching here while `disconnecting` means the flow was NOT
+      -- superseded — it started after the Disconnect — so it is ordinary
+      -- work aimed at a mailbox that is mid-Disconnect, and it is refused
+      -- without revoking anything.
       return jsonb_build_object('result', 'account_mismatch');
     end if;
 
@@ -994,32 +1152,11 @@ begin
     -- situation that happens to look similar".
     --
     -- Concretely, this is what stops an OAuth flow the human abandoned from
-    -- undoing the Disconnect they chose instead.
+    -- undoing the Disconnect they chose instead. Supersession has already been
+    -- ruled out above, so anything caught here moved on for some OTHER reason
+    -- and revokes nothing — amendment #2's rule intact.
     if p_expected_target_revision is null
        or v_target.authorization_revision <> p_expected_target_revision then
-      -- WHY IT IS STALE MATTERS, exactly once.
-      --
-      -- If the reason is an explicit human Disconnect of THIS Google account,
-      -- the grant this callback just obtained must be revoked at Google, not
-      -- merely dropped: otherwise the human ends with `disconnected` locally and
-      -- an ACTIVE authorization at Google, which is not what they asked for.
-      -- That is not callback cleanup — it is carrying out the newer instruction.
-      --
-      -- Both halves of the test are load-bearing. The disconnect intent must be
-      -- NEWER than the revision this flow pinned, and the mailbox must not have
-      -- been legitimately re-authorized since — otherwise an old callback could
-      -- revoke a working connection the human made after changing their mind
-      -- again. Any other reason for staleness answers `state_changed` and
-      -- revokes nothing, which is amendment #2's rule intact.
-      if v_target.disconnect_requested_revision is not null
-         and v_target.disconnect_requested_revision > p_expected_target_revision
-         and v_target.connection_state in ('disconnecting', 'disconnected') then
-        return jsonb_build_object(
-          'result', 'superseded_by_disconnect',
-          'connection_state', v_target.connection_state
-        );
-      end if;
-
       return jsonb_build_object(
         'result', 'state_changed',
         'connection_state', v_target.connection_state
@@ -1068,17 +1205,46 @@ begin
     v_account := v_target;
     v_found := true;
   else
+    -- LOCKED, for the same reason the reconnect target is (amendment #4). This
+    -- read now decides whether a grant gets revoked, so it has to RESERVE the
+    -- row rather than merely observe it: an unlocked read could see the mailbox
+    -- a moment before an explicit Disconnect commits and answer "ordinary
+    -- refusal, revoke nothing" about a decision that had already been made.
     select m.* into v_account
       from public.mail_accounts m
      where m.provider = 'gmail'
        and m.provider_account_subject = p_provider_account_subject
        and m.user_id = p_user_id
        and m.connection_state <> 'deleted'
-     limit 1;
+     limit 1
+     for no key update;
     v_found := found;
   end if;
 
   if v_found then
+    -- THE FENCE, FOR A FLOW THAT NEVER HAD A TARGET.
+    --
+    -- This is the door amendment #5 left unlocked. A generic CONNECT has no
+    -- target and no pinned revision, so the whole revision mechanism is silent
+    -- about it — and yet the identity it comes back with can be a mailbox the
+    -- human disconnected while the browser was at Google. It exchanged a code,
+    -- so the Google grant for that identity is ACTIVE; answering
+    -- `reconnect_required` and revoking nothing left `disconnected` locally and
+    -- authorized at Google, which is the exact divergence B02 exists to prevent.
+    --
+    -- The intent sequence answers it without a target: this flow began before
+    -- that mailbox's Disconnect, and that Disconnect still stands. A generic
+    -- flow started AFTER the Disconnect draws a higher number, is not
+    -- superseded, and falls through to the ordinary `reconnect_required`
+    -- policy below.
+    if private.gmail_flow_superseded_by_disconnect(v_account, p_oauth_intent_seq) then
+      return jsonb_build_object(
+        'result', 'superseded_by_disconnect',
+        'connection_state', v_account.connection_state,
+        'mail_account_id', v_account.id
+      );
+    end if;
+
     if v_account.connection_state = 'connected' then
       -- Already working. A second generic connect flow must not silently swap
       -- the credential underneath a live connection.
@@ -1233,8 +1399,46 @@ begin
     return jsonb_build_object('result', 'account_retired');
   end if;
 
+  -- CONSENT MAY ONLY CONNECT FROM `consent_required`, and this is a state gate
+  -- rather than a nicety.
+  --
+  -- The function's job is to answer the ONE question the product asks after a
+  -- successful authorization: may we process this mailbox privately? That
+  -- question is only open while the row says `consent_required`. Without the
+  -- gate, the last statement here — `set connection_state = 'connected'` —
+  -- applied to whatever state it found, and amendment #5 made that reachable in
+  -- the worst possible place: a Disconnect deliberately RETAINS the credential
+  -- while `disconnecting`, so the "is there a credential?" test below passed and
+  -- a stale consent form submitted before the human pressed Disconnect could
+  -- land afterwards and put the mailbox back to `connected`.
+  --
+  -- Reproduced: `consent_required` -> Disconnect prepare wins the lock ->
+  -- `disconnecting` with the credential retained -> transient revoke failure ->
+  -- the stale consent action lands -> a new private-processing receipt is
+  -- written and the state becomes `connected`. The newer explicit Disconnect,
+  -- undone by a form the human submitted before making it.
+  --
+  -- The check is inside the SAME `for no key update` lock taken above, so the
+  -- two orderings are the only two there are: consent first (it connects, and
+  -- the Disconnect then applies to a connected mailbox), or Disconnect first
+  -- (the consent wakes, sees `disconnecting`, and refuses). No third ordering,
+  -- and no window where both believe they won.
+  --
+  -- Nothing is written on refusal — not even a receipt. A consent receipt is
+  -- evidence that a decision took effect; recording one for a decision that was
+  -- refused would make the append-only history say something that did not
+  -- happen.
+  if v_account.connection_state <> 'consent_required' then
+    return jsonb_build_object(
+      'result', 'consent_not_applicable',
+      'connection_state', v_account.connection_state
+    );
+  end if;
+
   -- Consent authorizes processing. Without a stored credential there is nothing
-  -- to process with, and `connected` would be a claim we cannot honour.
+  -- to process with, and `connected` would be a claim we cannot honour. The
+  -- invariant already guarantees exactly one for `consent_required`; this stays
+  -- as the backstop that fails closed if that ever stops being true.
   select exists (
     select 1 from private.gmail_oauth_credentials c where c.mail_account_id = p_mail_account_id
   ) into v_has_credential;
@@ -1674,6 +1878,7 @@ declare
   v_account public.mail_accounts%rowtype;
   v_cred private.gmail_oauth_credentials%rowtype;
   v_cancelled integer;
+  v_intent bigint;
 begin
   if p_user_id is null then
     raise exception 'gmail_disconnect_prepare requires an authenticated user'
@@ -1716,6 +1921,13 @@ begin
 
   -- CANCEL WHAT HAS NOT STARTED. An unconsumed reconnect transaction for this
   -- mailbox is an older intention that must not be allowed to complete.
+  --
+  -- This can only reach flows that NAMED this mailbox. A generic CONNECT has no
+  -- target — it will not know its Google identity until the callback — so it is
+  -- invisible here by construction, and no amount of widening this DELETE would
+  -- find it. That is what `disconnect_intent_seq` below is for: the generic flow
+  -- is fenced at the callback instead, once its identity is verified and the
+  -- database can tell which mailbox it turned out to be about.
   with cancelled as (
     delete from private.gmail_oauth_transactions t
      where t.user_id = p_user_id
@@ -1724,17 +1936,33 @@ begin
   )
   select count(*)::int into v_cancelled from cancelled;
 
-  -- Record the intent. The trigger picks the number; asking for the bump is all
-  -- this function may do, and the revision it produces is then stored as the
-  -- disconnect marker so a mid-flight callback can compare against it.
+  -- THE DURABLE INTENT. Two facts are recorded, and they answer two questions.
+  --
+  -- `disconnect_intent_seq` is this Disconnect's position in the lifecycle's
+  -- shared order of events. Every OAuth flow — targeted or generic — carries a
+  -- position from the same sequence, so "did that flow begin before this
+  -- Disconnect?" is one comparison, available even for a flow that had no
+  -- target to pin.
+  --
+  -- `disconnect_requested_revision` records WHICH VERSION of the mailbox was
+  -- disconnected. The trigger picks the number; asking for the bump is all this
+  -- function may do.
+  v_intent := nextval('public.mail_account_lifecycle_intent_seq');
+
   perform set_config('b02.authorization_revision_bump', 'requested', true);
   update public.mail_accounts
      set connection_state = 'disconnecting',
+         disconnect_intent_seq = v_intent,
          last_state_change_at = now()
-   where id = p_mail_account_id;
+   where id = p_mail_account_id
+  returning * into v_account;
 
+  -- The marker is the revision that update just produced. The bump request is
+  -- cleared first so this second write does not draw a THIRD revision and leave
+  -- the marker permanently one behind the row it describes.
+  perform set_config('b02.authorization_revision_bump', '', true);
   update public.mail_accounts
-     set disconnect_requested_revision = authorization_revision
+     set disconnect_requested_revision = v_account.authorization_revision
    where id = p_mail_account_id
   returning * into v_account;
 
@@ -1748,6 +1976,7 @@ begin
       'result', 'ok',
       'cancelled_transactions', v_cancelled,
       'disconnect_revision', v_account.disconnect_requested_revision,
+      'disconnect_intent_seq', v_account.disconnect_intent_seq,
       'has_credential', false
     );
   end if;
@@ -1756,6 +1985,7 @@ begin
     'result', 'ok',
     'cancelled_transactions', v_cancelled,
     'disconnect_revision', v_account.disconnect_requested_revision,
+    'disconnect_intent_seq', v_account.disconnect_intent_seq,
     'has_credential', true,
     'refresh_token_ciphertext', v_cred.refresh_token_ciphertext,
     'refresh_token_iv', v_cred.refresh_token_iv,
@@ -1808,12 +2038,41 @@ begin
                               'connection_state', v_account.connection_state);
   end if;
 
-  delete from private.gmail_oauth_credentials where mail_account_id = p_mail_account_id;
-
   if v_account.connection_state = 'disconnected' then
-    -- Already there. Re-running after a partial failure must succeed.
+    -- Already there. Re-running after a partial failure must succeed. The
+    -- credential is cleared rather than assumed absent, because "already
+    -- disconnected" has to mean the same thing on the second attempt as on the
+    -- first.
+    delete from private.gmail_oauth_credentials where mail_account_id = p_mail_account_id;
     return jsonb_build_object('result', 'ok', 'already_disconnected', true);
   end if;
+
+  -- FINALIZE REQUIRES A PREPARED DISCONNECT, and this gate is the reason the
+  -- three-step protocol is a protocol rather than a convention.
+  --
+  -- The contract is PREPARE -> revoke at Google -> FINALIZE. Without this check
+  -- the last step accepted almost any live mailbox, so a trusted caller could go
+  -- straight from `connected` to `disconnected` — credential deleted, scopes
+  -- emptied, the human told they had disconnected — with no durable intent
+  -- recorded, no in-flight OAuth cancelled, and nothing said to Google at all.
+  -- That is the original provider/local divergence, rebuilt through the RPC
+  -- surface. Reproduced by direct SQL against the audited head: `connected` with
+  -- a live credential, one finalize call, result `ok`, and a Google grant still
+  -- active with nothing left that could revoke it.
+  --
+  -- `service_role` is a capability, not proof that every future caller
+  -- remembered the protocol. The database is where "you cannot skip the step
+  -- that talks to Google" gets to be true.
+  --
+  -- `disconnecting` is the only state a finalization may consume, because it is
+  -- the only state that says a human asked for this and the provider side was
+  -- attempted.
+  if v_account.connection_state <> 'disconnecting' then
+    return jsonb_build_object('result', 'prepare_required',
+                              'connection_state', v_account.connection_state);
+  end if;
+
+  delete from private.gmail_oauth_credentials where mail_account_id = p_mail_account_id;
 
   update public.mail_accounts
      set connection_state = 'disconnected',
@@ -1823,6 +2082,135 @@ begin
    where id = p_mail_account_id;
 
   return jsonb_build_object('result', 'ok', 'already_disconnected', false);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4h2. RETRY MATERIAL FOR A REVOCATION THAT DID NOT SUCCEED
+-- ---------------------------------------------------------------------------
+-- The narrow, ugly case that nothing else covers.
+--
+-- A stale OAuth flow is refused with `superseded_by_disconnect`. That refusal is
+-- the ONE that revokes, because the human explicitly ended this authorization
+-- while the flow was in the air. But the revocation is a network call, and a
+-- network call can fail transiently. Amendment #5 logged that failure and let
+-- the freshly-issued refresh token fall out of memory — which meant the final
+-- state could be:
+--
+--     local mailbox   disconnected
+--     local credential none
+--     Google grant    ACTIVE
+--
+-- with nothing left anywhere that could revoke it. The human is told they
+-- disconnected, and the application remains authorized, permanently. That is the
+-- exact failure the whole `disconnecting` design exists to prevent, arriving one
+-- step further down the path.
+--
+-- So the fresh credential is made DURABLE FIRST and revoked second — the same
+-- ordering as prepare/revoke/finalize, for the same reason. What is stored is
+-- not an authorization: it is the instrument required to carry out a revocation
+-- the human already asked for, held in a state that permits no processing.
+--
+-- Every precondition is a refusal to guess:
+--
+--   owner + subject          the row must be this user's, and must be the very
+--                            Google identity this callback verified
+--   flow predates the        the intent sequence, exactly as `persist` used it.
+--   Disconnect               A flow started AFTER the Disconnect is new work
+--   the Disconnect stands    `disconnecting`/`disconnected` only, so a newer
+--                            successful Reconnect refuses both the store AND
+--                            the revoke — the human changed their mind, and
+--                            this old callback does not get to overrule that
+--
+-- On success the mailbox is left/returned to `disconnecting`, never
+-- `disconnected`: the provider side is unresolved and the row must not claim
+-- otherwise. `gmail_credential_load` refuses that state, so nothing can process
+-- the mailbox with what is stored here.
+--
+-- No plaintext. The application seals the token with AES-256-GCM before this
+-- function ever sees it, exactly as the ordinary credential path does.
+create or replace function public.gmail_record_superseded_disconnect_credential(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_provider_account_subject text,
+  p_oauth_intent_seq bigint,
+  p_refresh_ciphertext text,
+  p_refresh_iv text,
+  p_refresh_auth_tag text,
+  p_key_version text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+begin
+  if p_user_id is null or coalesce(btrim(p_provider_account_subject), '') = '' then
+    raise exception 'gmail_record_superseded_disconnect_credential requires a user and a verified provider subject'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  select m.* into v_account
+    from public.mail_accounts m
+   where m.id = p_mail_account_id
+     and m.user_id = p_user_id
+   for no key update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  -- The identity is re-established here rather than trusted from the caller.
+  if v_account.provider <> 'gmail'
+     or v_account.provider_account_subject <> p_provider_account_subject then
+    return jsonb_build_object('result', 'account_mismatch');
+  end if;
+
+  -- The same predicate `persist` used to decide this was a supersession, asked
+  -- again under this function's own lock. If it is no longer true — most
+  -- importantly because a newer successful Reconnect made the mailbox live
+  -- again — nothing is stored and the caller must not revoke.
+  if not private.gmail_flow_superseded_by_disconnect(v_account, p_oauth_intent_seq) then
+    return jsonb_build_object('result', 'not_superseded',
+                              'connection_state', v_account.connection_state);
+  end if;
+
+  -- The retained credential, if any, is the OLD one the Disconnect already tried
+  -- to revoke. It is replaced rather than kept alongside: there is one credential
+  -- per mailbox, and the token that matters now is the one representing the
+  -- grant that is still active. Revoking the old one could answer
+  -- `invalid_token` — true of that token, and no evidence at all about this
+  -- newer grant.
+  delete from private.gmail_oauth_credentials where mail_account_id = p_mail_account_id;
+
+  insert into private.gmail_oauth_credentials
+    (mail_account_id, user_id, refresh_token_ciphertext, refresh_token_iv,
+     refresh_token_auth_tag, encryption_key_version)
+  values
+    (p_mail_account_id, p_user_id, p_refresh_ciphertext, p_refresh_iv,
+     p_refresh_auth_tag, p_key_version);
+
+  -- BACK TO `disconnecting` IF IT HAD ALREADY BEEN FINALIZED. The Disconnect
+  -- reported completion on the evidence it had; this callback is newer evidence
+  -- that the provider side is not finished. Saying `disconnected` while holding
+  -- a live grant's token would be the row asserting the one thing we now know to
+  -- be false.
+  if v_account.connection_state <> 'disconnecting' then
+    perform set_config('b02.authorization_revision_bump', 'requested', true);
+    update public.mail_accounts
+       set connection_state = 'disconnecting',
+           last_state_change_at = now()
+     where id = p_mail_account_id
+    returning * into v_account;
+  end if;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'connection_state', v_account.connection_state,
+    'mail_account_id', p_mail_account_id
+  );
 end;
 $$;
 
@@ -1877,7 +2265,7 @@ begin
   foreach fn in array array[
     'public.gmail_oauth_begin(uuid,text,text,text,text,text,text,text,uuid,text[],text,integer)',
     'public.gmail_oauth_consume_transaction(uuid,text)',
-    'public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,bigint,text)',
+    'public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,bigint,text,bigint)',
     'public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)',
     'public.gmail_credential_load(uuid)',
     'public.gmail_credential_load_for_owner(uuid,uuid)',
@@ -1886,6 +2274,7 @@ begin
     'public.gmail_mark_reauth_required(uuid,bigint)',
     'public.gmail_disconnect_prepare(uuid,uuid)',
     'public.gmail_disconnect_finalize(uuid,uuid)',
+    'public.gmail_record_superseded_disconnect_credential(uuid,uuid,text,bigint,text,text,text,text)',
     'public.gmail_connection_status(uuid)'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', fn);

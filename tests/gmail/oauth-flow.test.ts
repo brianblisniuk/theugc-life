@@ -545,7 +545,14 @@ d("B02 — Gmail OAuth connection", () => {
       );
       // Consent authorizes processing; without a credential there is nothing to
       // process with, and `connected` would be a claim we cannot honour.
-      expect(granted.result).toBe("no_credential");
+      //
+      // Since amendment #6 it is refused one step earlier and for a stronger
+      // reason: the mailbox is `reauth_required`, so the question this action
+      // answers is not open at all. `no_credential` remains in the RPC as the
+      // fail-closed backstop behind the state gate — `consent_required` is
+      // guaranteed by the deferred invariant to hold exactly one credential, so
+      // reaching it would mean that invariant had been broken.
+      expect(granted.result).toBe("consent_not_applicable");
     });
 
     it("refuses consent requested by a different user", async () => {

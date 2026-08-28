@@ -41,7 +41,20 @@ export interface FakeGoogleProject {
   issueRefreshToken(subject: string): string;
   /** Project-wide: invalidates EVERY token for the subject that owns this one. */
   revokeToken(token: string): void;
+  /**
+   * Kill ONE token without touching the subject's project grant.
+   *
+   * This is not revocation and must not be confused with it. It models the state
+   * a token reaches on its own — superseded by rotation, or simply no longer
+   * accepted — while the (user, project) grant behind it, and any newer token
+   * issued from that grant, remain perfectly alive. It exists so a test can
+   * distinguish "this token is dead" from "this authorization is gone", which is
+   * exactly the inference `invalid_token` must never be used to make.
+   */
+  invalidateToken(token: string): void;
   isTokenValid(token: string): boolean;
+  /** True while ANY token for this subject would still be honoured. */
+  isSubjectAuthorized(subject: string): boolean;
   subjectOf(token: string): string | null;
   /** Subjects whose whole project grant has been revoked. */
   revokedSubjects(): string[];
@@ -50,6 +63,7 @@ export interface FakeGoogleProject {
 export function createFakeGoogleProject(): FakeGoogleProject {
   const owner = new Map<string, string>();
   const revoked = new Set<string>();
+  const deadTokens = new Set<string>();
   let counter = 0;
 
   return {
@@ -68,7 +82,11 @@ export function createFakeGoogleProject(): FakeGoogleProject {
       // what we can attribute; an attributable token revokes its whole grant.
       if (subject) revoked.add(subject);
     },
+    invalidateToken(token) {
+      deadTokens.add(token);
+    },
     isTokenValid(token) {
+      if (deadTokens.has(token)) return false;
       const subject = owner.get(token);
       // A token this project never issued is outside the domain we model, so we
       // say nothing about it rather than declaring it dead. Only an
@@ -78,6 +96,7 @@ export function createFakeGoogleProject(): FakeGoogleProject {
       if (!subject) return true;
       return !revoked.has(subject);
     },
+    isSubjectAuthorized: (subject) => !revoked.has(subject),
     subjectOf: (token) => owner.get(token) ?? null,
     revokedSubjects: () => [...revoked],
   };
@@ -220,6 +239,16 @@ export function createFakeGoogle(options: FakeGoogleOptions = {}): FakeGoogle {
     async revoke({ token }) {
       calls.revocations.push(token);
       if (options.revokeError) throw options.revokeError;
+      // A TOKEN GOOGLE NO LONGER RECOGNISES CANNOT REVOKE ANYTHING.
+      //
+      // Presenting a dead token to the revocation endpoint is an error about
+      // that token — `invalid_token` — and it changes nothing. Modelling this is
+      // what lets a test show the difference that matters: after this call the
+      // subject's grant is still authorized, so any code that treated
+      // `invalid_token` as proof the authorization was gone is visibly wrong.
+      if (!project.isTokenValid(token)) {
+        throw new GoogleAdapterError("invalid_token", true);
+      }
       // PROJECT-WIDE. Not "destroy this one token".
       project.revokeToken(token);
     },
