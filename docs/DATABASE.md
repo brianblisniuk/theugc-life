@@ -1271,6 +1271,66 @@ history either.
 **0035 creates no message, thread, attachment, sync or job table, connects no
 mailbox, infers no consent, enrols no user and stores no token.**
 
+## 5i. Gmail OAuth credentials and transactions (migration 0036)
+
+B01 promised that B02 would keep credentials server-side, encrypted, out of any
+generally queryable table, and unreachable by a client. This is where that is
+made true.
+
+### The `private` schema
+**No `usage` grant for `anon`, `authenticated` or `service_role`** — not a narrow
+grant, no path at all. `service_role` is `BYPASSRLS`, so RLS could never have
+protected a credential from the trusted role; withholding schema usage does. The
+only door is a set of SECURITY DEFINER functions in `public`, executable by
+`service_role` alone, each pinning its `search_path` and each one transaction.
+
+### private.gmail_oauth_transactions
+One in-flight authorization: owner-bound, TTL ~10 minutes, **consumed once** by a
+single `delete … returning` scoped to the user, so a replay finds nothing and a
+state started by user A cannot be completed by user B.
+
+`state` and `nonce` are stored as **digests** — the raw values travel in the URL,
+so what we keep recognises them without being able to forge one. The **PKCE
+verifier is encrypted** rather than hashed, because the token exchange needs the
+plaintext back. A `reconnect` target is composite-FK'd to `mail_accounts (id,
+user_id)`, so a caller-supplied account id cannot aim the flow at somebody else's
+mailbox. `return_path` carries a CHECK forbidding absolute and protocol-relative
+values.
+
+### private.gmail_oauth_credentials
+The encrypted refresh token, **one per mailbox** — a replacement supersedes its
+predecessor completely, because keeping the old one would be keeping a live key
+we decided to stop using. Ciphertext, IV, authentication tag and key version are
+stored; the AES-256-GCM key is not, and the database has never seen it.
+
+**Absent on purpose:** access token, ID token, authorization code, raw state, raw
+nonce. An access token lives minutes and belongs in memory; the rest are
+single-use inputs whose job is over.
+
+`provider_refresh_token_expires_at` is NULL when Google did not state one — *not
+stated*, never *never expires*.
+
+The composite FK on `(mail_account_id, user_id)` is B01's provenance spine: the
+credential cannot lose either the mailbox or the human, and cascades with both.
+
+### The RPC surface
+`gmail_oauth_begin` · `gmail_oauth_consume_transaction` ·
+`gmail_connection_persist` · `gmail_grant_private_processing_consent` ·
+`gmail_credential_load` · `gmail_credential_replace` ·
+`gmail_mark_reauth_required` · `gmail_disconnect_finalize` ·
+`gmail_connection_status`.
+
+`gmail_connection_persist` is the atomic landing point after every Google-side
+check has passed. It implements B01's account selection — new identity, reuse a
+live row, never revive a `deleted` one, refuse an identity owned by another user
+without naming them — and stores the credential in the same transaction, so a
+`connected` mailbox with no credential, or a credential under the wrong owner,
+cannot survive. `gmail_credential_load` returns the ENVELOPE, never a token:
+decryption happens in the application.
+
+**0036 connects no mailbox, opens no OAuth transaction, stores no credential and
+infers no consent. It adds no message, thread, attachment, sync or import table.**
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -1595,5 +1655,8 @@ At minimum:
     explicit deletion request distinct from disconnecting, and an RLS posture
     that deliberately gives admin/editor NOTHING. No OAuth credential column
     exists, and the migration connects no mailbox and infers no consent
+22. Gmail OAuth connection, reconnect and disconnect (0036) — the first
+    long-lived secret in the system, and the `private` schema that keeps it out
+    of reach. See §5i
 
 Every migration must be reproducible from an empty database.

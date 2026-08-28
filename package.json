@@ -2,7 +2,7 @@
   "name": "theugc-life",
   "version": "0.0.0",
   "private": true,
-  "description": "theugc.life \u2014 the operating system for travel UGC creators.",
+  "description": "theugc.life — the operating system for travel UGC creators.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -55,6 +55,7 @@
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "exceljs": "^4.4.0",
+    "google-auth-library": "^11.0.2",
     "jszip": "^3.10.1",
     "next": "^15.5.23",
     "papaparse": "^5.5.4",

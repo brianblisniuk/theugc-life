@@ -45,6 +45,11 @@ export function setupDatabase(): Promise<void> {
       try {
         await client.query("drop schema if exists public cascade");
         await client.query("drop schema if exists auth cascade");
+        // `private` (0036) holds the Gmail OAuth credential and transaction
+        // tables. Dropping only `public` would leave them behind with their
+        // foreign keys cascaded away, and the next migration run would fail on
+        // "relation already exists" — a reset has to reset the whole schema.
+        await client.query("drop schema if exists private cascade");
         await client.query("create schema public");
         await client.query("grant all on schema public to current_user");
 

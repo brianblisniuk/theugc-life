@@ -286,8 +286,8 @@ is B02.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| B01 | **IN PROGRESS** — open PR, not merged | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
-| B02 | GATED | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
+| B01 | **DONE** — PR #33, merge `d4a9e81d` | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
+| B02 | **IN PROGRESS** — open PR, not merged | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
 | B03 | GATED | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
@@ -608,9 +608,31 @@ At this baseline, Phase A is closed at the code gate:
 
 The open implementation block is:
 
-> **B01 — mail account, consent and the private communication boundary. Open PR,
-> not merged, external audit amendments #1, #2 and #3 applied, awaiting re-audit
-> and the human merge gate.**
+> **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR, not merged,
+> awaiting external audit and the human merge gate.**
+
+**B01 is DONE and merged.** PR #33, final audited head
+`699c07b651303406cd4131376c15f62cfb33adf0`, merged as
+`d4a9e81d9f7d800d8b17ff5af7e85544fd0b883c`, with 1,843 tests passing at the
+audited head. It passed on the third external audit amendment; what it
+established, and what B02 now builds on:
+
+- the private Gmail plane is isolated from admin/editor **client** access —
+  `is_admin_or_editor()` governs nothing in it;
+- private-processing and network-intelligence consent are **separate**, the
+  second explicit, revocable and default NOT granted;
+- the **latest consent event dominates**, ordered by a database-owned ordinal
+  rather than a caller-supplied timestamp;
+- a durable Google provider identity has **exactly one app owner**, held in its
+  own registry spanning a mailbox's whole history;
+- after a terminal deletion the **same owner may reconnect** through a NEW row,
+  inheriting no consent and no history;
+- **cross-owner transfer of a provider identity is refused**, and the ownership
+  reservation is released **only** by full app-user erasure;
+- and B01 implemented **no Gmail OAuth, no token storage and no message table** —
+  which is precisely the gap B02 fills.
+
+B02 does **not** implement email import. Historical import begins at B03.
 
 **Phase A's code gate is closed.** A05 merged as `ed857f0b`, and with it the
 canonical property spine: preview (A04), human decision (A04.5), withdrawal
