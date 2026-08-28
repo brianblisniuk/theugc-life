@@ -1949,6 +1949,47 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #7 (2026-08-28) settled that **an operation that
+spans a network call needs a compare-and-swap on the thing it operated on, and
+that the result of that swap must be checked rather than assumed.**
+
+Disconnect is prepare → revoke at Google → finalize, and the two database steps
+are separate transactions. Amendment #6 made the window between them one in which
+the credential can legitimately CHANGE: a superseded OAuth callback replaces the
+stored token with the fresh one representing a newer grant, precisely so that
+grant can still be revoked. Finalize checked only that a Disconnect was
+outstanding, so an older finalizer could delete a credential it had never sent to
+Google — and with `invalid_token` on the old token, which proves nothing about a
+newer one, the end state was `disconnected` locally, no credential anywhere, and
+the newer grant still live with nothing able to revoke it. That is the state
+amendment #6 existed to make impossible, reached one step further along.
+
+So the unit of a provider operation is now "credential generation G under
+Disconnect intent I", not "something for mailbox A". Finalization compares both
+under the row lock and refuses with `stale_disconnect_intent` or
+`newer_revocation_material`, mutating nothing. A NULL expected generation is
+information — there was nothing to revoke when this was prepared — so a credential
+appearing since is newer material this caller never sent anywhere. A NULL
+expected intent is refused outright. Both parameters are required, so the
+unqualified two-argument finalizer does not exist: `service_role` is a
+capability, not proof that a caller followed the protocol, and this is the third
+time that sentence has had to be enforced rather than written down.
+
+Two consequences worth stating as decisions. The provider's answer applies to the
+token the provider was given, and the database is the only thing that knows
+whether that token is still the one this operation is responsible for — so
+`invalid_token` never overrides the CAS. And "we asked" is not "it happened":
+both callers check the transport error AND the RPC's own result, and neither
+reports a disconnection it did not complete.
+
+The same amendment corrected two user-facing claims. `provider_unavailable` said
+"nothing was changed", which stopped being true when prepare moved before the
+network call — the mailbox is already `disconnecting` and its in-flight OAuth is
+already cancelled; what is missing is Google's confirmation, and the copy now
+says that. And `deletion_in_progress` was falling through to "that mailbox was
+not found", which is a different and misleading thing to tell someone whose
+deletion is running.
+
 B02 external audit amendment #6 (2026-08-28) settled that **a lifecycle fence
 must cover every OAuth flow, including the ones with no target, and that the
 protocol steps are enforced by the database rather than remembered by callers.**

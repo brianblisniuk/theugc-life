@@ -1972,11 +1972,19 @@ begin
      and c.user_id = p_user_id;
 
   if not found then
+    -- THE SNAPSHOT THIS PROVIDER OPERATION IS ABOUT.
+    --
+    -- `disconnect_intent_seq` says WHICH Disconnect, and a NULL
+    -- `credential_generation` says WHICH credential — namely none. That NULL is
+    -- information, not an absence of it: it is what lets finalize refuse if a
+    -- credential appears while this caller is at Google, because such a
+    -- credential is material this operation never sent anywhere.
     return jsonb_build_object(
       'result', 'ok',
       'cancelled_transactions', v_cancelled,
       'disconnect_revision', v_account.disconnect_requested_revision,
       'disconnect_intent_seq', v_account.disconnect_intent_seq,
+      'credential_generation', null,
       'has_credential', false
     );
   end if;
@@ -1986,6 +1994,11 @@ begin
     'cancelled_transactions', v_cancelled,
     'disconnect_revision', v_account.disconnect_requested_revision,
     'disconnect_intent_seq', v_account.disconnect_intent_seq,
+    -- Carried across the network call and required back at finalize. The
+    -- envelope and the generation travel together, exactly as they do for a
+    -- refresh (amendment #2): whatever is derived from a credential names the
+    -- credential it came from.
+    'credential_generation', v_cred.credential_generation,
     'has_credential', true,
     'refresh_token_ciphertext', v_cred.refresh_token_ciphertext,
     'refresh_token_iv', v_cred.refresh_token_iv,
@@ -1996,7 +2009,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 4h. DISCONNECT FINALIZE — local half of a revocation that already succeeded
+-- 4h. DISCONNECT FINALIZE — compare-and-swap across the provider network gap
 -- ---------------------------------------------------------------------------
 -- Called ONLY after Google has confirmed the token is gone or already invalid.
 -- Idempotent on purpose: if the previous attempt revoked at Google and then
@@ -2006,9 +2019,41 @@ $$;
 -- Disconnect is not delete. The mailbox row, the consent history, the ownership
 -- reservation and any Gmail-derived workspace data all remain — B01 is explicit
 -- that stopping access and removing data are different acts.
+--
+-- THE NETWORK GAP IS A CONCURRENCY WINDOW, AND IT NEEDS A CAS.
+--
+-- `prepare` and `finalize` are separate transactions with a Google round-trip
+-- between them, and amendment #6 made that window one in which the credential
+-- can legitimately CHANGE: a superseded OAuth callback replaces the stored
+-- token with the FRESH one representing a newer grant, precisely so that grant
+-- can still be revoked. Checking only `connection_state = 'disconnecting'` let
+-- an older finalizer delete a credential it had never revoked. Reproduced:
+--
+--   prepare loads R1/G1
+--   -> superseded callback stores R2/G2, its own revoke fails transiently
+--   -> the old revoke(R1) returns invalid_token (true of R1, and no evidence at
+--      all about R2)
+--   -> finalize deletes R2 and writes `disconnected`
+--
+--   LOCAL disconnected · CREDENTIAL none · GOOGLE grant from R2 STILL ACTIVE
+--   · RETRY impossible
+--
+-- which is the exact state amendment #6 existed to make impossible.
+--
+-- So the provider operation is no longer "I revoked something for mailbox A".
+-- It is "I attempted to revoke credential generation G under Disconnect intent
+-- I", and only a caller whose snapshot still matches may finalize. Same
+-- principle B02 already applies to refresh rotation, `invalid_grant` handling
+-- and the authorization revision — now applied to the one gap that had none.
+--
+-- The two expectations are REQUIRED parameters, with no defaults, so the old
+-- two-argument call does not resolve to this function. A finalizer with no
+-- snapshot is not a finalizer.
 create or replace function public.gmail_disconnect_finalize(
   p_user_id uuid,
-  p_mail_account_id uuid
+  p_mail_account_id uuid,
+  p_expected_disconnect_intent_seq bigint,
+  p_expected_credential_generation bigint
 )
 returns jsonb
 language plpgsql
@@ -2017,6 +2062,7 @@ set search_path = public, private, pg_temp
 as $$
 declare
   v_account public.mail_accounts%rowtype;
+  v_current_generation bigint;
 begin
   select m.* into v_account
     from public.mail_accounts m
@@ -2072,6 +2118,50 @@ begin
                               'connection_state', v_account.connection_state);
   end if;
 
+  -- CAS 1 — IS THIS STILL THE DISCONNECT THIS CALLER PREPARED?
+  --
+  -- Two Disconnect attempts can overlap: D1 prepares intent I1, the human
+  -- presses the button again, D2 prepares I2, and D1's provider call returns
+  -- last. Without this, whichever network response arrived last would be
+  -- authoritative — D1 finalizing a decision it knows nothing about, on
+  -- credential material it never loaded. A NULL expectation is not a wildcard:
+  -- a caller with no snapshot has not proved it prepared anything.
+  if p_expected_disconnect_intent_seq is null
+     or v_account.disconnect_intent_seq is distinct from p_expected_disconnect_intent_seq then
+    return jsonb_build_object('result', 'stale_disconnect_intent',
+                              'connection_state', v_account.connection_state);
+  end if;
+
+  -- CAS 2 — IS THE CREDENTIAL STILL THE ONE THIS CALLER TRIED TO REVOKE?
+  --
+  -- The provider's answer is about the token that was PRESENTED to it. It says
+  -- nothing about a token that replaced it while we were waiting, and
+  -- `invalid_token` least of all — amendment #6 settled that. The database is
+  -- what knows whether the generation this Disconnect is responsible for is
+  -- still the generation on the row.
+  select c.credential_generation into v_current_generation
+    from private.gmail_oauth_credentials c
+   where c.mail_account_id = p_mail_account_id;
+
+  if p_expected_credential_generation is null then
+    -- A no-credential Disconnect. The NULL means something: there was nothing
+    -- to revoke when this operation was prepared. A credential appearing since
+    -- is newer material this caller never sent to Google.
+    if v_current_generation is not null then
+      return jsonb_build_object('result', 'newer_revocation_material',
+                                'connection_state', v_account.connection_state,
+                                'credential_generation', v_current_generation);
+    end if;
+  elsif v_current_generation is null
+        or v_current_generation <> p_expected_credential_generation then
+    return jsonb_build_object('result', 'newer_revocation_material',
+                              'connection_state', v_account.connection_state,
+                              'credential_generation', v_current_generation);
+  end if;
+
+  -- Both expectations hold: this caller revoked the credential that is still
+  -- here, under the Disconnect that is still current. Only now may it be
+  -- destroyed and the state moved.
   delete from private.gmail_oauth_credentials where mail_account_id = p_mail_account_id;
 
   update public.mail_accounts
@@ -2146,6 +2236,7 @@ set search_path = public, private, pg_temp
 as $$
 declare
   v_account public.mail_accounts%rowtype;
+  v_generation bigint;
 begin
   if p_user_id is null or coalesce(btrim(p_provider_account_subject), '') = '' then
     raise exception 'gmail_record_superseded_disconnect_credential requires a user and a verified provider subject'
@@ -2190,7 +2281,8 @@ begin
      refresh_token_auth_tag, encryption_key_version)
   values
     (p_mail_account_id, p_user_id, p_refresh_ciphertext, p_refresh_iv,
-     p_refresh_auth_tag, p_key_version);
+     p_refresh_auth_tag, p_key_version)
+  returning credential_generation into v_generation;
 
   -- BACK TO `disconnecting` IF IT HAD ALREADY BEEN FINALIZED. The Disconnect
   -- reported completion on the evidence it had; this callback is newer evidence
@@ -2206,9 +2298,18 @@ begin
     returning * into v_account;
   end if;
 
+  -- THE SNAPSHOT THE CALLBACK MUST FINALIZE UNDER.
+  --
+  -- The callback is about to revoke the token it just stored, so it needs the
+  -- same two facts a Disconnect carries across its own network gap: which
+  -- credential it is responsible for, and which Disconnect it is acting under.
+  -- Without them it would have to call an unqualified finalizer — which is the
+  -- defect this amendment exists to remove, not a shortcut it may keep.
   return jsonb_build_object(
     'result', 'ok',
     'connection_state', v_account.connection_state,
+    'credential_generation', v_generation,
+    'disconnect_intent_seq', v_account.disconnect_intent_seq,
     'mail_account_id', p_mail_account_id
   );
 end;
@@ -2273,7 +2374,7 @@ begin
     'public.gmail_credential_currentness(uuid,bigint)',
     'public.gmail_mark_reauth_required(uuid,bigint)',
     'public.gmail_disconnect_prepare(uuid,uuid)',
-    'public.gmail_disconnect_finalize(uuid,uuid)',
+    'public.gmail_disconnect_finalize(uuid,uuid,bigint,bigint)',
     'public.gmail_record_superseded_disconnect_credential(uuid,uuid,text,bigint,text,text,text,text)',
     'public.gmail_connection_status(uuid)'
   ] loop

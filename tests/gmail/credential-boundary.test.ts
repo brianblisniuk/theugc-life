@@ -98,7 +98,7 @@ d("B02 credential boundary (0036)", () => {
         "public.gmail_credential_currentness(uuid,bigint)",
         "public.gmail_mark_reauth_required(uuid,bigint)",
         "public.gmail_disconnect_prepare(uuid,uuid)",
-        "public.gmail_disconnect_finalize(uuid,uuid)",
+        "public.gmail_disconnect_finalize(uuid,uuid,bigint,bigint)",
         "public.gmail_record_superseded_disconnect_credential(uuid,uuid,text,bigint,text,text,text,text)",
         "public.gmail_connection_status(uuid)",
       ];

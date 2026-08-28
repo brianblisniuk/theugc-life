@@ -84,3 +84,22 @@ export function canDisconnect(account: Pick<GmailAccountStatus, "connectionState
 export function canConnectAnother(configured: boolean, accountCount: number): boolean {
   return configured && accountCount > 0;
 }
+
+/**
+ * THE ONE CALLBACK OUTCOME THAT NEEDS A WORD OF ITS OWN.
+ *
+ * `disconnect_incomplete` means an OAuth flow was superseded by the person's
+ * Disconnect, the grant it obtained had to be revoked, and that revocation did
+ * not succeed. The mailbox sits in `disconnecting` holding the token needed to
+ * retry — a real, resolvable situation that the state line alone reads as a
+ * transient hiccup.
+ *
+ * Everything else the callback can report is already visible in the mailbox's
+ * own state, and the state is the authority. This deliberately does not grow
+ * into a status taxonomy: a second, weaker source of truth about a connection is
+ * how the two end up disagreeing.
+ */
+export function disconnectNoticeFor(status: string | null | undefined): string | null {
+  if (status !== "disconnect_incomplete") return null;
+  return "Google has not confirmed the disconnection yet. Nothing is being processed — try Disconnect again to finish it.";
+}

@@ -176,6 +176,38 @@ export async function startGmailAuthorization(
   };
 }
 
+/**
+ * The ONE way to finalize a Disconnect, used by both callers.
+ *
+ * `prepare` and `finalize` sit either side of a Google round-trip, and the
+ * credential can legitimately change during it — a superseded callback replaces
+ * the stored token with a fresher one on purpose. So finalization is a
+ * compare-and-swap: it names the Disconnect intent it prepared under and the
+ * credential generation it actually sent to Google, and the database refuses if
+ * either has moved.
+ *
+ * The result is returned rather than ignored. Both the transport error and the
+ * RPC's own answer are checked, because "we asked" is not "it happened" — the
+ * same lesson amendment #1 settled for rotated refresh tokens.
+ */
+async function finalizeDisconnect(
+  deps: GmailDeps,
+  userId: string,
+  mailAccountId: string,
+  expectedDisconnectIntentSeq: number | null,
+  expectedCredentialGeneration: number | null,
+): Promise<{ ok: boolean; result: string }> {
+  const { data, error } = await deps.db.rpc("gmail_disconnect_finalize", {
+    p_user_id: userId,
+    p_mail_account_id: mailAccountId,
+    p_expected_disconnect_intent_seq: expectedDisconnectIntentSeq,
+    p_expected_credential_generation: expectedCredentialGeneration,
+  });
+  if (error) return { ok: false, result: "transport_error" };
+  const result = ((data ?? {}) as { result?: string }).result ?? "unknown";
+  return { ok: result === "ok", result };
+}
+
 export type CallbackOutcome =
   | { result: "connected"; mailAccountId: string; returnPath: string | null }
   | { result: "consent_required"; mailAccountId: string; returnPath: string | null }
@@ -400,7 +432,11 @@ export async function completeGmailAuthorization(
   const storeSupersededRetryMaterial = async (
     mailAccountId: string,
     subject: string,
-  ): Promise<"stored" | "refused" | "failed"> => {
+  ): Promise<
+    | { outcome: "stored"; credentialGeneration: number; disconnectIntentSeq: number }
+    | { outcome: "refused" }
+    | { outcome: "failed" }
+  > => {
     const { data, error: storeError } = await deps.db.rpc(
       "gmail_record_superseded_disconnect_credential",
       {
@@ -414,8 +450,20 @@ export async function completeGmailAuthorization(
         p_key_version: sealed.keyVersion,
       },
     );
-    if (storeError) return "failed";
-    return ((data ?? {}) as { result?: string }).result === "ok" ? "stored" : "refused";
+    if (storeError) return { outcome: "failed" };
+    const stored = (data ?? {}) as {
+      result?: string;
+      credential_generation?: number | string | null;
+      disconnect_intent_seq?: number | string | null;
+    };
+    if (stored.result !== "ok") return { outcome: "refused" };
+    // The snapshot this callback must finalize under. It revoked THIS
+    // generation, under THIS Disconnect, and finalize will accept nothing else.
+    return {
+      outcome: "stored",
+      credentialGeneration: Number(stored.credential_generation),
+      disconnectIntentSeq: Number(stored.disconnect_intent_seq),
+    };
   };
 
   // OFFLINE ACCESS OR NOTHING. B03 syncs while the human is away, so a
@@ -553,7 +601,7 @@ export async function completeGmailAuthorization(
       // makes revoking wrong — a newer successful Reconnect above all — so the
       // token is discarded and Google is left alone.
       const stored = await storeSupersededRetryMaterial(mailAccountId, identity.subject);
-      if (stored === "refused") {
+      if (stored.outcome === "refused") {
         discardWithoutRevoking();
         return { result: "state_changed", returnPath };
       }
@@ -564,7 +612,7 @@ export async function completeGmailAuthorization(
         // The grant is still live and the token that can remove it is stored.
         // If the store itself failed there is nothing to retry with, which is a
         // worse outcome and is reported as the same honest one: not disconnected.
-        if (stored === "failed") {
+        if (stored.outcome === "failed") {
           console.warn("[gmail] superseded grant could not be revoked or retained", {
             mail_account_id: mailAccountId,
           });
@@ -573,11 +621,30 @@ export async function completeGmailAuthorization(
       }
 
       // Revoked — or proven unusable. Finish the Disconnect the human asked for
-      // rather than leaving the mailbox sitting in `disconnecting`.
-      await deps.db.rpc("gmail_disconnect_finalize", {
-        p_user_id: input.userId,
-        p_mail_account_id: mailAccountId,
-      });
+      // rather than leaving the mailbox sitting in `disconnecting`, and finish it
+      // UNDER THE SNAPSHOT THIS CALLBACK ACTUALLY REVOKED: the generation it
+      // stored, under the Disconnect that was current when it stored it. If the
+      // store failed there is no snapshot, so there is nothing this callback is
+      // entitled to finalize — an unqualified finalizer is exactly the defect
+      // amendment #7 removes.
+      if (stored.outcome === "failed") {
+        return { result: "disconnect_incomplete", mailAccountId, returnPath };
+      }
+
+      const finalized = await finalizeDisconnect(
+        deps,
+        input.userId,
+        mailAccountId,
+        stored.disconnectIntentSeq,
+        stored.credentialGeneration,
+      );
+      if (!finalized.ok) {
+        // Something newer arrived between the revoke and the finalize. The
+        // provider side of THIS grant is done, but the mailbox is not ours to
+        // close: whatever replaced our material is now responsible for it, and
+        // destroying it here is precisely what this amendment forbids.
+        return { result: "disconnect_incomplete", mailAccountId, returnPath };
+      }
       return { result: "state_changed", returnPath };
     }
     case "reconnect_required":
@@ -687,6 +754,10 @@ export async function disconnectGmailAccount(
   const loaded = (data ?? {}) as {
     result?: string;
     has_credential?: boolean;
+    // THE SNAPSHOT THIS PROVIDER OPERATION IS ABOUT, carried across the network
+    // call and required back at finalize.
+    disconnect_intent_seq?: number | string | null;
+    credential_generation?: number | string | null;
     refresh_token_ciphertext?: string;
     refresh_token_iv?: string;
     refresh_token_auth_tag?: string;
@@ -698,6 +769,16 @@ export async function disconnectGmailAccount(
   if (loaded.result === "deletion_in_progress") return { result: "deletion_in_progress" };
   if (loaded.result === "already_disconnected") return { result: "disconnected" };
   if (loaded.result !== "ok") return { result: "provider_unavailable" };
+
+  // WHAT THIS PROVIDER OPERATION IS ABOUT: this Disconnect, and this credential.
+  // A NULL generation is information rather than the absence of it — it says
+  // there was nothing to revoke when the operation was prepared, so a credential
+  // appearing before finalization is newer material this call never sent to
+  // Google.
+  const expectedIntentSeq =
+    loaded.disconnect_intent_seq == null ? null : Number(loaded.disconnect_intent_seq);
+  const expectedGeneration =
+    loaded.credential_generation == null ? null : Number(loaded.credential_generation);
 
   if (loaded.has_credential) {
     let refreshToken: string;
@@ -750,19 +831,29 @@ export async function disconnectGmailAccount(
   // Reached when revocation succeeded, when the token was already invalid, and
   // when a previous attempt already removed the credential. All three mean the
   // same thing locally, which is what makes this idempotent.
-  const { data: finalized, error: finalizeError } = await deps.db.rpc("gmail_disconnect_finalize", {
-    p_user_id: input.userId,
-    p_mail_account_id: input.mailAccountId,
-  });
-  if (finalizeError) return { result: "provider_unavailable" };
+  //
+  // AND ALL THREE ARE CLAIMS ABOUT THE CREDENTIAL WE LOADED. Finalization names
+  // it, so the database can refuse if the world moved while we were at Google —
+  // a superseded callback storing a newer token, or a second Disconnect
+  // recording a newer intent. Without that, whichever network response returned
+  // last would win, and an older Disconnect could destroy retry material for a
+  // grant it never touched.
+  const finalized = await finalizeDisconnect(
+    deps,
+    input.userId,
+    input.mailAccountId,
+    expectedIntentSeq,
+    expectedGeneration,
+  );
 
-  const outcome = (finalized ?? {}) as { result?: string };
-  if (outcome.result === "not_found") return { result: "not_found" };
-  if (outcome.result === "deletion_in_progress") return { result: "deletion_in_progress" };
-  // `prepare_required` means the mailbox left `disconnecting` between our
-  // prepare and our finalize — a concurrent decision won. Reporting
-  // `disconnected` would be claiming an outcome this call did not produce.
-  if (outcome.result !== "ok") return { result: "provider_unavailable" };
+  if (finalized.result === "not_found") return { result: "not_found" };
+  if (finalized.result === "deletion_in_progress") return { result: "deletion_in_progress" };
+  // Everything else that is not `ok` — `stale_disconnect_intent`,
+  // `newer_revocation_material`, `prepare_required`, a transport error — means
+  // this call did not complete the Disconnect, whatever Google said about the
+  // token it was given. Reporting `disconnected` would be claiming an outcome
+  // this operation did not produce, and would invite the UI to say so.
+  if (!finalized.ok) return { result: "provider_unavailable" };
   return { result: "disconnected" };
 }
 

@@ -517,7 +517,10 @@ ordering as prepare/revoke/finalize and for the same reason:
 2. the revocation is attempted with that fresh token;
 3. on success — or on `invalid_token` **for that same token**, which means the
    grant's newest artifact is already unusable — `gmail_disconnect_finalize`
-   completes the Disconnect;
+   completes the Disconnect, **under the generation this callback stored and the
+   intent it stored it under**. If something newer arrived in between, finalize
+   refuses and the callback respects the refusal rather than closing a mailbox
+   that is no longer its responsibility;
 4. on any other failure the mailbox stays `disconnecting` with the retry
    material, and the callback answers `disconnect_incomplete`. The human is not
    told they are disconnected, because they are not. A later Disconnect retry
@@ -700,6 +703,55 @@ only `disconnecting` (→ `disconnected`) and is idempotent on `disconnected` (�
 `deletion_pending` with `deletion_in_progress`; `deleted` with
 `account_retired`.
 
+**And it REQUIRES the snapshot it prepared under.** The state gate alone answers
+"is a Disconnect outstanding?" — not "is this *my* Disconnect, on the credential
+*I* sent to Google?". Those became different questions the moment a superseded
+callback was allowed to replace the stored token mid-Disconnect, and the
+difference was reachable:
+
+```
+prepare loads R1/G1
+  -> superseded callback stores R2/G2; its own revoke fails transiently
+  -> revoke(R1) returns invalid_token — true of R1, no evidence about R2
+  -> finalize deletes R2 and writes `disconnected`
+
+LOCAL disconnected · CREDENTIAL none · GOOGLE grant from R2 ACTIVE · RETRY impossible
+```
+
+So the provider operation is no longer *"I revoked something for mailbox A"*. It
+is **"I attempted to revoke credential generation G under Disconnect intent I"**,
+and finalization is a compare-and-swap on both:
+
+| condition | refusal |
+|---|---|
+| `disconnect_intent_seq` ≠ the one prepared under | `stale_disconnect_intent` |
+| the credential is not the generation that was sent to Google | `newer_revocation_material` |
+| a credential appeared after a **no-credential** prepare (expected generation NULL) | `newer_revocation_material` |
+
+A NULL expected generation is information, not a wildcard: it says there was
+nothing to revoke when this operation was prepared. A NULL expected intent is
+refused outright — a caller with no snapshot has not proved it prepared anything.
+Both parameters are **required**, so the old two-argument call does not resolve:
+an unqualified finalizer is not a finalizer.
+
+Only an exact match may delete the credential, empty the scopes and write
+`disconnected`. Everything else changes nothing and leaves the mailbox in
+`disconnecting`, still holding the retry material for whatever grant may still
+be alive.
+
+**`invalid_token` does not override the CAS.** It proves the token *presented to
+Google* is unusable — that is the whole of its meaning (§10). Whether the
+generation it refers to is still the one this Disconnect is responsible for is a
+question only the database can answer, and the CAS is where it answers it.
+
+**Both callers check the result.** `disconnectGmailAccount` and the superseded
+callback each carry their own snapshot and each treat anything but `ok` —
+including a transport error — as "this call did not complete the Disconnect".
+Neither reports success it did not produce, and neither destroys material it did
+not revoke. The superseded callback's snapshot comes from
+`gmail_record_superseded_disconnect_credential`, which returns the generation it
+stored and the intent it stored it under.
+
 Without that gate the last step accepted almost any live mailbox, so a trusted
 caller could go straight from `connected` to `disconnected` — credential
 deleted, scopes emptied, the human told they had disconnected — with no durable
@@ -727,8 +779,20 @@ longer usable, and both allow finalization. This is asserted in the orchestratio
 layer, not only inside the adapter, so the guarantee does not depend on which
 adapter is wired in.
 
-Any other provider failure returns a controlled error and changes nothing. The
-account is **not** falsely marked disconnected.
+Any other provider failure returns a controlled error, and the account is **not**
+falsely marked disconnected.
+
+It is no longer true that *nothing changed*, and the UI must not say so. Prepare
+runs before the network call by design: the mailbox is already `disconnecting`,
+its in-flight OAuth flows are already cancelled, and no processing happens from
+that state. What has not happened is Google's confirmation. The copy says that —
+"Google has not confirmed the disconnection yet. Gmail processing is stopped
+while we finish disconnecting it — try Disconnect again." — because "nothing was
+changed" would be a smaller lie than "disconnected" and still a lie.
+
+`deletion_in_progress` is a distinct outcome and gets a distinct message. It used
+to fall through to "that mailbox was not found", which is a different and
+misleading thing to tell someone whose deletion request is running right now.
 
 Disconnect revokes whatever credential exists, including one belonging to a
 mailbox that never reached `connected`. A `consent_required` mailbox holds a LIVE
@@ -919,6 +983,13 @@ made:
   invite the human to reauthorize the very grant a disconnect is in the middle of
   removing;
 - **the consent prompt** follows the STATE (§11a), not the consent projection;
+- **an unfinished Disconnect gets a line of its own.** `disconnect_incomplete`
+  is the one callback outcome the mailbox state under-reports: the row reads
+  `disconnecting`, which looks transient, when in fact a live Google grant is
+  waiting on a retry. Every other outcome is already visible in the state, and
+  the state is the authority — this deliberately does not grow into a status
+  taxonomy, because a second source of truth about a connection is how the two
+  end up disagreeing;
 - **Disconnect** appears for `pending_authorization`, `consent_required`,
   `connected`, `reauth_required` and `disconnecting`. It disappears once access
   has actually stopped (`disconnected`) and on the deletion states, where the

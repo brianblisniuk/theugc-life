@@ -254,13 +254,21 @@ d("amendment #4 — the revision is reserved, not merely inspected", () => {
       // operation — `prepare` is what takes the lock and waits here.
       const waiting = (async () => {
         await lifecycle.query("begin");
-        await lifecycle.query("select public.gmail_disconnect_prepare($1::uuid, $2::uuid)", [
-          userId,
-          mailAccountId,
-        ]);
-        const finalize = await lifecycle.query(
-          "select public.gmail_disconnect_finalize($1::uuid, $2::uuid) as r",
+        const prepared = await lifecycle.query(
+          "select public.gmail_disconnect_prepare($1::uuid, $2::uuid) as r",
           [userId, mailAccountId],
+        );
+        // Amendment #7: finalization names the Disconnect it prepared under and
+        // the credential generation it is responsible for. Here both come from
+        // the prepare that just ran inside this same transaction, so the CAS
+        // holds and the ordering — not the snapshot — is what is under test.
+        const snapshot = prepared.rows[0].r as {
+          disconnect_intent_seq: string;
+          credential_generation: string | null;
+        };
+        const finalize = await lifecycle.query(
+          "select public.gmail_disconnect_finalize($1::uuid, $2::uuid, $3::bigint, $4::bigint) as r",
+          [userId, mailAccountId, snapshot.disconnect_intent_seq, snapshot.credential_generation],
         );
         await lifecycle.query("commit");
         return finalize;

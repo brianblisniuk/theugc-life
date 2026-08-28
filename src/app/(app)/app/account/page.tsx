@@ -8,8 +8,16 @@ import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
 
 export const metadata: Metadata = { title: "Account" };
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requireUser("/app/account");
+  // The OAuth callback redirects back here with its outcome. Only the one
+  // outcome the mailbox state cannot express on its own is rendered; see
+  // `disconnectNoticeFor`.
+  const gmailStatus = (await searchParams).gmail;
   const configured = isGmailOAuthConfigured();
   // Only this user's mailboxes: the RPC filters on the session-derived id, and
   // the page never accepts one from the request.
@@ -29,7 +37,11 @@ export default async function AccountPage() {
         </div>
       </dl>
 
-      <GmailConnectionPanel accounts={gmailAccounts} configured={configured} />
+      <GmailConnectionPanel
+        accounts={gmailAccounts}
+        configured={configured}
+        callbackStatus={typeof gmailStatus === "string" ? gmailStatus : null}
+      />
 
       <p className="text-sm text-muted">
         Need to change your password?{" "}

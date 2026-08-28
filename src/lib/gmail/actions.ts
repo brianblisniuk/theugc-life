@@ -92,9 +92,24 @@ export async function disconnectGmailAction(
       // We could not confirm with Google that the token is dead, so we do not
       // claim it is. Saying "disconnected" here would be the one lie this whole
       // flow is built to avoid.
+      //
+      // Nor is "nothing was changed" true any more, and it used to be said here.
+      // The prepare step runs BEFORE the network call by design: the mailbox is
+      // already `disconnecting`, its in-flight OAuth flows are already cancelled,
+      // and no processing happens from that state. What has not happened is the
+      // confirmation from Google.
       return {
         status: "error",
-        message: "Google could not confirm the disconnection. Nothing was changed — try again.",
+        message:
+          "Google has not confirmed the disconnection yet. Gmail processing is stopped while we finish disconnecting it — try Disconnect again.",
+      };
+    case "deletion_in_progress":
+      // A distinct outcome that used to fall through to "not found", which is a
+      // different and misleading thing to tell someone whose deletion request is
+      // running right now.
+      return {
+        status: "error",
+        message: "A deletion request is already in progress for this Gmail account.",
       };
     case "not_configured":
       return { status: "error", message: "Gmail is not configured on this deployment." };

@@ -16,6 +16,7 @@ import {
   canConnectAnother,
   canDisconnect,
   canReconnect,
+  disconnectNoticeFor,
   needsPrivateProcessingConsent,
 } from "@/lib/gmail/panel-actions";
 
@@ -115,10 +116,14 @@ function DisconnectButton({ mailAccountId }: { mailAccountId: string }) {
 export function GmailConnectionPanel({
   accounts,
   configured,
+  callbackStatus,
 }: {
   accounts: GmailAccountStatus[];
   configured: boolean;
+  /** The `gmail` query parameter the OAuth callback redirects with, if any. */
+  callbackStatus?: string | null;
 }) {
+  const notice = disconnectNoticeFor(callbackStatus);
   return (
     <section className="space-y-4 rounded-[var(--radius-app)] border border-border bg-surface p-5">
       <div>
@@ -128,6 +133,15 @@ export function GmailConnectionPanel({
           Gmail data stays in your own workspace.
         </p>
       </div>
+
+      {/* An unfinished Disconnect is the one callback outcome the state line
+          alone under-reports: the mailbox reads `disconnecting`, which looks
+          transient, when in fact a live Google grant is waiting on a retry. */}
+      {notice ? (
+        <p role="status" className="text-sm text-danger">
+          {notice}
+        </p>
+      ) : null}
 
       {!configured ? (
         <p className="text-sm text-muted">Gmail is not configured on this deployment.</p>

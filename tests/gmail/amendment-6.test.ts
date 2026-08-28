@@ -432,10 +432,10 @@ d("amendment #6 — finalize requires a prepared Disconnect", () => {
     const project = createFakeGoogleProject();
     const { userId, mailAccountId, subject } = await connectedIn(project, "a6-9");
 
-    const res = await client.query("select public.gmail_disconnect_finalize($1, $2) as r", [
-      userId,
-      mailAccountId,
-    ]);
+    const res = await client.query(
+      "select public.gmail_disconnect_finalize($1, $2, null::bigint, null::bigint) as r",
+      [userId, mailAccountId],
+    );
     expect(res.rows[0].r).toMatchObject({
       result: "prepare_required",
       connection_state: "connected",
@@ -453,10 +453,10 @@ d("amendment #6 — finalize requires a prepared Disconnect", () => {
 
     // `reauth_required` — a live lifecycle, no disconnect intent.
     await expireCredential(mailAccountId);
-    const reauth = await client.query("select public.gmail_disconnect_finalize($1, $2) as r", [
-      userId,
-      mailAccountId,
-    ]);
+    const reauth = await client.query(
+      "select public.gmail_disconnect_finalize($1, $2, null::bigint, null::bigint) as r",
+      [userId, mailAccountId],
+    );
     expect(reauth.rows[0].r).toMatchObject({
       result: "prepare_required",
       connection_state: "reauth_required",
@@ -468,10 +468,10 @@ d("amendment #6 — finalize requires a prepared Disconnect", () => {
     const authorized = await authorize(other, { project });
     const consentId = (authorized.outcome as { mailAccountId: string }).mailAccountId;
     expect(await stateOf(consentId)).toBe("consent_required");
-    const consent = await client.query("select public.gmail_disconnect_finalize($1, $2) as r", [
-      other,
-      consentId,
-    ]);
+    const consent = await client.query(
+      "select public.gmail_disconnect_finalize($1, $2, null::bigint, null::bigint) as r",
+      [other, consentId],
+    );
     expect(consent.rows[0].r).toMatchObject({
       result: "prepare_required",
       connection_state: "consent_required",

@@ -609,8 +609,33 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #6, awaiting re-audit and the human merge
+> merged, on external audit amendment #7, awaiting re-audit and the human merge
 > gate.**
+
+**B02 external audit amendment #7 (2026-08-28)** closed one merge-blocking
+concurrency gap and two result-truth corrections against head `7f41a9a`:
+
+- **Disconnect had no CAS across its provider network gap.** `prepare` and
+  `finalize` are separate transactions, and amendment #6 deliberately allows a
+  superseded callback to replace the stored credential in between. Reproduced:
+  prepare loads R1/G1, the callback stores R2/G2 and its own revoke fails,
+  `revoke(R1)` answers `invalid_token` — true of R1, no evidence about R2 — and
+  finalize deletes R2. Local `disconnected`, no credential, the grant behind R2
+  still ACTIVE, retry impossible. Finalization now names the Disconnect intent it
+  prepared under and the credential generation it actually sent to Google, and
+  refuses with `stale_disconnect_intent` or `newer_revocation_material`
+  otherwise. Both parameters are required, so the unqualified two-argument
+  finalizer no longer exists;
+- **`provider_unavailable` claimed "nothing was changed".** Untrue since prepare
+  moved before the network call: the mailbox is already `disconnecting` and its
+  in-flight OAuth is already cancelled. The copy now says processing is stopped
+  and Google has not confirmed yet;
+- **`deletion_in_progress` fell through to "that mailbox was not found."** It has
+  its own message now.
+
+Both callers check the finalize result — transport error and RPC answer — so
+neither reports a disconnection it did not complete, and neither destroys
+material it did not revoke.
 
 **B02 external audit amendment #6 (2026-08-28)** closed five findings against
 head `967a0fb`, all reproduced first:

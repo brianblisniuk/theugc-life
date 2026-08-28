@@ -545,7 +545,7 @@ d("amendment #5 — a deletion owns the lifecycle while it runs", () => {
     // Called directly, so removing the orchestration check would not quietly
     // open the second door.
     const direct = await client.query(
-      "select public.gmail_disconnect_finalize($1::uuid,$2::uuid) as r",
+      "select public.gmail_disconnect_finalize($1::uuid,$2::uuid,null::bigint,null::bigint) as r",
       [userId, mailAccountId],
     );
     expect((direct.rows[0].r as { result: string }).result).toBe("deletion_in_progress");

@@ -1432,7 +1432,8 @@ the account row is gone, there is nothing left to be coherent with. No
 `gmail_credential_replace` · `gmail_credential_currentness` ·
 `gmail_mark_reauth_required` · `gmail_disconnect_prepare` ·
 `gmail_disconnect_finalize` · `gmail_record_superseded_disconnect_credential` ·
-`gmail_connection_status`.
+`gmail_connection_status`. Thirteen functions; `gmail_disconnect_finalize` takes
+its CAS snapshot, so its identity is `(uuid, uuid, bigint, bigint)`.
 
 `gmail_disconnect_finalize` **requires the prepared state**: only `disconnecting`
 may be consumed (→ `disconnected`), `disconnected` is idempotent, and every other
@@ -1442,6 +1443,29 @@ deleted, scopes emptied — with no durable intent, no in-flight OAuth cancelled
 and nothing said to Google, which is the original provider/local divergence
 rebuilt through the RPC surface. `service_role` is a capability, not proof that a
 caller followed the protocol.
+
+**It also requires the snapshot the caller prepared under**, because `prepare`
+and `finalize` are separate transactions with a Google round-trip between them
+and the credential can legitimately change during it — a superseded callback
+replaces the stored token with the fresher one on purpose. `p_expected_disconnect_intent_seq`
+and `p_expected_credential_generation` are REQUIRED parameters, so the old
+two-argument call does not resolve, and both are compared under the row lock:
+
+| condition | refusal |
+|---|---|
+| the mailbox's `disconnect_intent_seq` is not the one prepared under, or is NULL | `stale_disconnect_intent` |
+| the stored generation is not the one sent to Google | `newer_revocation_material` |
+| a credential exists after a NULL (no-credential) expectation | `newer_revocation_material` |
+
+Reproduced without it: prepare loads R1/G1, a superseded callback stores R2/G2
+and its own revoke fails transiently, `revoke(R1)` answers `invalid_token` — true
+of R1 and no evidence about R2 — and finalize deletes R2. Local `disconnected`,
+no credential, and the grant behind R2 still active with nothing left to revoke
+it. The provider's answer is about the token it was given; only the database
+knows whether that is still the credential this Disconnect is responsible for.
+`gmail_record_superseded_disconnect_credential` returns the generation it stored
+and the intent it stored it under, so the callback finalizes under its own
+snapshot rather than an unqualified one.
 
 `gmail_record_superseded_disconnect_credential` is the durable half of the one
 revocation B02 performs on a refused callback. Revoking a superseded grant is a
