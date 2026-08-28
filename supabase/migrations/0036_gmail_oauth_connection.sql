@@ -32,6 +32,57 @@
 -- Migrations 0001-0035 are unchanged.
 
 -- ===========================================================================
+-- 0. FAIL BEFORE CHOICE
+-- ===========================================================================
+-- This migration installs an invariant it cannot retroactively satisfy: from
+-- here on, a `connected` mailbox holds exactly one Gmail refresh credential.
+-- Every row that exists BEFORE this file runs has zero, because the table that
+-- would hold one is created below.
+--
+-- A constraint trigger governs writes, so such a row would sit there — connected
+-- according to the database, unreadable in fact — until something happened to
+-- touch it. The migration would report success while the property it claims to
+-- establish was already false. That is not an invariant; it is a hope with a
+-- trigger attached.
+--
+-- B02 cannot invent a Google refresh token for a row B01 created, so there is no
+-- honest automatic repair. The four dishonest ones are all refused explicitly:
+-- do not synthesize a credential, do not silently demote the row, do not delete
+-- it, and do not shrug and say the next write will sort it out. Instead the
+-- migration REFUSES TO INSTALL, names the rows, and hands the decision to a
+-- human who knows what those mailboxes are.
+--
+-- The expected count is zero, and provably so: B01 shipped schema only — no
+-- route, no action, no function that can create a `mail_accounts` row — so
+-- nothing could have reached `connected` before B02 exists to connect it. That
+-- is exactly why this guard is cheap: it costs one query on a table that should
+-- be empty, and it is the difference between an invariant and a claim.
+do $$
+declare
+  v_connected bigint;
+  v_sample text;
+begin
+  if to_regclass('public.mail_accounts') is null then
+    return;
+  end if;
+
+  select count(*) into v_connected
+    from public.mail_accounts where connection_state = 'connected';
+
+  if v_connected > 0 then
+    select string_agg(id::text, ', ' order by id) into v_sample
+      from (select id from public.mail_accounts
+             where connection_state = 'connected' order by id limit 10) s;
+
+    raise exception
+      '0036 refuses to install: % mail account(s) are already `connected` and cannot hold a Gmail OAuth credential, because this migration is what creates the credential store. B02 cannot attach a refresh token retroactively — the human would have to authorize at Google again — so these rows require explicit operator resolution (disconnect them, or retire them under B01''s deletion path) before the credential invariants can be installed. Refusing rather than synthesizing a credential, demoting the row or deleting it. First rows: %',
+      v_connected, coalesce(v_sample, 'none')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+end;
+$$;
+
+-- ===========================================================================
 -- 1. THE PRIVATE SCHEMA — NOT REACHABLE FROM ANY CLIENT ROLE
 -- ===========================================================================
 create schema if not exists private;
@@ -198,6 +249,11 @@ comment on table private.gmail_oauth_transactions is
 -- ID token, the raw state and the raw nonce. An access token lives minutes and
 -- belongs in memory; persisting it would multiply the blast radius of this table
 -- for no benefit. The others are single-use inputs whose job is over.
+create sequence if not exists private.gmail_credential_generation_seq;
+
+comment on sequence private.gmail_credential_generation_seq is
+  'B02: the credential concurrency token. Never reissues a number, so a generation identifies one credential for the life of the database even across delete-and-recreate on reconnection.';
+
 create table private.gmail_oauth_credentials (
   -- One credential per mailbox. Not a history: a replaced refresh token
   -- supersedes its predecessor completely, and keeping the old one would be
@@ -210,8 +266,39 @@ create table private.gmail_oauth_credentials (
   refresh_token_auth_tag text not null check (length(refresh_token_auth_tag) > 0),
   encryption_key_version text not null check (length(btrim(encryption_key_version)) > 0),
 
-  -- Google returns this only sometimes. NULL means "not stated", never "never
-  -- expires" — the unknown-vs-zero distinction this codebase keeps everywhere.
+  -- THE CONCURRENCY TOKEN.
+  --
+  -- A refresh is: load the credential, call Google, write the result. The middle
+  -- step is a network round trip, and in that gap another worker can rotate the
+  -- token and the human can disconnect. Writing back by `mail_account_id` alone
+  -- makes whatever arrives last authoritative regardless of what it was derived
+  -- from, so a slow worker can overwrite a newer credential with an older one,
+  -- or delete a token it never saw because the one IT held was rejected.
+  --
+  -- So every mutation derived from a loaded credential must name the generation
+  -- it was derived from, and is refused if that is no longer current.
+  --
+  -- Deliberately NOT a timestamp: two writes in the same microsecond compare
+  -- equal, and clock order is not causal order.
+  --
+  -- And deliberately a SEQUENCE rather than a per-row counter starting at 1. A
+  -- credential is deleted and re-created on every disconnect-then-reconnect, so
+  -- a per-row counter would hand the new credential generation 1 again — and a
+  -- worker still holding generation 1 from the PREVIOUS authorization would find
+  -- its stale value matching, which is precisely the collision this column
+  -- exists to make impossible. A sequence never reissues a number, so a
+  -- generation identifies a credential for the lifetime of the database.
+  credential_generation bigint not null
+    default nextval('private.gmail_credential_generation_seq')
+    check (credential_generation > 0),
+
+  -- Google's token endpoint can return `refresh_token_expires_in` for
+  -- time-based access. `google-auth-library@11.0.2` does not surface it on the
+  -- credentials object it hands back, so THE PRODUCTION ADAPTER ALWAYS WRITES
+  -- NULL HERE. The column exists because this is where the value belongs when an
+  -- adapter can read it, and NULL keeps its usual meaning: "not stated", never
+  -- "never expires". B02 does not claim to capture provider refresh-token expiry
+  -- metadata — see §14 of the B02 contract.
   provider_refresh_token_expires_at timestamptz,
 
   created_at timestamptz not null default now(),
@@ -318,6 +405,28 @@ begin
     raise exception
       'mail account % is `%` while a Gmail refresh credential is still stored for it. Every one of these states asserts that no current provider access is held — a surviving credential means the record says access stopped while the key to resume it is still on disk.',
       account_id, account.connection_state
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  -- `pending_authorization` MEANS THE WHOLE SENTENCE, NOT HALF OF IT.
+  --
+  -- 0035 defines it as: a connection was started, the human has NOT completed
+  -- Google's consent screen, and no provider access is represented as current.
+  -- The credential rule above covers "no usable credential". A scope set is the
+  -- other half of "no access represented as current" — `granted_scopes` is what
+  -- the product reads to answer "what may we do with this mailbox?", and a row
+  -- claiming `gmail.readonly` while claiming Google never authorized anything is
+  -- two contradictory answers to that question sitting in one row.
+  --
+  -- `reauth_required` is deliberately NOT subject to this. It retains the last
+  -- known scope set by contract, because that records what the human actually
+  -- authorized and is what a reconnection is trying to restore. The two states
+  -- say different things and must not be collapsed.
+  if account.connection_state = 'pending_authorization'
+     and cardinality(coalesce(account.granted_scopes, '{}')) <> 0 then
+    raise exception
+      'mail account % is `pending_authorization` holding scopes %. That state asserts the human never completed Google''s consent screen and no provider access is current; a granted scope set is the record of an authorization that this state says did not happen.',
+      account_id, public.canonical_scope_set(account.granted_scopes)
       using errcode = 'integrity_constraint_violation';
   end if;
 
@@ -667,6 +776,10 @@ begin
          refresh_token_auth_tag = excluded.refresh_token_auth_tag,
          encryption_key_version = excluded.encryption_key_version,
          provider_refresh_token_expires_at = excluded.provider_refresh_token_expires_at,
+         -- A reconnection replaces the credential, so it advances the
+         -- generation like any other replacement: work in flight against the
+         -- old one is stale from this moment.
+         credential_generation = nextval('private.gmail_credential_generation_seq'),
          updated_at = now();
 
   -- MAY WE CONNECT WITHOUT ASKING AGAIN? Only if a consent this mailbox already
@@ -825,9 +938,13 @@ begin
     return jsonb_build_object('result', 'no_credential');
   end if;
 
+  -- The generation travels WITH the envelope. Everything derived from this
+  -- credential names it when it writes back, so a mutation cannot be applied to
+  -- a credential that is no longer the one it was derived from.
   return jsonb_build_object(
     'result', 'ok',
     'user_id', v_cred.user_id,
+    'credential_generation', v_cred.credential_generation,
     'refresh_token_ciphertext', v_cred.refresh_token_ciphertext,
     'refresh_token_iv', v_cred.refresh_token_iv,
     'refresh_token_auth_tag', v_cred.refresh_token_auth_tag,
@@ -896,6 +1013,7 @@ begin
   return jsonb_build_object(
     'result', 'ok',
     'connection_state', v_state,
+    'credential_generation', v_cred.credential_generation,
     'refresh_token_ciphertext', v_cred.refresh_token_ciphertext,
     'refresh_token_iv', v_cred.refresh_token_iv,
     'refresh_token_auth_tag', v_cred.refresh_token_auth_tag,
@@ -905,10 +1023,22 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 4f. ROTATE — Google occasionally hands back a replacement refresh token
+-- 4f. ROTATE — compare-and-swap, because a refresh spans a network call
 -- ---------------------------------------------------------------------------
+-- Google occasionally hands back a replacement refresh token. Writing it by
+-- `mail_account_id` alone made whichever worker finished last authoritative
+-- regardless of what it had derived its result from: two workers that both
+-- loaded generation 1 could each store their own successor, and the slower one
+-- would silently replace the faster one's newer credential with a value derived
+-- from a token Google had already rotated away.
+--
+-- So the caller names the generation it loaded, and the update happens only if
+-- that is still the current one. It also re-checks that the mailbox is still
+-- connected and still consented: a refresh that began while the human was
+-- permitted must not land after they withdrew.
 create or replace function public.gmail_credential_replace(
   p_mail_account_id uuid,
+  p_expected_generation bigint,
   p_refresh_ciphertext text,
   p_refresh_iv text,
   p_refresh_auth_tag text,
@@ -920,20 +1050,126 @@ language plpgsql
 security definer
 set search_path = public, private, pg_temp
 as $$
+declare
+  v_state text;
+  v_generation bigint;
 begin
+  if p_expected_generation is null then
+    raise exception 'gmail_credential_replace requires the generation the caller loaded'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- Lock the mailbox first, so two concurrent CAS attempts serialize here rather
+  -- than racing on the credential row.
+  select m.connection_state into v_state
+    from public.mail_accounts m where m.id = p_mail_account_id for no key update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  if v_state <> 'connected'
+     or not public.mail_account_has_consent(p_mail_account_id, 'private_gmail_processing') then
+    -- The world moved while we were talking to Google. Storing a fresh
+    -- credential for a mailbox that is no longer connected or no longer
+    -- permitted would re-arm access the human just stopped.
+    return jsonb_build_object('result', 'state_changed', 'connection_state', v_state);
+  end if;
+
+  select c.credential_generation into v_generation
+    from private.gmail_oauth_credentials c
+   where c.mail_account_id = p_mail_account_id;
+
+  if not found then
+    return jsonb_build_object('result', 'no_credential');
+  end if;
+
+  if v_generation <> p_expected_generation then
+    -- Somebody else rotated it. Their credential is newer than anything this
+    -- caller can produce, so it stays.
+    return jsonb_build_object(
+      'result', 'stale_credential',
+      'current_generation', v_generation,
+      'expected_generation', p_expected_generation
+    );
+  end if;
+
   update private.gmail_oauth_credentials
      set refresh_token_ciphertext = p_refresh_ciphertext,
          refresh_token_iv = p_refresh_iv,
          refresh_token_auth_tag = p_refresh_auth_tag,
          encryption_key_version = p_key_version,
          provider_refresh_token_expires_at = p_provider_refresh_expires_at,
+         credential_generation = nextval('private.gmail_credential_generation_seq'),
          updated_at = now()
-   where mail_account_id = p_mail_account_id;
+   where mail_account_id = p_mail_account_id
+     and credential_generation = p_expected_generation
+  returning credential_generation into v_generation;
+
+  if not found then
+    return jsonb_build_object('result', 'stale_credential');
+  end if;
+
+  return jsonb_build_object('result', 'ok', 'credential_generation', v_generation);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4f-bis. CURRENTNESS — the last thing checked before a token is handed over
+-- ---------------------------------------------------------------------------
+-- A refresh spans a network call, and a human can disconnect during it. Handing
+-- back an access token obtained under an authorization that has since been
+-- withdrawn is the one outcome the whole consent apparatus exists to prevent.
+--
+-- This does NOT claim to be a distributed lock over B03's future Gmail calls —
+-- nothing at this layer could be. It establishes the strongest honest handoff:
+-- this token was still authorized by our current local state immediately before
+-- we handed it over. B03 adds its own job-level cancellation on top.
+create or replace function public.gmail_credential_currentness(
+  p_mail_account_id uuid,
+  p_expected_generation bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_state text;
+  v_generation bigint;
+begin
+  select m.connection_state into v_state
+    from public.mail_accounts m where m.id = p_mail_account_id;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  if v_state <> 'connected' then
+    return jsonb_build_object('result', 'state_changed', 'connection_state', v_state);
+  end if;
+
+  if not public.mail_account_has_consent(p_mail_account_id, 'private_gmail_processing') then
+    return jsonb_build_object('result', 'consent_missing');
+  end if;
+
+  select c.credential_generation into v_generation
+    from private.gmail_oauth_credentials c
+   where c.mail_account_id = p_mail_account_id;
 
   if not found then
     return jsonb_build_object('result', 'no_credential');
   end if;
-  return jsonb_build_object('result', 'ok');
+
+  if v_generation <> p_expected_generation then
+    return jsonb_build_object(
+      'result', 'stale_credential',
+      'current_generation', v_generation,
+      'expected_generation', p_expected_generation
+    );
+  end if;
+
+  return jsonb_build_object('result', 'ok', 'credential_generation', v_generation);
 end;
 $$;
 
@@ -945,7 +1181,8 @@ $$;
 -- cannot be used; the consent history and the ownership reservation stay,
 -- because neither of them stopped being true.
 create or replace function public.gmail_mark_reauth_required(
-  p_mail_account_id uuid
+  p_mail_account_id uuid,
+  p_expected_generation bigint
 )
 returns jsonb
 language plpgsql
@@ -954,18 +1191,60 @@ set search_path = public, private, pg_temp
 as $$
 declare
   v_state text;
+  v_generation bigint;
 begin
+  if p_expected_generation is null then
+    raise exception 'gmail_mark_reauth_required requires the generation that actually failed'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
   select connection_state into v_state
     from public.mail_accounts where id = p_mail_account_id for no key update;
 
   if not found then
     return jsonb_build_object('result', 'not_found');
   end if;
-  if v_state = 'deleted' then
-    return jsonb_build_object('result', 'account_retired');
+
+  -- IT MUST STILL BE THE SITUATION THE FAILURE WAS ABOUT.
+  --
+  -- This is destructive — it deletes a credential and moves the mailbox — so it
+  -- may only act on the exact state that produced the `invalid_grant`. Without
+  -- these checks a slow worker holding a long-dead token could delete a
+  -- credential somebody else had just stored, or drag a mailbox the human had
+  -- deliberately DISCONNECTED back to `reauth_required`, which reads as "we
+  -- would like you to reconnect" about a decision they already made.
+  if v_state <> 'connected'
+     or not public.mail_account_has_consent(p_mail_account_id, 'private_gmail_processing') then
+    return jsonb_build_object('result', 'state_changed', 'connection_state', v_state);
   end if;
 
-  delete from private.gmail_oauth_credentials where mail_account_id = p_mail_account_id;
+  select c.credential_generation into v_generation
+    from private.gmail_oauth_credentials c
+   where c.mail_account_id = p_mail_account_id;
+
+  if not found then
+    -- Already gone. Nothing to destroy, and nothing this caller knows makes it
+    -- right to move the mailbox.
+    return jsonb_build_object('result', 'no_credential');
+  end if;
+
+  if v_generation <> p_expected_generation then
+    -- The token that failed is not the token on disk. A newer one exists and
+    -- has not been shown to be dead.
+    return jsonb_build_object(
+      'result', 'stale_credential',
+      'current_generation', v_generation,
+      'expected_generation', p_expected_generation
+    );
+  end if;
+
+  delete from private.gmail_oauth_credentials
+   where mail_account_id = p_mail_account_id
+     and credential_generation = p_expected_generation;
+
+  if not found then
+    return jsonb_build_object('result', 'stale_credential');
+  end if;
 
   -- `reauth_required` keeps the scope set: it records what the human last
   -- authorized, which is what a reconnection is trying to restore. Only
@@ -1089,8 +1368,9 @@ begin
     'public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)',
     'public.gmail_credential_load(uuid)',
     'public.gmail_credential_load_for_owner(uuid,uuid)',
-    'public.gmail_credential_replace(uuid,text,text,text,text,timestamptz)',
-    'public.gmail_mark_reauth_required(uuid)',
+    'public.gmail_credential_replace(uuid,bigint,text,text,text,text,timestamptz)',
+    'public.gmail_credential_currentness(uuid,bigint)',
+    'public.gmail_mark_reauth_required(uuid,bigint)',
     'public.gmail_disconnect_finalize(uuid,uuid)',
     'public.gmail_connection_status(uuid)'
   ] loop

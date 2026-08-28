@@ -1313,6 +1313,16 @@ and a `connect` carrying a target is a transaction whose two fields describe
 different flows — the callback would then have to pick one, and a caller who can
 influence that pick can steer where a fresh Google grant lands.
 
+### 0036 refuses to install on state it cannot make true
+Before anything else, the migration aborts if any `mail_accounts` row is already
+`connected`. Such a row cannot hold a credential — this migration is what creates
+the credential store — so completing would mean reporting success while the
+invariant below was already false. B02 cannot attach a refresh token
+retroactively, so there is no honest repair: it does not synthesize one, demote
+the row, delete it, or leave it for the next write. It names the rows and stops.
+The expected count is zero, because B01 shipped schema only and nothing could
+have reached `connected` before B02 exists to connect it.
+
 ### private.gmail_oauth_credentials
 The encrypted refresh token, **one per mailbox** — a replacement supersedes its
 predecessor completely, because keeping the old one would be keeping a live key
@@ -1323,8 +1333,21 @@ stored; the AES-256-GCM key is not, and the database has never seen it.
 nonce. An access token lives minutes and belongs in memory; the rest are
 single-use inputs whose job is over.
 
+`credential_generation` is the **concurrency token**: a `bigint` from a sequence,
+returned by every load and supplied by every mutation derived from one. A refresh
+spans a network call, so without it a slow worker could overwrite a newer
+credential, delete one it never saw, or drag a disconnected mailbox back to
+`reauth_required`. Not a timestamp (equal values collide, clock order is not
+causal order) and not a per-row counter (a reconnection deletes and re-creates
+the row, so a per-row counter would reissue generation 1 and a stale value would
+match). `gmail_credential_replace`, `gmail_mark_reauth_required` and
+`gmail_credential_currentness` are all compare-and-swap on it, and each also
+re-checks that the mailbox is still `connected` and still consented.
+
 `provider_refresh_token_expires_at` is NULL when Google did not state one — *not
-stated*, never *never expires*.
+stated*, never *never expires*. **The production adapter always writes NULL**:
+`google-auth-library@11.0.2` does not surface `refresh_token_expires_in`, so B02
+does not currently capture provider refresh-token expiry metadata.
 
 The composite FK on `(mail_account_id, user_id)` is B01's provenance spine: the
 credential cannot lose either the mailbox or the human, and cascades with both.
@@ -1338,7 +1361,13 @@ UPDATE **and DELETE**) and on `mail_account_consents`. At COMMIT:
 - every other state → **no** credential;
 - `consent_required` additionally requires `gmail.readonly`, and may not survive
   a granted private-processing consent whose snapshot equals the current scope
-  set — that decision has already been made, and the mailbox is `connected`.
+  set — that decision has already been made, and the mailbox is `connected`;
+- `pending_authorization` additionally requires an **empty scope set**. 0035
+  defines it as "the human has not completed Google's consent screen and no
+  provider access is current"; a granted scope set is the record of an
+  authorization that state says did not happen. `reauth_required` is deliberately
+  exempt — it retains the last known scope set by contract, because that is what
+  a reconnection is trying to restore.
 
 Deferred because every legitimate write passes through an intermediate state:
 persist sets the account row before inserting the credential, disconnect deletes
@@ -1353,8 +1382,9 @@ the account row is gone, there is nothing left to be coherent with. No
 `gmail_oauth_begin` · `gmail_oauth_consume_transaction` ·
 `gmail_connection_persist` · `gmail_grant_private_processing_consent` ·
 `gmail_credential_load` · `gmail_credential_load_for_owner` ·
-`gmail_credential_replace` · `gmail_mark_reauth_required` ·
-`gmail_disconnect_finalize` · `gmail_connection_status`.
+`gmail_credential_replace` · `gmail_credential_currentness` ·
+`gmail_mark_reauth_required` · `gmail_disconnect_finalize` ·
+`gmail_connection_status`.
 
 `gmail_connection_persist` is the atomic landing point after every Google-side
 check has passed. When the transaction named a reconnect target, it binds that
@@ -1371,8 +1401,8 @@ naming them — and stores the credential in the same transaction. A successful
 authorization lands in `consent_required`, never `connected`, unless a current
 exact-scope consent already exists.
 
-`gmail_credential_load` returns the ENVELOPE, never a token: decryption happens in
-the application. It takes **no user id**, which is right for a trusted internal
+`gmail_credential_load` returns the ENVELOPE and its generation, never a token:
+decryption happens in the application. It takes **no user id**, which is right for a trusted internal
 caller in B03 and wrong for anything a browser reaches, so user-initiated actions
 use `gmail_credential_load_for_owner(p_user_id, p_mail_account_id)` instead —
 the owner is part of the lookup, so a stranger's mailbox id returns `not_found`

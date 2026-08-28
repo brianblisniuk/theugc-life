@@ -1949,6 +1949,38 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #2 (2026-08-28) settled that **the Google Cloud
+project used for the Gmail integration is an authorization domain**. Google's
+programmatic token revocation removes every OAuth 2.0 scope previously granted to
+the PROJECT for that user and invalidates the issued tokens for all clients under
+it — so revocation is an operation on the (user, project) grant, and there is no
+per-token call. Two rules follow, and both are decisions rather than
+implementation notes.
+
+FIRST: revocation is not a rollback primitive. B02 used it as callback cleanup,
+which meant a refused authorization destroyed whatever else that person had
+authorized this project to do. The worst case was reproducible: a stranger
+authorizing a Google account they do not own was correctly refused by B01's
+ownership rule, and the refusal disconnected the legitimate owner. A refused
+callback now persists nothing and revokes nothing, and the contract states the
+honest cost — the application may still appear in the person's Google account
+although we hold no usable token. Explicit Disconnect still revokes, because
+there the project-wide operation is exactly what was asked for.
+
+SECOND: unrelated Google integrations may not share this OAuth project. Calendar,
+Drive, any other Google OAuth integration, and application login flows whose
+grants must survive a Gmail disconnect all need a separate project and a new
+security contract — otherwise "disconnect Gmail" silently signs someone out or
+breaks their calendar. `gmail.readonly` and a future incremental `gmail.send`
+belong to the same integration and may share the domain deliberately.
+
+The same amendment made credential mutation causal rather than last-write-wins: a
+refresh spans a network call, so every mutation derived from a loaded credential
+names the generation it came from and is refused if that is no longer current. A
+stale worker can no longer overwrite a newer token, delete one it never saw, or
+undo a Disconnect. And 0036 now REFUSES TO INSTALL rather than completing while
+the invariant it establishes is already false.
+
 B02 external audit amendment #1 (2026-08-28) added `consent_required` to the
 connection-state vocabulary. D067's state words were written before any
 credential existed anywhere in this system, so `pending_authorization` was

@@ -213,7 +213,10 @@ d("amendment #1 — the state word tells the truth", () => {
 
   it("6. `reauth_required` holds no credential", async () => {
     const { mailAccountId } = await connectedMailbox("state6");
-    await client.query("select public.gmail_mark_reauth_required($1)", [mailAccountId]);
+    await client.query(
+      `select public.gmail_mark_reauth_required($1, (select credential_generation from private.gmail_oauth_credentials where mail_account_id = $1))`,
+      [mailAccountId],
+    );
     expect((await readMailAccount(client, mailAccountId)).connection_state).toBe("reauth_required");
     expect(await countCredentials(client, mailAccountId)).toBe(0);
   });
@@ -357,7 +360,11 @@ d("amendment #1 — a reconnect is bound to the mailbox it names", () => {
     expect(bRows.rows[0].n).toBe(0);
 
     // The grant we refused to keep is handed back to Google.
-    expect(attack.google.calls.revocations).toHaveLength(1);
+    // NOT revoked. Google's revocation is project-wide: it would remove every
+    // scope this project holds for the user and invalidate the tokens of
+    // any other mailbox they have connected. A refused callback persists
+    // nothing and revokes nothing.
+    expect(attack.google.calls.revocations).toHaveLength(0);
   });
 
   it("11. reconnect A + an already-connected B is account_mismatch, not already_connected", async () => {
@@ -459,7 +466,11 @@ d("amendment #1 — a reconnect is bound to the mailbox it names", () => {
     );
     expect(attack.outcome!.result).toBe("account_retired");
     expect((await readMailAccount(client, id)).connection_state).toBe("deleted");
-    expect(attack.google.calls.revocations).toHaveLength(1);
+    // NOT revoked. Google's revocation is project-wide: it would remove every
+    // scope this project holds for the user and invalidate the tokens of
+    // any other mailbox they have connected. A refused callback persists
+    // nothing and revokes nothing.
+    expect(attack.google.calls.revocations).toHaveLength(0);
   });
 
   it("14. a `connect` transaction carrying a target is refused by the database", async () => {
@@ -705,6 +716,8 @@ d("amendment #1 — a user action loads only its own credential", () => {
     const outcome = await disconnectGmailAccount({ userId, mailAccountId }, deps(google));
 
     expect(outcome.result).toBe("disconnected");
+    // Disconnect DOES revoke, project-wide — which is precisely what the
+    // human asked for: stop this application's Gmail authorization.
     expect(google.calls.revocations).toHaveLength(1);
     expect(await countCredentials(client, mailAccountId)).toBe(0);
   });
@@ -720,6 +733,8 @@ d("amendment #1 — a user action loads only its own credential", () => {
     const google = createFakeGoogle();
     const result = await disconnectGmailAccount({ userId, mailAccountId }, deps(google));
     expect(result.result).toBe("disconnected");
+    // Disconnect DOES revoke, project-wide — which is precisely what the
+    // human asked for: stop this application's Gmail authorization.
     expect(google.calls.revocations).toHaveLength(1);
     expect(await countCredentials(client, mailAccountId)).toBe(0);
   });
@@ -846,7 +861,11 @@ d("amendment #1 — what must not have changed", () => {
       nonceOverride: "not-the-nonce-we-sent",
     });
     expect(badNonce.outcome!.result).toBe("identity_unverified");
-    expect(badNonce.google.calls.revocations).toHaveLength(1);
+    // NOT revoked. Google's revocation is project-wide: it would remove every
+    // scope this project holds for the user and invalidate the tokens of
+    // any other mailbox they have connected. A refused callback persists
+    // nothing and revokes nothing.
+    expect(badNonce.google.calls.revocations).toHaveLength(0);
   });
 
   it("34. the durable identity is still the verified Google subject, never the email", async () => {
@@ -905,7 +924,11 @@ d("amendment #1 — what must not have changed", () => {
     const other = await createTestUser(client, "preserve-own-b");
     const attack = await authorize(other, { subject });
     expect(attack.outcome!.result).toBe("owned_by_other_user");
-    expect(attack.google.calls.revocations).toHaveLength(1);
+    // NOT revoked. Google's revocation is project-wide: it would remove every
+    // scope this project holds for the user and invalidate the tokens of
+    // any other mailbox they have connected. A refused callback persists
+    // nothing and revokes nothing.
+    expect(attack.google.calls.revocations).toHaveLength(0);
   });
 
   it("40. B02 still reads no mail: only the profile endpoint is ever called", async () => {

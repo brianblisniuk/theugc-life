@@ -281,7 +281,11 @@ d("B02 — Gmail OAuth connection", () => {
       });
       expect(outcome!.result).toBe("identity_unverified");
       // The grant we obtained and rejected is handed back.
-      expect(google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(google.calls.revocations).toHaveLength(0);
     });
 
     it("handles the human declining at Google, and consumes the transaction", async () => {
@@ -345,7 +349,11 @@ d("B02 — Gmail OAuth connection", () => {
       // An access token alone is not a connection: B03 syncs while the human is
       // away, and an hour from now we would have nothing.
       expect(outcome!.result).toBe("missing_refresh_token");
-      expect(google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(google.calls.revocations).toHaveLength(0);
 
       const accounts = await client.query(
         "select count(*)::int n from public.mail_accounts where user_id = $1",
@@ -360,7 +368,11 @@ d("B02 — Gmail OAuth connection", () => {
         grantedScopes: [OPENID_SCOPE, USERINFO_EMAIL_SCOPE],
       });
       expect(outcome!.result).toBe("scope_refused");
-      expect(google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(google.calls.revocations).toHaveLength(0);
     });
 
     it("refuses a returned scope outside the approved set", async () => {
@@ -369,19 +381,31 @@ d("B02 — Gmail OAuth connection", () => {
         grantedScopes: [GMAIL_READONLY_SCOPE, "https://www.googleapis.com/auth/gmail.modify"],
       });
       expect(outcome!.result).toBe("scope_refused");
-      expect(google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(google.calls.revocations).toHaveLength(0);
     });
 
     it("refuses an unverifiable ID token, and a missing one", async () => {
       const invalid = await createTestUser(client, "badid");
       const one = await runAuthorization(invalid, { idTokenError: "id_token_invalid" });
       expect(one.outcome!.result).toBe("identity_unverified");
-      expect(one.google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(one.google.calls.revocations).toHaveLength(0);
 
       const absent = await createTestUser(client, "noid");
       const two = await runAuthorization(absent, { idToken: null });
       expect(two.outcome!.result).toBe("identity_unverified");
-      expect(two.google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(two.google.calls.revocations).toHaveLength(0);
     });
 
     it("uses the verified subject as the durable identity, and email as display only", async () => {
@@ -416,7 +440,11 @@ d("B02 — Gmail OAuth connection", () => {
         profileError: "gmail_profile_403",
       });
       expect(outcome!.result).toBe("mailbox_unusable");
-      expect(google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(google.calls.revocations).toHaveLength(0);
       const accounts = await client.query(
         "select count(*)::int n from public.mail_accounts where user_id = $1",
         [userId],
@@ -499,10 +527,16 @@ d("B02 — Gmail OAuth connection", () => {
 
       // Reach the credential-less state the legitimate way. Deleting the row
       // directly is no longer possible — 0036 refuses `consent_required` with no
-      // credential at COMMIT — so the mailbox goes to `reauth_required`, which is
-      // exactly the situation this guard is for: the human's authorization
-      // stopped working and they are being asked to agree to processing anyway.
-      await client.query("select public.gmail_mark_reauth_required($1)", [id]);
+      // credential at COMMIT — so the mailbox is connected properly and then its
+      // token dies, which is exactly the situation this guard is for: the
+      // authorization stopped working and the human is asked to agree to
+      // processing anyway. The generation is 1 because nothing rotated it, so
+      // the CAS is satisfied and `reauth_required` is reached legitimately.
+      await grantPrivateProcessingConsent({ userId, mailAccountId: id }, deps(createFakeGoogle()));
+      await client.query(
+        `select public.gmail_mark_reauth_required($1, (select credential_generation from private.gmail_oauth_credentials where mail_account_id = $1))`,
+        [id],
+      );
       expect(await countCredentials(client, id)).toBe(0);
 
       const granted = await grantPrivateProcessingConsent(
@@ -562,7 +596,11 @@ d("B02 — Gmail OAuth connection", () => {
       const second = await runAuthorization(userId, { subject });
       expect(second.outcome!.result).toBe("already_connected");
       // The grant we did not keep is given back.
-      expect(second.google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(second.google.calls.revocations).toHaveLength(0);
     });
 
     it("never revives a deleted row, and gives the same owner a NEW one", async () => {
@@ -621,7 +659,11 @@ d("B02 — Gmail OAuth connection", () => {
       const attempt = await runAuthorization(stranger, { subject });
       expect(attempt.outcome!.result).toBe("owned_by_other_user");
       // The credential we obtained is handed back rather than kept.
-      expect(attempt.google.calls.revocations).toHaveLength(1);
+      // NOT revoked. Google's revocation is project-wide: it would remove every
+      // scope this project holds for the user and invalidate the tokens of
+      // any other mailbox they have connected. A refused callback persists
+      // nothing and revokes nothing.
+      expect(attempt.google.calls.revocations).toHaveLength(0);
       // And the refusal carries nothing identifying about the real owner.
       expect(JSON.stringify(attempt.outcome)).not.toContain(owner);
 
@@ -733,6 +775,8 @@ d("B02 — Gmail OAuth connection", () => {
       const outcome = await disconnectGmailAccount({ userId, mailAccountId }, deps(google));
 
       expect(outcome.result).toBe("disconnected");
+      // Disconnect DOES revoke — project-wide, which is exactly what the human
+      // asked for: stop this application's Gmail authorization.
       expect(google.calls.revocations).toHaveLength(1);
       expect(await countCredentials(client, mailAccountId)).toBe(0);
 

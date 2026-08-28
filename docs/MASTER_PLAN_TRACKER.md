@@ -609,8 +609,27 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #1, awaiting re-audit and the human merge
+> merged, on external audit amendment #2, awaiting re-audit and the human merge
 > gate.**
+
+**B02 external audit amendment #2 (2026-08-28)** closed three further
+merge-blocking findings against head `578bf37`:
+
+- Google's revocation is **project-wide** — it removes every scope the project
+  holds for that user. B02 was using it as callback cleanup, so refusing an
+  authorization destroyed whatever else that person had connected; a stranger
+  authorizing someone else's Google account could disconnect the real owner. A
+  refused callback now revokes nothing; explicit Disconnect still does, and the
+  runbook records the OAuth project as an authorization domain that unrelated
+  Google integrations must not share;
+- credential mutations had no concurrency token, so a slow worker could overwrite
+  a newer credential, delete one it never saw, or drag a **disconnected** mailbox
+  back to `reauth_required`. Every mutation is now compare-and-swap on a
+  database-owned `credential_generation`, and a final currentness check runs
+  before any access token is handed over;
+- 0036 completed successfully on a database where `connected` mailboxes held zero
+  credentials — the invariant it claims to establish was already false. It now
+  **refuses to install**, names the rows, and leaves them to an operator.
 
 **B02 external audit amendment #1 (2026-08-28)** closed five merge-blocking
 findings against head `99833bd`, all reproduced as real committed states first:

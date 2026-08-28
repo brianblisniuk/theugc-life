@@ -268,14 +268,47 @@ supplied alongside `purpose=connect` rather than passing it on.
 
 ---
 
-## 10. Compensation, and atomicity
+## 10. What happens to a grant we refuse — and why it is NOT revoked
 
-The token exchange happens before every local invariant can be checked, so when
-Google has issued a credential and the local side then refuses — a forbidden
-scope, a failed health check, a cross-owner identity — B02 **revokes the grant it
-is not going to keep**. Leaving it would mean a human's mailbox is authorized to
-an application that has no record of it: invisible to them and to us. A failed
-compensating revocation is logged as a sanitized security event, code only.
+### The Google fact this rests on
+
+A programmatic revocation **removes every OAuth 2.0 scope previously granted to
+the PROJECT for that user and invalidates the issued access and refresh tokens
+for all clients registered under that project.** It operates on the (user,
+project) grant. There is no "revoke only this token" call.
+
+### So a refused callback revokes nothing
+
+An earlier version of B02 called revoke on every callback refusal and described
+it as "giving back the token we just received". That description was wrong, and
+the behaviour was worse than wrong:
+
+- **authorizing an already-connected mailbox again** → `already_connected`, and
+  the revoke killed the credential that mailbox was still using;
+- **a reconnect whose account chooser returned a different mailbox** →
+  `account_mismatch`, and the revoke killed the *other* mailbox, which the human
+  had never mentioned;
+- **a stranger authorizing a Google account somebody else owns** →
+  `owned_by_other_user`, and the revoke disconnected the legitimate owner. B01's
+  correct cross-owner refusal had become a way to disconnect other people.
+
+The rule now: **a refused callback persists nothing and revokes nothing.** The
+token material stays in memory, is never written and never logged, and falls out
+of scope. Preserving a connection that is already valid matters more than tidying
+up an in-memory token we are about to forget.
+
+### The honest cost, stated rather than hidden
+
+After a failed first-time authorization, the application may still appear in the
+person's Google Account even though **nothing was persisted here** and we hold no
+usable token. They can retry the connection, or remove the access from their
+Google Account settings.
+
+B02 does not pretend that discarding a token locally revokes Google's grant. The
+only way to make that true would be the project-wide operation above, and using
+it here is what caused the three failures listed.
+
+## 10a. Atomicity
 
 Once all Google-side checks pass, local persistence is **one transaction** inside
 one SECURITY DEFINER function. None of these can survive — and "cannot survive"
@@ -349,6 +382,13 @@ receipt and projection is bound to a `mail_account_id`.
 Disconnect is **not** delete. The mailbox row, its consent history, its ownership
 reservation and any Gmail-derived workspace data all remain — deletion is a
 separate B01 lifecycle.
+
+**Disconnect is the one place project-wide revocation belongs**, because there it
+is precisely what the human asked for: stop this application's Gmail
+authorization. See §10 for why it is not used anywhere else, and
+`B02_GOOGLE_CLOUD_SETUP.md` §0 for the architecture rule that follows — the
+OAuth project is an authorization domain, and unrelated Google integrations must
+not share it.
 
 **Google revoke first, local finalize second.** The order is the whole point:
 
@@ -426,6 +466,55 @@ permanently unusable. **HTTP 4xx alone is not evidence**, and neither is a
 mark `reauth_required`; it surfaces a sanitized retryable error. Nothing
 auto-loops.
 
+### Every mutation names the credential it came from
+
+A refresh is: load the credential, call Google, write the result. The middle step
+is a network round trip, and in it another worker can rotate the token and the
+human can disconnect. Keying the write on `mail_account_id` alone made whichever
+worker finished last authoritative regardless of what it had derived its result
+from — so a slow worker could overwrite a newer credential with one derived from
+a token Google had already rotated away, delete a credential it had never seen
+because the one IT held was rejected, or drag a mailbox the human had
+deliberately **disconnected** back to `reauth_required`.
+
+`private.gmail_oauth_credentials.credential_generation` closes that. It is a
+database-owned `bigint` drawn from a sequence — deliberately **not** a timestamp
+(two writes in the same microsecond compare equal, and clock order is not causal
+order), and deliberately **not** a per-row counter starting at 1 (a credential is
+deleted and re-created on every reconnection, so a per-row counter would reissue
+generation 1 and a stale worker's remembered value would match).
+
+Every load returns it. Every mutation derived from a loaded credential supplies
+it, and is a compare-and-swap:
+
+| operation | proceeds only if | otherwise |
+|---|---|---|
+| `gmail_credential_replace` | still `connected`, consent still current, generation unchanged | `state_changed` / `stale_credential`, nothing written |
+| `gmail_mark_reauth_required` | still `connected`, consent still current, credential present at **that** generation | `state_changed` / `stale_credential`, nothing deleted, no state moved |
+| `gmail_credential_currentness` | still `connected`, consent current, generation is the one this result corresponds to | `state_changed`, no token handed back |
+
+A stale `invalid_grant` therefore never deletes a newer refresh token, and never
+undoes a Disconnect.
+
+### The application must not claim a transition that did not happen
+
+`reauth_required` is reported **only** when the CAS RPC confirms it performed the
+transition. A transport failure surfaces as a provider error; a stale or
+state-changed refusal surfaces as `state_changed`. The previous version awaited
+the RPC and returned `reauth_required` regardless of what it said.
+
+### The last check before the token leaves
+
+A human can disconnect while the refresh call is in flight. Before returning
+`{ result: 'ok', accessToken }`, the local state is re-read and must still agree:
+connected, consented, and at the generation this result corresponds to — the one
+loaded, or the one just committed by this worker's own rotation.
+
+This does **not** claim to be a distributed lock over B03's future Gmail calls;
+nothing at this layer could be. It establishes the strongest honest handoff:
+*this access token was still authorized by our current local state immediately
+before it was handed over.* B03 adds its own job-level cancellation on top.
+
 ### Rotation is part of a successful refresh
 
 The order is explicit: a usable access token must exist, and only then is the
@@ -442,6 +531,19 @@ The previous credential is deliberately **not** deleted on a storage failure.
 Whether Google has already invalidated it is not knowable from here, and throwing
 away the only value that might still work would turn a storage blip into a forced
 re-authorization. The next attempt establishes which it was.
+
+### Provider refresh-token expiry metadata is NOT captured
+
+Google's token endpoint can return `refresh_token_expires_in` for time-based
+access, and `private.gmail_oauth_credentials.provider_refresh_token_expires_at`
+is where that value belongs. **`google-auth-library@11.0.2` does not surface it**
+on the credentials object it returns, so the production adapter always writes
+NULL there.
+
+Stated plainly rather than left as an implication: B02 does not currently capture
+provider refresh-token expiry metadata. The column keeps its usual meaning —
+NULL is "not stated", never "never expires" — and a future adapter that can read
+the field populates it without a schema change.
 
 ### Google Testing mode
 

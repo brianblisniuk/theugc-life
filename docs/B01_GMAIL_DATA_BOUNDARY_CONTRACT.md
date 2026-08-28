@@ -509,7 +509,7 @@ So 0036 **adds** a state rather than redefining a merged one. 0035 is untouched;
 
 | state | Google authorization | credential | private-processing consent |
 |---|---|---|---|
-| `pending_authorization` | not completed | none | — |
+| `pending_authorization` | not completed | none | — (and an **empty** scope set) |
 | `consent_required` | completed, `gmail.readonly` granted | **exactly one** | absent, withdrawn, or about a different scope set |
 | `connected` | completed, `gmail.readonly` granted | **exactly one** | granted, snapshot **equal** to the current scope set |
 | `reauth_required` | no longer usable | none | history preserved |

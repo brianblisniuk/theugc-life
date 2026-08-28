@@ -7,9 +7,44 @@ Contract: [`B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md`](B02_GMAIL_OAUTH_CONNECTION_
 
 ---
 
+## 0. THE PROJECT IS AN AUTHORIZATION DOMAIN — read before creating one
+
+This is an architecture constraint, not a preference, and it has to be settled
+before real credentials exist because it is expensive to undo afterwards.
+
+Google's programmatic token revocation **removes every OAuth 2.0 scope
+previously granted to the PROJECT for that user, and invalidates the issued
+access and refresh tokens for all clients registered under that project.** It is
+an operation on the (user, project) grant. It is not "revoke this one token", and
+there is no narrower call.
+
+Two consequences:
+
+**Disconnect is project-wide by nature.** When a creator disconnects Gmail, B02
+calls revoke, and that is exactly what they asked for: stop this application's
+authorization. Nothing narrower is available, and nothing narrower is wanted.
+
+**So the project must contain only things that should die together.**
+`gmail.readonly` today and an incremental `gmail.send` later belong to the same
+Gmail integration and may intentionally share this revocation domain — a creator
+who disconnects Gmail expects both to stop.
+
+**Do NOT casually add unrelated Google integrations to this OAuth project:**
+
+- Google Calendar authorization;
+- Google Drive authorization;
+- any other unrelated Google OAuth integration;
+- application **login** flows whose grants must survive a Gmail disconnect.
+
+Any of those would mean "disconnect Gmail" silently signs the person out of the
+product, or breaks their calendar sync, with no indication that it would. If a
+future feature needs one, it gets a **separate Google Cloud project** and a new
+architecture/security contract — not a scope quietly appended to this one.
+
 ## 1. Google Cloud project
 
-1. Create or select a Google Cloud project for TheUGC.
+1. Create or select a Google Cloud project for TheUGC, **used only for the Gmail
+   integration** (§0).
 2. **Enable the Gmail API** for it.
 3. Configure the **OAuth consent screen**:
    - user type **External**;

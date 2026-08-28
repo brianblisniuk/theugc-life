@@ -35,9 +35,12 @@ import {
  * the atomic part and the network calls are not.
  *
  * SECOND, when Google has already issued a credential and the local side then
- * refuses, we go back and revoke it. Leaving a live grant we have decided not to
- * keep would mean a human's mailbox is authorized to an application that has no
- * record of it — invisible to them, and to us.
+ * refuses, we persist nothing and revoke nothing. Revocation at Google is a
+ * PROJECT-WIDE operation on the user's grant, not a way to hand one token back,
+ * so using it as callback cleanup would destroy whatever else that person had
+ * authorized this project to do — including a different mailbox of theirs that
+ * is working right now. Explicit Disconnect is the one place that operation
+ * belongs, because there it is exactly what the human asked for.
  */
 
 const STATE_TTL_SECONDS = 600;
@@ -263,25 +266,44 @@ export async function completeGmailAuthorization(
     return { result: "invalid_state" };
   }
 
-  /** Give back a grant we are not going to keep. Never logs the token. */
-  const compensate = async () => {
-    const token = tokens.refreshToken ?? tokens.accessToken;
-    if (!token) return;
-    try {
-      await deps.google.revoke({ token });
-    } catch (revokeError) {
-      // Sanitized security event: a code, never the credential.
-      console.warn("[gmail] compensating revoke failed", {
-        code: revokeError instanceof GoogleAdapterError ? revokeError.code : "unknown",
-      });
-    }
+  /**
+   * WHAT WE DO WITH A GRANT WE ARE NOT GOING TO KEEP: nothing.
+   *
+   * An earlier version called `google.revoke()` here, described as "giving back
+   * the token we just received". That is not Google's model. Google documents a
+   * programmatic revocation as removing every scope previously granted to the
+   * PROJECT for that user and invalidating the issued tokens for all clients
+   * under it — so revoking the token from a refused callback destroys the user's
+   * whole Gmail authorization, including the credential a DIFFERENT, working,
+   * still-`connected` mailbox depends on.
+   *
+   * The three cases that made this a blocker: authorizing an already-connected
+   * account again, a reconnect whose picker returned a different mailbox of the
+   * same user, and — worst — a STRANGER authorizing a Google account somebody
+   * else legitimately owns, which turned B01's correct cross-owner refusal into
+   * a way to disconnect another person's mailbox.
+   *
+   * So a refused callback simply persists nothing. The token material stays in
+   * memory, is never written and never logged, and falls out of scope with this
+   * function. Preserving a connection that is already valid matters more than
+   * tidying up an in-memory token we are about to forget.
+   *
+   * The honest cost, documented in §10 of the contract: after a failed first
+   * authorization the application may still appear in the user's Google account
+   * even though nothing was stored here. We hold no usable token in that case.
+   * The human can retry, or remove the access from their Google Account
+   * settings. Pretending a local discard revokes Google's grant would be the
+   * same category of lie this whole block exists to avoid.
+   */
+  const discardWithoutRevoking = () => {
+    /* deliberately empty — see above. Nothing is persisted, nothing is logged. */
   };
 
   // OFFLINE ACCESS OR NOTHING. B03 syncs while the human is away, so a
   // connection without a refresh token is not a connection — it is an access
   // token that expires in an hour and a promise we cannot keep.
   if (!tokens.refreshToken) {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "missing_refresh_token" };
   }
 
@@ -290,16 +312,16 @@ export async function completeGmailAuthorization(
   // never infer the granted set from the requested one.
   const granted = canonicalScopeSet(tokens.grantedScopes);
   if (forbiddenScopes(granted).length > 0) {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "scope_refused", detail: "forbidden_scope" };
   }
   if (!hasReadScope(granted)) {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "scope_refused", detail: "missing_read" };
   }
 
   if (!tokens.idToken) {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "identity_unverified" };
   }
 
@@ -307,14 +329,14 @@ export async function completeGmailAuthorization(
   try {
     identity = await deps.google.verifyIdToken({ idToken: tokens.idToken });
   } catch {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "identity_unverified" };
   }
 
   // The nonce ties this ID token to the authorization WE started. Without it,
   // state alone leaves the door open to token substitution.
   if (!identity.nonce || sha256(identity.nonce) !== tx.nonce_digest) {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "identity_unverified" };
   }
 
@@ -324,7 +346,7 @@ export async function completeGmailAuthorization(
   try {
     profile = await deps.google.getProfile({ accessToken: tokens.accessToken });
   } catch {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "mailbox_unusable" };
   }
 
@@ -346,7 +368,7 @@ export async function completeGmailAuthorization(
   });
 
   if (persistError) {
-    await compensate();
+    discardWithoutRevoking();
     return { result: "persist_failed" };
   }
 
@@ -360,25 +382,25 @@ export async function completeGmailAuthorization(
     case "already_connected":
       // Not an error, and not a reason to swap the credential of a working
       // connection. The one we just obtained is given back.
-      await compensate();
+      discardWithoutRevoking();
       return { result: "already_connected", mailAccountId: outcome.mail_account_id!, returnPath };
     case "account_mismatch":
       // The human asked to reconnect ONE mailbox and authorized a different
       // Google account. Turning that into a new connection would be answering a
       // question they were never asked, so the grant goes back.
-      await compensate();
+      discardWithoutRevoking();
       return { result: "account_mismatch", returnPath };
     case "account_retired":
       // The reconnect target is a `deleted` record. Reviving it would contradict
       // the completed deletion it rests on; a fresh connect makes a new row.
-      await compensate();
+      discardWithoutRevoking();
       return { result: "account_retired", returnPath };
     case "owned_by_other_user":
       // Refused, and the answer says nothing about who owns it.
-      await compensate();
+      discardWithoutRevoking();
       return { result: "owned_by_other_user" };
     default:
-      await compensate();
+      discardWithoutRevoking();
       return { result: "persist_failed" };
   }
 }
@@ -532,6 +554,12 @@ export type AccessTokenOutcome =
   | { result: "configuration_error" }
   /** Google rotated the refresh token and we could not store the replacement. */
   | { result: "credential_storage_failed" }
+  /**
+   * The local authorization moved while we were talking to Google — the human
+   * disconnected, consent was withdrawn, or another worker rotated the
+   * credential. Nothing was overwritten and no token is handed back.
+   */
+  | { result: "state_changed" }
   | { result: "not_configured" };
 
 /**
@@ -561,6 +589,7 @@ export async function getFreshGmailAccessToken(
   const loaded = (data ?? {}) as {
     result?: string;
     connection_state?: GmailConnectionState;
+    credential_generation?: number | string;
     refresh_token_ciphertext?: string;
     refresh_token_iv?: string;
     refresh_token_auth_tag?: string;
@@ -572,6 +601,15 @@ export async function getFreshGmailAccessToken(
     return { result: "not_connected", connectionState: loaded.connection_state };
   }
   if (loaded.result !== "ok") return { result: "not_connected" };
+
+  // THE GENERATION THIS WHOLE CALL IS ABOUT. Every mutation below names it, so
+  // nothing derived from this credential can be applied to a different one.
+  // `bigint` arrives from PostgREST as a string, so it is normalised once here
+  // rather than at each use.
+  const loadedGeneration = Number(loaded.credential_generation);
+  if (!Number.isFinite(loadedGeneration) || loadedGeneration <= 0) {
+    return { result: "provider_unavailable" };
+  }
 
   let refreshToken: string;
   try {
@@ -604,10 +642,27 @@ export async function getFreshGmailAccessToken(
     // consent history and the ownership reservation stay, because neither
     // stopped being true.
     if (refreshTokenIsPermanentlyDead(classified.code)) {
-      await deps.db.rpc("gmail_mark_reauth_required", {
+      // ...but only for the credential that ACTUALLY failed, and only while the
+      // situation is still the one this failure was about. A slow worker holding
+      // a long-dead token must not delete a credential somebody else just
+      // stored, and must not drag a mailbox the human deliberately DISCONNECTED
+      // back to `reauth_required` — which would read as "please reconnect" about
+      // a decision they had already made.
+      const { data: marked, error: markError } = await deps.db.rpc("gmail_mark_reauth_required", {
         p_mail_account_id: input.mailAccountId,
+        p_expected_generation: loadedGeneration,
       });
-      return { result: "reauth_required" };
+
+      // AND ONLY CLAIM IT IF IT HAPPENED. The previous version awaited this RPC
+      // and returned `reauth_required` regardless of what it said — reporting a
+      // transition that a transport failure or a stale refusal had prevented.
+      if (markError) return { result: "provider_unavailable" };
+      const outcome = ((marked ?? {}) as { result?: string }).result;
+      if (outcome === "ok") return { result: "reauth_required" };
+      if (outcome === "stale_credential" || outcome === "state_changed") {
+        return { result: "state_changed" };
+      }
+      return { result: "not_connected" };
     }
 
     // OUR FAULT. A wrong client secret, a client not permitted to make this
@@ -643,10 +698,17 @@ export async function getFreshGmailAccessToken(
   // already invalidated it is not something we can know from here, and throwing
   // away the only value that might still work would turn a storage blip into a
   // forced re-authorization. The next attempt establishes which it was.
+  //
+  // The write is a COMPARE-AND-SWAP on the generation we loaded, so a slower
+  // worker cannot replace a newer credential with one derived from a token
+  // Google has already rotated away.
+  let effectiveGeneration = loadedGeneration;
+
   if (refreshed.refreshToken && refreshed.refreshToken !== refreshToken) {
     const rotated = sealSecret(refreshed.refreshToken, cfg.encryptionKey, cfg.encryptionKeyVersion);
     const { data: replaced, error: replaceError } = await deps.db.rpc("gmail_credential_replace", {
       p_mail_account_id: input.mailAccountId,
+      p_expected_generation: loadedGeneration,
       p_refresh_ciphertext: rotated.ciphertext,
       p_refresh_iv: rotated.iv,
       p_refresh_auth_tag: rotated.authTag,
@@ -654,15 +716,48 @@ export async function getFreshGmailAccessToken(
       p_provider_refresh_expires_at: refreshed.refreshTokenExpiresAt?.toISOString() ?? null,
     });
 
-    const stored = ((replaced ?? {}) as { result?: string }).result === "ok";
-    if (replaceError || !stored) {
+    if (replaceError) {
       // Sanitized: neither token appears here, and neither does the ciphertext.
-      console.error("[gmail] rotated refresh token could not be stored", {
-        stored: false,
-      });
+      console.error("[gmail] rotated refresh token could not be stored", { stored: false });
       return { result: "credential_storage_failed" };
     }
+
+    const outcome = (replaced ?? {}) as {
+      result?: string;
+      credential_generation?: number | string;
+    };
+    if (outcome.result === "stale_credential" || outcome.result === "state_changed") {
+      // Somebody else moved first, or the human disconnected while we were
+      // talking to Google. Their state is newer than ours and stands; we neither
+      // overwrite it nor hand out a token minted under the old one.
+      return { result: "state_changed" };
+    }
+    if (outcome.result !== "ok") {
+      console.error("[gmail] rotated refresh token could not be stored", { stored: false });
+      return { result: "credential_storage_failed" };
+    }
+    effectiveGeneration = Number(outcome.credential_generation);
   }
+
+  // THE LAST THING BEFORE THE TOKEN LEAVES.
+  //
+  // A human can disconnect while the refresh call is in flight, and another
+  // worker can rotate underneath us. Handing back an access token obtained under
+  // an authorization that has since been withdrawn is precisely the outcome the
+  // consent apparatus exists to prevent, so the local state is re-read and must
+  // still agree: connected, consented, and at the generation this result
+  // corresponds to — the one we loaded, or the one we just committed.
+  //
+  // This is not a distributed lock over B03's future Gmail calls; nothing here
+  // could be. It is the strongest honest handoff: this token was still
+  // authorized by our current local state immediately before we returned it.
+  const { data: current, error: currentError } = await deps.db.rpc("gmail_credential_currentness", {
+    p_mail_account_id: input.mailAccountId,
+    p_expected_generation: effectiveGeneration,
+  });
+  if (currentError) return { result: "provider_unavailable" };
+  const currentness = ((current ?? {}) as { result?: string }).result;
+  if (currentness !== "ok") return { result: "state_changed" };
 
   return { result: "ok", accessToken: refreshed.accessToken };
 }
