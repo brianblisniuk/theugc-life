@@ -90,7 +90,7 @@ d("B02 credential boundary (0036)", () => {
       const functions = [
         "public.gmail_oauth_begin(uuid,text,text,text,text,text,text,text,uuid,text[],text,integer)",
         "public.gmail_oauth_consume_transaction(uuid,text)",
-        "public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,text)",
+        "public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,bigint,text)",
         "public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)",
         "public.gmail_credential_load(uuid)",
         "public.gmail_credential_load_for_owner(uuid,uuid)",

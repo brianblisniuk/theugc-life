@@ -229,6 +229,49 @@ and the newly issued grant is revoked.
 
 ## 9. Which mail account, exactly
 
+### A reconnect pins the mailbox's lifecycle REVISION, not its state name
+
+OAuth is a long-running operation — longer than a refresh. We write a
+transaction, hand the browser to Google, and the callback arrives whenever the
+human gets round to it. The world moves in between, and an older intention must
+not overwrite a newer decision:
+
+1. mailbox A is `reauth_required`;
+2. the human starts Reconnect A;
+3. they change their mind and **Disconnect** A — revoked at Google, credential
+   gone, state `disconnected`;
+4. the old callback lands. `disconnected` is a reconnectable state, so it stored
+   a fresh credential and, the old consent still being on file for the same scope
+   set, put the mailbox straight back to `connected`.
+
+**Checking the state name is not enough**, and this is the part that matters. A
+mailbox can leave a reconnectable state and come back to one:
+
+```
+reauth_required (rev 10) → disconnected (rev 11) → reauth_required (rev 12)
+```
+
+A callback pinned at rev 10 finds exactly the word it expects and is still stale:
+two lifecycle decisions happened that it knows nothing about.
+
+So `mail_accounts.authorization_revision` is a database-owned `bigint` from a
+sequence. It advances when a `connection_state` transition or a `granted_scopes`
+change happens — the changes that invalidate an authorization started against the
+older state — and not when unrelated display metadata is edited. A trigger
+assigns it on every update, so it is never caller-settable and a **direct SQL**
+lifecycle change invalidates in-flight OAuth exactly as a server action does.
+
+`gmail_oauth_begin` resolves the target itself, requires it to be in a
+reconnectable state **right now**, and captures its revision. A flow therefore
+cannot begin against a `connected` mailbox and wait for it to become
+reconnectable: it starts against a real state, not a possible future one.
+`purpose`/`target`/`revision` are an IFF — connect has neither, reconnect has
+both.
+
+`gmail_connection_persist` then requires the exact revision alongside everything
+below. A different one answers `state_changed`: nothing persisted, no scopes
+changed, no state moved, and no Google grant revoked.
+
 ### A reconnect is bound to its target FIRST
 
 When the OAuth transaction named a target mailbox, that binding is checked before
@@ -255,16 +298,33 @@ meant "connect whatever you picked".
 | case | behaviour |
 |---|---|
 | **A** — identity never seen | create a NEW `mail_accounts` row |
-| **B** — a LIVE row owned by this user (`pending_authorization`/`consent_required`/`disconnected`/`reauth_required`) | **reuse that row**; never a second live row |
+| **B** — a LIVE row owned by this user, not connected | **`reconnect_required`** — persist nothing; see below |
 | **B′** — that row is already `connected` | return `already_connected`; do not silently swap a working credential |
 | **C** — only `deleted` rows exist | create a NEW row; `deleted` stays terminal |
-| **D** — identity owned by a different app user | **refuse**, revoke the grant, store nothing, and say nothing about who owns it |
+| **D** — identity owned by a different app user | **refuse**, store nothing, revoke nothing, and say nothing about who owns it |
 
-### `purpose` and `target` are an IFF
+### Why a generic CONNECT may no longer revive a live row
 
-`connect` ⇔ no target; `reconnect` ⇔ a target. Enforced as a CHECK on the
-transaction table and again in the start route, which drops a `mail_account_id`
-supplied alongside `purpose=connect` rather than passing it on.
+A connect flow does not know which Google account it will get until the callback,
+so it could not have pinned that mailbox's revision at the start — there was
+nothing to pin. Letting it reuse an existing non-deleted row would reintroduce
+the whole stale-callback problem through the one door with no snapshot to check:
+connect, wander off, disconnect, and let the old callback restore access.
+
+So a generic connect that lands on a live mailbox of this owner answers
+`reconnect_required` and persists nothing. The human uses the explicit **Reconnect**
+action, which pins the revision. Every non-connected account in the UI exposes it.
+
+This is a deliberate narrowing of B01's CASE B: a generic connect now serves an
+unseen identity, or one whose previous rows are all terminally `deleted`.
+
+### `purpose`, `target` and `revision` are an IFF
+
+`connect` ⇔ no target and no revision; `reconnect` ⇔ both. Enforced as a CHECK on
+the transaction table and again in the start route, which drops a
+`mail_account_id` supplied alongside `purpose=connect` rather than passing it on.
+The revision is never supplied by a caller — `gmail_oauth_begin` reads it from
+the row, because pinning a value the caller chose would be pinning nothing.
 
 ---
 

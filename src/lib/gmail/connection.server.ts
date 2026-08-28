@@ -84,7 +84,9 @@ export function safeReturnPath(candidate: string | null | undefined): string | n
 export type StartResult =
   | { result: "ok"; authorizationUrl: string }
   | { result: "not_configured" }
-  | { result: "invalid_target" };
+  | { result: "invalid_target" }
+  /** The target is not in a state a reconnect may start against — `connected`, retired, or deleting. */
+  | { result: "not_reconnectable"; connectionState?: GmailConnectionState };
 
 /**
  * CONNECT / RECONNECT, step one: record the in-flight authorization and send the
@@ -128,7 +130,7 @@ export async function startGmailAuthorization(
   const codeVerifier = randomToken(64);
   const sealedVerifier = sealSecret(codeVerifier, cfg.encryptionKey, cfg.encryptionKeyVersion);
 
-  const { error } = await deps.db.rpc("gmail_oauth_begin", {
+  const { data: begun, error } = await deps.db.rpc("gmail_oauth_begin", {
     p_user_id: input.userId,
     p_state_digest: sha256(state),
     p_nonce_digest: sha256(nonce),
@@ -146,6 +148,19 @@ export async function startGmailAuthorization(
   if (error) {
     // The composite FK in 0036 rejects a target that is not this user's mailbox,
     // so a caller-supplied account id cannot aim the flow at somebody else.
+    return { result: "invalid_target" };
+  }
+
+  // THE FLOW STARTS AGAINST A REAL STATE. `gmail_oauth_begin` resolves the
+  // target itself, refuses one that is not reconnectable right now, and pins its
+  // lifecycle revision — so a caller can neither aim at somebody else's mailbox
+  // nor open a reconnect against a mailbox that is currently working and hope it
+  // becomes reconnectable later.
+  const begin = (begun ?? {}) as { result?: string; connection_state?: GmailConnectionState };
+  if (begin.result === "not_reconnectable") {
+    return { result: "not_reconnectable", connectionState: begin.connection_state };
+  }
+  if (begin.result !== "ok") {
     return { result: "invalid_target" };
   }
 
@@ -168,6 +183,19 @@ export type CallbackOutcome =
   | { result: "access_denied"; returnPath: string | null }
   | { result: "account_mismatch"; returnPath: string | null }
   | { result: "account_retired"; returnPath: string | null }
+  /**
+   * The mailbox moved on while this authorization was in flight — most often
+   * because the human disconnected it after starting the flow. The newer
+   * decision stands; nothing was persisted.
+   */
+  | { result: "state_changed"; returnPath: string | null }
+  /**
+   * A generic connect landed on a Google account that already has a live, not
+   * currently connected mailbox here. Reconnecting it is an explicit action that
+   * pins the mailbox's lifecycle revision, so this flow persists nothing and
+   * asks the human to use it.
+   */
+  | { result: "reconnect_required"; mailAccountId: string; returnPath: string | null }
   | { result: "invalid_state" }
   | { result: "missing_refresh_token" }
   | { result: "scope_refused"; detail: "missing_read" | "forbidden_scope" }
@@ -186,6 +214,8 @@ interface TransactionRow {
   encryption_key_version?: string;
   purpose?: string;
   target_mail_account_id?: string | null;
+  /** The lifecycle revision the target had when this flow started. */
+  target_authorization_revision?: number | string | null;
   return_path?: string | null;
 }
 
@@ -364,6 +394,10 @@ export async function completeGmailAuthorization(
     p_key_version: sealed.keyVersion,
     p_provider_refresh_expires_at: tokens.refreshTokenExpiresAt?.toISOString() ?? null,
     p_expected_mail_account_id: tx.target_mail_account_id ?? null,
+    // The revision this flow was started against. The database refuses to land a
+    // reconnect on any other version of that mailbox.
+    p_expected_target_revision:
+      tx.target_authorization_revision == null ? null : Number(tx.target_authorization_revision),
     p_consent_policy_version: PRIVATE_PROCESSING_POLICY_VERSION,
   });
 
@@ -395,6 +429,20 @@ export async function completeGmailAuthorization(
       // the completed deletion it rests on; a fresh connect makes a new row.
       discardWithoutRevoking();
       return { result: "account_retired", returnPath };
+    case "state_changed":
+      // The human decided something newer than this flow — usually Disconnect.
+      // An older intention does not get to overwrite a later decision.
+      discardWithoutRevoking();
+      return { result: "state_changed", returnPath };
+    case "reconnect_required":
+      // A generic connect cannot pin a lifecycle revision for a mailbox whose
+      // identity was unknown when it started, so it does not get to revive one.
+      discardWithoutRevoking();
+      return {
+        result: "reconnect_required",
+        mailAccountId: outcome.mail_account_id!,
+        returnPath,
+      };
     case "owned_by_other_user":
       // Refused, and the answer says nothing about who owns it.
       discardWithoutRevoking();

@@ -40,6 +40,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(started.authorizationUrl);
   }
 
-  const reason = started.result === "not_configured" ? "gmail_not_configured" : "gmail_bad_target";
+  const reason =
+    started.result === "not_configured"
+      ? "gmail_not_configured"
+      : started.result === "not_reconnectable"
+        ? "gmail_not_reconnectable"
+        : "gmail_bad_target";
   return NextResponse.redirect(`${origin}/app/account?gmail=${reason}`);
 }

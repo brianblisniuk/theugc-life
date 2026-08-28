@@ -1949,6 +1949,33 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #3 (2026-08-28) extended the causality reasoning
+from credentials to AUTHORIZATION. Amendment #2 established that a refresh spans
+a network call and therefore needs a generation; OAuth spans a much longer one —
+we hand the browser to Google and the callback arrives whenever the human returns
+— and had no equivalent. So an intention could outlive the decision that replaced
+it: a Reconnect started before an explicit Disconnect landed afterwards, stored a
+fresh credential, and put the mailbox back to `connected`.
+
+`mail_accounts.authorization_revision` is the fix, and the important part of it
+is that it is a REVISION rather than a state check. A mailbox can leave a
+reconnectable state and come back to one, so a callback that verifies only the
+state name finds the word it expects while knowing nothing about the decisions in
+between. The revision is database-owned, advanced by trigger on lifecycle change,
+and never caller-settable — which also means a direct SQL change invalidates
+in-flight OAuth exactly as a server action does. A reconnect pins it at start and
+must match it exactly at the callback; a flow cannot even begin against a mailbox
+that is not reconnectable right now.
+
+The same amendment narrowed B01's CASE B: a generic CONNECT may no longer revive
+an existing live mailbox. It cannot pin a revision for an identity it does not
+learn until the callback, so it would be the one door with no snapshot to check.
+It answers `reconnect_required` and persists nothing; the human uses the explicit
+Reconnect action, which does pin one. And the migration guard was completed to
+cover every invariant that can already be false — a `pending_authorization` row
+with a non-empty scope set is valid under 0035 and forbidden by 0036, so 0036 now
+refuses to install on one rather than finishing incoherent.
+
 B02 external audit amendment #2 (2026-08-28) settled that **the Google Cloud
 project used for the Gmail integration is an authorization domain**. Google's
 programmatic token revocation removes every OAuth 2.0 scope previously granted to

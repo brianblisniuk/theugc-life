@@ -575,7 +575,20 @@ d("B02 — Gmail OAuth connection", () => {
       // Move it to disconnected, then authorize again through the generic flow.
       await releaseConnection(id);
 
-      const second = await runAuthorization(userId, { subject });
+      // A generic connect no longer revives a live row: it has no lifecycle
+      // snapshot of a mailbox whose identity it did not know when it started.
+      const generic = await runAuthorization(userId, { subject });
+      expect(generic.outcome!.result).toBe("reconnect_required");
+
+      // The explicit action does, because it pins the target's revision.
+      const second = await runAuthorization(
+        userId,
+        { subject },
+        {
+          purpose: "reconnect",
+          targetMailAccountId: id,
+        },
+      );
       expect((second.outcome as { mailAccountId: string }).mailAccountId).toBe(id);
 
       const rows = await client.query(
@@ -717,10 +730,11 @@ d("B02 — Gmail OAuth connection", () => {
 
       // Google now returns a wider set. B01: a consent given about a narrower
       // mailbox does not describe a wider one.
-      const second = await runAuthorization(userId, {
-        subject,
-        grantedScopes: [...B02_REQUESTED_SCOPES, GMAIL_SEND_SCOPE],
-      });
+      const second = await runAuthorization(
+        userId,
+        { subject, grantedScopes: [...B02_REQUESTED_SCOPES, GMAIL_SEND_SCOPE] },
+        { purpose: "reconnect", targetMailAccountId: id },
+      );
       expect(second.outcome!.result).toBe("consent_required");
       expect((await readMailAccount(client, id)).connection_state).toBe("consent_required");
     });
@@ -753,7 +767,14 @@ d("B02 — Gmail OAuth connection", () => {
       );
       await client.query("commit");
 
-      const second = await runAuthorization(userId, { subject });
+      const second = await runAuthorization(
+        userId,
+        { subject },
+        {
+          purpose: "reconnect",
+          targetMailAccountId: id,
+        },
+      );
       expect(second.outcome!.result).toBe("consent_required");
     });
   });

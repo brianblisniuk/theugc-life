@@ -609,8 +609,23 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #2, awaiting re-audit and the human merge
+> merged, on external audit amendment #3, awaiting re-audit and the human merge
 > gate.**
+
+**B02 external audit amendment #3 (2026-08-28)** closed the last two
+merge-blocking findings against head `b50eff0`:
+
+- an OAuth flow had no causality token, so a Reconnect started before an explicit
+  Disconnect **landed afterwards and undid it** — restoring the credential and
+  the `connected` state. `mail_accounts.authorization_revision` is pinned at
+  start and required exactly at the callback; checking the state name would not
+  have been enough, because a mailbox can leave a reconnectable state and return
+  to one. A generic Connect may no longer revive a live mailbox at all — it never
+  pinned a revision for an identity it learns only at the callback — and answers
+  `reconnect_required` instead;
+- the migration guard checked only one of the two invariants 0036 installs. A
+  `pending_authorization` row with a non-empty scope set is valid under 0035 and
+  forbidden by 0036, and the migration completed on one. It now refuses.
 
 **B02 external audit amendment #2 (2026-08-28)** closed three further
 merge-blocking findings against head `578bf37`:

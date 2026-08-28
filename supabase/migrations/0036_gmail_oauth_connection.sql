@@ -57,9 +57,36 @@
 -- nothing could have reached `connected` before B02 exists to connect it. That
 -- is exactly why this guard is cheap: it costs one query on a table that should
 -- be empty, and it is the difference between an invariant and a claim.
+-- THE GUARD MUST COVER EVERY NEW INVARIANT, not just the first one. 0036 makes
+-- two statements about pre-existing rows that they can already contradict:
+--
+--   1. `connected` holds exactly one credential — impossible before the store
+--      exists, so any pre-existing `connected` row is a counterexample;
+--   2. `pending_authorization` holds an EMPTY scope set — and 0035 permits a
+--      `pending_authorization` row with `gmail.readonly`, because its empty-scope
+--      CHECK covers only `disconnected`, `deletion_pending` and `deleted`. Such a
+--      row is entirely valid under 0035 and forbidden the moment 0036 lands.
+--
+-- Checking only the first is the same mistake in a smaller place: the migration
+-- would still complete with one of its own invariants already false.
+--
+-- The remaining 0035 states need no guard, and it is worth saying why rather
+-- than leaving it to be inferred:
+--
+--   reauth_required   no credential can exist before this migration, and the
+--                     state legitimately RETAINS its last known scope set — that
+--                     is the contract, not a violation;
+--   disconnected /
+--   deletion_pending /
+--   deleted           0035 already requires `disconnected_at` and an empty scope
+--                     set for all three, and no credential store exists yet, so
+--                     both new rules are satisfied by construction;
+--   consent_required  cannot exist: 0035's CHECK does not permit the value, and
+--                     this migration is what adds it.
 do $$
 declare
   v_connected bigint;
+  v_pending bigint;
   v_sample text;
 begin
   if to_regclass('public.mail_accounts') is null then
@@ -77,6 +104,24 @@ begin
     raise exception
       '0036 refuses to install: % mail account(s) are already `connected` and cannot hold a Gmail OAuth credential, because this migration is what creates the credential store. B02 cannot attach a refresh token retroactively — the human would have to authorize at Google again — so these rows require explicit operator resolution (disconnect them, or retire them under B01''s deletion path) before the credential invariants can be installed. Refusing rather than synthesizing a credential, demoting the row or deleting it. First rows: %',
       v_connected, coalesce(v_sample, 'none')
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  select count(*) into v_pending
+    from public.mail_accounts
+   where connection_state = 'pending_authorization'
+     and cardinality(coalesce(granted_scopes, '{}')) > 0;
+
+  if v_pending > 0 then
+    select string_agg(id::text, ', ' order by id) into v_sample
+      from (select id from public.mail_accounts
+             where connection_state = 'pending_authorization'
+               and cardinality(coalesce(granted_scopes, '{}')) > 0
+             order by id limit 10) s;
+
+    raise exception
+      '0036 refuses to install: % mail account(s) are `pending_authorization` while holding a non-empty granted scope set. 0035 permitted that combination; 0036 does not, because the state asserts the human never completed Google''s consent screen and a granted scope set is the record of an authorization it says did not happen. Only a human can say which half is true, so these rows require explicit operator resolution. Refusing rather than clearing the scopes or changing the state on their behalf. First rows: %',
+      v_pending, coalesce(v_sample, 'none')
       using errcode = 'integrity_constraint_violation';
   end if;
 end;
@@ -150,6 +195,91 @@ alter table public.mail_accounts
     ('pending_authorization', 'consent_required', 'connected', 'reauth_required',
      'disconnected', 'deletion_pending', 'deleted'));
 
+-- ===========================================================================
+-- 1b. THE LIFECYCLE REVISION — OAUTH IS A LONG-RUNNING OPERATION TOO
+-- ===========================================================================
+-- Amendment #2 gave the CREDENTIAL a generation, because a refresh spans a
+-- network call and the world can move during it. Authorization spans a much
+-- longer one: we write a transaction, hand the browser to Google, and the
+-- callback arrives whenever the human gets round to it — minutes later, or after
+-- they wandered off, made a cup of tea, and changed their mind.
+--
+-- The reconnect target was validated against its state AT CALLBACK TIME, which
+-- means a newer decision could be overwritten by an older intention:
+--
+--   1. mailbox A is `reauth_required`;
+--   2. the human starts Reconnect A;
+--   3. the human changes their mind and DISCONNECTS A — revoked at Google,
+--      credential gone, state `disconnected`;
+--   4. the old callback finally arrives. `disconnected` is a reconnectable
+--      state, so the callback stored a fresh credential and — because the old
+--      consent was still on file for the same scope set — put the mailbox
+--      straight back to `connected`.
+--
+-- An explicit Disconnect, undone by an intention that predates it.
+--
+-- CHECKING THE STATE NAME IS NOT ENOUGH, and this is the part worth being exact
+-- about. A mailbox can leave a reconnectable state and come back to it:
+--
+--   reauth_required (rev 10) -> disconnected (rev 11) -> reauth_required (rev 12)
+--
+-- A callback pinned at rev 10 finds the state name it expects and is still
+-- stale: two lifecycle decisions happened in between that it knows nothing
+-- about. So the flow pins the exact REVISION, not the state.
+--
+-- Database-owned and monotonic, from a sequence. Not a timestamp — amendment #2
+-- settled that: equal values collide and clock order is not causal order. Not
+-- caller-supplied either: the trigger below overwrites whatever a writer puts
+-- there, so a direct SQL lifecycle change invalidates in-flight OAuth exactly
+-- like an RPC one does.
+create sequence if not exists public.mail_account_authorization_revision_seq;
+
+revoke all on sequence public.mail_account_authorization_revision_seq from public;
+revoke all on sequence public.mail_account_authorization_revision_seq from anon, authenticated;
+-- service_role holds INSERT/UPDATE on mail_accounts (0035), so it needs to be
+-- able to draw the default and the trigger's next value. No client role does.
+grant usage, select on sequence public.mail_account_authorization_revision_seq to service_role;
+
+alter table public.mail_accounts
+  add column authorization_revision bigint not null
+    default nextval('public.mail_account_authorization_revision_seq');
+
+comment on column public.mail_accounts.authorization_revision is
+  'B02: the lifecycle revision an in-flight OAuth flow pins. Advances whenever a change invalidates an authorization started against the older state — a connection-state transition or a scope-set change. Database-owned and not caller-settable.';
+
+-- WHAT ADVANCES IT, and what deliberately does not.
+--
+-- A lifecycle decision invalidates a flow started before it, so a
+-- `connection_state` transition or a `granted_scopes` change advances the
+-- revision. Editing an email address or touching `updated_at` does not: a
+-- display-metadata change is not a decision about access, and making every
+-- unrelated write invalidate in-flight OAuth would turn a correctness mechanism
+-- into a source of spurious failures.
+--
+-- The trigger ALWAYS assigns the column, which is what makes it non-caller-
+-- controlled: a writer who supplies their own value has it overwritten with
+-- either the bumped value or the old one.
+create or replace function public.bump_mail_account_authorization_revision()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.connection_state is distinct from old.connection_state
+     or new.granted_scopes is distinct from old.granted_scopes then
+    new.authorization_revision := nextval('public.mail_account_authorization_revision_seq');
+  else
+    new.authorization_revision := old.authorization_revision;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.bump_mail_account_authorization_revision() from public;
+
+create trigger mail_accounts_authorization_revision
+  before update on public.mail_accounts
+  for each row execute function public.bump_mail_account_authorization_revision();
+
 comment on column public.mail_accounts.connection_state is
   'B01 + B02: pending_authorization = Google authorization not completed, no credential. consent_required (B02) = Google authorization completed and a credential exists, but private-processing consent does not cover the granted scope set. connected = both. reauth_required/disconnected = no credential. deletion_pending/deleted per B01.';
 
@@ -193,6 +323,13 @@ create table private.gmail_oauth_transactions (
   -- if a caller supplies its id.
   target_mail_account_id uuid,
 
+  -- ...and the lifecycle revision that target had when the flow STARTED. The id
+  -- says which mailbox; this says which version of it. Without it, a callback
+  -- that arrives after the human disconnected would find a state that happens to
+  -- be reconnectable again and quietly undo their decision. Written by
+  -- `gmail_oauth_begin` from the row itself — never supplied by a caller.
+  target_authorization_revision bigint,
+
   -- What we asked Google for. Recorded to compare against what Google actually
   -- grants — B01 §11's rule is that the granted set is authoritative and the
   -- requested set is never a substitute for it.
@@ -223,8 +360,12 @@ create table private.gmail_oauth_transactions (
   -- and a caller who can influence that decision can steer where a fresh Google
   -- grant lands. An IFF removes the choice instead of documenting it.
   constraint gmail_oauth_transactions_purpose_target_iff
-    check ((purpose = 'connect' and target_mail_account_id is null)
-        or (purpose = 'reconnect' and target_mail_account_id is not null)),
+    check ((purpose = 'connect'
+            and target_mail_account_id is null
+            and target_authorization_revision is null)
+        or (purpose = 'reconnect'
+            and target_mail_account_id is not null
+            and target_authorization_revision is not null)),
 
   constraint gmail_oauth_transactions_ttl
     check (expires_at > created_at)
@@ -499,6 +640,17 @@ create constraint trigger mail_account_consents_credential_coherent
 -- ---------------------------------------------------------------------------
 -- 4a. BEGIN — record an authorization that is about to start
 -- ---------------------------------------------------------------------------
+-- A RECONNECT STARTS AGAINST A REAL STATE, NOT A POSSIBLE FUTURE ONE.
+--
+-- The target is resolved and validated HERE, and its lifecycle revision is
+-- captured from the row itself. Two things follow that did not hold before:
+--
+--   * a flow cannot BEGIN against a mailbox that is currently `connected` (or
+--     retired, or in a deletion state). A caller could otherwise open
+--     "Reconnect A" while A was working and hope it became reconnectable later
+--     — starting a flow against a state that does not exist yet;
+--   * the revision is read from the row, so no caller can supply one. Pinning a
+--     value the caller chose would be pinning nothing.
 create or replace function public.gmail_oauth_begin(
   p_user_id uuid,
   p_state_digest text,
@@ -513,17 +665,53 @@ create or replace function public.gmail_oauth_begin(
   p_return_path text,
   p_ttl_seconds integer
 )
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = public, private, pg_temp
 as $$
 declare
   v_id uuid;
+  v_target public.mail_accounts%rowtype;
+  v_revision bigint;
 begin
   if p_user_id is null then
     raise exception 'gmail_oauth_begin requires an authenticated user'
       using errcode = 'invalid_parameter_value';
+  end if;
+
+  if p_purpose = 'reconnect' then
+    if p_target_mail_account_id is null then
+      return jsonb_build_object('result', 'invalid_target');
+    end if;
+
+    -- Owner in the lookup, not compared afterwards. Somebody else's mailbox does
+    -- not exist here. `for no key update` so a concurrent lifecycle change
+    -- serializes against this read rather than racing it.
+    select m.* into v_target
+      from public.mail_accounts m
+     where m.id = p_target_mail_account_id
+       and m.user_id = p_user_id
+       and m.provider = 'gmail'
+     for no key update;
+
+    if not found then
+      return jsonb_build_object('result', 'invalid_target');
+    end if;
+
+    if v_target.connection_state not in
+       ('disconnected', 'reauth_required', 'pending_authorization', 'consent_required') then
+      -- `connected` included: a working mailbox is not something to reconnect,
+      -- and a flow opened against one would be waiting for a state change it has
+      -- no right to anticipate. `deleted` and the deletion states are refused for
+      -- B01's terminality reasons.
+      return jsonb_build_object(
+        'result', 'not_reconnectable',
+        'connection_state', v_target.connection_state
+      );
+    end if;
+
+    v_revision := v_target.authorization_revision;
   end if;
 
   -- Housekeeping on the way in, so expired rows cannot accumulate unbounded
@@ -533,16 +721,23 @@ begin
   insert into private.gmail_oauth_transactions
     (user_id, state_digest, nonce_digest, code_verifier_ciphertext,
      code_verifier_iv, code_verifier_auth_tag, encryption_key_version,
-     purpose, target_mail_account_id, requested_scopes, return_path, expires_at)
+     purpose, target_mail_account_id, target_authorization_revision,
+     requested_scopes, return_path, expires_at)
   values
     (p_user_id, p_state_digest, p_nonce_digest, p_verifier_ciphertext,
      p_verifier_iv, p_verifier_auth_tag, p_key_version,
-     p_purpose, p_target_mail_account_id,
+     p_purpose,
+     case when p_purpose = 'reconnect' then p_target_mail_account_id end,
+     v_revision,
      public.canonical_scope_set(p_requested_scopes), p_return_path,
      now() + make_interval(secs => greatest(p_ttl_seconds, 1)))
   returning id into v_id;
 
-  return v_id;
+  return jsonb_build_object(
+    'result', 'ok',
+    'id', v_id,
+    'target_authorization_revision', v_revision
+  );
 end;
 $$;
 
@@ -588,6 +783,7 @@ begin
     'encryption_key_version', v_row.encryption_key_version,
     'purpose', v_row.purpose,
     'target_mail_account_id', v_row.target_mail_account_id,
+    'target_authorization_revision', v_row.target_authorization_revision,
     'requested_scopes', to_jsonb(v_row.requested_scopes),
     'return_path', v_row.return_path
   );
@@ -629,6 +825,7 @@ create or replace function public.gmail_connection_persist(
   p_key_version text,
   p_provider_refresh_expires_at timestamptz,
   p_expected_mail_account_id uuid,
+  p_expected_target_revision bigint,
   p_consent_policy_version text
 )
 returns jsonb
@@ -695,6 +892,25 @@ begin
     if v_target.provider_account_subject <> p_provider_account_subject then
       return jsonb_build_object('result', 'account_mismatch');
     end if;
+
+    -- ...AND IT MUST STILL BE THE SAME VERSION OF THAT MAILBOX.
+    --
+    -- The state name is not enough. A mailbox can leave a reconnectable state
+    -- and return to one — `reauth_required` -> `disconnected` -> `reauth_required`
+    -- — and a callback pinned before all of that would find the word it expects
+    -- while knowing nothing about the two decisions in between. The revision is
+    -- what distinguishes "still the situation I started against" from "a
+    -- situation that happens to look similar".
+    --
+    -- Concretely, this is what stops an OAuth flow the human abandoned from
+    -- undoing the Disconnect they chose instead.
+    if p_expected_target_revision is null
+       or v_target.authorization_revision <> p_expected_target_revision then
+      return jsonb_build_object(
+        'result', 'state_changed',
+        'connection_state', v_target.connection_state
+      );
+    end if;
   end if;
 
   -- CASE D first, because it is the one that must not leak. The registry is
@@ -727,6 +943,27 @@ begin
       return jsonb_build_object(
         'result', 'already_connected',
         'mail_account_id', v_account.id
+      );
+    end if;
+
+    -- A GENERIC CONNECT MAY NOT REVIVE A LIVE ROW.
+    --
+    -- A connect flow does not know which Google account it will get until the
+    -- callback, so it cannot have pinned that mailbox's lifecycle revision at
+    -- the start — there was nothing to pin. Letting it reuse an existing
+    -- non-deleted row would reintroduce the whole stale-callback problem
+    -- through the one door that has no snapshot to check: connect, wander off,
+    -- disconnect, and let the old callback restore access.
+    --
+    -- So the answer is to send the human through the explicit action that DOES
+    -- pin a revision. This is a deliberate narrowing of B01's CASE B: a generic
+    -- connect now serves an unseen identity, or one whose previous rows are all
+    -- terminally `deleted`. Nothing is persisted here.
+    if p_expected_mail_account_id is null then
+      return jsonb_build_object(
+        'result', 'reconnect_required',
+        'mail_account_id', v_account.id,
+        'connection_state', v_account.connection_state
       );
     end if;
 
@@ -1364,7 +1601,7 @@ begin
   foreach fn in array array[
     'public.gmail_oauth_begin(uuid,text,text,text,text,text,text,text,uuid,text[],text,integer)',
     'public.gmail_oauth_consume_transaction(uuid,text)',
-    'public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,text)',
+    'public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,bigint,text)',
     'public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)',
     'public.gmail_credential_load(uuid)',
     'public.gmail_credential_load_for_owner(uuid,uuid)',

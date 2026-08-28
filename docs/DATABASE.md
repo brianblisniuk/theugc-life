@@ -1307,21 +1307,48 @@ user_id)`, so a caller-supplied account id cannot aim the flow at somebody else'
 mailbox. `return_path` carries a CHECK forbidding absolute and protocol-relative
 values.
 
-`purpose` and `target_mail_account_id` are an **IFF**: `connect` ⇔ no target,
-`reconnect` ⇔ a target. "Reconnect implies a target" left the other half open,
+`purpose`, `target_mail_account_id` and `target_authorization_revision` are an
+**IFF**: `connect` ⇔ neither, `reconnect` ⇔ both. "Reconnect implies a target" left the other half open,
 and a `connect` carrying a target is a transaction whose two fields describe
 different flows — the callback would then have to pick one, and a caller who can
 influence that pick can steer where a fresh Google grant lands.
 
 ### 0036 refuses to install on state it cannot make true
-Before anything else, the migration aborts if any `mail_accounts` row is already
-`connected`. Such a row cannot hold a credential — this migration is what creates
-the credential store — so completing would mean reporting success while the
-invariant below was already false. B02 cannot attach a refresh token
-retroactively, so there is no honest repair: it does not synthesize one, demote
-the row, delete it, or leave it for the next write. It names the rows and stops.
-The expected count is zero, because B01 shipped schema only and nothing could
-have reached `connected` before B02 exists to connect it.
+Before anything else, the migration aborts if any pre-existing `mail_accounts`
+row contradicts a rule 0036 is about to install. **Two** rules can already be
+false:
+
+- any row that is `connected` — it cannot hold a credential, because this
+  migration is what creates the credential store;
+- any `pending_authorization` row with a **non-empty** scope set — 0035 permits
+  that combination (its empty-scope CHECK covers only `disconnected`,
+  `deletion_pending` and `deleted`) and 0036 forbids it.
+
+The remaining states need no guard: `reauth_required` legitimately retains its
+scopes and can hold no credential yet; `disconnected`/`deletion_pending`/`deleted`
+already require empty scopes under 0035; `consent_required` cannot exist, because
+0035's CHECK does not permit the value.
+
+B02 cannot attach a refresh token retroactively and cannot know which half of a
+`pending_authorization`-with-scopes row is true, so there is no honest repair: it
+does not synthesize a credential, clear the scopes, demote or promote the state,
+delete rows, or leave it for the next write. It names the rows and stops. The
+expected count is zero, because B01 shipped schema only.
+
+### mail_accounts.authorization_revision (added by 0036)
+The **lifecycle revision an in-flight OAuth flow pins.** A `bigint` from
+`public.mail_account_authorization_revision_seq`, advanced by a BEFORE UPDATE
+trigger whenever `connection_state` or `granted_scopes` changes — the changes
+that invalidate an authorization started against the older state. Unrelated
+display-metadata edits leave it alone.
+
+The trigger assigns the column on every update, so it is **not caller-settable**,
+and a direct SQL lifecycle change invalidates in-flight OAuth exactly as a server
+action does. `gmail_oauth_begin` captures it for a reconnect and
+`gmail_connection_persist` requires the exact value — because a mailbox can leave
+a reconnectable state and return to one, and a stale callback would otherwise
+find the state name it expects while knowing nothing about the decisions in
+between.
 
 ### private.gmail_oauth_credentials
 The encrypted refresh token, **one per mailbox** — a replacement supersedes its
@@ -1395,11 +1422,17 @@ account at the account chooser fell through to "identity never seen" and silentl
 created a new mailbox. A `deleted` target answers `account_retired`; B01's
 terminality is not something a reconnect may undo.
 
-It then implements B01's account selection — new identity, reuse a live row,
-never revive a `deleted` one, refuse an identity owned by another user without
-naming them — and stores the credential in the same transaction. A successful
-authorization lands in `consent_required`, never `connected`, unless a current
-exact-scope consent already exists.
+It also requires the pinned `target_authorization_revision` to still be the
+mailbox's current one, so an OAuth flow the human abandoned cannot undo the
+Disconnect they chose instead.
+
+It then implements B01's account selection — new identity, never revive a
+`deleted` one, refuse an identity owned by another user without naming them — and
+stores the credential in the same transaction. A generic connect landing on an
+existing LIVE row of this owner answers `reconnect_required` and persists
+nothing: it never pinned that mailbox's revision, so it does not get to revive
+it. A successful authorization lands in `consent_required`, never `connected`,
+unless a current exact-scope consent already exists.
 
 `gmail_credential_load` returns the ENVELOPE and its generation, never a token:
 decryption happens in the application. It takes **no user id**, which is right for a trusted internal

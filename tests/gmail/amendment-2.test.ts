@@ -552,7 +552,11 @@ d("amendment #2 — a credential mutation names the credential it came from", ()
     );
     await client.query("commit");
 
-    const again = await authorize(userId, { project, subject });
+    const again = await authorize(
+      userId,
+      { project, subject },
+      { purpose: "reconnect", targetMailAccountId: mailAccountId },
+    );
     expect((again.outcome as { mailAccountId: string }).mailAccountId).toBe(mailAccountId);
     // A fresh credential is a NEW generation even though the row is the same and
     // the old credential row was deleted in between — a per-row counter would

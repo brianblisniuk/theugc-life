@@ -150,6 +150,12 @@ export function GmailConnectionPanel({
                 {needsConsent ? <ConsentPrompt mailAccountId={account.mailAccountId} /> : null}
 
                 <div className="flex flex-wrap items-start gap-3">
+                  {/* Reconnect is the ONLY way back for a mailbox that already
+                      exists here. A generic Connect cannot revive one: it does
+                      not know which Google account it will get until the
+                      callback, so it has no lifecycle snapshot to check the
+                      answer against. This link does, which is why every
+                      non-connected account exposes it. */}
                   {account.connectionState !== "connected" ? (
                     <a
                       href={`/api/integrations/gmail/oauth/start?purpose=reconnect&mail_account_id=${account.mailAccountId}`}

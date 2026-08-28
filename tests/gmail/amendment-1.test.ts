@@ -274,7 +274,11 @@ d("amendment #1 — the state word tells the truth", () => {
     );
     await client.query("commit");
 
-    const again = await authorize(userId, { subject });
+    const again = await authorize(
+      userId,
+      { subject },
+      { purpose: "reconnect", targetMailAccountId: mailAccountId },
+    );
     expect(again.outcome!.result).toBe("consent_required");
     expect((await readMailAccount(client, mailAccountId)).connection_state).toBe(
       "consent_required",
@@ -285,10 +289,14 @@ d("amendment #1 — the state word tells the truth", () => {
     // wider set, and `consent_required` is the state that says so out loud.
     const widened = await connectedMailbox("state9c-narrow");
     await releaseConnection(widened.mailAccountId);
-    const wider = await authorize(widened.userId, {
-      subject: widened.subject,
-      grantedScopes: [...B02_REQUESTED_SCOPES, "https://www.googleapis.com/auth/gmail.send"],
-    });
+    const wider = await authorize(
+      widened.userId,
+      {
+        subject: widened.subject,
+        grantedScopes: [...B02_REQUESTED_SCOPES, "https://www.googleapis.com/auth/gmail.send"],
+      },
+      { purpose: "reconnect", targetMailAccountId: widened.mailAccountId },
+    );
     expect(wider.outcome!.result).toBe("consent_required");
     expect((await readMailAccount(client, widened.mailAccountId)).connection_state).toBe(
       "consent_required",
@@ -457,20 +465,35 @@ d("amendment #1 — a reconnect is bound to the mailbox it names", () => {
     ]);
     await client.query("commit");
 
-    // The transaction can still name it — the composite FK only proves ownership
-    // — so the refusal has to come from the persist step.
+    // TWO LAYERS REFUSE IT, independently.
+    //
+    // Since amendment #3 the flow cannot even BEGIN against a retired target:
+    // `gmail_oauth_begin` resolves the mailbox itself and rejects every state
+    // that is not reconnectable.
     const attack = await authorize(
       userId,
       { subject },
       { purpose: "reconnect", targetMailAccountId: id },
     );
-    expect(attack.outcome!.result).toBe("account_retired");
-    expect((await readMailAccount(client, id)).connection_state).toBe("deleted");
+    expect(attack.started.result).toBe("not_reconnectable");
+    expect(attack.outcome).toBeNull();
     // NOT revoked. Google's revocation is project-wide: it would remove every
-    // scope this project holds for the user and invalidate the tokens of
-    // any other mailbox they have connected. A refused callback persists
-    // nothing and revokes nothing.
+    // scope this project holds for the user and invalidate the tokens of any
+    // other mailbox they have connected.
     expect(attack.google.calls.revocations).toHaveLength(0);
+
+    // And the persist step still refuses on its own, so removing the first check
+    // would not quietly open the second. Called directly, because the
+    // orchestration can no longer reach it with a retired target.
+    const direct = await client.query(
+      `select public.gmail_connection_persist(
+         $1::uuid, $2, 'x@example.invalid',
+         array['https://www.googleapis.com/auth/gmail.readonly']::text[],
+         'ct','iv','tag','v1', null, $3::uuid, 1::bigint, 'p/1') as r`,
+      [userId, subject, id],
+    );
+    expect(direct.rows[0].r.result).toBe("account_retired");
+    expect((await readMailAccount(client, id)).connection_state).toBe("deleted");
   });
 
   it("14. a `connect` transaction carrying a target is refused by the database", async () => {
@@ -875,8 +898,13 @@ d("amendment #1 — what must not have changed", () => {
     const id = (first.outcome as { mailAccountId: string }).mailAccountId;
     await releaseConnection(id);
 
-    // Same Google account, new address: the SAME mailbox row.
-    const second = await authorize(userId, { subject, email: "after@example.invalid" });
+    // Same Google account, new address: the SAME mailbox row. Reached through the
+    // explicit reconnect, which is now the only flow that may revive a live row.
+    const second = await authorize(
+      userId,
+      { subject, email: "after@example.invalid" },
+      { purpose: "reconnect", targetMailAccountId: id },
+    );
     expect((second.outcome as { mailAccountId: string }).mailAccountId).toBe(id);
     expect((await readMailAccount(client, id)).provider_account_subject).toBe(subject);
   });
