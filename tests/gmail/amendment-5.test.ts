@@ -10,6 +10,7 @@ import {
   startGmailAuthorization,
   type GmailDeps,
 } from "@/lib/gmail/connection.server";
+import { B02_REQUESTED_SCOPES } from "@/lib/gmail/contract";
 import { resetGmailOAuthConfigCache } from "@/lib/gmail/env.server";
 import { GoogleAdapterError } from "@/lib/gmail/google.server";
 import { canDisconnect } from "@/lib/gmail/panel-actions";
@@ -135,6 +136,14 @@ async function expireCredential(mailAccountId: string) {
 }
 
 const stateOf = async (id: string) => (await readMailAccount(client, id)).connection_state;
+
+async function revisionOf(mailAccountId: string): Promise<string> {
+  const res = await client.query(
+    "select authorization_revision from public.mail_accounts where id = $1",
+    [mailAccountId],
+  );
+  return String(res.rows[0].authorization_revision);
+}
 
 /**
  * A db wrapper that performs the human's Disconnect at the exact moment the
@@ -376,6 +385,64 @@ d("amendment #5 — Disconnect dominates the provider authorization too", () => 
     // The connection the human actually wants is untouched.
     expect(await stateOf(mailAccountId)).toBe("connected");
     expect(await countCredentials(client, mailAccountId)).toBe(1);
+  });
+
+  it("A9b. a newer SUCCESSFUL Reconnect is not a disconnect, even with a disconnect on record", async () => {
+    // A9 proves the ancient callback cannot get that far. This drives the guard
+    // itself, because the branch condition is what a future maintainer edits:
+    // `disconnect_requested_revision` IS set and IS newer than the pinned
+    // revision, and the answer must still be a plain `state_changed`, because
+    // the mailbox is `connected` again. Revoking here would take away the
+    // authorization the human most recently asked for.
+    const project = createFakeGoogleProject();
+    const { userId, mailAccountId, subject } = await connectedIn(project, "a5-9b");
+    await expireCredential(mailAccountId);
+    const pinned = await revisionOf(mailAccountId);
+
+    await disconnectGmailAccount(
+      { userId, mailAccountId },
+      deps(createFakeGoogle({ project, subject })),
+    );
+    const fresh = await authorize(
+      userId,
+      { project, subject },
+      { purpose: "reconnect", targetMailAccountId: mailAccountId },
+    );
+    expect(fresh.outcome!.result).toBe("connected");
+
+    const marker = await client.query(
+      "select disconnect_requested_revision as d from public.mail_accounts where id=$1",
+      [mailAccountId],
+    );
+    expect(Number(marker.rows[0].d)).toBeGreaterThan(Number(pinned));
+
+    const persistPinnedAtOldRevision = () =>
+      client.query(
+        `select public.gmail_connection_persist(
+           $1::uuid, $2, 'a9b@example.invalid', $3::text[],
+           'LATE-CT','iv','tag','v1', null, $4::uuid, $5::bigint, 'p/1') as r`,
+        [userId, subject, B02_REQUESTED_SCOPES, mailAccountId, pinned],
+      );
+
+    // While the mailbox is `connected` the revoke branch is not merely
+    // untaken — it is unreachable. The reconnectable-state gate runs FIRST and
+    // answers `account_mismatch`, so a working connection cannot be revoked by
+    // an old callback even if every later condition were wrong.
+    const whileConnected = await persistPinnedAtOldRevision();
+    expect(whileConnected.rows[0].r.result).toBe("account_mismatch");
+
+    // Now the sharp case: put the mailbox back into a RECONNECTABLE state that
+    // is not a disconnect state, so the callback reaches the revision check with
+    // the disconnect marker still on the row and still newer than its pin. The
+    // marker alone must not be enough.
+    await expireCredential(mailAccountId);
+    expect(await stateOf(mailAccountId)).toBe("reauth_required");
+
+    const whileReauth = await persistPinnedAtOldRevision();
+    expect(whileReauth.rows[0].r.result).toBe("state_changed");
+
+    // Untouched, and no revocation anywhere in the domain.
+    expect(project.revokedSubjects()).not.toContain(subject);
   });
 
   it("A10. account_mismatch and owned_by_other_user still revoke nothing", async () => {
