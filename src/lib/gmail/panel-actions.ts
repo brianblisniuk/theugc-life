@@ -49,9 +49,26 @@ export function needsPrivateProcessingConsent(
   return account.hasCredential && account.connectionState === "consent_required";
 }
 
-/** Disconnect is meaningful until access has already stopped. */
+/**
+ * The states a user-facing Disconnect has meaning in.
+ *
+ * `disconnecting` is included so a retry is possible when the provider side did
+ * not resolve. `disconnected` is already there. `deletion_pending` and `deleted`
+ * belong to the deletion lifecycle: access has stopped, a specific request may
+ * be outstanding, and a Disconnect that moved the state would stop the account
+ * surface saying "Deletion in progress" while the request was still running. The
+ * database refuses all three; this only keeps the panel from offering them.
+ */
+const DISCONNECTABLE_STATES: ReadonlySet<GmailConnectionState> = new Set([
+  "pending_authorization",
+  "consent_required",
+  "connected",
+  "reauth_required",
+  "disconnecting",
+]);
+
 export function canDisconnect(account: Pick<GmailAccountStatus, "connectionState">): boolean {
-  return account.connectionState !== "disconnected";
+  return DISCONNECTABLE_STATES.has(account.connectionState);
 }
 
 /**

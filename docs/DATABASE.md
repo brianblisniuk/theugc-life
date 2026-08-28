@@ -1077,8 +1077,9 @@ array on write to sorted-distinct form, which is what lets scope sets be compare
 as SETS with `=`.
 
 `connection_state` is `pending_authorization` · `consent_required` ·
-`connected` · `reauth_required` · `disconnected` · `deletion_pending` ·
-`deleted`. **`consent_required` was added by 0036**, which ALTERs the CHECK 0035
+`connected` · `reauth_required` · `disconnecting` · `disconnected` ·
+`deletion_pending` · `deleted`. **`consent_required` and `disconnecting` were
+added by 0036**, which ALTERs the CHECK 0035
 created: B01 wrote its vocabulary before any credential existed anywhere, so
 `pending_authorization` meant "the human has not finished at Google and we hold
 no access" — a sentence that cannot describe the moment after a successful
@@ -1395,6 +1396,12 @@ registered on `mail_accounts`, on `private.gmail_oauth_credentials` (INSERT,
 UPDATE **and DELETE**) and on `mail_account_consents`. At COMMIT:
 
 - `connected` / `consent_required` → **exactly one** credential;
+- `disconnecting` → **zero or one**. This is the one state that spans a network
+  call by design: the owner has asked to stop, and the credential is retained
+  until revocation resolves because it is the only thing that can revoke. Stating
+  "exactly one" would refuse the row the instant finalize deleted it, and stating
+  nothing would leave a state with no upper bound at all — so the trigger
+  enforces at most one and says why;
 - every other state → **no** credential;
 - `consent_required` additionally requires `gmail.readonly`, and may not survive
   a granted private-processing consent whose snapshot equals the current scope
@@ -1420,8 +1427,22 @@ the account row is gone, there is nothing left to be coherent with. No
 `gmail_connection_persist` · `gmail_grant_private_processing_consent` ·
 `gmail_credential_load` · `gmail_credential_load_for_owner` ·
 `gmail_credential_replace` · `gmail_credential_currentness` ·
-`gmail_mark_reauth_required` · `gmail_disconnect_finalize` ·
-`gmail_connection_status`.
+`gmail_mark_reauth_required` · `gmail_disconnect_prepare` ·
+`gmail_disconnect_finalize` · `gmail_connection_status`.
+
+`gmail_disconnect_prepare` is the step that makes Disconnect dominate the
+provider. It runs BEFORE the network call, in one transaction: it deletes the
+mailbox's outstanding OAuth transactions (a flow that has not come back can never
+be completed), moves the row to `disconnecting`, records
+`disconnect_requested_revision` from the revision the trigger just issued, and
+returns the credential envelope for the revocation about to happen. Doing any of
+that after Google answered would be making the decision too late to beat a
+callback already in flight. It refuses `deletion_pending` with
+`deletion_in_progress` and `deleted` with `account_retired`, so a user-facing
+Disconnect cannot rewrite a lifecycle a deletion request owns — without that
+refusal the `disconnecting` write hits B01's
+`mail_accounts_non_deletion_state_has_no_request` CHECK and raises instead of
+answering.
 
 `gmail_connection_persist` is the atomic landing point after every Google-side
 check has passed. When the transaction named a reconnect target, it binds that
@@ -1434,7 +1455,13 @@ terminality is not something a reconnect may undo.
 
 It also requires the pinned `target_authorization_revision` to still be the
 mailbox's current one, so an OAuth flow the human abandoned cannot undo the
-Disconnect they chose instead.
+Disconnect they chose instead. When the reason it is stale is a **newer explicit
+Disconnect** — `disconnect_requested_revision` strictly greater than the pinned
+revision, and the row now `disconnecting` or `disconnected` — it says so, with
+`superseded_by_disconnect` rather than a generic `state_changed`. That is the one
+refusal the application answers by revoking at Google, because there the
+project-wide revocation is the thing the human actually asked for; every other
+refusal still revokes nothing.
 
 It then implements B01's account selection — new identity, never revive a
 `deleted` one, refuse an identity owned by another user without naming them — and

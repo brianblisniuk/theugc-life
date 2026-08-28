@@ -829,7 +829,15 @@ d("B02 — Gmail OAuth connection", () => {
       // The credential is RETAINED: it is the only thing that can revoke the
       // access Google still honours.
       expect(await countCredentials(client, mailAccountId)).toBe(1);
-      expect((await readMailAccount(client, mailAccountId)).connection_state).toBe("connected");
+      // NOT `connected`, and not `disconnected` either. Amendment #5 records the
+      // human's Disconnect BEFORE the network call, because that decision is
+      // what has to dominate a concurrent OAuth callback — a decision made only
+      // after Google answers cannot beat a callback that lands while Google is
+      // still thinking. So the row sits in `disconnecting`: access is not
+      // claimed to be stopped (it is not), and the mailbox is not claimed to be
+      // usable (the owner said otherwise). Retrying Disconnect is what finishes
+      // it, and `disconnecting` is a state Disconnect accepts.
+      expect((await readMailAccount(client, mailAccountId)).connection_state).toBe("disconnecting");
     });
 
     it("is idempotent after a revoke that succeeded and a finalize that did not", async () => {

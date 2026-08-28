@@ -380,33 +380,74 @@ token material stays in memory, is never written and never logged, and falls out
 of scope. Preserving a connection that is already valid matters more than tidying
 up an in-memory token we are about to forget.
 
-This is the rule for **every** refusal path, with no exceptions anywhere else in
-this document: missing refresh token, forbidden scope, missing read scope,
-unverifiable or missing ID token, nonce mismatch, failed mailbox health check,
-`account_mismatch`, `account_retired`, `state_changed`, `reconnect_required`,
-`already_connected`, `owned_by_other_user`, and a failed local persist. If a
-sentence elsewhere says a refusal revokes, that sentence is wrong and this one
-governs — these instructions are read by people writing the next feature, and one
-stale line is how the project-wide revocation defect gets reintroduced.
+This is the rule for **every** refusal path listed here: missing refresh token,
+forbidden scope, missing read scope, unverifiable or missing ID token, nonce
+mismatch, failed mailbox health check, `account_mismatch`, `account_retired`,
+`state_changed`, `reconnect_required`, `already_connected`,
+`owned_by_other_user`, and a failed local persist. If a sentence elsewhere says
+one of THOSE refusals revokes, that sentence is wrong and this one governs —
+these instructions are read by people writing the next feature, and one stale
+line is how the project-wide revocation defect gets reintroduced.
+
+### The one refusal that DOES revoke, and why it is not a counter-example
+
+There is exactly one exception, and it is not tidying up: **`superseded_by_disconnect`**.
+
+The three failures above share a shape. In each, the human either wanted a
+connection to keep working or had never asked for anything, and the revoke
+destroyed authorization they still wanted. `superseded_by_disconnect` is the
+opposite shape: the callback is stale *because the owner of that mailbox
+explicitly pressed Disconnect after the flow began*. Removing the project's
+authorization is not a side effect there — it is the literal thing they asked
+for, and B02's promise is Disconnect, not "forget our copy of the token while
+Google may remain authorized".
+
+The refusal is narrow, and every part of the narrowing is load-bearing:
+
+- the mailbox must carry a `disconnect_requested_revision` **strictly newer than
+  the revision this flow pinned** — so an older disconnect, or a mailbox that
+  was disconnected before the flow started, is not it;
+- the mailbox must currently be `disconnecting` or `disconnected` — a newer
+  successful Reconnect, or any other state, is not it;
+- the callback's verified Google `sub` must be the subject the disconnect was
+  aimed at. A different Google account reached through the account chooser is
+  `account_mismatch`, which revokes nothing.
+
+`account_mismatch`, `owned_by_other_user`, `reconnect_required`,
+`already_connected`, an ordinary `state_changed` from an unrelated lifecycle
+change, and a newer successful Reconnect all still revoke **nothing**. Do not
+collapse these two cases back together: the distinction is between "we are
+discarding a token we did not want" and "the person told us to end this
+authorization while it was being created".
 
 ### The honest cost, stated rather than hidden
 
 After a failed first-time authorization, the application may still appear in the
 person's Google Account even though **nothing was persisted here** and we hold no
 usable token. They can retry the connection, or remove the access from their
-Google Account settings.
+Google Account settings. That is a genuine limitation and it is stated, not
+hidden — a generic CONNECT that fails a check has no mailbox and no disconnect
+intent to attach itself to, so there is nothing that could make revocation the
+right call.
 
-The same limitation covers one concurrency ordering worth naming: if a Disconnect
-and a stale reconnect callback overlap such that the disconnect's credential load
-runs BEFORE the callback stores anything, the disconnect finds no credential and
-therefore calls no revoke. The final local state is still correct — disconnected,
-no stored token, scopes emptied — but the grant the callback obtained may remain
-visible in the person's Google Account. B02 does not claim a revocation that did
-not happen.
+**A Disconnect that overlaps a stale flow is NOT covered by that limitation, and
+must not be described as an accepted cost.** It used to be, and it was wrong: a
+reconnect callback landing after a Disconnect would exchange its code, be
+refused, and leave a live grant in the person's Google Account that nothing
+removed — the mailbox read `disconnected` while Google was freshly authorized.
+Two mechanisms now close it, in this order:
 
-B02 does not pretend that discarding a token locally revokes Google's grant. The
-only way to make that true would be the project-wide operation above, and using
-it here is what caused the three failures listed.
+1. `gmail_disconnect_prepare` **cancels the mailbox's outstanding OAuth
+   transactions** before any network call, so in the ordinary sequential case
+   the stale callback's `state` resolves to nothing, no code is exchanged, and
+   no grant is ever created;
+2. for the genuine race — the callback had already consumed its transaction
+   before the disconnect ran — the persist refuses with
+   `superseded_by_disconnect` and the grant that flow just obtained is revoked.
+
+B02 still does not pretend that discarding a token locally revokes Google's
+grant. The only way to make that true is the project-wide operation above, and
+using it on the three failures listed is what caused them.
 
 ## 10a. Atomicity
 
@@ -418,6 +459,11 @@ remembers:
 - a `connected` or `consent_required` mailbox with no refresh credential;
 - a `pending_authorization`, `reauth_required`, `disconnected`,
   `deletion_pending` or `deleted` mailbox that still holds one;
+- a `disconnecting` mailbox holding MORE than one — this is the single state
+  where either count is legitimate, because the credential is retained on
+  purpose until revocation resolves (§13) and then destroyed. "Zero or one" is
+  not a gap in the invariant; it is the honest statement of a state that spans a
+  network call, and it is enforced as an upper bound rather than left unchecked;
 - a `consent_required` mailbox without `gmail.readonly`, or one whose consent has
   in fact already been granted for exactly its scope set;
 - a credential attached to the wrong app owner;
@@ -504,15 +550,44 @@ authorization. See §10 for why it is not used anywhere else, and
 OAuth project is an authorization domain, and unrelated Google integrations must
 not share it.
 
-**Google revoke first, local finalize second.** The order is the whole point:
+**Record the intent, then revoke at Google, then finalize locally.** Three steps,
+and each order relation is load-bearing:
+
+`gmail_disconnect_prepare` → revoke at Google → `gmail_disconnect_finalize`.
+
+*Prepare before the network call*, because a decision made only after Google
+answers cannot beat an OAuth callback that lands while Google is still thinking.
+Prepare runs in one transaction and does three things: it **cancels the mailbox's
+outstanding OAuth transactions**, so a flow that has not yet come back can never
+be completed; it moves the mailbox to `disconnecting` and records
+`disconnect_requested_revision`, so a callback that had *already* consumed its
+transaction can be recognised as superseded (§10); and it returns the credential
+envelope, if one exists, for the revocation about to happen.
+
+*Revoke before finalize*, because:
 
 - if Google succeeds and the local write fails, running disconnect again
   completes the job — Google reports the token already invalid, and finalization
-  proceeds. The operation is idempotent;
+  proceeds. The operation is idempotent, and `disconnecting` is one of the states
+  Disconnect accepts, precisely so a retry is possible;
 - if local state were cleared first and revocation then failed, we would have
   destroyed the only credential capable of revoking an access Google still
   honours, and told the human they had disconnected while the application
   remained authorized.
+
+**`disconnecting` is a real state and it is not a synonym for `disconnected`.**
+It says: the owner has asked to stop, and the provider side is not resolved yet.
+The credential is deliberately still there — it is the only thing that can
+revoke — so the invariant for this state permits zero or one credential, and
+nothing else. Naming the row `disconnected` before revocation resolved would be
+the application telling the human something it does not know.
+
+**A deletion owns the lifecycle while it runs.** If the mailbox is
+`deletion_pending`, both prepare and finalize refuse with `deletion_in_progress`
+and change nothing. Access has already stopped in that state, so Disconnect has
+nothing to add, and rewriting the row would clear the deletion pointer the claim
+rests on and stop telling the human that their deletion is running. `deleted`
+refuses as `account_retired`.
 
 A successful revocation **or** `invalid_token` both prove the stored token is no
 longer usable, and both allow finalization. This is asserted in the orchestration
@@ -707,8 +782,16 @@ made:
   `reauth_required` and `disconnected` — the states `gmail_oauth_begin` accepts.
   Offering it on a `connected` or deleting mailbox would offer something certain
   to be refused;
+  Offering it on a `disconnecting` mailbox would be worse than useless: it would
+  invite the human to reauthorize the very grant a disconnect is in the middle of
+  removing;
 - **the consent prompt** follows the STATE (§11a), not the consent projection;
-- **Disconnect** disappears once access has already stopped;
+- **Disconnect** appears for `pending_authorization`, `consent_required`,
+  `connected`, `reauth_required` and `disconnecting`. It disappears once access
+  has actually stopped (`disconnected`) and on the deletion states, where the
+  RPCs would refuse it anyway. `disconnecting` keeps the button on purpose:
+  that state means the provider side did not resolve, and pressing Disconnect
+  again is the retry that finishes it;
 - **Connect another Gmail** is available whenever Gmail is configured and at
   least one mailbox exists. B01 allows one creator many mailboxes — a personal
   and a business Gmail are both legitimate — and the backend always did; the

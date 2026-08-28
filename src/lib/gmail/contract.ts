@@ -111,6 +111,7 @@ export type GmailConnectionState =
   | "consent_required"
   | "connected"
   | "reauth_required"
+  | "disconnecting"
   | "disconnected"
   | "deletion_pending"
   | "deleted";

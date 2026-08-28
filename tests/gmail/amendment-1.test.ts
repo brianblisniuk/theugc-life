@@ -720,7 +720,12 @@ d("amendment #1 — a user action loads only its own credential", () => {
       { userId: strangerId, mailAccountId: victim.mailAccountId },
       deps(google, recording),
     );
-    expect(called).toContain("gmail_credential_load_for_owner");
+    // Since amendment #5 the owner check happens one step EARLIER still:
+    // `gmail_disconnect_prepare` resolves the row owner-bound before anything is
+    // loaded or sent to Google, so a stranger's id is refused without either
+    // credential loader being reached at all.
+    expect(called).toContain("gmail_disconnect_prepare");
+    expect(called).not.toContain("gmail_credential_load_for_owner");
     // The ownerless loader is for trusted internal callers only; a user-initiated
     // action must never reach it with an id that came from a form.
     expect(called).not.toContain("gmail_credential_load");

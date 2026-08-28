@@ -609,8 +609,35 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #4, awaiting re-audit and the human merge
+> merged, on external audit amendment #5, awaiting re-audit and the human merge
 > gate.**
+
+**B02 external audit amendment #5 (2026-08-28)** closed two findings against
+head `16cdea0`:
+
+- **a stale OAuth flow could reauthorize Google after a Disconnect.** Reproduced
+  at the audited head: a Reconnect begun, a real Disconnect performed
+  (`disconnected`, zero credentials), then the old callback landing —
+  1 code exchange, 0 revocations, and the grant live again at Google while the
+  mailbox read `disconnected`. Disconnect now records the human's intent BEFORE
+  the network call: `gmail_disconnect_prepare` cancels the mailbox's outstanding
+  OAuth transactions, moves the row to a new `disconnecting` state and pins
+  `disconnect_requested_revision`. The stale callback then finds no transaction
+  and exchanges nothing. For the genuine race — the callback consumed its
+  transaction first — the persist answers `superseded_by_disconnect` and that
+  one refusal revokes, because there the project-wide revocation is exactly what
+  the human asked for. Every other refusal still revokes nothing;
+- **Disconnect could reach into a running deletion.** A `deletion_pending`
+  mailbox was protected only incidentally, by a B01 CHECK written for a different
+  purpose, and only as an unhandled `check_violation` rather than an answer.
+  Prepare and finalize now refuse it as `deletion_in_progress`, and `deleted` as
+  `account_retired`.
+
+`disconnecting` is a real state, not a synonym for `disconnected`: access has not
+stopped yet and the credential is deliberately retained, because it is the only
+thing that can revoke. It is the one state whose credential invariant is a range
+(zero or one, enforced as an upper bound), no read path treats it as usable, and
+Disconnect accepts it so a failed revocation can be retried.
 
 **B02 external audit amendment #4 (2026-08-28)** closed four findings against
 head `88d4b8e`:

@@ -329,6 +329,31 @@ export async function completeGmailAuthorization(
     /* deliberately empty — see above. Nothing is persisted, nothing is logged. */
   };
 
+  /**
+   * Carry out a Disconnect the human issued while this flow was in the air.
+   *
+   * The narrow exception to the rule above, and narrow on purpose: it runs only
+   * when the database has proved that an explicit Disconnect of this same Google
+   * account superseded this flow. Everywhere else, revoking would destroy
+   * something the person still wants — which is exactly what amendment #2 fixed.
+   */
+  const revokeSupersededGrant = async () => {
+    const token = tokens.refreshToken ?? tokens.accessToken;
+    if (!token) return;
+    try {
+      await deps.google.revoke({ token });
+    } catch (revokeError) {
+      const code = revokeError instanceof GoogleAdapterError ? revokeError.code : "unknown";
+      // Already unusable is the outcome we wanted. Anything else is logged as a
+      // sanitized security event — a code, never the credential — because the
+      // human believes they are disconnected and this is the one path that could
+      // leave them wrong.
+      if (code !== "invalid_token") {
+        console.warn("[gmail] revoke of a superseded grant failed", { code });
+      }
+    }
+  };
+
   // OFFLINE ACCESS OR NOTHING. B03 syncs while the human is away, so a
   // connection without a refresh token is not a connection — it is an access
   // token that expires in an hour and a promise we cannot keep.
@@ -430,9 +455,27 @@ export async function completeGmailAuthorization(
       discardWithoutRevoking();
       return { result: "account_retired", returnPath };
     case "state_changed":
-      // The human decided something newer than this flow — usually Disconnect.
-      // An older intention does not get to overwrite a later decision.
+      // The world moved on for some OTHER reason. An older intention does not
+      // get to overwrite a later decision, and it does not get to revoke either:
+      // that is amendment #2's rule, and it protects whatever the person has
+      // authorized since.
       discardWithoutRevoking();
+      return { result: "state_changed", returnPath };
+    case "superseded_by_disconnect":
+      // THE ONE REFUSAL THAT REVOKES, and it is not cleanup.
+      //
+      // The human explicitly disconnected THIS Google account after this flow
+      // started. Dropping the token we just obtained would leave them
+      // `disconnected` here and still authorized at Google — the opposite of
+      // what they asked for. Revoking is carrying out the newer instruction.
+      //
+      // The database established all of it before answering: an explicit
+      // reconnect, the target owned by this user, the verified Google subject
+      // equal to that target's, a disconnect intent NEWER than the revision this
+      // flow pinned, and no legitimate re-authorization since. None of the
+      // ordinary refusals — `account_mismatch`, `owned_by_other_user`,
+      // `reconnect_required`, `already_connected` — can reach this branch.
+      await revokeSupersededGrant();
       return { result: "state_changed", returnPath };
     case "reconnect_required":
       // A generic connect cannot pin a lifecycle revision for a mailbox whose
@@ -492,6 +535,8 @@ export async function grantPrivateProcessingConsent(
 export type DisconnectOutcome =
   | { result: "disconnected" }
   | { result: "not_found" }
+  /** A deletion request owns this mailbox's lifecycle until it finishes. */
+  | { result: "deletion_in_progress" }
   | { result: "provider_unavailable" }
   | { result: "not_configured" };
 
@@ -520,15 +565,17 @@ export async function disconnectGmailAccount(
     return { result: "not_configured" };
   }
 
-  // OWNER-BOUND, because `mailAccountId` came from a form.
+  // PHASE ONE: RECORD THE INTENTION, BEFORE TOUCHING THE NETWORK.
   //
-  // The earlier version called the ownerless `gmail_credential_load` and
-  // compared `user_id` afterwards. The comparison was correct and the ordering
-  // was not: a browser-supplied id had already caused the encrypted credential
-  // of whichever mailbox it named to be assembled and handed to this layer. This
-  // RPC puts the authenticated user inside the lookup, so a stranger's id finds
-  // nothing and no envelope is ever built.
-  const { data, error } = await deps.db.rpc("gmail_credential_load_for_owner", {
+  // Owner-bound, because `mailAccountId` came from a form: the authenticated
+  // user is inside the lookup, so a stranger's id finds nothing and no envelope
+  // is ever built.
+  //
+  // This also cancels unconsumed reconnect transactions for this mailbox and
+  // records a durable disconnect intent, so an older OAuth flow cannot hand
+  // Google a fresh grant after the human has asked to stop. The state becomes
+  // `disconnecting`, not `disconnected` — the provider side is not resolved yet.
+  const { data, error } = await deps.db.rpc("gmail_disconnect_prepare", {
     p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
   });
@@ -536,6 +583,7 @@ export async function disconnectGmailAccount(
 
   const loaded = (data ?? {}) as {
     result?: string;
+    has_credential?: boolean;
     refresh_token_ciphertext?: string;
     refresh_token_iv?: string;
     refresh_token_auth_tag?: string;
@@ -543,8 +591,12 @@ export async function disconnectGmailAccount(
   };
 
   if (loaded.result === "not_found") return { result: "not_found" };
+  if (loaded.result === "account_retired") return { result: "not_found" };
+  if (loaded.result === "deletion_in_progress") return { result: "deletion_in_progress" };
+  if (loaded.result === "already_disconnected") return { result: "disconnected" };
+  if (loaded.result !== "ok") return { result: "provider_unavailable" };
 
-  if (loaded.result === "ok") {
+  if (loaded.has_credential) {
     let refreshToken: string;
     try {
       refreshToken = openSecret(
@@ -588,6 +640,7 @@ export async function disconnectGmailAccount(
 
   const outcome = (finalized ?? {}) as { result?: string };
   if (outcome.result === "not_found") return { result: "not_found" };
+  if (outcome.result === "deletion_in_progress") return { result: "deletion_in_progress" };
   if (outcome.result !== "ok") return { result: "provider_unavailable" };
   return { result: "disconnected" };
 }

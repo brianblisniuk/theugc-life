@@ -182,10 +182,18 @@ d("amendment #3 — a newer lifecycle decision beats an older OAuth flow", () =>
     // The old callback finally arrives.
     const outcome = await finish(userId, begun.google, begun.state!);
 
-    expect(outcome.result).toBe("state_changed");
+    // Amendment #3 refused this callback at `gmail_connection_persist`, AFTER
+    // the code had been exchanged — which left a fresh live grant at Google that
+    // nothing then removed (amendment #5, blocker A). Amendment #5 moved the
+    // refusal earlier: Disconnect now CANCELS the mailbox's outstanding OAuth
+    // transactions before it touches the network, so the callback's `state` no
+    // longer resolves to anything and no code is ever exchanged.
+    expect(outcome.result).toBe("invalid_state");
+    expect(begun.google.calls.exchanges).toHaveLength(0);
     expect((await readMailAccount(client, mailAccountId)).connection_state).toBe("disconnected");
     expect(await countCredentials(client, mailAccountId)).toBe(0);
     // And the refusal does not revoke: that would be project-wide (amendment #2).
+    // There is also nothing to revoke — a grant that was never created.
     expect(begun.google.calls.revocations).toHaveLength(0);
   });
 
@@ -217,8 +225,15 @@ d("amendment #3 — a newer lifecycle decision beats an older OAuth flow", () =>
     expect(await revisionOf(mailAccountId)).toBeGreaterThan(pinned);
 
     const outcome = await finish(userId, begun.google, begun.state!);
-    // This is why the revision matters and the state name does not.
-    expect(outcome.result).toBe("state_changed");
+    // This is why the revision matters and the state name does not. Since
+    // amendment #5 the Disconnect in the middle also cancelled the transaction,
+    // so the callback is refused one step earlier still — but the revision check
+    // is what would have caught it, and it is still the only thing standing
+    // between a stale callback and a lifecycle change made some other way:
+    // amendment #4's serialized-race test drives that path with a direct SQL
+    // UPDATE, which cancels nothing and still gets `state_changed`.
+    expect(outcome.result).toBe("invalid_state");
+    expect(begun.google.calls.exchanges).toHaveLength(0);
     expect(await countCredentials(client, mailAccountId)).toBe(0);
   });
 

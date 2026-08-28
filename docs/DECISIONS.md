@@ -1949,6 +1949,54 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #5 (2026-08-28) settled that **Disconnect dominates
+the provider, and a deletion owns the lifecycle while it runs.**
+
+Amendment #3 made a stale callback lose, and amendment #4 made it lose reliably —
+but it lost too late. The refusal happened at the persist step, AFTER the
+authorization code had been exchanged, so a Reconnect flow that came back after a
+Disconnect created a fresh live grant at Google that nothing then removed. The
+mailbox read `disconnected` while the person's Google account had just been
+reauthorized. That was reproduced at the audited head: one exchange performed,
+zero revocations, the grant active again. B02's promise is Disconnect, not
+"forget our copy of the token while Google may remain authorized".
+
+The decision has three parts. FIRST, **the human's intent is recorded before the
+network call, not after it**: a decision made only once Google answers cannot beat
+a callback already in flight. `gmail_disconnect_prepare` cancels the mailbox's
+outstanding OAuth transactions, moves the row to a new `disconnecting` state and
+records the revision that request was made at — all in one transaction, before
+anything is sent to Google. In the ordinary sequential case the stale callback
+then resolves to no transaction at all and no code is ever exchanged.
+
+SECOND, **`disconnecting` is a state, not a synonym.** Naming the row
+`disconnected` before revocation resolved would be the application asserting
+something it does not know, and naming it `connected` would contradict the person
+who just pressed the button. It is the one state whose credential invariant is a
+range — zero or one — because the credential is retained on purpose until the
+revocation it is the only instrument for has resolved, and destroyed immediately
+after. No read path treats it as usable, and Disconnect accepts it so a failed
+revocation can be retried.
+
+THIRD, **the one refusal that DOES revoke.** Amendment #2's rule stands
+everywhere except one case: a callback that is stale specifically because a newer
+explicit Disconnect of the same mailbox, aimed at the same verified Google
+subject, superseded it. There the project-wide revocation is precisely what was
+asked for. `account_mismatch`, `owned_by_other_user`, `reconnect_required`,
+`already_connected`, an unrelated `state_changed` and a newer successful Reconnect
+all still revoke nothing. These two cases must not be collapsed again: one is
+discarding a token we did not want, the other is a person ending an authorization
+while it was being created.
+
+The same amendment stopped a user-facing Disconnect from reaching into a deletion
+it does not own. `deletion_pending` names a specific request that is running and
+the account surface says so; rewriting the row would clear the pointer that claim
+rests on. Prepare and finalize both refuse it as `deletion_in_progress`, and
+`deleted` as `account_retired`. B01's row-local CHECK had been catching the write
+incidentally — as an unhandled `check_violation` rather than an answer — and the
+new `disconnecting` state is exactly the kind of change that turns an incidental
+protection into a crash at a worse moment.
+
 B02 external audit amendment #4 (2026-08-28) made the lifecycle revision an
 actual reservation rather than an observation. A plpgsql function is VOLATILE and
 takes a fresh snapshot per statement, so comparing a revision without locking the

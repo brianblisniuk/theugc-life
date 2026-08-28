@@ -489,7 +489,7 @@ Deferred constraint triggers make the state labels mean something:
   half of revocation. B02 revokes at Google and destroys the credential, and
   neither substitutes for the other.
 
-### Amendment (B02 / 0036): `consent_required`
+### Amendment (B02 / 0036): `consent_required` and `disconnecting`
 
 B01 wrote its connection-state vocabulary before any credential existed anywhere
 in the system, and defined `pending_authorization` as *a connection was started;
@@ -504,7 +504,14 @@ authorized anything and we hold no access" about a mailbox we could read this
 second, and every later reader — support, an export, a deletion routine, an
 auditor — would inherit that.
 
-So 0036 **adds** a state rather than redefining a merged one. 0035 is untouched;
+B02 produces a second moment B01 had no word for, at the other end of the
+lifecycle. Disconnect spans a network call to Google, and the row has to say
+something true while that call is outstanding. `connected` would be a lie — the
+owner has asked to stop. `disconnected` would be a worse one — access has not
+stopped yet, and the credential is deliberately retained because it is the only
+thing that can revoke. So 0036 adds `disconnecting` for exactly that interval.
+
+So 0036 **adds** states rather than redefining merged ones. 0035 is untouched;
 0036 ALTERs the CHECK it created. The meanings, in full:
 
 | state | Google authorization | credential | private-processing consent |
@@ -513,6 +520,7 @@ So 0036 **adds** a state rather than redefining a merged one. 0035 is untouched;
 | `consent_required` | completed, `gmail.readonly` granted | **exactly one** | absent, withdrawn, or about a different scope set |
 | `connected` | completed, `gmail.readonly` granted | **exactly one** | granted, snapshot **equal** to the current scope set |
 | `reauth_required` | no longer usable | none | history preserved |
+| `disconnecting` | the owner has asked to stop; the provider side is unresolved | **zero or one** — retained until revocation resolves, then destroyed | history preserved |
 | `disconnected` | intentionally stopped | none | history preserved, scope set empty |
 | `deletion_pending` / `deleted` | — | none | B01 semantics unchanged |
 
@@ -520,6 +528,22 @@ The credential column of that table is a **deferred database invariant**, not a
 convention — see DATABASE.md §5i. `connected` and `consent_required` both assert
 that a usable Google authorization is held right now, and a mailbox holding no
 refresh token cannot be read, so the state word and the credential are one fact.
+`disconnecting` is the one state whose honest answer is a range, and it is
+enforced as an upper bound of one rather than left unconstrained.
+
+`disconnecting` is deliberately **not** added to B01's disconnected-shape CHECK
+(`disconnected_at is not null` and an empty scope set). Those requirements
+describe a connection that has stopped; this one has not stopped yet, and
+back-dating `disconnected_at` or emptying the scope set while Google is still
+honouring the grant would be recording a completion that has not happened. Both
+are written by `gmail_disconnect_finalize`, when they become true.
+
+What keeps the retained credential from being used as an authorization is not
+the scope set but the state gate: `gmail_credential_load` and
+`gmail_credential_load_for_owner` answer `not_connected` for anything other than
+`connected`. **No B02 read path treats `disconnecting` as usable.** The only
+thing that receives that credential is the revocation about to destroy it, and
+it is handed over by `gmail_disconnect_prepare` itself.
 
 ### The state names the deletion it rests on
 

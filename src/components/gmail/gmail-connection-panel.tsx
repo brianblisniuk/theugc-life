@@ -48,6 +48,10 @@ const STATE_COPY: Record<GmailConnectionState, { label: string; hint: string }> 
     label: "Reauthorization required",
     hint: "Google stopped accepting our stored authorization. This is normal — reconnect to continue.",
   },
+  disconnecting: {
+    label: "Disconnecting",
+    hint: "We are stopping this connection with Google. Nothing is being processed. If this does not finish, try Disconnect again.",
+  },
   disconnected: {
     label: "Disconnected",
     hint: "Access is stopped. Anything already built from this mailbox was kept.",
