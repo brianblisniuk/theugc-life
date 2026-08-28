@@ -12,6 +12,12 @@ import {
   type GmailAccountStatus,
   type GmailConnectionState,
 } from "@/lib/gmail/contract";
+import {
+  canConnectAnother,
+  canDisconnect,
+  canReconnect,
+  needsPrivateProcessingConsent,
+} from "@/lib/gmail/panel-actions";
 
 /**
  * The smallest UI that exercises B02 honestly.
@@ -135,10 +141,10 @@ export function GmailConnectionPanel({
         <ul className="space-y-5">
           {accounts.map((account) => {
             const copy = STATE_COPY[account.connectionState];
-            const needsConsent =
-              account.hasCredential &&
-              !account.privateProcessingConsent &&
-              account.connectionState !== "connected";
+            // Every action rule lives in `panel-actions`, so the component only
+            // renders decisions rather than making them twice.
+            const needsConsent = needsPrivateProcessingConsent(account);
+            const reconnectable = canReconnect(account);
             return (
               <li key={account.mailAccountId} className="space-y-3 border-t border-border pt-4">
                 <div>
@@ -154,9 +160,9 @@ export function GmailConnectionPanel({
                       exists here. A generic Connect cannot revive one: it does
                       not know which Google account it will get until the
                       callback, so it has no lifecycle snapshot to check the
-                      answer against. This link does, which is why every
-                      non-connected account exposes it. */}
-                  {account.connectionState !== "connected" ? (
+                      answer against. This link does — and it appears only for
+                      the states the database will actually accept. */}
+                  {reconnectable ? (
                     <a
                       href={`/api/integrations/gmail/oauth/start?purpose=reconnect&mail_account_id=${account.mailAccountId}`}
                       className="rounded-[var(--radius-app)] border border-border px-4 py-2 text-sm"
@@ -164,7 +170,7 @@ export function GmailConnectionPanel({
                       Reconnect Gmail
                     </a>
                   ) : null}
-                  {account.connectionState !== "disconnected" ? (
+                  {canDisconnect(account) ? (
                     <DisconnectButton mailAccountId={account.mailAccountId} />
                   ) : null}
                 </div>
@@ -192,6 +198,22 @@ export function GmailConnectionPanel({
           })}
         </ul>
       )}
+
+      {/* ONE CREATOR, MANY MAILBOXES. B01 says so explicitly — a personal and a
+          business Gmail are both legitimate — and the backend has always
+          supported it. Rendering Connect only when the list was empty meant that
+          after the first mailbox there was no ordinary way to add a second.
+          This starts a generic CONNECT, which is the right flow for an account
+          we have never seen; Reconnect is for a mailbox that already exists
+          here, and using it for a new one would be aiming at the wrong row. */}
+      {canConnectAnother(configured, accounts.length) ? (
+        <a
+          href="/api/integrations/gmail/oauth/start"
+          className="inline-block rounded-[var(--radius-app)] border border-border px-4 py-2 text-sm"
+        >
+          Connect another Gmail
+        </a>
+      ) : null}
     </section>
   );
 }

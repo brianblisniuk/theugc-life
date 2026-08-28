@@ -1949,6 +1949,34 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #4 (2026-08-28) made the lifecycle revision an
+actual reservation rather than an observation. A plpgsql function is VOLATILE and
+takes a fresh snapshot per statement, so comparing a revision without locking the
+row is evidence about a row rather than a hold on it — reproducibly, a callback
+could read revision N, a Disconnect could commit N+1, and the callback's later
+writes would still land. The reconnect target is now loaded `for no key update`
+before anything is compared, and that lock is held through the credential write.
+
+The same amendment established that a SUCCESSFUL RECONNECT CONSUMES THE REVISION
+IT USED, even when it changes neither state nor scopes: landing a fresh Google
+credential is itself a provider-authorization event, and without it two flows
+begun against the same version could both land, the second silently replacing the
+first's credential. The persist function requests the bump and the trigger
+chooses the number, because a revision the application could pick would not be
+database-owned — and for the same reason the trigger now fires on INSERT as well
+as UPDATE. Background refresh rotation deliberately does not bump: it is not a
+human authorization event, and `credential_generation` is already the clock for
+it.
+
+Two product-truth corrections went with it. The consent prompt now follows the
+STATE rather than the consent projection: `consent_required` with a `granted`
+consent for a NARROWER scope set is a real and correct combination, and keying on
+the projection left it unreachable — "Awaiting your permission" with no way to
+give it. And the B02 contract's remaining sentences instructing a refused
+callback to revoke the grant were removed; that document is an implementation
+input, and one stale line is how the project-wide revocation defect closed in
+amendment #2 gets reintroduced.
+
 B02 external audit amendment #3 (2026-08-28) extended the causality reasoning
 from credentials to AUTHORIZATION. Amendment #2 established that a refresh spans
 a network call and therefore needs a generation; OAuth spans a much longer one —

@@ -1344,8 +1344,18 @@ display-metadata edits leave it alone.
 
 The trigger assigns the column on every update, so it is **not caller-settable**,
 and a direct SQL lifecycle change invalidates in-flight OAuth exactly as a server
-action does. `gmail_oauth_begin` captures it for a reconnect and
-`gmail_connection_persist` requires the exact value — because a mailbox can leave
+action does. A successful explicit reconnect also advances it: landing a fresh Google
+credential is a provider-authorization event, so two flows begun against the same
+version cannot both land. The persist function REQUESTS that bump and the trigger
+chooses the number; a background `gmail_credential_replace` deliberately does not
+request one, because rotation is not a human authorization event. The trigger
+fires on INSERT as well as UPDATE, so a supplied value is overwritten either way.
+
+`gmail_oauth_begin` captures it for a reconnect and `gmail_connection_persist`
+loads the target **`for no key update`** before comparing anything — a plpgsql
+function is VOLATILE and takes a fresh snapshot per statement, so an unlocked
+comparison is evidence about a row rather than a hold on it. It requires the
+exact value — because a mailbox can leave
 a reconnectable state and return to one, and a stale callback would otherwise
 find the state name it expects while knowing nothing about the decisions in
 between.

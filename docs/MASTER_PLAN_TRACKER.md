@@ -609,8 +609,30 @@ At this baseline, Phase A is closed at the code gate:
 The open implementation block is:
 
 > **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #3, awaiting re-audit and the human merge
+> merged, on external audit amendment #4, awaiting re-audit and the human merge
 > gate.**
+
+**B02 external audit amendment #4 (2026-08-28)** closed four findings against
+head `88d4b8e`:
+
+- the lifecycle revision was **checked but not reserved**. Reproduced with two
+  real PostgreSQL sessions: the callback read revision N, a Disconnect committed
+  N+1, and the callback still wrote. The reconnect target is now locked
+  `for no key update` before anything is compared;
+- a successful reconnect did not **consume** its revision, so two flows begun
+  against the same version could both land — the second replacing the first's
+  credential. A successful reconnect now advances it, requested by the function
+  and numbered by the trigger, which also now fires on INSERT;
+- `consent_required` with an older `granted` consent for a narrower scope set
+  left the UI showing "Awaiting your permission" **with no way to give it**. The
+  prompt now follows the state, which is the authority;
+- the contract still told a future maintainer that a failed health check and an
+  account mismatch revoke the grant — the exact defect amendment #2 removed from
+  the code. All refusal paths now agree.
+
+Also: one creator may have many mailboxes (B01 says so), and the panel now offers
+**Connect another Gmail**; Reconnect is offered only for the states the database
+accepts.
 
 **B02 external audit amendment #3 (2026-08-28)** closed the last two
 merge-blocking findings against head `b50eff0`:

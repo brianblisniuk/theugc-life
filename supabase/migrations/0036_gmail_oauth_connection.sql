@@ -256,16 +256,39 @@ comment on column public.mail_accounts.authorization_revision is
 -- unrelated write invalidate in-flight OAuth would turn a correctness mechanism
 -- into a source of spurious failures.
 --
--- The trigger ALWAYS assigns the column, which is what makes it non-caller-
--- controlled: a writer who supplies their own value has it overwritten with
--- either the bumped value or the old one.
+-- A SUCCESSFUL EXPLICIT RECONNECT ALSO ADVANCES IT, even when it changes neither
+-- the state nor the scope set. Landing a fresh Google credential IS a provider
+-- authorization event, and without this two reconnect flows begun against the
+-- same version could both land — the second silently replacing the first's
+-- credential, each of them "current" by every check available to it.
+-- `gmail_connection_persist` REQUESTS that bump; it never supplies a number.
+--
+-- A background refresh-token rotation is deliberately excluded: it is not a
+-- human authorization event, and bumping there would cancel unrelated in-flight
+-- OAuth flows for no reason. That is what `credential_generation` is for. Two
+-- clocks, two questions.
+--
+-- THE TRIGGER ALWAYS ASSIGNS THE COLUMN — on INSERT as well as UPDATE — which is
+-- what makes "database-owned" true rather than merely intended. A writer who
+-- supplies their own value has it overwritten, whichever statement they use.
 create or replace function public.bump_mail_account_authorization_revision()
 returns trigger
 language plpgsql
 as $$
 begin
+  if tg_op = 'INSERT' then
+    -- The column default would do this for a writer who omits it; assigning it
+    -- here covers the writer who does NOT omit it. `mail_accounts` is
+    -- trusted-server-only, so this is a contract-truth fix rather than a
+    -- cross-user hole — but a contract that is only true when nobody tries is
+    -- not a contract.
+    new.authorization_revision := nextval('public.mail_account_authorization_revision_seq');
+    return new;
+  end if;
+
   if new.connection_state is distinct from old.connection_state
-     or new.granted_scopes is distinct from old.granted_scopes then
+     or new.granted_scopes is distinct from old.granted_scopes
+     or coalesce(current_setting('b02.authorization_revision_bump', true), '') = 'requested' then
     new.authorization_revision := nextval('public.mail_account_authorization_revision_seq');
   else
     new.authorization_revision := old.authorization_revision;
@@ -277,7 +300,7 @@ $$;
 revoke all on function public.bump_mail_account_authorization_revision() from public;
 
 create trigger mail_accounts_authorization_revision
-  before update on public.mail_accounts
+  before insert or update on public.mail_accounts
   for each row execute function public.bump_mail_account_authorization_revision();
 
 comment on column public.mail_accounts.connection_state is
@@ -842,6 +865,7 @@ declare
   v_consent_scopes text[];
   v_consent_state text;
   v_reused boolean := false;
+  v_found boolean := false;
 begin
   if p_user_id is null or coalesce(btrim(p_provider_account_subject), '') = '' then
     raise exception 'gmail_connection_persist requires a user and a verified provider subject'
@@ -859,9 +883,25 @@ begin
   -- EXACT RECONNECT BINDING — first, and before any generic case applies.
   -- ---------------------------------------------------------------------
   if p_expected_mail_account_id is not null then
+    -- LOCK FIRST, THEN CHECK.
+    --
+    -- A revision comparison is evidence about the row that was read. It does not
+    -- RESERVE that row, and a plpgsql function is VOLATILE, so every statement
+    -- inside it takes a fresh snapshot. Without the lock this was a
+    -- time-of-check/time-of-use race with a real, reproducible outcome:
+    --
+    --   callback  SELECT target        -> sees revision N, comparison passes
+    --   human     Disconnect           -> revision N+1, COMMIT
+    --   callback  UPDATE ... INSERT    -> writes anyway, restoring access
+    --
+    -- `for no key update` makes the check and the mutation describe the SAME row
+    -- version. A concurrent lifecycle write either waits behind us and applies
+    -- afterwards, or commits first and is then visible to our locked read, which
+    -- fails the comparison. There is no third ordering.
     select m.* into v_target
       from public.mail_accounts m
-     where m.id = p_expected_mail_account_id;
+     where m.id = p_expected_mail_account_id
+     for no key update;
 
     -- Ownership is re-established here rather than trusted from the caller.
     -- The transaction's composite FK already bound the target to this user when
@@ -911,6 +951,24 @@ begin
         'connection_state', v_target.connection_state
       );
     end if;
+
+    -- A SUCCESSFUL RECONNECT IS ITSELF A LIFECYCLE EVENT, so it consumes the
+    -- revision it was authorized against.
+    --
+    -- Without this, a reconnect that changes neither the state nor the scope set
+    -- left the revision untouched — and TWO flows begun against the same version
+    -- could both land, the second silently replacing the first's credential.
+    -- Both were "current" by every check available to them.
+    --
+    -- The caller REQUESTS the bump; the trigger chooses the number. Letting the
+    -- application supply a revision would make "database-owned" untrue in the
+    -- one place it matters most. This is `set local`, so it lasts exactly as
+    -- long as this function's transaction.
+    --
+    -- Deliberately NOT done by `gmail_credential_replace`: a background refresh
+    -- rotation is not a human authorization event, and bumping there would
+    -- cancel unrelated in-flight OAuth flows for no reason.
+    perform set_config('b02.authorization_revision_bump', 'requested', true);
   end if;
 
   -- CASE D first, because it is the one that must not leak. The registry is
@@ -928,15 +986,25 @@ begin
   -- CASE B — a live row for this identity, owned by this user. `deleted` is
   -- excluded, so a retired mailbox is never revived (CASE C falls through to
   -- the insert below).
-  select m.* into v_account
-    from public.mail_accounts m
-   where m.provider = 'gmail'
-     and m.provider_account_subject = p_provider_account_subject
-     and m.user_id = p_user_id
-     and m.connection_state <> 'deleted'
-   limit 1;
+  --
+  -- For a reconnect this is the row we already LOCKED above, so it is reused
+  -- rather than looked up again: a second, unlocked read of the same row could
+  -- see a different version and would put the race straight back.
+  if p_expected_mail_account_id is not null then
+    v_account := v_target;
+    v_found := true;
+  else
+    select m.* into v_account
+      from public.mail_accounts m
+     where m.provider = 'gmail'
+       and m.provider_account_subject = p_provider_account_subject
+       and m.user_id = p_user_id
+       and m.connection_state <> 'deleted'
+     limit 1;
+    v_found := found;
+  end if;
 
-  if found then
+  if v_found then
     if v_account.connection_state = 'connected' then
       -- Already working. A second generic connect flow must not silently swap
       -- the credential underneath a live connection.

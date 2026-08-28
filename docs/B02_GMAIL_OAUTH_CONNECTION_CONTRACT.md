@@ -222,8 +222,9 @@ reaches a real mailbox — a Google account without Gmail would otherwise become
 them**, because they are sync state and B02 does not sync. No message or thread
 is listed.
 
-If the health check fails, the connection is refused, no credential is stored,
-and the newly issued grant is revoked.
+If the health check fails, the connection is refused and no credential is stored.
+The grant is **not** revoked — see §10: revocation at Google is project-wide, so
+using it as callback cleanup destroys whatever else that person authorized.
 
 ---
 
@@ -272,6 +273,28 @@ both.
 below. A different one answers `state_changed`: nothing persisted, no scopes
 changed, no state moved, and no Google grant revoked.
 
+**The check RESERVES the row, it does not merely inspect it.** The target is
+loaded `for no key update` before anything is compared, and the lock is held
+until the transaction ends. A plpgsql function is VOLATILE, so each statement
+inside it takes a fresh snapshot — without the lock, a callback could read
+revision N, a Disconnect could commit N+1, and the callback's later writes would
+still land. Evidence about a row is not a hold on it. With the lock there are
+only two orderings, and both are safe: the lifecycle write waits behind us and
+applies afterwards, or it commits first and is then visible to our locked read,
+which fails the comparison.
+
+**A successful reconnect CONSUMES the revision it used.** Landing a fresh Google
+credential is itself a provider-authorization event, so it advances the revision
+even when the state and the scope set are unchanged. Without that, two flows
+begun against the same version could both land — the second replacing the
+first's credential, each of them "current" by every check available to it. The
+function REQUESTS the bump; the trigger chooses the number, because a revision
+the application could pick would not be database-owned. A background
+`gmail_credential_replace` deliberately does not bump: rotation is not a human
+authorization event, and cancelling unrelated in-flight flows for it would be
+noise. `credential_generation` is the clock for rotation; this is the clock for
+the lifecycle.
+
 ### A reconnect is bound to its target FIRST
 
 When the OAuth transaction named a target mailbox, that binding is checked before
@@ -281,8 +304,8 @@ user, be a `gmail` account, be in a reconnectable state (`disconnected`,
 binding itself — carry a `provider_account_subject` **equal to the subject Google
 just verified**.
 
-Anything else answers `account_mismatch`, the newly issued grant is revoked, and
-nothing is stored. A `deleted` target answers `account_retired`: B01's
+Anything else answers `account_mismatch` and nothing is stored. The grant is
+**not** revoked (§10). A `deleted` target answers `account_retired`: B01's
 terminality is not something a reconnect may undo, and a returning creator starts
 a NEW connect flow and receives a NEW row.
 
@@ -357,12 +380,29 @@ token material stays in memory, is never written and never logged, and falls out
 of scope. Preserving a connection that is already valid matters more than tidying
 up an in-memory token we are about to forget.
 
+This is the rule for **every** refusal path, with no exceptions anywhere else in
+this document: missing refresh token, forbidden scope, missing read scope,
+unverifiable or missing ID token, nonce mismatch, failed mailbox health check,
+`account_mismatch`, `account_retired`, `state_changed`, `reconnect_required`,
+`already_connected`, `owned_by_other_user`, and a failed local persist. If a
+sentence elsewhere says a refusal revokes, that sentence is wrong and this one
+governs — these instructions are read by people writing the next feature, and one
+stale line is how the project-wide revocation defect gets reintroduced.
+
 ### The honest cost, stated rather than hidden
 
 After a failed first-time authorization, the application may still appear in the
 person's Google Account even though **nothing was persisted here** and we hold no
 usable token. They can retry the connection, or remove the access from their
 Google Account settings.
+
+The same limitation covers one concurrency ordering worth naming: if a Disconnect
+and a stale reconnect callback overlap such that the disconnect's credential load
+runs BEFORE the callback stores anything, the disconnect finds no credential and
+therefore calls no revoke. The final local state is still correct — disconnected,
+no stored token, scopes emptied — but the grant the callback obtained may remain
+visible in the person's Google Account. B02 does not claim a revocation that did
+not happen.
 
 B02 does not pretend that discarding a token locally revokes Google's grant. The
 only way to make that true would be the project-wide operation above, and using
@@ -412,6 +452,20 @@ On acceptance, atomically: append a `granted` `private_gmail_processing` receipt
 advance the projection onto it, snapshot the **actual** granted scope set, and
 transition to `connected` with `connected_at`. B01's deferred invariants are the
 final authority.
+
+### 11a. Asking again when the scope set widened
+
+`consent_required` is the database's answer to "does a current, exact-scope
+private-processing consent exist?", and it is the only answer the UI consults. A
+stored consent can be `granted` and still not cover the mailbox in front of the
+human: it may describe a narrower set from before a reconnect widened the grant,
+and B01 requires a fresh decision for the new set.
+
+The consent prompt is therefore shown when the state is `consent_required` and a
+credential exists — **not** when the consent projection happens to read
+un-granted. Keying on the projection left exactly the widened case unreachable:
+"Awaiting your permission" with no way to give it.
+
 
 **Network contribution is not mentioned as implied and is not granted.** It stays
 separate, explicit, revocable and default-off, and B02 offers no way to enable it.
@@ -640,6 +694,28 @@ comparison applied to its result, so an id naming somebody else's mailbox finds
 nothing instead of finding their secret and then discarding it.
 
 ---
+
+## 16a. The account panel
+
+The smallest honest surface: connect, consent, reconnect, disconnect, and which
+of those states a mailbox is actually in. Its rules live in
+`src/lib/gmail/panel-actions.ts` so they are testable as rules rather than as
+rendering, and so the component never makes a decision the database has already
+made:
+
+- **Reconnect** appears only for `pending_authorization`, `consent_required`,
+  `reauth_required` and `disconnected` — the states `gmail_oauth_begin` accepts.
+  Offering it on a `connected` or deleting mailbox would offer something certain
+  to be refused;
+- **the consent prompt** follows the STATE (§11a), not the consent projection;
+- **Disconnect** disappears once access has already stopped;
+- **Connect another Gmail** is available whenever Gmail is configured and at
+  least one mailbox exists. B01 allows one creator many mailboxes — a personal
+  and a business Gmail are both legitimate — and the backend always did; the
+  panel previously offered Connect only when the list was empty, so there was no
+  ordinary way to add a second. It starts a generic CONNECT, which is the right
+  flow for an account we have never seen. Reconnect targets a mailbox that
+  already exists here and would aim at the wrong row.
 
 ## 17. Not in this layer
 
