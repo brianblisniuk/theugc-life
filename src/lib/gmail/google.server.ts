@@ -44,7 +44,15 @@ export interface GmailProfile {
 /** A sanitized provider failure. Carries a code, never a credential. */
 export class GoogleAdapterError extends Error {
   readonly code: string;
-  /** Transient failures may be retried; permanent ones mean the grant is gone. */
+  /**
+   * Transient failures may be retried; permanent ones mean the GRANT is gone.
+   *
+   * Never read this to decide whether to delete a credential — use
+   * `refreshTokenIsPermanentlyDead` for that. A `GoogleAdapterError` can be
+   * constructed by any caller, including the profile check, with whatever
+   * permanence it judged; only the refresh path's own taxonomy is allowed to be
+   * destructive.
+   */
   readonly permanent: boolean;
 
   constructor(code: string, permanent: boolean, message?: string) {
@@ -86,12 +94,46 @@ export interface GoogleOAuthAdapter {
  * to be connected while every sync fails. So the permanent list is explicit and
  * short, and anything unrecognised is treated as transient.
  */
-const PERMANENT_GRANT_ERRORS = new Set([
-  "invalid_grant",
+const PERMANENT_GRANT_ERRORS = new Set(["invalid_grant"]);
+
+/**
+ * OUR FAULT, NOT THE CREATOR'S.
+ *
+ * These three are the errors Google documents against the CLIENT and the
+ * REQUEST, not against the grant. `invalid_client` means our client id or secret
+ * is wrong. `unauthorized_client` means our client is not permitted to make this
+ * kind of request. `invalid_request` means the request itself was malformed or
+ * missing a parameter. Every one of them is satisfied by a deployment with a
+ * mistyped secret or a programming error on our side, and none of them is
+ * evidence that a creator's refresh token stopped working.
+ *
+ * An earlier version treated all three as permanent, which meant a single wrong
+ * environment variable would delete every refresh token it touched and demand
+ * that each creator reconnect by hand — the exact outcome the permanent/transient
+ * distinction exists to prevent, inflicted on people who did nothing.
+ *
+ * `invalid_grant` is the one Google documents as the token having expired or
+ * been revoked, so it is the one — and, until another is documented as proving
+ * the same thing, the only one — that is allowed to destroy a credential.
+ */
+const CLIENT_CONFIGURATION_ERRORS = new Set([
   "invalid_client",
   "unauthorized_client",
   "invalid_request",
 ]);
+
+/**
+ * THE ONLY QUESTION THAT MAY DESTROY A CREDENTIAL: has Google told us that THIS
+ * REFRESH TOKEN is finished? Not "did the call fail", not "was it a 4xx".
+ */
+export function refreshTokenIsPermanentlyDead(code: string): boolean {
+  return code === "invalid_grant";
+}
+
+/** True when the failure points at our own configuration or request, not the grant. */
+export function isClientConfigurationError(code: string): boolean {
+  return CLIENT_CONFIGURATION_ERRORS.has(code);
+}
 
 /**
  * OAuth error codes are a closed vocabulary of short identifiers. Anything that

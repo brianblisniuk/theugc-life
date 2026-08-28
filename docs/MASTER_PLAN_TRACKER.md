@@ -608,8 +608,31 @@ At this baseline, Phase A is closed at the code gate:
 
 The open implementation block is:
 
-> **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR, not merged,
-> awaiting external audit and the human merge gate.**
+> **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
+> merged, on external audit amendment #1, awaiting re-audit and the human merge
+> gate.**
+
+**B02 external audit amendment #1 (2026-08-28)** closed five merge-blocking
+findings against head `99833bd`, all reproduced as real committed states first:
+
+- a successful Google authorization sat in `pending_authorization` — a state 0035
+  defines as "not authorized, no access" — while holding `gmail.readonly` and a
+  live refresh token. 0036 now ALTERs that CHECK to add **`consent_required`**,
+  additively, and the correspondence between the state word and the stored
+  credential is a **deferred invariant** rather than writer discipline;
+- "reconnect mailbox A" fell through to a generic connect when the human chose a
+  different Google account, silently creating a mailbox or reporting success for
+  one they never named. The reconnect target is now bound to the verified Google
+  subject **before** any general case applies, and `purpose`/`target` is an IFF;
+- three errors Google documents against OUR client and OUR request were treated
+  as proof that a CREATOR's refresh token had died, so one wrong environment
+  variable would have deleted every credential it touched. Only `invalid_grant`
+  is destructive now;
+- a rotated refresh token whose storage failed was reported as a successful
+  refresh, leaving the mailbox holding a value that stops working;
+- Disconnect loaded the encrypted credential for a browser-supplied mailbox id
+  and compared owners afterwards. User-initiated actions now use an owner-bound
+  RPC where the authenticated user is part of the lookup.
 
 **B01 is DONE and merged.** PR #33, final audited head
 `699c07b651303406cd4131376c15f62cfb33adf0`, merged as

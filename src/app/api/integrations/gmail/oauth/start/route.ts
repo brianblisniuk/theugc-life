@@ -23,7 +23,10 @@ export async function GET(request: NextRequest) {
 
   const purposeParam = searchParams.get("purpose");
   const purpose = purposeParam === "reconnect" ? "reconnect" : "connect";
-  const target = searchParams.get("mail_account_id");
+  // A `mail_account_id` on a CONNECT is dropped here rather than passed along.
+  // The two fields would otherwise describe different flows, and the one the
+  // caller controls should not be the one that decides.
+  const target = purpose === "reconnect" ? searchParams.get("mail_account_id") : null;
 
   const started = await startGmailAuthorization({
     userId: resolution.session.userId,

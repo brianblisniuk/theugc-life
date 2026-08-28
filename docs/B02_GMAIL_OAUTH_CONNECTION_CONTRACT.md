@@ -127,6 +127,15 @@ Consuming the transaction before the token exchange makes a failed exchange
 non-retryable. That is accepted: the human restarts the flow, and an
 authorization code that could be replayed is worse.
 
+**A denial ends the transaction too.** When Google returns `error=access_denied`,
+consumption still happens first: a callback carrying a state we issued is a flow
+of ours reaching its end, whichever way it ended. Returning early on the error
+parameter — which an earlier version did — left the state digest, nonce digest
+and encrypted PKCE verifier alive until the TTL expired, contradicting "consumed
+once by the callback". A callback with no state at all, an unknown state, an
+expired one, or one belonging to a different user is still refused as
+`invalid_state`, and no code is exchanged for a flow the human refused.
+
 ---
 
 ## 5. Where the credential lives
@@ -199,7 +208,8 @@ application and authorizing access to a creator's mailbox are different security
 boundaries; sharing a route would mean one set of checks guarding both.
 
 Every external check happens before anything local is written, in order: valid
-app session → state consumed once → code exchanged with the PKCE verifier →
+app session → state consumed once (denial or not) → code exchanged with the
+PKCE verifier →
 refresh token present → granted scopes acceptable → ID token verified → nonce
 matches → **Gmail profile health check**.
 
@@ -219,15 +229,42 @@ and the newly issued grant is revoked.
 
 ## 9. Which mail account, exactly
 
-After the verified `sub` is known, B01 decides:
+### A reconnect is bound to its target FIRST
+
+When the OAuth transaction named a target mailbox, that binding is checked before
+any of the general cases below is even considered. The target must belong to this
+user, be a `gmail` account, be in a reconnectable state (`disconnected`,
+`reauth_required`, `pending_authorization`, `consent_required`), and — the
+binding itself — carry a `provider_account_subject` **equal to the subject Google
+just verified**.
+
+Anything else answers `account_mismatch`, the newly issued grant is revoked, and
+nothing is stored. A `deleted` target answers `account_retired`: B01's
+terminality is not something a reconnect may undo, and a returning creator starts
+a NEW connect flow and receives a NEW row.
+
+This ordering is the fix, not the check itself. Comparing the target only inside
+the branch where a live row for the returned subject already existed meant that
+picking a **different** Google account at the account chooser fell straight
+through to "identity never seen" and silently created a mailbox, or reported
+`already_connected` for a mailbox the human never named. "Reconnect A" quietly
+meant "connect whatever you picked".
+
+### Then B01's four cases
 
 | case | behaviour |
 |---|---|
 | **A** — identity never seen | create a NEW `mail_accounts` row |
-| **B** — a LIVE row owned by this user (`pending_authorization`/`disconnected`/`reauth_required`) | **reuse that row**; never a second live row |
+| **B** — a LIVE row owned by this user (`pending_authorization`/`consent_required`/`disconnected`/`reauth_required`) | **reuse that row**; never a second live row |
 | **B′** — that row is already `connected` | return `already_connected`; do not silently swap a working credential |
 | **C** — only `deleted` rows exist | create a NEW row; `deleted` stays terminal |
 | **D** — identity owned by a different app user | **refuse**, revoke the grant, store nothing, and say nothing about who owns it |
+
+### `purpose` and `target` are an IFF
+
+`connect` ⇔ no target; `reconnect` ⇔ a target. Enforced as a CHECK on the
+transaction table and again in the start route, which drops a `mail_account_id`
+supplied alongside `purpose=connect` rather than passing it on.
 
 ---
 
@@ -241,9 +278,15 @@ an application that has no record of it: invisible to them and to us. A failed
 compensating revocation is logged as a sanitized security event, code only.
 
 Once all Google-side checks pass, local persistence is **one transaction** inside
-one SECURITY DEFINER function. None of these can survive:
+one SECURITY DEFINER function. None of these can survive — and "cannot survive"
+means a deferred constraint trigger refuses the COMMIT, not that the writer
+remembers:
 
-- a `connected` mailbox with no refresh credential;
+- a `connected` or `consent_required` mailbox with no refresh credential;
+- a `pending_authorization`, `reauth_required`, `disconnected`,
+  `deletion_pending` or `deleted` mailbox that still holds one;
+- a `consent_required` mailbox without `gmail.readonly`, or one whose consent has
+  in fact already been granted for exactly its scope set;
 - a credential attached to the wrong app owner;
 - a credential for an unverified provider identity.
 
@@ -254,10 +297,17 @@ one SECURITY DEFINER function. None of these can survive:
 A Google authorization is not a product consent, and B02 keeps them apart.
 
 For a **brand-new** mail account the callback persists the provider identity, the
-actual granted scopes and the encrypted credential while leaving the mailbox
-**not yet `connected`**. The credential is stored at this point because we hold a
+actual granted scopes and the encrypted credential and leaves the mailbox in
+**`consent_required`**. The credential is stored at this point because we hold a
 real grant and must be able to revoke it; what we do not yet hold is permission
 to process.
+
+The state is `consent_required` and specifically NOT `pending_authorization`.
+0035 defines the latter as "the human has not completed Google's consent screen;
+no access", which would be false about a mailbox whose verified `sub`, approved
+`gmail.readonly` and live refresh token we are holding at that moment. B02 adds
+the word rather than quietly widening an existing one — see §9 of the B01
+contract for the full table.
 
 The creator is then shown an explicit, plain-language step. The **server owns the
 exact consent text and its version**, and computes the digest from that text — a
@@ -277,8 +327,9 @@ separate, explicit, revocable and default-off, and B02 offers no way to enable i
 
 ## 12. Reconnect
 
-Applies to `disconnected`, `reauth_required` and `pending_authorization` rows. A
-`deleted` row is never revived.
+Applies to `disconnected`, `reauth_required`, `pending_authorization` and
+`consent_required` rows, and only when the verified Google subject is that row's
+own subject (§9). A `deleted` row is never revived.
 
 The fresh credential and actual scope set replace the old ones. Then:
 
@@ -317,6 +368,25 @@ adapter is wired in.
 Any other provider failure returns a controlled error and changes nothing. The
 account is **not** falsely marked disconnected.
 
+Disconnect revokes whatever credential exists, including one belonging to a
+mailbox that never reached `connected`. A `consent_required` mailbox holds a LIVE
+Google grant; skipping its revocation would leave the human authorized to an
+application whose UI had just told them they had stopped it.
+
+### The credential a user action may load
+
+Disconnect receives a `mail_account_id` from a form, so it uses
+`gmail_credential_load_for_owner(p_user_id, p_mail_account_id)` — the
+authenticated user is part of the **lookup**, and a stranger's id returns
+`not_found` with no envelope ever assembled.
+
+The ownerless `gmail_credential_load` remains, because a B03 background job holds
+a mailbox id it derived itself and has no session to check against. It is not
+reachable from a user-initiated path. Loading the credential first and comparing
+owners a line later was the earlier arrangement: the comparison was correct, and
+the boundary had already been crossed on the strength of untrusted input by the
+time it ran.
+
 ---
 
 ## 14. Refresh, and `reauth_required`
@@ -329,17 +399,49 @@ effect everywhere rather than depending on each future caller remembering.
 The access token is returned **in memory**. It is never persisted, never logged,
 never sent to a browser.
 
-**Permanent failure** (`invalid_grant` and friends) is normal lifecycle, not
-database corruption: users revoke at Google, passwords change, Testing-mode grants
-lapse. Atomically: remove the unusable credential and set `reauth_required`.
-Consent history and the ownership reservation are **kept** — neither stopped being
-true.
+### What may destroy a credential
 
-**Transient failure** does not erase the credential and does not mark
-`reauth_required`; it surfaces a sanitized retryable error. Nothing auto-loops.
+Exactly one error: **`invalid_grant`**, which is what Google documents for a
+refresh token that has expired or been invalidated. That is normal lifecycle, not
+corruption: users revoke at Google, passwords change, Testing-mode grants lapse.
+Atomically, remove the unusable credential and set `reauth_required`. Consent
+history and the ownership reservation are **kept** — neither stopped being true.
 
-If Google returns a **replacement refresh token** during refresh, it is stored
-encrypted after the response validates — the old one stops working.
+**`invalid_client`, `unauthorized_client` and `invalid_request` are NOT
+destructive.** Google documents these against our CLIENT and our REQUEST: a wrong
+client id or secret, a client not permitted to make this request, a malformed or
+incomplete request. Every one of them is satisfied by a mistyped environment
+variable or a programming error on our side, and none is evidence that a
+creator's token stopped working. Treating them as permanent — which an earlier
+version did — meant one bad deployment would delete every credential it touched
+and require each affected person to reconnect by hand to repair a mistake of
+ours. They surface as a sanitized configuration failure and change nothing.
+
+Adding another code to the destructive set requires citing current official
+Google documentation stating that it proves the refresh token itself is
+permanently unusable. **HTTP 4xx alone is not evidence**, and neither is a
+`permanent` flag set by whichever caller constructed the error.
+
+**Transient or unrecognised failure** does not erase the credential and does not
+mark `reauth_required`; it surfaces a sanitized retryable error. Nothing
+auto-loops.
+
+### Rotation is part of a successful refresh
+
+The order is explicit: a usable access token must exist, and only then is the
+provider refresh treated as successful; if Google returned a **replacement
+refresh token**, storing it encrypted is part of completing that refresh.
+
+Both the transport error and the RPC's own answer are checked. If the replacement
+cannot be stored, the refresh reports a sanitized storage failure — **not**
+success — because the mailbox is now holding a value that stops working, and
+saying "ok" would hand a caller a token while hiding that the connection is
+already broken.
+
+The previous credential is deliberately **not** deleted on a storage failure.
+Whether Google has already invalidated it is not knowable from here, and throwing
+away the only value that might still work would turn a storage blip into a forced
+re-authorization. The next attempt establishes which it was.
 
 ### Google Testing mode
 
@@ -370,8 +472,10 @@ Every Gmail route and action establishes the authenticated app user first, then
 verifies ownership, then does privileged work. **Service role is a capability,
 never an authorization.** No route trusts a `user_id`, a mail-account owner, a
 provider subject or an email supplied by the browser. A mail account id does
-arrive from the form, but it is only ever used inside a query that also
-constrains `user_id`.
+arrive from the form, but every query it reaches also constrains `user_id` — and
+for the credential specifically, the owner is part of the LOOKUP rather than a
+comparison applied to its result, so an id naming somebody else's mailbox finds
+nothing instead of finding their secret and then discarding it.
 
 ---
 

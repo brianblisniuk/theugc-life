@@ -489,6 +489,38 @@ Deferred constraint triggers make the state labels mean something:
   half of revocation. B02 revokes at Google and destroys the credential, and
   neither substitutes for the other.
 
+### Amendment (B02 / 0036): `consent_required`
+
+B01 wrote its connection-state vocabulary before any credential existed anywhere
+in the system, and defined `pending_authorization` as *a connection was started;
+the human has NOT completed Google's consent screen; NO ACCESS.*
+
+B02 produces a moment that sentence cannot describe. When a creator finishes at
+Google we hold a verified `sub`, the scope set Google actually approved, and a
+usable refresh token — and we still have not asked them the product question,
+because a Google authorization is not a product consent. Reusing
+`pending_authorization` there would make the database say "the human has not
+authorized anything and we hold no access" about a mailbox we could read this
+second, and every later reader — support, an export, a deletion routine, an
+auditor — would inherit that.
+
+So 0036 **adds** a state rather than redefining a merged one. 0035 is untouched;
+0036 ALTERs the CHECK it created. The meanings, in full:
+
+| state | Google authorization | credential | private-processing consent |
+|---|---|---|---|
+| `pending_authorization` | not completed | none | — |
+| `consent_required` | completed, `gmail.readonly` granted | **exactly one** | absent, withdrawn, or about a different scope set |
+| `connected` | completed, `gmail.readonly` granted | **exactly one** | granted, snapshot **equal** to the current scope set |
+| `reauth_required` | no longer usable | none | history preserved |
+| `disconnected` | intentionally stopped | none | history preserved, scope set empty |
+| `deletion_pending` / `deleted` | — | none | B01 semantics unchanged |
+
+The credential column of that table is a **deferred database invariant**, not a
+convention — see DATABASE.md §5i. `connected` and `consent_required` both assert
+that a usable Google authorization is held right now, and a mailbox holding no
+refresh token cannot be read, so the state word and the credential are one fact.
+
 ### The state names the deletion it rests on
 
 A deletion state is a claim about a **specific** request, so `mail_accounts`
@@ -517,8 +549,8 @@ nobody asked to delete, then read back as evidence that they had.
 
 Every other connection state is a stage in a mailbox's life and may be left.
 `deleted` is not a stage: it is the assertion that the stored Gmail data is gone
-and the record retired. It may not become `pending_authorization`, `connected`,
-`reauth_required`, `disconnected` or `deletion_pending`, and the request it names
+and the record retired. It may not become `pending_authorization`, `consent_required`,
+`connected`, `reauth_required`, `disconnected` or `deletion_pending`, and the request it names
 cannot be swapped afterwards. A revived row would make the assertion false while
 still carrying the completed deletion as its evidence.
 

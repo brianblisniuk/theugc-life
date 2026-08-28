@@ -93,6 +93,7 @@ d("B02 credential boundary (0036)", () => {
         "public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,text)",
         "public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)",
         "public.gmail_credential_load(uuid)",
+        "public.gmail_credential_load_for_owner(uuid,uuid)",
         "public.gmail_credential_replace(uuid,text,text,text,text,timestamptz)",
         "public.gmail_mark_reauth_required(uuid)",
         "public.gmail_disconnect_finalize(uuid,uuid)",
@@ -123,7 +124,7 @@ d("B02 credential boundary (0036)", () => {
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.proname like 'gmail\\_%'
       `);
-      expect(res.rows.length).toBe(9);
+      expect(res.rows.length).toBe(10);
       for (const row of res.rows) {
         expect(row.prosecdef, row.proname).toBe(true);
         expect(

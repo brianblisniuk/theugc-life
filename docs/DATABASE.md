@@ -1076,8 +1076,18 @@ side cannot drift apart; `public.canonical_scope_set()` normalises every scope
 array on write to sorted-distinct form, which is what lets scope sets be compared
 as SETS with `=`.
 
-`connection_state` is `pending_authorization` · `connected` · `reauth_required` ·
-`disconnected` · `deletion_pending` · `deleted`. CHECKs require a `connected` row
+`connection_state` is `pending_authorization` · `consent_required` ·
+`connected` · `reauth_required` · `disconnected` · `deletion_pending` ·
+`deleted`. **`consent_required` was added by 0036**, which ALTERs the CHECK 0035
+created: B01 wrote its vocabulary before any credential existed anywhere, so
+`pending_authorization` meant "the human has not finished at Google and we hold
+no access" — a sentence that cannot describe the moment after a successful
+authorization but before the product permission, when a verified `sub`, the
+approved scope set and a usable refresh token are all in hand. The two states now
+divide that ground: `pending_authorization` keeps its merged meaning exactly, and
+`consent_required` means Google authorized us, a credential exists, and no
+current private-processing consent covers the granted scope set. CHECKs require a
+`connected` row
 to name when it connected, to hold at least one scope, and to hold
 **`gmail.readonly` specifically** — `openid` plus `gmail.send` is a mailbox we may
 write to and may not read, which is not a Gmail connection in this product's
@@ -1297,6 +1307,12 @@ user_id)`, so a caller-supplied account id cannot aim the flow at somebody else'
 mailbox. `return_path` carries a CHECK forbidding absolute and protocol-relative
 values.
 
+`purpose` and `target_mail_account_id` are an **IFF**: `connect` ⇔ no target,
+`reconnect` ⇔ a target. "Reconnect implies a target" left the other half open,
+and a `connect` carrying a target is a transaction whose two fields describe
+different flows — the callback would then have to pick one, and a caller who can
+influence that pick can steer where a fresh Google grant lands.
+
 ### private.gmail_oauth_credentials
 The encrypted refresh token, **one per mailbox** — a replacement supersedes its
 predecessor completely, because keeping the old one would be keeping a live key
@@ -1313,20 +1329,54 @@ stated*, never *never expires*.
 The composite FK on `(mail_account_id, user_id)` is B01's provenance spine: the
 credential cannot lose either the mailbox or the human, and cascades with both.
 
+### The state word and the credential are one fact
+`assert_gmail_credential_state_coherent()` is a **deferred** constraint trigger
+registered on `mail_accounts`, on `private.gmail_oauth_credentials` (INSERT,
+UPDATE **and DELETE**) and on `mail_account_consents`. At COMMIT:
+
+- `connected` / `consent_required` → **exactly one** credential;
+- every other state → **no** credential;
+- `consent_required` additionally requires `gmail.readonly`, and may not survive
+  a granted private-processing consent whose snapshot equals the current scope
+  set — that decision has already been made, and the mailbox is `connected`.
+
+Deferred because every legitimate write passes through an intermediate state:
+persist sets the account row before inserting the credential, disconnect deletes
+the credential before moving the state. Registered on all three write origins for
+the reason A04.6 and A05 established — deleting the credential of a `connected`
+mailbox never touches `mail_accounts`, so a trigger watching only that table
+would never see it. Cascades are handled by reading the FINAL database state: if
+the account row is gone, there is nothing left to be coherent with. No
+`pg_trigger_depth()`.
+
 ### The RPC surface
 `gmail_oauth_begin` · `gmail_oauth_consume_transaction` ·
 `gmail_connection_persist` · `gmail_grant_private_processing_consent` ·
-`gmail_credential_load` · `gmail_credential_replace` ·
-`gmail_mark_reauth_required` · `gmail_disconnect_finalize` ·
-`gmail_connection_status`.
+`gmail_credential_load` · `gmail_credential_load_for_owner` ·
+`gmail_credential_replace` · `gmail_mark_reauth_required` ·
+`gmail_disconnect_finalize` · `gmail_connection_status`.
 
 `gmail_connection_persist` is the atomic landing point after every Google-side
-check has passed. It implements B01's account selection — new identity, reuse a
-live row, never revive a `deleted` one, refuse an identity owned by another user
-without naming them — and stores the credential in the same transaction, so a
-`connected` mailbox with no credential, or a credential under the wrong owner,
-cannot survive. `gmail_credential_load` returns the ENVELOPE, never a token:
-decryption happens in the application.
+check has passed. When the transaction named a reconnect target, it binds that
+target FIRST — same owner, `gmail`, a reconnectable state, and a
+`provider_account_subject` equal to the subject Google just verified — and
+answers `account_mismatch` otherwise. Without that, choosing a different Google
+account at the account chooser fell through to "identity never seen" and silently
+created a new mailbox. A `deleted` target answers `account_retired`; B01's
+terminality is not something a reconnect may undo.
+
+It then implements B01's account selection — new identity, reuse a live row,
+never revive a `deleted` one, refuse an identity owned by another user without
+naming them — and stores the credential in the same transaction. A successful
+authorization lands in `consent_required`, never `connected`, unless a current
+exact-scope consent already exists.
+
+`gmail_credential_load` returns the ENVELOPE, never a token: decryption happens in
+the application. It takes **no user id**, which is right for a trusted internal
+caller in B03 and wrong for anything a browser reaches, so user-initiated actions
+use `gmail_credential_load_for_owner(p_user_id, p_mail_account_id)` instead —
+the owner is part of the lookup, so a stranger's mailbox id returns `not_found`
+and no envelope is ever assembled.
 
 **0036 connects no mailbox, opens no OAuth transaction, stores no credential and
 infers no consent. It adds no message, thread, attachment, sync or import table.**

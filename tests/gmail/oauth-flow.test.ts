@@ -95,6 +95,30 @@ async function runAuthorization(
   return { started, google, outcome };
 }
 
+/**
+ * 0036 makes the state word and the credential one fact, so a fixture that stops
+ * claiming a connection has to let the credential go in the same breath. Both
+ * halves in ONE transaction: the invariant is checked at COMMIT, and doing them
+ * as two statements would be asserting a state nobody is allowed to hold.
+ */
+const RELEASE_CREDENTIAL = "delete from private.gmail_oauth_credentials where mail_account_id = $1";
+
+async function releaseConnection(mailAccountId: string): Promise<void> {
+  await client.query("begin");
+  try {
+    await client.query(RELEASE_CREDENTIAL, [mailAccountId]);
+    await client.query(
+      `update public.mail_accounts set connection_state='disconnected',
+          disconnected_at=now(), granted_scopes='{}' where id=$1`,
+      [mailAccountId],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+}
+
 d("B02 — Gmail OAuth connection", () => {
   // =====================================================================
   describe("the authorization request", () => {
@@ -260,16 +284,42 @@ d("B02 — Gmail OAuth connection", () => {
       expect(google.calls.revocations).toHaveLength(1);
     });
 
-    it("handles the human declining at Google", async () => {
+    it("handles the human declining at Google, and consumes the transaction", async () => {
       const userId = await createTestUser(client, "denied");
       const google = createFakeGoogle();
+      const started = await startGmailAuthorization({ userId, purpose: "connect" }, deps(google));
+      const state = new URL(
+        (started as { authorizationUrl: string }).authorizationUrl,
+      ).searchParams.get("state")!;
+
       const outcome = await completeGmailAuthorization(
-        { userId, state: "x", code: null, error: "access_denied" },
+        { userId, state, code: null, error: "access_denied" },
         deps(google),
       );
       expect(outcome.result).toBe("access_denied");
-      // Nothing was issued, so there is nothing to revoke.
+      // Nothing was issued, so there is nothing to revoke, and no code is
+      // exchanged for a flow the human refused.
       expect(google.calls.revocations).toHaveLength(0);
+      expect(google.calls.exchanges).toHaveLength(0);
+
+      // A DENIAL IS AN ENDING. The state digest, nonce digest and encrypted PKCE
+      // verifier are gone, not left alive until the TTL expires.
+      const remaining = await client.query(
+        "select count(*)::int n from private.gmail_oauth_transactions where user_id = $1",
+        [userId],
+      );
+      expect(remaining.rows[0].n).toBe(0);
+    });
+
+    it("refuses a denial that carries an unknown state", async () => {
+      const userId = await createTestUser(client, "denied-unknown");
+      const outcome = await completeGmailAuthorization(
+        { userId, state: "never-issued", code: null, error: "access_denied" },
+        deps(createFakeGoogle()),
+      );
+      // Consuming comes first, so a denial is only reported for a flow we
+      // actually started. An unrecognised state is not our business at all.
+      expect(outcome.result).toBe("invalid_state");
     });
 
     it("refuses a PKCE/code failure at the exchange", async () => {
@@ -387,8 +437,9 @@ d("B02 — Gmail OAuth connection", () => {
       const id = (outcome as { mailAccountId: string }).mailAccountId;
       const row = await readMailAccount(client, id);
       // Authorized at Google, not yet permitted by the human. Those are two
-      // different decisions and B01 keeps them apart.
-      expect(row.connection_state).toBe("pending_authorization");
+      // different decisions and the state says which one is missing —
+      // `pending_authorization` would claim Google had not authorized us either.
+      expect(row.connection_state).toBe("consent_required");
       // The credential IS stored: we hold a real grant and must be able to
       // revoke it. What we do not yet hold is permission to process.
       expect(await countCredentials(client, id)).toBe(1);
@@ -445,9 +496,14 @@ d("B02 — Gmail OAuth connection", () => {
         subject: `sub-${randomBytes(6).toString("hex")}`,
       });
       const id = (outcome as { mailAccountId: string }).mailAccountId;
-      await client.query("delete from private.gmail_oauth_credentials where mail_account_id = $1", [
-        id,
-      ]);
+
+      // Reach the credential-less state the legitimate way. Deleting the row
+      // directly is no longer possible — 0036 refuses `consent_required` with no
+      // credential at COMMIT — so the mailbox goes to `reauth_required`, which is
+      // exactly the situation this guard is for: the human's authorization
+      // stopped working and they are being asked to agree to processing anyway.
+      await client.query("select public.gmail_mark_reauth_required($1)", [id]);
+      expect(await countCredentials(client, id)).toBe(0);
 
       const granted = await grantPrivateProcessingConsent(
         { userId, mailAccountId: id },
@@ -483,11 +539,7 @@ d("B02 — Gmail OAuth connection", () => {
       const id = (first.outcome as { mailAccountId: string }).mailAccountId;
 
       // Move it to disconnected, then authorize again through the generic flow.
-      await client.query(
-        `update public.mail_accounts set connection_state='disconnected',
-            disconnected_at=now(), granted_scopes='{}' where id = $1`,
-        [id],
-      );
+      await releaseConnection(id);
 
       const second = await runAuthorization(userId, { subject });
       expect((second.outcome as { mailAccountId: string }).mailAccountId).toBe(id);
@@ -521,6 +573,7 @@ d("B02 — Gmail OAuth connection", () => {
 
       // Retire it the legitimate B01 way.
       await client.query("begin");
+      await client.query(RELEASE_CREDENTIAL, [oldId]);
       await client.query(
         `update public.mail_accounts set connection_state='disconnected',
             disconnected_at=now(), granted_scopes='{}' where id=$1`,
@@ -590,11 +643,7 @@ d("B02 — Gmail OAuth connection", () => {
       const id = (first.outcome as { mailAccountId: string }).mailAccountId;
       await grantPrivateProcessingConsent({ userId, mailAccountId: id }, deps(createFakeGoogle()));
 
-      await client.query(
-        `update public.mail_accounts set connection_state='disconnected',
-            disconnected_at=now(), granted_scopes='{}' where id=$1`,
-        [id],
-      );
+      await releaseConnection(id);
 
       const second = await runAuthorization(
         userId,
@@ -622,11 +671,7 @@ d("B02 — Gmail OAuth connection", () => {
       const first = await runAuthorization(userId, { subject });
       const id = (first.outcome as { mailAccountId: string }).mailAccountId;
       await grantPrivateProcessingConsent({ userId, mailAccountId: id }, deps(createFakeGoogle()));
-      await client.query(
-        `update public.mail_accounts set connection_state='disconnected',
-            disconnected_at=now(), granted_scopes='{}' where id=$1`,
-        [id],
-      );
+      await releaseConnection(id);
 
       // Google now returns a wider set. B01: a consent given about a narrower
       // mailbox does not describe a wider one.
@@ -635,7 +680,7 @@ d("B02 — Gmail OAuth connection", () => {
         grantedScopes: [...B02_REQUESTED_SCOPES, GMAIL_SEND_SCOPE],
       });
       expect(second.outcome!.result).toBe("consent_required");
-      expect((await readMailAccount(client, id)).connection_state).toBe("pending_authorization");
+      expect((await readMailAccount(client, id)).connection_state).toBe("consent_required");
     });
 
     it("requires a new consent when the previous one was withdrawn", async () => {
@@ -646,11 +691,7 @@ d("B02 — Gmail OAuth connection", () => {
       await grantPrivateProcessingConsent({ userId, mailAccountId: id }, deps(createFakeGoogle()));
 
       // Withdraw, the B01 way: a new receipt and the projection advanced onto it.
-      await client.query(
-        `update public.mail_accounts set connection_state='disconnected',
-            disconnected_at=now(), granted_scopes='{}' where id=$1`,
-        [id],
-      );
+      await releaseConnection(id);
       await client.query("begin");
       const withdrawal = await client.query(
         `insert into public.mail_account_consent_receipts
@@ -873,6 +914,7 @@ d("B02 — Gmail OAuth connection", () => {
       // Scopes are cleared FIRST: B01 checks a receipt's snapshot against the
       // account's scope set at COMMIT, so a withdrawal recorded alongside a
       // disconnect snapshots the empty set.
+      await client.query(RELEASE_CREDENTIAL, [withdrawn.mailAccountId]);
       await client.query(
         `update public.mail_accounts set connection_state='disconnected',
             disconnected_at=now(), granted_scopes='{}' where id=$1`,

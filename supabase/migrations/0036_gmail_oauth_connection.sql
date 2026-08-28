@@ -46,6 +46,63 @@ comment on schema private is
   'B02: server-only storage that no client role may reach. No usage grant for anon, authenticated or service_role — the only door is a SECURITY DEFINER function in public, executable by service_role alone.';
 
 -- ===========================================================================
+-- 1a. THE STATE B01 DID NOT HAVE A WORD FOR
+-- ===========================================================================
+-- 0035 wrote its state vocabulary before any credential existed anywhere in the
+-- system, and defined:
+--
+--   pending_authorization  a connection was started; the human has NOT completed
+--                          Google's consent screen; NO ACCESS.
+--
+-- B02 produces a situation that sentence cannot describe. When a creator
+-- finishes at Google we hold a verified `sub`, the scope set Google actually
+-- approved, and a usable refresh token — and we still have not asked them the
+-- product question, because a Google authorization is not a product consent.
+-- Reusing `pending_authorization` for that moment would make the database say
+-- "the human has not authorized anything and we have no access" about a mailbox
+-- we could read this second. That is not a stricter label; it is a false one,
+-- and every later reader — support, an export, a deletion routine, an auditor —
+-- would inherit the lie.
+--
+-- So B02 ADDS a state rather than redefining a merged one. 0035 is untouched;
+-- this ALTERs the constraint it created, additively, and the two states now
+-- divide the ground between them cleanly:
+--
+--   pending_authorization  Google authorization has NOT completed. No usable
+--                          stored refresh credential. No provider access is
+--                          represented as current. (0035's meaning, intact.)
+--
+--   consent_required       Google authorization COMPLETED: the durable provider
+--                          identity is verified, an encrypted refresh credential
+--                          exists, and `gmail.readonly` is in the approved set —
+--                          but no current private-processing consent covers
+--                          exactly that scope set, so the product may not
+--                          process the mailbox yet.
+--
+--   connected              all of the above AND a current, exact-scope-matching
+--                          private-processing consent. (0035's meaning, intact.)
+--
+--   reauth_required        the last authorization is no longer usable; no
+--                          credential remains.
+--
+--   disconnected           access was intentionally stopped; no credential, and
+--                          an empty scope set.
+--
+--   deletion_pending /
+--   deleted                0035's meanings, untouched.
+alter table public.mail_accounts
+  drop constraint mail_accounts_connection_state_check;
+
+alter table public.mail_accounts
+  add constraint mail_accounts_connection_state_check
+  check (connection_state in
+    ('pending_authorization', 'consent_required', 'connected', 'reauth_required',
+     'disconnected', 'deletion_pending', 'deleted'));
+
+comment on column public.mail_accounts.connection_state is
+  'B01 + B02: pending_authorization = Google authorization not completed, no credential. consent_required (B02) = Google authorization completed and a credential exists, but private-processing consent does not cover the granted scope set. connected = both. reauth_required/disconnected = no credential. deletion_pending/deleted per B01.';
+
+-- ===========================================================================
 -- 2. THE OAUTH TRANSACTION — SHORT-LIVED, OWNER-BOUND, CONSUMED ONCE
 -- ===========================================================================
 -- B01 cannot create a mail account before Google tells us the durable `sub`, so
@@ -108,8 +165,15 @@ create table private.gmail_oauth_transactions (
     foreign key (target_mail_account_id, user_id)
     references public.mail_accounts (id, user_id) on delete cascade,
 
-  constraint gmail_oauth_transactions_reconnect_shape
-    check (purpose <> 'reconnect' or target_mail_account_id is not null),
+  -- PURPOSE AND TARGET ARE THE SAME FACT, WRITTEN TWICE, SO THEY MUST AGREE
+  -- EXACTLY. "reconnect implies a target" leaves the other half open, and a
+  -- `connect` carrying a target is a transaction whose two fields describe
+  -- different flows: the callback would then have to decide which one it meant,
+  -- and a caller who can influence that decision can steer where a fresh Google
+  -- grant lands. An IFF removes the choice instead of documenting it.
+  constraint gmail_oauth_transactions_purpose_target_iff
+    check ((purpose = 'connect' and target_mail_account_id is null)
+        or (purpose = 'reconnect' and target_mail_account_id is not null)),
 
   constraint gmail_oauth_transactions_ttl
     check (expires_at > created_at)
@@ -171,6 +235,150 @@ create trigger gmail_oauth_credentials_set_updated_at
 
 comment on table private.gmail_oauth_credentials is
   'B02: the encrypted Gmail refresh token, one per mailbox. No access token, no ID token, no authorization code, no raw state or nonce. Unreachable from any client role.';
+
+-- ===========================================================================
+-- 3a. THE STATE WORD AND THE CREDENTIAL MUST BE THE SAME FACT
+-- ===========================================================================
+-- The state vocabulary above is only worth anything if the database enforces it.
+-- Left to writer discipline, "connected with no credential" and "disconnected
+-- while a live refresh token sits in `private`" are both one forgotten line
+-- away, and neither is visible from the public plane — a support answer, an
+-- export or a deletion routine would read the state word and be wrong.
+--
+-- So the correspondence is an invariant, not a convention:
+--
+--   connected / consent_required   EXACTLY ONE credential row exists.
+--   everything else                NO credential row exists.
+--
+-- Deferred to COMMIT because every legitimate write passes through an
+-- intermediate state: `gmail_connection_persist` sets the account row before it
+-- inserts the credential, and `gmail_disconnect_finalize` deletes the credential
+-- before it moves the state. An immediate check would make the correct order
+-- impossible. What has to be coherent is the state that SURVIVES commit.
+--
+-- Registered on BOTH write origins — the account and the credential — for the
+-- reason A04.6 and A05 established the hard way: an invariant enforced from one
+-- side can be walked around from the other. Deleting the credential of a
+-- `connected` mailbox never touches `mail_accounts`, and inserting one under a
+-- `disconnected` mailbox never touches it either.
+-- ON EXISTING ROWS: a constraint trigger governs WRITES, so rows already in the
+-- table are not re-validated by this migration. That set is empty in any real
+-- deployment and provably so: B01 shipped schema only — no route, no action and
+-- no function that could create a `mail_accounts` row at all — so no mailbox can
+-- have reached `connected` before B02 exists to connect it. The first write to
+-- any such row would be refused, which is the correct outcome rather than a
+-- silent repair; deleting or rewriting rows from a migration is not something
+-- this file is willing to do to make an invariant look true.
+create or replace function public.assert_gmail_credential_state_coherent()
+returns trigger
+language plpgsql
+as $$
+declare
+  account_id uuid;
+  account record;
+  credential_count integer;
+  consent_state text;
+  consent_scopes text[];
+begin
+  -- OLD and NEW are each unassigned outside their own operations, so the row
+  -- image is chosen by operation rather than coalesced.
+  if tg_table_name = 'mail_accounts' then
+    account_id := new.id;
+  elsif tg_op = 'DELETE' then
+    account_id := old.mail_account_id;
+  else
+    account_id := new.mail_account_id;
+  end if;
+
+  -- FINAL DATABASE STATE, read now. This is also what makes cascades correct
+  -- without asking whether one happened: when the owning user or the mailbox row
+  -- is erased, PostgreSQL removes the parent first and the credential goes with
+  -- it, so by commit there is no account left to be coherent with. A
+  -- `pg_trigger_depth()` test would be answering a different question — how we
+  -- got here rather than where we ended up — and B01's amendment #3 already
+  -- established why that is not proof of anything.
+  select m.connection_state, m.granted_scopes into account
+    from public.mail_accounts m where m.id = account_id;
+
+  if not found then
+    return null;
+  end if;
+
+  select count(*)::int into credential_count
+    from private.gmail_oauth_credentials c where c.mail_account_id = account_id;
+
+  if account.connection_state in ('connected', 'consent_required') then
+    if credential_count <> 1 then
+      raise exception
+        'mail account % is `%` with % stored credentials. Both states assert that a usable Google authorization is held right now; without exactly one credential the word is a claim about access this system does not have.',
+        account_id, account.connection_state, credential_count
+        using errcode = 'integrity_constraint_violation';
+    end if;
+  elsif credential_count <> 0 then
+    raise exception
+      'mail account % is `%` while a Gmail refresh credential is still stored for it. Every one of these states asserts that no current provider access is held — a surviving credential means the record says access stopped while the key to resume it is still on disk.',
+      account_id, account.connection_state
+      using errcode = 'integrity_constraint_violation';
+  end if;
+
+  if account.connection_state = 'consent_required' then
+    -- The state names a mailbox we could read if we were permitted to. Without
+    -- the read scope there is nothing being withheld, and the label would be
+    -- describing a decision that does not arise.
+    if not (public.canonical_scope_set(account.granted_scopes)
+            @> array['https://www.googleapis.com/auth/gmail.readonly']::text[]) then
+      raise exception
+        'mail account % is `consent_required` without `gmail.readonly`. The state means "Google has authorized us to read this mailbox and the human has not yet permitted us to process it"; with no read grant there is no such pending decision.',
+        account_id
+        using errcode = 'integrity_constraint_violation';
+    end if;
+
+    -- ...and it must be genuinely pending. If a current private-processing
+    -- consent already covers exactly this scope set, the human HAS decided, and
+    -- leaving the mailbox in `consent_required` would ask them again for
+    -- permission they already gave — or, worse, hold back processing they
+    -- already authorized while the record blames them for not answering.
+    select c.state, r.granted_scopes_at_decision
+      into consent_state, consent_scopes
+      from public.mail_account_consents c
+      join public.mail_account_consent_receipts r on r.id = c.current_receipt_id
+     where c.mail_account_id = account_id
+       and c.consent_kind = 'private_gmail_processing';
+
+    if consent_state = 'granted'
+       and consent_scopes is not distinct from public.canonical_scope_set(account.granted_scopes) then
+      raise exception
+        'mail account % is `consent_required` while holding a granted private_gmail_processing consent for exactly these scopes. The decision this state is waiting for has already been made: the mailbox is `connected`.',
+        account_id
+        using errcode = 'integrity_constraint_violation';
+    end if;
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke all on function public.assert_gmail_credential_state_coherent() from public;
+
+create constraint trigger mail_accounts_credential_coherent
+  after insert or update on public.mail_accounts
+  deferrable initially deferred
+  for each row execute function public.assert_gmail_credential_state_coherent();
+
+-- DELETE included: removing the credential is the whole of one direction of the
+-- attack, and it never touches `mail_accounts` for the other trigger to see.
+create constraint trigger gmail_oauth_credentials_state_coherent
+  after insert or update or delete on private.gmail_oauth_credentials
+  deferrable initially deferred
+  for each row execute function public.assert_gmail_credential_state_coherent();
+
+-- The consent projection is a third write origin for the `consent_required`
+-- half: granting consent without moving the state off `consent_required` would
+-- otherwise leave a mailbox permanently asking for a decision already made.
+create constraint trigger mail_account_consents_credential_coherent
+  after insert or update or delete on public.mail_account_consents
+  deferrable initially deferred
+  for each row execute function public.assert_gmail_credential_state_coherent();
 
 -- ===========================================================================
 -- 4. THE ONLY DOOR — SECURITY DEFINER, service_role ONLY
@@ -285,7 +493,18 @@ $$;
 -- profile call proved the mailbox is reachable. Everything local happens here,
 -- in one transaction, so none of the forbidden intermediate states can survive.
 --
--- Account selection obeys B01 exactly, and the four cases are its four cases:
+-- A RECONNECT IS BOUND TO ITS TARGET BEFORE ANY OF THAT. When the transaction
+-- named a mailbox, the returned Google subject must BE that mailbox's subject,
+-- and the check happens before the generic cases are even considered. The
+-- earlier arrangement — comparing the target only inside the branch where a live
+-- row for the returned subject already existed — meant that choosing a DIFFERENT
+-- Google account at Google's account picker fell straight through to "identity
+-- never seen" and silently created a new mailbox, or to "already connected" for
+-- a mailbox the human never asked to touch. "Reconnect A" then quietly meant
+-- "connect whatever you picked", which is not a reconnection and not what the
+-- human was shown.
+--
+-- Account selection then obeys B01 exactly, and the four cases are its four:
 --   A  provider identity never seen        -> new mail_accounts row
 --   B  live row owned by this user         -> REUSE it (never a second live row)
 --   C  only retired rows                   -> new row; `deleted` stays terminal
@@ -312,6 +531,7 @@ declare
   v_scopes text[] := public.canonical_scope_set(p_granted_scopes);
   v_registered_owner uuid;
   v_account public.mail_accounts%rowtype;
+  v_target public.mail_accounts%rowtype;
   v_mail_account_id uuid;
   v_consent_scopes text[];
   v_consent_state text;
@@ -327,6 +547,45 @@ begin
   -- storing a credential we would not be allowed to use.
   if not (v_scopes @> array['https://www.googleapis.com/auth/gmail.readonly']::text[]) then
     return jsonb_build_object('result', 'missing_read_scope');
+  end if;
+
+  -- ---------------------------------------------------------------------
+  -- EXACT RECONNECT BINDING — first, and before any generic case applies.
+  -- ---------------------------------------------------------------------
+  if p_expected_mail_account_id is not null then
+    select m.* into v_target
+      from public.mail_accounts m
+     where m.id = p_expected_mail_account_id;
+
+    -- Ownership is re-established here rather than trusted from the caller.
+    -- The transaction's composite FK already bound the target to this user when
+    -- it was created, but this function is the door a credential comes through
+    -- and it does not get to assume its inputs were checked upstream.
+    if not found or v_target.user_id <> p_user_id or v_target.provider <> 'gmail' then
+      return jsonb_build_object('result', 'account_mismatch');
+    end if;
+
+    -- A retired mailbox is not a reconnection target. B01's terminality means
+    -- the row asserts that stored Gmail data was removed; reviving it would make
+    -- that assertion false while the completed deletion request sits underneath
+    -- as its evidence. The same human reconnecting the same Google identity
+    -- starts a NEW connect flow and gets a NEW row — which is the honest record
+    -- of a second, separate grant of access.
+    if v_target.connection_state = 'deleted' then
+      return jsonb_build_object('result', 'account_retired');
+    end if;
+
+    if v_target.connection_state not in
+       ('disconnected', 'reauth_required', 'pending_authorization', 'consent_required') then
+      return jsonb_build_object('result', 'account_mismatch');
+    end if;
+
+    -- THE BINDING ITSELF. The human was shown "reconnect this mailbox"; if the
+    -- account picker produced a different Google identity, the only truthful
+    -- answer is that this is not that mailbox. Never a silent connect.
+    if v_target.provider_account_subject <> p_provider_account_subject then
+      return jsonb_build_object('result', 'account_mismatch');
+    end if;
   end if;
 
   -- CASE D first, because it is the one that must not leak. The registry is
@@ -362,22 +621,21 @@ begin
       );
     end if;
 
-    -- A reconnect that named a target must land on that target. If it does not,
-    -- something is confused and we stop rather than guess.
-    if p_expected_mail_account_id is not null
-       and p_expected_mail_account_id <> v_account.id then
-      return jsonb_build_object('result', 'account_mismatch');
-    end if;
-
+    -- No second target comparison here. The binding above already proved the
+    -- returned subject IS this target's subject, and the live-row unique index
+    -- means only one row can carry that subject — so a check at this point could
+    -- only ever agree, and a second source of truth about the same fact is how
+    -- the two drift apart later.
     v_mail_account_id := v_account.id;
     v_reused := true;
 
-    -- Back to `pending_authorization` before the scopes go on: B01 requires a
-    -- disconnected row to hold an EMPTY scope set, so the state has to move
-    -- first. It is also honest — we hold a fresh grant and have not yet
-    -- established that we are permitted to use it.
+    -- `consent_required`, not `pending_authorization`: Google HAS authorized us,
+    -- the credential below is about to exist, and the only thing missing is the
+    -- product permission. The state has to move before the scopes go on anyway —
+    -- B01 requires a disconnected row to hold an EMPTY scope set — and this is
+    -- the state that describes where we actually are.
     update public.mail_accounts
-       set connection_state = 'pending_authorization',
+       set connection_state = 'consent_required',
            granted_scopes = v_scopes,
            email_address = coalesce(p_email_address, email_address),
            disconnected_at = null,
@@ -392,7 +650,7 @@ begin
        connection_state, granted_scopes)
     values
       (p_user_id, 'gmail', p_provider_account_subject, p_email_address,
-       'pending_authorization', v_scopes)
+       'consent_required', v_scopes)
     returning id into v_mail_account_id;
   end if;
 
@@ -570,6 +828,74 @@ begin
   return jsonb_build_object(
     'result', 'ok',
     'user_id', v_cred.user_id,
+    'refresh_token_ciphertext', v_cred.refresh_token_ciphertext,
+    'refresh_token_iv', v_cred.refresh_token_iv,
+    'refresh_token_auth_tag', v_cred.refresh_token_auth_tag,
+    'encryption_key_version', v_cred.encryption_key_version
+  );
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4e-bis. LOAD FOR AN OWNER — the surface a USER-INITIATED action must use
+-- ---------------------------------------------------------------------------
+-- `gmail_credential_load` above takes no user id, because a background job in
+-- B03 will hold a mailbox id it derived itself and has no session to check
+-- against. That is defensible for a trusted internal caller and indefensible for
+-- anything reached from a browser: Disconnect passes a `mail_account_id` that
+-- came from a form, and loading the credential first and comparing owners
+-- afterwards means the secret boundary was crossed on the strength of untrusted
+-- input. The comparison happening a line later does not un-cross it.
+--
+-- So a user-initiated action uses THIS function, where the owner is part of the
+-- lookup rather than a check applied to its result. A stranger's mailbox id
+-- returns `not_found`, and the envelope is never assembled at all.
+--
+-- Unlike the internal loader, this one does NOT require `connected`: disconnect
+-- has to be able to revoke a credential belonging to a mailbox that is merely
+-- `consent_required`. That grant is live at Google, and a disconnect that
+-- quietly skipped revoking it would leave the human's mailbox authorized to an
+-- application whose UI told them they had stopped it.
+create or replace function public.gmail_credential_load_for_owner(
+  p_user_id uuid,
+  p_mail_account_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_state text;
+  v_cred private.gmail_oauth_credentials%rowtype;
+begin
+  if p_user_id is null then
+    raise exception 'gmail_credential_load_for_owner requires an authenticated user'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- Owner in the WHERE clause. Somebody else's mailbox does not exist here.
+  select m.connection_state into v_state
+    from public.mail_accounts m
+   where m.id = p_mail_account_id
+     and m.user_id = p_user_id;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  select c.* into v_cred
+    from private.gmail_oauth_credentials c
+   where c.mail_account_id = p_mail_account_id
+     and c.user_id = p_user_id;
+
+  if not found then
+    return jsonb_build_object('result', 'no_credential', 'connection_state', v_state);
+  end if;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'connection_state', v_state,
     'refresh_token_ciphertext', v_cred.refresh_token_ciphertext,
     'refresh_token_iv', v_cred.refresh_token_iv,
     'refresh_token_auth_tag', v_cred.refresh_token_auth_tag,
@@ -762,6 +1088,7 @@ begin
     'public.gmail_connection_persist(uuid,text,text,text[],text,text,text,text,timestamptz,uuid,text)',
     'public.gmail_grant_private_processing_consent(uuid,uuid,text,text,text)',
     'public.gmail_credential_load(uuid)',
+    'public.gmail_credential_load_for_owner(uuid,uuid)',
     'public.gmail_credential_replace(uuid,text,text,text,text,timestamptz)',
     'public.gmail_mark_reauth_required(uuid)',
     'public.gmail_disconnect_finalize(uuid,uuid)',

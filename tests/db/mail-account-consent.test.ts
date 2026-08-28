@@ -123,11 +123,31 @@ async function decideConsent(
 }
 
 /**
- * A fully connected mailbox: scopes, private-processing consent and the
- * `connected` state established together. They have to be one transaction now:
+ * The credential half of a connection.
+ *
+ * B01 stored no token, so its fixtures never needed one. B02's 0036 makes the
+ * state word and the credential a single fact — `connected` asserts that a
+ * usable Google authorization is held RIGHT NOW, and a mailbox holding no
+ * refresh token cannot be read — so a fixture that claims `connected` has to
+ * hold one, and one that stops claiming it has to let it go. The values are
+ * obvious placeholders: nothing here decrypts them, and B01 is not the suite
+ * that tests the envelope.
+ */
+const ATTACH_CREDENTIAL = `insert into private.gmail_oauth_credentials
+   (mail_account_id, user_id, refresh_token_ciphertext, refresh_token_iv,
+    refresh_token_auth_tag, encryption_key_version)
+ values ($1, $2, 'fixture-ciphertext', 'fixture-iv', 'fixture-tag', 'v1')
+ on conflict (mail_account_id) do nothing`;
+
+const RELEASE_CREDENTIAL = "delete from private.gmail_oauth_credentials where mail_account_id = $1";
+
+/**
+ * A fully connected mailbox: scopes, credential, private-processing consent and
+ * the `connected` state established together. They have to be one transaction:
  * the receipt's scope snapshot is checked against the account's ACTUAL scopes at
  * COMMIT, so a fixture that granted consent first and widened access afterwards
- * would be recording a consent about a mailbox that did not yet exist.
+ * would be recording a consent about a mailbox that did not yet exist — and the
+ * credential invariant is checked at the same moment.
  */
 async function connectedAccount(
   userId: string = USERS.pro,
@@ -143,6 +163,7 @@ async function connectedAccount(
         where id = $1`,
       [account.id, scopes],
     );
+    await q(ATTACH_CREDENTIAL, [account.id, account.userId]);
     const inserted = await q(
       RECEIPT_INSERT,
       receiptParams(account, "private_gmail_processing", "granted", scopes),
@@ -160,15 +181,24 @@ async function connectedAccount(
   return account;
 }
 
-/** Stop provider access. Stored data is untouched — that is the whole point. */
+/**
+ * Stop provider access. Stored data is untouched — that is the whole point.
+ *
+ * The credential goes with it, in the same transaction: a `disconnected` record
+ * holding a live refresh token would say access stopped while the key to resume
+ * it sat on disk, which is exactly what 0036's invariant refuses.
+ */
 async function disconnectAccount(account: Account): Promise<void> {
-  await adminQuery(
-    `update public.mail_accounts
-        set connection_state = 'disconnected', disconnected_at = now(),
-            granted_scopes = '{}', last_state_change_at = now()
-      where id = $1`,
-    [account.id],
-  );
+  await txOk(async (q) => {
+    await q(RELEASE_CREDENTIAL, [account.id]);
+    await q(
+      `update public.mail_accounts
+          set connection_state = 'disconnected', disconnected_at = now(),
+              granted_scopes = '{}', last_state_change_at = now()
+        where id = $1`,
+      [account.id],
+    );
+  });
 }
 
 async function openDeletionRequest(
@@ -653,6 +683,9 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
             where id = $1`,
           [account.id, GMAIL_READONLY],
         );
+        // Everything EXCEPT the consent is in place, so the consent rule is what
+        // this asserts rather than whichever invariant happens to fire first.
+        await q(ATTACH_CREDENTIAL, [account.id, account.userId]);
       });
       expect(error).toMatch(/cannot be `connected` without a granted private_gmail_processing/);
       expect((await accountRow(account.id)).connection_state).toBe("pending_authorization");
@@ -727,13 +760,7 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
   describe("disconnect is not delete", () => {
     it("16. disconnected is represented distinctly from any deletion", async () => {
       const account = await connectedAccount();
-      await adminQuery(
-        `update public.mail_accounts
-            set connection_state = 'disconnected', disconnected_at = now(),
-                granted_scopes = '{}', last_state_change_at = now()
-          where id = $1`,
-        [account.id],
-      );
+      await disconnectAccount(account);
       const row = await accountRow(account.id);
       expect(row.connection_state).toBe("disconnected");
       expect(row.granted_scopes).toEqual([]);
@@ -760,12 +787,7 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
 
     it("17/19. a deletion request is explicit and stays owner-bound", async () => {
       const account = await connectedAccount();
-      await adminQuery(
-        `update public.mail_accounts
-            set connection_state = 'disconnected', disconnected_at = now(), granted_scopes = '{}'
-          where id = $1`,
-        [account.id],
-      );
+      await disconnectAccount(account);
       const [request] = await adminQuery<{ id: string; status: string }>(
         `insert into public.mail_account_deletion_requests
            (mail_account_id, user_id, scope, requested_by_user_id, requested_at)
@@ -808,12 +830,7 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
 
     it("18. `deleted` requires a COMPLETED deletion, and `deletion_pending` an open one", async () => {
       const account = await connectedAccount();
-      await adminQuery(
-        `update public.mail_accounts
-            set connection_state = 'disconnected', disconnected_at = now(), granted_scopes = '{}'
-          where id = $1`,
-        [account.id],
-      );
+      await disconnectAccount(account);
 
       // A label with nothing behind it is a promise to the user that nothing is
       // keeping. The pointer is what makes the promise checkable, so a deletion
@@ -1823,6 +1840,7 @@ d("B01 mail account, consent and the private communication boundary (0035)", () 
             where id = $1`,
           [second.id, GMAIL_READONLY],
         );
+        await q(ATTACH_CREDENTIAL, [second.id, second.userId]);
       });
       expect(error).toMatch(/cannot be `connected` without a granted private_gmail_processing/);
 

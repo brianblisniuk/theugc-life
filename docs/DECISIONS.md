@@ -1949,6 +1949,27 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #1 (2026-08-28) added `consent_required` to the
+connection-state vocabulary. D067's state words were written before any
+credential existed anywhere in this system, so `pending_authorization` was
+defined as "the human has not completed Google's consent screen; no access" — a
+sentence B02 made false, because after a successful authorization we hold a
+verified `sub`, the approved scope set and a usable refresh token while still not
+having asked the product question. The addition is deliberately ADDITIVE:
+`pending_authorization` keeps its merged meaning exactly, migration `0035` is
+untouched, and `0036` ALTERs the CHECK it created. Reusing the old word would
+have left the database asserting "no access" about a mailbox that could be read
+that second, and every later reader — support, an export, a deletion routine, an
+auditor — would have inherited it.
+
+The same amendment fixed what a state word is allowed to assert on its own: the
+correspondence between the state and the stored credential is now a deferred
+database invariant (`connected`/`consent_required` ⇒ exactly one credential;
+every other state ⇒ none), and only `invalid_grant` may destroy a credential —
+`invalid_client`, `unauthorized_client` and `invalid_request` are errors about
+OUR client and OUR request, and treating them as proof that a creator's token
+died would delete credentials to punish a mistyped environment variable.
+
 External audit amendment #3 (2026-08-27) added the release rule above, after the
 same cross-owner transfer proved reachable at amendment #2's head by deleting a
 mailbox row and then its ownership reservation, with the owning user untouched.

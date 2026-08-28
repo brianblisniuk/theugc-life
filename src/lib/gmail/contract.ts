@@ -94,9 +94,21 @@ export const PRIVATE_PROCESSING_CONSENT_TEXT =
   "You can withdraw this permission, disconnect the mailbox, or request deletion " +
   "of the data derived from it at any time.";
 
-/** The states the account surface can render, straight from B01's state machine. */
+/**
+ * The states the account surface can render — B01's state machine, plus the one
+ * word B02 had to add.
+ *
+ * `pending_authorization` keeps its merged meaning exactly: the human has not
+ * finished at Google and no credential exists. `consent_required` is the state
+ * B01 had no name for because no credential existed anywhere yet — Google HAS
+ * authorized us, a refresh token is stored, `gmail.readonly` is granted, and the
+ * product still may not touch the mailbox because the person has not been asked.
+ * Collapsing the two would make the database say "no access" about a mailbox we
+ * could read this second.
+ */
 export type GmailConnectionState =
   | "pending_authorization"
+  | "consent_required"
   | "connected"
   | "reauth_required"
   | "disconnected"

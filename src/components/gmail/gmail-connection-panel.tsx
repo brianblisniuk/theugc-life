@@ -27,8 +27,12 @@ const idle: GmailActionState = { status: "idle" };
 
 const STATE_COPY: Record<GmailConnectionState, { label: string; hint: string }> = {
   pending_authorization: {
+    label: "Authorization not finished",
+    hint: "The Google step was not completed. Nothing is connected and we hold no access.",
+  },
+  consent_required: {
     label: "Awaiting your permission",
-    hint: "Google has authorized access. One more step before we process anything.",
+    hint: "Google has authorized access. We have not read anything yet — that needs your explicit permission below.",
   },
   connected: {
     label: "Connected",

@@ -18,6 +18,8 @@ import { gmailOAuthConfig } from "@/lib/gmail/env.server";
 import {
   GoogleAdapterError,
   googleOAuthAdapter,
+  isClientConfigurationError,
+  refreshTokenIsPermanentlyDead,
   type GoogleOAuthAdapter,
 } from "@/lib/gmail/google.server";
 
@@ -108,7 +110,13 @@ export async function startGmailAuthorization(
     return { result: "not_configured" };
   }
 
-  if (input.purpose === "reconnect" && !input.targetMailAccountId) {
+  // PURPOSE AND TARGET ARE ONE FACT. A reconnect without a target has nothing to
+  // reconnect; a connect WITH a target is a request whose two halves describe
+  // different flows, and the caller does not get to leave that ambiguity for the
+  // callback to resolve. The database enforces the same IFF — this is the
+  // friendly refusal, that one is the binding one.
+  const target = input.purpose === "reconnect" ? (input.targetMailAccountId ?? null) : null;
+  if (input.purpose === "reconnect" && !target) {
     return { result: "invalid_target" };
   }
 
@@ -126,7 +134,7 @@ export async function startGmailAuthorization(
     p_verifier_auth_tag: sealedVerifier.authTag,
     p_key_version: sealedVerifier.keyVersion,
     p_purpose: input.purpose,
-    p_target_mail_account_id: input.targetMailAccountId ?? null,
+    p_target_mail_account_id: target,
     p_requested_scopes: [...B02_REQUESTED_SCOPES],
     p_return_path: safeReturnPath(input.returnPath),
     p_ttl_seconds: STATE_TTL_SECONDS,
@@ -154,7 +162,9 @@ export type CallbackOutcome =
   | { result: "connected"; mailAccountId: string; returnPath: string | null }
   | { result: "consent_required"; mailAccountId: string; returnPath: string | null }
   | { result: "already_connected"; mailAccountId: string; returnPath: string | null }
-  | { result: "access_denied" }
+  | { result: "access_denied"; returnPath: string | null }
+  | { result: "account_mismatch"; returnPath: string | null }
+  | { result: "account_retired"; returnPath: string | null }
   | { result: "invalid_state" }
   | { result: "missing_refresh_token" }
   | { result: "scope_refused"; detail: "missing_read" | "forbidden_scope" }
@@ -199,18 +209,33 @@ export async function completeGmailAuthorization(
     return { result: "not_configured" };
   }
 
-  // The human declined at Google. Nothing was issued; nothing to clean up.
-  if (input.error) return { result: "access_denied" };
-  if (!input.state || !input.code) return { result: "invalid_state" };
+  // A callback with no state at all is not a callback of ours, whatever else it
+  // carries. There is nothing to consume and nothing to say.
+  if (!input.state) return { result: "invalid_state" };
 
-  // CONSUME ONCE. `delete ... returning`, scoped to this user, so a replay finds
-  // nothing and user B cannot finish a flow user A started.
+  // CONSUME ONCE, AND BEFORE ANYTHING ELSE — including before reading Google's
+  // `error` parameter. `delete ... returning`, scoped to this user, so a replay
+  // finds nothing and user B cannot finish a flow user A started.
+  //
+  // Returning early on `error` used to happen FIRST, which meant a declined
+  // authorization left its state digest, nonce digest and encrypted PKCE
+  // verifier alive until the TTL expired. The contract says the transaction is
+  // consumed once by the callback; a denial is one of the ways a flow ends, not
+  // an exemption from ending it.
   const { data, error } = await deps.db.rpc("gmail_oauth_consume_transaction", {
     p_user_id: input.userId,
     p_state_digest: sha256(input.state),
   });
   const tx = (data ?? { result: "not_found" }) as TransactionRow;
   if (error || tx.result !== "ok") return { result: "invalid_state" };
+
+  // The human declined at Google. The transaction is now spent, so the same
+  // denied state cannot be presented twice; nothing was issued, so there is
+  // nothing to revoke, and no code is exchanged.
+  if (input.error) {
+    return { result: "access_denied", returnPath: safeReturnPath(tx.return_path) };
+  }
+  if (!input.code) return { result: "invalid_state" };
 
   let codeVerifier: string;
   try {
@@ -337,6 +362,17 @@ export async function completeGmailAuthorization(
       // connection. The one we just obtained is given back.
       await compensate();
       return { result: "already_connected", mailAccountId: outcome.mail_account_id!, returnPath };
+    case "account_mismatch":
+      // The human asked to reconnect ONE mailbox and authorized a different
+      // Google account. Turning that into a new connection would be answering a
+      // question they were never asked, so the grant goes back.
+      await compensate();
+      return { result: "account_mismatch", returnPath };
+    case "account_retired":
+      // The reconnect target is a `deleted` record. Reviving it would contradict
+      // the completed deletion it rests on; a fresh connect makes a new row.
+      await compensate();
+      return { result: "account_retired", returnPath };
     case "owned_by_other_user":
       // Refused, and the answer says nothing about who owns it.
       await compensate();
@@ -414,24 +450,29 @@ export async function disconnectGmailAccount(
     return { result: "not_configured" };
   }
 
-  const { data, error } = await deps.db.rpc("gmail_credential_load", {
+  // OWNER-BOUND, because `mailAccountId` came from a form.
+  //
+  // The earlier version called the ownerless `gmail_credential_load` and
+  // compared `user_id` afterwards. The comparison was correct and the ordering
+  // was not: a browser-supplied id had already caused the encrypted credential
+  // of whichever mailbox it named to be assembled and handed to this layer. This
+  // RPC puts the authenticated user inside the lookup, so a stranger's id finds
+  // nothing and no envelope is ever built.
+  const { data, error } = await deps.db.rpc("gmail_credential_load_for_owner", {
+    p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
   });
   if (error) return { result: "provider_unavailable" };
 
   const loaded = (data ?? {}) as {
     result?: string;
-    user_id?: string;
     refresh_token_ciphertext?: string;
     refresh_token_iv?: string;
     refresh_token_auth_tag?: string;
     encryption_key_version?: string;
   };
 
-  // Ownership is verified against the stored row, never against a client claim.
-  if (loaded.result === "ok" && loaded.user_id !== input.userId) {
-    return { result: "not_found" };
-  }
+  if (loaded.result === "not_found") return { result: "not_found" };
 
   if (loaded.result === "ok") {
     let refreshToken: string;
@@ -487,6 +528,10 @@ export type AccessTokenOutcome =
   | { result: "consent_missing" }
   | { result: "reauth_required" }
   | { result: "provider_unavailable" }
+  /** OUR configuration or request was wrong. The creator's credential is intact. */
+  | { result: "configuration_error" }
+  /** Google rotated the refresh token and we could not store the replacement. */
+  | { result: "credential_storage_failed" }
   | { result: "not_configured" };
 
 /**
@@ -552,28 +597,55 @@ export async function getFreshGmailAccessToken(
         ? refreshError
         : new GoogleAdapterError("unknown_error", false);
 
-    // PERMANENT: the human revoked at Google, changed their password, or a
-    // Testing-mode grant lapsed after its ~7 days. Normal lifecycle. The
-    // credential goes because it cannot be used; consent history and the
-    // ownership reservation stay, because neither stopped being true.
-    if (classified.permanent) {
+    // THE ONLY DESTRUCTIVE CASE. `invalid_grant` is what Google documents for a
+    // refresh token that has expired or been invalidated — the human revoked at
+    // Google, changed their password, or a Testing-mode grant lapsed after its
+    // ~7 days. Normal lifecycle. The credential goes because it cannot be used;
+    // consent history and the ownership reservation stay, because neither
+    // stopped being true.
+    if (refreshTokenIsPermanentlyDead(classified.code)) {
       await deps.db.rpc("gmail_mark_reauth_required", {
         p_mail_account_id: input.mailAccountId,
       });
       return { result: "reauth_required" };
     }
 
-    // TRANSIENT: a blip. Destroying a working credential over one would turn a
+    // OUR FAULT. A wrong client secret, a client not permitted to make this
+    // request, a malformed request — none of these says anything about the
+    // creator's token, and treating them as permanent would delete every
+    // credential the broken deployment touched and make each person reconnect by
+    // hand to fix a mistake of ours.
+    if (isClientConfigurationError(classified.code)) {
+      console.error("[gmail] refresh rejected our client or request", { code: classified.code });
+      return { result: "configuration_error" };
+    }
+
+    // TRANSIENT OR UNRECOGNISED: a blip, or a code we have no documented reason
+    // to read as fatal. Destroying a working credential over either would turn a
     // retry into a re-authorization the human has to perform by hand.
     console.warn("[gmail] refresh failed transiently", { code: classified.code });
     return { result: "provider_unavailable" };
   }
 
-  // Google occasionally rotates the refresh token. Storing the replacement is
-  // not optional: the old one stops working.
+  // ORDER MATTERS HERE. A response with no usable access token is not a
+  // successful refresh, whatever else it contained, so that is settled first.
+  if (!refreshed.accessToken) return { result: "provider_unavailable" };
+
+  // ROTATION IS PART OF SUCCESS, NOT A SIDE EFFECT OF IT.
+  //
+  // When Google hands back a replacement refresh token the old one stops
+  // working, so a refresh that reports success while the replacement sits
+  // unstored has left the mailbox holding a credential that will fail on the
+  // next call — and told its caller everything is fine. Both the transport error
+  // and the RPC's own answer are checked; an earlier version ignored both.
+  //
+  // The previous credential is deliberately NOT deleted. Whether Google has
+  // already invalidated it is not something we can know from here, and throwing
+  // away the only value that might still work would turn a storage blip into a
+  // forced re-authorization. The next attempt establishes which it was.
   if (refreshed.refreshToken && refreshed.refreshToken !== refreshToken) {
     const rotated = sealSecret(refreshed.refreshToken, cfg.encryptionKey, cfg.encryptionKeyVersion);
-    await deps.db.rpc("gmail_credential_replace", {
+    const { data: replaced, error: replaceError } = await deps.db.rpc("gmail_credential_replace", {
       p_mail_account_id: input.mailAccountId,
       p_refresh_ciphertext: rotated.ciphertext,
       p_refresh_iv: rotated.iv,
@@ -581,9 +653,17 @@ export async function getFreshGmailAccessToken(
       p_key_version: rotated.keyVersion,
       p_provider_refresh_expires_at: refreshed.refreshTokenExpiresAt?.toISOString() ?? null,
     });
+
+    const stored = ((replaced ?? {}) as { result?: string }).result === "ok";
+    if (replaceError || !stored) {
+      // Sanitized: neither token appears here, and neither does the ciphertext.
+      console.error("[gmail] rotated refresh token could not be stored", {
+        stored: false,
+      });
+      return { result: "credential_storage_failed" };
+    }
   }
 
-  if (!refreshed.accessToken) return { result: "provider_unavailable" };
   return { result: "ok", accessToken: refreshed.accessToken };
 }
 
