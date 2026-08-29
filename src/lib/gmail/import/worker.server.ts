@@ -85,7 +85,7 @@ interface ClaimedStep {
   next_attempt_at?: string | null;
 }
 
-const epochSeconds = (iso: string): number => Math.floor(new Date(iso).getTime() / 1000);
+const msOf = (iso: string): number => new Date(iso).getTime();
 
 /**
  * The database's refusal vocabulary, mapped onto the run lifecycle.
@@ -216,6 +216,50 @@ async function applyAuthorizationOutcome(
   return { result: "retry_scheduled", reason: outcome.result };
 }
 
+interface DbRefusal {
+  result?: string;
+  connection_state?: string;
+  run_status?: string;
+}
+
+/**
+ * ONE PLACE THAT TURNS A DATABASE REFUSAL INTO A TRUTHFUL OUTCOME.
+ *
+ * Every commit path can be refused, and the refusal has to be reported as what
+ * it is. Two rules matter here:
+ *
+ * FIRST, the run's own status wins when the database says the run is no longer
+ * runnable. A mailbox lifecycle change now stops runs durably in the same
+ * transaction that moved the mailbox, so by the time a stale response arrives
+ * the run is ALREADY cancelled or paused — and the honest report is "cancelled",
+ * not "we will try again later".
+ *
+ * SECOND, nothing is ever reported as progress. A refusal means the mutation did
+ * not happen; saying otherwise would let a caller believe a work item moved when
+ * it did not.
+ */
+async function refusalOutcome(
+  deps: ImportDeps,
+  input: { userId: string; runId: string },
+  outcome: DbRefusal,
+): Promise<StepOutcome> {
+  if (outcome.run_status === "cancelled_connection_stopped") {
+    return { result: "cancelled", connectionState: outcome.connection_state ?? "unknown" };
+  }
+  if (outcome.run_status === "paused_consent") return { result: "paused", reason: "consent" };
+  if (outcome.run_status === "paused_reauth") return { result: "paused", reason: "reauth" };
+  if (outcome.run_status === "failed" || outcome.run_status === "completed") {
+    return { result: "not_runnable", status: outcome.run_status };
+  }
+
+  return (
+    (await applyAuthorizationOutcome(deps, input.userId, input.runId, {
+      result: commitRefusalToLifecycle(outcome.result),
+      connectionState: outcome.connection_state,
+    })) ?? { result: "retry_scheduled", reason: outcome.result ?? "unknown" }
+  );
+}
+
 /**
  * PERFORM AT MOST ONE DURABLE STEP.
  *
@@ -274,10 +318,18 @@ export async function runOneImportStep(
       p_user_id: input.userId,
       p_run_id: input.runId,
       p_lease_token: leaseToken,
+      // NO GMAIL CALL HAPPENS FOR THIS STEP, AND IT IS STILL FENCED. The window
+      // between claiming `complete_run` and committing it is small and not
+      // zero, and what can change inside it is a HUMAN DECISION.
+      p_expected_authorization_revision: revision,
     });
-    const outcome = (data ?? {}) as { result?: string; status?: string };
-    if (outcome.result !== "ok")
-      return { result: "retry_scheduled", reason: outcome.result ?? "unknown" };
+    const outcome = (data ?? {}) as {
+      result?: string;
+      status?: string;
+      connection_state?: string;
+      run_status?: string;
+    };
+    if (outcome.result !== "ok") return refusalOutcome(deps, input, outcome);
     return { result: "finished", status: outcome.status ?? "completed" };
   }
 
@@ -303,8 +355,11 @@ export async function runOneImportStep(
     try {
       const page = await deps.gmail.listSentMessages({
         accessToken,
-        windowStartEpochSeconds: epochSeconds(claimed.window_start_at!),
-        windowEndEpochSeconds: epochSeconds(claimed.window_end_at!),
+        // EXACT MILLISECONDS. The adapter rounds outward to Gmail's
+        // second-resolution search; rounding here would round twice and could
+        // only ever narrow the request.
+        windowStartMs: msOf(claimed.window_start_at!),
+        windowEndMs: msOf(claimed.window_end_at!),
         pageToken: claimed.page_token ?? null,
       });
 
@@ -323,18 +378,23 @@ export async function runOneImportStep(
         p_sent_messages_seen: page.candidates.length,
         p_quota_units: page.quotaUnits,
       });
-      const outcome = (data ?? {}) as { result?: string; connection_state?: string };
+      const outcome = (data ?? {}) as DbRefusal;
       if (outcome.result === "ok" || outcome.result === "already_applied") {
         return { result: "progressed", step: "enumerate_page" };
       }
-      return (
-        (await applyAuthorizationOutcome(deps, input.userId, input.runId, {
-          result: commitRefusalToLifecycle(outcome.result),
-          connectionState: outcome.connection_state,
-        })) ?? { result: "retry_scheduled", reason: outcome.result ?? "unknown" }
-      );
+      return refusalOutcome(deps, input, outcome);
     } catch (error) {
-      return recordProviderFailure(deps, input, leaseToken, null, error, 0);
+      return recordProviderFailure(
+        deps,
+        input,
+        leaseToken,
+        revision,
+        null,
+        error,
+        // ENUMERATION'S OWN DURABLE BUDGET, carried on the run. A page has no
+        // work item to count against, so the claim hands the count over.
+        claimed.attempt_count ?? 0,
+      );
     }
   }
 
@@ -371,21 +431,17 @@ export async function runOneImportStep(
       p_text_parts_omitted_external: sanitized.counters.textPartsOmittedExternal,
       p_attachment_or_nontext_parts_omitted: sanitized.counters.attachmentOrNonTextPartsOmitted,
     });
-    const outcome = (data ?? {}) as { result?: string; connection_state?: string };
+    const outcome = (data ?? {}) as DbRefusal;
     if (outcome.result === "ok" || outcome.result === "already_applied") {
       return { result: "progressed", step: "fetch_thread" };
     }
-    return (
-      (await applyAuthorizationOutcome(deps, input.userId, input.runId, {
-        result: commitRefusalToLifecycle(outcome.result),
-        connectionState: outcome.connection_state,
-      })) ?? { result: "retry_scheduled", reason: outcome.result ?? "unknown" }
-    );
+    return refusalOutcome(deps, input, outcome);
   } catch (error) {
     return recordProviderFailure(
       deps,
       input,
       leaseToken,
+      revision,
       providerThreadId,
       error,
       claimed.attempt_count ?? 0,
@@ -397,6 +453,7 @@ async function recordProviderFailure(
   deps: ImportDeps,
   input: { userId: string; runId: string },
   leaseToken: string,
+  authorizationRevision: number,
   providerThreadId: string | null,
   error: unknown,
   attemptCount: number,
@@ -412,17 +469,25 @@ async function recordProviderFailure(
         });
 
   // A VANISHED THREAD IS A TERMINAL WORK RESULT, NOT A RUN FAILURE, and it
-  // certainly does not license fabricating a message row.
+  // certainly does not license fabricating a message row. It is still a
+  // provider result obtained under one authorization, so it is fenced like one.
   if (read.reason === "thread_not_found" && providerThreadId) {
-    await deps.db.rpc("gmail_historical_import_record_thread_gone", {
+    const { data } = await deps.db.rpc("gmail_historical_import_record_thread_gone", {
       p_user_id: input.userId,
       p_run_id: input.runId,
       p_lease_token: leaseToken,
-      p_expected_authorization_revision: null,
+      p_expected_authorization_revision: authorizationRevision,
       p_provider_thread_id: providerThreadId,
       p_quota_units: THREADS_GET_QUOTA_UNITS,
     });
-    return { result: "progressed", step: "thread_gone" };
+    const outcome = (data ?? {}) as DbRefusal;
+    // THE SEMANTIC RESULT DECIDES WHAT HAPPENED. A refusal means the work item
+    // was NOT marked gone, and reporting `progressed` would tell the caller a
+    // mutation occurred that did not.
+    if (outcome.result === "ok" || outcome.result === "already_applied") {
+      return { result: "progressed", step: "thread_gone" };
+    }
+    return refusalOutcome(deps, input, outcome);
   }
 
   const delayMs = read.retryable ? backoffDelayMs(attemptCount + 1, deps.random) : 0;
@@ -431,6 +496,7 @@ async function recordProviderFailure(
     p_user_id: input.userId,
     p_run_id: input.runId,
     p_lease_token: leaseToken,
+    p_expected_authorization_revision: authorizationRevision,
     p_provider_thread_id: providerThreadId,
     p_error_code: read.reason,
     p_retry_after_seconds: Math.ceil(delayMs / 1000),
@@ -439,10 +505,17 @@ async function recordProviderFailure(
     // being attempted four more times to reach the same answer.
     p_max_attempts: read.retryable ? B03_MAX_PROVIDER_ATTEMPTS : 1,
   });
-  const outcome = (data ?? {}) as { result?: string; thread_failed?: boolean };
+  const outcome = (data ?? {}) as DbRefusal & { thread_failed?: boolean; run_failed?: boolean };
+
+  // NOTHING WAS RECORDED IF THE FENCE REFUSED. The attempt did not count, the
+  // work item did not move, and the caller must not be told it did.
+  if (outcome.result !== "ok") return refusalOutcome(deps, input, outcome);
 
   if (read.retryable && delayMs > 0) await deps.sleep(delayMs);
 
+  // A RUN WHOSE ENUMERATION EXHAUSTED ITS BUDGET IS FINISHED, and the loop must
+  // stop rather than claim a step that will never be handed out again.
+  if (outcome.run_failed) return { result: "failed", reason: read.reason };
   if (outcome.thread_failed) return { result: "failed", reason: read.reason };
   return { result: "retry_scheduled", reason: read.reason };
 }

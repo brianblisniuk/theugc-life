@@ -27,8 +27,10 @@ import type { RawThread } from "@/lib/gmail/import/sanitizer";
 export interface GmailHistoricalReadAdapter {
   listSentMessages(input: {
     accessToken: string;
-    windowStartEpochSeconds: number;
-    windowEndEpochSeconds: number;
+    /** Exact window bounds in MILLISECONDS. The rounding to Gmail's
+     * second-resolution search happens here, once, and outward. */
+    windowStartMs: number;
+    windowEndMs: number;
     pageToken: string | null;
   }): Promise<{
     candidates: { messageId: string; threadId: string }[];
@@ -52,20 +54,29 @@ const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
  * server's idea of the calendar. Epoch seconds have no timezone to be wrong
  * about.
  *
- * `after:` is exclusive, so it is nudged one second earlier to make the range
- * inclusive of the window's first second. This only decides what Gmail OFFERS;
- * the local `internalDate` filter decides what is kept, and it is authoritative.
+ * THE PROVIDER QUERY MUST BE A SUPERSET OF THE LOCAL WINDOW.
+ *
+ * Gmail searches at second resolution; `window_end_at` is a database timestamp
+ * with milliseconds in it. Flooring the upper bound made the request NARROWER
+ * than the window it was serving: with an end of `20:00:00.750`, a sent message
+ * at `20:00:00.500` is inside the authoritative local interval and Gmail is
+ * never asked for it. The local `internalDate` filter cannot recover a message
+ * enumeration never returned, so it has to be the SEARCH that is generous:
+ *
+ *   after  = floor(start) − 1     `after:` is exclusive, so nudge it back
+ *   before = ceil(end)            round OUTWARD, never inward
+ *
+ * The query may therefore overfetch by up to one second at each edge. That is
+ * the correct direction to be wrong: the exact local filter removes the excess,
+ * and it is the only thing that decides what is stored.
  *
  * NOTHING ELSE REACHES `q`. Not a browser string, not a CLI free-text argument,
  * not a database column. A Gmail search query is a capability — it can ask for
  * anything in the mailbox — and B03 constructs the whole of it.
  */
-export function buildSentWindowQuery(
-  windowStartEpochSeconds: number,
-  windowEndEpochSeconds: number,
-): string {
-  const after = Math.max(Math.floor(windowStartEpochSeconds) - 1, 0);
-  const before = Math.floor(windowEndEpochSeconds);
+export function buildSentWindowQuery(windowStartMs: number, windowEndMs: number): string {
+  const after = Math.max(Math.floor(windowStartMs / 1000) - 1, 0);
+  const before = Math.ceil(windowEndMs / 1000);
   return `after:${after} before:${before}`;
 }
 
@@ -75,6 +86,15 @@ async function readJson(response: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+function malformedList(): GmailReadError {
+  return new GmailReadError({
+    operation: "messages_list",
+    status: null,
+    reason: "malformed_response",
+    retryable: false,
+  });
 }
 
 function providerReason(body: unknown): unknown {
@@ -90,19 +110,14 @@ function providerReason(body: unknown): unknown {
  * a query parameter, never a log line, never an error, never a row.
  */
 export const gmailHistoricalReadAdapter: GmailHistoricalReadAdapter = {
-  async listSentMessages({
-    accessToken,
-    windowStartEpochSeconds,
-    windowEndEpochSeconds,
-    pageToken,
-  }) {
+  async listSentMessages({ accessToken, windowStartMs, windowEndMs, pageToken }) {
     const url = new URL(`${GMAIL_API}/messages`);
     // SENT-ROOTED. The label is what makes this an outreach-shaped acquisition
     // rather than an inbox crawl.
     url.searchParams.set("labelIds", "SENT");
     url.searchParams.set("maxResults", String(MESSAGES_LIST_MAX_RESULTS));
     url.searchParams.set("includeSpamTrash", "true");
-    url.searchParams.set("q", buildSentWindowQuery(windowStartEpochSeconds, windowEndEpochSeconds));
+    url.searchParams.set("q", buildSentWindowQuery(windowStartMs, windowEndMs));
     // Ask for only what B03 uses. `resultSizeEstimate` is deliberately absent:
     // it is an estimate, and the absence of `nextPageToken` is the only
     // completion signal this pipeline trusts.
@@ -121,18 +136,45 @@ export const gmailHistoricalReadAdapter: GmailHistoricalReadAdapter = {
       );
     }
 
-    const body = (await readJson(response)) as {
-      messages?: { id?: string; threadId?: string }[];
-      nextPageToken?: string;
-    } | null;
+    // A MALFORMED SUCCESS IS NOT AN EMPTY MAILBOX.
+    //
+    // A 200 whose body will not parse, or whose `messages` is not a list, or
+    // that names a candidate with no id, used to read as "enumeration finished,
+    // zero candidates" — indistinguishable from a creator who simply sent
+    // nothing. That is the worst possible reading: it would let a provider
+    // contract violation mark a run `completed` over history it never saw.
+    // Every one of these fails the PAGE instead, and the page is retried under
+    // the durable enumeration budget.
+    const body = await readJson(response);
+    if (body === null || typeof body !== "object") throw malformedList();
 
-    const candidates = (body?.messages ?? [])
-      .map((m) => ({ messageId: (m.id ?? "").trim(), threadId: (m.threadId ?? "").trim() }))
-      .filter((m) => m.messageId !== "" && m.threadId !== "");
+    const raw = body as { messages?: unknown; nextPageToken?: unknown };
+
+    // `messages` ABSENT is legitimate: Gmail omits the key on an empty page.
+    // `messages` present and not a list is not.
+    if (raw.messages !== undefined && !Array.isArray(raw.messages)) throw malformedList();
+
+    const candidates = (raw.messages ?? []).map((entry: unknown) => {
+      const candidate = entry as { id?: unknown; threadId?: unknown };
+      const messageId = typeof candidate?.id === "string" ? candidate.id.trim() : "";
+      const threadId = typeof candidate?.threadId === "string" ? candidate.threadId.trim() : "";
+      // ONE BAD ENTRY FAILS THE WHOLE PAGE. Dropping it would silently shrink
+      // the candidate set, and nothing downstream could ever tell.
+      if (messageId === "" || threadId === "") throw malformedList();
+      return { messageId, threadId };
+    });
+
+    if (raw.nextPageToken !== undefined) {
+      if (typeof raw.nextPageToken !== "string" || raw.nextPageToken.trim() === "") {
+        // The cursor is the only thing that decides whether enumeration is
+        // over. A malformed one must never be read as "no more pages".
+        throw malformedList();
+      }
+    }
 
     return {
       candidates,
-      nextPageToken: body?.nextPageToken ?? null,
+      nextPageToken: typeof raw.nextPageToken === "string" ? raw.nextPageToken : null,
       quotaUnits: MESSAGES_LIST_QUOTA_UNITS,
     };
   },

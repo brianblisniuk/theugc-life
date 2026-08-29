@@ -118,6 +118,20 @@ create table private.gmail_historical_import_runs (
   enumeration_page_token text,
   enumeration_completed_at timestamptz,
 
+  -- THE ENUMERATION RETRY BUDGET, and it has to live HERE.
+  --
+  -- A thread fetch has a work-item row to carry its attempt count; a listing
+  -- page has nothing but the run. Without these two columns a `messages.list`
+  -- that keeps answering 429 is retried by whatever process happens to poll
+  -- next, forever, with no memory of how many times it already failed and no
+  -- schedule for when to try again — an unbounded loop wearing the costume of a
+  -- retry policy. They belong to the CURRENT cursor position: a successful page
+  -- commit resets them, because the next page is a different provider
+  -- operation with its own budget.
+  enumeration_attempt_count integer not null default 0
+    check (enumeration_attempt_count >= 0),
+  enumeration_next_attempt_at timestamptz,
+
   -- WHAT HAPPENED, in counts only. No subject, no address, no body.
   candidate_sent_messages_seen integer not null default 0 check (candidate_sent_messages_seen >= 0),
   unique_threads_discovered integer not null default 0 check (unique_threads_discovered >= 0),
@@ -500,6 +514,107 @@ create constraint trigger gmail_historical_import_threads_absent_when_deleted
   for each row execute function public.assert_gmail_import_data_absent_when_deleted();
 
 -- ===========================================================================
+-- 3b. A HUMAN DECISION MUST NOT DEPEND ON WHETHER A WORKER WAS POLLING
+-- ===========================================================================
+-- Everything else in B03 asks "may we read this mailbox?" at the moment a
+-- worker happens to look. That is enough to stop a stale response being
+-- persisted, and it is NOT enough to record that a human made a decision.
+--
+-- The gap it leaves is a real sequence, not a theoretical one:
+--
+--   run R is runnable
+--   the person Disconnects            no worker is running
+--   the person Reconnects             no worker is running
+--   a worker finally polls
+--
+-- Every question the worker can ask is answered by the CURRENT row, and the
+-- current row says `connected`. The Disconnect happened, B03 has no record of
+-- it, and R simply carries on — which contradicts the rule that a disconnect
+-- ends a historical run and that starting again is explicit.
+--
+-- The fix is to stop treating a lifecycle change as something to be observed
+-- and start treating it as something that HAPPENS. The transition itself
+-- carries the run forward, inside the same transaction that moved the mailbox,
+-- so the outcome does not depend on anybody being awake.
+--
+-- Scope: this trigger owns B03 RUN LIFECYCLE and nothing else. It reads
+-- `mail_accounts` and writes only `private.gmail_historical_import_runs`. It
+-- never touches B01 consent, B02 credentials, or the mailbox row itself, and it
+-- never deletes imported data — a Disconnect is not a deletion.
+create or replace function private.apply_gmail_lifecycle_to_import_runs()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.connection_state is not distinct from old.connection_state then
+    return null;
+  end if;
+
+  if new.connection_state in ('disconnecting', 'disconnected', 'deletion_pending', 'deleted') then
+    -- THE CONNECTION IS OVER, or a deletion owns the mailbox now. Every
+    -- non-terminal run stops, including one that was already paused: a paused
+    -- run is a run waiting for the human to answer a question, and this IS the
+    -- answer. Terminal runs are left exactly as they are — a `completed` import
+    -- does not become `cancelled` because the person later disconnected.
+    update private.gmail_historical_import_runs
+       set status = 'cancelled_connection_stopped',
+           phase = 'finished',
+           completed_at = now(),
+           last_error_code = 'connection_stopped',
+           lease_token = null,
+           lease_expires_at = null,
+           lease_step = null,
+           lease_thread_id = null,
+           lease_authorization_revision = null
+     where mail_account_id = new.id
+       and status in ('runnable', 'paused_reauth', 'paused_consent');
+
+  elsif new.connection_state in ('reauth_required', 'pending_authorization') then
+    update private.gmail_historical_import_runs
+       set status = 'paused_reauth',
+           last_error_code = 'reauth_required',
+           lease_token = null,
+           lease_expires_at = null,
+           lease_step = null,
+           lease_thread_id = null,
+           lease_authorization_revision = null
+     where mail_account_id = new.id
+       and status = 'runnable';
+
+  elsif new.connection_state = 'consent_required' then
+    update private.gmail_historical_import_runs
+       set status = 'paused_consent',
+           last_error_code = 'consent_missing',
+           lease_token = null,
+           lease_expires_at = null,
+           lease_step = null,
+           lease_thread_id = null,
+           lease_authorization_revision = null
+     where mail_account_id = new.id
+       and status = 'runnable';
+  end if;
+
+  -- `connected` DELIBERATELY DOES NOTHING.
+  --
+  -- Reconnecting a mailbox answers "may we read your mail again"; it does not
+  -- answer "please resume the import you stopped". A paused run stays paused
+  -- until somebody resumes it, and a cancelled run stays cancelled forever —
+  -- starting again means starting a new run, which is a decision somebody makes
+  -- rather than a side effect of a state name coming back.
+  return null;
+end;
+$$;
+
+revoke all on function private.apply_gmail_lifecycle_to_import_runs() from public;
+
+comment on function private.apply_gmail_lifecycle_to_import_runs() is
+  'B03: carries a mail_accounts lifecycle transition into historical import runs in the SAME transaction, so a Disconnect or consent withdrawal is durable rather than dependent on a worker polling at that moment. Writes only B03 run rows.';
+
+create trigger gmail_lifecycle_stops_import_runs
+  after update of connection_state on public.mail_accounts
+  for each row execute function private.apply_gmail_lifecycle_to_import_runs();
+
+-- ===========================================================================
 -- 4. MAY WE STILL READ THIS MAILBOX?
 -- ===========================================================================
 -- One predicate, asked at claim time and asked AGAIN at every commit.
@@ -728,6 +843,16 @@ begin
   -- ENUMERATION FIRST. Fetching threads before the candidate set is known would
   -- be working from an answer that is still being computed.
   if v_run.enumeration_completed_at is null then
+    -- A DURABLE BACKOFF, not a sleep in a process. The page that failed is
+    -- still the page to fetch, and the schedule for retrying it survives the
+    -- worker that scheduled it.
+    if v_run.enumeration_next_attempt_at is not null
+       and v_run.enumeration_next_attempt_at > now() then
+      return jsonb_build_object(
+        'result', 'waiting',
+        'next_attempt_at', v_run.enumeration_next_attempt_at);
+    end if;
+
     update private.gmail_historical_import_runs
        set lease_token = v_token,
            lease_expires_at = v_expires,
@@ -745,7 +870,8 @@ begin
       'authorization_revision', v_account.authorization_revision,
       'window_start_at', v_run.window_start_at,
       'window_end_at', v_run.window_end_at,
-      'page_token', v_run.enumeration_page_token
+      'page_token', v_run.enumeration_page_token,
+      'attempt_count', v_run.enumeration_attempt_count
     );
   end if;
 
@@ -836,6 +962,18 @@ as $$
 declare
   v_auth text;
 begin
+  -- NO WILDCARD ON A CLAIMED RESULT.
+  --
+  -- Every caller of this guard is holding something a provider said in answer to
+  -- a step the database handed out, and every claim names the authorization
+  -- revision it was issued under. A NULL here would mean "compare against
+  -- whatever is current", which is precisely the comparison that lets a response
+  -- from revision N mutate work under revision N+2. A caller that cannot name
+  -- its revision is not holding a claimed result.
+  if p_expected_authorization_revision is null then
+    return 'authorization_revision_required';
+  end if;
+
   -- A STALE WORKER MAY COMMIT NOTHING. If its lease expired and another worker
   -- reclaimed the step, the token no longer matches and the response it is
   -- holding belongs to work somebody else has taken over.
@@ -924,13 +1062,18 @@ begin
     -- NOTHING FETCHED IS PERSISTED. Not the thread ids, not the cursor, not the
     -- counters. A response obtained under an authorization that has since
     -- changed does not enter storage, and it is not logged either.
-    if v_guard not in ('not_found', 'stale_lease') then
+    if v_guard not in ('not_found', 'stale_lease', 'authorization_revision_required') then
       perform private.gmail_import_release_lease(p_run_id);
     end if;
     -- The connection state travels with the refusal so the worker can tell a
     -- Disconnect from a withdrawn consent without asking a second question.
+    -- The connection state AND the run's own status travel with the refusal.
+    -- A mailbox lifecycle change stops runs durably now, so by the time a stale
+    -- response arrives the run is already cancelled or paused, and the worker
+    -- must report THAT rather than "we will try again later".
     return jsonb_build_object(
       'result', v_guard,
+      'run_status', v_run.status,
       'connection_state',
       (select m.connection_state from public.mail_accounts m where m.id = v_run.mail_account_id));
   end if;
@@ -978,6 +1121,11 @@ begin
          estimated_gmail_quota_units =
            estimated_gmail_quota_units + greatest(coalesce(p_quota_units, 0), 0),
          last_error_code = null,
+         -- A NEW PAGE IS A NEW PROVIDER OPERATION, so it gets its own budget.
+         -- Carrying the previous page's failures forward would let a run that
+         -- is making steady progress accumulate its way into `failed`.
+         enumeration_attempt_count = 0,
+         enumeration_next_attempt_at = null,
          lease_token = null,
          lease_expires_at = null,
          lease_step = null,
@@ -1042,17 +1190,24 @@ begin
     v_run, p_lease_token, 'fetch_thread', p_expected_authorization_revision);
 
   if v_guard <> 'ok' then
-    if v_guard not in ('not_found', 'stale_lease') then
+    if v_guard not in ('not_found', 'stale_lease', 'authorization_revision_required') then
       perform private.gmail_import_release_lease(p_run_id);
     end if;
     -- The connection state travels with the refusal so the worker can tell a
     -- Disconnect from a withdrawn consent without asking a second question.
+    -- The connection state AND the run's own status travel with the refusal.
+    -- A mailbox lifecycle change stops runs durably now, so by the time a stale
+    -- response arrives the run is already cancelled or paused, and the worker
+    -- must report THAT rather than "we will try again later".
     return jsonb_build_object(
       'result', v_guard,
+      'run_status', v_run.status,
       'connection_state',
       (select m.connection_state from public.mail_accounts m where m.id = v_run.mail_account_id));
   end if;
 
+  -- THE LEASE NAMES ONE THREAD. Holding a valid token for thread T1 is not
+  -- permission to record a result against T2.
   if v_run.lease_thread_id is distinct from p_provider_thread_id then
     return jsonb_build_object('result', 'stale_lease');
   end if;
@@ -1215,21 +1370,31 @@ begin
     return jsonb_build_object('result', 'not_found');
   end if;
 
+  -- A VANISHED THREAD IS STILL A PROVIDER RESULT. It was obtained by a call made
+  -- under one authorization, and marking a work item terminal is a mutation like
+  -- any other, so it is fenced like any other.
   v_guard := private.gmail_import_commit_guard(
     v_run, p_lease_token, 'fetch_thread', p_expected_authorization_revision);
 
   if v_guard <> 'ok' then
-    if v_guard not in ('not_found', 'stale_lease') then
+    if v_guard not in ('not_found', 'stale_lease', 'authorization_revision_required') then
       perform private.gmail_import_release_lease(p_run_id);
     end if;
     -- The connection state travels with the refusal so the worker can tell a
     -- Disconnect from a withdrawn consent without asking a second question.
+    -- The connection state AND the run's own status travel with the refusal.
+    -- A mailbox lifecycle change stops runs durably now, so by the time a stale
+    -- response arrives the run is already cancelled or paused, and the worker
+    -- must report THAT rather than "we will try again later".
     return jsonb_build_object(
       'result', v_guard,
+      'run_status', v_run.status,
       'connection_state',
       (select m.connection_state from public.mail_accounts m where m.id = v_run.mail_account_id));
   end if;
 
+  -- THE LEASE NAMES ONE THREAD. Holding a valid token for thread T1 is not
+  -- permission to record a result against T2.
   if v_run.lease_thread_id is distinct from p_provider_thread_id then
     return jsonb_build_object('result', 'stale_lease');
   end if;
@@ -1266,13 +1431,27 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 5g. RETRY, AND THE END OF RETRYING
 -- ---------------------------------------------------------------------------
--- Records a transient provider failure and schedules the next attempt. When a
--- work item exhausts its attempts it becomes `failed` — which is what stops the
--- run from later calling itself `completed`.
+-- Records a transient provider failure and schedules the next attempt.
+--
+-- TWO KINDS OF WORK FAIL HERE, and only one of them has a row of its own.
+--
+-- A thread fetch has a work item, so its attempt count and its next attempt
+-- live on that item. An ENUMERATION page has nothing but the run: there is no
+-- `messages.list` entity to count against, which is exactly why the run itself
+-- has to carry the enumeration attempt count and the enumeration schedule.
+-- Without them a listing call that keeps answering 429 is retried by whoever
+-- polls next, forever, remembering nothing — an unbounded loop wearing the
+-- costume of a retry policy.
+--
+-- Either way this is a PROVIDER RESULT arriving from a claimed step, so it is
+-- fenced exactly like a successful one: the lease token, the lease step, the
+-- exact thread when there is one, and the authorization revision the claim was
+-- issued under.
 create or replace function public.gmail_historical_import_record_retry(
   p_user_id uuid,
   p_run_id uuid,
   p_lease_token uuid,
+  p_expected_authorization_revision bigint,
   p_provider_thread_id text,
   p_error_code text,
   p_retry_after_seconds integer,
@@ -1285,10 +1464,14 @@ security definer
 set search_path = public, private, pg_temp
 as $$
 declare
+  v_guard text;
   v_run private.gmail_historical_import_runs%rowtype;
   v_thread private.gmail_historical_import_threads%rowtype;
   v_attempts integer;
+  v_max integer := greatest(coalesce(p_max_attempts, 5), 1);
+  v_delay integer := greatest(coalesce(p_retry_after_seconds, 1), 0);
   v_terminal boolean := false;
+  v_run_failed boolean := false;
 begin
   if p_error_code is null or p_error_code !~ '^[a-z][a-z0-9_]{0,63}$' then
     raise exception 'gmail_historical_import_record_retry requires a sanitized error code'
@@ -1304,29 +1487,87 @@ begin
     return jsonb_build_object('result', 'not_found');
   end if;
 
-  if v_run.lease_token is null or p_lease_token is null
-     or v_run.lease_token <> p_lease_token or v_run.lease_expires_at <= now() then
+  -- THE STEP THE FAILURE BELONGS TO IS DECIDED BY THE PRESENCE OF A THREAD, and
+  -- then PROVED against the lease. A caller cannot record an enumeration
+  -- failure while holding a thread lease, or the reverse.
+  v_guard := private.gmail_import_commit_guard(
+    v_run,
+    p_lease_token,
+    case when p_provider_thread_id is null then 'enumerate_page' else 'fetch_thread' end,
+    p_expected_authorization_revision);
+
+  if v_guard <> 'ok' then
+    -- NOTHING IS RECORDED. An attempt count is a durable claim that we asked
+    -- Google something under a particular authorization; a response from an
+    -- authorization that has since changed does not get to make that claim, and
+    -- it does not get to push a work item closer to `failed` either.
+    if v_guard not in ('not_found', 'stale_lease', 'authorization_revision_required') then
+      perform private.gmail_import_release_lease(p_run_id);
+    end if;
+    -- The connection state AND the run's own status travel with the refusal.
+    -- A mailbox lifecycle change stops runs durably now, so by the time a stale
+    -- response arrives the run is already cancelled or paused, and the worker
+    -- must report THAT rather than "we will try again later".
+    return jsonb_build_object(
+      'result', v_guard,
+      'run_status', v_run.status,
+      'connection_state',
+      (select m.connection_state from public.mail_accounts m where m.id = v_run.mail_account_id));
+  end if;
+
+  if p_provider_thread_id is null then
+    -- ENUMERATION. The budget belongs to the CURRENT cursor position.
+    v_attempts := v_run.enumeration_attempt_count + 1;
+    v_terminal := v_attempts >= v_max;
+    v_run_failed := v_terminal;
+
+    update private.gmail_historical_import_runs
+       set enumeration_attempt_count = v_attempts,
+           enumeration_next_attempt_at =
+             case when v_terminal then null else now() + make_interval(secs => v_delay) end,
+           status = case when v_terminal then 'failed' else status end,
+           phase = case when v_terminal then 'finished' else phase end,
+           completed_at = case when v_terminal then now() else completed_at end,
+           last_error_code = p_error_code,
+           estimated_gmail_quota_units =
+             estimated_gmail_quota_units + greatest(coalesce(p_quota_units, 0), 0),
+           lease_token = null,
+           lease_expires_at = null,
+           lease_step = null,
+           lease_thread_id = null,
+           lease_authorization_revision = null
+     where id = p_run_id;
+
+    return jsonb_build_object(
+      'result', 'ok',
+      'scope', 'enumeration',
+      'attempt_count', v_attempts,
+      'thread_failed', false,
+      'run_failed', v_run_failed);
+  end if;
+
+  -- THE LEASE NAMES ONE THREAD. A valid token for T1 may not record a failure
+  -- against T2 — that would let one claimed step spend another item's budget.
+  if v_run.lease_thread_id is distinct from p_provider_thread_id then
     return jsonb_build_object('result', 'stale_lease');
   end if;
 
-  if p_provider_thread_id is not null then
-    select t.* into v_thread
-      from private.gmail_historical_import_threads t
-     where t.run_id = p_run_id and t.provider_thread_id = p_provider_thread_id
-     for no key update;
+  select t.* into v_thread
+    from private.gmail_historical_import_threads t
+   where t.run_id = p_run_id and t.provider_thread_id = p_provider_thread_id
+   for no key update;
 
-    if found and v_thread.status = 'pending' then
-      v_attempts := v_thread.attempt_count + 1;
-      v_terminal := v_attempts >= greatest(coalesce(p_max_attempts, 5), 1);
+  if found and v_thread.status = 'pending' then
+    v_attempts := v_thread.attempt_count + 1;
+    v_terminal := v_attempts >= v_max;
 
-      update private.gmail_historical_import_threads
-         set attempt_count = v_attempts,
-             last_error_code = p_error_code,
-             status = case when v_terminal then 'failed' else 'pending' end,
-             completed_at = case when v_terminal then now() else null end,
-             next_attempt_at = now() + make_interval(secs => greatest(coalesce(p_retry_after_seconds, 1), 0))
-       where id = v_thread.id;
-    end if;
+    update private.gmail_historical_import_threads
+       set attempt_count = v_attempts,
+           last_error_code = p_error_code,
+           status = case when v_terminal then 'failed' else 'pending' end,
+           completed_at = case when v_terminal then now() else null end,
+           next_attempt_at = now() + make_interval(secs => v_delay)
+     where id = v_thread.id;
   end if;
 
   update private.gmail_historical_import_runs
@@ -1340,7 +1581,12 @@ begin
          lease_authorization_revision = null
    where id = p_run_id;
 
-  return jsonb_build_object('result', 'ok', 'thread_failed', v_terminal);
+  return jsonb_build_object(
+    'result', 'ok',
+    'scope', 'thread',
+    'attempt_count', coalesce(v_attempts, 0),
+    'thread_failed', v_terminal,
+    'run_failed', false);
 end;
 $$;
 
@@ -1494,7 +1740,8 @@ $$;
 create or replace function public.gmail_historical_import_commit_completion(
   p_user_id uuid,
   p_run_id uuid,
-  p_lease_token uuid
+  p_lease_token uuid,
+  p_expected_authorization_revision bigint
 )
 returns jsonb
 language plpgsql
@@ -1502,6 +1749,7 @@ security definer
 set search_path = public, private, pg_temp
 as $$
 declare
+  v_guard text;
   v_run private.gmail_historical_import_runs%rowtype;
   v_pending integer;
   v_failed integer;
@@ -1516,10 +1764,30 @@ begin
     return jsonb_build_object('result', 'not_found');
   end if;
 
-  if v_run.lease_token is null or p_lease_token is null
-     or v_run.lease_token <> p_lease_token or v_run.lease_expires_at <= now()
-     or v_run.lease_step is distinct from 'complete_run' then
-    return jsonb_build_object('result', 'stale_lease');
+  -- NO GMAIL CALL HAPPENS FOR THIS STEP, AND IT IS STILL FENCED.
+  --
+  -- The gap between claiming `complete_run` and committing it is small, but it
+  -- is not zero, and what can change inside it is a HUMAN DECISION: a Disconnect
+  -- in that window would otherwise be overwritten by a run declaring itself
+  -- `completed` under an authorization that no longer exists. Stamping a
+  -- terminal, quotable status onto a run is a mutation, and mutations here name
+  -- the revision they were decided under.
+  v_guard := private.gmail_import_commit_guard(
+    v_run, p_lease_token, 'complete_run', p_expected_authorization_revision);
+
+  if v_guard <> 'ok' then
+    if v_guard not in ('not_found', 'stale_lease', 'authorization_revision_required') then
+      perform private.gmail_import_release_lease(p_run_id);
+    end if;
+    -- The connection state AND the run's own status travel with the refusal.
+    -- A mailbox lifecycle change stops runs durably now, so by the time a stale
+    -- response arrives the run is already cancelled or paused, and the worker
+    -- must report THAT rather than "we will try again later".
+    return jsonb_build_object(
+      'result', v_guard,
+      'run_status', v_run.status,
+      'connection_state',
+      (select m.connection_state from public.mail_accounts m where m.id = v_run.mail_account_id));
   end if;
 
   if v_run.enumeration_completed_at is null then
@@ -1603,6 +1871,10 @@ begin
     'window_start_at', v_run.window_start_at,
     'window_end_at', v_run.window_end_at,
     'enumeration_complete', v_run.enumeration_completed_at is not null,
+    -- Operational counts, so a stalled enumeration is visible as a number
+    -- rather than as a run that simply never finishes.
+    'enumeration_attempt_count', v_run.enumeration_attempt_count,
+    'enumeration_next_attempt_at', v_run.enumeration_next_attempt_at,
     'candidate_sent_messages_seen', v_run.candidate_sent_messages_seen,
     'unique_threads_discovered', v_run.unique_threads_discovered,
     'threads_pending', v_pending,
@@ -1733,11 +2005,11 @@ begin
     'public.gmail_historical_import_commit_page(uuid,uuid,uuid,bigint,text,text,text[],integer,integer)',
     'public.gmail_historical_import_commit_thread(uuid,uuid,uuid,bigint,text,jsonb,integer,integer,integer)',
     'public.gmail_historical_import_record_thread_gone(uuid,uuid,uuid,bigint,text,integer)',
-    'public.gmail_historical_import_record_retry(uuid,uuid,uuid,text,text,integer,integer,integer)',
+    'public.gmail_historical_import_record_retry(uuid,uuid,uuid,bigint,text,text,integer,integer,integer)',
     'public.gmail_historical_import_pause(uuid,uuid,text)',
     'public.gmail_historical_import_cancel_connection_stopped(uuid,uuid,text)',
     'public.gmail_historical_import_resume(uuid,uuid)',
-    'public.gmail_historical_import_commit_completion(uuid,uuid,uuid)',
+    'public.gmail_historical_import_commit_completion(uuid,uuid,uuid,bigint)',
     'public.gmail_historical_import_status(uuid,uuid)',
     'public.gmail_historical_import_purge_for_deletion(uuid,uuid,uuid)'
   ] loop

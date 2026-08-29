@@ -611,6 +611,52 @@ The open implementation block is:
 > **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
 > Open PR, not merged, awaiting external audit and the human merge gate.**
 
+**B03 external audit amendment #1 (2026-08-29)** closed five merge-blocking
+correctness gaps against head `52cf624`, each reproduced as real committed state
+on real PostgreSQL before it was fixed:
+
+- **Enumeration retries were neither bounded nor durable.** `record_retry` only
+  incremented an attempt when a provider thread was named — right for
+  `threads.get`, meaningless for `messages.list`, which has no work item.
+  Reproduced: twelve consecutive 429s left the run `runnable` with no attempt
+  count and no schedule anywhere, and a non-retryable 400 passing
+  `max_attempts = 1` failed nothing. The run now carries
+  `enumeration_attempt_count`/`enumeration_next_attempt_at` for the current
+  cursor, the claim enforces the backoff, five failures end the run and a
+  successful page resets the budget.
+- **A human lifecycle decision existed only if a worker observed it.**
+  Reproduced: Disconnect, then Reconnect, with nothing polling in between — the
+  next claim saw only the current row, said `connected`, and handed out a lease.
+  The Disconnect had happened and B03 held no record of it. A lifecycle change is
+  not an event to be observed but a thing that HAPPENS: a narrow trigger now
+  carries the transition into the runs inside the same transaction that moved the
+  mailbox. `connected` deliberately does nothing — reconnecting answers "may we
+  read your mail again", not "please resume the import you stopped".
+- **Failure and completion paths escaped the fence.** `record_thread_gone` was
+  called with a NULL revision, `record_retry` had no revision parameter at all,
+  and `commit_completion` had none either. Reproduced: a 404 from revision N
+  marked work `gone` under revision N+2. Every claim-derived result now names its
+  revision, a NULL is refused outright, and a lease names one thread.
+- **A fractional `window_end_at` made the provider query narrower than the
+  window.** Flooring both bounds meant a sent message at `20:00:00.500` was
+  inside a window ending `20:00:00.750` and Gmail was never asked for it — and no
+  local filter can recover a message enumeration never returned. Both bounds now
+  round outward.
+- **Message headers overwrote MIME structural headers.** For a single-part
+  message Gmail's top-level MessagePart is both the RFC message and its only MIME
+  part, so writing From/To/Subject into `payload.headers` destroyed the charset
+  and transfer encoding of the body being stored — for the commonest shape of
+  email there is. Two namespaces now, and neither overwrites the other.
+
+Two smaller defects were found alongside them and closed: an
+`inline; filename="…"` disposition could carry a filename past the attachment
+guard (the guard trusted `part.filename`, which Gmail frequently leaves empty),
+and a malformed provider response read as a successful empty result — a 200 that
+will not parse is not an empty mailbox. The attachment wording was also corrected
+to what the Gmail API actually permits: **no separate attachment retrieval and no
+attachment bytes persisted**, rather than a claim that no attachment byte can
+cross the network inside a thread response B03 legitimately needs.
+
 **B03 (2026-08-29)** adds migration `0037_gmail_historical_import.sql` — the
 first Gmail CONTENT this system stores — plus the sanitizer, the narrow read
 adapter, the durable worker and the operator CLI. Contract:

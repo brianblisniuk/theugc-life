@@ -1,6 +1,7 @@
 import type { GmailHistoricalReadAdapter } from "@/lib/gmail/import/read-adapter.server";
 import { MESSAGES_LIST_QUOTA_UNITS, THREADS_GET_QUOTA_UNITS } from "@/lib/gmail/import/contract";
 import { GmailReadError } from "@/lib/gmail/import/errors";
+import { buildSentWindowQuery } from "@/lib/gmail/import/read-adapter.server";
 import type { RawMessage, RawThread } from "@/lib/gmail/import/sanitizer";
 
 /**
@@ -75,18 +76,19 @@ export function createFakeGmailRead(options: FakeGmailOptions = {}): FakeGmailRe
   return {
     calls,
 
-    async listSentMessages({ pageToken, windowStartEpochSeconds, windowEndEpochSeconds }) {
+    async listSentMessages({ pageToken, windowStartMs, windowEndMs }) {
       calls.listMessagesCalls += 1;
       calls.pageTokens.push(pageToken);
-      calls.windows.push({ start: windowStartEpochSeconds, end: windowEndEpochSeconds });
+      calls.windows.push({ start: windowStartMs, end: windowEndMs });
       // What the production adapter would put on the wire, recorded so tests can
-      // assert the request SHAPE without a live call.
+      // assert the request SHAPE without a live call. The query is built by the
+      // REAL function so the fake cannot drift from the rounding it asserts.
       calls.listParams.push({
         userId: "me",
         labelIds: "SENT",
         maxResults: 500,
         includeSpamTrash: true,
-        q: `after:${Math.max(windowStartEpochSeconds - 1, 0)} before:${windowEndEpochSeconds}`,
+        q: buildSentWindowQuery(windowStartMs, windowEndMs),
       });
       calls.quotaUnits += MESSAGES_LIST_QUOTA_UNITS;
 

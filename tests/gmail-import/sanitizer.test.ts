@@ -176,7 +176,7 @@ describe("B03 sanitizer — what may be persisted", () => {
       thread("t9", [textMessage({ id: "h", threadId: "t9", internalDateMs: inside })]),
       WINDOW,
     );
-    const headers = sanitized.messages[0]!.payload.headers!;
+    const headers = sanitized.messages[0]!.messageHeaders;
     expect(Object.keys(headers).sort()).toEqual(["date", "from", "message-id", "subject", "to"]);
     // The provider's RAW value, unparsed: turning an address into a person is
     // B04's decision, and guessing it here would freeze the guess into the raw
@@ -233,7 +233,9 @@ describe("B03 request shape and provider constants", () => {
     // The only thing that varies in `q` is the window. A Gmail search string is
     // a capability to ask for anything in the mailbox, so none of it comes from
     // a browser, a CLI argument or a database column.
-    const q = buildSentWindowQuery(1_700_000_000, 1_700_003_600);
+    // Milliseconds in, epoch seconds out. Both bounds round OUTWARD so the
+    // provider query is a superset of the exact local window.
+    const q = buildSentWindowQuery(1_700_000_000_000, 1_700_003_600_000);
     expect(q).toBe("after:1699999999 before:1700003600");
     // Epoch seconds, not YYYY/MM/DD: Gmail reads date strings at midnight
     // Pacific, which silently shifts a window by up to a day.

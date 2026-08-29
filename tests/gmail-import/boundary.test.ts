@@ -127,11 +127,11 @@ d("B03 private boundary (0037)", () => {
       "public.gmail_historical_import_commit_page(uuid,uuid,uuid,bigint,text,text,text[],integer,integer)",
       "public.gmail_historical_import_commit_thread(uuid,uuid,uuid,bigint,text,jsonb,integer,integer,integer)",
       "public.gmail_historical_import_record_thread_gone(uuid,uuid,uuid,bigint,text,integer)",
-      "public.gmail_historical_import_record_retry(uuid,uuid,uuid,text,text,integer,integer,integer)",
+      "public.gmail_historical_import_record_retry(uuid,uuid,uuid,bigint,text,text,integer,integer,integer)",
       "public.gmail_historical_import_pause(uuid,uuid,text)",
       "public.gmail_historical_import_cancel_connection_stopped(uuid,uuid,text)",
       "public.gmail_historical_import_resume(uuid,uuid)",
-      "public.gmail_historical_import_commit_completion(uuid,uuid,uuid)",
+      "public.gmail_historical_import_commit_completion(uuid,uuid,uuid,bigint)",
       "public.gmail_historical_import_status(uuid,uuid)",
       "public.gmail_historical_import_purge_for_deletion(uuid,uuid,uuid)",
     ];

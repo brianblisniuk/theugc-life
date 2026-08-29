@@ -1601,7 +1601,14 @@ estimate derived from the provider's published per-method costs — **not a bill
 statement**.
 
 `enumeration_page_token` is an opaque provider cursor: never parsed, never
-logged, meaningless outside Google.
+logged, meaningless outside Google. `enumeration_attempt_count` and
+`enumeration_next_attempt_at` are the durable retry budget for the CURRENT cursor
+position — a thread fetch has a work item to count attempts against, a listing
+page has nothing but the run, and without them a `messages.list` that keeps
+answering 429 is retried by whoever polls next, forever, remembering nothing. A
+successful page commit resets both, because the next page is a different provider
+operation. The backoff is enforced by the CLAIM, so a fresh process cannot skip a
+delay that lived in the process which scheduled it.
 
 The **durable step lease** (`lease_token`, `lease_expires_at`, `lease_step`,
 `lease_thread_id`, `lease_authorization_revision`) is all of its parts or none of
@@ -1619,6 +1626,26 @@ runs are not two decisions; they are a race for the same quota and rows.
 `forbid_gmail_import_run_identity_change()` refuses any update to owner, mailbox,
 window or acquisition strategy. Those four facts are what the run IS.
 
+### A mailbox lifecycle change carries the runs with it
+`private.apply_gmail_lifecycle_to_import_runs()` is an AFTER UPDATE trigger on
+`public.mail_accounts.connection_state`. Asking "may we read this mailbox?"
+whenever a worker happens to look is enough to stop a stale response being
+persisted; it is **not** enough to record that a person made a decision. A
+Disconnect followed by a Reconnect with nothing polling in between left the run
+runnable and the Disconnect unrecorded, so the transition now moves the run
+inside the same transaction that moved the mailbox:
+
+- `disconnecting`/`disconnected`/`deletion_pending`/`deleted` → every
+  non-terminal run becomes `cancelled_connection_stopped`, lease cleared;
+- `reauth_required`/`pending_authorization` → a `runnable` run becomes
+  `paused_reauth`;
+- `consent_required` → a `runnable` run becomes `paused_consent`;
+- `connected` → **nothing**. Reconnecting answers "may we read your mail again",
+  not "please resume the import you stopped".
+
+It is idempotent, never rewrites a terminal run, writes only B03 run rows, and
+deletes nothing — a Disconnect is not a deletion, and imported mail survives it.
+
 ### private.gmail_historical_import_threads
 The durable work queue, one row per deduped provider thread per run, in
 PostgreSQL rather than in a process because a process is the thing that crashes.
@@ -1633,11 +1660,17 @@ is current. Provider ids are account-scoped, so the mailbox is part of the key.
 `first_import_run_id`/`last_import_run_id` carry provenance without duplication.
 
 `sanitized_payload` is provider-shaped **after** the application's single
-deterministic sanitizer: approved headers, inline `text/plain` and `text/html`
-bodies, and structural metadata for omitted parts. Never `raw`, never `snippet`,
-never `attachmentId`, never attachment bytes. `payload_sha256` is a digest of the
-canonicalized payload — metadata, so a replay can skip a meaningless write
-without comparing bodies.
+deterministic sanitizer: the approved RFC message headers in `message_headers`,
+the MIME structural headers of each part in `payload.headers`, inline
+`text/plain` and `text/html` bodies, and structural metadata for omitted parts.
+The two header namespaces are separate because for a single-part message Gmail's
+top-level `MessagePart` is both the message and its only MIME part, and sharing
+one property destroyed the charset and transfer encoding of the body being
+stored. Never `raw`, never `snippet`, never `attachmentId`, never attachment
+bytes, and never a filename — a header value carrying a `name=`/`filename=`
+parameter is dropped whole, wherever the provider put it. `payload_sha256` is a
+digest of the canonicalized payload — metadata, so a replay can skip a
+meaningless write without comparing bodies.
 
 `forbid_gmail_raw_message_thread_move()` fails closed if the same account/message
 id is ever presented under a different thread id. Gmail thread membership is part
@@ -1674,6 +1707,16 @@ commit is a network call PostgreSQL cannot cancel, so the guarantee is the
 strongest honest one available — **the response of a stale step may not be
 persisted**. The revision is what makes it a compare-and-swap rather than a
 re-read: a state name can leave and return, a revision cannot go backwards.
+
+Every claim-derived result carries it, not only the successful ones:
+`_record_thread_gone`, `_record_retry` and `_commit_completion` all require the
+revision their claim was issued under, and a NULL is refused with
+`authorization_revision_required` — "compare against whatever is current" is
+exactly the comparison that lets a stale response through. A lease also names one
+thread: a valid token for T1 may not record a result against T2. Refusals carry
+the run's own `run_status` alongside the connection state, so a worker meeting a
+run that a lifecycle change already stopped reports *cancelled* rather than
+"we will try again later".
 
 **0037 imports nothing.** It connects no mailbox, fetches nothing, infers no
 consent and creates no run. It adds no normalized thread, message, participant or

@@ -2274,11 +2274,20 @@ completed run could never be honestly described.
 ### What is stored is a sanitized snapshot, never a mailbox copy
 
 One deterministic sanitizer, in one place, decides what may enter the database:
-the approved headers, inline `text/plain` and `text/html` bodies, and the MIME
-structure of everything omitted. Never Gmail's `raw` format, never `snippet`,
-never an `attachmentId`, and never attachment bytes. The read interface has **no
-attachment method at all** — not a disabled one — so this is a property of the
-type rather than a promise about the implementation.
+the approved RFC message headers, the MIME structural headers of each part,
+inline `text/plain` and `text/html` bodies, and the structure of everything
+omitted. Never Gmail's `raw` format, never `snippet`, never an `attachmentId`,
+never attachment bytes, and never a filename — wherever the provider put it.
+
+The read interface has **no attachment method at all** — not a disabled one — so
+that is a property of the type rather than a promise about the implementation.
+Stated precisely, because the imprecise version would be a claim the Gmail API
+does not support: B03 never calls `users.messages.attachments.get`, never follows
+an `attachmentId`, and never persists body data for an attachment, a non-text or
+a named part. Inline non-text bytes CAN arrive inside the `threads.get` response
+B03 legitimately needs, and the sanitizer discards them before anything is
+written. "No attachment byte ever crosses the network" would describe a system we
+do not have.
 
 Header values are preserved and NOT parsed. Deciding who an address belongs to is
 a later block's judgement, and making it here would bake a guess into the layer
@@ -2309,6 +2318,36 @@ A withdrawn consent PAUSES the run; a disconnect or deletion CANCELS it. They ar
 different human decisions and the system does not collapse them. Neither resumes
 by itself: restarting an import is a decision, not a consequence of reconnecting.
 
+### And a human decision does not depend on whether anything was watching
+
+Re-checking at every commit stops a stale response being stored. It does not
+record that a person decided something. Disconnect and then reconnect with no
+worker running in between and every question the next worker can ask is answered
+by the current row, which says `connected` — so the run carries on and the
+Disconnect leaves no trace anywhere.
+
+That is not a race to be narrowed; it is the wrong model. A lifecycle change is
+not an event to be observed, it is a thing that HAPPENS, and it now carries the
+import runs with it inside the same transaction that moved the mailbox.
+Reconnecting still does nothing to a stopped run: it answers "may we read your
+mail again", not "please resume the import you stopped".
+
+### The provider is asked for MORE than the window, never less
+
+Gmail searches at second resolution and the window ends on a database timestamp
+with milliseconds in it, so the search bounds round OUTWARD. The query may
+overfetch by under a second at each edge and the exact local filter removes the
+excess. Rounding inward is not a smaller version of the same behaviour — it makes
+the request narrower than the window it serves, and **a message enumeration never
+returned cannot be recovered by any filter downstream of it**.
+
+The same asymmetry decides how a malformed provider response is read. A 200 whose
+body will not parse, or that names a candidate with no id, must not read as
+"enumeration finished, zero candidates": that is indistinguishable from a creator
+who simply sent nothing, and it would let a provider contract violation mark a
+run `completed` over history it never saw. Absence of email is a claim about
+somebody's life, and B03 does not make it on the strength of a broken response.
+
 ### `deleted` becomes falsifiable here
 
 B01 defined `deleted` as an assertion that stored Gmail data was removed, at a
@@ -2325,3 +2364,14 @@ today — every run is created by an explicit call); which windows the product
 offers; and anything at all about normalization, hotel matching, reply detection,
 outcomes or aggregation. Gmail-derived data remains Gmail-derived under D067's
 Limited Use rules, whatever any later block computes from it.
+
+External audit amendment #1 (2026-08-29) added the durable-lifecycle, outward
+rounding and malformed-response paragraphs above, plus the precise attachment
+wording. Five correctness gaps were reproduced as real committed state before
+being closed — enumeration retries that were neither bounded nor durable, a
+Disconnect that existed only if a worker observed it, failure and completion
+paths that escaped the authorization fence, a fractional window end that made the
+provider query narrower than the window, and message headers that overwrote the
+MIME structural headers of single-part mail. The shape they share is the one B02
+learned seven times: a check that spans a gap must carry the value it checked,
+and a decision that spans a gap must be written down where the gap cannot reach.

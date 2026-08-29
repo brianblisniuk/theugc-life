@@ -1,6 +1,7 @@
 # B03 — Gmail historical import: private, resumable, idempotent, sent-rooted
 
-Status: implemented in PR (unmerged). Migration `0037_gmail_historical_import.sql`.
+Status: implemented in PR #35 (unmerged), amended in place under external audit
+amendment #1. Migration `0037_gmail_historical_import.sql`.
 Depends on: [`B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`](B01_GMAIL_DATA_BOUNDARY_CONTRACT.md)
 (migration `0035`), [`B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md`](B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md)
 (migration `0036`, merged as `f8d088b`), decisions D067 and D068.
@@ -93,6 +94,16 @@ Gmail interprets at midnight Pacific). **No browser string, CLI free-text
 argument or database column reaches `q`** — a Gmail search query is a capability
 that can ask for anything in the mailbox.
 
+**The provider query is a SUPERSET of the local window, never a subset.** Gmail
+searches at second resolution; `window_end_at` is a database timestamp carrying
+milliseconds. Both bounds therefore round OUTWARD —
+`after: floor(start/1000) − 1`, `before: ceil(end/1000)` — so the request may
+overfetch by under a second at each edge and the exact local filter removes the
+excess. Rounding the upper bound inward made the request narrower than the window
+it served: with an end of `20:00:00.750`, a sent message at `20:00:00.500` was
+inside the authoritative interval and Gmail was never asked for it. **A message
+enumeration never returned cannot be recovered by any local filter.**
+
 ---
 
 ## 4. What is stored, and what is refused
@@ -110,10 +121,10 @@ Provenance is kept without duplication: `first_import_run_id` and
 
 | kept | refused |
 | --- | --- |
-| the approved message headers (§4.1) | every other header |
+| the approved message headers (§4.1), in `messageHeaders` | every other header |
 | inline `text/plain` and `text/html` body data | any other MIME type's body data |
 | MIME structure of omitted parts (mimeType, size) | attachment bytes, `attachmentId` |
-| `Content-Type`/`Content-Disposition`/`Content-Transfer-Encoding` **of parts whose body was kept** | those headers on omitted parts — a `Content-Disposition` carries the filename |
+| `Content-Type`/`Content-Disposition`/`Content-Transfer-Encoding` on **every** part | any header value carrying a `name=`/`filename=` parameter — dropped whole |
 | `internalDate`, `labelIds`, `historyId`, `sizeEstimate` | `snippet`, `raw` |
 
 **4.1 Approved message headers:** `From`, `Sender`, `Reply-To`, `To`, `Cc`,
@@ -121,22 +132,52 @@ Provenance is kept without duplication: `first_import_run_id` and
 preserved verbatim and **not parsed** — deciding who an address belongs to is
 B04's job, and doing it here would bake a guess into the raw layer.
 
-A part's body is persistable **only if** its MIME type is on the text list **and**
-it has no filename **and** it has no `attachmentId` **and** its
-`Content-Disposition` is not `attachment`. Any one of those failing omits the
-body and records a reason (`attachment`, `non_text`, `external_body`). **The
-sanitizer's failure mode is "kept less", never "stored something we should
-not".**
+**Two header namespaces, never one.** For a single-part message Gmail's
+top-level `MessagePart` is *both* the RFC message carrying `From`/`To`/`Subject`
+*and* the MIME part carrying `Content-Type` and `Content-Transfer-Encoding`.
+`messageHeaders` and `payload.headers` are therefore separate fields, and neither
+may overwrite the other — writing the message headers into the part destroyed the
+charset and transfer encoding of the very body being stored, for the commonest
+shape of email there is.
 
-### There is no attachment method
+A part's body is persistable **only if** its MIME type is on the text list
+**and** the part is not NAMED **and** it has no `attachmentId` **and** its
+`Content-Disposition` is not `attachment`. Any one of those failing omits the
+body and records a reason (`attachment`, `non_text`, `external_body`).
+
+**A part is NAMED wherever the provider put the name.** `part.filename`, a
+`filename=` in `Content-Disposition`, or a `name=` in `Content-Type` all count,
+in any casing, quoted or not. Gmail frequently leaves `part.filename` empty while
+a disposition carries the name; trusting the field alone would let the provider's
+formatting choice decide the privacy posture. A filename-bearing header value is
+dropped whole rather than kept for its structural half — `boundary=` is not a
+filename and survives. **The sanitizer's failure mode is "kept less", never
+"stored something we should not".**
+
+### There is no separate attachment retrieval, and no attachment byte is stored
 
 `GmailHistoricalReadAdapter` has exactly two methods: `listSentMessages` and
 `getThread`. There is **no** `users.messages.attachments.get` — not a disabled
-one, not a guarded one. "B03 never fetches attachments" is a fact about the type,
-not a promise about the implementation. There is likewise no send, modify, label
-or history method. `getThread` uses `format=full`, never `format=raw`: a raw
-response is the whole RFC822 message including attachment bytes, and it would
-arrive before any sanitizer could intervene.
+one, not a guarded one — so it is a fact about the type, not a promise about the
+implementation. There is likewise no send, modify, label or history method.
+`getThread` uses `format=full`, never `format=raw`: a raw response is the whole
+RFC822 message, and it would arrive before any sanitizer could intervene.
+
+**The honest statement, precisely.** `threads.get(format=full)` returns a
+`MessagePartBody` that MAY carry `body.data` inline whenever Gmail did not assign
+an external `attachmentId`. B03 must fetch the thread to acquire the
+conversation, so such bytes can cross the network as part of a response it
+legitimately asked for. What B03 guarantees is therefore:
+
+- it **never calls** `users.messages.attachments.get`;
+- it **never follows** an `attachmentId`;
+- it **never persists** body data for an attachment, a non-text part or a named
+  part, and has no table or column that could hold one;
+- inline non-text or named bytes arriving inside the required thread response are
+  **discarded by the sanitizer before anything is written**.
+
+"No attachment can ever cross the network" would be a stronger claim than the
+Gmail API permits, and stating it would be describing a system we do not have.
 
 ### Omissions are counted
 
@@ -193,10 +234,55 @@ guarantees is the strongest honest property available:
 
 > **The response of a stale step may not be persisted.**
 
+**Every claim-derived result names the revision it came from** — the successful
+commits, and equally `record_thread_gone`, `record_retry` and
+`commit_completion`. Marking a work item `gone`, spending an attempt from its
+budget, and stamping a terminal status on a run are all mutations, and a mutation
+decided by a response obtained under revision N may not land under revision N+2.
+**A NULL revision is refused outright**: "compare against whatever is current" is
+precisely the comparison that lets a stale response through, so it is not on
+offer. `commit_completion` makes no Gmail call at all and is fenced anyway,
+because what changes between its claim and its commit is a human decision.
+
+**A lease names one thread.** A valid token for T1 is not permission to record a
+result against T2 — that would let one claimed step spend another item's budget.
+
 The revision is what makes this a compare-and-swap rather than a re-read. A state
 name can leave and come back; a revision cannot go backwards. This is the same
 lesson B02 learned three times — a check that spans a network gap must carry the
 value it checked, or it is evidence rather than a hold.
+
+### A human decision is durable, not observed
+
+Asking "may we read this mailbox?" whenever a worker happens to look is enough to
+stop a stale response being persisted. It is **not** enough to record that a
+person made a decision:
+
+```
+run R is runnable
+the person Disconnects        no worker is running
+the person Reconnects         no worker is running
+a worker finally polls        every question it can ask is answered by the
+                              CURRENT row, which says `connected`
+```
+
+The Disconnect happened and R simply carried on. So a lifecycle change is no
+longer something to be observed: a narrow trigger on `mail_accounts` carries the
+transition into B03's runs **inside the same transaction that moved the mailbox**.
+
+| the mailbox enters | non-terminal runs become |
+| --- | --- |
+| `disconnecting`, `disconnected`, `deletion_pending`, `deleted` | `cancelled_connection_stopped`, lease cleared |
+| `reauth_required`, `pending_authorization` | `paused_reauth` (from `runnable`) |
+| `consent_required` | `paused_consent` (from `runnable`) |
+| `connected` | **nothing** |
+
+`connected` doing nothing is the point. Reconnecting answers "may we read your
+mail again"; it does not answer "please resume the import you stopped". A paused
+run stays paused until somebody resumes it, a cancelled run stays cancelled
+forever, and starting again means starting a NEW run. The trigger is idempotent,
+never rewrites a terminal run, writes only B03 run rows, and deletes nothing — a
+Disconnect is not a deletion.
 
 ### Refusals map onto the lifecycle, and the state name is the reason
 
@@ -235,6 +321,17 @@ claim → fresh access token via B02 → exactly one Gmail call → commit
 
 If the process dies at any point, the lease expires and the next worker claims
 the same work. Idempotence makes that replay safe.
+
+**Enumeration carries its own durable retry budget.** A thread fetch has a work
+item to count attempts against; a listing page has nothing but the run, so
+`enumeration_attempt_count` and `enumeration_next_attempt_at` live on the run
+itself. Without them a `messages.list` that keeps answering 429 is retried by
+whichever process polls next, forever, remembering nothing — an unbounded loop
+wearing the costume of a retry policy. The budget belongs to the CURRENT cursor:
+a successful page commit resets it, because the next page is a different provider
+operation. Exhausting it ends the run `failed`; a non-retryable error exhausts it
+on the first attempt. The backoff is enforced by the CLAIM, so a fresh process
+cannot skip a delay that lived in the process that scheduled it.
 
 **A lease is liveness, a revision is authorization.** They are deliberately
 different mechanisms: a lease answers "is another worker still on this?" (time),
@@ -276,6 +373,21 @@ rewriting the row would bury it. The trigger fails closed.
 | 404 on a thread | `thread_not_found` | **terminal work result**, not a run failure: the thread is `gone`, counted, and no message row is fabricated |
 | 403 | `forbidden`, non-retryable | one attempt; explicitly **not** treated as a dead credential — that is B02's judgement to make, and B03 guessing would delete a working token |
 | malformed response, or a thread id that is not the one requested | non-retryable | the work item fails; a provider answering with a different conversation is not something to normalize away |
+
+**A malformed success is not an empty mailbox.** A 200 whose body will not parse,
+whose `messages` is not a list, that names a candidate with no id, or that
+carries a non-string `nextPageToken` used to read as "enumeration finished, zero
+candidates" — indistinguishable from a creator who simply sent nothing. Each one
+now fails the PAGE. One bad entry fails the whole page rather than being dropped,
+because a silently shrunken candidate set is invisible to everything downstream.
+An ABSENT `messages` key stays legitimate: Gmail omits it on an empty page.
+
+The same rule applies inside a thread: a **non-draft** message with no id, no
+thread id or an unparsable `internalDate` fails the fetch instead of vanishing.
+Skipping it and then marking the thread `complete` would record "this
+conversation contained these messages" about a conversation we could not fully
+read. Drafts are dropped before identity is ever needed, so nothing about them
+can be malformed.
 
 Stored error codes are sanitized slugs matching `^[a-z][a-z0-9_]{0,63}$`. No
 provider message, no response body, no address ever enters an error column.
@@ -358,6 +470,30 @@ thread id or a body.
 
 ---
 
+## 13a. External audit amendment #1
+
+The principal architecture survived the first external audit; five correctness
+gaps did not, and each was reproduced as real committed state on real PostgreSQL
+before it was fixed.
+
+- **Enumeration retries were neither bounded nor durable.** `record_retry` only
+  incremented an attempt when a provider thread was named, so a `messages.list`
+  429 counted nothing and scheduled nothing. Fixed by §7's run-level budget.
+- **A human lifecycle decision existed only if a worker observed it.** A
+  Disconnect followed by a Reconnect with nothing polling in between left the run
+  runnable. Fixed by §6's transition trigger.
+- **Failure and completion paths escaped the fence.** `record_thread_gone` was
+  called with a NULL revision, `record_retry` had no revision parameter at all,
+  and `commit_completion` had none either. Fixed by §6; NULL is now refused.
+- **A fractional `window_end_at` made the provider query narrower than the
+  window.** Fixed by §3's outward rounding.
+- **Message headers overwrote MIME structural headers on single-part mail.**
+  Fixed by §4's two namespaces.
+
+Two smaller defects were found alongside them: an `inline; filename="…"`
+disposition could carry a filename past the attachment guard (§4), and a
+malformed provider response read as a successful empty result (§9).
+
 ## 14. Verification
 
 - Migration replay: fresh `0001→0037`; populated main `0036→0037` with no drift
@@ -368,8 +504,12 @@ thread id or a body.
 - Negative controls: removing the raw-message identity, letting the sanitizer
   keep attachment data, dropping the authorization fence, accepting a stale
   lease, splitting the page insert from the cursor advance, and allowing
-  `deleted` to coexist with B03 rows each break the suite. A control that does
-  not bite means the test was not binding.
+  `deleted` to coexist with B03 rows each break the suite. Amendment #1 added
+  seven more — removing the enumeration budget, removing the lifecycle trigger,
+  disabling the revision fence on the result paths, flooring the upper search
+  bound, letting message headers overwrite the part headers, silently dropping
+  malformed entries, and trusting `part.filename` alone — and each of those bites
+  too. A control that does not bite means the test was not binding.
 - No live Google call is made by any test. The provider is a fake that models
   paging, drafts, attachments, external bodies, vanished threads, rate limits and
   malformed responses.

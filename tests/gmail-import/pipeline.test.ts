@@ -495,14 +495,23 @@ d("B03 authorization currentness", () => {
         await setConnectionState(client, run.mailAccountId, state);
       }
 
+      // THE RUN IS ALREADY STOPPED BEFORE ANY WORKER LOOKS. That is the point
+      // of amendment #1's lifecycle trigger: the transition that moved the
+      // mailbox carried the run with it, so this assertion holds with nothing
+      // running in between.
+      expect([state, (await runRow(client, run.runId)).status]).toEqual([
+        state,
+        "cancelled_connection_stopped",
+      ]);
+
+      // And a worker that turns up afterwards finds nothing to claim.
       const outcome = await runOneImportStep(
         { userId: run.userId, runId: run.runId },
         importDeps(client, { gmail: createFakeGmailRead() }),
       );
-      expect([state, outcome.result]).toEqual([state, "cancelled"]);
-      expect([state, (await runRow(client, run.runId)).status]).toEqual([
+      expect([state, outcome]).toEqual([
         state,
-        "cancelled_connection_stopped",
+        { result: "not_runnable", status: "cancelled_connection_stopped" },
       ]);
     }
   });
@@ -511,11 +520,7 @@ d("B03 authorization currentness", () => {
     const run = await startRun("b03-auth-consent");
     await withdrawConsent(client, run.mailAccountId, run.userId);
 
-    const outcome = await runOneImportStep(
-      { userId: run.userId, runId: run.runId },
-      importDeps(client, { gmail: createFakeGmailRead() }),
-    );
-    expect(outcome).toEqual({ result: "paused", reason: "consent" });
+    // The withdrawal itself paused the run, in the transaction that recorded it.
     expect((await runRow(client, run.runId)).status).toBe("paused_consent");
 
     // A paused run does not restart because a worker polled.
@@ -649,13 +654,53 @@ d("B03 authorization currentness", () => {
       p_sent_messages_seen: 500,
       p_quota_units: 5,
     });
-    expect((refused.data as { result: string }).result).toBe("not_connected");
+    // REFUSED, and the refusal names the run's own state. Since amendment #1 the
+    // Disconnect stopped the run and cleared its lease in the same transaction,
+    // so the fence that catches this stale response is the lease — one step
+    // EARLIER than the authorization comparison that used to catch it. Both
+    // refuse; what matters is that nothing is persisted and the worker is told
+    // the truth about why.
+    const outcome = refused.data as { result: string; run_status: string };
+    expect(outcome.result).toBe("stale_lease");
+    expect(outcome.run_status).toBe("cancelled_connection_stopped");
 
     const rows = await threadRows(client, run.runId);
     expect(rows.map((r) => r.provider_thread_id)).toEqual(["t-control"]);
     const row = await runRow(client, run.runId);
     expect(row.enumeration_page_token).toBe("P2");
     expect(row.candidate_sent_messages_seen).toBe(1);
+
+    // 79-82. The AUTHORIZATION comparison still refuses on its own, with the
+    // lease intact and the run runnable: a reconnect that moved the revision is
+    // enough, and no Disconnect is needed to prove it.
+    const healthy = await startRun("b03-auth-race-revision");
+    const claimed = (
+      await db.rpc("gmail_historical_import_claim_step", {
+        p_user_id: healthy.userId,
+        p_run_id: healthy.runId,
+        p_lease_seconds: 120,
+      })
+    ).data as { lease_token: string; authorization_revision: number };
+
+    // A GENUINELY STALE WORKER presents the revision ITS claim was issued under.
+    // Passing an older number is exactly what such a worker does, and it is the
+    // only way to reach this branch now that a lifecycle change stops the run
+    // outright: every transition that moves the revision either cancels/pauses
+    // the run (so the lease fence catches it first) or is refused by B01. The
+    // branch is therefore a fail-closed backstop, and this is what it backstops.
+    const stale = await db.rpc("gmail_historical_import_commit_page", {
+      p_user_id: healthy.userId,
+      p_run_id: healthy.runId,
+      p_lease_token: claimed.lease_token,
+      p_expected_authorization_revision: Number(claimed.authorization_revision) - 1,
+      p_page_token_used: null,
+      p_next_page_token: null,
+      p_thread_ids: ["t-stale-revision"],
+      p_sent_messages_seen: 3,
+      p_quota_units: 5,
+    });
+    expect((stale.data as { result: string }).result).toBe("authorization_changed");
+    expect(await threadRows(client, healthy.runId)).toHaveLength(0);
   });
 
   it("83-85. a consent withdrawal before the commit refuses the response too", async () => {
@@ -681,7 +726,12 @@ d("B03 authorization currentness", () => {
       p_sent_messages_seen: 9,
       p_quota_units: 5,
     });
-    expect((refused.data as { result: string }).result).toBe("not_connected");
+    // Same shape as the Disconnect case: the withdrawal stopped the run before
+    // the response arrived, so the lease is gone and the refusal says which
+    // human decision did it.
+    const outcome = refused.data as { result: string; run_status: string };
+    expect(outcome.result).toBe("stale_lease");
+    expect(outcome.run_status).toBe("paused_consent");
     expect(await threadRows(client, run.runId)).toHaveLength(0);
     expect((await runRow(client, run.runId)).candidate_sent_messages_seen).toBe(0);
   });

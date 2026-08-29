@@ -94,7 +94,11 @@ export type OmissionReason = "attachment" | "non_text" | "external_body";
 
 export interface SanitizedPart {
   mimeType: string;
-  /** Present only for parts whose body data was kept. */
+  /**
+   * The MIME frame of THIS part — charset, transfer encoding, multipart
+   * boundary. Never the RFC message headers, and never a filename: a header
+   * value carrying a `name=`/`filename=` parameter is dropped whole.
+   */
   headers?: Record<string, string>;
   body?: { size: number; data: string };
   /** Present only for parts whose body data was NOT kept. */
@@ -112,6 +116,16 @@ export interface SanitizedMessage {
   labelIds: string[];
   providerHistoryId: string | null;
   sizeEstimate: number | null;
+  /**
+   * The RFC MESSAGE headers — From/To/Subject/Date/Message-ID and the rest of
+   * the approved set.
+   *
+   * A separate field from `payload.headers` because for a single-part message
+   * Gmail's top-level MessagePart is both the message AND its only MIME part.
+   * Sharing one property meant the message headers overwrote the structural ones
+   * for the commonest shape of email there is.
+   */
+  messageHeaders: Record<string, string>;
   payload: SanitizedPart;
 }
 
