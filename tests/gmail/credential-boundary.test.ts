@@ -126,7 +126,12 @@ d("B02 credential boundary (0036)", () => {
         select p.proname, p.prosecdef, p.proconfig
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.proname like 'gmail\\_%'
+           and p.proname not like 'gmail\\_historical\\_import\\_%'
       `);
+      // B02's own surface. B03 adds definer functions of its own in 0037 and
+      // asserts the same two properties about them in its own boundary suite —
+      // a count over every `gmail_%` function would stop being a statement about
+      // B02 the moment a later block did its job.
       expect(res.rows.length).toBe(13);
       for (const row of res.rows) {
         expect(row.prosecdef, row.proname).toBe(true);
@@ -140,13 +145,18 @@ d("B02 credential boundary (0036)", () => {
 
   describe("what the credential table stores, and what it refuses to", () => {
     it("has no column that could hold an access token, ID token, code or raw state", async () => {
-      const res = await client.query(`
-        select c.relname, a.attname
-          from pg_attribute a
-          join pg_class c on c.oid = a.attrelid
-          join pg_namespace n on n.oid = c.relnamespace
-         where n.nspname = 'private' and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
-      `);
+      // B02's OWN tables. B03 stores different things for different reasons —
+      // an opaque provider page cursor, a database-owned worker lease — and
+      // asserts its own version of this property in its own boundary suite.
+      const res = await client.query(
+        `select c.relname, a.attname
+           from pg_attribute a
+           join pg_class c on c.oid = a.attrelid
+           join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'private' and c.relkind = 'r'
+            and c.relname in ('gmail_oauth_credentials', 'gmail_oauth_transactions')
+            and a.attnum > 0 and not a.attisdropped`,
+      );
       const columns = res.rows.map((r) => `${r.relname}.${r.attname}`);
 
       // An access token lives minutes and belongs in memory; the others are
@@ -200,28 +210,40 @@ d("B02 credential boundary (0036)", () => {
   });
 
   describe("B02 imported nothing", () => {
+    // B03 (migration 0037) is where Gmail content legitimately arrives, under
+    // its own contract and its own tests. These assertions are about B02's
+    // surface, so they name it: a scan of the whole schema would stop being a
+    // statement about B02 the moment a later block did its job.
+    const B02_TABLES = ["gmail_oauth_credentials", "gmail_oauth_transactions"];
+
     it("creates no message, thread, attachment, sync or import table", async () => {
-      const res = await client.query(`
-        select c.relname
-          from pg_class c join pg_namespace n on n.oid = c.relnamespace
-         where n.nspname in ('public', 'private') and c.relkind = 'r'
-           and c.relname ~* 'message|thread|attachment|mailbox_sync|gmail_history|email_import|label'
-      `);
+      const res = await client.query(
+        `select c.relname
+           from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public', 'private') and c.relkind = 'r'
+            and c.relname = any($1::text[])
+            and c.relname ~* 'message|thread|attachment|mailbox_sync|gmail_history|email_import|label'`,
+        [B02_TABLES],
+      );
       expect(res.rows.map((r) => r.relname)).toEqual([]);
     });
 
     it("stores no Gmail sync state from the profile health check", async () => {
       // The profile response carries messagesTotal, threadsTotal and historyId.
-      // They are sync state and B02 does not sync, so nothing here can hold them.
-      const res = await client.query(`
-        select a.attname
-          from pg_attribute a
-          join pg_class c on c.oid = a.attrelid
-          join pg_namespace n on n.oid = c.relnamespace
-         where n.nspname in ('public','private') and c.relkind = 'r'
-           and a.attnum > 0 and not a.attisdropped
-           and a.attname ~* 'messages_total|threads_total|history_id'
-      `);
+      // They are sync state and B02 does not sync, so nothing IT created can
+      // hold them. B03 retains a provider history id on a raw message and
+      // deliberately draws no conclusion from it; B08 owns incremental sync.
+      const res = await client.query(
+        `select a.attname
+           from pg_attribute a
+           join pg_class c on c.oid = a.attrelid
+           join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public','private') and c.relkind = 'r'
+            and c.relname = any($1::text[])
+            and a.attnum > 0 and not a.attisdropped
+            and a.attname ~* 'messages_total|threads_total|history_id'`,
+        [B02_TABLES],
+      );
       expect(res.rows).toEqual([]);
     });
 

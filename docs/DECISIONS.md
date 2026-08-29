@@ -2217,3 +2217,111 @@ transaction, must renew private-processing consent when it adds `gmail.send`, an
 must treat a retired mail account as gone rather than reusable, and must handle a
 refused connection when the Google account is already owned by a different app
 user.
+
+## D068 — Historical Gmail acquisition is sent-rooted, window-fixed and private
+Status: Accepted — decides what B03 is allowed to ask Google for, and what may
+enter the database as a result
+Depends on D067; implemented by migration `0037_gmail_historical_import.sql`
+
+B03 is the first block that stores Gmail **content**. D067 decided the scopes and
+the consents; this decides the acquisition rule, and it is a product decision
+rather than an implementation detail because it determines what the system knows
+about a creator forever after.
+
+### A thread is a candidate only if the creator wrote into it
+
+Enumeration is `users.messages.list` restricted to Gmail's `SENT` label inside a
+bounded date range. A conversation the creator never wrote into is not outreach,
+and the system does not acquire it.
+
+This is the line between *importing a creator's outreach history* and *crawling
+their mailbox*. Newsletters, personal correspondence and a family holiday booking
+all sit in the same inbox; none become candidates. Requesting `gmail.readonly`
+buys the ability to read everything, and D067 already accepted that cost for the
+one capability the product needs — the acquisition rule is where the system
+chooses not to exercise it.
+
+Once a thread IS a candidate, the whole thread inside the window is acquired,
+including messages the creator did not send. A conversation with the replies
+removed is not a conversation, and every later layer that wants to know whether a
+hotel answered would be reading a record that structurally cannot say.
+
+The rule is stored as `acquisition_strategy = 'sent_rooted_threads_v1'` under a
+database CHECK that admits no other value. Widening it is a contract change, and
+it has to look like one rather than being reachable by passing a different
+argument.
+
+### A draft is not communication
+
+Messages carrying Gmail's `DRAFT` label are dropped entirely — not stored, not
+counted. A draft is a sentence somebody typed and did not send. Treating one as
+outreach would bias every future timing, reply and outcome measurement in the
+same direction, and the bias would be invisible because the record would look
+complete.
+
+### The window is decided by a human, once, and never grows
+
+B03 does not invent 12, 24 or 36 months, and does not offer "all history". Which
+lookbacks a creator is offered is a product decision that belongs in the product,
+and hiding one in a pipeline is how it becomes permanent without anyone deciding
+it. The caller supplies the start; the DATABASE fixes the end at creation.
+
+That second half matters as much as the first. A worker that re-read "now" on
+each restart would be importing a window that grows while it runs, so two
+resumptions of one import would not be the same operation — and a partially
+completed run could never be honestly described.
+
+### What is stored is a sanitized snapshot, never a mailbox copy
+
+One deterministic sanitizer, in one place, decides what may enter the database:
+the approved headers, inline `text/plain` and `text/html` bodies, and the MIME
+structure of everything omitted. Never Gmail's `raw` format, never `snippet`,
+never an `attachmentId`, and never attachment bytes. The read interface has **no
+attachment method at all** — not a disabled one — so this is a property of the
+type rather than a promise about the implementation.
+
+Header values are preserved and NOT parsed. Deciding who an address belongs to is
+a later block's judgement, and making it here would bake a guess into the layer
+everything else is derived from.
+
+The sanitizer's failure mode is deliberately asymmetric: when it cannot decide,
+it keeps LESS. Omissions are counted, so the gap in the historical record is
+measurable rather than silent — an import that dropped half the bodies must not
+look identical to one that captured everything.
+
+### Permission is re-checked at every commit, not once at the start
+
+Between deciding to fetch a thread and storing it there is a network call, and a
+human can disconnect their mailbox or withdraw consent while it is in flight.
+PostgreSQL cannot cancel a request already on the wire and B03 does not pretend
+otherwise. What the system guarantees instead is the strongest honest property
+available: **the response of a stale step may not be persisted.**
+
+Four conditions are re-evaluated at every commit — the mailbox is still
+`connected`, private-processing consent is still granted, that consent still
+covers the current scope set, and B02's `authorization_revision` has not moved.
+The revision is what makes this a compare-and-swap rather than a re-read: a
+connection state can leave and come back, but a revision cannot go backwards.
+This is the same lesson B02's audits produced three times, applied before the
+first content row exists rather than after.
+
+A withdrawn consent PAUSES the run; a disconnect or deletion CANCELS it. They are
+different human decisions and the system does not collapse them. Neither resumes
+by itself: restarting an import is a decision, not a consequence of reconnecting.
+
+### `deleted` becomes falsifiable here
+
+B01 defined `deleted` as an assertion that stored Gmail data was removed, at a
+time when no Gmail data could exist. B03 is the first layer that can make that
+assertion false, so it is the first layer that enforces it: a deferred constraint
+trigger registered on every table that can write refuses to let a transaction
+commit with a mailbox marked `deleted` while any run, work item or message
+survives for it.
+
+### What this does not decide
+
+Whether an import starts automatically when a mailbox connects (it does not
+today — every run is created by an explicit call); which windows the product
+offers; and anything at all about normalization, hotel matching, reply detection,
+outcomes or aggregation. Gmail-derived data remains Gmail-derived under D067's
+Limited Use rules, whatever any later block computes from it.

@@ -25,7 +25,21 @@ export function createRpcClient(client: Client): FakeAdminClient {
     async rpc<T>(name: string, args: Record<string, unknown>): Promise<RpcResult<T>> {
       const keys = Object.keys(args);
       const named = keys.map((key, i) => `${key} := $${i + 1}`).join(", ");
-      const values = keys.map((key) => args[key]);
+      // PostgREST sends the whole argument object as JSON, so a jsonb parameter
+      // arrives as JSON there. `pg` would instead bind a JS array as a POSTGRES
+      // ARRAY, which is the right thing for `text[]` and the wrong thing for
+      // `jsonb`. Serializing structured values keeps this shim faithful to the
+      // client the server code actually runs against.
+      const values = keys.map((key) => {
+        const value = args[key];
+        if (Array.isArray(value)) {
+          return value.every((item) => typeof item === "string") ? value : JSON.stringify(value);
+        }
+        if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+          return JSON.stringify(value);
+        }
+        return value;
+      });
       try {
         const res = await client.query(`select public.${name}(${named}) as value`, values);
         return { data: (res.rows[0]?.value ?? null) as T, error: null };

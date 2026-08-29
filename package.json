@@ -2,7 +2,7 @@
   "name": "theugc-life",
   "version": "0.0.0",
   "private": true,
-  "description": "theugc.life — the operating system for travel UGC creators.",
+  "description": "theugc.life \u2014 the operating system for travel UGC creators.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -49,7 +49,11 @@
     "source:review:revoke:prepare": "tsx scripts/human-review-revocation/prepare.ts",
     "source:review:revoke:apply": "tsx scripts/human-review-revocation/revoke-cli.ts",
     "source:publication:prepare": "tsx scripts/source-publication/prepare.ts",
-    "source:publication:apply": "tsx scripts/source-publication/publish-cli.ts"
+    "source:publication:apply": "tsx scripts/source-publication/publish-cli.ts",
+    "gmail:import:start": "tsx scripts/gmail-import/cli.ts start",
+    "gmail:import:work": "tsx scripts/gmail-import/cli.ts work",
+    "gmail:import:resume": "tsx scripts/gmail-import/cli.ts resume",
+    "gmail:import:status": "tsx scripts/gmail-import/cli.ts status"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

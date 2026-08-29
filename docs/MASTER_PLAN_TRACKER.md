@@ -287,8 +287,8 @@ is B02.
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | B01 | **DONE** — PR #33, merge `d4a9e81d` | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
-| B02 | **IN PROGRESS** — open PR, not merged | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
-| B03 | GATED | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
+| B02 | **DONE** — PR #34, merge `f8d088b9` | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
+| B03 | **IN PROGRESS** — open PR, not merged | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | GATED | sent/reply/time-to-reply extraction | qualifying human reply semantics explicit; auto/delivery noise separated |
@@ -608,9 +608,54 @@ At this baseline, Phase A is closed at the code gate:
 
 The open implementation block is:
 
-> **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #7, awaiting re-audit and the human merge
-> gate.**
+> **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
+> Open PR, not merged, awaiting external audit and the human merge gate.**
+
+**B03 (2026-08-29)** adds migration `0037_gmail_historical_import.sql` — the
+first Gmail CONTENT this system stores — plus the sanitizer, the narrow read
+adapter, the durable worker and the operator CLI. Contract:
+[`B03_GMAIL_HISTORICAL_IMPORT_CONTRACT.md`](B03_GMAIL_HISTORICAL_IMPORT_CONTRACT.md);
+decision: **D068**.
+
+What B03 decides, and why each is a decision rather than an implementation
+detail:
+
+- **Sent-rooted acquisition.** A thread is a candidate only if the creator sent
+  into it inside the window. That is the line between importing an outreach
+  history and crawling a mailbox, so it is a CHECK constraint
+  (`acquisition_strategy = 'sent_rooted_threads_v1'`) rather than a behaviour a
+  later writer could change by passing a different argument. Once a thread IS a
+  candidate the whole in-window thread is acquired — a conversation with the
+  replies removed cannot answer whether a hotel replied.
+- **The window is fixed at creation, and the DATABASE fixes its end.** B03
+  invents no lookback: which windows a human is offered is a product decision.
+  And a worker re-reading "now" per restart would import a window that grows
+  while it runs, so two resumptions of one run would not be the same operation.
+- **Message identity is `(mailbox, provider message id)`, not `(run, message)`.**
+  One Gmail message is one row across every import; keying on the run would store
+  ten snapshots of one fact and make every later layer guess which is current.
+- **Permission is re-checked at EVERY commit under an authorization-revision
+  compare-and-swap.** PostgreSQL cannot cancel a Gmail request already in flight,
+  so the guarantee is the strongest honest one: the response of a stale step may
+  not be persisted. This is B02's thrice-learned lesson applied before the first
+  content row exists rather than after an audit found it missing.
+- **A withdrawn consent pauses; a disconnect or deletion cancels.** Different
+  human decisions, not collapsed. Neither resumes by itself.
+- **The queue, the cursor and the worker lease live in PostgreSQL**, because a
+  process is the thing that crashes. A lease is liveness (time); a revision is
+  authorization currentness (causality); they stay separate mechanisms.
+- **The read interface has no attachment method at all** — so "B03 never fetches
+  attachments" is a fact about the type, not a promise about the implementation.
+  The sanitizer is a whitelist whose failure mode is "kept less", and omissions
+  are counted so the gap in the historical record is measurable.
+- **`deleted` becomes falsifiable here**, and is therefore enforced here: a
+  deferred constraint trigger on `mail_accounts` and on all three B03 tables
+  refuses to commit a `deleted` mailbox that still has import data.
+
+`0037` refuses to install over pre-existing tables of its own names, and imports
+nothing itself. **No real Gmail account was connected, no real email was read, no
+attachment was fetched and no live Google call was made in any test.**
+
 
 **B02 external audit amendment #7 (2026-08-28)** closed one merge-blocking
 concurrency gap and two result-truth corrections against head `7f41a9a`:
@@ -778,6 +823,27 @@ findings against head `99833bd`, all reproduced as real committed states first:
 - Disconnect loaded the encrypted credential for a browser-supplied mailbox id
   and compared owners afterwards. User-initiated actions now use an owner-bound
   RPC where the authenticated user is part of the lookup.
+
+**B02 is DONE and merged.** PR #34, final audited head `1adf575`, merged as
+`f8d088b98586c39dca5290d16116ff63e464ccd1`, with 2,050 tests passing at the
+audited head. It passed on the SEVENTH external audit amendment, and the shape of
+those seven rounds is itself the finding worth keeping: every one of them was a
+compare-and-swap missing across a gap where the system had to leave the database
+and talk to Google, and each was reproduced as real committed state on real
+PostgreSQL before it was fixed. What B02 established, and what B03 now builds on:
+
+- an encrypted refresh token in a `private` schema no client role holds `USAGE`
+  on — `service_role` is `BYPASSRLS`, so withholding schema usage, not RLS, is
+  what protects it;
+- thirteen definer-rights RPCs, each pinning `search_path` and each taking the
+  owner as part of the lookup;
+- `authorization_revision` as a database-owned causality token, and the
+  `credential_generation` / `disconnect_intent_seq` compare-and-swaps that make a
+  stale worker's write refusable rather than merely unlikely;
+- one may-we-read chokepoint that returns a fresh access token or an honest
+  refusal, which is the only Gmail authorization surface B03 is permitted to use;
+- and B02 imported nothing: no message, thread, attachment or sync table exists
+  at `f8d088b`, which is precisely the gap B03 fills.
 
 **B01 is DONE and merged.** PR #33, final audited head
 `699c07b651303406cd4131376c15f62cfb33adf0`, merged as
