@@ -286,8 +286,8 @@ is B02.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| B01 | **IN PROGRESS** — open PR, not merged | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
-| B02 | GATED | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
+| B01 | **DONE** — PR #33, merge `d4a9e81d` | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
+| B02 | **IN PROGRESS** — open PR, not merged | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
 | B03 | GATED | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
@@ -608,9 +608,199 @@ At this baseline, Phase A is closed at the code gate:
 
 The open implementation block is:
 
-> **B01 — mail account, consent and the private communication boundary. Open PR,
-> not merged, external audit amendments #1, #2 and #3 applied, awaiting re-audit
-> and the human merge gate.**
+> **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
+> merged, on external audit amendment #7, awaiting re-audit and the human merge
+> gate.**
+
+**B02 external audit amendment #7 (2026-08-28)** closed one merge-blocking
+concurrency gap and two result-truth corrections against head `7f41a9a`:
+
+- **Disconnect had no CAS across its provider network gap.** `prepare` and
+  `finalize` are separate transactions, and amendment #6 deliberately allows a
+  superseded callback to replace the stored credential in between. Reproduced:
+  prepare loads R1/G1, the callback stores R2/G2 and its own revoke fails,
+  `revoke(R1)` answers `invalid_token` — true of R1, no evidence about R2 — and
+  finalize deletes R2. Local `disconnected`, no credential, the grant behind R2
+  still ACTIVE, retry impossible. Finalization now names the Disconnect intent it
+  prepared under and the credential generation it actually sent to Google, and
+  refuses with `stale_disconnect_intent` or `newer_revocation_material`
+  otherwise. Both parameters are required, so the unqualified two-argument
+  finalizer no longer exists;
+- **`provider_unavailable` claimed "nothing was changed".** Untrue since prepare
+  moved before the network call: the mailbox is already `disconnecting` and its
+  in-flight OAuth is already cancelled. The copy now says processing is stopped
+  and Google has not confirmed yet;
+- **`deletion_in_progress` fell through to "that mailbox was not found."** It has
+  its own message now.
+
+Both callers check the finalize result — transport error and RPC answer — so
+neither reports a disconnection it did not complete, and neither destroys
+material it did not revoke.
+
+**B02 external audit amendment #6 (2026-08-28)** closed five findings against
+head `967a0fb`, all reproduced first:
+
+- **the supersession branch was unreachable while `disconnecting`.** The
+  reconnectable-state gate ran first and answered `account_mismatch` for exactly
+  the state in which a live, freshly-created grant is most likely to exist. The
+  checks are now ordered by meaning — identity, then supersession, then the
+  ordinary lifecycle refusals — and no state was made writable that was not
+  writable before;
+- **a superseded revocation that failed lost the token.** Reproduced:
+  `state_changed`, zero credentials, and `GOOGLE GRANT STILL ACTIVE? true` with
+  nothing left to retry with. The fresh credential is now stored sealed and
+  first, in `disconnecting`, and revoked second; a failure answers
+  `disconnect_incomplete` and a retry finishes the job. A newer successful
+  Reconnect refuses both the store and the revoke;
+- **`gmail_disconnect_finalize` could bypass prepare and Google entirely.**
+  Reproduced by direct SQL: `connected` with a live credential, one call, result
+  `ok`, state `disconnected`, nothing said to Google. It now consumes only
+  `disconnecting` and answers `prepare_required` otherwise;
+- **a stale consent could revive a `disconnecting` mailbox.** Reproduced:
+  `disconnecting` → the consent form the human submitted before pressing
+  Disconnect lands → new receipt, state `connected`. Consent may now connect only
+  from `consent_required`, checked inside the lock it already holds, and writes
+  nothing on refusal;
+- **generic CONNECT flows had no fence at all.** Reproduced: "Connect another
+  Gmail" begun before a Disconnect, chooser returns the disconnected identity,
+  `reconnect_required`, and `GOOGLE GRANT ACTIVE AGAIN? true`. A generic flow has
+  no target, so there is no revision to pin and nothing for `prepare` to cancel.
+
+The fence for the last one is a shared monotonic
+`mail_account_lifecycle_intent_seq`: every OAuth transaction draws a position
+when it begins, every Disconnect draws one at prepare, and the comparison works
+before any Google identity is known. `authorization_revision` is kept for the
+exact-version CAS on a known target — two clocks, two questions. Also settled:
+`invalid_token` is evidence about one token, never proof that a newer concurrent
+grant has disappeared.
+
+**B02 external audit amendment #5 (2026-08-28)** closed two findings against
+head `16cdea0`:
+
+- **a stale OAuth flow could reauthorize Google after a Disconnect.** Reproduced
+  at the audited head: a Reconnect begun, a real Disconnect performed
+  (`disconnected`, zero credentials), then the old callback landing —
+  1 code exchange, 0 revocations, and the grant live again at Google while the
+  mailbox read `disconnected`. Disconnect now records the human's intent BEFORE
+  the network call: `gmail_disconnect_prepare` cancels the mailbox's outstanding
+  OAuth transactions, moves the row to a new `disconnecting` state and pins
+  `disconnect_requested_revision`. The stale callback then finds no transaction
+  and exchanges nothing. For the genuine race — the callback consumed its
+  transaction first — the persist answers `superseded_by_disconnect` and that
+  one refusal revokes, because there the project-wide revocation is exactly what
+  the human asked for. Every other refusal still revokes nothing;
+- **Disconnect could reach into a running deletion.** A `deletion_pending`
+  mailbox was protected only incidentally, by a B01 CHECK written for a different
+  purpose, and only as an unhandled `check_violation` rather than an answer.
+  Prepare and finalize now refuse it as `deletion_in_progress`, and `deleted` as
+  `account_retired`.
+
+`disconnecting` is a real state, not a synonym for `disconnected`: access has not
+stopped yet and the credential is deliberately retained, because it is the only
+thing that can revoke. It is the one state whose credential invariant is a range
+(zero or one, enforced as an upper bound), no read path treats it as usable, and
+Disconnect accepts it so a failed revocation can be retried.
+
+**B02 external audit amendment #4 (2026-08-28)** closed four findings against
+head `88d4b8e`:
+
+- the lifecycle revision was **checked but not reserved**. Reproduced with two
+  real PostgreSQL sessions: the callback read revision N, a Disconnect committed
+  N+1, and the callback still wrote. The reconnect target is now locked
+  `for no key update` before anything is compared;
+- a successful reconnect did not **consume** its revision, so two flows begun
+  against the same version could both land — the second replacing the first's
+  credential. A successful reconnect now advances it, requested by the function
+  and numbered by the trigger, which also now fires on INSERT;
+- `consent_required` with an older `granted` consent for a narrower scope set
+  left the UI showing "Awaiting your permission" **with no way to give it**. The
+  prompt now follows the state, which is the authority;
+- the contract still told a future maintainer that a failed health check and an
+  account mismatch revoke the grant — the exact defect amendment #2 removed from
+  the code. All refusal paths now agree.
+
+Also: one creator may have many mailboxes (B01 says so), and the panel now offers
+**Connect another Gmail**; Reconnect is offered only for the states the database
+accepts.
+
+**B02 external audit amendment #3 (2026-08-28)** closed the last two
+merge-blocking findings against head `b50eff0`:
+
+- an OAuth flow had no causality token, so a Reconnect started before an explicit
+  Disconnect **landed afterwards and undid it** — restoring the credential and
+  the `connected` state. `mail_accounts.authorization_revision` is pinned at
+  start and required exactly at the callback; checking the state name would not
+  have been enough, because a mailbox can leave a reconnectable state and return
+  to one. A generic Connect may no longer revive a live mailbox at all — it never
+  pinned a revision for an identity it learns only at the callback — and answers
+  `reconnect_required` instead;
+- the migration guard checked only one of the two invariants 0036 installs. A
+  `pending_authorization` row with a non-empty scope set is valid under 0035 and
+  forbidden by 0036, and the migration completed on one. It now refuses.
+
+**B02 external audit amendment #2 (2026-08-28)** closed three further
+merge-blocking findings against head `578bf37`:
+
+- Google's revocation is **project-wide** — it removes every scope the project
+  holds for that user. B02 was using it as callback cleanup, so refusing an
+  authorization destroyed whatever else that person had connected; a stranger
+  authorizing someone else's Google account could disconnect the real owner. A
+  refused callback now revokes nothing; explicit Disconnect still does, and the
+  runbook records the OAuth project as an authorization domain that unrelated
+  Google integrations must not share;
+- credential mutations had no concurrency token, so a slow worker could overwrite
+  a newer credential, delete one it never saw, or drag a **disconnected** mailbox
+  back to `reauth_required`. Every mutation is now compare-and-swap on a
+  database-owned `credential_generation`, and a final currentness check runs
+  before any access token is handed over;
+- 0036 completed successfully on a database where `connected` mailboxes held zero
+  credentials — the invariant it claims to establish was already false. It now
+  **refuses to install**, names the rows, and leaves them to an operator.
+
+**B02 external audit amendment #1 (2026-08-28)** closed five merge-blocking
+findings against head `99833bd`, all reproduced as real committed states first:
+
+- a successful Google authorization sat in `pending_authorization` — a state 0035
+  defines as "not authorized, no access" — while holding `gmail.readonly` and a
+  live refresh token. 0036 now ALTERs that CHECK to add **`consent_required`**,
+  additively, and the correspondence between the state word and the stored
+  credential is a **deferred invariant** rather than writer discipline;
+- "reconnect mailbox A" fell through to a generic connect when the human chose a
+  different Google account, silently creating a mailbox or reporting success for
+  one they never named. The reconnect target is now bound to the verified Google
+  subject **before** any general case applies, and `purpose`/`target` is an IFF;
+- three errors Google documents against OUR client and OUR request were treated
+  as proof that a CREATOR's refresh token had died, so one wrong environment
+  variable would have deleted every credential it touched. Only `invalid_grant`
+  is destructive now;
+- a rotated refresh token whose storage failed was reported as a successful
+  refresh, leaving the mailbox holding a value that stops working;
+- Disconnect loaded the encrypted credential for a browser-supplied mailbox id
+  and compared owners afterwards. User-initiated actions now use an owner-bound
+  RPC where the authenticated user is part of the lookup.
+
+**B01 is DONE and merged.** PR #33, final audited head
+`699c07b651303406cd4131376c15f62cfb33adf0`, merged as
+`d4a9e81d9f7d800d8b17ff5af7e85544fd0b883c`, with 1,843 tests passing at the
+audited head. It passed on the third external audit amendment; what it
+established, and what B02 now builds on:
+
+- the private Gmail plane is isolated from admin/editor **client** access —
+  `is_admin_or_editor()` governs nothing in it;
+- private-processing and network-intelligence consent are **separate**, the
+  second explicit, revocable and default NOT granted;
+- the **latest consent event dominates**, ordered by a database-owned ordinal
+  rather than a caller-supplied timestamp;
+- a durable Google provider identity has **exactly one app owner**, held in its
+  own registry spanning a mailbox's whole history;
+- after a terminal deletion the **same owner may reconnect** through a NEW row,
+  inheriting no consent and no history;
+- **cross-owner transfer of a provider identity is refused**, and the ownership
+  reservation is released **only** by full app-user erasure;
+- and B01 implemented **no Gmail OAuth, no token storage and no message table** —
+  which is precisely the gap B02 fills.
+
+B02 does **not** implement email import. Historical import begins at B03.
 
 **Phase A's code gate is closed.** A05 merged as `ed857f0b`, and with it the
 canonical property spine: preview (A04), human decision (A04.5), withdrawal

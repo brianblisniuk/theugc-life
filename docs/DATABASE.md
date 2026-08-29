@@ -1076,8 +1076,19 @@ side cannot drift apart; `public.canonical_scope_set()` normalises every scope
 array on write to sorted-distinct form, which is what lets scope sets be compared
 as SETS with `=`.
 
-`connection_state` is `pending_authorization` · `connected` · `reauth_required` ·
-`disconnected` · `deletion_pending` · `deleted`. CHECKs require a `connected` row
+`connection_state` is `pending_authorization` · `consent_required` ·
+`connected` · `reauth_required` · `disconnecting` · `disconnected` ·
+`deletion_pending` · `deleted`. **`consent_required` and `disconnecting` were
+added by 0036**, which ALTERs the CHECK 0035
+created: B01 wrote its vocabulary before any credential existed anywhere, so
+`pending_authorization` meant "the human has not finished at Google and we hold
+no access" — a sentence that cannot describe the moment after a successful
+authorization but before the product permission, when a verified `sub`, the
+approved scope set and a usable refresh token are all in hand. The two states now
+divide that ground: `pending_authorization` keeps its merged meaning exactly, and
+`consent_required` means Google authorized us, a credential exists, and no
+current private-processing consent covers the granted scope set. CHECKs require a
+`connected` row
 to name when it connected, to hold at least one scope, and to hold
 **`gmail.readonly` specifically** — `openid` plus `gmail.send` is a mailbox we may
 write to and may not read, which is not a Gmail connection in this product's
@@ -1270,6 +1281,281 @@ history either.
 
 **0035 creates no message, thread, attachment, sync or job table, connects no
 mailbox, infers no consent, enrols no user and stores no token.**
+
+## 5i. Gmail OAuth credentials and transactions (migration 0036)
+
+B01 promised that B02 would keep credentials server-side, encrypted, out of any
+generally queryable table, and unreachable by a client. This is where that is
+made true.
+
+### The `private` schema
+**No `usage` grant for `anon`, `authenticated` or `service_role`** — not a narrow
+grant, no path at all. `service_role` is `BYPASSRLS`, so RLS could never have
+protected a credential from the trusted role; withholding schema usage does. The
+only door is a set of SECURITY DEFINER functions in `public`, executable by
+`service_role` alone, each pinning its `search_path` and each one transaction.
+
+### private.gmail_oauth_transactions
+One in-flight authorization: owner-bound, TTL ~10 minutes, **consumed once** by a
+single `delete … returning` scoped to the user, so a replay finds nothing and a
+state started by user A cannot be completed by user B.
+
+`state` and `nonce` are stored as **digests** — the raw values travel in the URL,
+so what we keep recognises them without being able to forge one. The **PKCE
+verifier is encrypted** rather than hashed, because the token exchange needs the
+plaintext back. A `reconnect` target is composite-FK'd to `mail_accounts (id,
+user_id)`, so a caller-supplied account id cannot aim the flow at somebody else's
+mailbox. `return_path` carries a CHECK forbidding absolute and protocol-relative
+values.
+
+`purpose`, `target_mail_account_id` and `target_authorization_revision` are an
+**IFF**: `connect` ⇔ neither, `reconnect` ⇔ both. "Reconnect implies a target" left the other half open,
+and a `connect` carrying a target is a transaction whose two fields describe
+different flows — the callback would then have to pick one, and a caller who can
+influence that pick can steer where a fresh Google grant lands.
+
+### 0036 refuses to install on state it cannot make true
+Before anything else, the migration aborts if any pre-existing `mail_accounts`
+row contradicts a rule 0036 is about to install. **Two** rules can already be
+false:
+
+- any row that is `connected` — it cannot hold a credential, because this
+  migration is what creates the credential store;
+- any `pending_authorization` row with a **non-empty** scope set — 0035 permits
+  that combination (its empty-scope CHECK covers only `disconnected`,
+  `deletion_pending` and `deleted`) and 0036 forbids it.
+
+The remaining states need no guard: `reauth_required` legitimately retains its
+scopes and can hold no credential yet; `disconnected`/`deletion_pending`/`deleted`
+already require empty scopes under 0035; `consent_required` cannot exist, because
+0035's CHECK does not permit the value.
+
+B02 cannot attach a refresh token retroactively and cannot know which half of a
+`pending_authorization`-with-scopes row is true, so there is no honest repair: it
+does not synthesize a credential, clear the scopes, demote or promote the state,
+delete rows, or leave it for the next write. It names the rows and stops. The
+expected count is zero, because B01 shipped schema only.
+
+### mail_accounts.authorization_revision (added by 0036)
+The **lifecycle revision an in-flight OAuth flow pins.** A `bigint` from
+`public.mail_account_authorization_revision_seq`, advanced by a BEFORE UPDATE
+trigger whenever `connection_state` or `granted_scopes` changes — the changes
+that invalidate an authorization started against the older state. Unrelated
+display-metadata edits leave it alone.
+
+The trigger assigns the column on every update, so it is **not caller-settable**,
+and a direct SQL lifecycle change invalidates in-flight OAuth exactly as a server
+action does. A successful explicit reconnect also advances it: landing a fresh Google
+credential is a provider-authorization event, so two flows begun against the same
+version cannot both land. The persist function REQUESTS that bump and the trigger
+chooses the number; a background `gmail_credential_replace` deliberately does not
+request one, because rotation is not a human authorization event. The trigger
+fires on INSERT as well as UPDATE, so a supplied value is overwritten either way.
+
+`gmail_oauth_begin` captures it for a reconnect and `gmail_connection_persist`
+loads the target **`for no key update`** before comparing anything — a plpgsql
+function is VOLATILE and takes a fresh snapshot per statement, so an unlocked
+comparison is evidence about a row rather than a hold on it. It requires the
+exact value — because a mailbox can leave
+a reconnectable state and return to one, and a stale callback would otherwise
+find the state name it expects while knowing nothing about the decisions in
+between.
+
+### private.gmail_oauth_credentials
+The encrypted refresh token, **one per mailbox** — a replacement supersedes its
+predecessor completely, because keeping the old one would be keeping a live key
+we decided to stop using. Ciphertext, IV, authentication tag and key version are
+stored; the AES-256-GCM key is not, and the database has never seen it.
+
+**Absent on purpose:** access token, ID token, authorization code, raw state, raw
+nonce. An access token lives minutes and belongs in memory; the rest are
+single-use inputs whose job is over.
+
+`credential_generation` is the **concurrency token**: a `bigint` from a sequence,
+returned by every load and supplied by every mutation derived from one. A refresh
+spans a network call, so without it a slow worker could overwrite a newer
+credential, delete one it never saw, or drag a disconnected mailbox back to
+`reauth_required`. Not a timestamp (equal values collide, clock order is not
+causal order) and not a per-row counter (a reconnection deletes and re-creates
+the row, so a per-row counter would reissue generation 1 and a stale value would
+match). `gmail_credential_replace`, `gmail_mark_reauth_required` and
+`gmail_credential_currentness` are all compare-and-swap on it, and each also
+re-checks that the mailbox is still `connected` and still consented.
+
+`provider_refresh_token_expires_at` is NULL when Google did not state one — *not
+stated*, never *never expires*. **The production adapter always writes NULL**:
+`google-auth-library@11.0.2` does not surface `refresh_token_expires_in`, so B02
+does not currently capture provider refresh-token expiry metadata.
+
+The composite FK on `(mail_account_id, user_id)` is B01's provenance spine: the
+credential cannot lose either the mailbox or the human, and cascades with both.
+
+### The state word and the credential are one fact
+`assert_gmail_credential_state_coherent()` is a **deferred** constraint trigger
+registered on `mail_accounts`, on `private.gmail_oauth_credentials` (INSERT,
+UPDATE **and DELETE**) and on `mail_account_consents`. At COMMIT:
+
+- `connected` / `consent_required` → **exactly one** credential;
+- `disconnecting` → **zero or one**. This is the one state that spans a network
+  call by design: the owner has asked to stop, and the credential is retained
+  until revocation resolves because it is the only thing that can revoke. Stating
+  "exactly one" would refuse the row the instant finalize deleted it, and stating
+  nothing would leave a state with no upper bound at all — so the trigger
+  enforces at most one and says why. What it holds is **revocation retry
+  material**, either the token the Disconnect loaded or the fresher token a
+  superseded callback stored when its own revocation failed; `gmail_credential_load`
+  refuses this state, so nothing can process the mailbox with it;
+- every other state → **no** credential;
+- `consent_required` additionally requires `gmail.readonly`, and may not survive
+  a granted private-processing consent whose snapshot equals the current scope
+  set — that decision has already been made, and the mailbox is `connected`;
+- `pending_authorization` additionally requires an **empty scope set**. 0035
+  defines it as "the human has not completed Google's consent screen and no
+  provider access is current"; a granted scope set is the record of an
+  authorization that state says did not happen. `reauth_required` is deliberately
+  exempt — it retains the last known scope set by contract, because that is what
+  a reconnection is trying to restore.
+
+Deferred because every legitimate write passes through an intermediate state:
+persist sets the account row before inserting the credential, disconnect deletes
+the credential before moving the state. Registered on all three write origins for
+the reason A04.6 and A05 established — deleting the credential of a `connected`
+mailbox never touches `mail_accounts`, so a trigger watching only that table
+would never see it. Cascades are handled by reading the FINAL database state: if
+the account row is gone, there is nothing left to be coherent with. No
+`pg_trigger_depth()`.
+
+### The RPC surface
+`gmail_oauth_begin` · `gmail_oauth_consume_transaction` ·
+`gmail_connection_persist` · `gmail_grant_private_processing_consent` ·
+`gmail_credential_load` · `gmail_credential_load_for_owner` ·
+`gmail_credential_replace` · `gmail_credential_currentness` ·
+`gmail_mark_reauth_required` · `gmail_disconnect_prepare` ·
+`gmail_disconnect_finalize` · `gmail_record_superseded_disconnect_credential` ·
+`gmail_connection_status`. Thirteen functions; `gmail_disconnect_finalize` takes
+its CAS snapshot, so its identity is `(uuid, uuid, bigint, bigint)`.
+
+`gmail_disconnect_finalize` **requires the prepared state**: only `disconnecting`
+may be consumed (→ `disconnected`), `disconnected` is idempotent, and every other
+live state answers `prepare_required` without touching the row. Without it a
+trusted caller could go `connected` → `disconnected` in one call — credential
+deleted, scopes emptied — with no durable intent, no in-flight OAuth cancelled
+and nothing said to Google, which is the original provider/local divergence
+rebuilt through the RPC surface. `service_role` is a capability, not proof that a
+caller followed the protocol.
+
+**It also requires the snapshot the caller prepared under**, because `prepare`
+and `finalize` are separate transactions with a Google round-trip between them
+and the credential can legitimately change during it — a superseded callback
+replaces the stored token with the fresher one on purpose. `p_expected_disconnect_intent_seq`
+and `p_expected_credential_generation` are REQUIRED parameters, so the old
+two-argument call does not resolve, and both are compared under the row lock:
+
+| condition | refusal |
+|---|---|
+| the mailbox's `disconnect_intent_seq` is not the one prepared under, or is NULL | `stale_disconnect_intent` |
+| the stored generation is not the one sent to Google | `newer_revocation_material` |
+| a credential exists after a NULL (no-credential) expectation | `newer_revocation_material` |
+
+Reproduced without it: prepare loads R1/G1, a superseded callback stores R2/G2
+and its own revoke fails transiently, `revoke(R1)` answers `invalid_token` — true
+of R1 and no evidence about R2 — and finalize deletes R2. Local `disconnected`,
+no credential, and the grant behind R2 still active with nothing left to revoke
+it. The provider's answer is about the token it was given; only the database
+knows whether that is still the credential this Disconnect is responsible for.
+`gmail_record_superseded_disconnect_credential` returns the generation it stored
+and the intent it stored it under, so the callback finalizes under its own
+snapshot rather than an unqualified one.
+
+`gmail_record_superseded_disconnect_credential` is the durable half of the one
+revocation B02 performs on a refused callback. Revoking a superseded grant is a
+network call and can fail; the token that can remove that grant is the one the
+callback just received, so it is stored FIRST — sealed, in `disconnecting`, where
+`gmail_credential_load` refuses it — and revoked second. It re-checks owner,
+verified subject and the supersession predicate under its own lock, and refuses
+outright if a newer successful Reconnect has made the mailbox live again, so an
+old callback can neither overwrite that credential nor revoke that authorization.
+
+`gmail_grant_private_processing_consent` may connect **only from
+`consent_required`**, checked inside the lock it already holds; anything else
+answers `consent_not_applicable` and writes no receipt. `disconnecting`
+deliberately retains its credential, so without this gate a consent form
+submitted before a Disconnect could land after it and undo the newer decision.
+
+`gmail_disconnect_prepare` is the step that makes Disconnect dominate the
+provider. It runs BEFORE the network call, in one transaction: it deletes the
+mailbox's outstanding OAuth transactions (a flow that has not come back can never
+be completed), moves the row to `disconnecting`, records
+`disconnect_requested_revision` from the revision the trigger just issued, and
+returns the credential envelope for the revocation about to happen. Doing any of
+that after Google answered would be making the decision too late to beat a
+callback already in flight. It refuses `deletion_pending` with
+`deletion_in_progress` and `deleted` with `account_retired`, so a user-facing
+Disconnect cannot rewrite a lifecycle a deletion request owns — without that
+refusal the `disconnecting` write hits B01's
+`mail_accounts_non_deletion_state_has_no_request` CHECK and raises instead of
+answering.
+
+`gmail_connection_persist` is the atomic landing point after every Google-side
+check has passed. When the transaction named a reconnect target, it binds that
+target FIRST — same owner, `gmail`, a reconnectable state, and a
+`provider_account_subject` equal to the subject Google just verified — and
+answers `account_mismatch` otherwise. Without that, choosing a different Google
+account at the account chooser fell through to "identity never seen" and silently
+created a new mailbox. A `deleted` target answers `account_retired`; B01's
+terminality is not something a reconnect may undo.
+
+It also requires the pinned `target_authorization_revision` to still be the
+mailbox's current one, so an OAuth flow the human abandoned cannot undo the
+Disconnect they chose instead.
+
+**The checks are ordered by meaning**: identity (owner, provider, verified
+subject) → supersession → the ordinary lifecycle refusals. Supersession is a
+statement about a specific Google account, so identity settles first; and it must
+be asked before the reconnectable-state gate, because that gate destroys the
+information. Ordering it last is what made the `disconnecting` half of the
+supersession condition dead code — the gate answered `account_mismatch` for
+exactly the state in which a live, freshly-created grant is most likely to exist.
+Nothing is widened by the reorder: `connected`, `disconnecting`,
+`deletion_pending` and `deleted` are still states no callback may persist into.
+
+**The supersession fence is `mail_account_lifecycle_intent_seq`, not the
+revision.** Every OAuth transaction draws an `oauth_intent_seq` at INSERT and
+every explicit Disconnect draws a `disconnect_intent_seq` at prepare, from the
+SAME sequence — so "did this flow begin before the human's Disconnect?" is one
+comparison, and it works for a **generic CONNECT**, which has no target and
+therefore no revision to pin. That was the remaining hole: `prepare` can only
+cancel transactions that name a mailbox, so a "Connect another Gmail" begun
+before a Disconnect could come back with the disconnected identity, exchange its
+code, and be waved through as `reconnect_required` while Google's grant was
+active again. Both branches — targeted and generic — now consult
+`private.gmail_flow_superseded_by_disconnect()`, one predicate in one place.
+
+A sequence and not a timestamp, for amendment #2's reason: equal values collide
+and clock order is not causal order. `authorization_revision` is kept for what it
+alone can do — the exact-version CAS on a known target.
+
+`superseded_by_disconnect` is the one refusal the application answers by revoking
+at Google, because there the project-wide revocation is the thing the human
+actually asked for; every other refusal still revokes nothing.
+
+It then implements B01's account selection — new identity, never revive a
+`deleted` one, refuse an identity owned by another user without naming them — and
+stores the credential in the same transaction. A generic connect landing on an
+existing LIVE row of this owner answers `reconnect_required` and persists
+nothing: it never pinned that mailbox's revision, so it does not get to revive
+it. A successful authorization lands in `consent_required`, never `connected`,
+unless a current exact-scope consent already exists.
+
+`gmail_credential_load` returns the ENVELOPE and its generation, never a token:
+decryption happens in the application. It takes **no user id**, which is right for a trusted internal
+caller in B03 and wrong for anything a browser reaches, so user-initiated actions
+use `gmail_credential_load_for_owner(p_user_id, p_mail_account_id)` instead —
+the owner is part of the lookup, so a stranger's mailbox id returns `not_found`
+and no envelope is ever assembled.
+
+**0036 connects no mailbox, opens no OAuth transaction, stores no credential and
+infers no consent. It adds no message, thread, attachment, sync or import table.**
 
 ## 6. Editorial evidence and signals
 
@@ -1595,5 +1881,8 @@ At minimum:
     explicit deletion request distinct from disconnecting, and an RLS posture
     that deliberately gives admin/editor NOTHING. No OAuth credential column
     exists, and the migration connects no mailbox and infers no consent
+22. Gmail OAuth connection, reconnect and disconnect (0036) — the first
+    long-lived secret in the system, and the `private` schema that keeps it out
+    of reach. See §5i
 
 Every migration must be reproducible from an empty database.

@@ -1949,6 +1949,254 @@ B01 implements the boundary (`docs/B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`,
 migration `0035`). B02 implements OAuth against it, B03/B04 import and normalize
 under it, and the C-phase intelligence may consume only what G3 admits.
 
+B02 external audit amendment #7 (2026-08-28) settled that **an operation that
+spans a network call needs a compare-and-swap on the thing it operated on, and
+that the result of that swap must be checked rather than assumed.**
+
+Disconnect is prepare → revoke at Google → finalize, and the two database steps
+are separate transactions. Amendment #6 made the window between them one in which
+the credential can legitimately CHANGE: a superseded OAuth callback replaces the
+stored token with the fresh one representing a newer grant, precisely so that
+grant can still be revoked. Finalize checked only that a Disconnect was
+outstanding, so an older finalizer could delete a credential it had never sent to
+Google — and with `invalid_token` on the old token, which proves nothing about a
+newer one, the end state was `disconnected` locally, no credential anywhere, and
+the newer grant still live with nothing able to revoke it. That is the state
+amendment #6 existed to make impossible, reached one step further along.
+
+So the unit of a provider operation is now "credential generation G under
+Disconnect intent I", not "something for mailbox A". Finalization compares both
+under the row lock and refuses with `stale_disconnect_intent` or
+`newer_revocation_material`, mutating nothing. A NULL expected generation is
+information — there was nothing to revoke when this was prepared — so a credential
+appearing since is newer material this caller never sent anywhere. A NULL
+expected intent is refused outright. Both parameters are required, so the
+unqualified two-argument finalizer does not exist: `service_role` is a
+capability, not proof that a caller followed the protocol, and this is the third
+time that sentence has had to be enforced rather than written down.
+
+Two consequences worth stating as decisions. The provider's answer applies to the
+token the provider was given, and the database is the only thing that knows
+whether that token is still the one this operation is responsible for — so
+`invalid_token` never overrides the CAS. And "we asked" is not "it happened":
+both callers check the transport error AND the RPC's own result, and neither
+reports a disconnection it did not complete.
+
+The same amendment corrected two user-facing claims. `provider_unavailable` said
+"nothing was changed", which stopped being true when prepare moved before the
+network call — the mailbox is already `disconnecting` and its in-flight OAuth is
+already cancelled; what is missing is Google's confirmation, and the copy now
+says that. And `deletion_in_progress` was falling through to "that mailbox was
+not found", which is a different and misleading thing to tell someone whose
+deletion is running.
+
+B02 external audit amendment #6 (2026-08-28) settled that **a lifecycle fence
+must cover every OAuth flow, including the ones with no target, and that the
+protocol steps are enforced by the database rather than remembered by callers.**
+
+FIRST, **ordering of checks is a security property.** Amendment #5's
+supersession test ran after the "is this state reconnectable?" refusal, and that
+refusal answers `account_mismatch` for `disconnecting` — so the `disconnecting`
+half of the condition was unreachable, in exactly the window where a live,
+freshly-created grant is most likely to exist. The refusal that discards
+information cannot run before the question that needs it. The order is now
+identity, then supersession, then the ordinary lifecycle refusals. No state was
+made writable that was not writable before; they simply get a truthful answer
+about why they are refused.
+
+SECOND, **the fence has to work before the Google account is known.** A revision
+is a version of one known mailbox, so only a flow with a target can pin one. A
+generic CONNECT has no target and nothing for a Disconnect to cancel, so a
+"Connect another Gmail" begun before a Disconnect could come back with the
+disconnected identity, exchange its code, and be waved through as an ordinary
+refusal while Google's grant was active again. B02 therefore keeps two clocks
+with two jobs: `authorization_revision` for the exact-version CAS on a known
+target, and a shared monotonic `mail_account_lifecycle_intent_seq` drawn by every
+OAuth transaction at its start and by every Disconnect at prepare, which makes
+"did this flow begin before that Disconnect?" a single comparison available to
+targeted and generic flows alike. A sequence, not a timestamp.
+
+THIRD, **the one revocation B02 performs on a refused callback must be durable.**
+It is a network call, and the only thing that can remove the grant is the token
+that callback just received. Losing it on a transient failure could leave the
+mailbox `disconnected`, no credential anywhere, and the authorization ACTIVE
+forever. So the fresh credential is stored first — sealed, in `disconnecting`,
+where no read path will use it — and revoked second, with the mailbox returning
+to `disconnecting` if a Disconnect had already reported completion. A newer
+successful Reconnect refuses both the store and the revoke: the human changed
+their mind, and an older callback does not get to overrule that.
+
+FOURTH, **`invalid_token` is evidence about one token.** On the token a
+superseded callback just received it proves that grant's newest artifact is
+unusable. On an older stored token it proves nothing about a newer concurrent
+grant, and B02 does not infer otherwise — the newer grant is handled by the flow
+that created it.
+
+FIFTH, **a protocol is only a protocol if the database enforces its steps.**
+`gmail_disconnect_finalize` now consumes only `disconnecting`, so nothing can go
+from `connected` to `disconnected` without a recorded intent and a provider call;
+and `gmail_grant_private_processing_consent` may connect only from
+`consent_required`, so a consent form submitted before a Disconnect cannot land
+after it and undo the newer decision. Both were reachable precisely because
+amendment #5 deliberately retains the credential while `disconnecting`.
+`service_role` is a capability, not proof that a caller followed the protocol.
+
+B02 external audit amendment #5 (2026-08-28) settled that **Disconnect dominates
+the provider, and a deletion owns the lifecycle while it runs.**
+
+Amendment #3 made a stale callback lose, and amendment #4 made it lose reliably —
+but it lost too late. The refusal happened at the persist step, AFTER the
+authorization code had been exchanged, so a Reconnect flow that came back after a
+Disconnect created a fresh live grant at Google that nothing then removed. The
+mailbox read `disconnected` while the person's Google account had just been
+reauthorized. That was reproduced at the audited head: one exchange performed,
+zero revocations, the grant active again. B02's promise is Disconnect, not
+"forget our copy of the token while Google may remain authorized".
+
+The decision has three parts. FIRST, **the human's intent is recorded before the
+network call, not after it**: a decision made only once Google answers cannot beat
+a callback already in flight. `gmail_disconnect_prepare` cancels the mailbox's
+outstanding OAuth transactions, moves the row to a new `disconnecting` state and
+records the revision that request was made at — all in one transaction, before
+anything is sent to Google. In the ordinary sequential case the stale callback
+then resolves to no transaction at all and no code is ever exchanged.
+
+SECOND, **`disconnecting` is a state, not a synonym.** Naming the row
+`disconnected` before revocation resolved would be the application asserting
+something it does not know, and naming it `connected` would contradict the person
+who just pressed the button. It is the one state whose credential invariant is a
+range — zero or one — because the credential is retained on purpose until the
+revocation it is the only instrument for has resolved, and destroyed immediately
+after. No read path treats it as usable, and Disconnect accepts it so a failed
+revocation can be retried.
+
+THIRD, **the one refusal that DOES revoke.** Amendment #2's rule stands
+everywhere except one case: a callback that is stale specifically because a newer
+explicit Disconnect of the same mailbox, aimed at the same verified Google
+subject, superseded it. There the project-wide revocation is precisely what was
+asked for. `account_mismatch`, `owned_by_other_user`, `reconnect_required`,
+`already_connected`, an unrelated `state_changed` and a newer successful Reconnect
+all still revoke nothing. These two cases must not be collapsed again: one is
+discarding a token we did not want, the other is a person ending an authorization
+while it was being created.
+
+The same amendment stopped a user-facing Disconnect from reaching into a deletion
+it does not own. `deletion_pending` names a specific request that is running and
+the account surface says so; rewriting the row would clear the pointer that claim
+rests on. Prepare and finalize both refuse it as `deletion_in_progress`, and
+`deleted` as `account_retired`. B01's row-local CHECK had been catching the write
+incidentally — as an unhandled `check_violation` rather than an answer — and the
+new `disconnecting` state is exactly the kind of change that turns an incidental
+protection into a crash at a worse moment.
+
+B02 external audit amendment #4 (2026-08-28) made the lifecycle revision an
+actual reservation rather than an observation. A plpgsql function is VOLATILE and
+takes a fresh snapshot per statement, so comparing a revision without locking the
+row is evidence about a row rather than a hold on it — reproducibly, a callback
+could read revision N, a Disconnect could commit N+1, and the callback's later
+writes would still land. The reconnect target is now loaded `for no key update`
+before anything is compared, and that lock is held through the credential write.
+
+The same amendment established that a SUCCESSFUL RECONNECT CONSUMES THE REVISION
+IT USED, even when it changes neither state nor scopes: landing a fresh Google
+credential is itself a provider-authorization event, and without it two flows
+begun against the same version could both land, the second silently replacing the
+first's credential. The persist function requests the bump and the trigger
+chooses the number, because a revision the application could pick would not be
+database-owned — and for the same reason the trigger now fires on INSERT as well
+as UPDATE. Background refresh rotation deliberately does not bump: it is not a
+human authorization event, and `credential_generation` is already the clock for
+it.
+
+Two product-truth corrections went with it. The consent prompt now follows the
+STATE rather than the consent projection: `consent_required` with a `granted`
+consent for a NARROWER scope set is a real and correct combination, and keying on
+the projection left it unreachable — "Awaiting your permission" with no way to
+give it. And the B02 contract's remaining sentences instructing a refused
+callback to revoke the grant were removed; that document is an implementation
+input, and one stale line is how the project-wide revocation defect closed in
+amendment #2 gets reintroduced.
+
+B02 external audit amendment #3 (2026-08-28) extended the causality reasoning
+from credentials to AUTHORIZATION. Amendment #2 established that a refresh spans
+a network call and therefore needs a generation; OAuth spans a much longer one —
+we hand the browser to Google and the callback arrives whenever the human returns
+— and had no equivalent. So an intention could outlive the decision that replaced
+it: a Reconnect started before an explicit Disconnect landed afterwards, stored a
+fresh credential, and put the mailbox back to `connected`.
+
+`mail_accounts.authorization_revision` is the fix, and the important part of it
+is that it is a REVISION rather than a state check. A mailbox can leave a
+reconnectable state and come back to one, so a callback that verifies only the
+state name finds the word it expects while knowing nothing about the decisions in
+between. The revision is database-owned, advanced by trigger on lifecycle change,
+and never caller-settable — which also means a direct SQL change invalidates
+in-flight OAuth exactly as a server action does. A reconnect pins it at start and
+must match it exactly at the callback; a flow cannot even begin against a mailbox
+that is not reconnectable right now.
+
+The same amendment narrowed B01's CASE B: a generic CONNECT may no longer revive
+an existing live mailbox. It cannot pin a revision for an identity it does not
+learn until the callback, so it would be the one door with no snapshot to check.
+It answers `reconnect_required` and persists nothing; the human uses the explicit
+Reconnect action, which does pin one. And the migration guard was completed to
+cover every invariant that can already be false — a `pending_authorization` row
+with a non-empty scope set is valid under 0035 and forbidden by 0036, so 0036 now
+refuses to install on one rather than finishing incoherent.
+
+B02 external audit amendment #2 (2026-08-28) settled that **the Google Cloud
+project used for the Gmail integration is an authorization domain**. Google's
+programmatic token revocation removes every OAuth 2.0 scope previously granted to
+the PROJECT for that user and invalidates the issued tokens for all clients under
+it — so revocation is an operation on the (user, project) grant, and there is no
+per-token call. Two rules follow, and both are decisions rather than
+implementation notes.
+
+FIRST: revocation is not a rollback primitive. B02 used it as callback cleanup,
+which meant a refused authorization destroyed whatever else that person had
+authorized this project to do. The worst case was reproducible: a stranger
+authorizing a Google account they do not own was correctly refused by B01's
+ownership rule, and the refusal disconnected the legitimate owner. A refused
+callback now persists nothing and revokes nothing, and the contract states the
+honest cost — the application may still appear in the person's Google account
+although we hold no usable token. Explicit Disconnect still revokes, because
+there the project-wide operation is exactly what was asked for.
+
+SECOND: unrelated Google integrations may not share this OAuth project. Calendar,
+Drive, any other Google OAuth integration, and application login flows whose
+grants must survive a Gmail disconnect all need a separate project and a new
+security contract — otherwise "disconnect Gmail" silently signs someone out or
+breaks their calendar. `gmail.readonly` and a future incremental `gmail.send`
+belong to the same integration and may share the domain deliberately.
+
+The same amendment made credential mutation causal rather than last-write-wins: a
+refresh spans a network call, so every mutation derived from a loaded credential
+names the generation it came from and is refused if that is no longer current. A
+stale worker can no longer overwrite a newer token, delete one it never saw, or
+undo a Disconnect. And 0036 now REFUSES TO INSTALL rather than completing while
+the invariant it establishes is already false.
+
+B02 external audit amendment #1 (2026-08-28) added `consent_required` to the
+connection-state vocabulary. D067's state words were written before any
+credential existed anywhere in this system, so `pending_authorization` was
+defined as "the human has not completed Google's consent screen; no access" — a
+sentence B02 made false, because after a successful authorization we hold a
+verified `sub`, the approved scope set and a usable refresh token while still not
+having asked the product question. The addition is deliberately ADDITIVE:
+`pending_authorization` keeps its merged meaning exactly, migration `0035` is
+untouched, and `0036` ALTERs the CHECK it created. Reusing the old word would
+have left the database asserting "no access" about a mailbox that could be read
+that second, and every later reader — support, an export, a deletion routine, an
+auditor — would have inherited it.
+
+The same amendment fixed what a state word is allowed to assert on its own: the
+correspondence between the state and the stored credential is now a deferred
+database invariant (`connected`/`consent_required` ⇒ exactly one credential;
+every other state ⇒ none), and only `invalid_grant` may destroy a credential —
+`invalid_client`, `unauthorized_client` and `invalid_request` are errors about
+OUR client and OUR request, and treating them as proof that a creator's token
+died would delete credentials to punish a mistyped environment variable.
+
 External audit amendment #3 (2026-08-27) added the release rule above, after the
 same cross-owner transfer proved reachable at amendment #2's head by deleting a
 mailbox row and then its ownership reservation, with the owning user untouched.
