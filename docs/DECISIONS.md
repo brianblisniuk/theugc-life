@@ -2246,6 +2246,29 @@ including messages the creator did not send. A conversation with the replies
 removed is not a conversation, and every later layer that wants to know whether a
 hotel answered would be reading a record that structurally cannot say.
 
+### And candidacy is proved twice, because the provider cannot prove it once
+
+Gmail searches at second resolution while the window is millisecond-precise, so
+the search is deliberately widened at both ends. What `messages.list` returns is
+therefore PROVISIONAL: it can legitimately include a thread whose only SENT
+message falls outside the window.
+
+Filtering each message to the exact interval does not make such a thread safe —
+it removes the out-of-window SENT and keeps the in-window INBOUND reply, which is
+somebody's incoming mail from a conversation that was never a candidate. So after
+the thread is fetched, candidacy is re-proved exactly: at least one non-draft
+message inside `[start, end)` must carry `SENT`, or nothing from that thread is
+stored at all.
+
+The proof belongs to the database, derived from the rows it is about to write,
+and not to a boolean the caller passes in. A privacy boundary asserted by the
+layer that wants to cross it is not a boundary.
+
+A thread rejected this way is `filtered_out`: not `gone` (Gmail has it), not
+`failed` (nothing failed), not `complete` (nothing was imported). A run in which
+every provisional candidate is filtered out completes with zero messages, and
+that is a true and useful outcome rather than an error.
+
 The rule is stored as `acquisition_strategy = 'sent_rooted_threads_v1'` under a
 database CHECK that admits no other value. Widening it is a contract change, and
 it has to look like one rather than being reachable by passing a different
@@ -2435,3 +2458,10 @@ terminal work-item failure fail the run in the same transaction. The last one is
 the general rule worth keeping: when the worker knows something has permanently
 failed and the database does not, the database is not the source of truth — it is
 a cache of the last time somebody looked.
+
+External audit amendment #4 (2026-08-30) added the two-stage candidacy rule
+above. The outward provider search was correct and stayed; what was missing was
+the exact local proof after it, without which B03 stored inbound mail from
+threads that had no in-window sent root. The general shape is one this block has
+met before: a query deliberately imprecise for recall needs an exact check before
+its results become facts, and that check belongs where the facts are written.

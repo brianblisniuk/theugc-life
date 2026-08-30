@@ -611,6 +611,33 @@ The open implementation block is:
 > **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
 > Open PR, not merged, awaiting external audit and the human merge gate.**
 
+**B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
+privacy-boundary defect against head `de4ba0e`:
+
+- **The provider search is a deliberate superset, and sent-root eligibility was
+  never reconfirmed locally.** Gmail searches at second resolution while the
+  window is millisecond-precise, so `after:` is nudged back and `before:` rounded
+  up — correctly, and that means `messages.list` can offer a thread whose only
+  SENT message lies OUTSIDE the exact window. Reproduced at both edges: with a
+  window ending `…00.750`, a thread holding an inbound reply at `…00.500` and the
+  creator's only SENT at `…00.900` had the SENT dropped by the per-message filter
+  and **the inbound reply stored**. B03 had imported somebody's incoming mail
+  from a conversation that was never a candidate under its own acquisition rule.
+  Candidacy is now proved in TWO stages: provider discovery yields PROVISIONAL
+  candidates, and after `threads.get` the database re-proves — from the sanitized
+  rows it is about to commit, with no caller-supplied boolean — that at least one
+  non-DRAFT message inside `[start, end)` carries `SENT`. If not, zero raw
+  messages are written and the work item becomes `filtered_out`, a terminal
+  non-error state counted by `threads_filtered_out`. The provider query was not
+  narrowed; narrowing it would trade a privacy defect for a recall defect.
+
+The same round corrected documentation drift (the contract header claimed only
+amendment #1 had landed; §5 still said twelve definer functions when the surface
+has been thirteen since `validate_claim`) and a test-harness defect that had been
+hiding the new path — the RPC shim inferred parameter types from JavaScript
+values, so an EMPTY array bound as a Postgres array even for a `jsonb` parameter.
+It now reads the declared signature from the catalog, as PostgREST does.
+
 **B03 external audit amendment #3 (2026-08-30)** closed three further
 merge-blocking gaps and one raw-completeness defect against head `a416ff1`:
 

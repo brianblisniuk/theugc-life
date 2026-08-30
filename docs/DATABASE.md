@@ -1596,8 +1596,12 @@ the thread. Anything less left the worker reporting `failed` while the database
 said `runnable`, holding the active-run index for a mailbox nobody was importing.
 
 Counters only: candidate sent messages seen, unique threads discovered, threads
-completed, threads gone, messages stored, messages updated, and **two omission
-counters** so a later evaluation can tell how much of the record B03 could not
+completed, threads gone, **threads filtered out**, messages stored, messages
+updated, and **two omission counters**. The first two are PROVIDER DISCOVERY
+numbers and are named that way: `candidate_sent_messages_seen` is SENT results
+returned by the outward search, not exact-window SENT messages, and
+`unique_threads_discovered` is provisional candidates. Exact acceptance is
+`threads_completed`; exact rejection is `threads_filtered_out` so a later evaluation can tell how much of the record B03 could not
 see. No subject, no address, no body. `last_error_code` is a sanitized slug under
 a CHECK; no provider message ever enters it.
 `estimated_gmail_quota_units` is documented in its own column comment as an
@@ -1654,7 +1658,27 @@ deletes nothing — a Disconnect is not a deletion, and imported mail survives i
 The durable work queue, one row per deduped provider thread per run, in
 PostgreSQL rather than in a process because a process is the thing that crashes.
 `unique (run_id, provider_thread_id)` is what makes "the same listing page may be
-applied twice safely" a property rather than an intention.
+applied twice safely" a property rather than an intention. `status` is
+`pending`, `complete`, `gone`, `failed` or **`filtered_out`**.
+
+`filtered_out` is the state for PROVIDER OVERFETCH. The `messages.list` date
+query is deliberately wider than the run's window (Gmail searches at second
+resolution; the window has milliseconds), so it returns PROVISIONAL candidates —
+and a thread whose only SENT message lies outside the window can legitimately be
+among them. `gmail_historical_import_commit_thread` re-proves candidacy exactly,
+from the sanitized rows it is about to commit: at least one non-DRAFT message
+inside `[window_start_at, window_end_at)` must carry the `SENT` label. If not,
+ZERO raw messages are written, the item becomes `filtered_out` with
+`completed_at` set, and `threads_filtered_out` on the run counts it. The decision
+is made in the same transaction that would otherwise insert the rows, and the
+database derives it — there is no caller-supplied `p_is_candidate`, because that
+would put a privacy boundary in the hands of the layer that wants to cross it.
+
+`filtered_out` is deliberately not `gone` (the thread exists), not `failed`
+(nothing failed) and not `complete` (nothing was imported). It is terminal
+non-error work and counts as no pending work, so a run whose every provisional
+candidate is filtered out reaches `completed` with zero messages — a true
+statement about an exact sent-rooted import, not a failure.
 
 ### private.gmail_raw_messages
 Identity is **`(mail_account_id, provider_message_id)`** — not `(run, message)`.

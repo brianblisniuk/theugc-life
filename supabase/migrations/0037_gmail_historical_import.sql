@@ -133,10 +133,27 @@ create table private.gmail_historical_import_runs (
   enumeration_next_attempt_at timestamptz,
 
   -- WHAT HAPPENED, in counts only. No subject, no address, no body.
+  --
+  -- These two are PROVIDER DISCOVERY numbers, and the names are read that way:
+  -- `candidate_sent_messages_seen` is SENT results returned by the outward
+  -- second-resolution search, not exact-window SENT messages, and
+  -- `unique_threads_discovered` is PROVISIONAL thread candidates. Exact
+  -- acceptance is `threads_completed`; exact rejection is
+  -- `threads_filtered_out`.
   candidate_sent_messages_seen integer not null default 0 check (candidate_sent_messages_seen >= 0),
   unique_threads_discovered integer not null default 0 check (unique_threads_discovered >= 0),
   threads_completed integer not null default 0 check (threads_completed >= 0),
   threads_gone integer not null default 0 check (threads_gone >= 0),
+
+  -- PROVIDER OVERFETCH, MEASURED.
+  --
+  -- The `messages.list` date query is deliberately WIDER than the run's window,
+  -- because Gmail searches at second resolution and the window has milliseconds
+  -- in it. Threads counted here were offered by that wider search and then
+  -- proved, from the fetched thread itself, to contain no SENT message inside
+  -- the exact window. Keeping the number separate is what lets an operator tell
+  -- provider DISCOVERY apart from exact candidate ACCEPTANCE.
+  threads_filtered_out integer not null default 0 check (threads_filtered_out >= 0),
   messages_stored integer not null default 0 check (messages_stored >= 0),
   messages_updated integer not null default 0 check (messages_updated >= 0),
 
@@ -263,8 +280,18 @@ create table private.gmail_historical_import_threads (
   -- Private provider metadata. Not shown in ordinary operator output.
   provider_thread_id text not null check (length(btrim(provider_thread_id)) > 0),
 
+  -- pending        claimable work
+  -- complete       fetched, confirmed sent-rooted, messages committed
+  -- gone           Gmail no longer has the thread
+  -- failed         a permanent provider error this item cannot pass
+  -- filtered_out   provider discovery offered it, and `threads.get` proved it
+  --                has NO SENT message inside the EXACT window. Terminal, and
+  --                NOT an error: the thread exists (so not `gone`), nothing
+  --                went wrong (so not `failed`), and it is not an import (so
+  --                not `complete`). It is Gmail's second-resolution search
+  --                being a deliberate superset of a millisecond-precise window.
   status text not null default 'pending'
-    check (status in ('pending', 'complete', 'gone', 'failed')),
+    check (status in ('pending', 'complete', 'gone', 'failed', 'filtered_out')),
 
   attempt_count integer not null default 0 check (attempt_count >= 0),
   next_attempt_at timestamptz not null default now(),
@@ -288,7 +315,7 @@ create table private.gmail_historical_import_threads (
   constraint gmail_historical_import_threads_run_thread_uk unique (run_id, provider_thread_id),
 
   constraint gmail_historical_import_threads_terminal_shape check (
-    (status in ('complete', 'gone', 'failed')) = (completed_at is not null)
+    (status in ('complete', 'gone', 'failed', 'filtered_out')) = (completed_at is not null)
   )
 );
 
@@ -1289,6 +1316,7 @@ declare
   v_updated integer := 0;
   v_existing private.gmail_raw_messages%rowtype;
   v_internal timestamptz;
+  v_has_exact_sent_root boolean;
 begin
   select r.* into v_run
     from private.gmail_historical_import_runs r
@@ -1340,12 +1368,17 @@ begin
     return jsonb_build_object('result', 'already_applied');
   end if;
 
+  -- SHAPE FIRST, so every later decision — including the candidacy proof below
+  -- — reads values that are known to be readable. An input this function cannot
+  -- parse is a caller error, and it is raised as one rather than silently
+  -- changing what gets stored.
   for v_msg in select * from jsonb_array_elements(coalesce(p_messages, '[]'::jsonb))
   loop
     if coalesce(btrim(v_msg ->> 'provider_message_id'), '') = ''
        or coalesce(btrim(v_msg ->> 'provider_thread_id'), '') = ''
        or (v_msg ->> 'internal_date') is null
        or (v_msg -> 'sanitized_payload') is null
+       or jsonb_typeof(coalesce(v_msg -> 'label_ids', 'null'::jsonb)) <> 'array'
        or coalesce(v_msg ->> 'payload_sha256', '') !~ '^[0-9a-f]{64}$' then
       raise exception 'gmail_historical_import_commit_thread received a malformed sanitized message'
         using errcode = 'invalid_parameter_value';
@@ -1360,7 +1393,76 @@ begin
         v_msg ->> 'provider_message_id', v_msg ->> 'provider_thread_id', p_provider_thread_id
         using errcode = 'integrity_constraint_violation';
     end if;
+  end loop;
 
+  -- =========================================================================
+  -- STAGE 2: EXACT SENT-ROOT CONFIRMATION, BEFORE A SINGLE ROW IS WRITTEN
+  -- =========================================================================
+  --
+  -- Stage 1 was provider discovery, and it is a SUPERSET on purpose: Gmail
+  -- searches at second resolution while the window has milliseconds in it, so
+  -- `after:` is nudged back and `before:` is rounded up. That is the only way
+  -- not to miss a true exact-window SENT — and it means Gmail can legitimately
+  -- offer a thread whose only SENT message lies OUTSIDE the window.
+  --
+  -- Filtering individual messages to `[start, end)` is not enough to make such
+  -- a thread safe. Consider a window ending 20:00:00.750 and a thread holding
+  -- an inbound reply at .500 and the creator's only SENT at .900: the message
+  -- filter drops the SENT and KEEPS THE INBOUND REPLY. B03 would then have
+  -- imported somebody's incoming mail from a conversation that was never a
+  -- candidate under its own acquisition rule.
+  --
+  -- So candidacy is re-proved here, exactly, and from the data about to be
+  -- committed rather than from anything the caller asserts. There is no
+  -- `p_is_candidate` parameter: a boolean supplied by the application would
+  -- make the application the authority on a privacy boundary, and in this block
+  -- the database is.
+  --
+  -- A DRAFT cannot be the root. The sanitizer drops drafts before they get
+  -- here, and this does not rely on that: a sentence somebody typed and never
+  -- sent is not evidence that anything was sent, wherever it is filtered.
+  select exists (
+    select 1
+      from jsonb_array_elements(coalesce(p_messages, '[]'::jsonb)) as m
+     where (m ->> 'internal_date')::timestamptz >= v_run.window_start_at
+       and (m ->> 'internal_date')::timestamptz < v_run.window_end_at
+       and (m -> 'label_ids') ? 'SENT'
+       and not ((m -> 'label_ids') ? 'DRAFT')
+  ) into v_has_exact_sent_root;
+
+  if not v_has_exact_sent_root then
+    -- ZERO raw messages. Not the inbound replies, not the out-of-window SENT,
+    -- nothing. The thread work item goes terminal with a state that says what
+    -- actually happened, and the same transaction that would have inserted the
+    -- rows is the one that decides not to.
+    update private.gmail_historical_import_threads
+       set status = 'filtered_out',
+           completed_at = now(),
+           last_error_code = null
+     where id = v_thread.id;
+
+    update private.gmail_historical_import_runs
+       set threads_filtered_out = threads_filtered_out + 1,
+           text_parts_omitted_external =
+             text_parts_omitted_external + greatest(coalesce(p_text_parts_omitted_external, 0), 0),
+           attachment_or_nontext_parts_omitted =
+             attachment_or_nontext_parts_omitted
+               + greatest(coalesce(p_attachment_or_nontext_parts_omitted, 0), 0),
+           estimated_gmail_quota_units =
+             estimated_gmail_quota_units + greatest(coalesce(p_quota_units, 0), 0),
+           last_error_code = null,
+           lease_token = null,
+           lease_expires_at = null,
+           lease_step = null,
+           lease_thread_id = null,
+           lease_authorization_revision = null
+     where id = p_run_id;
+
+    return jsonb_build_object('result', 'filtered_out', 'stored', 0, 'updated', 0);
+  end if;
+
+  for v_msg in select * from jsonb_array_elements(coalesce(p_messages, '[]'::jsonb))
+  loop
     v_internal := (v_msg ->> 'internal_date')::timestamptz;
 
     -- THE LOCAL WINDOW IS AUTHORITATIVE. Gmail's search decides what is
@@ -1979,6 +2081,7 @@ declare
   v_complete integer;
   v_gone integer;
   v_failed integer;
+  v_filtered integer;
 begin
   select r.* into v_run
     from private.gmail_historical_import_runs r
@@ -1991,8 +2094,9 @@ begin
   select count(*) filter (where status = 'pending'),
          count(*) filter (where status = 'complete'),
          count(*) filter (where status = 'gone'),
-         count(*) filter (where status = 'failed')
-    into v_pending, v_complete, v_gone, v_failed
+         count(*) filter (where status = 'failed'),
+         count(*) filter (where status = 'filtered_out')
+    into v_pending, v_complete, v_gone, v_failed, v_filtered
     from private.gmail_historical_import_threads
    where run_id = p_run_id;
 
@@ -2015,6 +2119,9 @@ begin
     'threads_completed', v_complete,
     'threads_gone', v_gone,
     'threads_failed', v_failed,
+    -- Provider overfetch, kept distinct from every other outcome: the thread
+    -- exists, nothing failed, and it was not an exact-window candidate.
+    'threads_filtered_out', v_filtered,
     'messages_stored', v_run.messages_stored,
     'messages_updated', v_run.messages_updated,
     'text_parts_omitted_external', v_run.text_parts_omitted_external,

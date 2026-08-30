@@ -524,6 +524,13 @@ export async function runOneImportStep(
     if (outcome.result === "ok" || outcome.result === "already_applied") {
       return { result: "progressed", step: "fetch_thread" };
     }
+    // NOT A REFUSAL AND NOT AN IMPORT. The database proved from the fetched
+    // thread that it holds no SENT message inside the exact window, so nothing
+    // was stored and the work item is terminal. Provider discovery is a
+    // deliberate superset; this is what the excess looks like when it arrives.
+    if (outcome.result === "filtered_out") {
+      return { result: "progressed", step: "thread_filtered_out" };
+    }
     return refusalOutcome(deps, input, outcome);
   } catch (error) {
     return recordProviderFailure(

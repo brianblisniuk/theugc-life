@@ -1,7 +1,7 @@
 # B03 — Gmail historical import: private, resumable, idempotent, sent-rooted
 
 Status: implemented in PR #35 (unmerged), amended in place under external audit
-amendment #1. Migration `0037_gmail_historical_import.sql`.
+amendments #1, #2, #3 and #4. Migration `0037_gmail_historical_import.sql`.
 Depends on: [`B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`](B01_GMAIL_DATA_BOUNDARY_CONTRACT.md)
 (migration `0035`), [`B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md`](B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md)
 (migration `0036`, merged as `f8d088b`), decisions D067 and D068.
@@ -37,8 +37,28 @@ network intelligence of any kind · sending mail.
 ## 2. What "sent-rooted" means, and why it is a CHECK constraint
 
 A thread is a candidate **iff the creator sent at least one message in it inside
-the window**. Enumeration is `users.messages.list` with `labelIds=SENT` and a
-bounded date expression; the thread ids of those messages are the work queue.
+the window**. Proving that takes TWO STAGES, because the provider cannot answer
+the question exactly.
+
+**Stage 1 — provider discovery.** `users.messages.list` with `labelIds=SENT` and
+a bounded date expression. Its date range is a deliberate SUPERSET (§3), so what
+it returns is a set of **PROVISIONAL** thread candidates. Its job is recall: not
+to miss a true exact-window SENT just because Gmail searches at second
+resolution.
+
+**Stage 2 — exact local confirmation.** After `threads.get` and runtime
+validation, look only at non-DRAFT messages whose `internalDate` lies inside
+`[window_start_at, window_end_at)`. The thread is a TRUE candidate **iff at least
+one of those carries Gmail's `SENT` label**. Only then may ANY message from it be
+persisted; if not, **zero** raw messages are stored and the work item becomes
+`filtered_out` (§9).
+
+Skipping stage 2 is not a small gap. With a window ending `20:00:00.750`, a
+thread holding an inbound reply at `.500` and the creator's only SENT at `.900`
+passes the per-message window filter for the REPLY and fails it for the SENT — so
+B03 would store somebody's incoming mail from a conversation that was never a
+candidate under its own rule. The same false positive exists at the lower edge,
+because `after:` is widened too.
 
 This is the difference between *acquiring the creator's outreach history* and
 *crawling their mailbox*. A newsletter, a personal conversation, and a booking
@@ -94,7 +114,8 @@ Gmail interprets at midnight Pacific). **No browser string, CLI free-text
 argument or database column reaches `q`** — a Gmail search query is a capability
 that can ask for anything in the mailbox.
 
-**The provider query is a SUPERSET of the local window, never a subset.** Gmail
+**The provider query is a SUPERSET of the local window, never a subset — and the
+excess is filtered locally, not by narrowing the query.** Gmail
 searches at second resolution; `window_end_at` is a database timestamp carrying
 milliseconds. Both bounds therefore round OUTWARD —
 `after: floor(start/1000) − 1`, `before: ceil(end/1000)` — so the request may
@@ -219,6 +240,13 @@ Gmail API permits, and stating it would be describing a system we do not have.
 
 ### Omissions are counted
 
+**The discovery counters mean discovery, not acceptance.** Because the provider
+query is a superset, `candidate_sent_messages_seen` means *SENT results returned
+by the outward search* — not exact-window SENT messages — and
+`unique_threads_discovered` means *provisional* thread candidates. Exact
+acceptance is `threads_completed`; exact rejection is `threads_filtered_out`. The
+status RPC reports all of them, as counts only: no provider ids, no content.
+
 `text_parts_omitted_external` and `attachment_or_nontext_parts_omitted` are kept
 on the run so a later evaluation can tell how much of the historical record B03
 could not see. An import that silently dropped half the bodies would otherwise
@@ -243,7 +271,7 @@ staff, deletion-addressable.
 All three B03 tables live in the `private` schema, which grants `USAGE` to
 nobody. `service_role` is `BYPASSRLS`, so RLS could never have protected these
 tables from the trusted role — **withholding schema usage is what does**. The
-only doors are twelve `SECURITY DEFINER` functions in `public`, each with a
+only doors are thirteen `SECURITY DEFINER` functions in `public`, each with a
 pinned `search_path`, each `EXECUTE`-granted to `service_role` alone, and each
 taking the owner as part of its **lookup** rather than comparing it afterwards.
 
@@ -504,6 +532,36 @@ provider message, no response body, no address ever enters an error column.
 work remains, and no permanently failed thread was ignored. A partial import is
 not a completed import, however tidy the counters look.
 
+### `filtered_out` — provider overfetch, named honestly
+
+A provisional candidate that stage 2 rejects becomes `filtered_out`. It is
+deliberately none of the other words:
+
+| not | because |
+| --- | --- |
+| `gone` | the Gmail thread exists |
+| `failed` | nothing failed |
+| `complete` | nothing was imported |
+
+It is terminal non-error work: `completed_at` is set, it creates no raw-message
+row, and it counts as no pending work. `threads_filtered_out` on the run makes
+the quantity visible.
+
+Completion therefore reads: **`completed` iff enumeration is complete, no work is
+pending, and no work failed** — `complete`, `gone` and `filtered_out` are all
+terminal. A run in which every provisional thread is filtered out legitimately
+`completed` with zero raw messages, and that says something true: *the exact
+sent-rooted import finished and none of Google's provisional edge candidates
+qualified.* It is not a failure, and it is not an empty mailbox.
+
+**The decision is atomic and database-derived.** It happens inside the very
+transaction that would otherwise insert the rows, so there is no state where a
+thread is `filtered_out` and its messages exist. And it is derived by
+`gmail_historical_import_commit_thread` from the sanitized rows it is about to
+commit — there is no `p_is_candidate` parameter, because a boolean supplied by
+the application would make the application the authority on a privacy boundary,
+and in this block the database is.
+
 **And the failure is written when it becomes true, not when somebody next
 looks.** A terminal thread failure fails the RUN in the same transaction that
 records it: `failed`, `phase = finished`, `completed_at` set, lease cleared. The
@@ -660,6 +718,25 @@ the attachment wording was carried into the code comments as well as the docs.
 - **A terminal thread failure left the run `runnable`** while the worker reported
   `failed`. Fixed by §9's same-transaction run failure.
 
+## 13d. External audit amendment #4
+
+- **The provider search is a superset, and sent-root eligibility was never
+  reconfirmed locally.** A thread whose only SENT message fell outside the exact
+  window was offered by the rounded query, had that SENT dropped by the
+  per-message filter, and had its in-window INBOUND reply stored. Reproduced at
+  both edges. Fixed by §2's stage-2 confirmation, derived by the database from
+  the rows it is about to commit, with `filtered_out` (§9) as the truthful
+  terminal state and `threads_filtered_out` as its counter. The provider query
+  was **not** narrowed.
+
+The same round corrected two pieces of documentation drift: this contract's
+header claimed only amendment #1 had landed, and §5 still said twelve
+`SECURITY DEFINER` functions when the audited surface has been thirteen since
+`validate_claim`. It also fixed a test-harness defect that had been hiding the
+new path: the RPC shim inferred parameter types from JavaScript values, so an
+EMPTY array was bound as a Postgres array even for a `jsonb` parameter. It now
+reads the declared signature from the catalog, as PostgREST does.
+
 ## 14. Verification
 
 - Migration replay: fresh `0001→0037`; populated main `0036→0037` with no drift
@@ -681,8 +758,10 @@ the attachment wording was carried into the code comments as well as the docs.
   (3). Amendment #3 added four more: removing the validator's row lock
   (3 failures), restoring first-occurrence-only MIME decisions (5), applying the
   filename filter to message headers (4), and letting a terminal thread failure
-  leave the run runnable (7). **Twenty-one negative controls in total**, and a
-  control that does not bite means the test was not binding.
+  leave the run runnable (7). Amendment #4 added one more: removing the exact
+  sent-root confirmation, which persists an inbound reply from a thread that was
+  never a candidate (11 failures). **Twenty-two negative controls in total**, and
+  a control that does not bite means the test was not binding.
 - No live Google call is made by any test. The provider is a fake that models
   paging, drafts, attachments, external bodies, vanished threads, rate limits and
   malformed responses.
