@@ -110,7 +110,7 @@ d("B03 private boundary (0037)", () => {
         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname like 'gmail\\_historical\\_import\\_%'
     `);
-    expect(res.rows.length).toBe(12);
+    expect(res.rows.length).toBe(13);
     for (const row of res.rows) {
       expect(row.prosecdef, row.proname).toBe(true);
       expect(
@@ -124,6 +124,7 @@ d("B03 private boundary (0037)", () => {
     const functions = [
       "public.gmail_historical_import_start(uuid,uuid,timestamptz)",
       "public.gmail_historical_import_claim_step(uuid,uuid,integer)",
+      "public.gmail_historical_import_validate_claim(uuid,uuid,uuid,bigint,text,text)",
       "public.gmail_historical_import_commit_page(uuid,uuid,uuid,bigint,text,text,text[],integer,integer)",
       "public.gmail_historical_import_commit_thread(uuid,uuid,uuid,bigint,text,jsonb,integer,integer,integer)",
       "public.gmail_historical_import_record_thread_gone(uuid,uuid,uuid,bigint,text,integer)",

@@ -177,11 +177,17 @@ describe("B03 sanitizer — what may be persisted", () => {
       WINDOW,
     );
     const headers = sanitized.messages[0]!.messageHeaders;
-    expect(Object.keys(headers).sort()).toEqual(["date", "from", "message-id", "subject", "to"]);
+    expect(headers.map((h) => h.name).sort()).toEqual([
+      "date",
+      "from",
+      "message-id",
+      "subject",
+      "to",
+    ]);
     // The provider's RAW value, unparsed: turning an address into a person is
     // B04's decision, and guessing it here would freeze the guess into the raw
     // layer.
-    expect(headers.from).toBe("Creator <creator@example.invalid>");
+    expect(headers.find((h) => h.name === "from")!.value).toBe("Creator <creator@example.invalid>");
     const json = asJson(sanitized);
     expect(json).not.toContain("X-Internal-Routing");
     expect(json).not.toContain("SHOULD BE DROPPED");
@@ -189,12 +195,13 @@ describe("B03 sanitizer — what may be persisted", () => {
 
   it("55. the digest is deterministic and independent of provider field order", async () => {
     const base = textMessage({ id: "det", threadId: "tA", internalDateMs: inside });
+    // JSON KEY order is an accident of parsing, not a fact about the message.
     const reordered = {
       internalDate: base.internalDate,
       threadId: base.threadId,
       payload: {
         body: base.payload!.body,
-        headers: [...base.payload!.headers!].reverse(),
+        headers: base.payload!.headers,
         filename: base.payload!.filename,
         mimeType: base.payload!.mimeType,
       },
@@ -207,6 +214,18 @@ describe("B03 sanitizer — what may be persisted", () => {
     const a = sanitizeThread(thread("tA", [base]), WINDOW).messages[0]!;
     const b = sanitizeThread(thread("tA", [reordered]), WINDOW).messages[0]!;
     expect(sanitizedMessageDigest(a)).toBe(sanitizedMessageDigest(b));
+
+    // HEADER OCCURRENCE ORDER IS NOT AN ACCIDENT, and since headers are stored
+    // losslessly as a list it is part of the snapshot. With a repeated field —
+    // two `To:` lines — order is the only thing distinguishing one arrangement
+    // from the other, and B03 has no business declaring them equivalent.
+    const headerOrderChanged = sanitizeThread(
+      thread("tA", [
+        { ...base, payload: { ...base.payload!, headers: [...base.payload!.headers!].reverse() } },
+      ]),
+      WINDOW,
+    ).messages[0]!;
+    expect(sanitizedMessageDigest(headerOrderChanged)).not.toBe(sanitizedMessageDigest(a));
 
     // A CHANGED SNAPSHOT IS A DIFFERENT DIGEST. Labels are the common case: a
     // message that moved to TRASH is the same message with a new provider state.

@@ -24,10 +24,20 @@ import { sanitizeThread, toCommitRow } from "@/lib/gmail/import/sanitizer";
  * the database holds the queue, the cursor and the lease, and this module is
  * only the thing that discharges one claimed unit of work.
  *
- * Every step is: claim → get a fresh access token through B02 → make exactly one
- * Gmail call → commit. If the process dies at any point, the lease expires and
- * the next worker claims the same work; the database's idempotence rules make
- * the replay safe.
+ * Every step is: claim → get a fresh access token through B02 → pace → REVALIDATE
+ * THE CLAIM → make exactly one Gmail call → commit. If the process dies at any
+ * point, the lease expires and the next worker claims the same work; the
+ * database's idempotence rules make the replay safe.
+ *
+ * The revalidation is the boundary of B03's cancellation guarantee, and it is
+ * worth stating exactly:
+ *
+ *   BEFORE it returns ok   a Disconnect, a withdrawn consent or a reclaimed
+ *                          lease prevents the READ from happening at all
+ *   AFTER  it returns ok   the operation is in flight. PostgreSQL cannot cancel
+ *                          a request already on the wire, and no lock would help
+ *                          — so the guarantee narrows to the one that is true:
+ *                          the RESULT may not be persisted.
  */
 
 export interface ImportDeps {
@@ -102,13 +112,25 @@ function commitRefusalToLifecycle(result: string | undefined): string {
 }
 
 /**
- * A conservative per-mailbox pace.
+ * A conservative per-mailbox pace, AND EXACTLY WHAT IT GUARANTEES.
  *
  * Google publishes a per-user ceiling; B03 plans against a lower number, because
  * a published limit is shared with every other client of that user and can
  * change. Correctness and provider safety matter more here than throughput: a
  * historical import is a burst against one mailbox, which is exactly the shape
  * that trips a rate limit.
+ *
+ * IT IS PROCESS-LOCAL, and calling it a per-mailbox rate limiter would overstate
+ * it. One `gmail:import:work` process paces ITSELF to the budget. Two
+ * independently started worker processes do not share a bucket, and nothing here
+ * is durable across restarts.
+ *
+ * That is acceptable for the pilot because the durable retry budget and the
+ * provider's own rate responses — not this pacer — are what actually stop a run
+ * that is asking for too much: a 429 is recorded, backed off with jitter, and
+ * bounded at five attempts, all in the database. B03 is not being widened into
+ * distributed infrastructure to make this class instead; it is being described
+ * accurately.
  */
 export class QuotaPacer {
   private windowStartMs: number;
@@ -261,6 +283,53 @@ async function refusalOutcome(
 }
 
 /**
+ * THE LAST THING BEFORE WE TOUCH GOOGLE.
+ *
+ * The commit fence protects the database. This protects the MAILBOX.
+ *
+ * Between claiming a step and making the request, a worker asks B02 for an
+ * access token and may wait out the quota pacer. A human can Disconnect in that
+ * gap. The lifecycle trigger cancels the run and clears the lease — but this
+ * process is still holding the claim in memory, and if the person later
+ * reconnects, B02 hands it a perfectly valid token for a mailbox that is once
+ * again connected. It would then read Gmail under an import intention that was
+ * cancelled. Nothing would be persisted, and a read would still have happened.
+ *
+ * "A cancelled run does not resume" is a promise about READING somebody's mail,
+ * not only about writing rows, so it is enforced where the reading starts.
+ *
+ * Returns true only if the claim is still exactly the claim we were given.
+ */
+async function claimStillValid(
+  deps: ImportDeps,
+  input: { userId: string; runId: string },
+  claim: {
+    leaseToken: string;
+    revision: number;
+    step: string;
+    providerThreadId: string | null;
+  },
+): Promise<{ ok: true } | { ok: false; outcome: StepOutcome }> {
+  const { data, error } = await deps.db.rpc("gmail_historical_import_validate_claim", {
+    p_user_id: input.userId,
+    p_run_id: input.runId,
+    p_lease_token: claim.leaseToken,
+    p_expected_authorization_revision: claim.revision,
+    p_expected_step: claim.step,
+    p_expected_provider_thread_id: claim.providerThreadId,
+  });
+
+  // A TRANSPORT FAILURE IS NOT PERMISSION. If we cannot prove the claim is still
+  // live, we do not read.
+  if (error)
+    return { ok: false, outcome: { result: "retry_scheduled", reason: "validate_failed" } };
+
+  const outcome = (data ?? {}) as DbRefusal;
+  if (outcome.result === "ok") return { ok: true };
+  return { ok: false, outcome: await refusalOutcome(deps, input, outcome) };
+}
+
+/**
  * PERFORM AT MOST ONE DURABLE STEP.
  *
  * Everything that matters is committed by the database, under a lease token and
@@ -352,6 +421,17 @@ export async function runOneImportStep(
 
   if (claimed.step === "enumerate_page") {
     await quota.reserve(MESSAGES_LIST_QUOTA_UNITS);
+
+    // AFTER the token, AFTER any pacing sleep, and IMMEDIATELY before the
+    // request. Anything earlier would leave exactly the gap this closes.
+    const live = await claimStillValid(deps, input, {
+      leaseToken,
+      revision,
+      step: "enumerate_page",
+      providerThreadId: null,
+    });
+    if (!live.ok) return live.outcome;
+
     try {
       const page = await deps.gmail.listSentMessages({
         accessToken,
@@ -401,6 +481,15 @@ export async function runOneImportStep(
   // fetch_thread
   const providerThreadId = claimed.provider_thread_id!;
   await quota.reserve(THREADS_GET_QUOTA_UNITS);
+
+  const live = await claimStillValid(deps, input, {
+    leaseToken,
+    revision,
+    step: "fetch_thread",
+    providerThreadId,
+  });
+  if (!live.ok) return live.outcome;
+
   try {
     const fetched = await deps.gmail.getThread({ accessToken, threadId: providerThreadId });
 

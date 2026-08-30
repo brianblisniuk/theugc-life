@@ -127,7 +127,7 @@ Provenance is kept without duplication: `first_import_run_id` and
 | `Content-Type`/`Content-Disposition`/`Content-Transfer-Encoding` on **every** part | any header value carrying a `name=`/`filename=` parameter — dropped whole |
 | `internalDate`, `labelIds`, `historyId`, `sizeEstimate` | `snippet`, `raw` |
 
-**4.1 Approved message headers:** `From`, `Sender`, `Reply-To`, `To`, `Cc`,
+**4.1 Approved message headers** (each occurrence kept, in provider order)**:** `From`, `Sender`, `Reply-To`, `To`, `Cc`,
 `Bcc`, `Subject`, `Date`, `Message-ID`, `In-Reply-To`, `References`. Values are
 preserved verbatim and **not parsed** — deciding who an address belongs to is
 B04's job, and doing it here would bake a guess into the raw layer.
@@ -140,19 +140,37 @@ may overwrite the other — writing the message headers into the part destroyed 
 charset and transfer encoding of the very body being stored, for the commonest
 shape of email there is.
 
+**Both are LISTS, and every approved occurrence survives.** Gmail exposes headers
+as a list and RFC 5322 messages — especially the historical and obsolete ones B03
+exists to import — can legitimately repeat a field. Reducing them into a
+`Record<string, string>` meant a second `To:` silently overwrote the first, which
+is B03 choosing which occurrence is the real one. That is interpretation, it is
+B04's to make, and B04 could never recover what was discarded here. Names are
+lower-cased for stable lookup, values are untouched, provider order is preserved,
+and nothing is concatenated or deduplicated.
+
 A part's body is persistable **only if** its MIME type is on the text list
 **and** the part is not NAMED **and** it has no `attachmentId` **and** its
 `Content-Disposition` is not `attachment`. Any one of those failing omits the
 body and records a reason (`attachment`, `non_text`, `external_body`).
 
-**A part is NAMED wherever the provider put the name.** `part.filename`, a
-`filename=` in `Content-Disposition`, or a `name=` in `Content-Type` all count,
-in any casing, quoted or not. Gmail frequently leaves `part.filename` empty while
-a disposition carries the name; trusting the field alone would let the provider's
-formatting choice decide the privacy posture. A filename-bearing header value is
-dropped whole rather than kept for its structural half — `boundary=` is not a
-filename and survives. **The sanitizer's failure mode is "kept less", never
-"stored something we should not".**
+**A part is NAMED wherever the provider put the name, in every form RFC 2231
+permits.** `part.filename`, or a name parameter in `Content-Disposition` or
+`Content-Type` — and the parameter may be plain (`filename=`), extended
+(`filename*=UTF-8''private.pdf`), continued (`filename*0=`, `filename*1=`) or
+both at once (`filename*0*=UTF-8''private-`, `filename*1*=name.txt`). All three
+extended forms occur in real historical mail, which is exactly the mail B03
+imports, and a guard that only knew `filename=` kept the header and treated the
+body as ordinary text.
+
+The value is therefore split on parameter boundaries and each ATTRIBUTE NAME is
+matched on its own against `^(?:file)?name(\*\d+)?\*?$`. Gmail frequently leaves
+`part.filename` empty while a disposition carries the name; trusting the field
+alone would let the provider's formatting choice decide the privacy posture. A
+filename-bearing header value is dropped whole rather than kept for its
+structural half — `boundary=` is an attribute, not a name, and survives. **The
+sanitizer's failure mode is "kept less", never "stored something we should
+not".**
 
 ### There is no separate attachment retrieval, and no attachment byte is stored
 
@@ -233,6 +251,37 @@ cancel a request already in flight, and B03 does not pretend otherwise. What it
 guarantees is the strongest honest property available:
 
 > **The response of a stale step may not be persisted.**
+
+### And a stale claim may not START a read
+
+The commit fence protects the database; it does not protect the mailbox. Between
+claiming a step and making the request a worker asks B02 for a token and may wait
+out the quota pacer, and a Disconnect in that gap cancels the run and clears the
+lease while the WORKER still holds the claim in memory. If the person then
+reconnects, B02 hands that worker a perfectly valid token and it reads Gmail
+under an import intention that was cancelled — nothing persisted, and a read that
+should never have happened.
+
+So the claim is revalidated **immediately before every provider call**, after the
+token and after any pacing wait, by
+`gmail_historical_import_validate_claim(user, run, lease, revision, step,
+thread)`. It proves the same things the commit fence proves — owner, run
+runnable, exact lease token, unexpired, exact step, exact thread for a
+`fetch_thread` and none for an `enumerate_page`, mailbox connected, consent
+granted and exact-scope, revision unchanged — and it mutates nothing. A failed
+preflight means **zero Gmail calls**.
+
+It takes **no row lock**. A lock held across a Gmail call would pin a PostgreSQL
+transaction to a third party's latency and would not buy the guarantee anyway.
+The boundary is stated instead of engineered away:
+
+| | |
+| --- | --- |
+| **before** the preflight returns `ok` | a cancellation, a withdrawn consent or a reclaimed lease prevents the READ |
+| **after** it returns `ok` | the operation is in flight; a cancellation prevents the RESULT being persisted |
+
+A paused run therefore requires an explicit **resume** before another provider
+read, not merely before another write.
 
 **Every claim-derived result names the revision it came from** — the successful
 commits, and equally `record_thread_gone`, `record_retry` and
@@ -382,12 +431,33 @@ now fails the PAGE. One bad entry fails the whole page rather than being dropped
 because a silently shrunken candidate set is invisible to everything downstream.
 An ABSENT `messages` key stays legitimate: Gmail omits it on an empty page.
 
-The same rule applies inside a thread: a **non-draft** message with no id, no
-thread id or an unparsable `internalDate` fails the fetch instead of vanishing.
-Skipping it and then marking the thread `complete` would record "this
-conversation contained these messages" about a conversation we could not fully
-read. Drafts are dropped before identity is ever needed, so nothing about them
-can be malformed.
+**Every field B03 relies on is validated at runtime, in one place**
+(`provider-shape.ts`), and a TypeScript cast over parsed JSON is not treated as a
+fact about what arrived. In particular `typeof [] === "object"`, so a top-level
+`200 []` once passed an object check and read as a successful final empty page;
+the top level must now be a non-array object. `messages` must be an array if
+present, each candidate an object with non-empty string `id` and `threadId`, and
+`nextPageToken` a non-empty string if present.
+
+The thread response is validated the same way: non-array object, non-empty `id`,
+`messages` **must be an array** (an absent one is a response we did not
+understand, not an empty conversation), and for every **non-draft** message a
+non-empty `id`, a `threadId` equal to the thread's own, a valid `internalDate`,
+a string `historyId` if present, a finite `sizeEstimate` if present, and a
+non-array object `payload` whose MIME tree is validated recursively — headers as
+a list of `{string name, string value}`, body as an object with optional string
+`attachmentId`/`data` and finite `size`, `parts` as an array of valid parts.
+
+**`internalDate` needed a real parser, not a coercion.** `Number("")`,
+`Number("   ")` and `Number(null)` are all `0`, so `Number.isFinite(Number(x))`
+accepted a message with no timestamp and stored it dated 1 January 1970 — a fact
+about somebody's conversation, invented by a coercion rule. The provider value
+must now be a non-empty decimal integer string that survives as a safe integer.
+
+**Nothing malformed is coerced into `[]`, `{}`, `0` or `null`.** A malformed
+non-draft message fails the fetch: the work item stays pending, then fails, and
+the run cannot reach `completed`. Drafts are established from their labels and
+dropped before their content is examined, so nothing about them can be malformed.
 
 Stored error codes are sanitized slugs matching `^[a-z][a-z0-9_]{0,63}$`. No
 provider message, no response body, no address ever enters an error column.
@@ -416,6 +486,16 @@ as **an estimate derived from published costs, not a billing statement**.
 Running at a published ceiling means treating a number that can change, and that
 every other client of the same user shares, as a guarantee. The pacer is
 server-side and typed; no request parameter reaches it.
+
+**What the pacer actually guarantees.** It is PROCESS-LOCAL. One
+`gmail:import:work` process paces itself to the budget; two independently started
+worker processes do not share a bucket, and nothing about it survives a restart.
+Calling it a durable per-mailbox rate limiter would be an overstatement, so it is
+not called one. What actually bounds a run that asks for too much is the durable
+half: a 429 is recorded on the run or the work item, backed off with jitter, and
+capped at five attempts, all in the database. Making pacing durable is possible
+and is deliberately not being done here — B03 is not being widened into
+distributed infrastructure for it.
 
 ---
 
@@ -494,6 +574,29 @@ Two smaller defects were found alongside them: an `inline; filename="…"`
 disposition could carry a filename past the attachment guard (§4), and a
 malformed provider response read as a successful empty result (§9).
 
+## 13b. External audit amendment #2
+
+Three merge-blocking gaps and one raw-completeness correction, each reproduced
+before it was fixed.
+
+- **A cancelled or paused claim could still START a new Gmail request.**
+  Amendment #1 made the lifecycle decision durable, but the worker holds the
+  claim in memory across the token acquisition and the pacer wait; after a
+  Disconnect→Reconnect, B02 would hand it a valid token and it would read Gmail
+  under a cancelled intention. Fixed by §6's pre-provider claim fence.
+- **Malformed-success validation was partial.** `typeof [] === "object"`, so a
+  top-level `200 []` read as a successful empty final page. Fixed by §9's strict
+  runtime validators, which also caught `Number("") === 0` dating a message to
+  1970.
+- **RFC 2231 extended and continued filenames bypassed the name guard.**
+  `filename*=UTF-8''private.pdf` and `filename*0*=…` kept both the header and the
+  body. Fixed by §4's attribute-level parameter check.
+- **Repeated approved headers lost occurrences.** A `Record<string, string>` kept
+  one `To:` of two. Fixed by §4's lossless header lists.
+
+The `QuotaPacer`'s real guarantee is now stated in §10 rather than implied, and
+the attachment wording was carried into the code comments as well as the docs.
+
 ## 14. Verification
 
 - Migration replay: fresh `0001→0037`; populated main `0036→0037` with no drift
@@ -509,7 +612,10 @@ malformed provider response read as a successful empty result (§9).
   disabling the revision fence on the result paths, flooring the upper search
   bound, letting message headers overwrite the part headers, silently dropping
   malformed entries, and trusting `part.filename` alone — and each of those bites
-  too. A control that does not bite means the test was not binding.
+  too. Amendment #2 added four more: removing the pre-provider claim validation
+  (5 failures), accepting array/coercible malformed provider shapes (6), dropping
+  RFC 2231 extended-name detection (7), and collapsing repeated approved headers
+  (3). A control that does not bite means the test was not binding.
 - No live Google call is made by any test. The provider is a fake that models
   paging, drafts, attachments, external bodies, vanished threads, rate limits and
   malformed responses.

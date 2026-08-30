@@ -1668,9 +1668,15 @@ top-level `MessagePart` is both the message and its only MIME part, and sharing
 one property destroyed the charset and transfer encoding of the body being
 stored. Never `raw`, never `snippet`, never `attachmentId`, never attachment
 bytes, and never a filename — a header value carrying a `name=`/`filename=`
-parameter is dropped whole, wherever the provider put it. `payload_sha256` is a
+parameter is dropped whole, wherever the provider put it. Both header
+namespaces are LISTS, not maps: Gmail exposes headers as a list and RFC 5322
+messages can repeat a field, so collapsing them would make B03 choose which
+occurrence is real — an interpretation B04 owns and could never undo. Names are
+lower-cased, values untouched, provider order preserved. `payload_sha256` is a
 digest of the canonicalized payload — metadata, so a replay can skip a
-meaningless write without comparing bodies.
+meaningless write without comparing bodies; header occurrence ORDER is part of
+that snapshot, because with a repeated field it is the only thing distinguishing
+one arrangement from another.
 
 `forbid_gmail_raw_message_thread_move()` fails closed if the same account/message
 id is ever presented under a different thread id. Gmail thread membership is part
@@ -1696,7 +1702,8 @@ LOOKUP:
 `gmail_historical_import_start` · `_claim_step` · `_commit_page` ·
 `_commit_thread` · `_record_thread_gone` · `_record_retry` · `_pause` ·
 `_cancel_connection_stopped` · `_resume` · `_commit_completion` · `_status` ·
-`_purge_for_deletion`.
+`_purge_for_deletion`; plus `gmail_historical_import_validate_claim`, the
+read-only pre-provider fence. Thirteen functions.
 
 `private.gmail_import_authorization_state(mail_account_id, expected_revision)` is
 the single may-we-read predicate, evaluated at claim time **and again at every
@@ -1707,6 +1714,17 @@ commit is a network call PostgreSQL cannot cancel, so the guarantee is the
 strongest honest one available — **the response of a stale step may not be
 persisted**. The revision is what makes it a compare-and-swap rather than a
 re-read: a state name can leave and return, a revision cannot go backwards.
+
+`gmail_historical_import_validate_claim(user, run, lease, revision, step, thread)`
+asks the SAME question one last time immediately before each provider call, after
+the access token and after any quota wait, and mutates nothing. The commit fence
+protects the database; this protects the mailbox — without it, a worker holding a
+claim across a Disconnect→Reconnect would be handed a valid token and would READ
+Gmail under a cancelled import, persisting nothing and still having read. It
+takes **no row lock**: a lock held across a Gmail call would pin a transaction to
+a third party's latency and would not buy the guarantee anyway. Before it returns
+`ok`, a cancellation prevents the read; after it, the operation is in flight and
+the guarantee narrows to "the result may not be persisted".
 
 Every claim-derived result carries it, not only the successful ones:
 `_record_thread_gone`, `_record_retry` and `_commit_completion` all require the

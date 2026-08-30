@@ -5,7 +5,11 @@ import {
   MESSAGES_LIST_QUOTA_UNITS,
   THREADS_GET_QUOTA_UNITS,
 } from "@/lib/gmail/import/contract";
-import { classifyGmailReadFailure, GmailReadError } from "@/lib/gmail/import/errors";
+import { classifyGmailReadFailure } from "@/lib/gmail/import/errors";
+import {
+  parseGmailListResponse,
+  parseGmailThreadResponse,
+} from "@/lib/gmail/import/provider-shape";
 import type { RawThread } from "@/lib/gmail/import/sanitizer";
 
 /**
@@ -17,9 +21,16 @@ import type { RawThread } from "@/lib/gmail/import/sanitizer";
  *
  * THERE IS NO ATTACHMENT METHOD. Not a disabled one, not a guarded one — the
  * interface has no way to express `users.messages.attachments.get`, so "B03
- * never fetches attachments" is a fact about the type rather than a promise
- * about the implementation. A future writer who wanted one would have to widen
- * this interface, which is a review, not an accident.
+ * performs no separate attachment retrieval and follows no `attachmentId`" is a
+ * fact about the type rather than a promise about the implementation. A future
+ * writer who wanted one would have to widen this interface, which is a review,
+ * not an accident.
+ *
+ * That is the precise claim, and it is not the same as "no attachment byte ever
+ * crosses the network": `format=full` can return inline `body.data` for a part
+ * Gmail did not give an external `attachmentId`, inside a thread response B03
+ * legitimately needs. Those bytes are discarded by the sanitizer before anything
+ * is written, and no attachment/named/non-text body is ever persisted.
  *
  * There is also no send, no modify, no label and no history method, for the same
  * reason.
@@ -88,15 +99,6 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function malformedList(): GmailReadError {
-  return new GmailReadError({
-    operation: "messages_list",
-    status: null,
-    reason: "malformed_response",
-    retryable: false,
-  });
-}
-
 function providerReason(body: unknown): unknown {
   const error = (body as { error?: { errors?: { reason?: unknown }[]; status?: unknown } })?.error;
   return error?.errors?.[0]?.reason ?? error?.status;
@@ -136,47 +138,14 @@ export const gmailHistoricalReadAdapter: GmailHistoricalReadAdapter = {
       );
     }
 
-    // A MALFORMED SUCCESS IS NOT AN EMPTY MAILBOX.
-    //
-    // A 200 whose body will not parse, or whose `messages` is not a list, or
-    // that names a candidate with no id, used to read as "enumeration finished,
-    // zero candidates" — indistinguishable from a creator who simply sent
-    // nothing. That is the worst possible reading: it would let a provider
-    // contract violation mark a run `completed` over history it never saw.
-    // Every one of these fails the PAGE instead, and the page is retried under
-    // the durable enumeration budget.
-    const body = await readJson(response);
-    if (body === null || typeof body !== "object") throw malformedList();
+    // A MALFORMED SUCCESS IS NOT AN EMPTY MAILBOX, and the check has to be a
+    // real one. `typeof [] === "object"`, so a `200 []` used to pass a
+    // `typeof body === "object"` guard and read as a successful, final, empty
+    // page. The whole response subset B03 relies on is now validated at
+    // runtime, in one shared place.
+    const page = parseGmailListResponse(await readJson(response));
 
-    const raw = body as { messages?: unknown; nextPageToken?: unknown };
-
-    // `messages` ABSENT is legitimate: Gmail omits the key on an empty page.
-    // `messages` present and not a list is not.
-    if (raw.messages !== undefined && !Array.isArray(raw.messages)) throw malformedList();
-
-    const candidates = (raw.messages ?? []).map((entry: unknown) => {
-      const candidate = entry as { id?: unknown; threadId?: unknown };
-      const messageId = typeof candidate?.id === "string" ? candidate.id.trim() : "";
-      const threadId = typeof candidate?.threadId === "string" ? candidate.threadId.trim() : "";
-      // ONE BAD ENTRY FAILS THE WHOLE PAGE. Dropping it would silently shrink
-      // the candidate set, and nothing downstream could ever tell.
-      if (messageId === "" || threadId === "") throw malformedList();
-      return { messageId, threadId };
-    });
-
-    if (raw.nextPageToken !== undefined) {
-      if (typeof raw.nextPageToken !== "string" || raw.nextPageToken.trim() === "") {
-        // The cursor is the only thing that decides whether enumeration is
-        // over. A malformed one must never be read as "no more pages".
-        throw malformedList();
-      }
-    }
-
-    return {
-      candidates,
-      nextPageToken: typeof raw.nextPageToken === "string" ? raw.nextPageToken : null,
-      quotaUnits: MESSAGES_LIST_QUOTA_UNITS,
-    };
+    return { ...page, quotaUnits: MESSAGES_LIST_QUOTA_UNITS };
   },
 
   async getThread({ accessToken, threadId }) {
@@ -203,15 +172,10 @@ export const gmailHistoricalReadAdapter: GmailHistoricalReadAdapter = {
       );
     }
 
-    const thread = (await readJson(response)) as RawThread | null;
-    if (!thread || typeof thread.id !== "string" || thread.id.trim() === "") {
-      throw new GmailReadError({
-        operation: "threads_get",
-        status: response.status,
-        reason: "malformed_response",
-        retryable: false,
-      });
-    }
+    // The same treatment for the thread: every field B03 uses is validated
+    // before its absence is allowed to mean absence. A thread with no message
+    // list is not an empty conversation, it is a response we did not understand.
+    const thread = parseGmailThreadResponse(await readJson(response)) as RawThread;
 
     return { thread, quotaUnits: THREADS_GET_QUOTA_UNITS };
   },

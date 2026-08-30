@@ -2289,9 +2289,17 @@ B03 legitimately needs, and the sanitizer discards them before anything is
 written. "No attachment byte ever crosses the network" would describe a system we
 do not have.
 
-Header values are preserved and NOT parsed. Deciding who an address belongs to is
-a later block's judgement, and making it here would bake a guess into the layer
-everything else is derived from.
+Header values are preserved and NOT parsed, and EVERY approved occurrence is
+kept. Deciding who an address belongs to is a later block's judgement, and so is
+deciding which of two `To:` lines in a historical message is the real one —
+storing headers in a map made B03 answer that question by silently keeping the
+last one. Gmail returns headers as a list, RFC 5322 permits the repetition, and
+what B03 discards here B04 can never recover.
+
+The same asymmetry governs the filename guard: a part is a file wherever the
+provider put the name, including every RFC 2231 extended and continued parameter
+form, because those forms appear in exactly the historical mail this block
+imports.
 
 The sanitizer's failure mode is deliberately asymmetric: when it cannot decide,
 it keeps LESS. Omissions are counted, so the gap in the historical record is
@@ -2317,6 +2325,25 @@ first content row exists rather than after.
 A withdrawn consent PAUSES the run; a disconnect or deletion CANCELS it. They are
 different human decisions and the system does not collapse them. Neither resumes
 by itself: restarting an import is a decision, not a consequence of reconnecting.
+
+### Stopping an import stops the READING, not only the writing
+
+Re-checking at commit time keeps a stale response out of the database. It does
+not stop the request that produced it. A worker holding a claim across a
+Disconnect and a later Reconnect would be handed a perfectly valid access token
+and would read somebody's mail under an import they had cancelled — nothing
+stored, and a read that should never have happened.
+
+"A cancelled run does not resume" is a promise about reading a person's mail, so
+it is enforced where reading starts: the claim is revalidated immediately before
+every provider call, after the token and after any pacing wait. A paused run
+therefore needs an explicit resume before another provider read, not merely
+before another write.
+
+The boundary is stated rather than engineered away, because no lock could move
+it: before that check passes, a cancellation prevents the read; after it, the
+request is in flight and the guarantee narrows to the one that is true — the
+result may not be persisted.
 
 ### And a human decision does not depend on whether anything was watching
 
@@ -2375,3 +2402,12 @@ provider query narrower than the window, and message headers that overwrote the
 MIME structural headers of single-part mail. The shape they share is the one B02
 learned seven times: a check that spans a gap must carry the value it checked,
 and a decision that spans a gap must be written down where the gap cannot reach.
+
+External audit amendment #2 (2026-08-29) added the pre-provider paragraph and the
+repeated-header rule above. Three gaps and one completeness defect: a cancelled
+claim could still start a new Gmail read; malformed-response validation was
+partial, because `typeof [] === "object"` and `Number("") === 0`; RFC 2231
+extended filenames walked past the name guard; and repeated approved headers lost
+occurrences. The first is the one worth remembering — a guarantee about a human's
+data has to be enforced where the data is touched, not only where it is written
+down.

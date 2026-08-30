@@ -92,14 +92,30 @@ export const GMAIL_DRAFT_LABEL = "DRAFT";
 /** Why a part's body was not persisted. Recorded so the gap is measurable. */
 export type OmissionReason = "attachment" | "non_text" | "external_body";
 
+/**
+ * One header occurrence, exactly as the provider gave it.
+ *
+ * A LIST, not a map, because Gmail exposes headers as a list and RFC 5322
+ * messages can legitimately repeat a field. Collapsing them into a map would
+ * make B03 choose which occurrence survives — an interpretation it promised to
+ * leave to B04, and one B04 could never undo.
+ *
+ * `name` is lower-cased so lookups are stable; `value` is untouched.
+ */
+export interface SanitizedHeader {
+  name: string;
+  value: string;
+}
+
 export interface SanitizedPart {
   mimeType: string;
   /**
    * The MIME frame of THIS part — charset, transfer encoding, multipart
    * boundary. Never the RFC message headers, and never a filename: a header
-   * value carrying a `name=`/`filename=` parameter is dropped whole.
+   * value carrying any RFC 2231 `name`/`filename` parameter form is dropped
+   * whole.
    */
-  headers?: Record<string, string>;
+  headers?: SanitizedHeader[];
   body?: { size: number; data: string };
   /** Present only for parts whose body data was NOT kept. */
   contentOmitted?: true;
@@ -124,8 +140,12 @@ export interface SanitizedMessage {
    * Gmail's top-level MessagePart is both the message AND its only MIME part.
    * Sharing one property meant the message headers overwrote the structural ones
    * for the commonest shape of email there is.
+   *
+   * Every approved occurrence survives, in provider order. Two `To:` lines are
+   * two entries; B03 does not decide which is the real one, and does not
+   * concatenate them.
    */
-  messageHeaders: Record<string, string>;
+  messageHeaders: SanitizedHeader[];
   payload: SanitizedPart;
 }
 

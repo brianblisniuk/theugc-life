@@ -611,6 +611,39 @@ The open implementation block is:
 > **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
 > Open PR, not merged, awaiting external audit and the human merge gate.**
 
+**B03 external audit amendment #2 (2026-08-29)** closed three further
+merge-blocking gaps and one raw-completeness defect against head `11a10f1`:
+
+- **A cancelled or paused claim could still START a new Gmail request.**
+  Amendment #1 made the lifecycle decision durable in the database; the worker
+  still held the claim in memory across the token acquisition and the quota wait.
+  Reproduced: claim, Disconnect, Reconnect, resume — B02 correctly returned a
+  fresh token for a mailbox that was connected again, and the worker read Gmail
+  under a cancelled import. Nothing was persisted and a read had happened. The
+  claim is now revalidated immediately before every provider call by a read-only
+  `gmail_historical_import_validate_claim`, which takes no lock, and the
+  in-flight boundary is stated: before it, cancellation prevents the READ; after
+  it, cancellation prevents PERSISTENCE.
+- **Malformed-success validation was partial.** `typeof [] === "object"`, so a
+  top-level `200 []` read as a successful empty final page — a provider contract
+  violation indistinguishable from a creator who sent nothing. Every field B03
+  uses is now validated at runtime in one place, including the whole MIME tree.
+  The same pass caught `Number("")`, `Number("  ")` and `Number(null)` all being
+  `0`, which had been dating undated messages to 1 January 1970 and storing them.
+- **RFC 2231 extended filenames bypassed the name guard.**
+  `filename*=UTF-8''private.pdf` and `filename*0*=…` kept both the header and the
+  body as ordinary text. The guard now matches parameter ATTRIBUTES, covering
+  extended, continued and encoded-continued forms at any index, while
+  `boundary=` remains structure.
+- **Repeated approved headers lost occurrences.** A `Record<string, string>` kept
+  one of two `To:` lines — B03 deciding which occurrence is real, which is
+  precisely the interpretation it promised to leave to B04 and which B04 could
+  never undo. Headers are now lossless lists, message and MIME alike.
+
+The `QuotaPacer` is now documented as what it is — process-local, not a durable
+per-mailbox limiter — and the attachment wording correction was carried into the
+code comments as well as the docs.
+
 **B03 external audit amendment #1 (2026-08-29)** closed five merge-blocking
 correctness gaps against head `52cf624`, each reproduced as real committed state
 on real PostgreSQL before it was fixed:
@@ -690,8 +723,11 @@ detail:
 - **The queue, the cursor and the worker lease live in PostgreSQL**, because a
   process is the thing that crashes. A lease is liveness (time); a revision is
   authorization currentness (causality); they stay separate mechanisms.
-- **The read interface has no attachment method at all** — so "B03 never fetches
-  attachments" is a fact about the type, not a promise about the implementation.
+- **The read interface has no attachment method at all** — so "no separate
+  attachment retrieval, no `attachmentId` followed" is a fact about the type, not
+  a promise about the implementation. Inline bytes can still arrive inside the
+  `threads.get` response B03 needs; the sanitizer discards them before anything
+  is written, and no attachment byte is ever persisted.
   The sanitizer is a whitelist whose failure mode is "kept less", and omissions
   are counted so the gap in the historical record is measurable.
 - **`deleted` becomes falsifiable here**, and is therefore enforced here: a

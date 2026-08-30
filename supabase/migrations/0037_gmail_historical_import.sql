@@ -1020,6 +1020,93 @@ $$;
 revoke all on function private.gmail_import_release_lease(uuid) from public;
 
 -- ---------------------------------------------------------------------------
+-- 5c-bis. THE FINAL CHECK BEFORE WE TOUCH GOOGLE
+-- ---------------------------------------------------------------------------
+-- THE COMMIT FENCE PROTECTS THE DATABASE. THIS PROTECTS THE MAILBOX.
+--
+-- A worker claims a step, then does several things that take time before it
+-- makes the provider call: it asks B02 for a fresh access token, and it may wait
+-- out the quota pacer. A human can Disconnect during that gap. The lifecycle
+-- trigger correctly cancels the run and clears the lease — but the WORKER is
+-- still holding the claim in memory, and if the person later reconnects, B02
+-- will hand it a perfectly valid access token for a mailbox that is once again
+-- connected. It then reads Gmail under an import intention that was cancelled.
+--
+-- Nothing is persisted; the commit fence sees to that. But a read happened, and
+-- "a cancelled run does not resume" is a promise about READING somebody's mail,
+-- not only about writing rows. A paused run is the same: it must require an
+-- explicit resume before another provider read, not merely before another write.
+--
+-- So this is asked LAST — after the token, after any pacing sleep, immediately
+-- before the request. It proves the same six things the commit fence proves, and
+-- it mutates nothing.
+--
+-- IT TAKES NO LOCK. A row lock held across a Gmail call would pin a PostgreSQL
+-- transaction to the latency of a third party, and the lock would not buy the
+-- guarantee anyway: a decision committed after this returns is the in-flight
+-- case, which no amount of locking can prevent and which the commit fence is
+-- there to catch. The honest boundary is stated rather than engineered away:
+--
+--   BEFORE this returns ok   a cancellation prevents the read
+--   AFTER  this returns ok   the operation is in flight; a cancellation
+--                            prevents the RESULT being persisted
+create or replace function public.gmail_historical_import_validate_claim(
+  p_user_id uuid,
+  p_run_id uuid,
+  p_lease_token uuid,
+  p_expected_authorization_revision bigint,
+  p_expected_step text,
+  p_expected_provider_thread_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_run private.gmail_historical_import_runs%rowtype;
+  v_guard text;
+begin
+  if p_expected_step not in ('enumerate_page', 'fetch_thread', 'complete_run') then
+    raise exception 'gmail_historical_import_validate_claim requires a known step'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- The owner is part of the LOOKUP, not a comparison afterwards.
+  select r.* into v_run
+    from private.gmail_historical_import_runs r
+   where r.id = p_run_id and r.user_id = p_user_id;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  v_guard := private.gmail_import_commit_guard(
+    v_run, p_lease_token, p_expected_step, p_expected_authorization_revision);
+
+  if v_guard = 'ok' then
+    -- THE STEP AND ITS SUBJECT MUST MATCH. A thread fetch names the thread the
+    -- lease was issued for; an enumeration names none. A worker about to fetch
+    -- T2 while holding a lease for T1 has already lost track of what it claimed.
+    if p_expected_step = 'fetch_thread' then
+      if p_expected_provider_thread_id is null
+         or v_run.lease_thread_id is distinct from p_expected_provider_thread_id then
+        v_guard := 'stale_lease';
+      end if;
+    elsif p_expected_provider_thread_id is not null then
+      v_guard := 'stale_lease';
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'result', v_guard,
+    'run_status', v_run.status,
+    'connection_state',
+    (select m.connection_state from public.mail_accounts m where m.id = v_run.mail_account_id));
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 5d. COMMIT ONE ENUMERATION PAGE
 -- ---------------------------------------------------------------------------
 -- ONE transaction: the discovered thread work AND the cursor advance. Splitting
@@ -2002,6 +2089,7 @@ begin
   foreach fn in array array[
     'public.gmail_historical_import_start(uuid,uuid,timestamptz)',
     'public.gmail_historical_import_claim_step(uuid,uuid,integer)',
+    'public.gmail_historical_import_validate_claim(uuid,uuid,uuid,bigint,text,text)',
     'public.gmail_historical_import_commit_page(uuid,uuid,uuid,bigint,text,text,text[],integer,integer)',
     'public.gmail_historical_import_commit_thread(uuid,uuid,uuid,bigint,text,jsonb,integer,integer,integer)',
     'public.gmail_historical_import_record_thread_gone(uuid,uuid,uuid,bigint,text,integer)',

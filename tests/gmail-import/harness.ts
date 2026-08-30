@@ -209,3 +209,20 @@ export function importDeps(client: Client, overrides: Partial<ImportDeps> = {}):
     ...overrides,
   };
 }
+
+/**
+ * One header occurrence, by name, from the lossless list B03 now stores.
+ *
+ * `headerValues` returns EVERY occurrence, because that is the property the
+ * storage shape exists to preserve — a test that only ever asked for the first
+ * could not tell a list from the map it replaced.
+ */
+export const headerValues = (
+  headers: { name: string; value: string }[] | undefined,
+  name: string,
+): string[] => (headers ?? []).filter((h) => h.name === name).map((h) => h.value);
+
+export const headerValue = (
+  headers: { name: string; value: string }[] | undefined,
+  name: string,
+): string | undefined => headerValues(headers, name)[0];

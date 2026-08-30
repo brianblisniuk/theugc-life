@@ -9,6 +9,7 @@ import { runImportUntilIdle, runOneImportStep } from "@/lib/gmail/import/worker.
 import { createFakeGmailRead, textMessage, thread } from "./fake-gmail-read";
 import {
   connectedMailbox,
+  headerValue,
   importDeps,
   rawMessages,
   rpc,
@@ -795,12 +796,14 @@ describe("E. single-part MIME structure survives", () => {
     // Gmail's top-level MessagePart is the message AND its only MIME part.
     // Overloading one `headers` property meant the second fact destroyed the
     // first for the commonest shape of email there is.
-    expect(sanitized.message.messageHeaders.subject).toBe("Collaboration");
-    expect(sanitized.message.messageHeaders.from).toBe("Creator <creator@example.invalid>");
-    expect(sanitized.message.payload.headers!["content-type"]).toBe(
+    expect(headerValue(sanitized.message.messageHeaders, "subject")).toBe("Collaboration");
+    expect(headerValue(sanitized.message.messageHeaders, "from")).toBe(
+      "Creator <creator@example.invalid>",
+    );
+    expect(headerValue(sanitized.message.payload.headers, "content-type")).toBe(
       "text/plain; charset=ISO-8859-1",
     );
-    expect(sanitized.message.payload.headers!["content-transfer-encoding"]).toBe(
+    expect(headerValue(sanitized.message.payload.headers, "content-transfer-encoding")).toBe(
       "quoted-printable",
     );
     expect(sanitized.message.payload.body!.data).toBe("aGVsbG8");
@@ -808,8 +811,8 @@ describe("E. single-part MIME structure survives", () => {
 
   it("E2. the same holds for text/html", () => {
     const sanitized = sanitizeMessage(singlePart("text/html"))!;
-    expect(sanitized.message.messageHeaders.subject).toBe("Collaboration");
-    expect(sanitized.message.payload.headers!["content-type"]).toBe(
+    expect(headerValue(sanitized.message.messageHeaders, "subject")).toBe("Collaboration");
+    expect(headerValue(sanitized.message.payload.headers, "content-type")).toBe(
       "text/html; charset=ISO-8859-1",
     );
   });
@@ -844,15 +847,15 @@ describe("E. single-part MIME structure survives", () => {
       },
     })!;
 
-    expect(sanitized.message.messageHeaders.subject).toBe("Two ways to read it");
+    expect(headerValue(sanitized.message.messageHeaders, "subject")).toBe("Two ways to read it");
     // A `boundary=` parameter is structure, not a filename, and it survives.
-    expect(sanitized.message.payload.headers!["content-type"]).toBe(
+    expect(headerValue(sanitized.message.payload.headers, "content-type")).toBe(
       'multipart/alternative; boundary="000abc"',
     );
-    expect(sanitized.message.payload.parts![0]!.headers!["content-transfer-encoding"]).toBe(
-      "base64",
-    );
-    expect(sanitized.message.payload.parts![1]!.headers!["content-type"]).toBe(
+    expect(
+      headerValue(sanitized.message.payload.parts![0]!.headers, "content-transfer-encoding"),
+    ).toBe("base64");
+    expect(headerValue(sanitized.message.payload.parts![1]!.headers, "content-type")).toBe(
       "text/html; charset=UTF-8",
     );
   });
@@ -938,7 +941,7 @@ describe("a filename is never persisted, wherever the provider put it", () => {
         parts: [],
       },
     })!;
-    expect(sanitized.message.payload.headers!["content-type"]).toBe(
+    expect(headerValue(sanitized.message.payload.headers, "content-type")).toBe(
       "multipart/mixed; boundary=--x--",
     );
   });
