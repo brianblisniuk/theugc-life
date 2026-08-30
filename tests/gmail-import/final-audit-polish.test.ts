@@ -1,8 +1,9 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { runImportUntilIdle } from "@/lib/gmail/import/worker.server";
+import { buildSentWindowQuery } from "@/lib/gmail/import/read-adapter.server";
 import type { RawMessage, RawThread } from "@/lib/gmail/import/sanitizer";
+import { runImportUntilIdle } from "@/lib/gmail/import/worker.server";
 
 import { createFakeGmailRead, textMessage } from "./fake-gmail-read";
 import { connectedMailbox, importDeps, rawMessages, rpc, runRow, threadRows } from "./harness";
@@ -13,7 +14,7 @@ import { connectedMailbox, importDeps, rawMessages, rpc, runRow, threadRows } fr
  * Amendment #4 already proves that exact SENT-root candidacy is scoped to a
  * run's fixed window. This regression makes the mailbox dimension explicit too:
  * the SAME Gmail thread on the SAME mail_account may be filtered out in one run
- * and accepted in a later run whose database-owned window now includes the SENT.
+ * and accepted in a later run whose explicit window now includes the SENT.
  *
  * That matters because `(mail_account_id, provider_message_id)` is the durable
  * raw identity, while candidacy is intentionally a property of each import run.
@@ -62,7 +63,6 @@ async function startRunOnMailbox(input: {
 
 async function importSingleThread(input: {
   userId: string;
-  mailAccountId: string;
   runId: string;
   thread: RawThread;
 }) {
@@ -85,19 +85,24 @@ async function importSingleThread(input: {
 d("B03 final audit polish", () => {
   it("re-evaluates the same provider thread on the same mailbox against each run's exact window", async () => {
     const mailbox = await connectedMailbox(client, "b03-final-same-mailbox");
-    const windowStartAt = new Date(Date.now() - 30 * DAY);
+    const firstWindowStartAt = new Date(Date.now() - 30 * DAY);
 
     const first = await startRunOnMailbox({
       userId: mailbox.userId,
       mailAccountId: mailbox.mailAccountId,
-      windowStartAt,
+      windowStartAt: firstWindowStartAt,
     });
 
-    // Deliberately just AFTER run one's DB-owned end. Provider discovery may
-    // still offer this thread because the Gmail search rounds outward, but the
-    // exact local SENT-root proof must reject it for run one.
-    const sentAt = first.endMs + 200;
-    const replyAt = sentAt + 100;
+    // The creator's SENT is 500 ms BEFORE run one's exact start while the reply
+    // is 100 ms inside it. The deliberately widened provider `after:` still
+    // offers the SENT, so this is a real provisional candidate whose exact local
+    // proof must reject the thread for run one.
+    const sentAt = first.startMs - 500;
+    const replyAt = first.startMs + 100;
+    const firstQuery = buildSentWindowQuery(first.startMs, first.endMs);
+    const afterSeconds = Number(/after:(\d+)/.exec(firstQuery)![1]);
+    expect(sentAt).toBeGreaterThan(afterSeconds * 1000);
+
     const thread: RawThread = {
       id: "t-same-mailbox-window",
       messages: [
@@ -114,7 +119,6 @@ d("B03 final audit polish", () => {
 
     const firstOutcome = await importSingleThread({
       userId: mailbox.userId,
-      mailAccountId: mailbox.mailAccountId,
       runId: first.runId,
       thread,
     });
@@ -122,21 +126,20 @@ d("B03 final audit polish", () => {
     expect((await threadRows(client, first.runId))[0].status).toBe("filtered_out");
     expect(await rawMessages(client, mailbox.mailAccountId)).toHaveLength(0);
 
-    // Keep the SAME mailbox. We only need database "now" to move beyond the two
-    // message timestamps so the next run's immutable window_end_at includes them.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
+    // SAME mailbox, NEW run, deliberately wider exact window. No reconnect and
+    // no new provider identity: only the run's window changes. The SENT and reply
+    // are now both inside [start,end), so the same thread must qualify.
     const second = await startRunOnMailbox({
       userId: mailbox.userId,
       mailAccountId: mailbox.mailAccountId,
-      windowStartAt,
+      windowStartAt: new Date(first.startMs - 1000),
     });
     expect(second.runId).not.toBe(first.runId);
+    expect(second.startMs).toBeLessThanOrEqual(sentAt);
     expect(second.endMs).toBeGreaterThan(replyAt);
 
     const secondOutcome = await importSingleThread({
       userId: mailbox.userId,
-      mailAccountId: mailbox.mailAccountId,
       runId: second.runId,
       thread,
     });
