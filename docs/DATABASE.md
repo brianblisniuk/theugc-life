@@ -1589,7 +1589,11 @@ Status is one of `runnable`, `paused_reauth`, `paused_consent`,
 `cancelled_connection_stopped`, `failed`, `completed`; phase is `enumerating`,
 `fetching`, `finished`. `completed` is the one that must not lie — it requires
 enumeration finished, no work outstanding and no permanently failed thread
-ignored. A partial import is not a completed import.
+ignored. A partial import is not a completed import, and the failure is durable
+the moment it happens: a terminal thread failure sets the RUN to `failed`,
+`finished`, `completed_at` and a cleared lease in the same transaction that marks
+the thread. Anything less left the worker reporting `failed` while the database
+said `runnable`, holding the active-run index for a mailbox nobody was importing.
 
 Counters only: candidate sent messages seen, unique threads discovered, threads
 completed, threads gone, messages stored, messages updated, and **two omission
@@ -1667,8 +1671,11 @@ The two header namespaces are separate because for a single-part message Gmail's
 top-level `MessagePart` is both the message and its only MIME part, and sharing
 one property destroyed the charset and transfer encoding of the body being
 stored. Never `raw`, never `snippet`, never `attachmentId`, never attachment
-bytes, and never a filename — a header value carrying a `name=`/`filename=`
-parameter is dropped whole, wherever the provider put it. Both header
+bytes, and never a filename — a STRUCTURAL header value carrying any RFC 2231
+`name`/`filename` parameter form is dropped whole, wherever the provider put it,
+and every occurrence is consulted rather than the first. The same filter is
+deliberately NOT applied to RFC message-header values: `Subject:
+filename=proposal.pdf` is a subject line, not a MIME parameter. Both header
 namespaces are LISTS, not maps: Gmail exposes headers as a list and RFC 5322
 messages can repeat a field, so collapsing them would make B03 choose which
 occurrence is real — an interpretation B04 owns and could never undo. Names are
@@ -1721,10 +1728,18 @@ the access token and after any quota wait, and mutates nothing. The commit fence
 protects the database; this protects the mailbox — without it, a worker holding a
 claim across a Disconnect→Reconnect would be handed a valid token and would READ
 Gmail under a cancelled import, persisting nothing and still having read. It
-takes **no row lock**: a lock held across a Gmail call would pin a transaction to
-a third party's latency and would not buy the guarantee anyway. Before it returns
-`ok`, a cancellation prevents the read; after it, the operation is in flight and
-the guarantee narrows to "the result may not be persisted".
+takes a SHORT `for no key update` lock on the run row and holds it only there: an
+unlocked read is not a serialization point, because under READ COMMITTED a plain
+`SELECT` answers from its statement's snapshot and a Disconnect committing during
+it is invisible. The run row is the right object to lock, since the lifecycle
+trigger updates that same row inside the Disconnect transaction — so a lifecycle
+change that gets there first makes the preflight wait and then refuse, and a
+preflight that gets there first makes the lifecycle change wait briefly. The lock
+is never held across a Gmail call, a token exchange or a quota sleep; pinning a
+transaction to a third party's latency would be a worse bug. Before the
+validation transaction commits `ok`, a cancellation prevents the read; after it,
+the operation is in flight and the guarantee narrows to "the result may not be
+persisted".
 
 Every claim-derived result carries it, not only the successful ones:
 `_record_thread_gone`, `_record_retry` and `_commit_completion` all require the

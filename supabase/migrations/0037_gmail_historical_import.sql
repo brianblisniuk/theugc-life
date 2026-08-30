@@ -1041,14 +1041,37 @@ revoke all on function private.gmail_import_release_lease(uuid) from public;
 -- before the request. It proves the same six things the commit fence proves, and
 -- it mutates nothing.
 --
--- IT TAKES NO LOCK. A row lock held across a Gmail call would pin a PostgreSQL
--- transaction to the latency of a third party, and the lock would not buy the
--- guarantee anyway: a decision committed after this returns is the in-flight
--- case, which no amount of locking can prevent and which the commit fence is
--- there to catch. The honest boundary is stated rather than engineered away:
+-- IT TAKES A SHORT LOCK, AND IT HOLDS IT ONLY HERE.
 --
---   BEFORE this returns ok   a cancellation prevents the read
---   AFTER  this returns ok   the operation is in flight; a cancellation
+-- An unlocked read is not a serialization point. Under READ COMMITTED a plain
+-- SELECT answers from the snapshot its statement began with, so a Disconnect
+-- that commits while this function is running is simply not seen: the preflight
+-- returns `ok`, the Disconnect lands a microsecond later, and the worker reads
+-- Gmail under an import that was already cancelled. The check would then be
+-- evidence about a moment that had passed rather than a decision about now.
+--
+-- `for no key update` on the RUN ROW is what fixes that, and the run row is
+-- exactly the right object to lock: the mailbox lifecycle trigger updates THAT
+-- SAME ROW inside the Disconnect/consent/reauth transaction, so the two
+-- operations genuinely contend.
+--
+--   Disconnect first   the lifecycle transaction holds the run row; this
+--                      function WAITS, then sees the cancelled run and refuses.
+--                      ZERO Gmail calls.
+--   Validator first    this function holds the row, validates, returns and
+--                      commits; the lock is released. A Disconnect that arrives
+--                      now blocks briefly at the trigger and then proceeds.
+--
+-- THE LOCK IS NOT HELD ACROSS GOOGLE. It lives for the duration of this one
+-- statement — no token exchange, no quota sleep, no `messages.list`, no
+-- `threads.get` happens while it is held. Pinning a PostgreSQL transaction to a
+-- third party's latency would be a different and worse bug.
+--
+-- From the moment this transaction commits successfully, the provider operation
+-- is IN FLIGHT for B03's cancellation guarantee:
+--
+--   BEFORE this commits ok   a cancellation prevents the read
+--   AFTER  this commits ok   the operation is in flight; a cancellation
 --                            prevents the RESULT being persisted
 create or replace function public.gmail_historical_import_validate_claim(
   p_user_id uuid,
@@ -1072,10 +1095,13 @@ begin
       using errcode = 'invalid_parameter_value';
   end if;
 
-  -- The owner is part of the LOOKUP, not a comparison afterwards.
+  -- The owner is part of the LOOKUP, not a comparison afterwards. The lock is
+  -- what makes the answer a decision about NOW rather than about the snapshot
+  -- this statement happened to start with.
   select r.* into v_run
     from private.gmail_historical_import_runs r
-   where r.id = p_run_id and r.user_id = p_user_id;
+   where r.id = p_run_id and r.user_id = p_user_id
+   for no key update;
 
   if not found then
     return jsonb_build_object('result', 'not_found');
@@ -1657,8 +1683,25 @@ begin
      where id = v_thread.id;
   end if;
 
+  -- A PERMANENTLY FAILED THREAD FAILS THE RUN, IN THIS TRANSACTION.
+  --
+  -- The alternative was a state where the worker had already reported `failed`
+  -- and the database still said `runnable` — the run holding the one-active-run
+  -- index for a mailbox nobody was importing, its true status recoverable only
+  -- by running `work` a second time so a later step could notice. The database
+  -- is the durable truth in this block, so the truth has to be written when it
+  -- becomes true, not when somebody next looks.
+  --
+  -- `completed` already means "nothing outstanding and nothing permanently
+  -- failed". This is the same rule enforced one step earlier: the moment a work
+  -- item can never succeed, the run can never be `completed`, so it is `failed`
+  -- now. Its pending siblings stay as historical evidence of the work that was
+  -- not done, and are unclaimable because a terminal run hands out no leases.
   update private.gmail_historical_import_runs
      set last_error_code = p_error_code,
+         status = case when v_terminal then 'failed' else status end,
+         phase = case when v_terminal then 'finished' else phase end,
+         completed_at = case when v_terminal then now() else completed_at end,
          estimated_gmail_quota_units =
            estimated_gmail_quota_units + greatest(coalesce(p_quota_units, 0), 0),
          lease_token = null,
@@ -1673,7 +1716,7 @@ begin
     'scope', 'thread',
     'attempt_count', coalesce(v_attempts, 0),
     'thread_failed', v_terminal,
-    'run_failed', false);
+    'run_failed', v_terminal);
 end;
 $$;
 
@@ -1893,6 +1936,10 @@ begin
     return jsonb_build_object('result', 'work_remaining', 'pending', v_pending);
   end if;
 
+  -- A FAIL-CLOSED BACKSTOP. Since a terminal thread failure fails the run in the
+  -- same transaction that records it, a run reaching this point with failed
+  -- threads should be unreachable. It is kept because the alternative to a
+  -- backstop here is a run that calls itself `completed` over work that failed.
   v_status := case when v_failed > 0 then 'failed' else 'completed' end;
 
   update private.gmail_historical_import_runs

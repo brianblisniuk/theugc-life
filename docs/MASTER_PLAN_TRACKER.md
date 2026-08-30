@@ -611,6 +611,33 @@ The open implementation block is:
 > **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
 > Open PR, not merged, awaiting external audit and the human merge gate.**
 
+**B03 external audit amendment #3 (2026-08-30)** closed three further
+merge-blocking gaps and one raw-completeness defect against head `a416ff1`:
+
+- **The pre-provider check was not linearizable.** Amendment #2 added it; it read
+  the run without a lock, and under READ COMMITTED a plain `SELECT` answers from
+  its statement's snapshot. Reproduced with two real sessions: a Disconnect
+  transaction whose lifecycle trigger had already cancelled the run, uncommitted;
+  the preflight did not wait, answered `ok`, and the Disconnect committed
+  immediately after. The documented guarantee was not established. The validator
+  now takes a short `for no key update` on the run row — the same row the
+  lifecycle trigger writes — so the two operations are genuinely ordered. The
+  lock is never held across Google, a token exchange or a quota sleep.
+- **MIME safety decisions read only the first header occurrence.** With duplicate
+  headers now preserved, `Content-Disposition: inline` followed by
+  `Content-Disposition: attachment; filename*=UTF-8''private.pdf` had its
+  filename correctly dropped from storage and its BODY persisted anyway. Every
+  decision now reads every occurrence and resolves conservatively.
+- **The MIME filename filter ran on RFC message-header values.** `Subject:
+  filename=proposal.pdf` was discarded — a privacy rule applied to the wrong
+  namespace, losing real content and protecting nothing. Message and MIME header
+  selection are now separate functions with separate rules.
+- **A terminal thread failure left the run `runnable`.** The worker reported
+  `failed` while the database said the run was live, holding the one-active-run
+  index for a mailbox nobody was importing, and only a second `work` command
+  could reconcile them. The run now fails in the same transaction that fails the
+  thread: one command, and the database says what the worker says.
+
 **B03 external audit amendment #2 (2026-08-29)** closed three further
 merge-blocking gaps and one raw-completeness defect against head `11a10f1`:
 

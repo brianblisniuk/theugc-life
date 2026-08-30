@@ -450,10 +450,9 @@ d("B03 thread fetch and message identity", () => {
       ],
     });
 
-    await runImportUntilIdle(
-      { userId: run.userId, runId: run.runId },
-      importDeps(client, { gmail }),
-    );
+    // ONE invocation. Amendment #3 made the terminal thread failure fail the run
+    // in the same transaction, so the operator does not have to run `work` again
+    // for the database to state what the worker already knows.
     await runImportUntilIdle(
       { userId: run.userId, runId: run.runId },
       importDeps(client, { gmail }),

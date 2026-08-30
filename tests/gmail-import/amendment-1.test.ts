@@ -1060,10 +1060,8 @@ d("F. malformed provider responses fail closed", () => {
       },
     });
 
-    await runImportUntilIdle(
-      { userId: run.userId, runId: run.runId, maxSteps: 20 },
-      importDeps(client, { gmail }),
-    );
+    // ONE invocation is enough since amendment #3: the terminal thread failure
+    // and the run failure are the same transaction.
     await runImportUntilIdle(
       { userId: run.userId, runId: run.runId, maxSteps: 20 },
       importDeps(client, { gmail }),

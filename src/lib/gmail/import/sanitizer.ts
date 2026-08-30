@@ -104,48 +104,61 @@ export function hasMimeNameParameter(value: string | undefined): boolean {
 }
 
 /**
- * THE APPROVED HEADERS, AS A LIST, LOSSLESSLY.
+ * THE APPROVED RFC MESSAGE HEADERS, LOSSLESSLY, AND WITH NO MIME FILTERING.
  *
  * Gmail exposes `MessagePart.headers` as a LIST, and RFC 5322 messages —
  * especially the historical and obsolete ones B03 is built to import — can
  * legitimately carry the same field more than once. Reducing them into a
  * `Record<string, string>` meant a second `To:` silently overwrote the first,
- * which is B03 deciding WHICH occurrence is the real one.
+ * which is B03 deciding WHICH occurrence is the real one: precisely the
+ * interpretation it promised to leave to B04, and one B04 could never undo.
  *
- * That is precisely the decision B03 promised not to make. It preserves provider
- * values and does not interpret people or addresses; choosing between two `To`
- * lines is interpretation, and B04 cannot recover what was thrown away here.
+ * AND THE MIME NAME GUARD MUST NOT RUN HERE. `name=` and `filename=` mean
+ * something as MIME PARAMETERS of `Content-Type` and `Content-Disposition`. In
+ * the VALUE of an approved message header they are just text a human wrote —
+ * `Subject: filename=proposal.pdf` is a subject line, and discarding it applied
+ * a privacy rule to the wrong namespace, losing real content for no gain.
  *
  * So: whitelist by name case-insensitively, normalise the stored NAME to lower
- * case, preserve the raw VALUE untouched, keep EVERY approved occurrence in
- * provider order, and concatenate nothing.
+ * case, preserve the raw VALUE verbatim, keep EVERY approved occurrence in
+ * provider order, concatenate nothing, and filter nothing on the value.
  */
-function pickHeaders(
-  headers: RawHeader[] | undefined,
-  allowed: readonly string[],
-): SanitizedHeader[] {
+function pickMessageHeaders(headers: RawHeader[] | undefined): SanitizedHeader[] {
   const kept: SanitizedHeader[] = [];
   for (const header of headers ?? []) {
     const name = lower(header?.name);
-    if (!name || !allowed.includes(name)) continue;
+    if (!name || !B03_ALLOWED_MESSAGE_HEADERS.includes(name)) continue;
     if (typeof header.value !== "string") continue;
-    // A HEADER THAT CARRIES A FILENAME IS DROPPED WHOLE.
-    //
-    // `Content-Disposition: inline; filename="offer-for-marina.pdf"` and
-    // `Content-Type: text/plain; name="notes.txt"` are structural headers that
-    // also happen to contain a fact about somebody's life. B03 has no use for a
-    // filename, so it does not keep one — not in a field of its own, and not
-    // smuggled inside a header it was keeping for another reason.
-    if (hasMimeNameParameter(header.value)) continue;
-    // Otherwise the provider's raw VALUE, unparsed. Turning "Alice <a@x>" into a
-    // person is B04's decision, and making it here would freeze a guess into the
-    // raw layer.
     kept.push({ name, value: header.value });
   }
   return kept;
 }
 
-/** The first occurrence of a header, for the sanitizer's own decisions. */
+/**
+ * THE APPROVED MIME STRUCTURAL HEADERS — where the name guard belongs.
+ *
+ * These describe the MIME frame: charset, transfer encoding, multipart
+ * boundary. Here a `name=`/`filename=` parameter really is a filename, and a
+ * header carrying one is dropped WHOLE rather than kept for its structural half.
+ * B03 has no use for a filename, so it does not keep one — not in a field of its
+ * own, and not smuggled inside a header it was keeping for another reason.
+ *
+ * Every remaining occurrence is preserved, for the same reason message headers
+ * are: choosing between two `Content-Type` lines is not B03's decision.
+ */
+function pickPartHeaders(headers: RawHeader[] | undefined): SanitizedHeader[] {
+  const kept: SanitizedHeader[] = [];
+  for (const header of headers ?? []) {
+    const name = lower(header?.name);
+    if (!name || !B03_ALLOWED_PART_HEADERS.includes(name)) continue;
+    if (typeof header.value !== "string") continue;
+    if (hasMimeNameParameter(header.value)) continue;
+    kept.push({ name, value: header.value });
+  }
+  return kept;
+}
+
+/** Every stored occurrence of one header, by name. */
 export function headerOccurrences(
   headers: readonly SanitizedHeader[] | undefined,
   name: string,
@@ -153,18 +166,34 @@ export function headerOccurrences(
   return (headers ?? []).filter((header) => header.name === name).map((header) => header.value);
 }
 
-function headerValue(headers: RawHeader[] | undefined, name: string): string {
+/**
+ * EVERY occurrence of a PROVIDER header, not the first one.
+ *
+ * "First header wins" is a reasonable rule for reading a value and a dangerous
+ * one for making a SAFETY decision. Now that duplicate MIME headers are admitted
+ * and preserved, a part can carry
+ *
+ *     Content-Disposition: inline
+ *     Content-Disposition: attachment; filename*=UTF-8''private.pdf
+ *
+ * and a first-occurrence check sees only `inline`. The filename-bearing header
+ * was correctly dropped from storage — and the BODY was persisted anyway, which
+ * is the part that matters. Every decision below therefore reads all of them and
+ * takes the conservative answer.
+ */
+function rawHeaderValues(headers: RawHeader[] | undefined, name: string): string[] {
+  const values: string[] = [];
   for (const header of headers ?? []) {
-    if (lower(header?.name) === name) return lower(header?.value);
+    if (lower(header?.name) === name && typeof header.value === "string") values.push(header.value);
   }
-  return "";
+  return values;
 }
 
-function rawHeaderValue(headers: RawHeader[] | undefined, name: string): string {
-  for (const header of headers ?? []) {
-    if (lower(header?.name) === name && typeof header.value === "string") return header.value;
-  }
-  return "";
+/** Does ANY occurrence of `Content-Disposition` say this part is an attachment? */
+function anyDispositionIsAttachment(headers: RawHeader[] | undefined): boolean {
+  return rawHeaderValues(headers, "content-disposition").some((value) =>
+    value.trim().toLowerCase().startsWith("attachment"),
+  );
 }
 
 /**
@@ -178,8 +207,12 @@ function rawHeaderValue(headers: RawHeader[] | undefined, name: string): string 
  */
 function partIsNamed(part: RawPart): boolean {
   if ((part.filename ?? "").trim() !== "") return true;
-  if (hasMimeNameParameter(rawHeaderValue(part.headers, "content-disposition"))) return true;
-  if (hasMimeNameParameter(rawHeaderValue(part.headers, "content-type"))) return true;
+  // ANY occurrence. Contradictory provider headers resolve towards "this is a
+  // file", because being wrong in that direction costs a body we did not keep,
+  // and being wrong in the other costs somebody's document.
+  for (const name of ["content-disposition", "content-type"] as const) {
+    if (rawHeaderValues(part.headers, name).some(hasMimeNameParameter)) return true;
+  }
   return false;
 }
 
@@ -191,8 +224,9 @@ function partIsNamed(part: RawPart): boolean {
  *   an exact text MIME type   `text/plain` or `text/html`. Not a prefix match:
  *                             `text/calendar` and friends are files with a
  *                             text-ish label
- *   not named                 a named part is a file, whatever its type and
- *                             wherever the provider put the name
+ *   not named                 a named part is a file, whatever its type,
+ *                             wherever the provider put the name, and in ANY
+ *                             occurrence of the header
  *   no attachmentId           Gmail is telling us the data lives elsewhere
  *   not dispositioned as an   the sender said it is an attachment; believe them
  *   attachment
@@ -201,14 +235,13 @@ function bodyIsPersistableText(part: RawPart): boolean {
   if (!B03_TEXT_MIME_TYPES.includes(lower(part.mimeType))) return false;
   if (partIsNamed(part)) return false;
   if (part.body?.attachmentId) return false;
-  if (headerValue(part.headers, "content-disposition").startsWith("attachment")) return false;
+  if (anyDispositionIsAttachment(part.headers)) return false;
   return true;
 }
 
 function omissionReasonFor(part: RawPart): OmissionReason {
   if (partIsNamed(part)) return "attachment";
-  if (headerValue(part.headers, "content-disposition").startsWith("attachment"))
-    return "attachment";
+  if (anyDispositionIsAttachment(part.headers)) return "attachment";
   if (B03_TEXT_MIME_TYPES.includes(lower(part.mimeType)) && part.body?.attachmentId) {
     // A TEXT BODY GMAIL STORED SEPARATELY.
     //
@@ -253,7 +286,7 @@ function sanitizePart(part: RawPart): PartResult {
   // beside a persisted body was that `Content-Disposition` smuggles filenames;
   // that leak is now closed at the header level by `pickHeaders`, so the
   // structure can be kept without the name.
-  const structuralHeaders = pickHeaders(part.headers, B03_ALLOWED_PART_HEADERS);
+  const structuralHeaders = pickPartHeaders(part.headers);
   if (structuralHeaders.length > 0) sanitized.headers = structuralHeaders;
 
   if (hasBodyData && bodyIsPersistableText(part)) {
@@ -304,7 +337,7 @@ export function sanitizeMessage(message: RawMessage): {
   // the transfer encoding of the very body being stored — for exactly the
   // commonest shape of email there is. They are separate fields because they are
   // separate facts, and neither may overwrite the other.
-  const messageHeaders = pickHeaders(message.payload?.headers, B03_ALLOWED_MESSAGE_HEADERS);
+  const messageHeaders = pickMessageHeaders(message.payload?.headers);
 
   return {
     message: {

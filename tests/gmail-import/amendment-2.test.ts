@@ -528,15 +528,16 @@ d("B. a malformed provider answer never completes a run", () => {
     });
     const deps = importDeps(client, { gmail });
 
-    for (let i = 0; i < 4; i += 1) {
-      await runOneImportStep({ userId: run.userId, runId: run.runId }, deps);
-    }
+    // Enumerate, then fetch. The fetch is permanently malformed, so the second
+    // step is where both the work item and the run go terminal — together.
+    await runOneImportStep({ userId: run.userId, runId: run.runId }, deps);
+    await runOneImportStep({ userId: run.userId, runId: run.runId }, deps);
 
     expect(await rawMessages(client, run.mailAccountId)).toHaveLength(0);
     const rows = await threadRows(client, run.runId);
     expect(rows[0].status).toBe("failed");
     expect(rows[0].last_error_code).toBe("malformed_response");
-    expect((await runRow(client, run.runId)).status).not.toBe("completed");
+    expect((await runRow(client, run.runId)).status).toBe("failed");
   });
 });
 

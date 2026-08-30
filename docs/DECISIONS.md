@@ -2298,8 +2298,16 @@ what B03 discards here B04 can never recover.
 
 The same asymmetry governs the filename guard: a part is a file wherever the
 provider put the name, including every RFC 2231 extended and continued parameter
-form, because those forms appear in exactly the historical mail this block
-imports.
+form, and in EVERY occurrence of the header rather than the first — contradictory
+provider headers resolve towards "this is a file", because being wrong that way
+costs a body we did not keep and being wrong the other way costs somebody's
+document.
+
+That guard belongs to MIME headers only. `name=` and `filename=` are parameters
+of `Content-Type` and `Content-Disposition`; in the value of an approved message
+header they are simply text a human wrote, and discarding `Subject:
+filename=proposal.pdf` applied a privacy rule to the wrong namespace — losing
+real content and protecting nothing.
 
 The sanitizer's failure mode is deliberately asymmetric: when it cannot decide,
 it keeps LESS. Omissions are counted, so the gap in the historical record is
@@ -2340,10 +2348,18 @@ every provider call, after the token and after any pacing wait. A paused run
 therefore needs an explicit resume before another provider read, not merely
 before another write.
 
-The boundary is stated rather than engineered away, because no lock could move
-it: before that check passes, a cancellation prevents the read; after it, the
-request is in flight and the guarantee narrows to the one that is true — the
-result may not be persisted.
+That check has to be an ORDERING, not an observation. An unlocked read answers
+from the snapshot it started with, so a Disconnect committing while it ran was
+invisible and the read went ahead anyway. It now takes a brief row lock on the
+run — the same row a lifecycle change writes — so the two are genuinely ordered:
+whichever arrives first, the other waits. The lock is never held across the
+provider call; pinning a database transaction to a third party's latency would
+trade one defect for a worse one.
+
+The boundary is then exact rather than approximate, and it is stated rather than
+engineered away, because no lock could move it: before that check commits, a
+cancellation prevents the read; after it, the request is in flight and the
+guarantee narrows to the one that is true — the result may not be persisted.
 
 ### And a human decision does not depend on whether anything was watching
 
@@ -2411,3 +2427,11 @@ extended filenames walked past the name guard; and repeated approved headers los
 occurrences. The first is the one worth remembering — a guarantee about a human's
 data has to be enforced where the data is touched, not only where it is written
 down.
+
+External audit amendment #3 (2026-08-30) made the pre-provider check an ordering
+rather than an observation, extended the MIME safety rules to every header
+occurrence, confined the filename guard to the MIME namespace, and made a
+terminal work-item failure fail the run in the same transaction. The last one is
+the general rule worth keeping: when the worker knows something has permanently
+failed and the database does not, the database is not the source of truth — it is
+a cache of the last time somebody looked.

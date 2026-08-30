@@ -140,6 +140,14 @@ may overwrite the other — writing the message headers into the part destroyed 
 charset and transfer encoding of the very body being stored, for the commonest
 shape of email there is.
 
+**The MIME name filter applies to MIME headers ONLY.** `name=` and `filename=`
+are parameters of `Content-Type` and `Content-Disposition`. In the value of an
+approved RFC message header they are text a human wrote: `Subject:
+filename=proposal.pdf` is a subject line, and discarding it applied a privacy
+rule to the wrong namespace — losing real content and protecting nothing. Message
+headers are whitelisted and preserved verbatim, with no value filtering;
+structural headers keep the guard.
+
 **Both are LISTS, and every approved occurrence survives.** Gmail exposes headers
 as a list and RFC 5322 messages — especially the historical and obsolete ones B03
 exists to import — can legitimately repeat a field. Reducing them into a
@@ -153,6 +161,18 @@ A part's body is persistable **only if** its MIME type is on the text list
 **and** the part is not NAMED **and** it has no `attachmentId` **and** its
 `Content-Disposition` is not `attachment`. Any one of those failing omits the
 body and records a reason (`attachment`, `non_text`, `external_body`).
+
+**Every MIME safety decision reads EVERY occurrence of the header, not the
+first.** Once duplicate headers are admitted and preserved, a part can carry
+`Content-Disposition: inline` followed by
+`Content-Disposition: attachment; filename*=UTF-8''private.pdf`. A
+first-occurrence check saw only `inline`; the filename-bearing header was
+correctly dropped from storage and the BODY was persisted anyway — which is the
+half that matters. Contradictory provider headers now resolve conservatively:
+any `attachment` disposition, or any name parameter on any `Content-Type` or
+`Content-Disposition` occurrence, means the body is not persisted. Being wrong in
+that direction costs a body we did not keep; being wrong in the other costs
+somebody's document.
 
 **A part is NAMED wherever the provider put the name, in every form RFC 2231
 permits.** `part.filename`, or a name parameter in `Content-Disposition` or
@@ -271,14 +291,32 @@ runnable, exact lease token, unexpired, exact step, exact thread for a
 granted and exact-scope, revision unchanged — and it mutates nothing. A failed
 preflight means **zero Gmail calls**.
 
-It takes **no row lock**. A lock held across a Gmail call would pin a PostgreSQL
-transaction to a third party's latency and would not buy the guarantee anyway.
-The boundary is stated instead of engineered away:
+**It takes a SHORT lock, and holds it only there.** An unlocked read is not a
+serialization point: under READ COMMITTED a plain `SELECT` answers from the
+snapshot its statement began with, so a Disconnect committing while the preflight
+ran was simply not seen — `ok` returned, the Disconnect landed a moment later,
+and the worker read Gmail under a cancelled import. The check was evidence about
+a moment that had passed rather than a decision about now.
+
+`for no key update` on the RUN ROW fixes that, and the run row is the right
+object: the lifecycle trigger updates that same row inside the
+Disconnect/consent/reauth transaction, so the two operations genuinely contend.
+
+| ordering | outcome |
+| --- | --- |
+| lifecycle transaction first | the preflight WAITS, then sees the stopped run and refuses — **zero Gmail calls** |
+| validator first | it holds the row, validates, returns and commits; the lock is released and a Disconnect proceeds |
+
+The lock is **never held across Google**. It lives for the duration of that one
+statement — no token exchange, no quota sleep, no `messages.list`, no
+`threads.get` happens while it is held. Pinning a PostgreSQL transaction to a
+third party's latency would be a different and worse bug. The boundary is then
+exact rather than approximate:
 
 | | |
 | --- | --- |
-| **before** the preflight returns `ok` | a cancellation, a withdrawn consent or a reclaimed lease prevents the READ |
-| **after** it returns `ok` | the operation is in flight; a cancellation prevents the RESULT being persisted |
+| **before** the validation transaction commits `ok` | a cancellation, a withdrawn consent or a reclaimed lease prevents the READ |
+| **after** it commits `ok` | the operation is in flight; a cancellation prevents the RESULT being persisted |
 
 A paused run therefore requires an explicit **resume** before another provider
 read, not merely before another write.
@@ -466,6 +504,17 @@ provider message, no response body, no address ever enters an error column.
 work remains, and no permanently failed thread was ignored. A partial import is
 not a completed import, however tidy the counters look.
 
+**And the failure is written when it becomes true, not when somebody next
+looks.** A terminal thread failure fails the RUN in the same transaction that
+records it: `failed`, `phase = finished`, `completed_at` set, lease cleared. The
+alternative was a state where the worker had already reported `failed` and the
+database still said `runnable` — the run holding the one-active-run index for a
+mailbox nobody was importing, its real status recoverable only by running `work`
+a second time so a later step could notice. The database is the durable truth in
+this block, so one `work` command is enough. Pending siblings of a failed thread
+stay as evidence of work that was not done, and are unclaimable because a
+terminal run hands out no leases.
+
 ---
 
 ## 10. Quota
@@ -597,6 +646,20 @@ before it was fixed.
 The `QuotaPacer`'s real guarantee is now stated in §10 rather than implied, and
 the attachment wording was carried into the code comments as well as the docs.
 
+## 13c. External audit amendment #3
+
+- **The preflight was not linearizable.** It read the run without a lock, so a
+  Disconnect committing during it was invisible and `ok` was returned anyway.
+  Fixed by §6's short `for no key update` serialization point, proved with two
+  real PostgreSQL sessions and `pg_blocking_pids`.
+- **MIME safety decisions read only the first header occurrence.** A second
+  `Content-Disposition: attachment; filename*=…` was dropped from storage while
+  its body was kept. Fixed by §4's all-occurrence rule.
+- **The MIME filename filter ran on RFC message-header values**, discarding
+  `Subject: filename=proposal.pdf`. Fixed by §4's namespace separation.
+- **A terminal thread failure left the run `runnable`** while the worker reported
+  `failed`. Fixed by §9's same-transaction run failure.
+
 ## 14. Verification
 
 - Migration replay: fresh `0001→0037`; populated main `0036→0037` with no drift
@@ -615,7 +678,11 @@ the attachment wording was carried into the code comments as well as the docs.
   too. Amendment #2 added four more: removing the pre-provider claim validation
   (5 failures), accepting array/coercible malformed provider shapes (6), dropping
   RFC 2231 extended-name detection (7), and collapsing repeated approved headers
-  (3). A control that does not bite means the test was not binding.
+  (3). Amendment #3 added four more: removing the validator's row lock
+  (3 failures), restoring first-occurrence-only MIME decisions (5), applying the
+  filename filter to message headers (4), and letting a terminal thread failure
+  leave the run runnable (7). **Twenty-one negative controls in total**, and a
+  control that does not bite means the test was not binding.
 - No live Google call is made by any test. The provider is a fake that models
   paging, drafts, attachments, external bodies, vanished threads, rate limits and
   malformed responses.
