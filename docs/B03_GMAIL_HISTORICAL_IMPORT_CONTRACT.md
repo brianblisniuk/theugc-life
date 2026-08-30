@@ -105,7 +105,7 @@ performed.
 ### Two filters, and only one of them is authoritative
 
 Gmail's `q` decides what the provider **offers**. The local `internalDate`
-comparison against `[window_start_at, window_end_at]` decides what is
+comparison against `[window_start_at, window_end_at)` decides what is
 **persisted**, and it is authoritative. Gmail's date search is approximate and
 timezone-laden; the stored record must not be.
 
@@ -118,12 +118,15 @@ that can ask for anything in the mailbox.
 excess is filtered locally, not by narrowing the query.** Gmail
 searches at second resolution; `window_end_at` is a database timestamp carrying
 milliseconds. Both bounds therefore round OUTWARD —
-`after: floor(start/1000) − 1`, `before: ceil(end/1000)` — so the request may
-overfetch by under a second at each edge and the exact local filter removes the
-excess. Rounding the upper bound inward made the request narrower than the window
-it served: with an end of `20:00:00.750`, a sent message at `20:00:00.500` was
-inside the authoritative interval and Gmail was never asked for it. **A message
-enumeration never returned cannot be recovered by any local filter.**
+`after: floor(start/1000) − 1`, `before: ceil(end/1000)`. The upper edge can
+overfetch by under one second; the deliberately widened lower edge can overfetch
+by nearly two seconds in the worst case (the fractional remainder below
+`floor(start/1000)` plus the extra one-second nudge). The exact local filter
+removes both excesses. Rounding the upper bound inward made the request narrower
+than the window it served: with an end of `20:00:00.750`, a sent message at
+`20:00:00.500` was inside the authoritative interval and Gmail was never asked
+for it. **A message enumeration never returned cannot be recovered by any local
+filter.**
 
 ---
 
