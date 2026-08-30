@@ -287,8 +287,8 @@ is B02.
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | B01 | **DONE** — PR #33, merge `d4a9e81d` | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
-| B02 | **IN PROGRESS** — open PR, not merged | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
-| B03 | GATED | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
+| B02 | **DONE** — PR #34, merge `f8d088b9` | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
+| B03 | **IN PROGRESS** — open PR, not merged | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | GATED | sent/reply/time-to-reply extraction | qualifying human reply semantics explicit; auto/delivery noise separated |
@@ -608,9 +608,190 @@ At this baseline, Phase A is closed at the code gate:
 
 The open implementation block is:
 
-> **B02 — Gmail OAuth connection, reconnect and disconnect. Open PR #34, not
-> merged, on external audit amendment #7, awaiting re-audit and the human merge
-> gate.**
+> **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
+> Open PR, not merged, awaiting external audit and the human merge gate.**
+
+**B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
+privacy-boundary defect against head `de4ba0e`:
+
+- **The provider search is a deliberate superset, and sent-root eligibility was
+  never reconfirmed locally.** Gmail searches at second resolution while the
+  window is millisecond-precise, so `after:` is nudged back and `before:` rounded
+  up — correctly, and that means `messages.list` can offer a thread whose only
+  SENT message lies OUTSIDE the exact window. Reproduced at both edges: with a
+  window ending `…00.750`, a thread holding an inbound reply at `…00.500` and the
+  creator's only SENT at `…00.900` had the SENT dropped by the per-message filter
+  and **the inbound reply stored**. B03 had imported somebody's incoming mail
+  from a conversation that was never a candidate under its own acquisition rule.
+  Candidacy is now proved in TWO stages: provider discovery yields PROVISIONAL
+  candidates, and after `threads.get` the database re-proves — from the sanitized
+  rows it is about to commit, with no caller-supplied boolean — that at least one
+  non-DRAFT message inside `[start, end)` carries `SENT`. If not, zero raw
+  messages are written and the work item becomes `filtered_out`, a terminal
+  non-error state counted by `threads_filtered_out`. The provider query was not
+  narrowed; narrowing it would trade a privacy defect for a recall defect.
+
+The same round corrected documentation drift (the contract header claimed only
+amendment #1 had landed; §5 still said twelve definer functions when the surface
+has been thirteen since `validate_claim`) and a test-harness defect that had been
+hiding the new path — the RPC shim inferred parameter types from JavaScript
+values, so an EMPTY array bound as a Postgres array even for a `jsonb` parameter.
+It now reads the declared signature from the catalog, as PostgREST does.
+
+**B03 external audit amendment #3 (2026-08-30)** closed three further
+merge-blocking gaps and one raw-completeness defect against head `a416ff1`:
+
+- **The pre-provider check was not linearizable.** Amendment #2 added it; it read
+  the run without a lock, and under READ COMMITTED a plain `SELECT` answers from
+  its statement's snapshot. Reproduced with two real sessions: a Disconnect
+  transaction whose lifecycle trigger had already cancelled the run, uncommitted;
+  the preflight did not wait, answered `ok`, and the Disconnect committed
+  immediately after. The documented guarantee was not established. The validator
+  now takes a short `for no key update` on the run row — the same row the
+  lifecycle trigger writes — so the two operations are genuinely ordered. The
+  lock is never held across Google, a token exchange or a quota sleep.
+- **MIME safety decisions read only the first header occurrence.** With duplicate
+  headers now preserved, `Content-Disposition: inline` followed by
+  `Content-Disposition: attachment; filename*=UTF-8''private.pdf` had its
+  filename correctly dropped from storage and its BODY persisted anyway. Every
+  decision now reads every occurrence and resolves conservatively.
+- **The MIME filename filter ran on RFC message-header values.** `Subject:
+  filename=proposal.pdf` was discarded — a privacy rule applied to the wrong
+  namespace, losing real content and protecting nothing. Message and MIME header
+  selection are now separate functions with separate rules.
+- **A terminal thread failure left the run `runnable`.** The worker reported
+  `failed` while the database said the run was live, holding the one-active-run
+  index for a mailbox nobody was importing, and only a second `work` command
+  could reconcile them. The run now fails in the same transaction that fails the
+  thread: one command, and the database says what the worker says.
+
+**B03 external audit amendment #2 (2026-08-29)** closed three further
+merge-blocking gaps and one raw-completeness defect against head `11a10f1`:
+
+- **A cancelled or paused claim could still START a new Gmail request.**
+  Amendment #1 made the lifecycle decision durable in the database; the worker
+  still held the claim in memory across the token acquisition and the quota wait.
+  Reproduced: claim, Disconnect, Reconnect, resume — B02 correctly returned a
+  fresh token for a mailbox that was connected again, and the worker read Gmail
+  under a cancelled import. Nothing was persisted and a read had happened. The
+  claim is now revalidated immediately before every provider call by a read-only
+  `gmail_historical_import_validate_claim`, which takes no lock, and the
+  in-flight boundary is stated: before it, cancellation prevents the READ; after
+  it, cancellation prevents PERSISTENCE.
+- **Malformed-success validation was partial.** `typeof [] === "object"`, so a
+  top-level `200 []` read as a successful empty final page — a provider contract
+  violation indistinguishable from a creator who sent nothing. Every field B03
+  uses is now validated at runtime in one place, including the whole MIME tree.
+  The same pass caught `Number("")`, `Number("  ")` and `Number(null)` all being
+  `0`, which had been dating undated messages to 1 January 1970 and storing them.
+- **RFC 2231 extended filenames bypassed the name guard.**
+  `filename*=UTF-8''private.pdf` and `filename*0*=…` kept both the header and the
+  body as ordinary text. The guard now matches parameter ATTRIBUTES, covering
+  extended, continued and encoded-continued forms at any index, while
+  `boundary=` remains structure.
+- **Repeated approved headers lost occurrences.** A `Record<string, string>` kept
+  one of two `To:` lines — B03 deciding which occurrence is real, which is
+  precisely the interpretation it promised to leave to B04 and which B04 could
+  never undo. Headers are now lossless lists, message and MIME alike.
+
+The `QuotaPacer` is now documented as what it is — process-local, not a durable
+per-mailbox limiter — and the attachment wording correction was carried into the
+code comments as well as the docs.
+
+**B03 external audit amendment #1 (2026-08-29)** closed five merge-blocking
+correctness gaps against head `52cf624`, each reproduced as real committed state
+on real PostgreSQL before it was fixed:
+
+- **Enumeration retries were neither bounded nor durable.** `record_retry` only
+  incremented an attempt when a provider thread was named — right for
+  `threads.get`, meaningless for `messages.list`, which has no work item.
+  Reproduced: twelve consecutive 429s left the run `runnable` with no attempt
+  count and no schedule anywhere, and a non-retryable 400 passing
+  `max_attempts = 1` failed nothing. The run now carries
+  `enumeration_attempt_count`/`enumeration_next_attempt_at` for the current
+  cursor, the claim enforces the backoff, five failures end the run and a
+  successful page resets the budget.
+- **A human lifecycle decision existed only if a worker observed it.**
+  Reproduced: Disconnect, then Reconnect, with nothing polling in between — the
+  next claim saw only the current row, said `connected`, and handed out a lease.
+  The Disconnect had happened and B03 held no record of it. A lifecycle change is
+  not an event to be observed but a thing that HAPPENS: a narrow trigger now
+  carries the transition into the runs inside the same transaction that moved the
+  mailbox. `connected` deliberately does nothing — reconnecting answers "may we
+  read your mail again", not "please resume the import you stopped".
+- **Failure and completion paths escaped the fence.** `record_thread_gone` was
+  called with a NULL revision, `record_retry` had no revision parameter at all,
+  and `commit_completion` had none either. Reproduced: a 404 from revision N
+  marked work `gone` under revision N+2. Every claim-derived result now names its
+  revision, a NULL is refused outright, and a lease names one thread.
+- **A fractional `window_end_at` made the provider query narrower than the
+  window.** Flooring both bounds meant a sent message at `20:00:00.500` was
+  inside a window ending `20:00:00.750` and Gmail was never asked for it — and no
+  local filter can recover a message enumeration never returned. Both bounds now
+  round outward.
+- **Message headers overwrote MIME structural headers.** For a single-part
+  message Gmail's top-level MessagePart is both the RFC message and its only MIME
+  part, so writing From/To/Subject into `payload.headers` destroyed the charset
+  and transfer encoding of the body being stored — for the commonest shape of
+  email there is. Two namespaces now, and neither overwrites the other.
+
+Two smaller defects were found alongside them and closed: an
+`inline; filename="…"` disposition could carry a filename past the attachment
+guard (the guard trusted `part.filename`, which Gmail frequently leaves empty),
+and a malformed provider response read as a successful empty result — a 200 that
+will not parse is not an empty mailbox. The attachment wording was also corrected
+to what the Gmail API actually permits: **no separate attachment retrieval and no
+attachment bytes persisted**, rather than a claim that no attachment byte can
+cross the network inside a thread response B03 legitimately needs.
+
+**B03 (2026-08-29)** adds migration `0037_gmail_historical_import.sql` — the
+first Gmail CONTENT this system stores — plus the sanitizer, the narrow read
+adapter, the durable worker and the operator CLI. Contract:
+[`B03_GMAIL_HISTORICAL_IMPORT_CONTRACT.md`](B03_GMAIL_HISTORICAL_IMPORT_CONTRACT.md);
+decision: **D068**.
+
+What B03 decides, and why each is a decision rather than an implementation
+detail:
+
+- **Sent-rooted acquisition.** A thread is a candidate only if the creator sent
+  into it inside the window. That is the line between importing an outreach
+  history and crawling a mailbox, so it is a CHECK constraint
+  (`acquisition_strategy = 'sent_rooted_threads_v1'`) rather than a behaviour a
+  later writer could change by passing a different argument. Once a thread IS a
+  candidate the whole in-window thread is acquired — a conversation with the
+  replies removed cannot answer whether a hotel replied.
+- **The window is fixed at creation, and the DATABASE fixes its end.** B03
+  invents no lookback: which windows a human is offered is a product decision.
+  And a worker re-reading "now" per restart would import a window that grows
+  while it runs, so two resumptions of one run would not be the same operation.
+- **Message identity is `(mailbox, provider message id)`, not `(run, message)`.**
+  One Gmail message is one row across every import; keying on the run would store
+  ten snapshots of one fact and make every later layer guess which is current.
+- **Permission is re-checked at EVERY commit under an authorization-revision
+  compare-and-swap.** PostgreSQL cannot cancel a Gmail request already in flight,
+  so the guarantee is the strongest honest one: the response of a stale step may
+  not be persisted. This is B02's thrice-learned lesson applied before the first
+  content row exists rather than after an audit found it missing.
+- **A withdrawn consent pauses; a disconnect or deletion cancels.** Different
+  human decisions, not collapsed. Neither resumes by itself.
+- **The queue, the cursor and the worker lease live in PostgreSQL**, because a
+  process is the thing that crashes. A lease is liveness (time); a revision is
+  authorization currentness (causality); they stay separate mechanisms.
+- **The read interface has no attachment method at all** — so "no separate
+  attachment retrieval, no `attachmentId` followed" is a fact about the type, not
+  a promise about the implementation. Inline bytes can still arrive inside the
+  `threads.get` response B03 needs; the sanitizer discards them before anything
+  is written, and no attachment byte is ever persisted.
+  The sanitizer is a whitelist whose failure mode is "kept less", and omissions
+  are counted so the gap in the historical record is measurable.
+- **`deleted` becomes falsifiable here**, and is therefore enforced here: a
+  deferred constraint trigger on `mail_accounts` and on all three B03 tables
+  refuses to commit a `deleted` mailbox that still has import data.
+
+`0037` refuses to install over pre-existing tables of its own names, and imports
+nothing itself. **No real Gmail account was connected, no real email was read, no
+attachment was fetched and no live Google call was made in any test.**
+
 
 **B02 external audit amendment #7 (2026-08-28)** closed one merge-blocking
 concurrency gap and two result-truth corrections against head `7f41a9a`:
@@ -778,6 +959,27 @@ findings against head `99833bd`, all reproduced as real committed states first:
 - Disconnect loaded the encrypted credential for a browser-supplied mailbox id
   and compared owners afterwards. User-initiated actions now use an owner-bound
   RPC where the authenticated user is part of the lookup.
+
+**B02 is DONE and merged.** PR #34, final audited head `1adf575`, merged as
+`f8d088b98586c39dca5290d16116ff63e464ccd1`, with 2,050 tests passing at the
+audited head. It passed on the SEVENTH external audit amendment, and the shape of
+those seven rounds is itself the finding worth keeping: every one of them was a
+compare-and-swap missing across a gap where the system had to leave the database
+and talk to Google, and each was reproduced as real committed state on real
+PostgreSQL before it was fixed. What B02 established, and what B03 now builds on:
+
+- an encrypted refresh token in a `private` schema no client role holds `USAGE`
+  on — `service_role` is `BYPASSRLS`, so withholding schema usage, not RLS, is
+  what protects it;
+- thirteen definer-rights RPCs, each pinning `search_path` and each taking the
+  owner as part of the lookup;
+- `authorization_revision` as a database-owned causality token, and the
+  `credential_generation` / `disconnect_intent_seq` compare-and-swaps that make a
+  stale worker's write refusable rather than merely unlikely;
+- one may-we-read chokepoint that returns a fresh access token or an honest
+  refusal, which is the only Gmail authorization surface B03 is permitted to use;
+- and B02 imported nothing: no message, thread, attachment or sync table exists
+  at `f8d088b`, which is precisely the gap B03 fills.
 
 **B01 is DONE and merged.** PR #33, final audited head
 `699c07b651303406cd4131376c15f62cfb33adf0`, merged as

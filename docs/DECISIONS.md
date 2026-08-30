@@ -2217,3 +2217,251 @@ transaction, must renew private-processing consent when it adds `gmail.send`, an
 must treat a retired mail account as gone rather than reusable, and must handle a
 refused connection when the Google account is already owned by a different app
 user.
+
+## D068 — Historical Gmail acquisition is sent-rooted, window-fixed and private
+Status: Accepted — decides what B03 is allowed to ask Google for, and what may
+enter the database as a result
+Depends on D067; implemented by migration `0037_gmail_historical_import.sql`
+
+B03 is the first block that stores Gmail **content**. D067 decided the scopes and
+the consents; this decides the acquisition rule, and it is a product decision
+rather than an implementation detail because it determines what the system knows
+about a creator forever after.
+
+### A thread is a candidate only if the creator wrote into it
+
+Enumeration is `users.messages.list` restricted to Gmail's `SENT` label inside a
+bounded date range. A conversation the creator never wrote into is not outreach,
+and the system does not acquire it.
+
+This is the line between *importing a creator's outreach history* and *crawling
+their mailbox*. Newsletters, personal correspondence and a family holiday booking
+all sit in the same inbox; none become candidates. Requesting `gmail.readonly`
+buys the ability to read everything, and D067 already accepted that cost for the
+one capability the product needs — the acquisition rule is where the system
+chooses not to exercise it.
+
+Once a thread IS a candidate, the whole thread inside the window is acquired,
+including messages the creator did not send. A conversation with the replies
+removed is not a conversation, and every later layer that wants to know whether a
+hotel answered would be reading a record that structurally cannot say.
+
+### And candidacy is proved twice, because the provider cannot prove it once
+
+Gmail searches at second resolution while the window is millisecond-precise, so
+the search is deliberately widened at both ends. What `messages.list` returns is
+therefore PROVISIONAL: it can legitimately include a thread whose only SENT
+message falls outside the window.
+
+Filtering each message to the exact interval does not make such a thread safe —
+it removes the out-of-window SENT and keeps the in-window INBOUND reply, which is
+somebody's incoming mail from a conversation that was never a candidate. So after
+the thread is fetched, candidacy is re-proved exactly: at least one non-draft
+message inside `[start, end)` must carry `SENT`, or nothing from that thread is
+stored at all.
+
+The proof belongs to the database, derived from the rows it is about to write,
+and not to a boolean the caller passes in. A privacy boundary asserted by the
+layer that wants to cross it is not a boundary.
+
+A thread rejected this way is `filtered_out`: not `gone` (Gmail has it), not
+`failed` (nothing failed), not `complete` (nothing was imported). A run in which
+every provisional candidate is filtered out completes with zero messages, and
+that is a true and useful outcome rather than an error.
+
+The rule is stored as `acquisition_strategy = 'sent_rooted_threads_v1'` under a
+database CHECK that admits no other value. Widening it is a contract change, and
+it has to look like one rather than being reachable by passing a different
+argument.
+
+### A draft is not communication
+
+Messages carrying Gmail's `DRAFT` label are dropped entirely — not stored, not
+counted. A draft is a sentence somebody typed and did not send. Treating one as
+outreach would bias every future timing, reply and outcome measurement in the
+same direction, and the bias would be invisible because the record would look
+complete.
+
+### The window is decided by a human, once, and never grows
+
+B03 does not invent 12, 24 or 36 months, and does not offer "all history". Which
+lookbacks a creator is offered is a product decision that belongs in the product,
+and hiding one in a pipeline is how it becomes permanent without anyone deciding
+it. The caller supplies the start; the DATABASE fixes the end at creation.
+
+That second half matters as much as the first. A worker that re-read "now" on
+each restart would be importing a window that grows while it runs, so two
+resumptions of one import would not be the same operation — and a partially
+completed run could never be honestly described.
+
+### What is stored is a sanitized snapshot, never a mailbox copy
+
+One deterministic sanitizer, in one place, decides what may enter the database:
+the approved RFC message headers, the MIME structural headers of each part,
+inline `text/plain` and `text/html` bodies, and the structure of everything
+omitted. Never Gmail's `raw` format, never `snippet`, never an `attachmentId`,
+never attachment bytes, and never a filename — wherever the provider put it.
+
+The read interface has **no attachment method at all** — not a disabled one — so
+that is a property of the type rather than a promise about the implementation.
+Stated precisely, because the imprecise version would be a claim the Gmail API
+does not support: B03 never calls `users.messages.attachments.get`, never follows
+an `attachmentId`, and never persists body data for an attachment, a non-text or
+a named part. Inline non-text bytes CAN arrive inside the `threads.get` response
+B03 legitimately needs, and the sanitizer discards them before anything is
+written. "No attachment byte ever crosses the network" would describe a system we
+do not have.
+
+Header values are preserved and NOT parsed, and EVERY approved occurrence is
+kept. Deciding who an address belongs to is a later block's judgement, and so is
+deciding which of two `To:` lines in a historical message is the real one —
+storing headers in a map made B03 answer that question by silently keeping the
+last one. Gmail returns headers as a list, RFC 5322 permits the repetition, and
+what B03 discards here B04 can never recover.
+
+The same asymmetry governs the filename guard: a part is a file wherever the
+provider put the name, including every RFC 2231 extended and continued parameter
+form, and in EVERY occurrence of the header rather than the first — contradictory
+provider headers resolve towards "this is a file", because being wrong that way
+costs a body we did not keep and being wrong the other way costs somebody's
+document.
+
+That guard belongs to MIME headers only. `name=` and `filename=` are parameters
+of `Content-Type` and `Content-Disposition`; in the value of an approved message
+header they are simply text a human wrote, and discarding `Subject:
+filename=proposal.pdf` applied a privacy rule to the wrong namespace — losing
+real content and protecting nothing.
+
+The sanitizer's failure mode is deliberately asymmetric: when it cannot decide,
+it keeps LESS. Omissions are counted, so the gap in the historical record is
+measurable rather than silent — an import that dropped half the bodies must not
+look identical to one that captured everything.
+
+### Permission is re-checked at every commit, not once at the start
+
+Between deciding to fetch a thread and storing it there is a network call, and a
+human can disconnect their mailbox or withdraw consent while it is in flight.
+PostgreSQL cannot cancel a request already on the wire and B03 does not pretend
+otherwise. What the system guarantees instead is the strongest honest property
+available: **the response of a stale step may not be persisted.**
+
+Four conditions are re-evaluated at every commit — the mailbox is still
+`connected`, private-processing consent is still granted, that consent still
+covers the current scope set, and B02's `authorization_revision` has not moved.
+The revision is what makes this a compare-and-swap rather than a re-read: a
+connection state can leave and come back, but a revision cannot go backwards.
+This is the same lesson B02's audits produced three times, applied before the
+first content row exists rather than after.
+
+A withdrawn consent PAUSES the run; a disconnect or deletion CANCELS it. They are
+different human decisions and the system does not collapse them. Neither resumes
+by itself: restarting an import is a decision, not a consequence of reconnecting.
+
+### Stopping an import stops the READING, not only the writing
+
+Re-checking at commit time keeps a stale response out of the database. It does
+not stop the request that produced it. A worker holding a claim across a
+Disconnect and a later Reconnect would be handed a perfectly valid access token
+and would read somebody's mail under an import they had cancelled — nothing
+stored, and a read that should never have happened.
+
+"A cancelled run does not resume" is a promise about reading a person's mail, so
+it is enforced where reading starts: the claim is revalidated immediately before
+every provider call, after the token and after any pacing wait. A paused run
+therefore needs an explicit resume before another provider read, not merely
+before another write.
+
+That check has to be an ORDERING, not an observation. An unlocked read answers
+from the snapshot it started with, so a Disconnect committing while it ran was
+invisible and the read went ahead anyway. It now takes a brief row lock on the
+run — the same row a lifecycle change writes — so the two are genuinely ordered:
+whichever arrives first, the other waits. The lock is never held across the
+provider call; pinning a database transaction to a third party's latency would
+trade one defect for a worse one.
+
+The boundary is then exact rather than approximate, and it is stated rather than
+engineered away, because no lock could move it: before that check commits, a
+cancellation prevents the read; after it, the request is in flight and the
+guarantee narrows to the one that is true — the result may not be persisted.
+
+### And a human decision does not depend on whether anything was watching
+
+Re-checking at every commit stops a stale response being stored. It does not
+record that a person decided something. Disconnect and then reconnect with no
+worker running in between and every question the next worker can ask is answered
+by the current row, which says `connected` — so the run carries on and the
+Disconnect leaves no trace anywhere.
+
+That is not a race to be narrowed; it is the wrong model. A lifecycle change is
+not an event to be observed, it is a thing that HAPPENS, and it now carries the
+import runs with it inside the same transaction that moved the mailbox.
+Reconnecting still does nothing to a stopped run: it answers "may we read your
+mail again", not "please resume the import you stopped".
+
+### The provider is asked for MORE than the window, never less
+
+Gmail searches at second resolution and the window ends on a database timestamp
+with milliseconds in it, so the search bounds round OUTWARD. The query may
+overfetch by under a second at each edge and the exact local filter removes the
+excess. Rounding inward is not a smaller version of the same behaviour — it makes
+the request narrower than the window it serves, and **a message enumeration never
+returned cannot be recovered by any filter downstream of it**.
+
+The same asymmetry decides how a malformed provider response is read. A 200 whose
+body will not parse, or that names a candidate with no id, must not read as
+"enumeration finished, zero candidates": that is indistinguishable from a creator
+who simply sent nothing, and it would let a provider contract violation mark a
+run `completed` over history it never saw. Absence of email is a claim about
+somebody's life, and B03 does not make it on the strength of a broken response.
+
+### `deleted` becomes falsifiable here
+
+B01 defined `deleted` as an assertion that stored Gmail data was removed, at a
+time when no Gmail data could exist. B03 is the first layer that can make that
+assertion false, so it is the first layer that enforces it: a deferred constraint
+trigger registered on every table that can write refuses to let a transaction
+commit with a mailbox marked `deleted` while any run, work item or message
+survives for it.
+
+### What this does not decide
+
+Whether an import starts automatically when a mailbox connects (it does not
+today — every run is created by an explicit call); which windows the product
+offers; and anything at all about normalization, hotel matching, reply detection,
+outcomes or aggregation. Gmail-derived data remains Gmail-derived under D067's
+Limited Use rules, whatever any later block computes from it.
+
+External audit amendment #1 (2026-08-29) added the durable-lifecycle, outward
+rounding and malformed-response paragraphs above, plus the precise attachment
+wording. Five correctness gaps were reproduced as real committed state before
+being closed — enumeration retries that were neither bounded nor durable, a
+Disconnect that existed only if a worker observed it, failure and completion
+paths that escaped the authorization fence, a fractional window end that made the
+provider query narrower than the window, and message headers that overwrote the
+MIME structural headers of single-part mail. The shape they share is the one B02
+learned seven times: a check that spans a gap must carry the value it checked,
+and a decision that spans a gap must be written down where the gap cannot reach.
+
+External audit amendment #2 (2026-08-29) added the pre-provider paragraph and the
+repeated-header rule above. Three gaps and one completeness defect: a cancelled
+claim could still start a new Gmail read; malformed-response validation was
+partial, because `typeof [] === "object"` and `Number("") === 0`; RFC 2231
+extended filenames walked past the name guard; and repeated approved headers lost
+occurrences. The first is the one worth remembering — a guarantee about a human's
+data has to be enforced where the data is touched, not only where it is written
+down.
+
+External audit amendment #3 (2026-08-30) made the pre-provider check an ordering
+rather than an observation, extended the MIME safety rules to every header
+occurrence, confined the filename guard to the MIME namespace, and made a
+terminal work-item failure fail the run in the same transaction. The last one is
+the general rule worth keeping: when the worker knows something has permanently
+failed and the database does not, the database is not the source of truth — it is
+a cache of the last time somebody looked.
+
+External audit amendment #4 (2026-08-30) added the two-stage candidacy rule
+above. The outward provider search was correct and stayed; what was missing was
+the exact local proof after it, without which B03 stored inbound mail from
+threads that had no in-window sent root. The general shape is one this block has
+met before: a query deliberately imprecise for recall needs an exact check before
+its results become facts, and that check belongs where the facts are written.

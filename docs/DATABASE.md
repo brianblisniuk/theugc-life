@@ -1557,6 +1557,232 @@ and no envelope is ever assembled.
 **0036 connects no mailbox, opens no OAuth transaction, stores no credential and
 infers no consent. It adds no message, thread, attachment, sync or import table.**
 
+## 5j. Gmail historical import (migration 0037)
+
+The first Gmail **content** this database holds. Three tables, all in `private`,
+all G1 private under B01: never contributed to any shared intelligence, never
+reachable by a client role, deletion-addressable. The full reasoning is
+[`B03_GMAIL_HISTORICAL_IMPORT_CONTRACT.md`](B03_GMAIL_HISTORICAL_IMPORT_CONTRACT.md);
+what follows is what the schema itself guarantees.
+
+Like 0036, **0037 refuses to install** rather than completing over state it did
+not create: if `private.gmail_historical_import_runs`,
+`private.gmail_historical_import_threads` or `private.gmail_raw_messages`
+already exists, the migration aborts before creating anything.
+
+### private.gmail_historical_import_runs
+One explicit historical acquisition of one mailbox over one **fixed** window.
+
+`window_start_at` is supplied by the caller — B03 invents no lookback, because
+which lookbacks a human is offered is a product decision and a data pipe is where
+such a decision becomes permanent unnoticed. `window_end_at` is set **by the
+database** at creation and never moves: a worker re-reading "now" on each restart
+would import a window that grows while it runs, so two restarts of one run would
+not be the same operation.
+
+`acquisition_strategy` is a CHECK admitting only `'sent_rooted_threads_v1'`, not
+a comment. B03 acquires threads rooted in a message the creator SENT inside the
+window, and it may not silently become an inbox crawl because a later writer
+passed a different string.
+
+Status is one of `runnable`, `paused_reauth`, `paused_consent`,
+`cancelled_connection_stopped`, `failed`, `completed`; phase is `enumerating`,
+`fetching`, `finished`. `completed` is the one that must not lie — it requires
+enumeration finished, no work outstanding and no permanently failed thread
+ignored. A partial import is not a completed import, and the failure is durable
+the moment it happens: a terminal thread failure sets the RUN to `failed`,
+`finished`, `completed_at` and a cleared lease in the same transaction that marks
+the thread. Anything less left the worker reporting `failed` while the database
+said `runnable`, holding the active-run index for a mailbox nobody was importing.
+
+Counters only: candidate sent messages seen, unique threads discovered, threads
+completed, threads gone, **threads filtered out**, messages stored, messages
+updated, and **two omission counters**. The first two are PROVIDER DISCOVERY
+numbers and are named that way: `candidate_sent_messages_seen` is SENT results
+returned by the outward search, not exact-window SENT messages, and
+`unique_threads_discovered` is provisional candidates. Exact acceptance is
+`threads_completed`; exact rejection is `threads_filtered_out` so a later evaluation can tell how much of the record B03 could not
+see. No subject, no address, no body. `last_error_code` is a sanitized slug under
+a CHECK; no provider message ever enters it.
+`estimated_gmail_quota_units` is documented in its own column comment as an
+estimate derived from the provider's published per-method costs — **not a billing
+statement**.
+
+`enumeration_page_token` is an opaque provider cursor: never parsed, never
+logged, meaningless outside Google. `enumeration_attempt_count` and
+`enumeration_next_attempt_at` are the durable retry budget for the CURRENT cursor
+position — a thread fetch has a work item to count attempts against, a listing
+page has nothing but the run, and without them a `messages.list` that keeps
+answering 429 is retried by whoever polls next, forever, remembering nothing. A
+successful page commit resets both, because the next page is a different provider
+operation. The backoff is enforced by the CLAIM, so a fresh process cannot skip a
+delay that lived in the process which scheduled it.
+
+The **durable step lease** (`lease_token`, `lease_expires_at`, `lease_step`,
+`lease_thread_id`, `lease_authorization_revision`) is all of its parts or none of
+them, by CHECK; a `fetch_thread` lease names its thread and the other steps do
+not. A lease is **liveness** (time); the authorization revision is
+**authorization currentness** (causality). They are deliberately different
+mechanisms, because collapsing them would make a slow worker look unauthorized
+and a revoked one look alive.
+
+A partial unique index over `('runnable','paused_reauth','paused_consent')`
+allows **one active run per mailbox** while letting terminal runs coexist — a
+mailbox may be imported many times and that history is worth keeping. Two live
+runs are not two decisions; they are a race for the same quota and rows.
+
+`forbid_gmail_import_run_identity_change()` refuses any update to owner, mailbox,
+window or acquisition strategy. Those four facts are what the run IS.
+
+### A mailbox lifecycle change carries the runs with it
+`private.apply_gmail_lifecycle_to_import_runs()` is an AFTER UPDATE trigger on
+`public.mail_accounts.connection_state`. Asking "may we read this mailbox?"
+whenever a worker happens to look is enough to stop a stale response being
+persisted; it is **not** enough to record that a person made a decision. A
+Disconnect followed by a Reconnect with nothing polling in between left the run
+runnable and the Disconnect unrecorded, so the transition now moves the run
+inside the same transaction that moved the mailbox:
+
+- `disconnecting`/`disconnected`/`deletion_pending`/`deleted` → every
+  non-terminal run becomes `cancelled_connection_stopped`, lease cleared;
+- `reauth_required`/`pending_authorization` → a `runnable` run becomes
+  `paused_reauth`;
+- `consent_required` → a `runnable` run becomes `paused_consent`;
+- `connected` → **nothing**. Reconnecting answers "may we read your mail again",
+  not "please resume the import you stopped".
+
+It is idempotent, never rewrites a terminal run, writes only B03 run rows, and
+deletes nothing — a Disconnect is not a deletion, and imported mail survives it.
+
+### private.gmail_historical_import_threads
+The durable work queue, one row per deduped provider thread per run, in
+PostgreSQL rather than in a process because a process is the thing that crashes.
+`unique (run_id, provider_thread_id)` is what makes "the same listing page may be
+applied twice safely" a property rather than an intention. `status` is
+`pending`, `complete`, `gone`, `failed` or **`filtered_out`**.
+
+`filtered_out` is the state for PROVIDER OVERFETCH. The `messages.list` date
+query is deliberately wider than the run's window (Gmail searches at second
+resolution; the window has milliseconds), so it returns PROVISIONAL candidates —
+and a thread whose only SENT message lies outside the window can legitimately be
+among them. `gmail_historical_import_commit_thread` re-proves candidacy exactly,
+from the sanitized rows it is about to commit: at least one non-DRAFT message
+inside `[window_start_at, window_end_at)` must carry the `SENT` label. If not,
+ZERO raw messages are written, the item becomes `filtered_out` with
+`completed_at` set, and `threads_filtered_out` on the run counts it. The decision
+is made in the same transaction that would otherwise insert the rows, and the
+database derives it — there is no caller-supplied `p_is_candidate`, because that
+would put a privacy boundary in the hands of the layer that wants to cross it.
+
+`filtered_out` is deliberately not `gone` (the thread exists), not `failed`
+(nothing failed) and not `complete` (nothing was imported). It is terminal
+non-error work and counts as no pending work, so a run whose every provisional
+candidate is filtered out reaches `completed` with zero messages — a true
+statement about an exact sent-rooted import, not a failure.
+
+### private.gmail_raw_messages
+Identity is **`(mail_account_id, provider_message_id)`** — not `(run, message)`.
+The same Gmail message seen in ten imports is one message; keying on the run
+would store ten snapshots of one fact and force every later layer to guess which
+is current. Provider ids are account-scoped, so the mailbox is part of the key.
+`first_import_run_id`/`last_import_run_id` carry provenance without duplication.
+
+`sanitized_payload` is provider-shaped **after** the application's single
+deterministic sanitizer: the approved RFC message headers in `message_headers`,
+the MIME structural headers of each part in `payload.headers`, inline
+`text/plain` and `text/html` bodies, and structural metadata for omitted parts.
+The two header namespaces are separate because for a single-part message Gmail's
+top-level `MessagePart` is both the message and its only MIME part, and sharing
+one property destroyed the charset and transfer encoding of the body being
+stored. Never `raw`, never `snippet`, never `attachmentId`, never attachment
+bytes, and never a filename — a STRUCTURAL header value carrying any RFC 2231
+`name`/`filename` parameter form is dropped whole, wherever the provider put it,
+and every occurrence is consulted rather than the first. The same filter is
+deliberately NOT applied to RFC message-header values: `Subject:
+filename=proposal.pdf` is a subject line, not a MIME parameter. Both header
+namespaces are LISTS, not maps: Gmail exposes headers as a list and RFC 5322
+messages can repeat a field, so collapsing them would make B03 choose which
+occurrence is real — an interpretation B04 owns and could never undo. Names are
+lower-cased, values untouched, provider order preserved. `payload_sha256` is a
+digest of the canonicalized payload — metadata, so a replay can skip a
+meaningless write without comparing bodies; header occurrence ORDER is part of
+that snapshot, because with a repeated field it is the only thing distinguishing
+one arrangement from another.
+
+`forbid_gmail_raw_message_thread_move()` fails closed if the same account/message
+id is ever presented under a different thread id. Gmail thread membership is part
+of this layer's identity for a message; silently rewriting it would bury a
+provider or caller integrity error.
+
+### `deleted` is now falsifiable
+`assert_gmail_import_data_absent_when_deleted()` is a **deferred** constraint
+trigger registered on `mail_accounts` **and on all three B03 tables**. B01
+defines `deleted` as an assertion that stored Gmail data was removed; B03 is the
+first layer that can make it false, so it is the first that has to check. It is
+registered on every write origin because a trigger sees only writes to its own
+table, deferred because a legitimate purge touches several tables in one
+transaction, and it reads the FINAL state rather than consulting
+`pg_trigger_depth()` — cascade depth describes *how* rows went away, not
+*whether* the invariant holds. Composite `(mail_account_id, user_id)` FKs cascade
+with both the mailbox and the human.
+
+### The RPC surface
+Twelve `SECURITY DEFINER` functions in `public`, each pinning `search_path`, each
+`EXECUTE`-granted to `service_role` alone, each taking the owner as part of the
+LOOKUP:
+`gmail_historical_import_start` · `_claim_step` · `_commit_page` ·
+`_commit_thread` · `_record_thread_gone` · `_record_retry` · `_pause` ·
+`_cancel_connection_stopped` · `_resume` · `_commit_completion` · `_status` ·
+`_purge_for_deletion`; plus `gmail_historical_import_validate_claim`, the
+read-only pre-provider fence. Thirteen functions.
+
+`private.gmail_import_authorization_state(mail_account_id, expected_revision)` is
+the single may-we-read predicate, evaluated at claim time **and again at every
+commit**: the mailbox must be `connected`, private-processing consent must be
+`granted`, that consent must cover the **current** scope set (B01's exact-scope
+rule), and `authorization_revision` must be unchanged. The gap between claim and
+commit is a network call PostgreSQL cannot cancel, so the guarantee is the
+strongest honest one available — **the response of a stale step may not be
+persisted**. The revision is what makes it a compare-and-swap rather than a
+re-read: a state name can leave and return, a revision cannot go backwards.
+
+`gmail_historical_import_validate_claim(user, run, lease, revision, step, thread)`
+asks the SAME question one last time immediately before each provider call, after
+the access token and after any quota wait, and mutates nothing. The commit fence
+protects the database; this protects the mailbox — without it, a worker holding a
+claim across a Disconnect→Reconnect would be handed a valid token and would READ
+Gmail under a cancelled import, persisting nothing and still having read. It
+takes a SHORT `for no key update` lock on the run row and holds it only there: an
+unlocked read is not a serialization point, because under READ COMMITTED a plain
+`SELECT` answers from its statement's snapshot and a Disconnect committing during
+it is invisible. The run row is the right object to lock, since the lifecycle
+trigger updates that same row inside the Disconnect transaction — so a lifecycle
+change that gets there first makes the preflight wait and then refuse, and a
+preflight that gets there first makes the lifecycle change wait briefly. The lock
+is never held across a Gmail call, a token exchange or a quota sleep; pinning a
+transaction to a third party's latency would be a worse bug. Before the
+validation transaction commits `ok`, a cancellation prevents the read; after it,
+the operation is in flight and the guarantee narrows to "the result may not be
+persisted".
+
+Every claim-derived result carries it, not only the successful ones:
+`_record_thread_gone`, `_record_retry` and `_commit_completion` all require the
+revision their claim was issued under, and a NULL is refused with
+`authorization_revision_required` — "compare against whatever is current" is
+exactly the comparison that lets a stale response through. A lease also names one
+thread: a valid token for T1 may not record a result against T2. Refusals carry
+the run's own `run_status` alongside the connection state, so a worker meeting a
+run that a lifecycle change already stopped reports *cancelled* rather than
+"we will try again later".
+
+**0037 imports nothing.** It connects no mailbox, fetches nothing, infers no
+consent and creates no run. It adds no normalized thread, message, participant or
+address table (B04), no outreach or hotel match (B05), no reply/timing fact
+(B06), no outcome or correction (B07), no history cursor or watch subscription
+(B08), no network-intelligence eligibility or aggregate, no attachment table and
+no column that could hold attachment bytes, and no client-readable view of Gmail
+content for any role.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -1884,5 +2110,14 @@ At minimum:
 22. Gmail OAuth connection, reconnect and disconnect (0036) — the first
     long-lived secret in the system, and the `private` schema that keeps it out
     of reach. See §5i
+23. Gmail historical import (0037) — the first Gmail CONTENT the system stores:
+    one fixed-window, sent-rooted, resumable, idempotent acquisition per mailbox,
+    with the work queue, the cursor and the worker lease all in the database
+    because a process is the thing that crashes; the may-we-read predicate
+    re-asked at every commit under an authorization-revision compare-and-swap so
+    a stale response cannot be persisted; message identity keyed on
+    `(mailbox, provider message id)` so one message is one row across every
+    import; and the first enforcement that `deleted` actually means no Gmail data
+    survives. The migration imports nothing. See §5j
 
 Every migration must be reproducible from an empty database.

@@ -1,0 +1,491 @@
+import { createHash } from "node:crypto";
+
+import {
+  B03_ALLOWED_MESSAGE_HEADERS,
+  B03_ALLOWED_PART_HEADERS,
+  B03_TEXT_MIME_TYPES,
+  isDraft,
+  type OmissionReason,
+  type SanitizedMessage,
+  type SanitizedPart,
+  type SanitizedThread,
+  type SanitizedHeader,
+} from "@/lib/gmail/import/contract";
+import { GmailReadError } from "@/lib/gmail/import/errors";
+import { parseGmailThreadResponse, parseInternalDateMs } from "@/lib/gmail/import/provider-shape";
+
+/**
+ * THE ONE PLACE THAT DECIDES WHAT LEAVES GMAIL AND ENTERS STORAGE.
+ *
+ * B03 needs message text, because B04/B05/B07 will need something to read. It
+ * does not need files: attachment bytes are the largest, most sensitive and
+ * least necessary thing a mailbox contains.
+ *
+ * B03 performs NO SEPARATE ATTACHMENT RETRIEVAL and follows NO `attachmentId` —
+ * the read interface has no method for either. It cannot, however, promise that
+ * no attachment byte crosses the network: `threads.get(format=full)` returns
+ * inline `body.data` for parts Gmail gave no external `attachmentId`, inside a
+ * response B03 legitimately needs. THIS FUNCTION is what makes the real
+ * guarantee true — no attachment, named or non-text body is ever PERSISTED.
+ *
+ * So this is a whitelist, not a blacklist. A part whose shape this function does
+ * not recognise loses its body — the failure mode of a new Gmail MIME variant is
+ * "we kept less than we could have", never "we stored something we should not
+ * have".
+ *
+ * Deterministic and pure: same provider response in, same structure out, same
+ * digest. No clock, no randomness, no I/O.
+ */
+
+interface RawHeader {
+  name?: string;
+  value?: string;
+}
+
+interface RawPart {
+  partId?: string;
+  mimeType?: string;
+  filename?: string;
+  headers?: RawHeader[];
+  body?: { attachmentId?: string; size?: number; data?: string };
+  parts?: RawPart[];
+}
+
+export interface RawMessage {
+  id?: string;
+  threadId?: string;
+  labelIds?: string[];
+  historyId?: string;
+  internalDate?: string;
+  sizeEstimate?: number;
+  payload?: RawPart;
+  /** Present in provider responses; never persisted. */
+  snippet?: string;
+  raw?: string;
+}
+
+export interface RawThread {
+  id?: string;
+  messages?: RawMessage[];
+}
+
+const lower = (value: string | undefined): string => (value ?? "").trim().toLowerCase();
+
+/**
+ * DOES THIS HEADER VALUE CARRY A MIME NAME PARAMETER, IN ANY FORM RFC 2231
+ * PERMITS?
+ *
+ * A single regex over the whole value was not enough. RFC 2231 lets a parameter
+ * be extended (`filename*=UTF-8''private.pdf`), continued
+ * (`filename*0=`, `filename*1=`), or both at once
+ * (`filename*0*=UTF-8''private-`, `filename*1*=document.pdf`) — and all three
+ * forms turn up in real historical mail, which is exactly the mail B03 imports.
+ * A guard that only knew `filename=` let an extended one through, kept the
+ * header, and treated the body as ordinary text.
+ *
+ * So the value is split on parameter boundaries and each ATTRIBUTE NAME is
+ * examined on its own. Splitting on `;` can over-segment a quoted value; that
+ * direction is safe, because the worst outcome is deciding a part is named when
+ * it is not, and B03's whole failure posture is "keep less".
+ *
+ * `boundary=` must keep working — it is structure, not a name — and an attribute
+ * comparison gives that for free where a substring search did not.
+ */
+const NAME_ATTRIBUTE = /^(?:file)?name(?:\*\d+)?\*?$/i;
+
+export function hasMimeNameParameter(value: string | undefined): boolean {
+  if (!value) return false;
+  for (const segment of value.split(";")) {
+    const eq = segment.indexOf("=");
+    if (eq < 0) continue;
+    if (NAME_ATTRIBUTE.test(segment.slice(0, eq).trim())) return true;
+  }
+  return false;
+}
+
+/**
+ * THE APPROVED RFC MESSAGE HEADERS, LOSSLESSLY, AND WITH NO MIME FILTERING.
+ *
+ * Gmail exposes `MessagePart.headers` as a LIST, and RFC 5322 messages —
+ * especially the historical and obsolete ones B03 is built to import — can
+ * legitimately carry the same field more than once. Reducing them into a
+ * `Record<string, string>` meant a second `To:` silently overwrote the first,
+ * which is B03 deciding WHICH occurrence is the real one: precisely the
+ * interpretation it promised to leave to B04, and one B04 could never undo.
+ *
+ * AND THE MIME NAME GUARD MUST NOT RUN HERE. `name=` and `filename=` mean
+ * something as MIME PARAMETERS of `Content-Type` and `Content-Disposition`. In
+ * the VALUE of an approved message header they are just text a human wrote —
+ * `Subject: filename=proposal.pdf` is a subject line, and discarding it applied
+ * a privacy rule to the wrong namespace, losing real content for no gain.
+ *
+ * So: whitelist by name case-insensitively, normalise the stored NAME to lower
+ * case, preserve the raw VALUE verbatim, keep EVERY approved occurrence in
+ * provider order, concatenate nothing, and filter nothing on the value.
+ */
+function pickMessageHeaders(headers: RawHeader[] | undefined): SanitizedHeader[] {
+  const kept: SanitizedHeader[] = [];
+  for (const header of headers ?? []) {
+    const name = lower(header?.name);
+    if (!name || !B03_ALLOWED_MESSAGE_HEADERS.includes(name)) continue;
+    if (typeof header.value !== "string") continue;
+    kept.push({ name, value: header.value });
+  }
+  return kept;
+}
+
+/**
+ * THE APPROVED MIME STRUCTURAL HEADERS — where the name guard belongs.
+ *
+ * These describe the MIME frame: charset, transfer encoding, multipart
+ * boundary. Here a `name=`/`filename=` parameter really is a filename, and a
+ * header carrying one is dropped WHOLE rather than kept for its structural half.
+ * B03 has no use for a filename, so it does not keep one — not in a field of its
+ * own, and not smuggled inside a header it was keeping for another reason.
+ *
+ * Every remaining occurrence is preserved, for the same reason message headers
+ * are: choosing between two `Content-Type` lines is not B03's decision.
+ */
+function pickPartHeaders(headers: RawHeader[] | undefined): SanitizedHeader[] {
+  const kept: SanitizedHeader[] = [];
+  for (const header of headers ?? []) {
+    const name = lower(header?.name);
+    if (!name || !B03_ALLOWED_PART_HEADERS.includes(name)) continue;
+    if (typeof header.value !== "string") continue;
+    if (hasMimeNameParameter(header.value)) continue;
+    kept.push({ name, value: header.value });
+  }
+  return kept;
+}
+
+/** Every stored occurrence of one header, by name. */
+export function headerOccurrences(
+  headers: readonly SanitizedHeader[] | undefined,
+  name: string,
+): string[] {
+  return (headers ?? []).filter((header) => header.name === name).map((header) => header.value);
+}
+
+/**
+ * EVERY occurrence of a PROVIDER header, not the first one.
+ *
+ * "First header wins" is a reasonable rule for reading a value and a dangerous
+ * one for making a SAFETY decision. Now that duplicate MIME headers are admitted
+ * and preserved, a part can carry
+ *
+ *     Content-Disposition: inline
+ *     Content-Disposition: attachment; filename*=UTF-8''private.pdf
+ *
+ * and a first-occurrence check sees only `inline`. The filename-bearing header
+ * was correctly dropped from storage — and the BODY was persisted anyway, which
+ * is the part that matters. Every decision below therefore reads all of them and
+ * takes the conservative answer.
+ */
+function rawHeaderValues(headers: RawHeader[] | undefined, name: string): string[] {
+  const values: string[] = [];
+  for (const header of headers ?? []) {
+    if (lower(header?.name) === name && typeof header.value === "string") values.push(header.value);
+  }
+  return values;
+}
+
+/** Does ANY occurrence of `Content-Disposition` say this part is an attachment? */
+function anyDispositionIsAttachment(headers: RawHeader[] | undefined): boolean {
+  return rawHeaderValues(headers, "content-disposition").some((value) =>
+    value.trim().toLowerCase().startsWith("attachment"),
+  );
+}
+
+/**
+ * Is this part NAMED — that is, does anything about it say "this is a file"?
+ *
+ * Gmail is not consistent about where the name appears. `part.filename` is the
+ * obvious place and it is frequently empty while a `Content-Disposition` or a
+ * `Content-Type` carries the name instead. Trusting only `part.filename` means
+ * storing a filename whenever the provider declines to duplicate it, which is
+ * the provider's formatting choice deciding our privacy posture.
+ */
+function partIsNamed(part: RawPart): boolean {
+  if ((part.filename ?? "").trim() !== "") return true;
+  // ANY occurrence. Contradictory provider headers resolve towards "this is a
+  // file", because being wrong in that direction costs a body we did not keep,
+  // and being wrong in the other costs somebody's document.
+  for (const name of ["content-disposition", "content-type"] as const) {
+    if (rawHeaderValues(part.headers, name).some(hasMimeNameParameter)) return true;
+  }
+  return false;
+}
+
+/**
+ * May this part's BODY DATA be persisted?
+ *
+ * All four conditions, and each one is load-bearing:
+ *
+ *   an exact text MIME type   `text/plain` or `text/html`. Not a prefix match:
+ *                             `text/calendar` and friends are files with a
+ *                             text-ish label
+ *   not named                 a named part is a file, whatever its type,
+ *                             wherever the provider put the name, and in ANY
+ *                             occurrence of the header
+ *   no attachmentId           Gmail is telling us the data lives elsewhere
+ *   not dispositioned as an   the sender said it is an attachment; believe them
+ *   attachment
+ */
+function bodyIsPersistableText(part: RawPart): boolean {
+  if (!B03_TEXT_MIME_TYPES.includes(lower(part.mimeType))) return false;
+  if (partIsNamed(part)) return false;
+  if (part.body?.attachmentId) return false;
+  if (anyDispositionIsAttachment(part.headers)) return false;
+  return true;
+}
+
+function omissionReasonFor(part: RawPart): OmissionReason {
+  if (partIsNamed(part)) return "attachment";
+  if (anyDispositionIsAttachment(part.headers)) return "attachment";
+  if (B03_TEXT_MIME_TYPES.includes(lower(part.mimeType)) && part.body?.attachmentId) {
+    // A TEXT BODY GMAIL STORED SEPARATELY.
+    //
+    // `attachmentId` does not only mean "a file"; Gmail also uses it for MIME
+    // data it did not inline. B03 does not follow it even here, because
+    // following it means a separate `attachments.get` retrieval, and B03 has no
+    // such call — by interface, not by discipline. The omission is RECORDED so a later
+    // evaluation can measure how much of the historical record was unavailable
+    // rather than discovering the hole by its silence.
+    return "external_body";
+  }
+  return "non_text";
+}
+
+interface PartResult {
+  part: SanitizedPart;
+  externalTextOmitted: number;
+  attachmentOrNonTextOmitted: number;
+}
+
+function sanitizePart(part: RawPart): PartResult {
+  const mimeType = lower(part.mimeType) || "application/octet-stream";
+  let externalTextOmitted = 0;
+  let attachmentOrNonTextOmitted = 0;
+
+  const children: SanitizedPart[] = [];
+  for (const child of part.parts ?? []) {
+    const result = sanitizePart(child);
+    children.push(result.part);
+    externalTextOmitted += result.externalTextOmitted;
+    attachmentOrNonTextOmitted += result.attachmentOrNonTextOmitted;
+  }
+
+  const sanitized: SanitizedPart = { mimeType };
+  const hasBodyData = typeof part.body?.data === "string" && part.body.data.length > 0;
+
+  // STRUCTURAL HEADERS, ON EVERY PART.
+  //
+  // They describe the MIME frame — the charset a body is in, the transfer
+  // encoding it needs, the boundary that holds a multipart together — and B04
+  // needs them to decode what B03 stored. The reason they were once kept only
+  // beside a persisted body was that `Content-Disposition` smuggles filenames;
+  // that leak is now closed at the header level by `pickHeaders`, so the
+  // structure can be kept without the name.
+  const structuralHeaders = pickPartHeaders(part.headers);
+  if (structuralHeaders.length > 0) sanitized.headers = structuralHeaders;
+
+  if (hasBodyData && bodyIsPersistableText(part)) {
+    sanitized.body = { size: part.body?.size ?? 0, data: part.body!.data! };
+  } else if (hasBodyData || part.body?.attachmentId) {
+    // Structural metadata only. Never `data`, never `attachmentId`, and
+    // deliberately never the filename: B03 has no use for it, and a filename is
+    // content about a person's life.
+    const reason = omissionReasonFor(part);
+    sanitized.contentOmitted = true;
+    sanitized.omissionReason = reason;
+    if (typeof part.body?.size === "number") sanitized.size = part.body.size;
+    if (reason === "external_body") externalTextOmitted += 1;
+    else attachmentOrNonTextOmitted += 1;
+  }
+
+  if (children.length > 0) sanitized.parts = children;
+
+  return { part: sanitized, externalTextOmitted, attachmentOrNonTextOmitted };
+}
+
+export function sanitizeMessage(message: RawMessage): {
+  message: SanitizedMessage;
+  externalTextOmitted: number;
+  attachmentOrNonTextOmitted: number;
+} | null {
+  const providerMessageId = (message.id ?? "").trim();
+  const providerThreadId = (message.threadId ?? "").trim();
+  // `Number.isFinite(Number(x))` was not a date check: `Number("")`,
+  // `Number("   ")` and `Number(null)` are all 0, so a message with no timestamp
+  // was accepted and silently dated 1 January 1970 — a fact about somebody's
+  // conversation, invented by a coercion rule.
+  const internalDateMs = parseInternalDateMs(message.internalDate);
+
+  // A message with no identity or no time is not a message we can store, index
+  // or ever delete deliberately. The CALLER decides what that means; returning
+  // null here is a statement about this message, not a decision to ignore it.
+  if (!providerMessageId || !providerThreadId || internalDateMs === null) return null;
+
+  const payload = sanitizePart(message.payload ?? {});
+
+  // TWO HEADER NAMESPACES, NEVER ONE.
+  //
+  // For a single-part message Gmail's top-level MessagePart is BOTH things at
+  // once: the RFC message carrying From/To/Subject, and the MIME part carrying
+  // Content-Type and Content-Transfer-Encoding. Writing the message headers into
+  // `payload.headers` therefore destroyed the structural ones — the charset and
+  // the transfer encoding of the very body being stored — for exactly the
+  // commonest shape of email there is. They are separate fields because they are
+  // separate facts, and neither may overwrite the other.
+  const messageHeaders = pickMessageHeaders(message.payload?.headers);
+
+  return {
+    message: {
+      providerMessageId,
+      providerThreadId,
+      internalDateMs,
+      labelIds: [...(message.labelIds ?? [])].sort(),
+      providerHistoryId: message.historyId ?? null,
+      sizeEstimate: typeof message.sizeEstimate === "number" ? message.sizeEstimate : null,
+      messageHeaders,
+      payload: payload.part,
+    },
+    externalTextOmitted: payload.externalTextOmitted,
+    attachmentOrNonTextOmitted: payload.attachmentOrNonTextOmitted,
+  };
+}
+
+/**
+ * Sanitize a whole fetched thread, bounded LOCALLY to the run's window.
+ *
+ * Gmail's search decides which threads are offered; this decides which messages
+ * are kept. The window is half-open — `[start, end)` — so two adjacent windows
+ * neither overlap nor leave a gap between them.
+ */
+export function sanitizeThread(
+  thread: RawThread,
+  window: { startMs: number; endMs: number },
+): SanitizedThread {
+  // STRICT PROVIDER SHAPE FIRST, before any absence is allowed to mean absence.
+  //
+  // This runs here rather than only in the read adapter because the adapter is
+  // not the only way a thread reaches the sanitizer, and a validator that some
+  // callers skip is not a validator. It throws `malformed_response` — which
+  // fails the FETCH, so the work item stays pending and the run cannot reach
+  // `completed` over a conversation nobody could read.
+  const validated = parseGmailThreadResponse(thread);
+
+  const providerThreadId = validated.id;
+  const messages: SanitizedMessage[] = [];
+  let textPartsOmittedExternal = 0;
+  let attachmentOrNonTextPartsOmitted = 0;
+  let draftsDropped = 0;
+
+  for (const raw of validated.messages) {
+    // A DRAFT LEAVES BEFORE ITS CONTENT IS EVER LOOKED AT. Nothing about a draft
+    // is stored, so nothing about it can be malformed — and it is not evidence
+    // that anything was sent.
+    if (isDraft(raw.labelIds)) {
+      draftsDropped += 1;
+      continue;
+    }
+
+    const sanitized = sanitizeMessage(raw as RawMessage);
+    if (!sanitized) {
+      // Unreachable given the validator above, and kept as a fail-closed
+      // backstop rather than an assumption: if identity ever became
+      // unestablishable by another route, the answer is still to fail the fetch.
+      throw new GmailReadError({
+        operation: "threads_get",
+        status: null,
+        reason: "malformed_response",
+        retryable: false,
+      });
+    }
+
+    const at = sanitized.message.internalDateMs;
+    if (at < window.startMs || at >= window.endMs) continue;
+    messages.push(sanitized.message);
+    textPartsOmittedExternal += sanitized.externalTextOmitted;
+    attachmentOrNonTextPartsOmitted += sanitized.attachmentOrNonTextOmitted;
+  }
+
+  return {
+    providerThreadId,
+    messages,
+    counters: { textPartsOmittedExternal, attachmentOrNonTextPartsOmitted },
+    draftsDropped,
+  };
+}
+
+/**
+ * A CANONICAL FORM, so the same snapshot hashes the same way twice.
+ *
+ * JSON object key order is an accident of how a response was parsed, not a fact
+ * about the message. Sorting keys means a provider that reorders its fields
+ * does not look like a changed message — which is the whole point of the digest:
+ * to let a replay skip a meaningless write.
+ *
+ * Nothing volatile goes in. No local timestamps, no run id, no attempt count.
+ */
+export function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) {
+      if (source[key] === undefined) continue;
+      out[key] = canonicalize(source[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * The digest of a sanitized message snapshot.
+ *
+ * Metadata about content, not content: a hash cannot be read back into a
+ * sentence, so it is safe to store beside the row and compare on replay. The
+ * plaintext it summarises is never logged.
+ */
+export function sanitizedMessageDigest(message: SanitizedMessage): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        canonicalize({
+          provider_message_id: message.providerMessageId,
+          provider_thread_id: message.providerThreadId,
+          internal_date_ms: message.internalDateMs,
+          label_ids: [...message.labelIds].sort(),
+          provider_history_id: message.providerHistoryId,
+          size_estimate: message.sizeEstimate,
+          message_headers: message.messageHeaders,
+          payload: message.payload,
+        }),
+      ),
+    )
+    .digest("hex");
+}
+
+/** The row shape `gmail_historical_import_commit_thread` accepts. */
+export function toCommitRow(message: SanitizedMessage) {
+  return {
+    provider_message_id: message.providerMessageId,
+    provider_thread_id: message.providerThreadId,
+    internal_date: new Date(message.internalDateMs).toISOString(),
+    provider_history_id: message.providerHistoryId,
+    label_ids: message.labelIds,
+    sanitized_payload: canonicalize({
+      provider_message_id: message.providerMessageId,
+      provider_thread_id: message.providerThreadId,
+      internal_date_ms: message.internalDateMs,
+      label_ids: message.labelIds,
+      provider_history_id: message.providerHistoryId,
+      size_estimate: message.sizeEstimate,
+      message_headers: message.messageHeaders,
+      payload: message.payload,
+    }),
+    payload_sha256: sanitizedMessageDigest(message),
+  };
+}

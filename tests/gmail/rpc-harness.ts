@@ -20,12 +20,82 @@ export interface FakeAdminClient {
   rpc<T = unknown>(name: string, args: Record<string, unknown>): Promise<RpcResult<T>>;
 }
 
+/**
+ * The declared argument types of one `public.` function, from the catalog.
+ *
+ * PostgREST knows the signature it is calling, and that knowledge is not a
+ * detail — it is what tells it whether `[]` is an empty `text[]` or an empty
+ * `jsonb` array. Guessing from the JavaScript value cannot distinguish them, and
+ * guessing wrong made an empty sanitized message set arrive as a Postgres array
+ * that would not cast to `jsonb`, which silently turned a legitimate
+ * "this thread had nothing to store" into an RPC error. So this shim reads the
+ * signature too.
+ */
+const signatures = new Map<string, Promise<{ names: string[]; types: string[] }>>();
+
+function loadSignature(client: Client, name: string) {
+  const cached = signatures.get(name);
+  if (cached) return cached;
+  const pending = client
+    .query(
+      `select coalesce(p.proargnames, '{}') as names,
+              array(select format_type(t, null) from unnest(p.proargtypes) as t) as types
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = $1
+        limit 1`,
+      [name],
+    )
+    .then((res) => ({
+      names: (res.rows[0]?.names ?? []) as string[],
+      types: (res.rows[0]?.types ?? []) as string[],
+    }));
+  signatures.set(name, pending);
+  return pending;
+}
+
 export function createRpcClient(client: Client): FakeAdminClient {
   return {
     async rpc<T>(name: string, args: Record<string, unknown>): Promise<RpcResult<T>> {
       const keys = Object.keys(args);
-      const named = keys.map((key, i) => `${key} := $${i + 1}`).join(", ");
-      const values = keys.map((key) => args[key]);
+      let signature: { names: string[]; types: string[] };
+      try {
+        signature = await loadSignature(client, name);
+      } catch (error) {
+        return { data: null, error: { message: (error as Error).message } };
+      }
+
+      const declaredType = (key: string): string | null => {
+        const index = signature.names.indexOf(key);
+        return index >= 0 ? (signature.types[index] ?? null) : null;
+      };
+
+      // PostgREST sends the whole argument object as JSON, so a jsonb parameter
+      // arrives as JSON there. `pg` would instead bind a JS array as a POSTGRES
+      // ARRAY, which is right for `text[]` and wrong for `jsonb`. The declared
+      // type decides, so an EMPTY array is not ambiguous either.
+      const values = keys.map((key) => {
+        const value = args[key];
+        const type = declaredType(key);
+        if (type === "jsonb" || type === "json") {
+          return value === null || value === undefined ? null : JSON.stringify(value);
+        }
+        if (Array.isArray(value)) return value;
+        if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+          return JSON.stringify(value);
+        }
+        return value;
+      });
+
+      // The cast is explicit for the same reason: a bare `$n` for a NULL or an
+      // empty array leaves Postgres guessing at a type it should not have to.
+      const named = keys
+        .map((key, i) => {
+          const type = declaredType(key);
+          return `${key} := $${i + 1}${type ? `::${type}` : ""}`;
+        })
+        .join(", ");
+
       try {
         const res = await client.query(`select public.${name}(${named}) as value`, values);
         return { data: (res.rows[0]?.value ?? null) as T, error: null };

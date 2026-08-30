@@ -1,6 +1,7 @@
 # B02 — Gmail OAuth connection, reconnect and disconnect
 
-Status: implemented in PR (unmerged). Migration `0036_gmail_oauth_connection.sql`.
+Status: MERGED (PR #34, main `f8d088b`). Migration `0036_gmail_oauth_connection.sql`,
+amended in place seven times under external audit before merge.
 Depends on: [`B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`](B01_GMAIL_DATA_BOUNDARY_CONTRACT.md),
 migration `0035`, decision D067.
 
