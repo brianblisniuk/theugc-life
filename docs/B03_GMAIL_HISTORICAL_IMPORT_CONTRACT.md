@@ -1,7 +1,8 @@
 # B03 — Gmail historical import: private, resumable, idempotent, sent-rooted
 
 Status: implemented in PR #35 (unmerged), amended in place under external audit
-amendments #1, #2, #3 and #4. Migration `0037_gmail_historical_import.sql`.
+amendments #1, #2, #3 and #4, then final-audit polish. Migration
+`0037_gmail_historical_import.sql`.
 Depends on: [`B01_GMAIL_DATA_BOUNDARY_CONTRACT.md`](B01_GMAIL_DATA_BOUNDARY_CONTRACT.md)
 (migration `0035`), [`B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md`](B02_GMAIL_OAUTH_CONNECTION_CONTRACT.md)
 (migration `0036`, merged as `f8d088b`), decisions D067 and D068.
@@ -740,6 +741,20 @@ new path: the RPC shim inferred parameter types from JavaScript values, so an
 EMPTY array was bound as a Postgres array even for a `jsonb` parameter. It now
 reads the declared signature from the catalog, as PostgREST does.
 
+### Final-audit polish
+
+The final external pass found no merge-blocking defect, but tightened two claims
+before merge:
+
+- the same provider thread is now explicitly tested across **two runs of the same
+  `mail_account_id`**, proving that candidacy belongs to the run/window while raw
+  identity remains mailbox-scoped;
+- §3 now states the exact outward-query slack: the upper edge is less than one
+  second, while the lower edge can approach two seconds because it combines the
+  fractional floor remainder with the deliberate extra one-second `after:`
+  nudge. The exact local `[start,end)` filter and SENT-root proof remain the
+  persistence authority.
+
 ## 14. Verification
 
 - Migration replay: fresh `0001→0037`; populated main `0036→0037` with no drift
@@ -765,6 +780,9 @@ reads the declared signature from the catalog, as PostgREST does.
   sent-root confirmation, which persists an inbound reply from a thread that was
   never a candidate (11 failures). **Twenty-two negative controls in total**, and
   a control that does not bite means the test was not binding.
+- Final head verification: **2,241 tests across 80 files**, of which **191 are B03
+  tests across 9 files**. Push and pull-request CI both pass at the exact final
+  head after lint, build, typecheck and the PostgreSQL-backed test suite.
 - No live Google call is made by any test. The provider is a fake that models
   paging, drafts, attachments, external bodies, vanished threads, rate limits and
   malformed responses.
