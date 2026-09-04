@@ -288,8 +288,8 @@ is B02.
 |---|---|---|---|
 | B01 | **DONE** — PR #33, merge `d4a9e81d` | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
 | B02 | **DONE** — PR #34, merge `f8d088b9` | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
-| B03 | **IN PROGRESS** — open PR, not merged | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
-| B04 | GATED | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
+| B03 | **DONE** — PR #35, merge `1a579ca1` | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
+| B04 | **CURRENT PR** | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | GATED | sent/reply/time-to-reply extraction | qualifying human reply semantics explicit; auto/delivery noise separated |
 | B07 | GATED | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
@@ -606,10 +606,19 @@ At this baseline, Phase A is closed at the code gate:
 
 > **A04.6 (PR #31) is merged as `da968185fb3125b33b3b965e63f153ada0ad552f`.**
 
+**B03 (PR #35) is merged**, as merge commit `1a579ca125b16e3f0d81b727645b610eb7cf9501`
+into `main`. Final audited head `0a2b01ca3a17fbac4094e4fbb4a0f98945ce2145`, verified
+live against GitHub — CI green at that exact head (push and pull-request), the
+full repository suite (2,294 tests / 86 files at merge time) passing against the
+merged `main`, and the tracker corrected here to say so; the previous "IN
+PROGRESS — open PR, not merged" line in the table above was stale drift left
+over from before the merge, caught and corrected in this same round.
+
 The open implementation block is:
 
-> **B03 — Gmail historical import: private, resumable, idempotent, sent-rooted.
-> Open PR, not merged, awaiting external audit and the human merge gate.**
+> **B04 — Gmail private normalization: deterministic messages, participants and
+> text parts. Open PR, not merged, awaiting external audit and the human merge
+> gate.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

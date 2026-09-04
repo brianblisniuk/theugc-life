@@ -307,8 +307,11 @@ d("B03 has no raw-content surface", () => {
   });
 
   it("no application route or component reads raw Gmail messages", async () => {
-    // B04 will define the product-facing private representation. B03 deliberately
-    // ships none: no account-page inbox, no admin viewer, no export.
+    // B04 defines the product-facing... no, it does not either: B04 is a
+    // private server-side normalizer (`src/lib/gmail/normalize/`) reading raw
+    // rows through `gmail_normalize_list_candidates`, exactly as B03's own
+    // worker reads and writes through its RPCs — neither is a route or a
+    // component. No account-page inbox, no admin viewer, no export exists yet.
     const root = path.resolve(__dirname, "../..");
     const offenders: string[] = [];
     const { execSync } = await import("node:child_process");
@@ -321,6 +324,8 @@ d("B03 has no raw-content surface", () => {
     for (const file of hits) {
       if (file.includes("/src/lib/gmail/import/")) continue;
       if (file.includes("/scripts/gmail-import/")) continue;
+      if (file.includes("/src/lib/gmail/normalize/")) continue;
+      if (file.includes("/scripts/gmail-normalize/")) continue;
       offenders.push(file);
     }
     expect(offenders).toEqual([]);

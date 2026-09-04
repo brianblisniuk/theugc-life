@@ -2465,3 +2465,129 @@ the exact local proof after it, without which B03 stored inbound mail from
 threads that had no in-window sent root. The general shape is one this block has
 met before: a query deliberately imprecise for recall needs an exact check before
 its results become facts, and that check belongs where the facts are written.
+
+## D069 — Private Gmail normalization
+
+Status: Accepted — explicitly approved by human owner — decides how B03's raw
+evidence becomes B04's normalized projection, and what that projection is
+still forbidden to claim
+Depends on D067, D068; implemented by migration `0038_gmail_private_normalization.sql`;
+mechanism-level detail lives in `docs/B04_GMAIL_PRIVATE_NORMALIZATION_CONTRACT.md`,
+not here
+
+B03 stored a sanitized snapshot and interpreted none of it — headers stayed
+opaque lists, and there was no thread, no participant, no address anywhere in
+the database. B04 is the first layer that turns that evidence into something
+queryable, and this decision is what stops "queryable" from quietly becoming
+"business truth" the first time someone needs a `from` address.
+
+### Raw evidence, normalized projection, business semantics — three layers, not two
+
+B03's raw row remains the source of truth for what Gmail supplied inside the
+approved window. B04's rows are **deterministic projections** of that
+evidence: the same raw snapshot in always produces the same normalized rows
+out, and nothing about that computation is allowed to depend on a clock, on
+randomness, or on any other message. B05 and later may decide a normalized
+communication is outreach, a reply, a negotiation — B04 must not, and no
+hotel, pipeline, outreach or collaboration row or column exists anywhere in
+0038.
+
+### Gmail thread and message identities remain account-scoped
+
+`(mail_account_id, provider_thread_id)` and `(mail_account_id,
+provider_message_id)` are the only identities B04 recognizes, mirroring B03's
+own raw-message key exactly. Gmail's ids are ACCOUNT-SCOPED: the same
+provider string under two mailboxes names two unrelated objects, and a global
+identity would eventually merge them. No message is identified by its
+`Message-ID` header, its subject, its participants or its timestamp — those
+are evidence, not the provider's key, and confusing the two is exactly the
+mistake this decision closes off in advance.
+
+### A normalized message binds to an exact raw payload digest and normalizer version, not a loose provenance field
+
+Every normalized message carries three real constraints, not three comments:
+a foreign key into `private.gmail_raw_messages` on the exact
+`(mail_account_id, provider_message_id)`, the exact `source_payload_sha256`
+it was computed from, and the exact `normalizer_version` — a semantic
+contract version, not a git SHA or a timestamp, and unlike B03's
+`acquisition_strategy` it is expected to grow across the table's life rather
+than being fixed forever by a single-value CHECK.
+
+### Source replacement invalidates the old projection, in the same transaction
+
+B03 legitimately updates a raw row when the provider snapshot changes. The
+old normalized projection must not survive that as if it were current, and
+"the next worker will notice" is not a mechanism — it is a race with a name.
+Invalidation happens inside the SAME transaction that changes the digest, and
+is proven safe under real concurrent access, not just in the single-writer
+case. The exact trigger and locking mechanism is implementation detail
+specified in the B04 technical contract, not a product decision to freeze
+here.
+
+### Repeated approved headers remain evidence
+
+B03 already refused to let a second `To:` overwrite a first. B04 does not
+regress that one layer up: every approved header occurrence is its own row,
+carrying both its position among occurrences of its own name and its
+position among all approved headers on the message, so the original
+interleaved order is reconstructable. `unique` constraints make duplication
+structurally impossible rather than merely unlikely.
+
+### Participant and reference-token parsing is syntactic only
+
+Addresses are parsed with a real RFC 5322-aware library, not a comma split,
+and every parsed entry links to its exact source header occurrence by a real
+foreign key. `+tag` addressing is not stripped, Gmail's dot-insensitive local
+part is not collapsed, and two entries are never merged into "the same
+human." A malformed or empty header still produces a row — a header that
+carried text and a header that was never there must not look identical.
+Message-ID/In-Reply-To/References tokens are tokenized the same way and are
+explicitly NOT a reply graph: there is no `parent_message_id`, no `is_reply`,
+no `reply_received` anywhere in this migration, and no code path compares one
+token against another message's identity to decide anything. That
+comparison, and everything it would imply, belongs to a later, separately
+contracted block.
+
+### MIME text is normalized without business or body interpretation
+
+Only `text/plain` and `text/html` parts get a row — the same list B03 was
+willing to keep body data for — identified by structural position because
+B03 never promised Gmail's `partId` survived sanitization. Decoding is
+conservative and one-way: text is decoded from the provider's evidence
+exactly once, an ambiguous or conflicting encoding declaration is never
+resolved by guessing (first- or last-wins), and the raw evidence is preserved
+so a later normalizer version can reprocess if an assumption made here is
+ever falsified. Plain and HTML bodies are stored independently, never
+concatenated, never stripped of quotes or signatures, and decoded HTML is
+private source text, not declared safe to render. The exact decode and
+charset-conflict mechanism, and the evidence behind each provider-behavior
+assumption it relies on, is specified in the B04 technical contract.
+
+### B04 does not infer outreach, hotel, reply, outcome or network intelligence
+
+The literal Gmail `SENT` label fact is derived by the database from the
+locked raw row and stored as `provider_sent` — nothing else. Its absence
+licenses no inference: `provider_sent = false` does not mean inbound, does
+not mean a reply, does not mean a hotel responded. Zero hotel-matching,
+zero reply/outcome classification and zero network-intelligence row is
+written by this migration, and Gmail-derived data remains Gmail-derived
+under D067's Limited Use rules regardless of how normalized it becomes.
+
+### Delete removes Gmail-origin and Gmail-derived B04 state; disconnect may retain it
+
+Unchanged B01 semantics, extended additively: `gmail_normalize_purge_for_
+deletion` mirrors B03's own purge guard conditions and removes only B04's
+tables, never touching 0037's function. A new deferred constraint trigger —
+checking only `gmail_normalized_threads`, since every other B04 row requires
+a live thread by foreign key — refuses any transaction that marks a mailbox
+`deleted` while a normalized thread survives for it, registered on every
+write origin that could otherwise slip a fresh row past that transaction.
+
+### What this does not decide
+
+Whether normalization runs automatically after a B03 import completes (it
+does not, today). Anything about outreach detection, hotel matching, reply
+or timing facts, outcome classification, creator correction or network
+intelligence — all separately contracted, later blocks. Whether a
+syntactically valid message-id reference token that matches another stored
+message means anything at all.

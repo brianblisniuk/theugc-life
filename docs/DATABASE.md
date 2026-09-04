@@ -1783,6 +1783,127 @@ address table (B04), no outreach or hotel match (B05), no reply/timing fact
 no column that could hold attachment bytes, and no client-readable view of Gmail
 content for any role.
 
+## 5k. Gmail private normalization (migration 0038)
+
+The first deterministic projection over B03's raw evidence. Full reasoning in
+[`B04_GMAIL_PRIVATE_NORMALIZATION_CONTRACT.md`](B04_GMAIL_PRIVATE_NORMALIZATION_CONTRACT.md);
+what follows is what the schema itself guarantees. Like 0037, **0038 refuses to
+install** over pre-existing tables of its own names.
+
+### private.gmail_normalized_threads / private.gmail_normalized_messages
+Identity is account-scoped, exactly mirroring B03's raw identity:
+`(mail_account_id, provider_thread_id)` for threads,
+`(mail_account_id, provider_message_id)` for messages. A composite
+`unique (id, mail_account_id)` on threads lets the message table's thread FK
+require the SAME account, not merely a real thread — `gmail_normalized_
+messages_thread_fk` is `(normalized_thread_id, mail_account_id) references
+gmail_normalized_threads (id, mail_account_id)`.
+
+A message's exact provenance is three real constraints: `gmail_normalized_
+messages_raw_fk` — `(mail_account_id, provider_message_id) references
+private.gmail_raw_messages` — which alone makes cross-account raw provenance
+unrepresentable; `source_payload_sha256`, the exact digest it was computed
+from; and `normalizer_version` (currently always `gmail_normalizer_v1`), a
+sanitized-slug-shaped semantic contract version expected to grow across the
+table's life, unlike B03's single-value-forever `acquisition_strategy`.
+`provider_sent` is the LITERAL Gmail `SENT`-label fact, derived by the
+database from the locked raw row's `label_ids` — never accepted as a caller
+parameter, and its absence licenses no inbound/reply inference anywhere.
+
+### Source replacement invalidates the old projection, in the same transaction
+`private.invalidate_gmail_normalized_projection_on_raw_change()` is an
+`AFTER UPDATE OF payload_sha256` trigger installed **additively on
+`private.gmail_raw_messages`** — a table 0037 created, whose file is
+untouched — firing only `when (new.payload_sha256 is distinct from
+old.payload_sha256)`. It deletes the message's normalized projection (and,
+by cascade, every header/participant/reference-token/text-part) inside the
+SAME transaction that changes the raw digest, so no stale projection can
+survive a B03 re-import as if it were current.
+
+### The short lock and the digest-as-compare-and-swap
+`gmail_normalize_commit_message` takes `for no key update` on the EXACT raw
+row it normalizes, held only for that one function call — B04 makes no
+network call, so there is nothing to hold a lock across. The caller's
+`p_expected_source_payload_sha256` is the compare-and-swap token: if the
+locked row's current digest disagrees, the function returns `stale_source`
+and writes nothing. An existing projection whose digest AND version already
+match is `already_current` — zero writes, not even a timestamp — proved by
+calling the function directly rather than trusting the candidate list's own
+filter.
+
+### private.gmail_normalized_headers
+One row per approved header OCCURRENCE, never collapsed. `occurrence_index`
+(position among same-name occurrences) and `global_order` (position among
+ALL approved headers on the message) together reconstruct the original
+provider interleaving. `unique (normalized_message_id, header_name,
+occurrence_index)` and `unique (normalized_message_id, global_order)` make
+duplication structurally impossible.
+
+### private.gmail_normalized_participants
+Parsed from `From`/`Sender`/`Reply-To`/`To`/`Cc`/`Bcc` occurrences only, using
+`addressparser` (a real RFC 5322-aware tokenizer — quoted commas and RFC 2822
+groups included — not a comma split). Each entry FKs to its exact
+`source_header_id`. `parse_status` is `parsed`, `malformed` (text present,
+no clean addr-spec — `raw_fragment` keeps what was recovered) or
+`empty_group` (a genuine `Undisclosed-recipients:;`-shaped construct naming
+zero addresses) — a header that carried text never produces zero rows.
+No `+tag` stripping, no Gmail-dot collapsing, no identity merging;
+`domain_lower` is a mechanical convenience column only.
+
+### private.gmail_normalized_reference_tokens
+Syntactic `<local@domain>`-shaped tokens from `Message-ID`/`In-Reply-To`/
+`References`, in order, each FKed to its exact source header occurrence.
+`parse_status` is `valid_msgid` or `malformed`. **Not a reply graph**: no
+`parent_message_id`, no `is_reply`, no `reply_received` column exists here or
+anywhere in 0038, and no function in this migration compares one token
+against another message's identity.
+
+### private.gmail_normalized_text_parts
+Only `text/plain`/`text/html` parts get a row, identified by structural
+`part_path` (an `integer[]`, e.g. `{1,0}`) rather than Gmail's `partId`, which
+B03 never promised survived sanitization. `unique (normalized_message_id,
+part_path)`. Gmail's API `body.data` (base64url) is decoded EXACTLY ONCE;
+`Content-Transfer-Encoding` is preserved as evidence in
+`content_transfer_encoding_values` and never triggers a second decode.
+`decode_status` distinguishes `decoded`, `empty_decoded`, `body_absent`,
+`content_omitted_by_b03`, `invalid_base64url`, `conflicting_charset`,
+`unsupported_charset`, `decode_failure` and `missing_charset_undecodable` —
+nine states, never collapsed to `NULL` with no explanation. Charset decoding
+uses Node's built-in `TextDecoder` with `{ fatal: true }`; no new dependency
+was needed. A part B03 itself omitted (attachment, non-text, external body)
+still gets a row if its `mimeType` was text/plain or text/html, with
+`b03_omitted`/`b03_omission_reason` preserved verbatim — a genuinely
+non-text part produces NO row at all, and no attachment table or
+attachment-byte column exists anywhere in this migration.
+
+### `deleted` extended to B04's own tables
+`assert_gmail_normalized_data_absent_when_deleted()` checks only
+`gmail_normalized_threads` — every other B04 row requires a live thread by
+FK — as a deferred constraint trigger registered on `mail_accounts`,
+`gmail_normalized_threads` and `gmail_normalized_messages`, mirroring 0037's
+own registration-on-every-write-origin rule. `gmail_normalize_purge_for_
+deletion` mirrors `gmail_historical_import_purge_for_deletion`'s guard
+conditions exactly and removes only B04's own tables; 0037's purge function
+is untouched.
+
+### The RPC surface
+Four `SECURITY DEFINER` functions in `public`, each pinning `search_path`,
+each `EXECUTE`-granted to `service_role` alone: `gmail_normalize_list_
+candidates` (read-only, no lock — absent/out-of-date/stale-by-version
+candidates, ordered `(internal_date, provider_message_id)`),
+`gmail_normalize_commit_message` (the atomic write above),
+`gmail_normalize_status` (counts only — threads, messages, header
+occurrences, participants, reference tokens, text parts, stale/missing
+projections — never content), and `gmail_normalize_purge_for_deletion`.
+`service_role` holds no direct table grant on any B04 relation; the four
+functions are the only doors, exactly like B03's own posture.
+
+**0038 normalizes nothing itself.** It performs zero Gmail network activity,
+zero OAuth changes, zero quota consumption, creates no hotel/outreach/reply/
+outcome/network-intelligence row or column, and adds no client-readable view
+of Gmail content for any role. Every normalized row is written later, by the
+application, one message at a time, through `gmail_normalize_commit_message`.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -2119,5 +2240,14 @@ At minimum:
     `(mailbox, provider message id)` so one message is one row across every
     import; and the first enforcement that `deleted` actually means no Gmail data
     survives. The migration imports nothing. See §5j
+24. Gmail private normalization (0038) — the first deterministic projection over
+    B03's raw evidence: account-scoped normalized threads and messages bound to
+    an exact raw payload digest and normalizer version, lossless header
+    occurrences, syntactic address/reference-token parsing, structural MIME
+    text-part decoding with an exactly-once base64url rule, an additive
+    `AFTER UPDATE` trigger on `private.gmail_raw_messages` that invalidates a
+    stale projection in the same transaction as a B03 snapshot replacement, and
+    the same deleted-state invariant extended to B04's own tables. Performs zero
+    Gmail network activity and infers no outreach, reply or outcome fact. See §5k
 
 Every migration must be reproducible from an empty database.

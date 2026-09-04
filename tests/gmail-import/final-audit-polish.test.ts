@@ -61,11 +61,7 @@ async function startRunOnMailbox(input: {
   };
 }
 
-async function importSingleThread(input: {
-  userId: string;
-  runId: string;
-  thread: RawThread;
-}) {
+async function importSingleThread(input: { userId: string; runId: string; thread: RawThread }) {
   const gmail = createFakeGmailRead({
     pages: [
       {
@@ -106,14 +102,12 @@ d("B03 final audit polish", () => {
     const thread: RawThread = {
       id: "t-same-mailbox-window",
       messages: [
-        labelled(
-          { id: "m-sent", threadId: "t-same-mailbox-window", internalDateMs: sentAt },
-          ["SENT"],
-        ),
-        labelled(
-          { id: "m-reply", threadId: "t-same-mailbox-window", internalDateMs: replyAt },
-          ["INBOX"],
-        ),
+        labelled({ id: "m-sent", threadId: "t-same-mailbox-window", internalDateMs: sentAt }, [
+          "SENT",
+        ]),
+        labelled({ id: "m-reply", threadId: "t-same-mailbox-window", internalDateMs: replyAt }, [
+          "INBOX",
+        ]),
       ],
     };
 
@@ -146,7 +140,9 @@ d("B03 final audit polish", () => {
     expect(secondOutcome).toEqual({ result: "finished", status: "completed" });
     expect((await threadRows(client, second.runId))[0].status).toBe("complete");
     expect(
-      (await rawMessages(client, mailbox.mailAccountId)).map((row) => row.provider_message_id).sort(),
+      (await rawMessages(client, mailbox.mailAccountId))
+        .map((row) => row.provider_message_id)
+        .sort(),
     ).toEqual(["m-reply", "m-sent"]);
   });
 });
