@@ -2591,3 +2591,146 @@ or timing facts, outcome classification, creator correction or network
 intelligence — all separately contracted, later blocks. Whether a
 syntactically valid message-id reference token that matches another stored
 message means anything at all.
+
+## D070 — Gmail creator-outreach interpretation and commercial-target boundary (B05)
+
+Status: Accepted — explicitly approved by human owner on 2026-09-04
+Depends on D022, D028, D029, D057, D063, D067, D068, D069; implemented by
+migration `0039_gmail_outreach_commercial_targets.sql`
+
+B04 turned B03's raw evidence into a deterministic, replay-safe normalized
+projection and interpreted none of it. B05 is the first layer that answers a
+business question over that evidence: is a normalized thread creator-
+commercial outreach, who or what was the creator trying to reach, and which
+recipients were actually targeted as commercial contacts — never which
+recipients replied or engaged, which remains B06's scope entirely. This
+decision fixes what that claim asserts, who owns it, and its boundaries, in
+language that outlives hospitality as the first vertical.
+
+### One durable, vertical-neutral outreach fact
+
+A thread's outreach status is `qualified_outreach`, `not_outreach`,
+`needs_review` or `insufficient_evidence`. Positive outreach requires at
+least one thread message carrying the literal `provider_sent = true` fact
+B04 already derives, plus evidence in that creator-SENT content of a
+commercial proposal directed at a potential commercial target — not two
+separately authoritative creator-facing truths for "hospitality-target
+plausibility" and "collaboration-intent plausibility", which exist only as
+internal diagnostic dimensions. Non-SENT content is context only, never
+proof the creator proposed anything, and `provider_sent = false` is never
+relabeled "inbound" or "reply" (D069's rule, inherited unmodified).
+
+### A commercial target is first a private fact, independent of canonical inventory
+
+Gmail evidence of an intended target — a hotel, an organization, or any
+future kind of commercial counterparty — is preserved as a private target
+observation the moment the evidence supports it, whether or not canonical
+inventory currently contains a matching row. This observation never
+automatically creates a canonical hotel, organization, brand, business or
+contact. Canonical linkage is separate and is zero, one, or many: a private
+target observation may resolve to no canonical candidate, one strong
+candidate, or several ambiguous ones, and an observed recipient may
+similarly link to zero, one, or several canonical contact records. An exact
+address/email match is evidence only — it never by itself establishes
+commercial target identity, never by itself confirms a target contact, and
+never by itself selects one property out of a multi-property contact (D028
+applies identically at the contact layer).
+
+### Human confirmation anchors to the private fact, never to a canonical link
+
+A creator confirms "this was a real target I was pitching" against the
+stable target observation, and confirms "this was one of the people I was
+pitching" against the stable observed recipient — never against a canonical
+hotel/organization/contact row directly. A canonical link gained or improved
+later never fabricates, retracts, or requires re-confirmation of an existing
+creator decision: 2026's confirmation of an as-yet-uncatalogued business
+stands unchanged when a matching canonical row is added in 2027.
+
+### Machine output is not creator-confirmed truth, on every axis
+
+Outreach status, canonical-target-link quality, target scope, and target-
+contact identity are each independently versioned, replaceable machine
+assessments, described only in qualitative terms — `strong_match`,
+`needs_review`, `ambiguous`, `insufficient_evidence` — never a fabricated
+numeric probability presented as fact. A creator's confirmed decision on any
+axis is a separate, immutable-history-backed fact that a later machine
+reassessment never silently overwrites; the system may only flag
+disagreement between the two.
+
+### Target scope is its own semantic fact, never mechanically derived
+
+A single confirmed organization may represent a direct-service engagement
+(`single_target`) or a portfolio-level solicitation (`portfolio_target`) —
+different commercial facts requiring independent evidence and independent
+creator confirmation, never inferred from how many targets happen to be
+confirmed or from the target's kind. Scope
+(`single_target`/`multiple_targets`/`portfolio_target`/`unresolved`) may be
+captured independently of, and before, target identity is resolved; the
+system surfaces a consistency status between the two rather than enforcing a
+required confirmation order.
+
+### Observed recipients, target contacts, canonical contacts and commercial targets stay separate
+
+Every recipient address on a creator-SENT message is preserved as a
+deterministic observed recipient without exception, including the creator's
+own second address and any manager/assistant CC. Which observed recipient,
+if any, is the actual commercial target contact is a separate, machine-
+advisory-then-creator-confirmable interpretation. No future network-
+intelligence process may read "this address appeared in Gmail" as "the
+creator commercially contacted this person or company" without passing
+through this explicit semantic layer.
+
+### The data epistemic ladder
+
+OBSERVED → INTERPRETED → PRIVATE TARGET/RECIPIENT FACT → CANONICAL-LINKED →
+HUMAN-CONFIRMED → OUTCOME-LINKED → NETWORK-ELIGIBLE. No rung may be silently
+collapsed into another: an observed fact is never canonical truth, a machine
+interpretation is never human truth, and a human-confirmed Gmail-derived
+fact is never an ordinary global/network fact without separately clearing G3
+eligibility under D067.
+
+### Privacy, retention and the CRM boundary
+
+Everything B05 stores is G2 — private to the creator by default, with no
+staff/admin/editor access by role. B05 builds a private intelligence plane,
+not the live CRM: it writes nothing to `pipeline_items`, `outreach_events` or
+`collaborations`, and `outreach_events.source = 'gmail'` remains an unused
+future affordance rather than authorization to populate it now. A future,
+separately contracted feature may let a creator preview and selectively
+promote this private intelligence into their live workspace.
+
+Churn, inactivity, and Gmail disconnect are not themselves deletion events.
+An explicit applicable deletion request, or another applicable
+legal/provider-policy deletion requirement, purges the covered B05 state —
+machine and human layers together on every axis, since both remain G2.
+Already-imported Gmail-origin and Gmail-derived data otherwise remain
+subject to the product's disclosed retention policy.
+
+### No global or shared ML/AI model training from restricted Gmail-derived data
+
+Any model inference B05 or a later block introduces is per-user, personalized
+use only, consistent with Google Workspace Limited Use. Any future network-
+intelligence (G3) contribution remains fully provenance-linked and
+removable/recomputable on consent withdrawal or deletion;
+`network_intelligence_contribution` remains exactly as D067 defines it —
+separate, explicit, revocable, default not granted. This decision does not
+amend D067.
+
+### Catalog staleness is a coarse epoch plus a per-result relevant fingerprint
+
+A cheap, monotonic, cross-table signal ("the candidate universe might have
+changed") plus a per-result digest over the specific candidates actually
+relevant to that result, so an unrelated catalog write never forces
+wholesale re-evaluation of historical results while a genuinely relevant new
+candidate is never missed. This mechanism never touches a creator-confirmed
+decision on any axis.
+
+### What this does not decide
+
+Anything about sent/reply/timing facts or parent/child message relationships
+(B06); outcome classification, negotiation or collaboration/value semantics
+(B07); incremental Gmail sync (B08); when or how creator-confirmed Gmail
+history may be promoted into the live creator workflow ledger (a future,
+separately contracted feature); any real-world precision/recall threshold for
+B05's classifiers, since synthetic evaluation measures implementation
+correctness only and no accepted source fixes a production quality bar.

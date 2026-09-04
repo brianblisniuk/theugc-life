@@ -1,0 +1,125 @@
+/**
+ * B05 shared types and version constants. See
+ * docs/B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md for the full contract
+ * these types implement.
+ */
+
+/** V1 deterministic outreach classifier. No external model call. */
+export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v1";
+/** V1 deterministic target/target-contact matcher. No external model call. */
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v1";
+/** Versioned heuristic classifier-input transform (quote/HTML handling). */
+export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v1";
+
+export type OutreachStatus =
+  "qualified_outreach" | "not_outreach" | "needs_review" | "insufficient_evidence";
+
+export type MatchQuality = "strong_match" | "needs_review" | "ambiguous" | "insufficient_evidence";
+
+export type TargetScope = "single_target" | "multiple_targets" | "portfolio_target" | "unresolved";
+
+export type TargetKind = "hotel" | "organization";
+
+export type CanonicalContactKind = "hotel_contact" | "organization_contact";
+
+export type EvidenceAgreement = "agrees" | "differs" | "unavailable";
+
+export type RecipientRole = "to" | "cc" | "bcc";
+
+export type ParseStatus = "parsed" | "malformed" | "empty_group";
+
+export type CreatorDecisionAxis = "outreach" | "target_scope" | "target" | "target_contact";
+
+export type OutreachDecisionValue = "outreach_confirmed" | "not_outreach_confirmed";
+
+export type TargetAction = "confirm" | "remove";
+
+/** Reject, do not clamp — the same true-entry-point discipline as B04. */
+export function requirePositiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new RangeError(`${name} must be a positive integer, got ${value}`);
+  }
+  return value;
+}
+
+const VERSION_SHAPE = /^[a-z][a-z0-9_]{0,63}$/;
+
+export function requireVersionShape(value: string, name: string): string {
+  if (!VERSION_SHAPE.test(value)) {
+    throw new RangeError(`${name} must match ${VERSION_SHAPE}, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/** One SENT message's evidence, as returned by `gmail_outreach_get_thread_evidence`. */
+export interface EvidenceMessage {
+  normalizedMessageId: string;
+  providerMessageId: string;
+  providerSent: boolean;
+  internalDateMs: number;
+  sourcePayloadSha256: string;
+}
+
+export interface EvidenceTextPart {
+  normalizedMessageId: string;
+  partPath: readonly number[];
+  mimeType: "text/plain" | "text/html";
+  decodeStatus: string;
+  decodedText: string | null;
+}
+
+export interface EvidenceRecipient {
+  normalizedMessageId: string;
+  sourceHeaderId: string;
+  sourceParticipantId: string;
+  role: RecipientRole;
+  displayName: string | null;
+  addrSpec: string | null;
+  localPart: string | null;
+  domain: string | null;
+  domainLower: string | null;
+  parseStatus: ParseStatus;
+}
+
+export interface EvidenceSubject {
+  normalizedMessageId: string;
+  rawValue: string;
+}
+
+export interface ThreadEvidence {
+  normalizedThreadId: string;
+  providerThreadId: string;
+  messages: readonly EvidenceMessage[];
+  sentTextParts: readonly EvidenceTextPart[];
+  sentRecipients: readonly EvidenceRecipient[];
+  subjects: readonly EvidenceSubject[];
+}
+
+export interface TargetContactCandidateInput {
+  sourceParticipantId: string;
+  roleEvidence: EvidenceAgreement;
+  addressPatternEvidence: "named_person" | "generic_inbox" | "unavailable";
+  rank: number;
+}
+
+export interface TargetCanonicalLinkCandidateInput {
+  observationFingerprint: string;
+  targetKind: TargetKind;
+  targetHotelId?: string;
+  targetOrganizationId?: string;
+  nameEvidence: EvidenceAgreement;
+  domainEvidence: EvidenceAgreement;
+  addressEvidence: EvidenceAgreement;
+  contactEvidence: EvidenceAgreement;
+  rank: number;
+}
+
+export interface TargetObservationInput {
+  observationFingerprint: string;
+  observedName: string | null;
+  observedDomain: string | null;
+  targetKindHint: TargetKind | "unknown";
+  sourceMessageIds: readonly string[];
+  machineCanonicalLinkAssessment: MatchQuality;
+  candidateSetFingerprint: string;
+}

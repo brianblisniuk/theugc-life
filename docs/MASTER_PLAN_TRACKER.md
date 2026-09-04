@@ -289,8 +289,8 @@ is B02.
 | B01 | **DONE** — PR #33, merge `d4a9e81d` | mail-account + consent + private communication data model | explicit provider identities, tenant isolation, revocation/deletion semantics |
 | B02 | **DONE** — PR #34, merge `f8d088b9` | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
 | B03 | **DONE** — PR #35, merge `1a579ca1` | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
-| B04 | **CURRENT PR** | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
-| B05 | GATED | hotel-outreach thread detection + canonical hotel matching/review | measurable precision/recall; ambiguous target identity cannot silently merge |
+| B04 | **DONE** — PR #36, merge `773556f38bfa17ac4b078efae51953024babab52` | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
+| B05 | **CURRENT PR** | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | GATED | sent/reply/time-to-reply extraction | qualifying human reply semantics explicit; auto/delivery noise separated |
 | B07 | GATED | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
 | B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
@@ -614,11 +614,16 @@ merged `main`, and the tracker corrected here to say so; the previous "IN
 PROGRESS — open PR, not merged" line in the table above was stale drift left
 over from before the merge, caught and corrected in this same round.
 
+**B04 (PR #36) is merged**, as merge commit
+`773556f38bfa17ac4b078efae51953024babab52` into `main`, after an external
+audit amendment round and explicit human acceptance of D069.
+
 The open implementation block is:
 
-> **B04 — Gmail private normalization: deterministic messages, participants and
-> text parts. Open PR, not merged, awaiting external audit and the human merge
-> gate.**
+> **B05 — Gmail private creator-outreach interpretation: qualified-outreach
+> classification, private commercial-target observations, observed
+> recipients and target-contact interpretation. Open PR, not merged, awaiting
+> external audit and the human merge gate.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

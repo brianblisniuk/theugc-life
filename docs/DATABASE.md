@@ -1904,6 +1904,67 @@ outcome/network-intelligence row or column, and adds no client-readable view
 of Gmail content for any role. Every normalized row is written later, by the
 application, one message at a time, through `gmail_normalize_commit_message`.
 
+## 5l. Gmail private creator-outreach interpretation (migration 0039)
+
+B05 (D070). The first layer that answers a business question over B04's
+normalized evidence — is a thread creator-commercial outreach, who/what was
+the creator trying to reach, and which recipients were actually targeted as
+commercial contacts — kept in two epistemic layers that are never conflated.
+
+**MACHINE** (advisory, replaceable, never creator truth): `gmail_outreach_
+thread_signals` (current outreach classification, one row per thread,
+fenced by an `evidence_digest` re-verified at commit time under `for key
+share`), `gmail_outreach_observed_recipient_canonical_links` (zero/one/many
+exact-email links from an observed recipient to `hotel_contacts`/
+`organization_contacts`, computed inside the commit RPC, never trusted from
+the caller), `gmail_outreach_target_contact_signals`/`_candidates` (which
+observed recipient, if any, is the real target contact), `gmail_outreach_
+target_observations` (a **private, stable target fact independent of
+canonical inventory** — see below) and its advisory columns, `gmail_
+outreach_target_canonical_links` (zero/one/many `hotel`/`organization`
+candidates per observation, closed-and-additively-extensible `target_kind`).
+
+**HUMAN** (immutable events + current projection, authoritative): `gmail_
+outreach_creator_decision_events` (append-only, `event_seq generated always
+as identity` the sole ordering authority, four axes — `outreach`, `target_
+scope`, `target`, `target_contact` — one shared ledger with an `axis`
+discriminator and a shape CHECK per axis), `gmail_outreach_creator_
+decisions` (current scalar outreach + target-scope decisions),
+`gmail_outreach_target_confirmations` and `gmail_outreach_target_contact_
+confirmed_members` (current confirmed **sets**, since scope can be
+`multiple_targets`/`portfolio_target`). A machine re-run never writes to any
+HUMAN table; a canonical link gained later never rewrites a creator's
+existing confirmation, because confirmations anchor to the private
+observation/observed-recipient row, never to a canonical FK directly.
+
+**Deterministic observed recipients**: `gmail_outreach_observed_recipients`
+preserves every `to`/`cc`/`bcc` occurrence on a creator-SENT message,
+unfiltered (self-addresses, manager/assistant CCs, malformed participants
+included), keyed on the exact B04 participant row so re-extraction always
+upserts onto the same id and never orphans a human confirmation.
+
+**Catalog staleness** is two-level: a cheap, monotonic, cross-table sequence
+(`private.gmail_outreach_catalog_epoch_seq`, bumped by a statement-level
+trigger on `hotels`/`hotel_source_identities`/`hotel_contacts`/
+`organizations`/`hotel_organizations`/`organization_contacts`) means only
+"the candidate universe might have changed"; each machine row's own
+`evaluated_epoch` is what a reader compares against the current epoch to
+decide staleness — never a write-time reject.
+
+Six `SECURITY DEFINER` functions in `public`, `EXECUTE`-granted to
+`service_role` alone: `gmail_outreach_current_catalog_epoch`, `gmail_
+outreach_list_candidates`, `gmail_outreach_get_thread_evidence` (the read
+path B04 itself never needed to expose), `gmail_outreach_commit_
+interpretation` (the sole machine writer), `gmail_outreach_record_creator_
+decision` (the sole human writer), `gmail_outreach_status`, and `gmail_
+outreach_purge_for_deletion`.
+
+**0039 writes nothing to `public.pipeline_items`, `public.outreach_events`
+or `public.collaborations`**, and creates or mutates no canonical hotel,
+organization, brand or contact row. `public.is_admin_or_editor()` appears
+nowhere in this migration. Full contract in
+[`B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md`](B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md).
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -2249,5 +2310,23 @@ At minimum:
     stale projection in the same transaction as a B03 snapshot replacement, and
     the same deleted-state invariant extended to B04's own tables. Performs zero
     Gmail network activity and infers no outreach, reply or outcome fact. See §5k
+25. Gmail private creator-outreach interpretation (0039) — the first business
+    interpretation over B04's normalized evidence, kept in two epistemic layers
+    that are never conflated: a replaceable MACHINE projection (outreach
+    classification, target/target-contact candidates, canonical links) and an
+    immutable-event-backed HUMAN decision layer across four independent axes
+    (outreach, target scope, target, target contact) that a machine re-run can
+    never overwrite. A commercial target is first a private, stable fact
+    independent of canonical inventory, resolved to zero/one/many canonical
+    hotel/organization candidates separately from the creator's confirmation of
+    it, so a later canonical link never rewrites a creator's historical
+    decision; the same zero/one/many discipline applies to canonical contact
+    links. Every to/cc/bcc recipient on creator-SENT evidence is preserved
+    deterministically and unfiltered, distinct from the separate judgement of
+    which recipient was the actual commercial target contact. A two-level
+    catalog-staleness signal (a cheap cross-table epoch plus a per-result
+    fingerprint) avoids forcing wholesale re-evaluation on an unrelated
+    catalog write. Writes nothing to the live CRM ledger and creates or
+    mutates no canonical row. See §5l
 
 Every migration must be reproducible from an empty database.
