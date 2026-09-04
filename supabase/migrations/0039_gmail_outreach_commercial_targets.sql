@@ -528,15 +528,27 @@ create index gmail_outreach_target_contact_candidates_thread_idx
 -- creator's historical outreach" — independently of whether theugc.life's
 -- canonical inventory currently contains a matching hotel or organization.
 --
--- STABILITY: `observation_fingerprint` is a deterministic digest over the
--- normalized identity evidence (name/domain), computed by the caller.
--- Re-extraction upserts by (thread, fingerprint) — a recognized observation's
--- IDENTITY fields are never rewritten, so a creator confirmation referencing
--- it (gmail_outreach_target_confirmations) is never orphaned. Only the
--- ADVISORY columns (machine_canonical_link_assessment, matcher_version,
+-- STABILITY (EXTERNAL AUDIT AMENDMENT #3, Finding 3): `observation_
+-- fingerprint` is a deterministic digest over every MATERIAL semantic
+-- identity/matching-evidence dimension the caller extracted — domain AND
+-- normalized observed name (`computeTargetObservationFingerprint` in
+-- target-extraction.ts) — never domain alone. `observed_name` is not
+-- cosmetic here (unlike an observed recipient's `display_name`): `matchTarget
+-- Observation` reads it as an independent canonical-matching evidence
+-- dimension, so it MUST be part of the fact's identity/version — the same
+-- epistemic principle Amendment #2's Finding 1 already applied to observed
+-- recipients. Re-extraction upserts by (thread, fingerprint) — a recognized
+-- observation's IDENTITY fields (`observed_name`, `observed_domain`,
+-- `target_kind_hint`) are never rewritten, so a creator confirmation
+-- referencing it (gmail_outreach_target_confirmations) is never orphaned or
+-- silently reassigned to different real-world evidence. Only the ADVISORY
+-- columns (machine_canonical_link_assessment, matcher_version,
 -- evaluated_epoch, candidate_set_fingerprint) may be updated in place by a
--- later re-run; an evidence set that produces a different fingerprint creates
--- a NEW, additional observation rather than overwriting the old one.
+-- later re-run; MATERIALLY DIFFERENT evidence at the same domain (a
+-- different fingerprint) creates a NEW, additional observation — old
+-- confirmation intact, new observation unconfirmed — rather than rewriting
+-- the old one's identity while its advisory fields silently drift to
+-- reflect the new evidence.
 create table private.gmail_outreach_target_observations (
   id uuid primary key default gen_random_uuid(),
 
@@ -551,12 +563,17 @@ create table private.gmail_outreach_target_observations (
   observed_domain text,
   target_kind_hint text not null default 'unknown' check (target_kind_hint in ('hotel', 'organization', 'unknown')),
 
-  -- DURABLE, VERIFIED PROVENANCE (EXTERNAL AUDIT AMENDMENT #1, Finding 1/12).
-  -- `provider_message_id` — Gmail's own permanent id, not a B04 row uuid —
-  -- so provenance survives a B04 rebuild exactly like the observed-recipient
-  -- coordinates above. The commit RPC verifies every entry here actually
-  -- belongs to this exact thread/account BEFORE this row is created; a
-  -- caller cannot assert provenance the database has not itself confirmed.
+  -- DURABLE, VERIFIED, EVOLVING PROVENANCE (Finding 1/12; grows per
+  -- Amendment #3 Finding 3). `provider_message_id` — Gmail's own permanent
+  -- id, not a B04 row uuid — so provenance survives a B04 rebuild exactly
+  -- like the observed-recipient coordinates above. The commit RPC verifies
+  -- every entry here actually belongs to this exact thread/account BEFORE
+  -- it is added; a caller cannot assert provenance the database has not
+  -- itself confirmed. Unlike the IDENTITY fields above, this array is
+  -- allowed to GROW on reconciliation (a distinct union, never a rewrite or
+  -- a shrink) — an additional SENT follow-up naming the SAME target fact
+  -- honestly adds to its supporting evidence rather than being silently
+  -- dropped.
   source_provider_message_ids text[] not null,
   constraint gmail_outreach_target_observations_source_nonempty
     check (cardinality(source_provider_message_ids) > 0),
@@ -1036,6 +1053,87 @@ $$;
 
 revoke all on function private.gmail_outreach_may_process(uuid) from public;
 
+-- ---------------------------------------------------------------------------
+-- 10c. THE REAL LOCKED FENCE FOR B05's TWO WRITE PATHS (EXTERNAL AUDIT
+-- AMENDMENT #3, Findings 1 & 2)
+-- ---------------------------------------------------------------------------
+-- `gmail_outreach_may_process` above is an unlocked, best-effort read — fine
+-- for the two paths that commit nothing. Both of B05's WRITE paths
+-- (`gmail_outreach_commit_interpretation`, the sole MACHINE writer, and
+-- `gmail_outreach_record_creator_decision`, the sole HUMAN writer — a
+-- creator confirmation/correction is itself NEW Gmail-derived processing,
+-- exactly like a machine commit) must hold a transactionally stable answer
+-- to BOTH "is private_gmail_processing currently granted" and "does the
+-- mailbox's lifecycle currently permit new processing" at the moment they
+-- write — not a value read earlier in the same function that a concurrent
+-- withdrawal or deletion-start could have already invalidated.
+--
+-- LOCK ORDER IS THE WHOLE SAFETY ARGUMENT. B01's own consent-withdrawal
+-- writer (`tests/gmail-import/harness.ts`'s `withdrawConsent`, mirroring the
+-- real product flow) updates `mail_account_consents` FIRST, then
+-- `mail_accounts` SECOND. This function locks the SAME TWO ROWS in that
+-- SAME order — consent, then mail_accounts — so it can never be the
+-- "reverse-order" half of a lock-order deadlock against that writer: two
+-- transactions that always acquire shared resources in the same relative
+-- order can never form a wait-for cycle. B01's deletion-start writer
+-- (`startDeletion`) never touches the consent row at all — it only updates
+-- `mail_accounts` — so it can only ever conflict with the SECOND lock this
+-- function takes, never create a cycle either.
+--
+-- `deleted` is checked once, early, WITHOUT a lock: it is a terminal state
+-- with no path back (0039 §10's own absent-when-deleted assertion means
+-- nothing B05-shaped can exist for a `deleted` account regardless), so no
+-- concurrent transition into or out of it is possible to race against.
+-- `deletion_pending` is the one live transition (`connected` ->
+-- `deletion_pending`) a concurrent deletion-start can make WHILE this
+-- function is running, which is exactly why its check is the one that must
+-- be locked.
+create or replace function private.gmail_outreach_assert_may_process_locked(
+  p_mail_account_id uuid
+)
+returns text
+language plpgsql
+as $$
+declare
+  v_consent_state text;
+  v_connection_state text;
+begin
+  -- LOCK 1 of 2: the consent projection row.
+  select c.state into v_consent_state
+    from public.mail_account_consents c
+   where c.mail_account_id = p_mail_account_id
+     and c.consent_kind = 'private_gmail_processing'
+   for share;
+
+  if v_consent_state is distinct from 'granted' then
+    return 'consent_missing';
+  end if;
+
+  -- LOCK 2 of 2: the mail account lifecycle row, taken AFTER the consent
+  -- lock above, never before — the ordering a concurrent deletion-start
+  -- (which never touches consent) cannot violate, and the same ordering
+  -- B01's own withdrawal writer already uses.
+  select m.connection_state into v_connection_state
+    from public.mail_accounts m
+   where m.id = p_mail_account_id
+   for share;
+
+  if not found then
+    return 'not_found';
+  end if;
+  if v_connection_state = 'deleted' then
+    return 'account_deleted';
+  end if;
+  if v_connection_state = 'deletion_pending' then
+    return 'deletion_pending';
+  end if;
+
+  return 'ok';
+end;
+$$;
+
+revoke all on function private.gmail_outreach_assert_may_process_locked(uuid) from public;
+
 -- ===========================================================================
 -- 11. RPC SURFACE
 -- ===========================================================================
@@ -1511,7 +1609,7 @@ as $$
 declare
   v_account public.mail_accounts%rowtype;
   v_thread private.gmail_normalized_threads%rowtype;
-  v_consent_state text;
+  v_may_process text;
   v_current_digest text;
   v_current_count integer;
   v_current_catalog_epoch bigint;
@@ -1550,37 +1648,26 @@ begin
     return jsonb_build_object('result', 'account_deleted');
   end if;
 
-  -- EXTERNAL AUDIT AMENDMENT #2, Finding 2: a mailbox already queued for
-  -- deletion must not receive any NEW machine processing — its B05 history
-  -- may still be READ (gmail_outreach_status, gmail_outreach_purge_for_
-  -- deletion) but nothing may be written for it once deletion is underway.
-  if v_account.connection_state = 'deletion_pending' then
-    return jsonb_build_object('result', 'deletion_pending');
-  end if;
-
-  -- THE CONSENT FENCE (Finding 2). `connection_state <> 'deleted'` alone
-  -- (the original check above) is B04's precedent for a projection that
-  -- performs no new judgement over private content — B05 does, so it binds
-  -- to the actual authoritative answer: B01's `mail_account_has_consent`.
+  -- THE REAL LIFECYCLE + CONSENT FENCE (EXTERNAL AUDIT AMENDMENT #2 Finding
+  -- 2, hardened by AMENDMENT #3 Finding 1). `connection_state <> 'deleted'`
+  -- alone (B04's own precedent for a projection with no new judgement over
+  -- private content) is not enough for B05, which does form new judgements.
   -- This is RETENTION-vs-NEW-PROCESSING aware by construction: nothing here
-  -- ever deletes or hides EXISTING gmail_outreach_* rows on a withdrawal —
-  -- only this function (the sole writer of NEW machine state) refuses.
+  -- ever deletes or hides EXISTING gmail_outreach_* rows — only this
+  -- function (the sole MACHINE writer) refuses NEW work.
   --
-  -- `for share` on the exact consent row makes a withdrawal and this commit
-  -- mutually exclusive rather than a check-then-act race: a withdrawal
-  -- transaction's UPDATE of this same row must wait for this commit's
-  -- transaction to finish (so a commit that already started under live
-  -- consent completes honestly), or this commit blocks on an in-flight
-  -- withdrawal and re-reads the row only after it resolves — never an
-  -- interleaved, TOCTOU read of a value already being changed underneath it.
-  select c.state into v_consent_state
-    from public.mail_account_consents c
-   where c.mail_account_id = p_mail_account_id
-     and c.consent_kind = 'private_gmail_processing'
-   for share;
-
-  if v_consent_state is distinct from 'granted' then
-    return jsonb_build_object('result', 'consent_missing');
+  -- The EARLIER `v_account` read above is NOT itself a lifecycle fence — it
+  -- is unlocked, so a concurrent deletion-start committing between that read
+  -- and this point would be invisible to it. `private.gmail_outreach_
+  -- assert_may_process_locked` is the real fence: it takes `for share` on
+  -- the consent row and THEN the mail_accounts row (that exact order matters
+  -- — see its own comment for why it can never deadlock against B01's
+  -- withdrawal or deletion-start writers), so a concurrent withdrawal OR a
+  -- concurrent deletion-start racing this commit is caught under lock, not
+  -- inferred from a stale unlocked read.
+  v_may_process := private.gmail_outreach_assert_may_process_locked(p_mail_account_id);
+  if v_may_process <> 'ok' then
+    return jsonb_build_object('result', v_may_process);
   end if;
 
   select t.* into v_thread
@@ -1868,11 +1955,26 @@ begin
       v_existing_observation_fingerprint := null;
     end if;
 
+    -- EXTERNAL AUDIT AMENDMENT #3, Finding 3 (test B): `source_provider_
+    -- message_ids` is the EVOLVING evidence supporting this stable private
+    -- fact, not a frozen snapshot of whichever message first created the
+    -- row — an additional SENT follow-up message naming the SAME target
+    -- (same observation_fingerprint) must have its provenance HONESTLY
+    -- represented, not silently dropped. It only ever GROWS (a distinct
+    -- union), never loses a previously-proven id, and every id in it has
+    -- already been proven above to belong to this exact thread/account.
     update private.gmail_outreach_target_observations
        set machine_canonical_link_assessment = v_observation ->> 'machine_canonical_link_assessment',
            matcher_version = p_matcher_version,
            evaluated_epoch = p_catalog_epoch,
-           candidate_set_fingerprint = v_observation ->> 'candidate_set_fingerprint'
+           candidate_set_fingerprint = v_observation ->> 'candidate_set_fingerprint',
+           source_provider_message_ids = (
+             select array_agg(distinct x)
+               from unnest(
+                 source_provider_message_ids
+                 || (select array_agg(y) from jsonb_array_elements_text(v_observation -> 'source_provider_message_ids') y)
+               ) x
+           )
      where id = v_observation_id;
 
     -- EXTERNAL AUDIT AMENDMENT #2, Finding 4: when the caller's own
@@ -1963,6 +2065,7 @@ declare
   v_user_id uuid;
   v_account public.mail_accounts%rowtype;
   v_thread private.gmail_normalized_threads%rowtype;
+  v_may_process text;
   v_event_id uuid;
   v_event_seq bigint;
   v_observed_state text;
@@ -1985,6 +2088,20 @@ begin
 
   if v_account.connection_state = 'deleted' then
     return jsonb_build_object('result', 'account_deleted');
+  end if;
+
+  -- EXTERNAL AUDIT AMENDMENT #3, Finding 2: a creator confirmation/
+  -- correction is ITSELF new Gmail-derived processing, not merely a fact
+  -- about who owns the mailbox — `auth.uid()` proves authorship, never
+  -- authorization to process. This is the SAME real, locked fence
+  -- `gmail_outreach_commit_interpretation` uses (consent row, then
+  -- mail_accounts row, in that exact order — see that function's own
+  -- comment for why this order can never deadlock against B01's withdrawal
+  -- or deletion-start writers). RETENTION is unaffected: existing decision
+  -- events/projections are never touched here — only a NEW event is refused.
+  v_may_process := private.gmail_outreach_assert_may_process_locked(p_mail_account_id);
+  if v_may_process <> 'ok' then
+    return jsonb_build_object('result', v_may_process);
   end if;
 
   select t.* into v_thread from private.gmail_normalized_threads t

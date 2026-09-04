@@ -1947,7 +1947,12 @@ observed-recipient row, never to a canonical FK directly.
 `gmail_outreach_record_creator_decision` derives its actor from `auth.uid()`,
 never a caller parameter (Finding 2) — it is the one B05 write reachable from
 `authenticated`, called via the app's user-scoped Supabase client, never the
-service-role client every other B05 function uses.
+service-role client every other B05 function uses. Since EXTERNAL AUDIT
+AMENDMENT #3 Finding 2, it also calls the same locked consent/lifecycle
+fence the machine writer uses (below) before writing any new decision event
+— authorship via `auth.uid()` is not authorization to process after consent
+withdrawal or during account deletion; RETENTION of existing decisions is
+unaffected either way.
 
 **Deterministic observed recipients**: `gmail_outreach_observed_recipients`
 preserves every `to`/`cc`/`bcc` occurrence on a creator-SENT message,
@@ -1962,7 +1967,15 @@ participant_id` are a convenience cross-reference to whichever B04 row
 currently occupies that position (`on delete set null`). The same durable
 treatment applies to `gmail_outreach_target_observations.source_provider_
 message_ids` (Gmail's own message ids, verified server-side against the
-thread's current evidence before the row can be created).
+thread's current evidence before the row can be created) — and, since
+EXTERNAL AUDIT AMENDMENT #3 Finding 3, that array now GROWS on every
+reconciliation (a distinct union, never a rewrite or a shrink) rather than
+being frozen at first write. That amendment also folded the observed name
+into `gmail_outreach_target_observations.observation_fingerprint` itself
+(domain **and** normalized name, not domain alone) because `observed_name`
+is read as independent canonical-matching evidence, not a cosmetic label —
+a materially different name at the same domain now forks a new, additional
+observation instead of silently rewriting the old one's identity.
 
 **Catalog staleness** is two-level: a cheap, monotonic, cross-table sequence
 (`private.gmail_outreach_catalog_epoch_seq`, bumped by a statement-level
@@ -2024,6 +2037,27 @@ canonical-contact + target corroboration, never address morphology alone
 and never lets positive vocabulary found only there qualify a thread
 (Finding 7). `gmail_outreach_catalog_snapshot` replaced PostgREST `.or()`
 filter strings with exact/escaped parameterized comparisons (Finding 8).
+
+**EXTERNAL AUDIT AMENDMENT #3** (final lifecycle + target-provenance
+hardening, D070 unchanged): `gmail_outreach_commit_interpretation`'s
+lifecycle check is now a real lock
+(`private.gmail_outreach_assert_may_process_locked` — `for share` on the
+consent row, then `for share` on `mail_accounts`, B01's own withdrawal-writer
+order) rather than an unlocked read that only caught an already-`deletion_
+pending` mailbox, so a deletion-start racing an in-flight commit is now
+mutually exclusive with it in both directions (Finding 1).
+`gmail_outreach_record_creator_decision` calls the same locked fence before
+writing any new decision event — authorship via `auth.uid()` is not
+authorization to process after withdrawal or during deletion; existing
+decisions are retained regardless (Finding 2).
+`gmail_outreach_target_observations.observation_fingerprint` now
+incorporates the normalized observed name alongside the domain, and
+`source_provider_message_ids` now grows via union on each reconciliation
+instead of being frozen at first write — a materially different name at the
+same domain forks a new, additional observation rather than silently
+rewriting the old one's identity while its advisory columns drift ahead of
+it (Finding 3). No detector/matcher/transform version change — these
+findings corrected locking, gating, and identity/provenance discipline only.
 
 ## 6. Editorial evidence and signals
 

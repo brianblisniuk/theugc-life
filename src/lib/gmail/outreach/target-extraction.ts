@@ -111,6 +111,28 @@ function nameOverlap(a: string | null, b: string): boolean {
 }
 
 /**
+ * EXTERNAL AUDIT AMENDMENT #3, Finding 3: the private target fact's
+ * reconciliation key must incorporate every MATERIAL semantic-matching
+ * evidence dimension, exactly the same epistemic principle Amendment #2's
+ * Finding 1 already applied to observed recipients. `observedName` is not
+ * cosmetic here — `matchTargetObservation` reads it as an independent
+ * canonical-matching evidence dimension (`nameEvidence`) — so a domain whose
+ * evidence changes from "Hotel A" to a materially different "Hotel B" is a
+ * DIFFERENT private fact, never a silent rewrite of the first one's identity
+ * while its advisory (machine) fields drift to reflect the second. Lower-
+ * cased/trimmed before hashing so cosmetic capitalization differences across
+ * two otherwise-identical extractions don't fork a fact that didn't actually
+ * change.
+ */
+export function computeTargetObservationFingerprint(
+  domain: string,
+  observedName: string | null,
+): string {
+  const normalizedName = (observedName ?? "").trim().toLowerCase();
+  return digestOfString(`${domain}|${normalizedName}`);
+}
+
+/**
  * One private target observation per distinct non-freemail domain among
  * `to`-role SENT recipients. `cc`/`bcc` recipients never independently
  * generate a target observation — being copied is not evidence of being the
@@ -156,7 +178,7 @@ export function extractTargetObservations(
   const observations: TargetObservationInput[] = [];
   for (const [domain, entry] of byDomain) {
     observations.push({
-      observationFingerprint: digestOfString(domain),
+      observationFingerprint: computeTargetObservationFingerprint(domain, entry.displayName),
       observedName: entry.displayName,
       observedDomain: domain,
       targetKindHint: "unknown",

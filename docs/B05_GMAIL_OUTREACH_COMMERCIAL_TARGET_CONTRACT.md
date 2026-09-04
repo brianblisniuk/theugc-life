@@ -108,14 +108,30 @@ audit, never as authorization).
 ## 7. Private target observations
 
 `private.gmail_outreach_target_observations` — a private, stable fact
-independent of canonical inventory (§8 of D070). Identity fields
-(`observed_name`, `observed_domain`, `target_kind_hint`, `source_message_
-ids`) are written once per `(mail_account_id, normalized_thread_id,
-observation_fingerprint)` and never rewritten by a later re-run — the commit
-RPC's `on conflict ... do nothing` on the fingerprint, followed by a separate
-`update` that touches only the advisory columns, is what enforces this. A
-re-run that cannot recognize an existing observation (different fingerprint)
-creates a new, additional observation rather than overwriting the old one.
+independent of canonical inventory (§8 of D070). `observation_fingerprint`
+is a deterministic digest over every dimension of MATERIAL matching
+evidence the caller extracted — domain **and** normalized observed name
+(`computeTargetObservationFingerprint`) — never domain alone, because
+`observed_name` is read as independent canonical-matching evidence by
+`matchTargetObservation`, not merely a cosmetic label (the same epistemic
+principle §9's `recipient_fingerprint` already applies to observed
+recipients). Identity fields (`observed_name`, `observed_domain`,
+`target_kind_hint`) are written once per `(mail_account_id,
+normalized_thread_id, observation_fingerprint)` and never rewritten by a
+later re-run — the commit RPC's `on conflict ... do nothing` on the
+fingerprint, followed by a separate `update` that touches only the advisory
+columns, is what enforces this. A re-run that reproduces the SAME
+fingerprint reconciles onto the SAME row; one that reproduces a MATERIALLY
+DIFFERENT name at the same domain (a different fingerprint) creates a new,
+additional observation rather than overwriting the old one — the prior row,
+and any human confirmation of it, is left completely untouched.
+`source_provider_message_ids` is the one field that is allowed to EVOLVE on
+a recognized row: every reconciliation grows it via a distinct union with
+the newly-asserted, server-verified ids (never a rewrite, never a shrink),
+so an additional SENT follow-up naming the same target fact honestly adds to
+its supporting evidence rather than being silently dropped or left to drift
+out of sync with the fact it supports. Explicit account deletion still
+purges every row regardless of which fingerprint it carries.
 
 ## 8. Canonical target-link semantics
 
@@ -204,10 +220,12 @@ scoring, canonical hashing, and all stored provenance itself.
 guarantee is "we can reconstruct exactly what evidence and configuration
 produced this stored result," never "calling the model again returns
 identical bytes." Every machine row records its detector/matcher version;
-V1's deterministic baseline (`gmail_outreach_rules_v2`/`gmail_outreach_match_
-rules_v2` — bumped from `_v1` by EXTERNAL AUDIT AMENDMENT #1's quote/
-signature stripping and matcher fixes, §21) needs no model-identifier/
-prompt-version columns since it makes no external call, but
+V1's deterministic baseline (`gmail_outreach_rules_v3`/`gmail_outreach_match_
+rules_v3`/`gmail_outreach_text_v3` — bumped from `_v1` to `_v2` by EXTERNAL
+AUDIT AMENDMENT #1's quote/signature stripping and matcher fixes, and from
+`_v2` to `_v3` by EXTERNAL AUDIT AMENDMENT #2's scope/contact/authored-text
+findings, §21/§22) needs no model-identifier/prompt-version columns since it
+makes no external call, but
 the schema (implicit in `reason_codes`/evidence columns, extensible via
 future columns) does not preclude adding them for a future model-backed
 adapter without breaking existing rows.
@@ -245,16 +263,52 @@ current its catalog read was.
 ## 17. Creator decisions/corrections
 
 The single writer is `public.gmail_outreach_record_creator_decision`
-(service_role-only, `p_user_id` verified against `mail_accounts.user_id`
-before any write). Four independently-decidable axes — `outreach`,
-`target_scope`, `target`, `target_contact` — each producing an immutable
-event (`gmail_outreach_creator_decision_events`, `decided_by_user_id =
-user_id` enforced by both the function and the table's own CHECK) and
-updating exactly the corresponding current-projection row/table. A `target`
-or `target_contact` "remove" action deletes the confirmation row (its
+(`SECURITY DEFINER`, actor derived from `auth.uid()`, the account verified
+to belong to that user before any write). A creator confirmation or
+correction is itself NEW Gmail-derived processing, not merely a fact about
+mailbox ownership: `auth.uid()` proves authorship, never authorization to
+process after consent withdrawal or during account deletion. The function
+therefore calls the same real, locked fence
+`gmail_outreach_commit_interpretation` uses
+(`private.gmail_outreach_assert_may_process_locked`, §17a) before touching
+any decision table — a withdrawal or a live deletion-start transition
+refuses the new event exactly as it refuses a new machine commit. RETENTION
+is unaffected: existing decision events/projections are never touched by
+this gate — only a NEW event is refused, and refusal is reported
+(`consent_missing` / `deletion_pending`) rather than silently swallowed.
+
+Four independently-decidable axes — `outreach`, `target_scope`, `target`,
+`target_contact` — each producing an immutable event
+(`gmail_outreach_creator_decision_events`, `decided_by_user_id = user_id`
+enforced by both the function and the table's own CHECK) and updating
+exactly the corresponding current-projection row/table. A `target` or
+`target_contact` "remove" action deletes the confirmation row (its
 authorizing event remains permanently in the ledger) rather than
 soft-deleting it, since "confirmed" is defined by presence, not by a status
 column that could itself drift.
+
+## 17a. The shared consent/lifecycle fence
+
+`private.gmail_outreach_assert_may_process_locked(mail_account_id)` is the
+one locked gate both the machine writer
+(`gmail_outreach_commit_interpretation`) and the human writer
+(`gmail_outreach_record_creator_decision`) call before writing anything new.
+It takes `for share` on the mailbox's `private_gmail_processing` consent row
+first, then `for share` on the `mail_accounts` row second — the exact order
+B01's own withdrawal writer already uses, so this fence can never form a
+lock-order deadlock against a concurrent withdrawal, and a concurrent
+deletion-start (which only ever touches `mail_accounts`) can never form one
+against a consent-then-account locker either. Held across the caller's own
+transaction, this makes "is consent currently granted" and "does the
+mailbox's lifecycle currently permit new processing" a single transactionally
+stable answer, not two independent unlocked reads a concurrent writer could
+invalidate between them: a consent withdrawal or a `deletion_pending`
+transition racing a commit or a decision is now mutually exclusive with it,
+proven with genuine two-session `pg_blocking_pids` interleavings where the
+race happens DURING the check, never merely before it. `deleted` remains an
+unlocked, terminal-state check (no concurrent transition into or out of it
+exists to race against); `deletion_pending` is the one live transition this
+lock protects.
 
 ## 18. RLS/access model
 
@@ -278,6 +332,16 @@ MACHINE layer. `public.assert_gmail_outreach_data_absent_when_deleted`, a
 deferred constraint trigger registered on `mail_accounts` and on every
 top-level B05 table, makes "`deleted` + surviving B05 data" structurally
 unrepresentable, mirroring B03/B04's identical pattern.
+
+A `deletion_pending` transition starting concurrently with an in-flight
+machine commit or creator decision is not merely "already pending" by the
+time either writer checks — the shared fence (§17a) locks the mailbox row
+itself, so a deletion-start that begins WHILE a commit or a decision is
+in flight is forced to wait for it, and one that has already progressed
+past the lock point is honestly observed and refused. Either way: existing
+B05 rows are never touched by this refusal — only a NEW machine commit or a
+NEW human decision event is refused going forward, exactly like a consent
+withdrawal (§16 of Amendment #2 above).
 
 ## 20. Evaluation contract
 
@@ -384,7 +448,7 @@ verified by test.
 ## Technology choice — V1 deterministic baseline only
 
 No AI/model provider is selected or called anywhere in this PR. `src/lib/
-gmail/outreach/interpreter.ts` implements `gmail_outreach_rules_v2`, a
+gmail/outreach/interpreter.ts` implements `gmail_outreach_rules_v3`, a
 conservative, provider-abstracted, deterministic rules interpreter behind an
 interface any future per-user model adapter could implement without a schema
 change. The baseline abstains (`insufficient_evidence`/`needs_review`)
@@ -570,3 +634,64 @@ corrections. **No product decision in D070 was reopened.**
 `CLASSIFIER_INPUT_TRANSFORM_VERSION` are bumped to `_v3` to reflect findings
 4–8 changing real classification/matching/transform behavior — every
 previously-evaluated thread is offered for re-evaluation.
+
+## External Audit Amendment #3 — final lifecycle + target-provenance hardening, D070 unchanged
+
+A narrowly-scoped, four-finding follow-up against the Amendment #2 head, all
+implementation-level corrections. **No product decision in D070 was
+reopened**, and none of Amendment #2's nine already-accepted fixes above was
+redesigned.
+
+1. **A real deletion-start lifecycle fence for the machine writer
+   (Finding 1).** `gmail_outreach_commit_interpretation`'s lifecycle check
+   was previously an unlocked, stale read that only caught an
+   ALREADY-`deletion_pending` mailbox, never one whose deletion-start was
+   racing the commit itself. It now calls the shared locked fence (§17a)
+   — `for share` on the consent row, then `for share` on the `mail_accounts`
+   row, the exact order B01's own withdrawal writer uses, so this can never
+   deadlock against it or against deletion-start. Proven with genuine
+   two-session `pg_blocking_pids` interleavings in both directions: the
+   commit winning the fence first (deletion-start blocks, then proceeds
+   honestly once the commit lands), and deletion-start winning it first (the
+   commit blocks, then observes `deletion_pending` and refuses, writing
+   nothing).
+2. **The human decision writer gated identically (Finding 2).**
+   `gmail_outreach_record_creator_decision` is ALSO new Gmail-derived
+   processing — `auth.uid()` proves authorship, never authorization to
+   process after consent withdrawal or during deletion — so it now calls the
+   SAME locked fence (§17a) before writing any decision event. RETENTION is
+   unaffected: existing decision events/projections are never touched;
+   only a NEW event is refused (`consent_missing` / `deletion_pending`).
+   `network_intelligence_contribution` being unset never blocks an otherwise-
+   permitted decision — the gate reads only `private_gmail_processing`.
+   Proven with six tests including two genuine two-session races (against an
+   in-flight withdrawal, and against an in-flight deletion-start).
+3. **Provenance-stable private target observations (Finding 3).**
+   `observation_fingerprint` now incorporates domain AND normalized observed
+   name, not domain alone — `observed_name` is read as independent
+   canonical-matching evidence by `matchTargetObservation`, so it must be
+   part of the fact's identity/version rather than a silently-rewritable
+   field whose advisory columns could drift ahead of what the frozen
+   identity still describes (the same principle Amendment #2 Finding 1
+   already applied to observed recipients). A material name change at the
+   same domain now forks a new, additional observation — the prior row, and
+   any human confirmation of it, left completely untouched.
+   `source_provider_message_ids` now GROWS on every reconciliation (a
+   distinct union of server-verified ids, never a rewrite or a shrink)
+   instead of being frozen at first write, so a stable fact can honestly
+   gain supporting evidence from later follow-up messages. Proven by four
+   tests: a real B04 source rebuild that changes a message's display name
+   forks a new fact while the old confirmed fact stays untouched; a
+   follow-up message with the same evidence reconciles onto the same fact
+   with growing provenance; a pure B04 row-id rebuild (no material change)
+   leaves the fact stable; explicit account deletion purges every row.
+4. **Normative documentation reconciled (Finding 4).** §7 and §17/§17a above
+   now describe the fingerprint scheme, evolving provenance, and the shared
+   consent/lifecycle fence as they actually are post-Amendment-3, rather than
+   the pre-Amendment-2/3 behavior; version references throughout are
+   corrected to `_v3`. This appendix section and the live PR description were
+   updated together with the code.
+
+No detector, matcher, or classifier-input-transform version changes — none
+of these findings altered classification, matching, or transform output;
+they corrected locking, gating, and identity/provenance discipline only.

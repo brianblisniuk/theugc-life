@@ -869,6 +869,8 @@ export type RecordCreatorDecisionResult =
   | { result: "unauthenticated" }
   | { result: "not_found" }
   | { result: "account_deleted" }
+  | { result: "deletion_pending" }
+  | { result: "consent_missing" }
   | { result: "thread_not_found" }
   | { result: "observation_not_found" }
   | { result: "recipient_not_found" };
@@ -923,6 +925,8 @@ export async function recordCreatorDecision(
     case "unauthenticated":
     case "not_found":
     case "account_deleted":
+    case "deletion_pending":
+    case "consent_missing":
     case "thread_not_found":
     case "observation_not_found":
     case "recipient_not_found":
