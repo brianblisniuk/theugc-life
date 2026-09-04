@@ -2,7 +2,7 @@
   "name": "theugc-life",
   "version": "0.0.0",
   "private": true,
-  "description": "theugc.life \u2014 the operating system for travel UGC creators.",
+  "description": "theugc.life — the operating system for travel UGC creators.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -53,11 +53,14 @@
     "gmail:import:start": "tsx scripts/gmail-import/cli.ts start",
     "gmail:import:work": "tsx scripts/gmail-import/cli.ts work",
     "gmail:import:resume": "tsx scripts/gmail-import/cli.ts resume",
-    "gmail:import:status": "tsx scripts/gmail-import/cli.ts status"
+    "gmail:import:status": "tsx scripts/gmail-import/cli.ts status",
+    "gmail:normalize:run": "tsx scripts/gmail-normalize/cli.ts run",
+    "gmail:normalize:status": "tsx scripts/gmail-normalize/cli.ts status"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
+    "addressparser": "^1.0.1",
     "exceljs": "^4.4.0",
     "google-auth-library": "^11.0.2",
     "jszip": "^3.10.1",
@@ -71,6 +74,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/addressparser": "^1.0.3",
     "@types/node": "^20.17.12",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.11.10",
