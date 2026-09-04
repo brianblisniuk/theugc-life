@@ -2468,7 +2468,7 @@ its results become facts, and that check belongs where the facts are written.
 
 ## D069 — Private Gmail normalization
 
-Status: Proposed in PR #36 — pending human acceptance — decides how B03's raw
+Status: Accepted — explicitly approved by human owner — decides how B03's raw
 evidence becomes B04's normalized projection, and what that projection is
 still forbidden to claim
 Depends on D067, D068; implemented by migration `0038_gmail_private_normalization.sql`;
