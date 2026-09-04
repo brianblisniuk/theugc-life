@@ -4,6 +4,20 @@ import type { EvidenceTextPart } from "@/lib/gmail/outreach/contract";
 export { CLASSIFIER_INPUT_TRANSFORM_VERSION };
 
 /**
+ * `cleanText` — confident-authorship content the classifier may treat as the
+ * creator's own words. `uncertainAuthorshipText` — a trailing block (EXTERNAL
+ * AUDIT AMENDMENT #2, Finding 7) that LOOKS like a signature/closing but does
+ * not match any RFC-recognized delimiter, so `stripQuotedHistoryAndSignature`
+ * below cannot safely remove it outright without risking real content loss.
+ * Both non-null halves come from the SAME message; `uncertainAuthorshipText`
+ * is null when no such tail was detected.
+ */
+export interface ClassifierInputForMessage {
+  cleanText: string | null;
+  uncertainAuthorshipText: string | null;
+}
+
+/**
  * B04 deliberately preserves quoted text, signatures, and plain/HTML
  * independently. This transform is a VERSIONED HEURISTIC that turns that raw
  * evidence into classifier input — it is NOT lossless, it may abstain, and
@@ -27,21 +41,70 @@ export { CLASSIFIER_INPUT_TRANSFORM_VERSION };
  * classifier is scored accordingly — conservative, abstains rather than
  * guesses on the truncated result.
  */
-export function buildClassifierInputForMessage(parts: readonly EvidenceTextPart[]): string | null {
+export function buildClassifierInputForMessage(
+  parts: readonly EvidenceTextPart[],
+): ClassifierInputForMessage {
   const usable = parts.filter(
     (p) => p.decodeStatus === "decoded" || p.decodeStatus === "empty_decoded",
   );
 
   const plain = usable.find((p) => p.mimeType === "text/plain" && p.decodedText !== null);
-  if (plain)
-    return plain.decodedText === null ? null : stripQuotedHistoryAndSignature(plain.decodedText);
+  if (plain) {
+    if (plain.decodedText === null) return { cleanText: null, uncertainAuthorshipText: null };
+    return splitUncertainAuthorshipTail(stripQuotedHistoryAndSignature(plain.decodedText));
+  }
 
   const html = usable.find((p) => p.mimeType === "text/html" && p.decodedText !== null);
   if (html && html.decodedText !== null) {
-    return stripQuotedHistoryAndSignature(stripHtmlHeuristically(html.decodedText));
+    return splitUncertainAuthorshipTail(
+      stripQuotedHistoryAndSignature(stripHtmlHeuristically(html.decodedText)),
+    );
   }
 
-  return null;
+  return { cleanText: null, uncertainAuthorshipText: null };
+}
+
+/**
+ * `stripQuotedHistoryAndSignature` only recognizes RFC 3676's `-- ` signature
+ * delimiter and a handful of quote introducers. An ordinary closing —
+ * "Thanks,\nJane Doe\nUGC Creator\nTravel Influencer" — matches none of
+ * those, so it passes through untouched and the classifier could read
+ * `influencer`/`ugc` from a self-description line as if it were the actual
+ * pitch. This heuristic finds a common VALEDICTION line (a closing
+ * pleasantry with nothing after it but a short name/title block) and treats
+ * everything from that line to the end as UNCERTAIN authorship — real
+ * content that must not, by itself, drive a positive classification. Unlike
+ * the RFC-delimiter case, this text is not discarded (a legitimate pitch can
+ * genuinely end with "Thanks, let me know!" and more substance) — it is only
+ * downgraded to a lower evidentiary standard.
+ */
+const VALEDICTION_PATTERN =
+  /^\s*(thanks(?: so much| a lot| in advance)?|thank you|best(?: regards| wishes)?|kind regards|warm(?:ly)?(?: regards)?|regards|sincerely|cheers|talk soon|looking forward(?: to hearing from you)?)[,!.]?\s*$/i;
+
+function splitUncertainAuthorshipTail(text: string): ClassifierInputForMessage {
+  if (text.trim() === "") return { cleanText: text, uncertainAuthorshipText: null };
+
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!VALEDICTION_PATTERN.test(lines[i]!)) continue;
+
+    // A signature TAIL requires a name/title block AFTER the valediction —
+    // "Thanks!" as the message's own last line is just how a short reply
+    // ends, not a signature. Nothing follows means no split at all.
+    const afterValediction = lines
+      .slice(i + 1)
+      .join("\n")
+      .trim();
+    if (afterValediction === "") break;
+
+    const clean = lines.slice(0, i).join("\n").trim();
+    return {
+      cleanText: clean === "" ? null : clean,
+      uncertainAuthorshipText: lines.slice(i).join("\n").trim(),
+    };
+  }
+
+  return { cleanText: text, uncertainAuthorshipText: null };
 }
 
 /**

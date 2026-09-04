@@ -290,19 +290,44 @@ export interface ContactExample {
   readonly id: string;
   readonly gold: MatchQuality;
   readonly recipients: readonly EvidenceRecipient[];
+  /** Lower-cased addresses with independent target+contact corroboration (EXTERNAL AUDIT AMENDMENT #2, Finding 6). Defaults to none. */
+  readonly independentlyConfirmedAddresses?: readonly string[];
 }
 
 export const CONTACT_CORPUS: readonly ContactExample[] = [
   {
     id: "ct-1",
-    gold: "strong_match",
+    // EXTERNAL AUDIT AMENDMENT #2, Finding 6: a named-person local part is
+    // address MORPHOLOGY, not independent commercial corroboration — absent
+    // real corroboration this is needs_review, never a fabricated
+    // strong_match.
+    gold: "needs_review",
     recipients: [
       recipientFixture({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
     ],
   },
   {
-    id: "ct-2",
+    id: "ct-1b",
+    // The SAME shape as ct-1, but the address is independently corroborated
+    // (an exact canonical-contact match for a hotel/organization a SEPARATE
+    // domain/name signal also strongly identified) — this is what actually
+    // earns strong_match now.
     gold: "strong_match",
+    recipients: [
+      recipientFixture({
+        role: "to",
+        sourceParticipantId: "p1",
+        localPart: "jane.doe",
+        addrSpec: "jane.doe@corroborated.example",
+      }),
+    ],
+    independentlyConfirmedAddresses: ["jane.doe@corroborated.example"],
+  },
+  {
+    id: "ct-2",
+    // Finding 6: neither a named-person `to` nor a `cc` manager is
+    // independent corroboration on its own.
+    gold: "needs_review",
     recipients: [
       recipientFixture({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
       recipientFixture({ role: "cc", sourceParticipantId: "p2", localPart: "manager" }),
@@ -322,17 +347,41 @@ export const CONTACT_CORPUS: readonly ContactExample[] = [
     id: "ct-5",
     gold: "ambiguous",
     recipients: [
-      recipientFixture({ role: "to", sourceParticipantId: "p1", domainLower: "hotel-a.example" }),
-      recipientFixture({ role: "to", sourceParticipantId: "p2", domainLower: "hotel-b.example" }),
+      recipientFixture({
+        role: "to",
+        sourceParticipantId: "p1",
+        domainLower: "hotel-a.example",
+        addrSpec: "a@hotel-a.example",
+      }),
+      recipientFixture({
+        role: "to",
+        sourceParticipantId: "p2",
+        domainLower: "hotel-b.example",
+        addrSpec: "b@hotel-b.example",
+      }),
     ],
+    // Ambiguity (genuinely different businesses addressed) is a scope
+    // signal, not a confidence claim — it must dominate even WITH
+    // corroboration on one of the two addresses.
+    independentlyConfirmedAddresses: ["a@hotel-a.example"],
   },
   {
     id: "ct-6",
-    // Finding 8: a lone `to` recipient at a GENERIC inbox is no longer an
+    // Finding 8/6: a lone `to` recipient at a GENERIC inbox is no longer an
     // automatic strong_match — role alone is not corroborating evidence.
     gold: "needs_review",
     recipients: [
       recipientFixture({ role: "to", sourceParticipantId: "p1", localPart: "partnerships" }),
+    ],
+  },
+  {
+    id: "ct-7",
+    // Finding 6: two `to` recipients at the SAME domain is no longer an
+    // automatic strong_match by address count alone.
+    gold: "needs_review",
+    recipients: [
+      recipientFixture({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
+      recipientFixture({ role: "to", sourceParticipantId: "p2", localPart: "john.smith" }),
     ],
   },
 ];

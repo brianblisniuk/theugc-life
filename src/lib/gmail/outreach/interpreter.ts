@@ -35,11 +35,13 @@ export function classifyOutreach(input: {
     input.messages.filter((m) => m.providerSent).map((m) => m.normalizedMessageId),
   );
 
-  const sentTexts: string[] = [];
+  const cleanTexts: string[] = [];
+  const uncertainTexts: string[] = [];
   for (const messageId of sentMessageIds) {
     const parts = input.sentTextParts.filter((p) => p.normalizedMessageId === messageId);
-    const text = buildClassifierInputForMessage(parts);
-    if (text !== null) sentTexts.push(text);
+    const { cleanText, uncertainAuthorshipText } = buildClassifierInputForMessage(parts);
+    if (cleanText !== null) cleanTexts.push(cleanText);
+    if (uncertainAuthorshipText !== null) uncertainTexts.push(uncertainAuthorshipText);
   }
 
   const subjectTexts = input.subjects
@@ -52,14 +54,36 @@ export function classifyOutreach(input: {
     return { status: "insufficient_evidence", reasonCodes: ["no_sent_message"] };
   }
 
-  if (sentTexts.length === 0 && subjectTexts.length === 0) {
+  if (cleanTexts.length === 0 && uncertainTexts.length === 0 && subjectTexts.length === 0) {
     return { status: "insufficient_evidence", reasonCodes: ["no_usable_sent_text"] };
   }
 
-  const haystack = [...sentTexts, ...subjectTexts].join(" \n ").toLowerCase();
+  // EXTERNAL AUDIT AMENDMENT #2, Finding 7: the confident-authorship
+  // haystack (subjects + clean body text) is what may prove `qualified_
+  // outreach`. The uncertain-authorship haystack (a non-RFC signature/
+  // closing tail `stripQuotedHistoryAndSignature` could not safely remove
+  // outright) is read for EXCLUSION language only, and to detect the one
+  // adversarial case this finding names directly: positive vocabulary that
+  // appears ONLY inside that uncertain tail (e.g. a "UGC Creator / Travel
+  // Influencer" signature under an otherwise ordinary message) — that is
+  // never allowed to manufacture `qualified_outreach` on its own.
+  const cleanHaystack = [...cleanTexts, ...subjectTexts].join(" \n ").toLowerCase();
+  const uncertainHaystack = uncertainTexts.join(" \n ").toLowerCase();
+  const fullHaystack = [cleanHaystack, uncertainHaystack].filter((h) => h !== "").join(" \n ");
 
-  const exclusionMatched = EXCLUSION_PATTERNS.some((p) => p.test(haystack));
-  const positiveMatched = POSITIVE_PATTERNS.some((p) => p.test(haystack));
+  const exclusionMatched = EXCLUSION_PATTERNS.some((p) => p.test(fullHaystack));
+  const positiveMatchedClean = POSITIVE_PATTERNS.some((p) => p.test(cleanHaystack));
+  const positiveMatchedUncertainOnly =
+    !positiveMatchedClean && POSITIVE_PATTERNS.some((p) => p.test(uncertainHaystack));
+
+  if (positiveMatchedUncertainOnly && !exclusionMatched) {
+    return {
+      status: "needs_review",
+      reasonCodes: ["positive_language_uncertain_authorship_only"],
+    };
+  }
+
+  const positiveMatched = positiveMatchedClean;
 
   if (positiveMatched && !exclusionMatched) {
     return {

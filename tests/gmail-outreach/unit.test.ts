@@ -10,6 +10,7 @@ import { assessTargetContacts } from "@/lib/gmail/outreach/recipients";
 import { buildClassifierInputForMessage } from "@/lib/gmail/outreach/text-transform";
 import {
   deriveMachineTargetScope,
+  detectScopeLanguage,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation,
@@ -96,22 +97,24 @@ describe("B05 unit: text-transform.ts (classifier-input, D4/H)", () => {
       part({ mimeType: "text/plain", decodedText: "plain" }),
       part({ mimeType: "text/html", decodedText: "<p>html</p>" }),
     ];
-    expect(buildClassifierInputForMessage(parts)).toBe("plain");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("plain");
   });
 
   it("falls back to heuristically-stripped HTML when no plain part decoded", () => {
     const parts = [part({ mimeType: "text/html", decodedText: "<p>Hello <b>World</b></p>" })];
-    expect(buildClassifierInputForMessage(parts)).toBe("Hello World");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("Hello World");
   });
 
-  it("returns null when nothing decoded (undecodable / body absent)", () => {
+  it("returns null cleanText when nothing decoded (undecodable / body absent)", () => {
     const parts = [part({ decodeStatus: "body_absent", decodedText: null })];
-    expect(buildClassifierInputForMessage(parts)).toBeNull();
+    const result = buildClassifierInputForMessage(parts);
+    expect(result.cleanText).toBeNull();
+    expect(result.uncertainAuthorshipText).toBeNull();
   });
 
   it("empty_decoded is usable (a real empty body, not absence of evidence)", () => {
     const parts = [part({ decodeStatus: "empty_decoded", decodedText: "" })];
-    expect(buildClassifierInputForMessage(parts)).toBe("");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("");
   });
 
   it("Finding 10: truncates at a Gmail-style quote introducer, keeping only newly-authored text", () => {
@@ -121,7 +124,7 @@ describe("B05 unit: text-transform.ts (classifier-input, D4/H)", () => {
           "Thanks!\n\nOn Mon, Jan 1, 2026 at 9:00 AM Hotel Marketing <marketing@acmehotel.example> wrote:\nWe'd love to collaborate on UGC content.",
       }),
     ];
-    expect(buildClassifierInputForMessage(parts)).toBe("Thanks!");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("Thanks!");
   });
 
   it("Finding 10: truncates at a contiguous run of `>`-quoted lines with no introducer", () => {
@@ -131,7 +134,7 @@ describe("B05 unit: text-transform.ts (classifier-input, D4/H)", () => {
           "Sounds good.\n> We'd love to collaborate on a paid partnership.\n> Let us know.",
       }),
     ];
-    expect(buildClassifierInputForMessage(parts)).toBe("Sounds good.");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("Sounds good.");
   });
 
   it("Finding 10: truncates at the RFC 3676 signature delimiter", () => {
@@ -140,12 +143,53 @@ describe("B05 unit: text-transform.ts (classifier-input, D4/H)", () => {
         decodedText: "Just checking in, thanks!\n-- \nJane Doe — UGC Creator / Influencer",
       }),
     ];
-    expect(buildClassifierInputForMessage(parts)).toBe("Just checking in, thanks!");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("Just checking in, thanks!");
   });
 
   it("Finding 10: an unrecognized quote format passes through untouched (not lossless, may abstain)", () => {
     const parts = [part({ decodedText: "Hi there, hope you are well." })];
-    expect(buildClassifierInputForMessage(parts)).toBe("Hi there, hope you are well.");
+    expect(buildClassifierInputForMessage(parts).cleanText).toBe("Hi there, hope you are well.");
+  });
+
+  describe("Finding 7: uncertain-authorship signature tail", () => {
+    it("splits an ordinary non-RFC closing ('Thanks,' + name/title block) into clean vs uncertain text", () => {
+      const parts = [
+        part({
+          decodedText:
+            "Hi there, just checking on the dates for next month.\n\nThanks,\nJane Doe\nUGC Creator\nTravel Influencer",
+        }),
+      ];
+      const result = buildClassifierInputForMessage(parts);
+      expect(result.cleanText).toBe("Hi there, just checking on the dates for next month.");
+      expect(result.uncertainAuthorshipText).toContain("UGC Creator");
+      expect(result.uncertainAuthorshipText).toContain("Travel Influencer");
+    });
+
+    it("recognizes common valediction variants ('Best,', 'Regards,', 'Best regards,')", () => {
+      for (const valediction of ["Best,", "Regards,", "Best regards,", "Cheers,"]) {
+        const parts = [part({ decodedText: `See you soon.\n\n${valediction}\nJane Doe` })];
+        const result = buildClassifierInputForMessage(parts);
+        expect(result.cleanText).toBe("See you soon.");
+        expect(result.uncertainAuthorshipText).toContain("Jane Doe");
+      }
+    });
+
+    it("no valediction line means no uncertain tail at all", () => {
+      const parts = [part({ decodedText: "Hi there, hope you are well." })];
+      const result = buildClassifierInputForMessage(parts);
+      expect(result.uncertainAuthorshipText).toBeNull();
+    });
+
+    it("an RFC 3676 `-- ` signature is still fully stripped (never surfaces as an uncertain tail — it is discarded, not downgraded)", () => {
+      const parts = [
+        part({
+          decodedText: "Just checking in, thanks!\n-- \nJane Doe — UGC Creator / Influencer",
+        }),
+      ];
+      const result = buildClassifierInputForMessage(parts);
+      expect(result.cleanText).toBe("Just checking in, thanks!");
+      expect(result.uncertainAuthorshipText).toBeNull();
+    });
   });
 });
 
@@ -276,6 +320,36 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
     expect(result.status).toBe("qualified_outreach");
   });
 
+  it("Finding 7: 'UGC Creator / Travel Influencer' signature (no `-- ` delimiter) on an ordinary message is NOT qualified_outreach", () => {
+    const result = classifyOutreach({
+      messages: [sentMsg],
+      sentTextParts: [
+        textPart(
+          "m1",
+          "Hi there, just checking on the dates for next month.\n\nThanks,\nJane Doe\nUGC Creator\nTravel Influencer",
+        ),
+      ],
+      subjects: [],
+    });
+    expect(result.status).not.toBe("qualified_outreach");
+    expect(result.status).toBe("needs_review");
+    expect(result.reasonCodes).toContain("positive_language_uncertain_authorship_only");
+  });
+
+  it("Finding 7: the SAME positive vocabulary in the CLEAN body (above the signature) still qualifies", () => {
+    const result = classifyOutreach({
+      messages: [sentMsg],
+      sentTextParts: [
+        textPart(
+          "m1",
+          "I'd love to collaborate with your hotel on a paid partnership.\n\nThanks,\nJane Doe\nUGC Creator\nTravel Influencer",
+        ),
+      ],
+      subjects: [],
+    });
+    expect(result.status).toBe("qualified_outreach");
+  });
+
   it("insufficient_evidence: no usable SENT text at all (undecodable)", () => {
     const result = classifyOutreach({ messages: [sentMsg], sentTextParts: [], subjects: [] });
     expect(result.status).toBe("insufficient_evidence");
@@ -308,67 +382,122 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
 });
 
 describe("B05 unit: recipients.ts (observed recipient vs target-contact)", () => {
-  it("a lone `to` recipient with corroborating named-person evidence yields strong_match; a lone `bcc` (e.g. creator's own second address) never does", () => {
-    const toOnly = assessTargetContacts([
-      recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
-    ]);
-    expect(toOnly.matchQuality).toBe("strong_match");
+  const noCorroboration = new Set<string>();
 
-    const bccOnly = assessTargetContacts([
-      recipient({ role: "bcc", sourceParticipantId: "p2", localPart: "me" }),
-    ]);
+  it("EXTERNAL AUDIT AMENDMENT #2, Finding 6: a lone named-person `to` recipient WITHOUT independent corroboration is needs_review, never strong_match", () => {
+    const toOnly = assessTargetContacts(
+      [recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" })],
+      noCorroboration,
+    );
+    expect(toOnly.matchQuality).toBe("needs_review");
+
+    const bccOnly = assessTargetContacts(
+      [recipient({ role: "bcc", sourceParticipantId: "p2", localPart: "me" })],
+      noCorroboration,
+    );
     expect(bccOnly.matchQuality).toBe("insufficient_evidence");
   });
 
+  it("Finding 6: a lone `to` recipient WITH independent corroboration (canonical-contact + independently-matched target) IS strong_match", () => {
+    const addr = "marketing@acmehotel.example";
+    const result = assessTargetContacts(
+      [recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe", addrSpec: addr })],
+      new Set([addr]),
+    );
+    expect(result.matchQuality).toBe("strong_match");
+  });
+
   it("a lone `to` recipient at a GENERIC inbox is needs_review, never strong_match (Finding 8 — role alone is not target identity)", () => {
-    const result = assessTargetContacts([
-      recipient({ role: "to", sourceParticipantId: "p1", localPart: "marketing" }),
-    ]);
+    const result = assessTargetContacts(
+      [recipient({ role: "to", sourceParticipantId: "p1", localPart: "marketing" })],
+      noCorroboration,
+    );
     expect(result.matchQuality).toBe("needs_review");
   });
 
   it("a lone `cc` (e.g. a manager) yields needs_review, never strong_match", () => {
-    const ccOnly = assessTargetContacts([
-      recipient({ role: "cc", sourceParticipantId: "p3", localPart: "manager" }),
-    ]);
+    const ccOnly = assessTargetContacts(
+      [recipient({ role: "cc", sourceParticipantId: "p3", localPart: "manager" })],
+      noCorroboration,
+    );
     expect(ccOnly.matchQuality).toBe("needs_review");
   });
 
-  it("two `to` recipients at the SAME domain remain strong_match (multiple legitimate contacts)", () => {
-    const result = assessTargetContacts([
-      recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
-      recipient({ role: "to", sourceParticipantId: "p2", localPart: "john.smith" }),
-    ]);
-    expect(result.matchQuality).toBe("strong_match");
+  it("Finding 6: two `to` recipients at the SAME domain WITHOUT independent corroboration is needs_review, never strong_match by address count alone", () => {
+    const result = assessTargetContacts(
+      [
+        recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
+        recipient({ role: "to", sourceParticipantId: "p2", localPart: "john.smith" }),
+      ],
+      noCorroboration,
+    );
+    expect(result.matchQuality).toBe("needs_review");
     expect(result.candidates).toHaveLength(2);
   });
 
-  it("two `to` recipients at DIFFERENT domains is ambiguous", () => {
-    const result = assessTargetContacts([
-      recipient({ role: "to", sourceParticipantId: "p1", domainLower: "hotel-a.example" }),
-      recipient({ role: "to", sourceParticipantId: "p2", domainLower: "hotel-b.example" }),
-    ]);
+  it("Finding 6: two `to` recipients at the SAME domain, one independently corroborated, IS strong_match", () => {
+    const addr = "jane.doe@acmehotel.example";
+    const result = assessTargetContacts(
+      [
+        recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe", addrSpec: addr }),
+        recipient({
+          role: "to",
+          sourceParticipantId: "p2",
+          localPart: "john.smith",
+          addrSpec: "john.smith@acmehotel.example",
+        }),
+      ],
+      new Set([addr]),
+    );
+    expect(result.matchQuality).toBe("strong_match");
+  });
+
+  it("two `to` recipients at DIFFERENT domains is ambiguous, regardless of corroboration (a real scope signal, not a confidence claim)", () => {
+    const result = assessTargetContacts(
+      [
+        recipient({
+          role: "to",
+          sourceParticipantId: "p1",
+          domainLower: "hotel-a.example",
+          addrSpec: "a@hotel-a.example",
+        }),
+        recipient({
+          role: "to",
+          sourceParticipantId: "p2",
+          domainLower: "hotel-b.example",
+          addrSpec: "b@hotel-b.example",
+        }),
+      ],
+      new Set(["a@hotel-a.example"]),
+    );
     expect(result.matchQuality).toBe("ambiguous");
   });
 
-  it("distinguishes a generic inbox from a named person by local part", () => {
-    const generic = assessTargetContacts([recipient({ role: "to", localPart: "partnerships" })]);
+  it("distinguishes a generic inbox from a named person by local part (informational evidence, no longer gates strong_match alone)", () => {
+    const generic = assessTargetContacts(
+      [recipient({ role: "to", localPart: "partnerships" })],
+      noCorroboration,
+    );
     expect(generic.candidates[0]!.addressPatternEvidence).toBe("generic_inbox");
 
-    const named = assessTargetContacts([recipient({ role: "to", localPart: "jane.doe" })]);
+    const named = assessTargetContacts(
+      [recipient({ role: "to", localPart: "jane.doe" })],
+      noCorroboration,
+    );
     expect(named.candidates[0]!.addressPatternEvidence).toBe("named_person");
   });
 
   it("never fabricates evidence for a malformed recipient (null local part -> unavailable)", () => {
-    const result = assessTargetContacts([
-      recipient({ role: "to", localPart: null, parseStatus: "malformed" }),
-    ]);
+    const result = assessTargetContacts(
+      [recipient({ role: "to", localPart: null, parseStatus: "malformed" })],
+      noCorroboration,
+    );
     expect(result.candidates[0]!.addressPatternEvidence).toBe("unavailable");
   });
 
   it("candidateSetFingerprint changes when the observed recipient set changes", () => {
-    const a = assessTargetContacts([recipient({ sourceParticipantId: "p1" })]);
-    const b = assessTargetContacts([recipient({ sourceParticipantId: "p2" })]);
+    const a = assessTargetContacts([recipient({ sourceParticipantId: "p1" })], noCorroboration);
+    const b = assessTargetContacts([recipient({ sourceParticipantId: "p2" })], noCorroboration);
     expect(a.candidateSetFingerprint).not.toBe(b.candidateSetFingerprint);
   });
 });
@@ -469,6 +598,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
       organizations: [],
       hotelIdByContactEmail: new Map(),
       organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
     });
     expect(result.observation.machineCanonicalLinkAssessment).toBe("needs_review");
     expect(result.links).toHaveLength(1);
@@ -486,6 +616,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
       organizations: [],
       hotelIdByContactEmail: new Map([["marketing@acmehotel.example", new Set(["hotel-1"])]]),
       organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
     });
     expect(result.observation.machineCanonicalLinkAssessment).toBe("strong_match");
   });
@@ -506,6 +637,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
         ["shared@sharedemail.example", new Set(["hotel-1", "hotel-2"])],
       ]),
       organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
     });
     const withContactEvidence = result.links.filter((l) => l.contactEvidence === "agrees");
     expect(withContactEvidence).toHaveLength(2);
@@ -525,6 +657,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
       organizations: [],
       hotelIdByContactEmail: new Map(),
       organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
     });
     expect(result.observation.machineCanonicalLinkAssessment).toBe("ambiguous");
     expect(result.links).toHaveLength(2);
@@ -541,6 +674,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
       organizations: [],
       hotelIdByContactEmail: new Map(),
       organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
     });
     expect(result.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
     expect(result.links).toHaveLength(0);
@@ -557,6 +691,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
       organizations: [{ id: "org-1", name: "Agency X", websiteDomain: "agencyx.example" }],
       hotelIdByContactEmail: new Map(),
       organizationIdByContactEmail: new Map([["contact@agencyx.example", new Set(["org-1"])]]),
+      hotelOrganizationLinks: [],
     });
     expect(result.links[0]!.targetKind).toBe("organization");
     expect(result.links[0]!.targetOrganizationId).toBe("org-1");
@@ -564,28 +699,127 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
   });
 });
 
-describe("B05 unit: target-extraction.ts (deriveMachineTargetScope, Finding 6)", () => {
-  it("zero observations is unresolved", () => {
-    expect(deriveMachineTargetScope([]).scope).toBe("unresolved");
+describe("B05 unit: target-extraction.ts (detectScopeLanguage, Finding 5)", () => {
+  it("detects portfolio/group language", () => {
+    expect(
+      detectScopeLanguage("We'd love to feature you across your portfolio of hotels")
+        .hasPortfolioLanguage,
+    ).toBe(true);
+    expect(
+      detectScopeLanguage("Would love to collaborate with each of your properties")
+        .hasPortfolioLanguage,
+    ).toBe(true);
   });
 
-  it("exactly one observation is single_target", () => {
-    const observations = extractTargetObservations(
-      [recipient({ role: "to", domainLower: "acmehotel.example" })],
-      PROVIDER_ID_MAP,
-    );
-    expect(deriveMachineTargetScope(observations).scope).toBe("single_target");
+  it("detects single-entity language", () => {
+    expect(
+      detectScopeLanguage("I'd love to feature your hotel in my next video")
+        .hasSingleEntityLanguage,
+    ).toBe(true);
+    expect(
+      detectScopeLanguage("Excited to stay at your property next month").hasSingleEntityLanguage,
+    ).toBe(true);
   });
 
-  it("two or more observations is multiple_targets — never a fabricated portfolio_target (no evidence source exists for it in V1)", () => {
-    const observations = extractTargetObservations(
-      [
-        recipient({ role: "to", domainLower: "hotel-a.example", sourceParticipantId: "p1" }),
-        recipient({ role: "to", domainLower: "hotel-b.example", sourceParticipantId: "p2" }),
-      ],
-      PROVIDER_ID_MAP,
+  it("ordinary text with neither signal reports both false", () => {
+    const result = detectScopeLanguage("Hi there, just checking on the dates.");
+    expect(result.hasPortfolioLanguage).toBe(false);
+    expect(result.hasSingleEntityLanguage).toBe(false);
+  });
+});
+
+describe("B05 unit: target-extraction.ts (deriveMachineTargetScope, EXTERNAL AUDIT AMENDMENT #2 Finding 5 — intent-based, never cardinality)", () => {
+  it("zero candidates is unresolved", () => {
+    expect(
+      deriveMachineTargetScope(
+        [],
+        { hasPortfolioLanguage: false, hasSingleEntityLanguage: false },
+        [],
+      ).scope,
+    ).toBe("unresolved");
+  });
+
+  // D070 explicitly rejected deriving scope from observation COUNT. This is
+  // the same single organization candidate in all three cases — the scope
+  // must come from the message's own commercial-intent language, never from
+  // how many observations were extracted.
+  const orgObservation = {
+    observationFingerprint: "fp-org-1",
+    observedName: "Acme Hospitality Group",
+    observedDomain: "acmegroup.example",
+    targetKindHint: "organization" as const,
+    sourceProviderMessageIds: ["provider-msg-1"],
+    machineCanonicalLinkAssessment: "strong_match" as const,
+    candidateSetFingerprint: "fp",
+  };
+  const strongOrgLink = {
+    observationFingerprint: "fp-org-1",
+    targetKind: "organization" as const,
+    targetOrganizationId: "org-1",
+    nameEvidence: "agrees" as const,
+    domainEvidence: "agrees" as const,
+    addressEvidence: "unavailable" as const,
+    contactEvidence: "unavailable" as const,
+    rank: 0,
+  };
+  const sameOrgCandidate = [{ observation: orgObservation, bestLink: strongOrgLink }];
+
+  it("message A (direct proposal, single-entity language): infers single_target from the SAME single org candidate", () => {
+    const language = detectScopeLanguage("I'd love to feature your hotel in an upcoming video.");
+    const result = deriveMachineTargetScope(sameOrgCandidate, language, []);
+    expect(result.scope).toBe("single_target");
+  });
+
+  it("message B (portfolio ask, portfolio language): infers portfolio_target from the SAME single org candidate", () => {
+    const language = detectScopeLanguage(
+      "Would love to collaborate across your portfolio of properties.",
     );
-    const result = deriveMachineTargetScope(observations);
+    const result = deriveMachineTargetScope(sameOrgCandidate, language, []);
+    expect(result.scope).toBe("portfolio_target");
+  });
+
+  it("message C (ambiguous, no scope language): unresolved from the SAME single org candidate — never derived from cardinality", () => {
+    const language = detectScopeLanguage("Thanks for getting back to me, let's talk soon.");
+    const result = deriveMachineTargetScope(sameOrgCandidate, language, []);
+    expect(result.scope).toBe("unresolved");
+  });
+
+  it("portfolio_target reason codes cite catalog corroboration when hotel_organizations shows a real multi-hotel portfolio", () => {
+    const language = { hasPortfolioLanguage: true, hasSingleEntityLanguage: false };
+    const links = [
+      { hotelId: "hotel-1", organizationId: "org-1", relationship: "corporate_group" },
+      { hotelId: "hotel-2", organizationId: "org-1", relationship: "corporate_group" },
+    ];
+    const result = deriveMachineTargetScope(sameOrgCandidate, language, links);
+    expect(result.scope).toBe("portfolio_target");
+    expect(result.reasonCodes).toContain("organization_portfolio_evidence");
+  });
+
+  it("two independently strong-matched candidates with no scope language is multiple_targets", () => {
+    const candidateA = {
+      observation: { ...orgObservation, observationFingerprint: "fp-a" },
+      bestLink: { ...strongOrgLink, observationFingerprint: "fp-a", targetOrganizationId: "org-a" },
+    };
+    const candidateB = {
+      observation: { ...orgObservation, observationFingerprint: "fp-b" },
+      bestLink: { ...strongOrgLink, observationFingerprint: "fp-b", targetOrganizationId: "org-b" },
+    };
+    const language = { hasPortfolioLanguage: false, hasSingleEntityLanguage: false };
+    const result = deriveMachineTargetScope([candidateA, candidateB], language, []);
     expect(result.scope).toBe("multiple_targets");
+  });
+
+  it("multiple candidates but only one strongly matched, no scope language: unresolved (never guesses from the weak one)", () => {
+    const weakCandidate = {
+      observation: {
+        ...orgObservation,
+        observationFingerprint: "fp-weak",
+        machineCanonicalLinkAssessment: "needs_review" as const,
+      },
+      bestLink: null,
+    };
+    const language = { hasPortfolioLanguage: false, hasSingleEntityLanguage: false };
+    const result = deriveMachineTargetScope([sameOrgCandidate[0]!, weakCandidate], language, []);
+    expect(result.scope).toBe("unresolved");
   });
 });

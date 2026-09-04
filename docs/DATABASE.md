@@ -1982,20 +1982,48 @@ full tables, and contact-email lookups are multimaps (Finding 5) —
 `hotel_contacts`/`organization_contacts` carry no unique-email constraint,
 so one address can legitimately match several rows.
 
-Seven `SECURITY DEFINER` functions in `public`: six MACHINE functions
+Eight `SECURITY DEFINER` functions in `public`: seven MACHINE functions
 `EXECUTE`-granted to `service_role` alone — `gmail_outreach_current_catalog_
-epoch`, `gmail_outreach_list_candidates`, `gmail_outreach_get_thread_
-evidence` (the read path B04 itself never needed to expose), `gmail_
-outreach_commit_interpretation` (the sole machine writer), `gmail_outreach_
-status`, `gmail_outreach_purge_for_deletion` — plus `gmail_outreach_record_
-creator_decision` (the sole human writer), granted to `authenticated` and
-`service_role` but gated by `auth.uid()`, never by the grant alone.
+epoch`, `gmail_outreach_list_candidates`, `gmail_outreach_catalog_snapshot`
+(EXTERNAL AUDIT AMENDMENT #2, Finding 8 — exact, parameterized bounded
+catalog reads), `gmail_outreach_get_thread_evidence` (the read path B04
+itself never needed to expose), `gmail_outreach_commit_interpretation` (the
+sole machine writer), `gmail_outreach_status`, `gmail_outreach_purge_for_
+deletion` — plus `gmail_outreach_record_creator_decision` (the sole human
+writer), granted to `authenticated` and `service_role` but gated by
+`auth.uid()`, never by the grant alone.
 
 **0039 writes nothing to `public.pipeline_items`, `public.outreach_events`
 or `public.collaborations`**, and creates or mutates no canonical hotel,
 organization, brand or contact row. `public.is_admin_or_editor()` appears
 nowhere in this migration. Full contract in
 [`B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md`](B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md).
+
+**EXTERNAL AUDIT AMENDMENT #2** (six further findings, D070 unchanged):
+`gmail_outreach_observed_recipients` identity is now the pair (durable
+coordinate, `recipient_fingerprint` over material evidence) — a materially
+different recipient at the same coordinate forks a new row (`is_current =
+false` on the old one) instead of overwriting it (Finding 1).
+`gmail_outreach_list_candidates`/`_get_thread_evidence`/`_commit_
+interpretation` now bind to B01's actual `public.mail_account_has_consent`
+rather than `connection_state <> 'deleted'` alone, with the commit path
+taking a real `for share` lock on the consent row so a withdrawal and an
+in-flight commit are mutually exclusive (Finding 2). The catalog-epoch fence
+is now a real lock — `private.gmail_outreach_catalog_epoch_lock`, taken `for
+share` at commit time and updated by every catalog-mutation trigger under
+the same statement that advances the epoch sequence — never the bare
+sequence's unlocked `last_value` (Finding 3). `interpretOneThread` now
+reuses a previously-committed classification/match result whenever the
+source is fresh and the relevant candidate-set fingerprint (now including
+`hotel_organizations`) is unchanged, provably skipping the classifier/matcher
+(Finding 4). `deriveMachineTargetScope` reads actual portfolio/single-entity
+language plus `hotel_organizations` evidence, never observation cardinality
+(Finding 5). `assessTargetContacts`'s `strong_match` requires independent
+canonical-contact + target corroboration, never address morphology alone
+(Finding 6). The classifier-input transform detects non-RFC signature tails
+and never lets positive vocabulary found only there qualify a thread
+(Finding 7). `gmail_outreach_catalog_snapshot` replaced PostgREST `.or()`
+filter strings with exact/escaped parameterized comparisons (Finding 8).
 
 ## 6. Editorial evidence and signals
 

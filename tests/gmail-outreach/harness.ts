@@ -18,8 +18,9 @@ import {
   type RawHeaderFixture,
   type RawPartFixture,
 } from "../gmail-normalize/harness";
+import { startDeletion, withdrawConsent } from "../gmail-import/harness";
 
-export { connectedMailbox, createTestUser };
+export { connectedMailbox, createTestUser, startDeletion, withdrawConsent };
 
 /**
  * B05 test fixtures against REAL PostgreSQL. Machine/human separation,
@@ -33,28 +34,13 @@ interface ThenableResult<T> {
 }
 
 /**
- * Parses a PostgREST-style `.or("col.op.value,col.op.value")` filter string
- * into a SQL WHERE clause. Only `eq` and `ilike` are needed by B05's own
- * queries — the exact operators `getCatalogSnapshot` uses (EXTERNAL AUDIT
- * AMENDMENT #1, Finding 4/5's bounded, case-insensitive catalog lookup).
+ * Adds the minimal `.from(table).select(cols)[.in(col, values)]` shim
+ * `OutreachDeps.db` needs, over a real pg client. `getCatalogSnapshot`
+ * (EXTERNAL AUDIT AMENDMENT #2, Finding 8) no longer builds PostgREST
+ * `.or()` filter strings — the bounded catalog lookup is now one
+ * parameterized RPC (`gmail_outreach_catalog_snapshot`) — so no `.or()` shim
+ * is needed here any more.
  */
-function parseOrFilter(filterString: string): { clause: string; params: unknown[] } {
-  const parts = filterString.split(",").map((p) => p.trim());
-  const clauses: string[] = [];
-  const params: unknown[] = [];
-  for (const part of parts) {
-    const match = /^([a-z_]+)\.(eq|ilike)\.(.*)$/i.exec(part);
-    if (!match) throw new Error(`test .or() shim: unsupported filter clause "${part}"`);
-    const [, column, op, rawValue] = match;
-    params.push(rawValue);
-    clauses.push(
-      op === "eq" ? `${column} = $${params.length}` : `${column} ilike $${params.length}`,
-    );
-  }
-  return { clause: clauses.length > 0 ? `(${clauses.join(" or ")})` : "false", params };
-}
-
-/** Adds the minimal `.from(table).select(cols)[.in(col, values)]` shim `OutreachDeps.db` needs, over a real pg client. */
 export function outreachDeps(client: Client): OutreachDeps {
   const rpc = createRpcClient(client);
   const from = (table: string) => ({
@@ -77,16 +63,6 @@ export function outreachDeps(client: Client): OutreachDeps {
               resolve: (v: { data: unknown[] | null; error: Error | null }) => R,
             ): Promise<R> {
               return run(`where ${column} = any($1)`, [values]).then(resolve);
-            },
-          } as ThenableResult<unknown>;
-        },
-        or(filterString: string): ThenableResult<unknown> {
-          const { clause, params } = parseOrFilter(filterString);
-          return {
-            then<R>(
-              resolve: (v: { data: unknown[] | null; error: Error | null }) => R,
-            ): Promise<R> {
-              return run(`where ${clause}`, params).then(resolve);
             },
           } as ThenableResult<unknown>;
         },

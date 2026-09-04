@@ -697,7 +697,10 @@ d("B05: RLS/access — no client role reaches B05 data", () => {
         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname like 'gmail\\_outreach\\_%'
     `);
-    expect(res.rows.length).toBe(7);
+    // 8: current_catalog_epoch, list_candidates, catalog_snapshot (Finding 8),
+    // get_thread_evidence, commit_interpretation, record_creator_decision,
+    // status, purge_for_deletion.
+    expect(res.rows.length).toBe(8);
     for (const row of res.rows) {
       expect(row.prosecdef, row.proname).toBe(true);
       expect(

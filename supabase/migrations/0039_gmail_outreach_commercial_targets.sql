@@ -58,6 +58,7 @@ begin
    where n.nspname = 'private'
      and c.relkind = 'r'
      and c.relname in (
+       'gmail_outreach_catalog_epoch_lock',
        'gmail_outreach_thread_signals',
        'gmail_outreach_observed_recipients',
        'gmail_outreach_observed_recipient_canonical_links',
@@ -106,20 +107,60 @@ create sequence private.gmail_outreach_catalog_epoch_seq;
 -- touched".
 select nextval('private.gmail_outreach_catalog_epoch_seq');
 
+-- ---------------------------------------------------------------------------
+-- EXTERNAL AUDIT AMENDMENT #2, Finding 3: a REAL transactional fence.
+-- ---------------------------------------------------------------------------
+-- The bare sequence above is fine for a CHEAP, lock-free, approximate read
+-- (§11a's candidate-offering query — reading `last_value` there costs nothing
+-- and being off by one bump for one query is harmless: it only decides
+-- whether a thread is OFFERED for re-evaluation, never whether a write
+-- happens). It is NOT fine as the actual commit-time fence: reading
+-- `last_value` and later writing, with no lock held in between, is a classic
+-- TOCTOU gap — a catalog mutation between the read and the write is
+-- invisible to the check.
+--
+-- This ONE ROW is the real fence. `gmail_outreach_commit_interpretation`
+-- takes a `for share` lock on it before comparing epochs and before any of
+-- its own writes, and holds that lock until its own transaction ends. A
+-- concurrent catalog mutation's trigger UPDATEs this SAME row (taking the
+-- conflicting exclusive lock ordinary UPDATE always takes), so the two can
+-- never interleave: whichever transaction reaches this row first forces the
+-- other to wait for it to fully finish, and only then read the row's real,
+-- final value. There is no window in which a commit can observe an epoch
+-- that a concurrent mutation is in the process of changing.
+create table private.gmail_outreach_catalog_epoch_lock (
+  id boolean primary key default true,
+  current_epoch bigint not null,
+  constraint gmail_outreach_catalog_epoch_lock_singleton check (id)
+);
+
+insert into private.gmail_outreach_catalog_epoch_lock (id, current_epoch)
+values (true, (select last_value from private.gmail_outreach_catalog_epoch_seq));
+
+comment on table private.gmail_outreach_catalog_epoch_lock is
+  'B05: the ONE lockable row backing the catalog-epoch transactional fence (EXTERNAL AUDIT AMENDMENT #2, Finding 3). gmail_outreach_commit_interpretation takes `for share` on this row before comparing/writing; a catalog-mutation trigger UPDATEs it under the same transaction it bumps the epoch sequence in, so the two can never interleave. Never read this table directly for a cheap/approximate epoch check — use gmail_outreach_current_catalog_epoch() or the bare sequence for that.';
+
 -- SECURITY DEFINER: this fires as an AFTER STATEMENT trigger on ordinary
 -- catalog writes to `public.hotels` etc, made by editor/admin roles that have
--- no reason to hold USAGE on a `private` schema sequence. Without definer
--- rights, an editor's routine hotel edit would fail with "permission denied
--- for sequence" — an unrelated, unintended side effect of B05 existing at
--- all. Owned by the migration role, which does hold the privilege.
+-- no reason to hold USAGE on a `private` schema sequence or UPDATE on a
+-- `private` schema table. Without definer rights, an editor's routine hotel
+-- edit would fail with "permission denied" — an unrelated, unintended side
+-- effect of B05 existing at all. Owned by the migration role, which does
+-- hold the privilege.
 create or replace function private.bump_gmail_outreach_catalog_epoch()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, private, pg_temp
 as $$
+declare
+  v_epoch bigint;
 begin
-  perform nextval('private.gmail_outreach_catalog_epoch_seq');
+  v_epoch := nextval('private.gmail_outreach_catalog_epoch_seq');
+  -- Same transaction, same statement's trigger: the lock row and the
+  -- sequence advance together atomically from the point of view of any
+  -- concurrent `for share` reader on the lock row.
+  update private.gmail_outreach_catalog_epoch_lock set current_epoch = v_epoch where id = true;
   return null;
 end;
 $$;
@@ -143,6 +184,10 @@ begin
 end;
 $$;
 
+-- Deliberately reads the LOCK ROW (not the bare sequence) so this cheap,
+-- unlocked read and the real fence in gmail_outreach_commit_interpretation
+-- always report the same number — the sequence itself is now only the
+-- mechanism that generates a fresh value, never a value B05 compares against.
 create or replace function public.gmail_outreach_current_catalog_epoch()
 returns bigint
 language sql
@@ -150,7 +195,7 @@ security definer
 set search_path = public, private, pg_temp
 stable
 as $$
-  select last_value from private.gmail_outreach_catalog_epoch_seq;
+  select current_epoch from private.gmail_outreach_catalog_epoch_lock where id = true;
 $$;
 
 revoke all on function public.gmail_outreach_current_catalog_epoch() from public;
@@ -255,6 +300,41 @@ create trigger gmail_outreach_thread_signals_touch
 -- cascade: a rebuild nulls them out and the next B05 re-commit reattaches
 -- them, but a human decision anchored to this row's `id` is never at risk,
 -- because nothing about this row's identity or existence depends on them.
+--
+-- EXTERNAL AUDIT AMENDMENT #2, Finding 1: the coordinate above is DURABLE
+-- structure, not evidence — it says WHERE in the thread a recipient sits,
+-- never WHO that recipient actually is. The original Amendment #1 fix let
+-- the evidence columns be mutated in place whenever a B04 rebuild reoccupied
+-- a coordinate, which silently rewrote a human's confirmed recipient to
+-- different real-world evidence (a raw-payload correction that changes
+-- `marketing@hotel-a.com` to `manager@hotel-b.com` at the same structural
+-- position) with no new human decision event. `recipient_fingerprint` is a
+-- second, SEMANTIC identity axis over the MATERIAL observed evidence (the
+-- address itself — never the cosmetic `display_name`, which a hotel can
+-- render differently between two sends of literally the same mailbox without
+-- that being a different real-world recipient). The row's true identity is
+-- now the PAIR (durable coordinate, recipient_fingerprint):
+--
+--   SAME coordinate, SAME fingerprint   the same real recipient reobserved —
+--                                       upsert reconciles the SAME row, and
+--                                       any human confirmation of it is
+--                                       naturally still about the same
+--                                       real-world evidence.
+--   SAME coordinate, DIFFERENT fingerprint   a materially different
+--                                       recipient now occupies that position
+--                                       — a NEW row is created for the new
+--                                       evidence; the OLD row (and any human
+--                                       confirmation anchored to its `id`)
+--                                       is left completely untouched, and is
+--                                       marked `is_current = false` since it
+--                                       no longer reflects live B04 evidence.
+--
+-- No human decision event is ever fabricated by this reconciliation — a
+-- stale `is_current = false` row's existing confirmation, if any, simply
+-- continues to describe the (now superseded) evidence it was always about.
+-- Explicit account deletion purges every row regardless of `is_current`,
+-- exactly like today (gmail_outreach_purge_for_deletion deletes by
+-- mail_account_id wholesale).
 create table private.gmail_outreach_observed_recipients (
   id uuid primary key default gen_random_uuid(),
 
@@ -268,8 +348,14 @@ create table private.gmail_outreach_observed_recipients (
   header_occurrence_index integer not null check (header_occurrence_index >= 0),
   participant_order integer not null check (participant_order >= 0),
 
-  -- OBSERVED EVIDENCE — refreshed on reconciliation (see the commit RPC);
-  -- never part of identity.
+  -- THE SEMANTIC IDENTITY AXIS (Finding 1) — a digest over the MATERIAL
+  -- observed evidence only (addr_spec/local_part/domain/domain_lower/
+  -- parse_status, lower-cased; never display_name). Computed by the commit
+  -- RPC itself, never trusted from the caller.
+  recipient_fingerprint text not null check (recipient_fingerprint ~ '^[0-9a-f]{64}$'),
+
+  -- OBSERVED EVIDENCE — identical for every row sharing a fingerprint;
+  -- refreshed (not overwritten with different values) on reconciliation.
   display_name text,
   addr_spec text,
   local_part text,
@@ -278,10 +364,18 @@ create table private.gmail_outreach_observed_recipients (
   parse_status text not null check (parse_status in ('parsed', 'malformed', 'empty_group')),
 
   -- CURRENT PROJECTION LINK — convenience only, never identity. Null after a
-  -- B04 rebuild until the next B05 re-commit reattaches it.
+  -- B04 rebuild until the next B05 re-commit reattaches it, and PERMANENTLY
+  -- null on a row a fingerprint change has superseded (Finding 1) — at most
+  -- ONE row per durable coordinate may ever hold a non-null value here.
   current_normalized_message_id uuid references private.gmail_normalized_messages(id) on delete set null,
   current_source_header_id uuid references private.gmail_normalized_headers(id) on delete set null,
   current_source_participant_id uuid references private.gmail_normalized_participants(id) on delete set null,
+
+  -- Whether this row reflects the CURRENT live B04 evidence at its
+  -- coordinate (Finding 1). A rebuild that reproduces the SAME fingerprint
+  -- keeps this true on the same row; a rebuild with DIFFERENT evidence sets
+  -- this false on the old row and creates a new, current row alongside it.
+  is_current boolean not null default true,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -294,20 +388,26 @@ create table private.gmail_outreach_observed_recipients (
     foreign key (mail_account_id, user_id)
     references public.mail_accounts (id, user_id) on delete cascade,
 
-  -- THE STABILITY KEY. One observed-recipient row per durable source
-  -- coordinate, forever — independent of which B04 row currently occupies it.
+  -- THE STABILITY KEY. One observed-recipient row per (durable source
+  -- coordinate, material evidence fingerprint), forever — independent of
+  -- which B04 row currently occupies the coordinate.
   constraint gmail_outreach_observed_recipients_durable_uidx
-    unique (mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order)
+    unique (mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order, recipient_fingerprint)
 );
 
 comment on table private.gmail_outreach_observed_recipients is
-  'B05: every To/Cc/Bcc occurrence on creator-SENT evidence, unfiltered. Deterministic extraction, not a machine judgement. Identity is a DURABLE source coordinate (provider_message_id/role/header_occurrence_index/participant_order), independent of B04''s own replaceable row lifecycle, so a B04 rebuild can never orphan a human target-contact confirmation. A recipient here is NOT a commercial target contact by itself — see gmail_outreach_target_contact_candidates and gmail_outreach_target_contact_confirmed_members.';
+  'B05: every To/Cc/Bcc occurrence on creator-SENT evidence, unfiltered. Deterministic extraction, not a machine judgement. Identity is the PAIR (durable source coordinate, recipient_fingerprint over material evidence) — independent of B04''s own replaceable row lifecycle, so a B04 rebuild can never orphan a human target-contact confirmation, AND a materially different recipient later occupying the same coordinate creates a new row rather than silently rewriting the old one''s evidence (EXTERNAL AUDIT AMENDMENT #2, Finding 1). `is_current = false` marks a row a fingerprint change has superseded; its own id and any human confirmation of it remain permanently valid. A recipient here is NOT a commercial target contact by itself — see gmail_outreach_target_contact_candidates and gmail_outreach_target_contact_confirmed_members.';
 
 create index gmail_outreach_observed_recipients_thread_idx
   on private.gmail_outreach_observed_recipients (normalized_thread_id);
 
 create index gmail_outreach_observed_recipients_addr_idx
   on private.gmail_outreach_observed_recipients (lower(addr_spec)) where addr_spec is not null;
+
+create index gmail_outreach_observed_recipients_coordinate_idx
+  on private.gmail_outreach_observed_recipients (
+    mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order
+  );
 
 create trigger gmail_outreach_observed_recipients_touch
   before update on private.gmail_outreach_observed_recipients
@@ -559,6 +659,13 @@ create table private.gmail_outreach_target_scope_signals (
   )),
   reason_codes text[] not null default '{}',
   matcher_version text not null check (matcher_version ~ '^[a-z][a-z0-9_]{0,63}$'),
+  -- EXTERNAL AUDIT AMENDMENT #2, Finding 4: scope evidence now reads
+  -- `hotel_organizations` portfolio relationships (part of the catalog), so
+  -- this signal is catalog-epoch-sensitive exactly like target_contact_
+  -- signals already was — the two-level fast path needs this to tell "the
+  -- matcher version is the same but the catalog moved" apart from "nothing
+  -- relevant changed at all".
+  evaluated_epoch bigint not null,
 
   evaluated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -870,6 +977,66 @@ create constraint trigger gmail_outreach_observed_recipients_absent_when_deleted
   for each row execute function public.assert_gmail_outreach_data_absent_when_deleted();
 
 -- ===========================================================================
+-- 10b. MAY WE PROCESS THIS MAILBOX'S CONTENT RIGHT NOW? (EXTERNAL AUDIT
+-- AMENDMENT #2, Finding 2)
+-- ===========================================================================
+-- B04 gates on `connection_state <> 'deleted'` alone, and that is defensible
+-- for a projection that performs no new judgement over private content — it
+-- normalizes structure, nothing more. B05 is different: it reads message
+-- text, classifies commercial intent and matches business identity, which
+-- is exactly the kind of new judgement B01's consent boundary exists to
+-- gate. "B05 follows B04's precedent" is therefore not a fix — B05 binds to
+-- the actual authoritative answer instead: `public.mail_account_has_
+-- consent(account_id, 'private_gmail_processing')`.
+--
+-- RETENTION vs NEW PROCESSING (explicit, not implied): withdrawing consent,
+-- or a mailbox entering `deletion_pending`, NEVER deletes or hides EXISTING
+-- gmail_outreach_* rows — that remains a decision solely for gmail_outreach_
+-- purge_for_deletion, driven by an explicit deletion request. This predicate
+-- gates only whether NEW machine work (offering a thread, reading its
+-- evidence, or committing a fresh interpretation) may happen from this
+-- moment forward. `gmail_outreach_status` and `gmail_outreach_purge_for_
+-- deletion` never call this — reading counts and purging on request are not
+-- "new processing" and must keep working regardless of current consent.
+--
+-- This unlocked, `stable` form is for the two READ paths (list_candidates,
+-- get_thread_evidence): nothing is committed there, so a race against a
+-- concurrent withdrawal is harmless — the WRITE path's own fence (inside
+-- gmail_outreach_commit_interpretation) is what actually has to be airtight,
+-- and that one takes a real `for share` lock on the exact consent row rather
+-- than calling this function (see that function's own comment).
+create or replace function private.gmail_outreach_may_process(
+  p_mail_account_id uuid
+)
+returns text
+language plpgsql
+stable
+as $$
+declare
+  v_state text;
+begin
+  select connection_state into v_state from public.mail_accounts where id = p_mail_account_id;
+
+  if not found then
+    return 'not_found';
+  end if;
+  if v_state = 'deleted' then
+    return 'account_deleted';
+  end if;
+  if v_state = 'deletion_pending' then
+    return 'deletion_pending';
+  end if;
+  if not public.mail_account_has_consent(p_mail_account_id, 'private_gmail_processing') then
+    return 'consent_missing';
+  end if;
+
+  return 'ok';
+end;
+$$;
+
+revoke all on function private.gmail_outreach_may_process(uuid) from public;
+
+-- ===========================================================================
 -- 11. RPC SURFACE
 -- ===========================================================================
 
@@ -904,6 +1071,7 @@ set search_path = public, private, pg_temp
 as $$
 declare
   v_rows jsonb;
+  v_may_process text;
 begin
   if p_detector_version !~ '^[a-z][a-z0-9_]{0,63}$' or p_matcher_version !~ '^[a-z][a-z0-9_]{0,63}$' then
     raise exception 'invalid detector/matcher version' using errcode = 'invalid_parameter_value';
@@ -914,11 +1082,55 @@ begin
       using errcode = 'invalid_parameter_value';
   end if;
 
+  v_may_process := private.gmail_outreach_may_process(p_mail_account_id);
+  if v_may_process <> 'ok' then
+    return jsonb_build_object('result', v_may_process, 'candidates', '[]'::jsonb);
+  end if;
+
+  -- EXTERNAL AUDIT AMENDMENT #2, Finding 4: each candidate now carries WHY it
+  -- is stale, so TS can pick the cheapest honest path instead of always
+  -- rerunning full interpretation on every offered thread:
+  --
+  --   source_stale    B04 evidence itself moved (new/changed messages) or
+  --                   the detector was never run / bumped — the classifier
+  --                   MUST rerun; nothing about the old outreach_status can
+  --                   be trusted.
+  --   matcher_stale    source is fresh, but the matching rules changed (or
+  --                   target/target-contact signals were never computed) —
+  --                   the classifier is skipped, only matching reruns.
+  --   catalog_stale    source AND matcher are both fresh; only the coarse
+  --                   catalog epoch moved. TS regenerates the bounded
+  --                   catalog snapshot cheaply and compares its fingerprint
+  --                   before deciding whether matching needs to rerun at
+  --                   all (service.ts's interpretOneThread).
   select coalesce(jsonb_agg(row), '[]'::jsonb) into v_rows
     from (
       select jsonb_build_object(
                'normalized_thread_id', t.id,
-               'provider_thread_id', t.provider_thread_id
+               'provider_thread_id', t.provider_thread_id,
+               'source_stale', (
+                 s.id is null
+                 or s.detector_version is distinct from p_detector_version
+                 or s.evidence_message_count <> (
+                      select count(*)::int from private.gmail_normalized_messages m
+                       where m.normalized_thread_id = t.id
+                    )
+                 or exists (
+                      select 1 from private.gmail_normalized_messages m
+                       where m.normalized_thread_id = t.id
+                         and m.normalized_at > s.evaluated_at
+                    )
+               ),
+               'matcher_stale', (
+                 tc.id is null
+                 or tc.matcher_version is distinct from p_matcher_version
+                 or ts.id is null
+                 or ts.matcher_version is distinct from p_matcher_version
+               ),
+               'catalog_stale', (
+                 tc.evaluated_epoch is distinct from p_current_catalog_epoch
+                 or ts.evaluated_epoch is distinct from p_current_catalog_epoch
+               )
              ) as row
         from private.gmail_normalized_threads t
         left join private.gmail_outreach_thread_signals s
@@ -944,9 +1156,10 @@ begin
               )
            or tc.id is null
            or tc.matcher_version is distinct from p_matcher_version
-           or tc.evaluated_epoch <> p_current_catalog_epoch
+           or tc.evaluated_epoch is distinct from p_current_catalog_epoch
            or ts.id is null
            or ts.matcher_version is distinct from p_matcher_version
+           or ts.evaluated_epoch is distinct from p_current_catalog_epoch
          )
        order by t.id asc
        limit p_limit
@@ -957,6 +1170,121 @@ end;
 $$;
 
 revoke all on function public.gmail_outreach_list_candidates(uuid, uuid, text, text, bigint, integer, uuid[]) from public;
+
+-- ---------------------------------------------------------------------------
+-- 11a-bis. BOUNDED, EXACT CATALOG SNAPSHOT (EXTERNAL AUDIT AMENDMENT #2, Finding 8)
+-- ---------------------------------------------------------------------------
+-- `getCatalogSnapshot` (service.ts) used to build its own PostgREST `.or()`
+-- filter strings with `email.ilike.<address>` / `website_url.ilike.%<domain>%`
+-- literals. `escapeOrFilterValue()` stripped only the filter-DSL's OWN
+-- delimiters (commas/parens), never ILIKE's own wildcard metacharacters
+-- (`%`/`_`) inside the literal itself — a legally-shaped local-part or
+-- domain containing either character would silently broaden the match
+-- (never an injection, but a real lookup-broadening/lookalike risk). This
+-- one RPC replaces both filter strings with parameterized, exact
+-- comparisons instead: email lookup is `lower(email) = any(...)` — no
+-- wildcard semantics of any kind, exact equality only — and the
+-- website-domain substring test escapes `%`, `_` and the escape character
+-- itself before building its ILIKE pattern, so a domain containing those
+-- characters is matched LITERALLY rather than as wildcards.
+create or replace function private.escape_like_pattern(value text)
+returns text
+language sql
+immutable
+as $$
+  select replace(replace(replace(value, '\', '\\'), '%', '\%'), '_', '\_');
+$$;
+
+revoke all on function private.escape_like_pattern(text) from public;
+
+create or replace function public.gmail_outreach_catalog_snapshot(
+  p_addresses text[],
+  p_domains text[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+stable
+as $$
+declare
+  v_addresses text[];
+  v_domains text[];
+  v_hotel_contacts jsonb;
+  v_organization_contacts jsonb;
+  v_matched_hotel_ids uuid[];
+  v_matched_organization_ids uuid[];
+  v_hotels jsonb;
+  v_organizations jsonb;
+  v_hotel_organization_links jsonb;
+begin
+  select coalesce(array_agg(distinct lower(a)), '{}') into v_addresses
+    from unnest(coalesce(p_addresses, '{}'::text[])) a;
+  select coalesce(array_agg(distinct lower(d)), '{}') into v_domains
+    from unnest(coalesce(p_domains, '{}'::text[])) d;
+
+  if coalesce(array_length(v_addresses, 1), 0) = 0 and coalesce(array_length(v_domains, 1), 0) = 0 then
+    return jsonb_build_object(
+      'hotels', '[]'::jsonb, 'organizations', '[]'::jsonb,
+      'hotel_contacts', '[]'::jsonb, 'organization_contacts', '[]'::jsonb,
+      'hotel_organization_links', '[]'::jsonb
+    );
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('hotel_id', hc.hotel_id, 'email', hc.email)), '[]'::jsonb),
+         coalesce(array_agg(distinct hc.hotel_id), '{}')
+    into v_hotel_contacts, v_matched_hotel_ids
+    from public.hotel_contacts hc
+   where hc.email is not null and lower(hc.email) = any(v_addresses);
+
+  select coalesce(jsonb_agg(jsonb_build_object('organization_id', oc.organization_id, 'email', oc.email)), '[]'::jsonb),
+         coalesce(array_agg(distinct oc.organization_id), '{}')
+    into v_organization_contacts, v_matched_organization_ids
+    from public.organization_contacts oc
+   where oc.email is not null and lower(oc.email) = any(v_addresses);
+
+  select coalesce(jsonb_agg(jsonb_build_object('id', h.id, 'name', h.name, 'website_url', h.website_url)), '[]'::jsonb)
+    into v_hotels
+    from public.hotels h
+   where h.id = any(v_matched_hotel_ids)
+      or exists (
+           select 1 from unnest(v_domains) d
+            where h.website_url is not null
+              and h.website_url ilike '%' || private.escape_like_pattern(d) || '%' escape '\'
+         );
+
+  select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'name', o.name, 'website_url', o.website_url)), '[]'::jsonb)
+    into v_organizations
+    from public.organizations o
+   where o.id = any(v_matched_organization_ids)
+      or exists (
+           select 1 from unnest(v_domains) d
+            where o.website_url is not null
+              and o.website_url ilike '%' || private.escape_like_pattern(d) || '%' escape '\'
+         );
+
+  -- `hotel_organizations` portfolio-relationship rows relevant to the bounded
+  -- hotel/organization universe just resolved above (Finding 4/5).
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'hotel_id', ho.hotel_id, 'organization_id', ho.organization_id, 'relationship', ho.relationship
+         )), '[]'::jsonb)
+    into v_hotel_organization_links
+    from public.hotel_organizations ho
+   where ho.hotel_id in (select (elem ->> 'id')::uuid from jsonb_array_elements(v_hotels) elem)
+      or ho.organization_id in (select (elem ->> 'id')::uuid from jsonb_array_elements(v_organizations) elem);
+
+  return jsonb_build_object(
+    'hotels', v_hotels,
+    'organizations', v_organizations,
+    'hotel_contacts', v_hotel_contacts,
+    'organization_contacts', v_organization_contacts,
+    'hotel_organization_links', v_hotel_organization_links
+  );
+end;
+$$;
+
+revoke all on function public.gmail_outreach_catalog_snapshot(text[], text[]) from public, anon, authenticated;
+grant execute on function public.gmail_outreach_catalog_snapshot(text[], text[]) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 11b. FULL B04 EVIDENCE BUNDLE FOR ONE THREAD
@@ -977,12 +1305,19 @@ security definer
 set search_path = public, private, pg_temp
 as $$
 declare
+  v_may_process text;
   v_thread private.gmail_normalized_threads%rowtype;
   v_messages jsonb;
   v_sent_text_parts jsonb;
   v_sent_recipients jsonb;
   v_subjects jsonb;
+  v_machine_state jsonb;
 begin
+  v_may_process := private.gmail_outreach_may_process(p_mail_account_id);
+  if v_may_process <> 'ok' then
+    return jsonb_build_object('result', v_may_process);
+  end if;
+
   select t.* into v_thread
     from private.gmail_normalized_threads t
    where t.id = p_normalized_thread_id
@@ -1046,6 +1381,75 @@ begin
    where m.normalized_thread_id = p_normalized_thread_id
      and h.header_name = 'subject';
 
+  -- EXTERNAL AUDIT AMENDMENT #2, Finding 4: the currently-stored MACHINE
+  -- state, so TS can decide the CHEAPEST honest re-evaluation path (skip the
+  -- classifier when only the catalog moved, skip matching entirely when the
+  -- freshly-recomputed relevant fingerprint is unchanged) instead of always
+  -- re-deriving everything from scratch — see service.ts's interpretOneThread.
+  select jsonb_build_object(
+           'thread_signal', (
+             select jsonb_build_object(
+                      'outreach_status', s.outreach_status,
+                      'reason_codes', s.reason_codes,
+                      'detector_version', s.detector_version
+                    )
+               from private.gmail_outreach_thread_signals s
+              where s.normalized_thread_id = p_normalized_thread_id
+                and s.mail_account_id = p_mail_account_id
+           ),
+           'target_contact_signal', (
+             select jsonb_build_object(
+                      'match_quality', tc.match_quality,
+                      'matcher_version', tc.matcher_version,
+                      'evaluated_epoch', tc.evaluated_epoch,
+                      'candidate_set_fingerprint', tc.candidate_set_fingerprint
+                    )
+               from private.gmail_outreach_target_contact_signals tc
+              where tc.normalized_thread_id = p_normalized_thread_id
+                and tc.mail_account_id = p_mail_account_id
+           ),
+           'target_scope_signal', (
+             select jsonb_build_object(
+                      'machine_target_scope', ts.machine_target_scope,
+                      'matcher_version', ts.matcher_version,
+                      'evaluated_epoch', ts.evaluated_epoch
+                    )
+               from private.gmail_outreach_target_scope_signals ts
+              where ts.normalized_thread_id = p_normalized_thread_id
+                and ts.mail_account_id = p_mail_account_id
+           ),
+           'target_observations', (
+             select coalesce(jsonb_agg(jsonb_build_object(
+                      'observation_fingerprint', o.observation_fingerprint,
+                      'matcher_version', o.matcher_version,
+                      'evaluated_epoch', o.evaluated_epoch,
+                      'candidate_set_fingerprint', o.candidate_set_fingerprint,
+                      'machine_canonical_link_assessment', o.machine_canonical_link_assessment,
+                      -- The EXISTING rank-0 canonical link (Finding 4/6): lets
+                      -- TS reconstruct target-scope and target-contact
+                      -- corroboration evidence for an observation it decides
+                      -- to REUSE (unchanged relevant fingerprint) without
+                      -- re-running matchTargetObservation just to recover
+                      -- which canonical row it had already matched.
+                      'best_canonical_link', (
+                        select jsonb_build_object(
+                                 'target_kind', l.target_kind,
+                                 'target_hotel_id', l.target_hotel_id,
+                                 'target_organization_id', l.target_organization_id,
+                                 'contact_evidence', l.contact_evidence
+                               )
+                          from private.gmail_outreach_target_canonical_links l
+                         where l.target_observation_id = o.id
+                           and l.rank = 0
+                      )
+                    ) order by o.observation_fingerprint), '[]'::jsonb)
+               from private.gmail_outreach_target_observations o
+              where o.normalized_thread_id = p_normalized_thread_id
+                and o.mail_account_id = p_mail_account_id
+           )
+         )
+    into v_machine_state;
+
   return jsonb_build_object(
     'result', 'ok',
     'normalized_thread_id', v_thread.id,
@@ -1053,7 +1457,8 @@ begin
     'messages', v_messages,
     'sent_text_parts', v_sent_text_parts,
     'sent_recipients', v_sent_recipients,
-    'subjects', v_subjects
+    'subjects', v_subjects,
+    'machine_state', v_machine_state
   );
 end;
 $$;
@@ -1106,17 +1511,21 @@ as $$
 declare
   v_account public.mail_accounts%rowtype;
   v_thread private.gmail_normalized_threads%rowtype;
+  v_consent_state text;
   v_current_digest text;
   v_current_count integer;
   v_current_catalog_epoch bigint;
   v_recipient_row jsonb;
+  v_participant record;
   v_observation jsonb;
   v_observation_id uuid;
+  v_existing_observation_fingerprint text;
   v_link jsonb;
   v_candidate jsonb;
   v_provider_message_id text;
   v_proven_count integer;
   v_asserted_count integer;
+  v_recipient_fingerprint text;
 begin
   if p_detector_version !~ '^[a-z][a-z0-9_]{0,63}$' or p_matcher_version !~ '^[a-z][a-z0-9_]{0,63}$' then
     raise exception 'invalid detector/matcher version' using errcode = 'invalid_parameter_value';
@@ -1139,6 +1548,39 @@ begin
 
   if v_account.connection_state = 'deleted' then
     return jsonb_build_object('result', 'account_deleted');
+  end if;
+
+  -- EXTERNAL AUDIT AMENDMENT #2, Finding 2: a mailbox already queued for
+  -- deletion must not receive any NEW machine processing — its B05 history
+  -- may still be READ (gmail_outreach_status, gmail_outreach_purge_for_
+  -- deletion) but nothing may be written for it once deletion is underway.
+  if v_account.connection_state = 'deletion_pending' then
+    return jsonb_build_object('result', 'deletion_pending');
+  end if;
+
+  -- THE CONSENT FENCE (Finding 2). `connection_state <> 'deleted'` alone
+  -- (the original check above) is B04's precedent for a projection that
+  -- performs no new judgement over private content — B05 does, so it binds
+  -- to the actual authoritative answer: B01's `mail_account_has_consent`.
+  -- This is RETENTION-vs-NEW-PROCESSING aware by construction: nothing here
+  -- ever deletes or hides EXISTING gmail_outreach_* rows on a withdrawal —
+  -- only this function (the sole writer of NEW machine state) refuses.
+  --
+  -- `for share` on the exact consent row makes a withdrawal and this commit
+  -- mutually exclusive rather than a check-then-act race: a withdrawal
+  -- transaction's UPDATE of this same row must wait for this commit's
+  -- transaction to finish (so a commit that already started under live
+  -- consent completes honestly), or this commit blocks on an in-flight
+  -- withdrawal and re-reads the row only after it resolves — never an
+  -- interleaved, TOCTOU read of a value already being changed underneath it.
+  select c.state into v_consent_state
+    from public.mail_account_consents c
+   where c.mail_account_id = p_mail_account_id
+     and c.consent_kind = 'private_gmail_processing'
+   for share;
+
+  if v_consent_state is distinct from 'granted' then
+    return jsonb_build_object('result', 'consent_missing');
   end if;
 
   select t.* into v_thread
@@ -1181,7 +1623,19 @@ begin
   -- simple and total) is written, and the caller re-reads a fresh snapshot
   -- and retries — the same retry-on-staleness shape B02's CAS RPCs already
   -- use.
-  select last_value into v_current_catalog_epoch from private.gmail_outreach_catalog_epoch_seq;
+  -- REAL TRANSACTIONAL FENCE (EXTERNAL AUDIT AMENDMENT #2, Finding 3): `for
+  -- share` on the ONE lock row private.gmail_outreach_catalog_epoch_lock —
+  -- never the bare sequence's `last_value` (which is just a number, lockable
+  -- by nothing). A concurrent catalog mutation's trigger UPDATEs this exact
+  -- row in the same statement it advances the sequence, so this read and
+  -- that write can never interleave: whichever transaction gets here first
+  -- forces the other to wait for it to fully finish before it can proceed,
+  -- eliminating the check-then-act gap a bare unlocked read would leave open.
+  select current_epoch into v_current_catalog_epoch
+    from private.gmail_outreach_catalog_epoch_lock
+   where id = true
+   for share;
+
   if v_current_catalog_epoch <> p_catalog_epoch then
     return jsonb_build_object('result', 'stale_catalog', 'current_catalog_epoch', v_current_catalog_epoch);
   end if;
@@ -1202,30 +1656,69 @@ begin
         evidence_message_count = excluded.evidence_message_count,
         evaluated_at = now();
 
-  -- OBSERVED RECIPIENTS — upsert on the DURABLE coordinate (Finding 1), never
-  -- on a B04 row id. Evidence and current-projection-link columns refresh on
-  -- reconciliation; the row's own id and durable coordinate never change.
+  -- OBSERVED RECIPIENTS — upsert on (DURABLE coordinate, material-evidence
+  -- fingerprint), never on a B04 row id (Finding 1/12). A rebuild that
+  -- reproduces the SAME evidence at the SAME coordinate reconciles the SAME
+  -- row; a rebuild whose evidence is MATERIALLY DIFFERENT at that coordinate
+  -- forks a NEW row and leaves the old one (and any human confirmation of
+  -- it) completely untouched, only marking it `is_current = false`.
   for v_recipient_row in select * from jsonb_array_elements(
     (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from unnest(coalesce(p_recipient_participant_ids, '{}'::uuid[])) as x)
   )
   loop
-    insert into private.gmail_outreach_observed_recipients (
-      user_id, mail_account_id, normalized_thread_id,
-      provider_message_id, role, header_occurrence_index, participant_order,
-      display_name, addr_spec, local_part, domain, domain_lower, parse_status,
-      current_normalized_message_id, current_source_header_id, current_source_participant_id
-    )
-    select p_user_id, p_mail_account_id, p_normalized_thread_id,
-           m.provider_message_id, p.header_role, h.occurrence_index, p.participant_order,
+    select m.provider_message_id, p.header_role, h.occurrence_index, p.participant_order,
            p.display_name, p.addr_spec, p.local_part, p.domain, p.domain_lower, p.parse_status,
-           m.id, h.id, p.id
+           m.id as normalized_message_id, h.id as source_header_id, p.id as source_participant_id
+      into v_participant
       from private.gmail_normalized_participants p
       join private.gmail_normalized_messages m on m.id = p.normalized_message_id
       join private.gmail_normalized_headers h on h.id = p.source_header_id
      where p.id = (v_recipient_row #>> '{}')::uuid
        and m.normalized_thread_id = p_normalized_thread_id
-       and p.header_role in ('to', 'cc', 'bcc')
-    on conflict (mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order)
+       and p.header_role in ('to', 'cc', 'bcc');
+
+    if not found then
+      continue;
+    end if;
+
+    -- MATERIAL EVIDENCE ONLY — never `display_name`, which is cosmetic and
+    -- can legitimately render differently between two sends of the exact
+    -- same mailbox without that being a different real-world recipient.
+    v_recipient_fingerprint := encode(digest(
+      lower(coalesce(v_participant.addr_spec, '')) || '|' ||
+      lower(coalesce(v_participant.local_part, '')) || '|' ||
+      lower(coalesce(v_participant.domain_lower, v_participant.domain, '')) || '|' ||
+      v_participant.parse_status,
+      'sha256'
+    ), 'hex');
+
+    update private.gmail_outreach_observed_recipients
+       set is_current = false,
+           current_normalized_message_id = null,
+           current_source_header_id = null,
+           current_source_participant_id = null,
+           updated_at = now()
+     where mail_account_id = p_mail_account_id
+       and normalized_thread_id = p_normalized_thread_id
+       and provider_message_id = v_participant.provider_message_id
+       and role = v_participant.header_role
+       and header_occurrence_index = v_participant.occurrence_index
+       and participant_order = v_participant.participant_order
+       and recipient_fingerprint <> v_recipient_fingerprint
+       and is_current = true;
+
+    insert into private.gmail_outreach_observed_recipients (
+      user_id, mail_account_id, normalized_thread_id,
+      provider_message_id, role, header_occurrence_index, participant_order, recipient_fingerprint,
+      display_name, addr_spec, local_part, domain, domain_lower, parse_status,
+      current_normalized_message_id, current_source_header_id, current_source_participant_id, is_current
+    ) values (
+      p_user_id, p_mail_account_id, p_normalized_thread_id,
+      v_participant.provider_message_id, v_participant.header_role, v_participant.occurrence_index, v_participant.participant_order, v_recipient_fingerprint,
+      v_participant.display_name, v_participant.addr_spec, v_participant.local_part, v_participant.domain, v_participant.domain_lower, v_participant.parse_status,
+      v_participant.normalized_message_id, v_participant.source_header_id, v_participant.source_participant_id, true
+    )
+    on conflict (mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order, recipient_fingerprint)
     do update set
       display_name = excluded.display_name,
       addr_spec = excluded.addr_spec,
@@ -1236,6 +1729,7 @@ begin
       current_normalized_message_id = excluded.current_normalized_message_id,
       current_source_header_id = excluded.current_source_header_id,
       current_source_participant_id = excluded.current_source_participant_id,
+      is_current = true,
       updated_at = now();
   end loop;
 
@@ -1247,6 +1741,9 @@ begin
    where l.observed_recipient_id = r.id
      and r.normalized_thread_id = p_normalized_thread_id;
 
+  -- `is_current = true` only (Finding 1): a row a fingerprint change has
+  -- superseded no longer reflects live evidence, so it earns no fresh
+  -- canonical-contact evidence on this or any future re-evaluation.
   insert into private.gmail_outreach_observed_recipient_canonical_links (
     observed_recipient_id, canonical_contact_kind, hotel_contact_id, match_basis, evaluated_epoch
   )
@@ -1254,6 +1751,7 @@ begin
     from private.gmail_outreach_observed_recipients r
     join public.hotel_contacts hc on lower(hc.email) = lower(r.addr_spec)
    where r.normalized_thread_id = p_normalized_thread_id
+     and r.is_current = true
      and r.addr_spec is not null
      and hc.email is not null;
 
@@ -1264,6 +1762,7 @@ begin
     from private.gmail_outreach_observed_recipients r
     join public.organization_contacts oc on lower(oc.email) = lower(r.addr_spec)
    where r.normalized_thread_id = p_normalized_thread_id
+     and r.is_current = true
      and r.addr_spec is not null
      and oc.email is not null;
 
@@ -1297,20 +1796,23 @@ begin
            v_candidate ->> 'role_evidence', v_candidate ->> 'address_pattern_evidence', (v_candidate ->> 'rank')::int
       from private.gmail_outreach_observed_recipients r
      where r.current_source_participant_id = (v_candidate ->> 'source_participant_id')::uuid
-       and r.normalized_thread_id = p_normalized_thread_id;
+       and r.normalized_thread_id = p_normalized_thread_id
+       and r.is_current = true;
   end loop;
 
   -- MACHINE TARGET-SCOPE SIGNAL (Finding 6) — thread-level, advisory only.
   insert into private.gmail_outreach_target_scope_signals (
-    user_id, mail_account_id, normalized_thread_id, machine_target_scope, reason_codes, matcher_version
+    user_id, mail_account_id, normalized_thread_id, machine_target_scope, reason_codes,
+    matcher_version, evaluated_epoch
   ) values (
     p_user_id, p_mail_account_id, p_normalized_thread_id, p_machine_target_scope,
-    coalesce(p_target_scope_reason_codes, '{}'), p_matcher_version
+    coalesce(p_target_scope_reason_codes, '{}'), p_matcher_version, p_catalog_epoch
   )
   on conflict (mail_account_id, normalized_thread_id) do update
     set machine_target_scope = excluded.machine_target_scope,
         reason_codes = excluded.reason_codes,
         matcher_version = excluded.matcher_version,
+        evaluated_epoch = excluded.evaluated_epoch,
         evaluated_at = now();
 
   -- TARGET OBSERVATIONS — reconcile, never overwrite identity fields.
@@ -1352,11 +1854,18 @@ begin
     returning id into v_observation_id;
 
     if v_observation_id is null then
-      select id into v_observation_id
+      -- Already existed — capture its PRIOR candidate_set_fingerprint before
+      -- overwriting it below, so the fast-path check right after can tell
+      -- whether the relevant candidate universe actually changed.
+      select id, candidate_set_fingerprint into v_observation_id, v_existing_observation_fingerprint
         from private.gmail_outreach_target_observations
        where mail_account_id = p_mail_account_id
          and normalized_thread_id = p_normalized_thread_id
          and observation_fingerprint = v_observation ->> 'observation_fingerprint';
+    else
+      -- Brand new row — there is no prior fingerprint to compare against, so
+      -- the canonical-links reconciliation below always applies.
+      v_existing_observation_fingerprint := null;
     end if;
 
     update private.gmail_outreach_target_observations
@@ -1366,27 +1875,37 @@ begin
            candidate_set_fingerprint = v_observation ->> 'candidate_set_fingerprint'
      where id = v_observation_id;
 
-    delete from private.gmail_outreach_target_canonical_links where target_observation_id = v_observation_id;
+    -- EXTERNAL AUDIT AMENDMENT #2, Finding 4: when the caller's own
+    -- fast-path decided the relevant candidate universe is UNCHANGED for
+    -- this observation (same candidate_set_fingerprint as what was already
+    -- stored), it sends no fresh links for it — the EXISTING canonical_links
+    -- rows are left completely alone rather than deleted and immediately
+    -- reinserted with identical content. A genuinely different fingerprint
+    -- (or a brand-new observation) always reconciles as before.
+    if v_existing_observation_fingerprint is distinct from (v_observation ->> 'candidate_set_fingerprint') then
+      delete from private.gmail_outreach_target_canonical_links where target_observation_id = v_observation_id;
 
-    for v_link in select * from jsonb_array_elements(coalesce(p_target_canonical_links, '[]'::jsonb))
-    loop
-      if v_link ->> 'observation_fingerprint' = v_observation ->> 'observation_fingerprint' then
-        insert into private.gmail_outreach_target_canonical_links (
-          target_observation_id, target_kind, target_hotel_id, target_organization_id,
-          name_evidence, domain_evidence, address_evidence, contact_evidence, rank
-        ) values (
-          v_observation_id,
-          v_link ->> 'target_kind',
-          nullif(v_link ->> 'target_hotel_id', '')::uuid,
-          nullif(v_link ->> 'target_organization_id', '')::uuid,
-          v_link ->> 'name_evidence', v_link ->> 'domain_evidence',
-          v_link ->> 'address_evidence', v_link ->> 'contact_evidence',
-          (v_link ->> 'rank')::int
-        );
-      end if;
-    end loop;
+      for v_link in select * from jsonb_array_elements(coalesce(p_target_canonical_links, '[]'::jsonb))
+      loop
+        if v_link ->> 'observation_fingerprint' = v_observation ->> 'observation_fingerprint' then
+          insert into private.gmail_outreach_target_canonical_links (
+            target_observation_id, target_kind, target_hotel_id, target_organization_id,
+            name_evidence, domain_evidence, address_evidence, contact_evidence, rank
+          ) values (
+            v_observation_id,
+            v_link ->> 'target_kind',
+            nullif(v_link ->> 'target_hotel_id', '')::uuid,
+            nullif(v_link ->> 'target_organization_id', '')::uuid,
+            v_link ->> 'name_evidence', v_link ->> 'domain_evidence',
+            v_link ->> 'address_evidence', v_link ->> 'contact_evidence',
+            (v_link ->> 'rank')::int
+          );
+        end if;
+      end loop;
+    end if;
 
     v_observation_id := null;
+    v_existing_observation_fingerprint := null;
   end loop;
 
   return jsonb_build_object('result', 'ok', 'normalized_thread_id', p_normalized_thread_id);

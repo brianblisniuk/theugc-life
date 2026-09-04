@@ -489,3 +489,84 @@ satisfy what D070 already required.
 `OUTREACH_DETECTOR_VERSION` and `TARGET_MATCHER_VERSION` are bumped to `_v2`
 to reflect findings 8–10 changing real classification/matching behavior —
 every previously-classified thread is offered for re-evaluation.
+
+## External Audit Amendment #2 — bounded follow-up, D070 unchanged
+
+A further six findings against the Amendment #1 head, all implementation-level
+corrections. **No product decision in D070 was reopened.**
+
+1. **Durable evidence forks on material change (Finding 1).** `gmail_outreach_
+   observed_recipients`' identity is now the PAIR (durable coordinate,
+   `recipient_fingerprint` — a digest over material evidence: address/local-
+   part/domain/parse-status, never the cosmetic `display_name`). A B04
+   rebuild that reproduces the SAME material evidence at a coordinate
+   reconciles the SAME row; one that reproduces MATERIALLY DIFFERENT evidence
+   at that coordinate forks a NEW row and marks the old one `is_current =
+   false`, leaving it (and any human confirmation of it) completely
+   untouched — no human decision event is ever fabricated. Explicit account
+   deletion still purges every row regardless of `is_current`.
+2. **The real `private_gmail_processing` consent gate (Finding 2).**
+   `gmail_outreach_list_candidates`, `gmail_outreach_get_thread_evidence` and
+   `gmail_outreach_commit_interpretation` now bind to B01's actual
+   authoritative answer — `public.mail_account_has_consent(account_id,
+   'private_gmail_processing')` — not merely `connection_state <> 'deleted'`.
+   RETENTION (existing B05 history) and NEW PROCESSING are explicit and
+   separate: a withdrawal or a `deletion_pending` transition never deletes
+   existing rows, but refuses every future list/read/commit. The commit
+   path's check takes a real `for share` lock on the consent row, making a
+   withdrawal and an in-flight commit mutually exclusive rather than a
+   check-then-act race — proven with a genuine two-session interleaving.
+3. **A real transactional catalog-epoch fence (Finding 3).** The bare
+   sequence's `last_value` was a lock-free, TOCTOU-vulnerable read.
+   `private.gmail_outreach_catalog_epoch_lock` is now the one row every
+   catalog-mutation trigger UPDATEs (in the same statement it advances the
+   sequence) and every commit takes `for share` on before comparing/writing —
+   a concurrent mutation and a commit can no longer interleave. Proven via
+   `pg_blocking_pids`, with the race happening DURING the check, not merely
+   before it.
+4. **A true two-level fast path (Finding 4).** `gmail_outreach_list_
+   candidates` now reports WHY a thread is stale (`source_stale`/
+   `matcher_stale`/`catalog_stale`) instead of one bare boolean.
+   `interpretOneThread` reuses the PREVIOUSLY-COMMITTED outreach
+   classification whenever the source is fresh, and reuses a previously-
+   matched observation's assessment whenever its relevant candidate-set
+   fingerprint (now including `hotel_organizations` portfolio relationships)
+   is unchanged — the classifier and the matcher are provably not re-invoked
+   in that case (via injected counting adapters, not inferred from output),
+   and `gmail_outreach_commit_interpretation` itself leaves an observation's
+   existing canonical links untouched when its fingerprint hasn't moved.
+5. **Semantic, non-cardinality machine target scope (Finding 5).**
+   `deriveMachineTargetScope` no longer counts observations. It reads actual
+   commercial-intent evidence — portfolio/group language or single-property
+   addressing language in the creator's own clean (non-quoted,
+   non-uncertain-signature) sent text, optionally corroborated by
+   `hotel_organizations` portfolio size — and returns `unresolved` when
+   neither is honestly present. The identical single organization candidate
+   can independently yield `single_target`, `portfolio_target`, or
+   `unresolved` depending only on the message's own language.
+6. **Independently-corroborated target-contact matching (Finding 6).**
+   `assessTargetContacts` no longer treats a named-person local part or
+   multiple same-domain `to` recipients as sufficient for `strong_match`.
+   `strong_match` now requires an exact canonical-contact match for a
+   hotel/organization that a SEPARATE (domain/name) signal also strongly
+   identified as this thread's actual target — two independent extraction
+   pathways agreeing, never address shape alone.
+7. **Authored-text uncertainty (Finding 7 hardening).** The classifier-input
+   transform now also detects a common non-RFC closing (a valediction line
+   followed by a name/title block, with no `-- ` delimiter) and marks it
+   `uncertainAuthorshipText`, separate from `cleanText`. Positive vocabulary
+   appearing ONLY inside that uncertain tail no longer qualifies a thread as
+   `qualified_outreach` — it lands at `needs_review` instead.
+8. **Exact, parameterized catalog lookups (Finding 8 hardening).**
+   `getCatalogSnapshot` now calls one RPC, `gmail_outreach_catalog_snapshot`,
+   which compares emails with EXACT equality (`lower(email) = any(...)`, no
+   wildcard semantics) and escapes `%`/`_`/the escape character before
+   building its website-domain ILIKE pattern — replacing the earlier
+   PostgREST `.or()` filter strings, whose escaping covered only the
+   filter-DSL's own delimiters, never ILIKE's wildcard metacharacters inside
+   the literal itself.
+
+`OUTREACH_DETECTOR_VERSION`, `TARGET_MATCHER_VERSION` and
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are bumped to `_v3` to reflect findings
+4–8 changing real classification/matching/transform behavior — every
+previously-evaluated thread is offered for re-evaluation.

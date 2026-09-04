@@ -101,6 +101,7 @@ describe("B05 evaluation harness: canonical target matching", () => {
         organizations: example.organizations,
         hotelIdByContactEmail,
         organizationIdByContactEmail,
+        hotelOrganizationLinks: [],
       });
 
       const predicted = result.observation.machineCanonicalLinkAssessment;
@@ -131,7 +132,10 @@ describe("B05 evaluation harness: canonical target matching", () => {
 describe("B05 evaluation harness: target-contact candidate assessment", () => {
   it("reports candidate correctness and abstention rate over the synthetic contact corpus", () => {
     const results: LabeledResult<string>[] = CONTACT_CORPUS.map((example) => {
-      const assessment = assessTargetContacts(example.recipients);
+      const assessment = assessTargetContacts(
+        example.recipients,
+        new Set(example.independentlyConfirmedAddresses ?? []),
+      );
       return { id: example.id, gold: example.gold, predicted: assessment.matchQuality };
     });
 

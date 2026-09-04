@@ -8,20 +8,33 @@
  * V1 deterministic outreach classifier. No external model call.
  * `_v2` (EXTERNAL AUDIT AMENDMENT #1, Finding 10): the classifier input now
  * has quoted history/signatures heuristically stripped before pattern
- * matching, changing which threads classify as `qualified_outreach` — a
- * real behavior change, so every previously-classified thread is offered
- * for re-evaluation via `gmail_outreach_list_candidates`'s detector-version
- * staleness check.
+ * matching. `_v3` (EXTERNAL AUDIT AMENDMENT #2, Finding 7): positive
+ * vocabulary appearing ONLY inside a heuristically-detected, non-RFC
+ * signature tail (uncertain authorship) no longer qualifies a thread as
+ * `qualified_outreach` — another real behavior change, so every
+ * previously-classified thread is offered for re-evaluation via
+ * `gmail_outreach_list_candidates`'s detector-version staleness check.
  */
-export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v2";
+export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v3";
 /**
  * V1 deterministic target/target-contact matcher. No external model call.
  * `_v2` (Finding 5/8/9): multimap contact-email evidence, a tightened
  * target-contact `strong_match` rule, and no domain-derived name evidence.
+ * `_v3` (EXTERNAL AUDIT AMENDMENT #2, Findings 4/5/6/8): the relevant
+ * candidate-set fingerprint now includes `hotel_organizations` portfolio
+ * relationships, machine target-scope is intent-based rather than a
+ * cardinality count, target-contact `strong_match` requires independent
+ * canonical-contact + target corroboration rather than address morphology,
+ * and the catalog snapshot query is exact-match rather than `ilike`.
  */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v2";
-/** Versioned heuristic classifier-input transform (quote/HTML handling, signature stripping). */
-export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v2";
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v3";
+/**
+ * Versioned heuristic classifier-input transform (quote/HTML handling,
+ * signature stripping). `_v3` (Finding 7): also splits a message into a
+ * confident-authorship `cleanText` and an `uncertainAuthorshipText` tail
+ * (a heuristically-detected, non-RFC valediction/signature block).
+ */
+export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v3";
 
 export type OutreachStatus =
   "qualified_outreach" | "not_outreach" | "needs_review" | "insufficient_evidence";
@@ -105,6 +118,53 @@ export interface ThreadEvidence {
   sentTextParts: readonly EvidenceTextPart[];
   sentRecipients: readonly EvidenceRecipient[];
   subjects: readonly EvidenceSubject[];
+}
+
+/**
+ * WHY a thread was offered for re-evaluation (EXTERNAL AUDIT AMENDMENT #2,
+ * Finding 4) — lets `interpretOneThread` pick the cheapest honest path
+ * instead of always rerunning full interpretation. `sourceStale` implies the
+ * classifier must rerun; `matcherStale`/`catalogStale` (with `sourceStale`
+ * false) mean the classifier's own result may be reused unchanged, and only
+ * matching may need to rerun.
+ */
+export interface CandidateStaleness {
+  sourceStale: boolean;
+  matcherStale: boolean;
+  catalogStale: boolean;
+}
+
+/** The currently-stored MACHINE state for one thread, as returned by `gmail_outreach_get_thread_evidence` (Finding 4). Null fields mean "never evaluated". */
+export interface MachineStateSnapshot {
+  threadSignal: {
+    outreachStatus: OutreachStatus;
+    reasonCodes: readonly string[];
+    detectorVersion: string;
+  } | null;
+  targetContactSignal: {
+    matchQuality: MatchQuality;
+    matcherVersion: string;
+    evaluatedEpoch: number;
+    candidateSetFingerprint: string;
+  } | null;
+  targetScopeSignal: {
+    machineTargetScope: TargetScope;
+    matcherVersion: string;
+    evaluatedEpoch: number;
+  } | null;
+  targetObservations: readonly {
+    observationFingerprint: string;
+    matcherVersion: string | null;
+    evaluatedEpoch: number | null;
+    candidateSetFingerprint: string | null;
+    machineCanonicalLinkAssessment: MatchQuality | null;
+    bestCanonicalLink: {
+      targetKind: TargetKind;
+      targetHotelId: string | null;
+      targetOrganizationId: string | null;
+      contactEvidence: EvidenceAgreement;
+    } | null;
+  }[];
 }
 
 export interface TargetContactCandidateInput {

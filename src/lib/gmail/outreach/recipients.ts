@@ -70,13 +70,25 @@ export interface TargetContactAssessment {
 /**
  * Scores every observed SENT recipient as a target-contact candidate. Every
  * candidate references a real observed-recipient participant id — never a
- * canonical contact. `matchQuality` is the thread-level aggregate; `strong_
- * match` requires at least one `to` recipient, `ambiguous` requires two or
- * more `to` recipients at genuinely different domains (a materially
- * different, less certain case than several people at one company).
+ * canonical contact.
+ *
+ * `independentlyConfirmedAddresses` (EXTERNAL AUDIT AMENDMENT #2, Finding 6)
+ * — lower-cased addresses with GENUINELY INDEPENDENT commercial-target
+ * corroboration: an exact canonical-contact-record match (`gmail_outreach_
+ * observed_recipient_canonical_links`'s own evidence) for a hotel/
+ * organization that a SEPARATE, independent signal (domain or name
+ * agreement) also identified as this thread's actual commercial target
+ * (`matchTargetObservation`'s `strong_match`). Two unrelated extraction
+ * pathways agreeing is real evidence; ADDRESS MORPHOLOGY (a dotted local
+ * part "looks like" a person, or several `to` recipients share a domain) is
+ * not — a `jane.doe@` address could just as easily be a manager, assistant,
+ * or colleague with no commercial role at all. The previous version treated
+ * morphology as sufficient for `strong_match`; this one never does — absent
+ * independent corroboration, `needs_review` is the honest ceiling.
  */
 export function assessTargetContacts(
   recipients: readonly EvidenceRecipient[],
+  independentlyConfirmedAddresses: ReadonlySet<string>,
 ): TargetContactAssessment {
   const scored = recipients.map((r, index) => ({
     sourceParticipantId: r.sourceParticipantId,
@@ -84,6 +96,7 @@ export function assessTargetContacts(
     addressPatternEvidence: addressPatternEvidence(r.localPart),
     role: r.role,
     domainLower: r.domainLower,
+    addrLower: r.addrSpec ? r.addrSpec.toLowerCase() : null,
     originalIndex: index,
   }));
 
@@ -103,23 +116,18 @@ export function assessTargetContacts(
   const toDomains = new Set(toRecipients.filter((r) => r.domainLower).map((r) => r.domainLower!));
   const toCount = toRecipients.length;
   const ccCount = scored.filter((r) => r.role === "cc").length;
+  const corroboratedToCount = toRecipients.filter(
+    (r) => r.addrLower !== null && independentlyConfirmedAddresses.has(r.addrLower),
+  ).length;
 
-  // EXTERNAL AUDIT AMENDMENT #1, Finding 8: `to` role ALONE is not enough for
-  // `strong_match` — that made this table's real behavior "to === target"
-  // despite its own documented intent never to assume that. `strong_match`
-  // now requires role evidence PLUS a corroborating signal: either two or
-  // more `to` recipients at the SAME domain (independently coordinated
-  // addressing of real people is stronger than one address), or a single
-  // `to` recipient whose local part reads as a named individual rather than
-  // a generic/shared inbox. A lone generic-inbox `to` is a real, legitimate
-  // signal — just not a CONFIDENT one — so it lands at `needs_review`,
-  // exactly like a lone `cc`, rather than being silently upgraded.
+  // `ambiguous` (genuinely different businesses addressed) is still decided
+  // by domain plurality — a real scope signal, unrelated to Finding 6's
+  // complaint about morphology-based CONFIDENCE. `strong_match` now requires
+  // independent corroboration; address shape alone never earns it.
   let matchQuality: MatchQuality;
   if (toCount > 0 && toDomains.size >= 2) {
     matchQuality = "ambiguous";
-  } else if (toCount >= 2) {
-    matchQuality = "strong_match";
-  } else if (toCount === 1 && toRecipients[0]!.addressPatternEvidence === "named_person") {
+  } else if (corroboratedToCount > 0) {
     matchQuality = "strong_match";
   } else if (toCount > 0 || ccCount > 0) {
     matchQuality = "needs_review";
