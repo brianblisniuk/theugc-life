@@ -2,6 +2,7 @@ import { TARGET_MATCHER_VERSION } from "@/lib/gmail/outreach/contract";
 import type {
   EvidenceAgreement,
   EvidenceRecipient,
+  MachineTargetScopeResult,
   MatchQuality,
   TargetCanonicalLinkCandidateInput,
   TargetKind,
@@ -41,15 +42,27 @@ export interface CatalogOrganization {
   websiteDomain: string | null;
 }
 
-/** A bounded, deterministic snapshot of catalog rows relevant to one thread's evaluation. */
+/**
+ * A bounded, deterministic snapshot of catalog rows relevant to one thread's
+ * evaluation.
+ *
+ * EXTERNAL AUDIT AMENDMENT #1, Finding 5: `hotelIdByContactEmail`/
+ * `organizationIdByContactEmail` are MULTIMAPS (one email can legitimately
+ * belong to several hotel_contacts rows — a shared inbox, a duplicate
+ * import, an agency contact representing several properties; the table
+ * carries no unique constraint on email for exactly this reason). A plain
+ * `Map<string, string>` here would silently collapse that ambiguity to
+ * whichever row happened to be written last, and could report `contact_
+ * evidence: agrees` for the WRONG business.
+ */
 export interface CatalogSnapshot {
   epoch: number;
   hotels: readonly CatalogHotel[];
   organizations: readonly CatalogOrganization[];
-  /** lower-cased email -> hotel id, from an exact hotel_contacts match. */
-  hotelIdByContactEmail: ReadonlyMap<string, string>;
-  /** lower-cased email -> organization id, from an exact organization_contacts match. */
-  organizationIdByContactEmail: ReadonlyMap<string, string>;
+  /** lower-cased email -> every hotel id it exactly matches in hotel_contacts. */
+  hotelIdByContactEmail: ReadonlyMap<string, ReadonlySet<string>>;
+  /** lower-cased email -> every organization id it exactly matches in organization_contacts. */
+  organizationIdByContactEmail: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** Extracts hostname (lower-cased, no scheme/www) from a URL-ish string. Returns null if unparseable. */
@@ -86,41 +99,79 @@ function nameOverlap(a: string | null, b: string): boolean {
  * `to`-role SENT recipients. `cc`/`bcc` recipients never independently
  * generate a target observation — being copied is not evidence of being the
  * pitch's destination.
+ *
+ * `messageIdToProviderId` maps each recipient's `normalizedMessageId` to
+ * Gmail's own permanent `provider_message_id` (EXTERNAL AUDIT AMENDMENT #1,
+ * Finding 1/12) — the durable provenance the commit RPC verifies
+ * server-side, so `sourceProviderMessageIds` never asserts a B04 row id that
+ * a rebuild could invalidate.
  */
 export function extractTargetObservations(
   recipients: readonly EvidenceRecipient[],
+  messageIdToProviderId: ReadonlyMap<string, string>,
 ): TargetObservationInput[] {
-  const byDomain = new Map<string, { sourceMessageIds: Set<string>; displayName: string | null }>();
+  const byDomain = new Map<
+    string,
+    { sourceProviderMessageIds: Set<string>; displayName: string | null }
+  >();
 
   for (const r of recipients) {
     if (r.role !== "to") continue;
     const domain = r.domainLower;
     if (!domain || FREEMAIL_DOMAINS.has(domain)) continue;
+    const providerMessageId = messageIdToProviderId.get(r.normalizedMessageId);
+    if (!providerMessageId) continue;
     const entry = byDomain.get(domain) ?? {
-      sourceMessageIds: new Set<string>(),
+      sourceProviderMessageIds: new Set<string>(),
       displayName: null,
     };
-    entry.sourceMessageIds.add(r.normalizedMessageId);
+    entry.sourceProviderMessageIds.add(providerMessageId);
+    // A recipient's display name is genuine, independently-observed name
+    // evidence (a human wrote it) — unlike a label mechanically derived from
+    // the domain string itself, which would let ONE signal (the domain)
+    // masquerade as two independent agreements once compared against a
+    // catalog row's name (Finding 9). No domain-derived fallback: absent
+    // real display-name evidence, `observedName` stays null — an honest
+    // abstention, not a fabricated signal.
     entry.displayName ??= r.displayName;
     byDomain.set(domain, entry);
   }
 
   const observations: TargetObservationInput[] = [];
   for (const [domain, entry] of byDomain) {
-    const label = domain.split(".")[0] ?? domain;
-    const observedName = label.charAt(0).toUpperCase() + label.slice(1);
     observations.push({
       observationFingerprint: digestOfString(domain),
-      observedName,
+      observedName: entry.displayName,
       observedDomain: domain,
       targetKindHint: "unknown",
-      sourceMessageIds: [...entry.sourceMessageIds],
+      sourceProviderMessageIds: [...entry.sourceProviderMessageIds],
       // Filled in by matchTargetObservation below.
       machineCanonicalLinkAssessment: "insufficient_evidence",
       candidateSetFingerprint: digestOfString(""),
     });
   }
   return observations;
+}
+
+/**
+ * Conservative, thread-level MACHINE target-scope hint (Finding 6). Never
+ * authoritative and never duplicated per observation. V1 uses only the one
+ * signal it can honestly support — how many distinct commercial targets the
+ * thread's own extraction found — and never invents a `portfolio_target`
+ * classification, since no portfolio/property-group language detector exists
+ * in this baseline; that value remains reachable only through the creator's
+ * own decision.
+ */
+export function deriveMachineTargetScope(
+  observations: readonly TargetObservationInput[],
+): MachineTargetScopeResult {
+  if (observations.length === 0) {
+    return { scope: "unresolved", reasonCodes: ["no_target_observation"] };
+  }
+  if (observations.length === 1) {
+    return { scope: "single_target", reasonCodes: ["one_target_observation"] };
+  }
+  return { scope: "multiple_targets", reasonCodes: ["multiple_target_observations"] };
 }
 
 export interface TargetMatchResult {
@@ -166,7 +217,7 @@ function evaluateCandidate(
 
   const contactMap =
     kind === "hotel" ? catalog.hotelIdByContactEmail : catalog.organizationIdByContactEmail;
-  const contactEvidence: EvidenceAgreement = addresses.some((a) => contactMap.get(a) === id)
+  const contactEvidence: EvidenceAgreement = addresses.some((a) => contactMap.get(a)?.has(id))
     ? "agrees"
     : "unavailable";
 
@@ -240,11 +291,26 @@ export function matchTargetObservation(
     assessment = "needs_review";
   }
 
-  const universeIds = [
-    ...catalog.hotels.map((h) => `hotel:${h.id}`),
-    ...catalog.organizations.map((o) => `org:${o.id}`),
+  // EXTERNAL AUDIT AMENDMENT #1, Finding 4: the fingerprint must encode the
+  // MATCHING-RELEVANT state the matcher actually read — name and website
+  // domain, not just an id that a name/domain edit would leave unchanged —
+  // plus the exact contact-email relationships evaluated against THIS
+  // observation's addresses, so a relevant contact-relation change (a new
+  // hotel_contacts row for one of these addresses, or one removed) also
+  // changes the fingerprint even when no hotel/organization row itself
+  // changed shape.
+  const relevantContactPairs = addresses.flatMap((a) => [
+    ...[...(catalog.hotelIdByContactEmail.get(a) ?? [])].map((id) => `contact:hotel:${a}:${id}`),
+    ...[...(catalog.organizationIdByContactEmail.get(a) ?? [])].map(
+      (id) => `contact:org:${a}:${id}`,
+    ),
+  ]);
+  const relevantState = [
+    ...catalog.hotels.map((h) => `hotel:${h.id}:${h.name}:${h.websiteDomain ?? ""}`),
+    ...catalog.organizations.map((o) => `org:${o.id}:${o.name}:${o.websiteDomain ?? ""}`),
+    ...relevantContactPairs,
   ];
-  const candidateSetFingerprint = digestOfSortedStrings(universeIds);
+  const candidateSetFingerprint = digestOfSortedStrings(relevantState);
 
   return {
     observation: {

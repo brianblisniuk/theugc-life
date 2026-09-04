@@ -2,6 +2,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  getCurrentCatalogEpoch,
   getOutreachStatus,
   getThreadEvidence,
   interpretOneThread,
@@ -18,6 +19,7 @@ import {
   outreachDeps,
   randomFingerprint,
   randomProviderId,
+  recordCreatorDecisionAs,
   targetObservationsOf,
   threadSignalRow,
 } from "./harness";
@@ -76,8 +78,7 @@ d("B05: full pipeline end-to-end", () => {
     expect(observations[0]!.observed_domain).toBe("acmehotel.example");
 
     // Human layer: all four axes.
-    const outreachDecision = await recordCreatorDecision(deps, {
-      userId,
+    const outreachDecision = await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "outreach",
@@ -85,8 +86,7 @@ d("B05: full pipeline end-to-end", () => {
     });
     expect(outreachDecision.result).toBe("ok");
 
-    const scopeDecision = await recordCreatorDecision(deps, {
-      userId,
+    const scopeDecision = await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "target_scope",
@@ -94,8 +94,7 @@ d("B05: full pipeline end-to-end", () => {
     });
     expect(scopeDecision.result).toBe("ok");
 
-    const targetDecision = await recordCreatorDecision(deps, {
-      userId,
+    const targetDecision = await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "target",
@@ -105,8 +104,7 @@ d("B05: full pipeline end-to-end", () => {
     expect(targetDecision.result).toBe("ok");
 
     const toRecipient = recipients.find((r) => r.role === "to")!;
-    const contactDecision = await recordCreatorDecision(deps, {
-      userId,
+    const contactDecision = await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "target_contact",
@@ -129,7 +127,7 @@ d("B05: full pipeline end-to-end", () => {
     });
   });
 
-  it("not_outreach and insufficient_evidence threads skip recipient/target extraction entirely", async () => {
+  it("Finding 7: a not_outreach thread STILL preserves observed recipients and target observations — OBSERVED is literal evidence, never gated on the machine's own classification", async () => {
     const { userId, mailAccountId } = await connectedMailbox(client, "b05-not-outreach");
     const deps = outreachDeps(client);
 
@@ -145,8 +143,21 @@ d("B05: full pipeline end-to-end", () => {
     const outcome = await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
     expect(outcome).toMatchObject({ result: "ok", outreachStatus: "not_outreach" });
 
-    expect(await observedRecipientsOf(client, normalizedThreadId)).toHaveLength(0);
-    expect(await targetObservationsOf(client, normalizedThreadId)).toHaveLength(0);
+    // A false negative from the machine classifier must never permanently
+    // block a later creator correction — the recipient and target-candidate
+    // data a correction would need to act on already exists.
+    expect(await observedRecipientsOf(client, normalizedThreadId)).toHaveLength(1);
+    expect(await targetObservationsOf(client, normalizedThreadId)).toHaveLength(1);
+
+    // The creator can still correct the outreach axis afterward, with real
+    // observed data already in place to act on.
+    const correction = await recordCreatorDecisionAs(client, userId, deps, {
+      mailAccountId,
+      normalizedThreadId,
+      axis: "outreach",
+      outreachDecision: "outreach_confirmed",
+    });
+    expect(correction.result).toBe("ok");
   });
 });
 
@@ -165,8 +176,7 @@ d("B05: machine vs human — machine never overwrites a creator decision", () =>
     });
 
     await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "outreach",
@@ -177,6 +187,7 @@ d("B05: machine vs human — machine never overwrites a creator decision", () =>
     // version disagreeing) — never through the creator-decision path.
     const evidence = await getThreadEvidence(deps, { userId, mailAccountId, normalizedThreadId });
     if (evidence.result !== "ok") throw new Error("evidence not found");
+    const currentEpoch = await getCurrentCatalogEpoch(deps);
 
     await deps.db.rpc("gmail_outreach_commit_interpretation", {
       p_user_id: userId,
@@ -193,7 +204,9 @@ d("B05: machine vs human — machine never overwrites a creator decision", () =>
       p_target_contact_candidates: [],
       p_target_observations: [],
       p_target_canonical_links: [],
-      p_catalog_epoch: 1,
+      p_machine_target_scope: "unresolved",
+      p_target_scope_reason_codes: [],
+      p_catalog_epoch: currentEpoch,
     });
 
     const machineSignal = await threadSignalRow(client, normalizedThreadId);
@@ -232,6 +245,8 @@ d("B05: source-evidence fence", () => {
       p_target_contact_candidates: [],
       p_target_observations: [],
       p_target_canonical_links: [],
+      p_machine_target_scope: "unresolved",
+      p_target_scope_reason_codes: [],
       p_catalog_epoch: 1,
     });
 
@@ -259,8 +274,7 @@ d("B05: target observation stability (reconciliation, not replacement)", () => {
     expect(firstPass).toHaveLength(1);
     const observationId = firstPass[0]!.id;
 
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "target",
@@ -348,8 +362,7 @@ d("B05: target scope is independent, never mechanically derived", () => {
     });
 
     // Scope decided BEFORE any interpretation or target confirmation exists at all.
-    const result = await recordCreatorDecision(deps, {
-      userId,
+    const result = await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "target_scope",
@@ -380,20 +393,18 @@ d("B05: target scope is independent, never mechanically derived", () => {
     });
     const obsA = await client.query(
       `insert into private.gmail_outreach_target_observations
-         (user_id, mail_account_id, normalized_thread_id, observation_fingerprint, observed_name, target_kind_hint)
-       values ($1, $2, $3, $4, 'Shared Org', 'organization') returning id`,
+         (user_id, mail_account_id, normalized_thread_id, observation_fingerprint, observed_name, target_kind_hint, source_provider_message_ids)
+       values ($1, $2, $3, $4, 'Shared Org', 'organization', '{provider-msg-fixture}') returning id`,
       [userId, mailAccountId, threadA.normalizedThreadId, randomFingerprint()],
     );
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId: threadA.normalizedThreadId,
       axis: "target",
       targetAction: "confirm",
       targetObservationId: obsA.rows[0].id,
     });
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId: threadA.normalizedThreadId,
       axis: "target_scope",
@@ -410,20 +421,18 @@ d("B05: target scope is independent, never mechanically derived", () => {
     });
     const obsB = await client.query(
       `insert into private.gmail_outreach_target_observations
-         (user_id, mail_account_id, normalized_thread_id, observation_fingerprint, observed_name, target_kind_hint)
-       values ($1, $2, $3, $4, 'Shared Org', 'organization') returning id`,
+         (user_id, mail_account_id, normalized_thread_id, observation_fingerprint, observed_name, target_kind_hint, source_provider_message_ids)
+       values ($1, $2, $3, $4, 'Shared Org', 'organization', '{provider-msg-fixture}') returning id`,
       [userId, mailAccountId, threadB.normalizedThreadId, randomFingerprint()],
     );
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId: threadB.normalizedThreadId,
       axis: "target",
       targetAction: "confirm",
       targetObservationId: obsB.rows[0].id,
     });
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId: threadB.normalizedThreadId,
       axis: "target_scope",
@@ -452,15 +461,13 @@ d("B05: immutable decision history — a correction is a new event, never an edi
       bodyText: "hello",
     });
 
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "outreach",
       outreachDecision: "outreach_confirmed",
     });
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "outreach",
@@ -523,8 +530,7 @@ d("B05: retention — disconnect and churn retain history; only explicit deletio
       bodyText: "collaborate on a paid partnership",
     });
     await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "outreach",
@@ -605,8 +611,7 @@ d("B05: cross-account isolation", () => {
     });
 
     // Account A tries to decide about Account B's thread.
-    const result = await recordCreatorDecision(deps, {
-      userId: accountA.userId,
+    const result = await recordCreatorDecisionAs(client, accountA.userId, deps, {
       mailAccountId: accountA.mailAccountId,
       normalizedThreadId: threadB.normalizedThreadId,
       axis: "outreach",
@@ -617,20 +622,64 @@ d("B05: cross-account isolation", () => {
 });
 
 d("B05: RLS/access — no client role reaches B05 data", () => {
-  it("anon and authenticated hold no EXECUTE on any gmail_outreach_* function", async () => {
+  it("anon and authenticated hold no EXECUTE on any MACHINE gmail_outreach_* function", async () => {
+    // Excludes gmail_outreach_record_creator_decision deliberately (Finding
+    // 2): that ONE function is meant to be callable by `authenticated`,
+    // because it derives its actor from auth.uid() rather than trusting a
+    // caller-supplied parameter — see the next test for its exact grants.
     const res = await client.query(
       `select p.proname,
               has_function_privilege('anon', p.oid, 'EXECUTE') as anon_can,
               has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_can
          from pg_proc p
          join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public' and p.proname like 'gmail_outreach_%'`,
+        where n.nspname = 'public' and p.proname like 'gmail_outreach_%'
+          and p.proname <> 'gmail_outreach_record_creator_decision'`,
     );
     expect(res.rows.length).toBeGreaterThan(0);
     for (const row of res.rows) {
       expect(row.anon_can).toBe(false);
       expect(row.authenticated_can).toBe(false);
     }
+  });
+
+  it("Finding 2: gmail_outreach_record_creator_decision is callable by authenticated and service_role, but never anon — and rejects a call carrying no real auth.uid()", async () => {
+    const res = await client.query(
+      `select has_function_privilege('anon', p.oid, 'EXECUTE') as anon_can,
+              has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_can,
+              has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role_can
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'gmail_outreach_record_creator_decision'`,
+    );
+    expect(res.rows[0].anon_can).toBe(false);
+    expect(res.rows[0].authenticated_can).toBe(true);
+    expect(res.rows[0].service_role_can).toBe(true);
+
+    // No request.jwt.claims set on this connection at all right now —
+    // exactly the shape of a machine/service caller with no real end-user
+    // session. auth.uid() must be null, and the function must refuse.
+    await client.query("select set_config('request.jwt.claims', '{}', false)");
+    const { userId, mailAccountId } = await connectedMailbox(
+      client,
+      "b05-unauthenticated-decision",
+    );
+    const { normalizedThreadId } = await insertNormalizedThread(client, {
+      userId,
+      mailAccountId,
+      providerMessageId: randomProviderId("msg"),
+      providerThreadId: randomProviderId("thread"),
+      bodyText: "hello",
+    });
+    const deps = outreachDeps(client);
+    const result = await recordCreatorDecision(deps, {
+      mailAccountId,
+      normalizedThreadId,
+      axis: "outreach",
+      outreachDecision: "outreach_confirmed",
+    });
+    expect(result.result).toBe("unauthenticated");
+    expect(await decisionEventsOf(client, normalizedThreadId)).toHaveLength(0);
   });
 
   it("no client role holds USAGE on the private schema (unchanged from B01-B04)", async () => {
@@ -677,8 +726,7 @@ d("B05: no CRM materialization", () => {
     );
 
     await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
-    await recordCreatorDecision(deps, {
-      userId,
+    await recordCreatorDecisionAs(client, userId, deps, {
       mailAccountId,
       normalizedThreadId,
       axis: "outreach",

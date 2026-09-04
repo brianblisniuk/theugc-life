@@ -99,18 +99,29 @@ export function assessTargetContacts(
     rank,
   }));
 
-  const toDomains = new Set(
-    scored.filter((r) => r.role === "to" && r.domainLower).map((r) => r.domainLower as string),
-  );
-  const toCount = scored.filter((r) => r.role === "to").length;
+  const toRecipients = scored.filter((r) => r.role === "to");
+  const toDomains = new Set(toRecipients.filter((r) => r.domainLower).map((r) => r.domainLower!));
+  const toCount = toRecipients.length;
   const ccCount = scored.filter((r) => r.role === "cc").length;
 
+  // EXTERNAL AUDIT AMENDMENT #1, Finding 8: `to` role ALONE is not enough for
+  // `strong_match` — that made this table's real behavior "to === target"
+  // despite its own documented intent never to assume that. `strong_match`
+  // now requires role evidence PLUS a corroborating signal: either two or
+  // more `to` recipients at the SAME domain (independently coordinated
+  // addressing of real people is stronger than one address), or a single
+  // `to` recipient whose local part reads as a named individual rather than
+  // a generic/shared inbox. A lone generic-inbox `to` is a real, legitimate
+  // signal — just not a CONFIDENT one — so it lands at `needs_review`,
+  // exactly like a lone `cc`, rather than being silently upgraded.
   let matchQuality: MatchQuality;
   if (toCount > 0 && toDomains.size >= 2) {
     matchQuality = "ambiguous";
-  } else if (toCount > 0) {
+  } else if (toCount >= 2) {
     matchQuality = "strong_match";
-  } else if (ccCount > 0) {
+  } else if (toCount === 1 && toRecipients[0]!.addressPatternEvidence === "named_person") {
+    matchQuality = "strong_match";
+  } else if (toCount > 0 || ccCount > 0) {
     matchQuality = "needs_review";
   } else {
     matchQuality = "insufficient_evidence";

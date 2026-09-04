@@ -77,7 +77,24 @@ interface ThenableResult<T> {
   then<R>(resolve: (v: { data: T[] | null; error: Error | null }) => R): Promise<R>;
 }
 
-/** A minimal `.from(table).select(cols)[.in(col, values)]` shim over `pg`, sufficient for the catalog snapshot lookup. */
+/** Parses a PostgREST-style `.or("col.op.value,...")` filter — see `tests/gmail-outreach/harness.ts`'s identical shim for why (Finding 4/5's bounded, case-insensitive catalog lookup). */
+function parseOrFilter(filterString: string): { clause: string; params: unknown[] } {
+  const parts = filterString.split(",").map((p) => p.trim());
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  for (const part of parts) {
+    const match = /^([a-z_]+)\.(eq|ilike)\.(.*)$/i.exec(part);
+    if (!match) throw new Error(`CLI .or() shim: unsupported filter clause "${part}"`);
+    const [, column, op, rawValue] = match;
+    params.push(rawValue);
+    clauses.push(
+      op === "eq" ? `${column} = $${params.length}` : `${column} ilike $${params.length}`,
+    );
+  }
+  return { clause: clauses.length > 0 ? `(${clauses.join(" or ")})` : "false", params };
+}
+
+/** A minimal `.from(table).select(cols)[.in(col, values)|.or(filter)]` shim over `pg`, sufficient for the catalog snapshot lookup. */
 function fromOf(client: Client) {
   return (table: string) => ({
     select(columns: string) {
@@ -103,6 +120,16 @@ function fromOf(client: Client) {
               resolve: (v: { data: unknown[] | null; error: Error | null }) => R,
             ): Promise<R> {
               return run(`where ${column} = any($1)`, [values]).then(resolve);
+            },
+          } as ThenableResult<unknown>;
+        },
+        or(filterString: string): ThenableResult<unknown> {
+          const { clause, params } = parseOrFilter(filterString);
+          return {
+            then<R>(
+              resolve: (v: { data: unknown[] | null; error: Error | null }) => R,
+            ): Promise<R> {
+              return run(`where ${clause}`, params).then(resolve);
             },
           } as ThenableResult<unknown>;
         },

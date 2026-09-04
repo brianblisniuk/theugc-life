@@ -21,6 +21,7 @@ import { OutreachStructuralError } from "@/lib/gmail/outreach/errors";
 import { classifyOutreach } from "@/lib/gmail/outreach/interpreter";
 import { assessTargetContacts } from "@/lib/gmail/outreach/recipients";
 import {
+  deriveMachineTargetScope,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation,
@@ -160,54 +161,122 @@ export async function getCurrentCatalogEpoch(deps: OutreachDeps): Promise<number
   return Number(data);
 }
 
+/** Escapes a literal value for safe use inside a PostgREST `.or()` filter string (commas/parens are the filter's own delimiters). */
+function escapeOrFilterValue(value: string): string {
+  return value.replace(/[,()]/g, "");
+}
+
 /**
- * A bounded, deterministic snapshot of the canonical rows relevant to
- * matching, scoped to addresses actually observed in this thread. This is
- * the ONLY place B05 reads `public.hotels`/`public.organizations`/
- * `public.hotel_contacts`/`public.organization_contacts` — read-only,
- * never mutated.
+ * A bounded, deterministic snapshot of the canonical rows RELEVANT to this
+ * thread's evaluation. This is the ONLY place B05 reads `public.hotels`/
+ * `public.organizations`/`public.hotel_contacts`/`public.organization_
+ * contacts` — read-only, never mutated.
+ *
+ * EXTERNAL AUDIT AMENDMENT #1, Finding 4/5: this used to fetch the ENTIRE
+ * `hotels`/`organizations` tables for every single thread, and matched
+ * contact emails via `.in("email", lowerAddresses)` — case-sensitive against
+ * stored text, while the SQL side compares `lower(email) = lower(addr_
+ * spec)`, so a differently-cased stored email silently never matched here.
+ * Both are fixed: the candidate universe is now BOUNDED to hotels/
+ * organizations actually reachable from this thread's own evidence (an
+ * exact contact-email match, or a website domain matching one of the
+ * observed target domains) — an unrelated hotel added anywhere else in the
+ * catalog costs this function nothing — and every email comparison is
+ * case-insensitive via `ilike` on the literal address (no wildcard
+ * characters), matching the database's own `lower(email) = lower(addr_
+ * spec)` rule exactly. Contact lookups are also MULTIMAPS (Finding 5): one
+ * email can legitimately match several hotel_contacts rows.
  */
 export async function getCatalogSnapshot(
   deps: OutreachDeps,
-  associatedAddresses: readonly string[],
+  input: { associatedAddresses: readonly string[]; observedDomains: readonly string[] },
 ): Promise<CatalogSnapshot> {
   const epoch = await getCurrentCatalogEpoch(deps);
 
+  const lowerAddresses = [...new Set(input.associatedAddresses.map((a) => a.toLowerCase()))];
+  const domains = [...new Set(input.observedDomains.map((d) => d.toLowerCase()))];
+
+  const hotelIdByContactEmail = new Map<string, Set<string>>();
+  const organizationIdByContactEmail = new Map<string, Set<string>>();
+
+  if (lowerAddresses.length === 0 && domains.length === 0) {
+    return {
+      epoch,
+      hotels: [],
+      organizations: [],
+      hotelIdByContactEmail,
+      organizationIdByContactEmail,
+    };
+  }
+
+  const contactOrFilter = lowerAddresses
+    .map((a) => `email.ilike.${escapeOrFilterValue(a)}`)
+    .join(",");
+
+  const [{ data: hotelContacts, error: hcError }, { data: orgContacts, error: ocError }] =
+    lowerAddresses.length > 0
+      ? await Promise.all([
+          deps.db.from("hotel_contacts").select("hotel_id, email").or(contactOrFilter),
+          deps.db
+            .from("organization_contacts")
+            .select("organization_id, email")
+            .or(contactOrFilter),
+        ])
+      : [
+          { data: [] as unknown, error: null },
+          { data: [] as unknown, error: null },
+        ];
+  if (hcError) throw new Error(`hotel_contacts lookup failed: ${hcError.message}`);
+  if (ocError) throw new Error(`organization_contacts lookup failed: ${ocError.message}`);
+
+  const matchedHotelIds = new Set<string>();
+  for (const row of (hotelContacts ?? []) as Array<{ hotel_id: string; email: string | null }>) {
+    if (!row.email) continue;
+    const key = row.email.toLowerCase();
+    matchedHotelIds.add(row.hotel_id);
+    const set = hotelIdByContactEmail.get(key) ?? new Set<string>();
+    set.add(row.hotel_id);
+    hotelIdByContactEmail.set(key, set);
+  }
+  const matchedOrgIds = new Set<string>();
+  for (const row of (orgContacts ?? []) as Array<{
+    organization_id: string;
+    email: string | null;
+  }>) {
+    if (!row.email) continue;
+    const key = row.email.toLowerCase();
+    matchedOrgIds.add(row.organization_id);
+    const set = organizationIdByContactEmail.get(key) ?? new Set<string>();
+    set.add(row.organization_id);
+    organizationIdByContactEmail.set(key, set);
+  }
+
+  // The BOUNDED candidate universe: reachable by an exact contact-email
+  // match, or a website domain containing one of the observed target
+  // domains. `website_url` is free text (not normalized to a bare domain in
+  // the schema), so a domain match is necessarily an `ilike` substring test
+  // rather than an exact equality — still vastly narrower than every row.
+  const hotelOrParts = [
+    ...[...matchedHotelIds].map((id) => `id.eq.${id}`),
+    ...domains.map((d) => `website_url.ilike.%${escapeOrFilterValue(d)}%`),
+  ];
+  const orgOrParts = [
+    ...[...matchedOrgIds].map((id) => `id.eq.${id}`),
+    ...domains.map((d) => `website_url.ilike.%${escapeOrFilterValue(d)}%`),
+  ];
+
   const [{ data: hotelsData, error: hotelsError }, { data: orgsData, error: orgsError }] =
     await Promise.all([
-      deps.db.from("hotels").select("id, name, website_url"),
-      deps.db.from("organizations").select("id, name, website_url"),
+      hotelOrParts.length > 0
+        ? deps.db.from("hotels").select("id, name, website_url").or(hotelOrParts.join(","))
+        : Promise.resolve({ data: [] as unknown, error: null }),
+      orgOrParts.length > 0
+        ? deps.db.from("organizations").select("id, name, website_url").or(orgOrParts.join(","))
+        : Promise.resolve({ data: [] as unknown, error: null }),
     ]);
 
   if (hotelsError) throw new Error(`hotels lookup failed: ${hotelsError.message}`);
   if (orgsError) throw new Error(`organizations lookup failed: ${orgsError.message}`);
-
-  const lowerAddresses = [...new Set(associatedAddresses.map((a) => a.toLowerCase()))];
-  const hotelIdByContactEmail = new Map<string, string>();
-  const organizationIdByContactEmail = new Map<string, string>();
-
-  if (lowerAddresses.length > 0) {
-    const [{ data: hotelContacts, error: hcError }, { data: orgContacts, error: ocError }] =
-      await Promise.all([
-        deps.db.from("hotel_contacts").select("hotel_id, email").in("email", lowerAddresses),
-        deps.db
-          .from("organization_contacts")
-          .select("organization_id, email")
-          .in("email", lowerAddresses),
-      ]);
-    if (hcError) throw new Error(`hotel_contacts lookup failed: ${hcError.message}`);
-    if (ocError) throw new Error(`organization_contacts lookup failed: ${ocError.message}`);
-
-    for (const row of (hotelContacts ?? []) as Array<{ hotel_id: string; email: string | null }>) {
-      if (row.email) hotelIdByContactEmail.set(row.email.toLowerCase(), row.hotel_id);
-    }
-    for (const row of (orgContacts ?? []) as Array<{
-      organization_id: string;
-      email: string | null;
-    }>) {
-      if (row.email) organizationIdByContactEmail.set(row.email.toLowerCase(), row.organization_id);
-    }
-  }
 
   const hotels = (
     (hotelsData ?? []) as Array<{ id: string; name: string; website_url: string | null }>
@@ -230,6 +299,7 @@ export async function getCatalogSnapshot(
 export type InterpretThreadOutcome =
   | { result: "ok"; outreachStatus: string }
   | { result: "stale_source"; currentEvidenceDigest: string }
+  | { result: "stale_catalog"; currentCatalogEpoch: number }
   | { result: "thread_not_found" }
   | { result: "account_deleted" }
   | { result: "not_found" };
@@ -238,6 +308,7 @@ interface CommitResponse {
   result: string;
   normalized_thread_id?: string;
   current_evidence_digest?: string;
+  current_catalog_epoch?: number;
 }
 
 export async function interpretOneThread(
@@ -255,36 +326,43 @@ export async function interpretOneThread(
     subjects: evidence.subjects,
   });
 
-  let recipientParticipantIds: string[] = [];
-  let targetContactMatchQuality = "insufficient_evidence";
-  let targetContactCandidateSetFingerprint = "0".repeat(64);
-  let targetContactCandidates: Array<Record<string, unknown>> = [];
+  // EXTERNAL AUDIT AMENDMENT #1, Finding 7: recipient/target extraction runs
+  // for EVERY evaluated thread, regardless of outreach classification.
+  // OBSERVED is literal evidence, not interpretation — a machine false
+  // negative (`not_outreach`/`insufficient_evidence`) must never permanently
+  // prevent a later creator correction to `outreach_confirmed` from having
+  // any observed recipients or target candidates to act on.
+  const recipientParticipantIds = evidence.sentRecipients.map((r) => r.sourceParticipantId);
+
+  const contactAssessment = assessTargetContacts(evidence.sentRecipients);
+  const targetContactCandidates = contactAssessment.candidates.map((c) => ({
+    source_participant_id: c.sourceParticipantId,
+    role_evidence: c.roleEvidence,
+    address_pattern_evidence: c.addressPatternEvidence,
+    rank: c.rank,
+  }));
+
+  const messageIdToProviderId = new Map(
+    evidence.messages.map((m) => [m.normalizedMessageId, m.providerMessageId]),
+  );
+  const rawObservations = extractTargetObservations(evidence.sentRecipients, messageIdToProviderId);
+  const associatedAddresses = evidence.sentRecipients
+    .filter((r) => r.role === "to" && r.addrSpec)
+    .map((r) => r.addrSpec as string);
+  const observedDomains = rawObservations
+    .map((o) => o.observedDomain)
+    .filter((d): d is string => d !== null);
+
   const targetObservations: TargetObservationInput[] = [];
   const targetCanonicalLinks: Array<Record<string, unknown>> = [];
-  let catalogEpoch = await getCurrentCatalogEpoch(deps);
+  // Only touch the catalog when there is something to actually match against
+  // (EXTERNAL AUDIT AMENDMENT #1, Finding 4) — most threads extract zero raw
+  // observations (freemail-only, or no `to` recipients at all), and those
+  // threads have no reason to read `hotels`/`organizations` at all.
+  let catalogEpoch: number;
 
-  // Recipient/target processing only for outcomes worth reviewing — never
-  // for a confident negative or an outright abstention, to avoid manufacturing
-  // noise for threads that are not outreach at all.
-  if (outreach.status === "qualified_outreach" || outreach.status === "needs_review") {
-    recipientParticipantIds = evidence.sentRecipients.map((r) => r.sourceParticipantId);
-
-    const contactAssessment = assessTargetContacts(evidence.sentRecipients);
-    targetContactMatchQuality = contactAssessment.matchQuality;
-    targetContactCandidateSetFingerprint = contactAssessment.candidateSetFingerprint;
-    targetContactCandidates = contactAssessment.candidates.map((c) => ({
-      source_participant_id: c.sourceParticipantId,
-      role_evidence: c.roleEvidence,
-      address_pattern_evidence: c.addressPatternEvidence,
-      rank: c.rank,
-    }));
-
-    const rawObservations = extractTargetObservations(evidence.sentRecipients);
-    const associatedAddresses = evidence.sentRecipients
-      .filter((r) => r.role === "to" && r.addrSpec)
-      .map((r) => r.addrSpec as string);
-
-    const catalog = await getCatalogSnapshot(deps, associatedAddresses);
+  if (rawObservations.length > 0) {
+    const catalog = await getCatalogSnapshot(deps, { associatedAddresses, observedDomains });
     catalogEpoch = catalog.epoch;
 
     for (const raw of rawObservations) {
@@ -304,7 +382,14 @@ export async function interpretOneThread(
         });
       }
     }
+  } else {
+    catalogEpoch = await getCurrentCatalogEpoch(deps);
   }
+
+  // EXTERNAL AUDIT AMENDMENT #1, Finding 6: the machine's own thread-level
+  // target-scope hint. Always computed (even zero observations legitimately
+  // report `unresolved`) and always advisory.
+  const machineScope = deriveMachineTargetScope(targetObservations);
 
   const { data: rawData, error } = await deps.db.rpc("gmail_outreach_commit_interpretation", {
     p_user_id: input.userId,
@@ -316,19 +401,21 @@ export async function interpretOneThread(
     p_outreach_status: outreach.status,
     p_reason_codes: outreach.reasonCodes,
     p_recipient_participant_ids: recipientParticipantIds,
-    p_target_contact_match_quality: targetContactMatchQuality,
-    p_target_contact_candidate_set_fingerprint: targetContactCandidateSetFingerprint,
+    p_target_contact_match_quality: contactAssessment.matchQuality,
+    p_target_contact_candidate_set_fingerprint: contactAssessment.candidateSetFingerprint,
     p_target_contact_candidates: targetContactCandidates,
     p_target_observations: targetObservations.map((o) => ({
       observation_fingerprint: o.observationFingerprint,
       observed_name: o.observedName,
       observed_domain: o.observedDomain,
       target_kind_hint: o.targetKindHint,
-      source_message_ids: o.sourceMessageIds,
+      source_provider_message_ids: o.sourceProviderMessageIds,
       machine_canonical_link_assessment: o.machineCanonicalLinkAssessment,
       candidate_set_fingerprint: o.candidateSetFingerprint,
     })),
     p_target_canonical_links: targetCanonicalLinks,
+    p_machine_target_scope: machineScope.scope,
+    p_target_scope_reason_codes: machineScope.reasonCodes,
     p_catalog_epoch: catalogEpoch,
   });
 
@@ -342,6 +429,8 @@ export async function interpretOneThread(
       return { result: "ok", outreachStatus: outreach.status };
     case "stale_source":
       return { result: "stale_source", currentEvidenceDigest: data.current_evidence_digest! };
+    case "stale_catalog":
+      return { result: "stale_catalog", currentCatalogEpoch: data.current_catalog_epoch! };
     case "thread_not_found":
       return { result: "thread_not_found" };
     case "account_deleted":
@@ -373,12 +462,20 @@ export interface InterpretBatchSummary {
   candidatesFound: number;
   interpreted: number;
   staleSource: number;
+  staleCatalog: number;
   other: number;
   outcomes: InterpretOutcomeRecord[];
 }
 
 function emptyBatchSummary(): InterpretBatchSummary {
-  return { candidatesFound: 0, interpreted: 0, staleSource: 0, other: 0, outcomes: [] };
+  return {
+    candidatesFound: 0,
+    interpreted: 0,
+    staleSource: 0,
+    staleCatalog: 0,
+    other: 0,
+    outcomes: [],
+  };
 }
 
 export async function interpretBatch(
@@ -391,11 +488,14 @@ export async function interpretBatch(
   },
 ): Promise<InterpretBatchSummary> {
   const limit = requirePositiveInteger(input.limit, "limit");
+  const currentCatalogEpoch = await getCurrentCatalogEpoch(deps);
 
   const { data: rawData, error } = await deps.db.rpc("gmail_outreach_list_candidates", {
     p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
     p_detector_version: OUTREACH_DETECTOR_VERSION,
+    p_matcher_version: TARGET_MATCHER_VERSION,
+    p_current_catalog_epoch: currentCatalogEpoch,
     p_limit: limit,
     p_exclude_normalized_thread_ids: input.excludeNormalizedThreadIds ?? [],
   });
@@ -420,6 +520,7 @@ export async function interpretBatch(
     });
     if (outcome.result === "ok") summary.interpreted += 1;
     else if (outcome.result === "stale_source") summary.staleSource += 1;
+    else if (outcome.result === "stale_catalog") summary.staleCatalog += 1;
     else summary.other += 1;
   }
 
@@ -457,6 +558,7 @@ export async function outreachInterpretMailboxUntilIdle(
     total.candidatesFound += batch.candidatesFound;
     total.interpreted += batch.interpreted;
     total.staleSource += batch.staleSource;
+    total.staleCatalog += batch.staleCatalog;
     total.other += batch.other;
     total.outcomes.push(...batch.outcomes);
 
@@ -491,6 +593,7 @@ export type RecordCreatorDecisionInput =
 
 export type RecordCreatorDecisionResult =
   | { result: "ok"; eventId: string }
+  | { result: "unauthenticated" }
   | { result: "not_found" }
   | { result: "account_deleted" }
   | { result: "thread_not_found" }
@@ -502,10 +605,20 @@ interface DecisionResponse {
   event_id?: string;
 }
 
+/**
+ * EXTERNAL AUDIT AMENDMENT #1, Finding 2: `deps.db` here MUST be a
+ * user-scoped client whose session carries the real creator's own
+ * `auth.uid()` — the repository's `@/lib/supabase/server` cookie-bound
+ * client, exactly as `service.server.ts`'s `defaultCreatorDecisionDeps()`
+ * constructs it — never the service-role admin client the other B05
+ * functions in this module use. There is no `userId`/`p_user_id` parameter
+ * any more: the database derives the actor from the session itself, so a
+ * caller cannot assert authorship it does not actually have. A machine/
+ * service-role caller with no such session gets `unauthenticated`.
+ */
 export async function recordCreatorDecision(
   deps: OutreachDeps,
   input: {
-    userId: string;
     mailAccountId: string;
     normalizedThreadId: string;
   } & RecordCreatorDecisionInput,
@@ -513,7 +626,6 @@ export async function recordCreatorDecision(
   const axis: CreatorDecisionAxis = input.axis;
 
   const { data: rawData, error } = await deps.db.rpc("gmail_outreach_record_creator_decision", {
-    p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
     p_normalized_thread_id: input.normalizedThreadId,
     p_axis: axis,
@@ -535,6 +647,7 @@ export async function recordCreatorDecision(
   switch (data.result) {
     case "ok":
       return { result: "ok", eventId: data.event_id! };
+    case "unauthenticated":
     case "not_found":
     case "account_deleted":
     case "thread_not_found":

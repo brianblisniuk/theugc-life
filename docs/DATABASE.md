@@ -1924,40 +1924,72 @@ canonical inventory** — see below) and its advisory columns, `gmail_
 outreach_target_canonical_links` (zero/one/many `hotel`/`organization`
 candidates per observation, closed-and-additively-extensible `target_kind`).
 
+Also MACHINE: `gmail_outreach_target_scope_signals` (added by EXTERNAL AUDIT
+AMENDMENT #1, Finding 6 — the thread-level advisory `single_target`/
+`multiple_targets`/`unresolved` hint; V1 never fabricates `portfolio_target`).
+
 **HUMAN** (immutable events + current projection, authoritative): `gmail_
 outreach_creator_decision_events` (append-only, `event_seq generated always
 as identity` the sole ordering authority, four axes — `outreach`, `target_
 scope`, `target`, `target_contact` — one shared ledger with an `axis`
 discriminator and a shape CHECK per axis), `gmail_outreach_creator_
-decisions` (current scalar outreach + target-scope decisions),
-`gmail_outreach_target_confirmations` and `gmail_outreach_target_contact_
-confirmed_members` (current confirmed **sets**, since scope can be
-`multiple_targets`/`portfolio_target`). A machine re-run never writes to any
-HUMAN table; a canonical link gained later never rewrites a creator's
-existing confirmation, because confirmations anchor to the private
-observation/observed-recipient row, never to a canonical FK directly.
+decisions` (current scalar outreach + target-scope decisions, each guarded by
+a denormalized `current_*_event_seq` so a concurrent correction can never
+move it backwards — Finding 3), `gmail_outreach_target_confirmations` and
+`gmail_outreach_target_contact_confirmed_members` (current confirmed
+**sets**, since scope can be `multiple_targets`/`portfolio_target`; each row
+is a tombstone that survives a `remove` — `is_confirmed = true` is the
+membership test, never row presence, so a stale delayed `confirm` can never
+resurrect a retired membership). A machine re-run never writes to any HUMAN
+table; a canonical link gained later never rewrites a creator's existing
+confirmation, because confirmations anchor to the private observation/
+observed-recipient row, never to a canonical FK directly.
+`gmail_outreach_record_creator_decision` derives its actor from `auth.uid()`,
+never a caller parameter (Finding 2) — it is the one B05 write reachable from
+`authenticated`, called via the app's user-scoped Supabase client, never the
+service-role client every other B05 function uses.
 
 **Deterministic observed recipients**: `gmail_outreach_observed_recipients`
 preserves every `to`/`cc`/`bcc` occurrence on a creator-SENT message,
 unfiltered (self-addresses, manager/assistant CCs, malformed participants
-included), keyed on the exact B04 participant row so re-extraction always
-upserts onto the same id and never orphans a human confirmation.
+included), keyed on a DURABLE Gmail coordinate — `provider_message_id`/
+`role`/`header_occurrence_index`/`participant_order` — never a B04 row id
+(Finding 1): B04 deletes-and-recreates a message's headers/participants
+under new ids on a rebuild (0038 §7), so re-extraction always upserts onto
+the same durable row and never orphans a human confirmation through one.
+`current_normalized_message_id`/`current_source_header_id`/`current_source_
+participant_id` are a convenience cross-reference to whichever B04 row
+currently occupies that position (`on delete set null`). The same durable
+treatment applies to `gmail_outreach_target_observations.source_provider_
+message_ids` (Gmail's own message ids, verified server-side against the
+thread's current evidence before the row can be created).
 
 **Catalog staleness** is two-level: a cheap, monotonic, cross-table sequence
 (`private.gmail_outreach_catalog_epoch_seq`, bumped by a statement-level
 trigger on `hotels`/`hotel_source_identities`/`hotel_contacts`/
-`organizations`/`hotel_organizations`/`organization_contacts`) means only
-"the candidate universe might have changed"; each machine row's own
-`evaluated_epoch` is what a reader compares against the current epoch to
-decide staleness — never a write-time reject.
+`organizations`/`hotel_organizations`/`organization_contacts`, and primed
+once at migration time — a fresh sequence's own first `nextval()` returns
+exactly its start value, which would otherwise make the very first catalog
+mutation in a new database invisible to an epoch comparison) means only "the
+candidate universe might have changed"; each machine row's own `evaluated_
+epoch` is what a reader compares against the current epoch to decide
+staleness for a READ. The commit RPC additionally re-verifies the epoch
+under lock at COMMIT time and refuses as `stale_catalog` if it moved
+(Finding 4) — the one write-time reject in this migration, mirroring the
+evidence-digest fence's own shape. The catalog snapshot itself is bounded to
+hotels/organizations reachable from the thread's own evidence, never the
+full tables, and contact-email lookups are multimaps (Finding 5) —
+`hotel_contacts`/`organization_contacts` carry no unique-email constraint,
+so one address can legitimately match several rows.
 
-Six `SECURITY DEFINER` functions in `public`, `EXECUTE`-granted to
-`service_role` alone: `gmail_outreach_current_catalog_epoch`, `gmail_
-outreach_list_candidates`, `gmail_outreach_get_thread_evidence` (the read
-path B04 itself never needed to expose), `gmail_outreach_commit_
-interpretation` (the sole machine writer), `gmail_outreach_record_creator_
-decision` (the sole human writer), `gmail_outreach_status`, and `gmail_
-outreach_purge_for_deletion`.
+Seven `SECURITY DEFINER` functions in `public`: six MACHINE functions
+`EXECUTE`-granted to `service_role` alone — `gmail_outreach_current_catalog_
+epoch`, `gmail_outreach_list_candidates`, `gmail_outreach_get_thread_
+evidence` (the read path B04 itself never needed to expose), `gmail_
+outreach_commit_interpretation` (the sole machine writer), `gmail_outreach_
+status`, `gmail_outreach_purge_for_deletion` — plus `gmail_outreach_record_
+creator_decision` (the sole human writer), granted to `authenticated` and
+`service_role` but gated by `auth.uid()`, never by the grant alone.
 
 **0039 writes nothing to `public.pipeline_items`, `public.outreach_events`
 or `public.collaborations`**, and creates or mutates no canonical hotel,

@@ -4,12 +4,24 @@
  * these types implement.
  */
 
-/** V1 deterministic outreach classifier. No external model call. */
-export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v1";
-/** V1 deterministic target/target-contact matcher. No external model call. */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v1";
-/** Versioned heuristic classifier-input transform (quote/HTML handling). */
-export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v1";
+/**
+ * V1 deterministic outreach classifier. No external model call.
+ * `_v2` (EXTERNAL AUDIT AMENDMENT #1, Finding 10): the classifier input now
+ * has quoted history/signatures heuristically stripped before pattern
+ * matching, changing which threads classify as `qualified_outreach` — a
+ * real behavior change, so every previously-classified thread is offered
+ * for re-evaluation via `gmail_outreach_list_candidates`'s detector-version
+ * staleness check.
+ */
+export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v2";
+/**
+ * V1 deterministic target/target-contact matcher. No external model call.
+ * `_v2` (Finding 5/8/9): multimap contact-email evidence, a tightened
+ * target-contact `strong_match` rule, and no domain-derived name evidence.
+ */
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v2";
+/** Versioned heuristic classifier-input transform (quote/HTML handling, signature stripping). */
+export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v2";
 
 export type OutreachStatus =
   "qualified_outreach" | "not_outreach" | "needs_review" | "insufficient_evidence";
@@ -119,7 +131,19 @@ export interface TargetObservationInput {
   observedName: string | null;
   observedDomain: string | null;
   targetKindHint: TargetKind | "unknown";
-  sourceMessageIds: readonly string[];
+  /**
+   * Gmail's own permanent message ids (never a B04 row uuid) — durable
+   * provenance that survives a B04 rebuild, and verified server-side against
+   * this exact thread/account before the observation row can be created
+   * (EXTERNAL AUDIT AMENDMENT #1, Finding 1/12).
+   */
+  sourceProviderMessageIds: readonly string[];
   machineCanonicalLinkAssessment: MatchQuality;
   candidateSetFingerprint: string;
+}
+
+/** A conservative, advisory, thread-level target-scope hint (Finding 6). Never authoritative — see the creator's own target_scope_decision. */
+export interface MachineTargetScopeResult {
+  scope: TargetScope;
+  reasonCodes: readonly string[];
 }

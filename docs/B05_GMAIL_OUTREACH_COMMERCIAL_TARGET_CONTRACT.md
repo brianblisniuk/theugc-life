@@ -134,10 +134,19 @@ organizations`.
 
 `private.gmail_outreach_observed_recipients` — every `to`/`cc`/`bcc`
 occurrence on a `provider_sent = true` message, unfiltered: self-addresses,
-manager/assistant CCs, malformed participants B04 preserved. Keyed
-(`unique(source_participant_id)`) on the exact B04 participant row it came
-from, so a re-extraction always upserts onto the same row id — a later human
-confirmation referencing it (§10) is never orphaned.
+manager/assistant CCs, malformed participants B04 preserved. Identity is a
+DURABLE source coordinate — `unique(mail_account_id, normalized_thread_id,
+provider_message_id, role, header_occurrence_index, participant_order)` —
+never a B04 row id (EXTERNAL AUDIT AMENDMENT #1, Finding 1): B04 is an
+explicitly replaceable projection (0038 §7) that deletes-and-recreates a
+message's headers/participants under new ids on a raw-payload correction or
+normalizer-version bump, so keying identity on a B04 row would let an
+ordinary rebuild silently orphan a human confirmation. `current_normalized_
+message_id`/`current_source_header_id`/`current_source_participant_id` are a
+convenience cross-reference to whichever B04 row currently occupies that
+position (`on delete set null`, never cascade) — a re-extraction always
+upserts onto the same durable row id and reattaches these, so a later human
+confirmation referencing it (§10) is never orphaned by a B04 rebuild.
 
 ## 10. Commercial target-contact interpretation
 
@@ -195,8 +204,10 @@ scoring, canonical hashing, and all stored provenance itself.
 guarantee is "we can reconstruct exactly what evidence and configuration
 produced this stored result," never "calling the model again returns
 identical bytes." Every machine row records its detector/matcher version;
-V1's deterministic baseline (`gmail_outreach_rules_v1`, §21) needs no
-model-identifier/prompt-version columns since it makes no external call, but
+V1's deterministic baseline (`gmail_outreach_rules_v2`/`gmail_outreach_match_
+rules_v2` — bumped from `_v1` by EXTERNAL AUDIT AMENDMENT #1's quote/
+signature stripping and matcher fixes, §21) needs no model-identifier/
+prompt-version columns since it makes no external call, but
 the schema (implicit in `reason_codes`/evidence columns, extensible via
 future columns) does not preclude adding them for a future model-backed
 adapter without breaking existing rows.
@@ -373,7 +384,7 @@ verified by test.
 ## Technology choice — V1 deterministic baseline only
 
 No AI/model provider is selected or called anywhere in this PR. `src/lib/
-gmail/outreach/interpreter.ts` implements `gmail_outreach_rules_v1`, a
+gmail/outreach/interpreter.ts` implements `gmail_outreach_rules_v2`, a
 conservative, provider-abstracted, deterministic rules interpreter behind an
 interface any future per-user model adapter could implement without a schema
 change. The baseline abstains (`insufficient_evidence`/`needs_review`)
@@ -390,3 +401,91 @@ precision/recall threshold; the design of a future historical-CRM-
 reconciliation feature; the design of a future explicitly-authorized
 support-sharing mechanism; whether or when a per-user model adapter replaces
 the V1 deterministic baseline.
+
+---
+
+## External Audit Amendment #1 — technical corrections, D070 unchanged
+
+This amendment corrects twelve implementation-level findings in the original
+`0039` against the accepted D070 contract above. **No product decision in
+D070 was reopened or reinterpreted** — every change below is a data-model,
+security, or algorithmic correction that makes the implementation actually
+satisfy what D070 already required.
+
+1. **Durable human anchors (Finding 1).** `gmail_outreach_observed_
+   recipients` and `gmail_outreach_target_observations.source_provider_
+   message_ids` now key identity/provenance on durable Gmail coordinates
+   (`provider_message_id`/`role`/`header_occurrence_index`/`participant_
+   order`), never a B04 row id — a B04 rebuild (0038 §7) can never again
+   orphan a human confirmation. Proven end-to-end against a real B04
+   invalidation-and-rebuild cycle in `tests/gmail-outreach/audit-amendment-1.test.ts`.
+2. **Creator-decision authenticity (Finding 2).** `gmail_outreach_record_
+   creator_decision` derives its actor from `auth.uid()`, never a caller
+   parameter, and is called from the app via `@/lib/supabase/server`'s
+   user-scoped client (this repository's own established "act as the user"
+   pattern) rather than the service-role admin client every other B05
+   function uses.
+3. **Concurrency-safe human projections (Finding 3).** Every current-
+   projection write (scalar axes and the two confirmed-member set tables) is
+   now guarded by a strictly-increasing `event_seq` comparison; the set
+   tables never delete on `remove`, keeping a tombstone so a stale, delayed
+   `confirm` can never resurrect a retired membership. Proven with true
+   multi-session interleavings, not timing.
+4. **Bounded, fenced catalog matching (Finding 4).** `getCatalogSnapshot` now
+   queries only hotels/organizations reachable from the thread's own
+   evidence (contact-email match or observed-domain match), never the full
+   table; `candidate_set_fingerprint` encodes name/domain/contact-relation
+   state, not bare ids; `gmail_outreach_commit_interpretation` re-verifies
+   the catalog epoch under lock and refuses as `stale_catalog` if it moved;
+   `gmail_outreach_list_candidates` also schedules re-evaluation on a
+   matcher-version or epoch change. (This audit also surfaced and fixed a
+   real off-by-one in the epoch sequence itself: a fresh sequence's first
+   `nextval()` returns exactly its start value, making the very first
+   catalog mutation in a new database invisible to epoch comparisons unless
+   the sequence is primed once at migration time — now it is.)
+5. **Multimap contact evidence (Finding 5).** `hotelIdByContactEmail`/
+   `organizationIdByContactEmail` are multimaps (`Map<string, Set<string>>`)
+   — one email can legitimately match several `hotel_contacts` rows, and a
+   plain map silently collapsed that to whichever was fetched last. Contact
+   lookups are also case-insensitive (`ilike`), matching the database's own
+   `lower(email) = lower(addr_spec)` comparison exactly.
+6. **Machine target-scope signal (Finding 6).** `gmail_outreach_target_
+   scope_signals` is the missing thread-level MACHINE half of the
+   target-scope axis — conservative (`single_target`/`multiple_targets`/
+   `unresolved`; V1 never fabricates `portfolio_target`, since no
+   portfolio-language evidence source exists) and always advisory.
+7. **Recipient/target extraction is unconditional (Finding 7).** `interpretOneThread`
+   no longer gates recipient/target extraction on the outreach classification
+   — OBSERVED is literal evidence, so a `not_outreach` false negative can
+   never permanently block a later creator correction from having real data
+   to act on.
+8. **Conservative target-contact matching (Finding 8).** A lone `to`
+   recipient at a generic inbox is `needs_review`, not an automatic
+   `strong_match` — role alone is not corroborating evidence; `strong_match`
+   now requires either two-or-more `to` recipients at one domain or a named-
+   person address pattern.
+9. **No domain-derived name evidence (Finding 9).** `observedName` is now
+   only ever genuine recipient display-name evidence, never a label
+   mechanically derived from the domain itself — the earlier version let one
+   signal (the domain) masquerade as two independent agreements once
+   compared against a catalog row's name.
+10. **Quote/signature-aware classifier input (Finding 10).** The classifier
+    input transform now heuristically truncates at common quote introducers,
+    `>`-quoted blocks and the RFC 3676 signature delimiter before pattern
+    matching — the original version let the OTHER party's quoted words or a
+    creator's own signature line be read as if the creator had authored them.
+11. **Consent/lifecycle gate reused exactly (Finding 11).** B05 performs zero
+    Gmail network calls and is local computation over rows B04 already
+    normalized from data B01–B03's consent chain already authorized to fetch
+    and store — the same reasoning B04 itself already documents for its own
+    identical `connection_state <> 'deleted'`-only gate (0038 has no
+    additional live consent check either). B05 reuses this exact precedent
+    bit-for-bit rather than inventing a new, inconsistent gate for one layer.
+12. **Verified provenance (Finding 12).** Covered by Finding 1: every
+    `source_provider_message_id` a caller asserts for a target observation is
+    checked server-side against this exact thread/account's current B04
+    evidence before the observation row can be created.
+
+`OUTREACH_DETECTOR_VERSION` and `TARGET_MATCHER_VERSION` are bumped to `_v2`
+to reflect findings 8–10 changing real classification/matching behavior —
+every previously-classified thread is offered for re-evaluation.

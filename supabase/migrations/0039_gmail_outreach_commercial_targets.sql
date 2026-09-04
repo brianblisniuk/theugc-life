@@ -65,6 +65,7 @@ begin
        'gmail_outreach_target_contact_candidates',
        'gmail_outreach_target_observations',
        'gmail_outreach_target_canonical_links',
+       'gmail_outreach_target_scope_signals',
        'gmail_outreach_creator_decisions',
        'gmail_outreach_target_confirmations',
        'gmail_outreach_target_contact_confirmed_members',
@@ -91,6 +92,19 @@ $$;
 -- fingerprint (computed by the caller, stored alongside `evaluated_epoch`)
 -- is what actually decides whether a specific stored result is stale.
 create sequence private.gmail_outreach_catalog_epoch_seq;
+
+-- PRIME IT. A sequence's OWN first `nextval()` call always returns exactly
+-- its START value (1) — identical to the value `last_value` already reads
+-- BEFORE that call, since `is_called` starts false. Reading bare `last_value`
+-- (the only cheap, lock-free way to inspect a sequence) therefore cannot
+-- distinguish "never bumped" from "bumped exactly once" until a SECOND call
+-- moves it to 2 — which would make the very first real catalog mutation in a
+-- fresh database invisible to every epoch comparison in this migration. One
+-- throwaway call here, at migration time, means every call site is dealing
+-- with a sequence that has already been advanced at least once, so mutation
+-- #1 in production always produces a value distinguishable from "never
+-- touched".
+select nextval('private.gmail_outreach_catalog_epoch_seq');
 
 -- SECURITY DEFINER: this fires as an AFTER STATEMENT trigger on ordinary
 -- catalog writes to `public.hotels` etc, made by editor/admin roles that have
@@ -214,11 +228,33 @@ create trigger gmail_outreach_thread_signals_touch
 -- interpretation happens here — filtering IS the interpretation this layer
 -- must not perform (see gmail_outreach_target_contact_candidates for that).
 --
--- STABILITY: keyed on `source_participant_id`, the exact B04 participant row
--- it was extracted from. Re-extraction upserts (ON CONFLICT DO NOTHING) — the
--- row's id never changes across re-runs, so a human target-contact
--- confirmation referencing it (gmail_outreach_target_contact_confirmed_
--- members) is never orphaned by a B05 re-run.
+-- STABILITY (EXTERNAL AUDIT AMENDMENT #1, Finding 1): B04 is an explicitly
+-- REPLACEABLE deterministic projection (0038 §7) — a raw-payload correction
+-- or a normalizer-version bump DELETES AND RECREATES the entire message row
+-- and everything FK'd to it (headers, participants, text parts) under a NEW
+-- uuid, even when nothing a human cares about changed. `gmail_normalized_
+-- threads.id` is the one thing that survives that rebuild (0038's commit
+-- function resolves the thread row `on conflict (mail_account_id, provider_
+-- thread_id) do nothing`), so it remains safe to key on; a B04 participant
+-- row is not.
+--
+-- The original version of this table keyed identity on `source_participant_
+-- id` with `on delete cascade` — which meant an ordinary B04 rebuild (no
+-- content the creator would recognize as different) could silently delete a
+-- human's target-contact confirmation by cascading through a row B04 never
+-- promised to keep stable. Identity now lives in DURABLE coordinates instead:
+-- `provider_message_id` (Gmail's own permanent message id — untouched by a
+-- B04 rebuild), `role` + `header_occurrence_index` (which To/Cc/Bcc header,
+-- 0-based among headers of that name) + `participant_order` (position within
+-- that header's parsed address list) — the exact structural position B04
+-- itself derives deterministically from the same raw payload, so the same
+-- raw content reproduces the same coordinate after ANY number of rebuilds.
+--
+-- The `current_*` columns are a CONVENIENCE cross-reference to whichever B04
+-- row currently occupies that position, `on delete set null` rather than
+-- cascade: a rebuild nulls them out and the next B05 re-commit reattaches
+-- them, but a human decision anchored to this row's `id` is never at risk,
+-- because nothing about this row's identity or existence depends on them.
 create table private.gmail_outreach_observed_recipients (
   id uuid primary key default gen_random_uuid(),
 
@@ -226,11 +262,14 @@ create table private.gmail_outreach_observed_recipients (
   mail_account_id uuid not null,
   normalized_thread_id uuid not null,
 
-  source_normalized_message_id uuid not null references private.gmail_normalized_messages(id) on delete cascade,
-  source_header_id uuid not null references private.gmail_normalized_headers(id) on delete cascade,
-  source_participant_id uuid not null references private.gmail_normalized_participants(id) on delete cascade,
-
+  -- THE DURABLE STABILITY KEY — survives a B04 rebuild by construction.
+  provider_message_id text not null,
   role text not null check (role in ('to', 'cc', 'bcc')),
+  header_occurrence_index integer not null check (header_occurrence_index >= 0),
+  participant_order integer not null check (participant_order >= 0),
+
+  -- OBSERVED EVIDENCE — refreshed on reconciliation (see the commit RPC);
+  -- never part of identity.
   display_name text,
   addr_spec text,
   local_part text,
@@ -238,7 +277,14 @@ create table private.gmail_outreach_observed_recipients (
   domain_lower text,
   parse_status text not null check (parse_status in ('parsed', 'malformed', 'empty_group')),
 
+  -- CURRENT PROJECTION LINK — convenience only, never identity. Null after a
+  -- B04 rebuild until the next B05 re-commit reattaches it.
+  current_normalized_message_id uuid references private.gmail_normalized_messages(id) on delete set null,
+  current_source_header_id uuid references private.gmail_normalized_headers(id) on delete set null,
+  current_source_participant_id uuid references private.gmail_normalized_participants(id) on delete set null,
+
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
 
   constraint gmail_outreach_observed_recipients_thread_fk
     foreign key (normalized_thread_id, mail_account_id)
@@ -248,20 +294,24 @@ create table private.gmail_outreach_observed_recipients (
     foreign key (mail_account_id, user_id)
     references public.mail_accounts (id, user_id) on delete cascade,
 
-  -- THE STABILITY KEY. One observed-recipient row per B04 participant row,
-  -- forever.
-  constraint gmail_outreach_observed_recipients_participant_uidx
-    unique (source_participant_id)
+  -- THE STABILITY KEY. One observed-recipient row per durable source
+  -- coordinate, forever — independent of which B04 row currently occupies it.
+  constraint gmail_outreach_observed_recipients_durable_uidx
+    unique (mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order)
 );
 
 comment on table private.gmail_outreach_observed_recipients is
-  'B05: every To/Cc/Bcc occurrence on creator-SENT evidence, unfiltered. Deterministic extraction, not a machine judgement. A recipient here is NOT a commercial target contact by itself — see gmail_outreach_target_contact_candidates and gmail_outreach_target_contact_confirmed_members.';
+  'B05: every To/Cc/Bcc occurrence on creator-SENT evidence, unfiltered. Deterministic extraction, not a machine judgement. Identity is a DURABLE source coordinate (provider_message_id/role/header_occurrence_index/participant_order), independent of B04''s own replaceable row lifecycle, so a B04 rebuild can never orphan a human target-contact confirmation. A recipient here is NOT a commercial target contact by itself — see gmail_outreach_target_contact_candidates and gmail_outreach_target_contact_confirmed_members.';
 
 create index gmail_outreach_observed_recipients_thread_idx
   on private.gmail_outreach_observed_recipients (normalized_thread_id);
 
 create index gmail_outreach_observed_recipients_addr_idx
   on private.gmail_outreach_observed_recipients (lower(addr_spec)) where addr_spec is not null;
+
+create trigger gmail_outreach_observed_recipients_touch
+  before update on private.gmail_outreach_observed_recipients
+  for each row execute function private.touch_gmail_outreach_row();
 
 -- ===========================================================================
 -- 4. ZERO/ONE/MANY CANONICAL CONTACT LINKS — evidence only, never identity
@@ -400,7 +450,16 @@ create table private.gmail_outreach_target_observations (
   observed_name text,
   observed_domain text,
   target_kind_hint text not null default 'unknown' check (target_kind_hint in ('hotel', 'organization', 'unknown')),
-  source_message_ids uuid[] not null default '{}',
+
+  -- DURABLE, VERIFIED PROVENANCE (EXTERNAL AUDIT AMENDMENT #1, Finding 1/12).
+  -- `provider_message_id` — Gmail's own permanent id, not a B04 row uuid —
+  -- so provenance survives a B04 rebuild exactly like the observed-recipient
+  -- coordinates above. The commit RPC verifies every entry here actually
+  -- belongs to this exact thread/account BEFORE this row is created; a
+  -- caller cannot assert provenance the database has not itself confirmed.
+  source_provider_message_ids text[] not null,
+  constraint gmail_outreach_target_observations_source_nonempty
+    check (cardinality(source_provider_message_ids) > 0),
 
   -- ADVISORY FIELDS — machine-replaceable, never authoritative.
   machine_canonical_link_assessment text check (machine_canonical_link_assessment in (
@@ -475,6 +534,54 @@ comment on table private.gmail_outreach_target_canonical_links is
 
 create index gmail_outreach_target_canonical_links_observation_idx
   on private.gmail_outreach_target_canonical_links (target_observation_id);
+
+-- ===========================================================================
+-- 7b. MACHINE — THREAD-LEVEL TARGET-SCOPE SIGNAL (EXTERNAL AUDIT AMENDMENT #1, Finding 6)
+-- ===========================================================================
+-- D070 accepted target_scope as its own axis with a MACHINE-advisory half and
+-- a CREATOR-authoritative half (§9a's `target_scope_decision`); the original
+-- 0039 implemented only the creator half. This is the missing machine half —
+-- thread-level (never duplicated per observation), conservative, and it
+-- NEVER decides anything: the creator's decision is authoritative regardless
+-- of what this table says, and the two may permanently disagree (the Ogilvy/
+-- Marriott-Caribbean-Partnerships case — the same organization can be a
+-- `single_target` in one creator's judgement on one thread and a `portfolio_
+-- target` on another).
+create table private.gmail_outreach_target_scope_signals (
+  id uuid primary key default gen_random_uuid(),
+
+  user_id uuid not null references public.users(id) on delete cascade,
+  mail_account_id uuid not null,
+  normalized_thread_id uuid not null,
+
+  machine_target_scope text not null check (machine_target_scope in (
+    'single_target', 'multiple_targets', 'portfolio_target', 'unresolved'
+  )),
+  reason_codes text[] not null default '{}',
+  matcher_version text not null check (matcher_version ~ '^[a-z][a-z0-9_]{0,63}$'),
+
+  evaluated_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint gmail_outreach_target_scope_signals_thread_fk
+    foreign key (normalized_thread_id, mail_account_id)
+    references private.gmail_normalized_threads (id, mail_account_id) on delete cascade,
+
+  constraint gmail_outreach_target_scope_signals_account_fk
+    foreign key (mail_account_id, user_id)
+    references public.mail_accounts (id, user_id) on delete cascade,
+
+  constraint gmail_outreach_target_scope_signals_identity_uidx
+    unique (mail_account_id, normalized_thread_id)
+);
+
+comment on table private.gmail_outreach_target_scope_signals is
+  'B05 MACHINE: advisory, thread-level target-scope hint. Never authoritative — see gmail_outreach_creator_decisions.target_scope_decision for the creator''s (possibly disagreeing) authoritative answer. A conservative V1 baseline may legitimately return unresolved whenever the evidence does not honestly support a stronger inference.';
+
+create trigger gmail_outreach_target_scope_signals_touch
+  before update on private.gmail_outreach_target_scope_signals
+  for each row execute function private.touch_gmail_outreach_row();
 
 -- ===========================================================================
 -- 8. HUMAN — IMMUTABLE DECISION EVENTS (all four axes, one ledger)
@@ -562,11 +669,21 @@ create table private.gmail_outreach_creator_decisions (
 
   outreach_decision text check (outreach_decision in ('outreach_confirmed', 'not_outreach_confirmed')),
   current_outreach_event_id uuid references private.gmail_outreach_creator_decision_events(id),
+  -- EXTERNAL AUDIT AMENDMENT #1, Finding 3: the event's own `event_seq`,
+  -- denormalized here so the projection UPDATE below can compare orderings
+  -- without a second lookup. This is what makes "the projection may only
+  -- advance, never move backwards" enforceable under real concurrency: two
+  -- correcting transactions racing to record seq 100 and seq 101 are
+  -- serialized by the row lock this table's own unique index takes, and
+  -- whichever one carries the LOWER seq loses the `where` guard below,
+  -- however the two transactions actually finish.
+  current_outreach_event_seq bigint,
 
   target_scope_decision text check (target_scope_decision in (
     'single_target', 'multiple_targets', 'portfolio_target', 'unresolved'
   )),
   current_target_scope_event_id uuid references private.gmail_outreach_creator_decision_events(id),
+  current_target_scope_event_seq bigint,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -584,45 +701,70 @@ create table private.gmail_outreach_creator_decisions (
 );
 
 comment on table private.gmail_outreach_creator_decisions is
-  'B05 HUMAN layer: current scalar creator decisions (outreach, target_scope) per thread. Authoritative. Never overwritten by a machine re-run. Consistency between target_scope_decision and the confirmed-target-member set (gmail_outreach_target_confirmations) is surfaced as a read-time status, never enforced as a write-time order.';
+  'B05 HUMAN layer: current scalar creator decisions (outreach, target_scope) per thread. Authoritative. Never overwritten by a machine re-run, and never moved backwards by a concurrent correction with a lower event_seq (Finding 3). Consistency between target_scope_decision and the confirmed-target-member set (gmail_outreach_target_confirmations) is surfaced as a read-time status, never enforced as a write-time order.';
 
 create trigger gmail_outreach_creator_decisions_touch
   before update on private.gmail_outreach_creator_decisions
   for each row execute function private.touch_gmail_outreach_row();
 
 -- 9b. Confirmed target set (may be many rows per thread — multi/portfolio scope).
+--
+-- EXTERNAL AUDIT AMENDMENT #1, Finding 3: a bare insert-on-confirm/delete-on-
+-- remove design destroys the only ordering evidence a 'remove' had, so a
+-- late-arriving stale 'confirm' (event_seq 100, delayed in flight) could
+-- resurrect a row after a newer 'remove' (event_seq 101) already deleted it
+-- — silently reverting a later decision. This table instead keeps ONE row
+-- per (thread, observation) for as long as any decision on it has ever been
+-- made — confirm and remove both UPDATE it — with `is_confirmed` carrying
+-- the current membership fact and `current_event_seq` guarding every write
+-- the same way §9a's scalar axes are guarded: a write only applies when its
+-- event_seq is strictly greater than the row's current one.
 create table private.gmail_outreach_target_confirmations (
   id uuid primary key default gen_random_uuid(),
 
   mail_account_id uuid not null,
   normalized_thread_id uuid not null,
   target_observation_id uuid not null references private.gmail_outreach_target_observations(id) on delete cascade,
-  confirming_event_id uuid not null references private.gmail_outreach_creator_decision_events(id),
+
+  is_confirmed boolean not null,
+  current_event_id uuid not null references private.gmail_outreach_creator_decision_events(id),
+  current_event_seq bigint not null,
 
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
 
   constraint gmail_outreach_target_confirmations_thread_fk
     foreign key (normalized_thread_id, mail_account_id)
     references private.gmail_normalized_threads (id, mail_account_id) on delete cascade,
 
-  -- Presence of a row IS the confirmation; a 'remove' event deletes it.
+  -- ONE ROW PER (thread, observation), for as long as it has ever been
+  -- decided. Membership is `is_confirmed = true`, never row presence.
   constraint gmail_outreach_target_confirmations_uidx
     unique (normalized_thread_id, target_observation_id)
 );
 
 comment on table private.gmail_outreach_target_confirmations is
-  'B05 HUMAN layer: the creator-confirmed set of commercial targets for a thread, each anchored to a private target observation — never a canonical hotel/organization row directly. A canonical link added or changed later never rewrites this row.';
+  'B05 HUMAN layer: the creator''s current confirm/remove decision per (thread, target observation), each anchored to a private target observation — never a canonical hotel/organization row directly. `is_confirmed = true` is the confirmed-target membership test, never row presence — a row survives a `remove` as a tombstone so a stale, delayed `confirm` from an earlier event_seq can never resurrect it (Finding 3). A canonical link added or changed later never rewrites this row.';
+
+create trigger gmail_outreach_target_confirmations_touch
+  before update on private.gmail_outreach_target_confirmations
+  for each row execute function private.touch_gmail_outreach_row();
 
 -- 9c. Confirmed target-contact set (may be many — multiple legitimate contacts).
+-- Same tombstone-and-monotonic-seq design as 9b, for the identical reason.
 create table private.gmail_outreach_target_contact_confirmed_members (
   id uuid primary key default gen_random_uuid(),
 
   mail_account_id uuid not null,
   normalized_thread_id uuid not null,
   observed_recipient_id uuid not null references private.gmail_outreach_observed_recipients(id) on delete cascade,
-  confirming_event_id uuid not null references private.gmail_outreach_creator_decision_events(id),
+
+  is_confirmed boolean not null,
+  current_event_id uuid not null references private.gmail_outreach_creator_decision_events(id),
+  current_event_seq bigint not null,
 
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
 
   constraint gmail_outreach_target_contact_confirmed_members_thread_fk
     foreign key (normalized_thread_id, mail_account_id)
@@ -633,7 +775,11 @@ create table private.gmail_outreach_target_contact_confirmed_members (
 );
 
 comment on table private.gmail_outreach_target_contact_confirmed_members is
-  'B05 HUMAN layer: the creator-confirmed set of commercial target-contact recipients, each anchored to a stable observed recipient — never a canonical contact row directly.';
+  'B05 HUMAN layer: the creator''s current confirm/remove decision per (thread, observed recipient), each anchored to a stable observed recipient — never a canonical contact row directly. `is_confirmed = true` is the confirmed-membership test, never row presence (Finding 3, same tombstone rationale as gmail_outreach_target_confirmations).';
+
+create trigger gmail_outreach_target_contact_confirmed_members_touch
+  before update on private.gmail_outreach_target_contact_confirmed_members
+  for each row execute function private.touch_gmail_outreach_row();
 
 -- ===========================================================================
 -- 10. `deleted` MUST NOT COEXIST WITH B05 DATA
@@ -681,11 +827,12 @@ begin
     + (select count(*) from private.gmail_outreach_creator_decisions where mail_account_id = account_id)
     + (select count(*) from private.gmail_outreach_target_observations where mail_account_id = account_id)
     + (select count(*) from private.gmail_outreach_observed_recipients where mail_account_id = account_id)
+    + (select count(*) from private.gmail_outreach_target_scope_signals where mail_account_id = account_id)
     into remaining_count;
 
   if remaining_count > 0 then
     raise exception
-      'mail account % is `deleted` while B05 outreach-interpretation state remains (% top-level row(s) across signals/decisions/observations/recipients). B05-derived Gmail data must not survive a completed deletion.',
+      'mail account % is `deleted` while B05 outreach-interpretation state remains (% top-level row(s) across signals/decisions/observations/recipients/scope-signals). B05-derived Gmail data must not survive a completed deletion.',
       account_id, remaining_count
       using errcode = 'integrity_constraint_violation';
   end if;
@@ -729,10 +876,24 @@ create constraint trigger gmail_outreach_observed_recipients_absent_when_deleted
 -- ---------------------------------------------------------------------------
 -- 11a. WHICH THREADS NEED (RE)INTERPRETATION
 -- ---------------------------------------------------------------------------
+-- EXTERNAL AUDIT AMENDMENT #1, Finding 4: staleness now also considers the
+-- MATCHER version and the coarse catalog epoch, not detector version alone —
+-- a matcher-version bump (target/contact matching rules changed) or a moved
+-- catalog epoch (the canonical universe might have changed) must schedule a
+-- thread for re-evaluation exactly like a detector-version bump already did.
+-- This is deliberately still a CHEAP, coarse filter: it decides only whether
+-- a thread is OFFERED for re-evaluation, never whether the expensive
+-- semantic re-match actually runs — that decision is the per-observation
+-- `candidate_set_fingerprint` comparison TS performs once it has read the
+-- thread's actual evidence (§11c/service.ts), so an unrelated catalog change
+-- elsewhere still costs this function nothing beyond one integer comparison
+-- per thread.
 create or replace function public.gmail_outreach_list_candidates(
   p_user_id uuid,
   p_mail_account_id uuid,
   p_detector_version text,
+  p_matcher_version text,
+  p_current_catalog_epoch bigint,
   p_limit integer,
   p_exclude_normalized_thread_ids uuid[] default '{}'::uuid[]
 )
@@ -744,9 +905,8 @@ as $$
 declare
   v_rows jsonb;
 begin
-  if p_detector_version !~ '^[a-z][a-z0-9_]{0,63}$' then
-    raise exception 'invalid detector version %', p_detector_version
-      using errcode = 'invalid_parameter_value';
+  if p_detector_version !~ '^[a-z][a-z0-9_]{0,63}$' or p_matcher_version !~ '^[a-z][a-z0-9_]{0,63}$' then
+    raise exception 'invalid detector/matcher version' using errcode = 'invalid_parameter_value';
   end if;
 
   if p_limit is null or p_limit < 1 or p_limit <> trunc(p_limit) then
@@ -763,6 +923,10 @@ begin
         from private.gmail_normalized_threads t
         left join private.gmail_outreach_thread_signals s
           on s.normalized_thread_id = t.id and s.mail_account_id = t.mail_account_id
+        left join private.gmail_outreach_target_contact_signals tc
+          on tc.normalized_thread_id = t.id and tc.mail_account_id = t.mail_account_id
+        left join private.gmail_outreach_target_scope_signals ts
+          on ts.normalized_thread_id = t.id and ts.mail_account_id = t.mail_account_id
        where t.mail_account_id = p_mail_account_id
          and t.user_id = p_user_id
          and not (t.id = any(coalesce(p_exclude_normalized_thread_ids, '{}'::uuid[])))
@@ -778,6 +942,11 @@ begin
                  where m.normalized_thread_id = t.id
                    and m.normalized_at > s.evaluated_at
               )
+           or tc.id is null
+           or tc.matcher_version is distinct from p_matcher_version
+           or tc.evaluated_epoch <> p_current_catalog_epoch
+           or ts.id is null
+           or ts.matcher_version is distinct from p_matcher_version
          )
        order by t.id asc
        limit p_limit
@@ -787,7 +956,7 @@ begin
 end;
 $$;
 
-revoke all on function public.gmail_outreach_list_candidates(uuid, uuid, text, integer, uuid[]) from public;
+revoke all on function public.gmail_outreach_list_candidates(uuid, uuid, text, text, bigint, integer, uuid[]) from public;
 
 -- ---------------------------------------------------------------------------
 -- 11b. FULL B04 EVIDENCE BUNDLE FOR ONE THREAD
@@ -906,6 +1075,10 @@ revoke all on function public.gmail_outreach_get_thread_evidence(uuid, uuid, uui
 -- thread's current normalized messages — against a freshly recomputed digest.
 -- A mismatch (the thread's B04 evidence changed since TS read it) refuses the
 -- whole commit; nothing is written from stale evidence.
+-- EXTERNAL AUDIT AMENDMENT #1: Finding 1 (durable recipient/observation
+-- provenance), Finding 4 (catalog-epoch CAS — `stale_catalog`), Finding 6
+-- (machine target-scope signal) all land in this one function, since it
+-- remains the sole writer of every MACHINE row.
 create or replace function public.gmail_outreach_commit_interpretation(
   p_user_id uuid,
   p_mail_account_id uuid,
@@ -921,6 +1094,8 @@ create or replace function public.gmail_outreach_commit_interpretation(
   p_target_contact_candidates jsonb,
   p_target_observations jsonb,
   p_target_canonical_links jsonb,
+  p_machine_target_scope text,
+  p_target_scope_reason_codes text[],
   p_catalog_epoch bigint
 )
 returns jsonb
@@ -933,12 +1108,15 @@ declare
   v_thread private.gmail_normalized_threads%rowtype;
   v_current_digest text;
   v_current_count integer;
+  v_current_catalog_epoch bigint;
   v_recipient_row jsonb;
-  v_recipient_ids uuid[] := '{}'::uuid[];
   v_observation jsonb;
   v_observation_id uuid;
   v_link jsonb;
   v_candidate jsonb;
+  v_provider_message_id text;
+  v_proven_count integer;
+  v_asserted_count integer;
 begin
   if p_detector_version !~ '^[a-z][a-z0-9_]{0,63}$' or p_matcher_version !~ '^[a-z][a-z0-9_]{0,63}$' then
     raise exception 'invalid detector/matcher version' using errcode = 'invalid_parameter_value';
@@ -946,6 +1124,10 @@ begin
 
   if p_outreach_status not in ('qualified_outreach', 'not_outreach', 'needs_review', 'insufficient_evidence') then
     raise exception 'invalid outreach status %', p_outreach_status using errcode = 'invalid_parameter_value';
+  end if;
+
+  if p_machine_target_scope not in ('single_target', 'multiple_targets', 'portfolio_target', 'unresolved') then
+    raise exception 'invalid machine target scope %', p_machine_target_scope using errcode = 'invalid_parameter_value';
   end if;
 
   select m.* into v_account from public.mail_accounts m
@@ -988,6 +1170,22 @@ begin
     return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', v_current_digest);
   end if;
 
+  -- THE CATALOG-EPOCH FENCE (Finding 4). TS read the catalog (hotels/
+  -- organizations/contacts) at `p_catalog_epoch` to compute every canonical
+  -- link and target-contact/target-scope result below. If the catalog moved
+  -- since — a relevant insert/update/delete somewhere in the six catalog
+  -- tables §1's triggers watch — those results were computed against a
+  -- universe that no longer exists, and none of them may become current.
+  -- This is a whole-commit refusal, exactly like `stale_source`: nothing
+  -- (not even the outreach classification, to keep this function's atomicity
+  -- simple and total) is written, and the caller re-reads a fresh snapshot
+  -- and retries — the same retry-on-staleness shape B02's CAS RPCs already
+  -- use.
+  select last_value into v_current_catalog_epoch from private.gmail_outreach_catalog_epoch_seq;
+  if v_current_catalog_epoch <> p_catalog_epoch then
+    return jsonb_build_object('result', 'stale_catalog', 'current_catalog_epoch', v_current_catalog_epoch);
+  end if;
+
   -- MACHINE LAYER ONLY, FROM HERE. Nothing below touches a HUMAN table.
   insert into private.gmail_outreach_thread_signals (
     user_id, mail_account_id, normalized_thread_id, outreach_status, reason_codes,
@@ -1004,32 +1202,46 @@ begin
         evidence_message_count = excluded.evidence_message_count,
         evaluated_at = now();
 
-  -- OBSERVED RECIPIENTS — upsert, stable ids preserved.
+  -- OBSERVED RECIPIENTS — upsert on the DURABLE coordinate (Finding 1), never
+  -- on a B04 row id. Evidence and current-projection-link columns refresh on
+  -- reconciliation; the row's own id and durable coordinate never change.
   for v_recipient_row in select * from jsonb_array_elements(
     (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from unnest(coalesce(p_recipient_participant_ids, '{}'::uuid[])) as x)
   )
   loop
     insert into private.gmail_outreach_observed_recipients (
       user_id, mail_account_id, normalized_thread_id,
-      source_normalized_message_id, source_header_id, source_participant_id,
-      role, display_name, addr_spec, local_part, domain, domain_lower, parse_status
+      provider_message_id, role, header_occurrence_index, participant_order,
+      display_name, addr_spec, local_part, domain, domain_lower, parse_status,
+      current_normalized_message_id, current_source_header_id, current_source_participant_id
     )
     select p_user_id, p_mail_account_id, p_normalized_thread_id,
-           p.normalized_message_id, p.source_header_id, p.id,
-           p.header_role, p.display_name, p.addr_spec, p.local_part, p.domain, p.domain_lower, p.parse_status
+           m.provider_message_id, p.header_role, h.occurrence_index, p.participant_order,
+           p.display_name, p.addr_spec, p.local_part, p.domain, p.domain_lower, p.parse_status,
+           m.id, h.id, p.id
       from private.gmail_normalized_participants p
       join private.gmail_normalized_messages m on m.id = p.normalized_message_id
+      join private.gmail_normalized_headers h on h.id = p.source_header_id
      where p.id = (v_recipient_row #>> '{}')::uuid
        and m.normalized_thread_id = p_normalized_thread_id
        and p.header_role in ('to', 'cc', 'bcc')
-    on conflict (source_participant_id) do nothing;
-
-    v_recipient_ids := array_append(v_recipient_ids, (v_recipient_row #>> '{}')::uuid);
+    on conflict (mail_account_id, normalized_thread_id, provider_message_id, role, header_occurrence_index, participant_order)
+    do update set
+      display_name = excluded.display_name,
+      addr_spec = excluded.addr_spec,
+      local_part = excluded.local_part,
+      domain = excluded.domain,
+      domain_lower = excluded.domain_lower,
+      parse_status = excluded.parse_status,
+      current_normalized_message_id = excluded.current_normalized_message_id,
+      current_source_header_id = excluded.current_source_header_id,
+      current_source_participant_id = excluded.current_source_participant_id,
+      updated_at = now();
   end loop;
 
   -- CANONICAL CONTACT LINKS — deterministic exact-email match, computed here
   -- (not trusted from the caller), wholesale replaced for this thread's
-  -- recipients.
+  -- recipients. Naturally 0..N per recipient: no map collapses it.
   delete from private.gmail_outreach_observed_recipient_canonical_links l
    using private.gmail_outreach_observed_recipients r
    where l.observed_recipient_id = r.id
@@ -1075,27 +1287,66 @@ begin
 
   for v_candidate in select * from jsonb_array_elements(coalesce(p_target_contact_candidates, '[]'::jsonb))
   loop
+    -- Matched via `current_source_participant_id`: valid because TS derived
+    -- `source_participant_id` from the SAME evidence bundle this same commit
+    -- just (re)attached above, in the same transaction.
     insert into private.gmail_outreach_target_contact_candidates (
       normalized_thread_id, mail_account_id, observed_recipient_id, role_evidence, address_pattern_evidence, rank
     )
     select p_normalized_thread_id, p_mail_account_id, r.id,
            v_candidate ->> 'role_evidence', v_candidate ->> 'address_pattern_evidence', (v_candidate ->> 'rank')::int
       from private.gmail_outreach_observed_recipients r
-     where r.source_participant_id = (v_candidate ->> 'source_participant_id')::uuid
+     where r.current_source_participant_id = (v_candidate ->> 'source_participant_id')::uuid
        and r.normalized_thread_id = p_normalized_thread_id;
   end loop;
+
+  -- MACHINE TARGET-SCOPE SIGNAL (Finding 6) — thread-level, advisory only.
+  insert into private.gmail_outreach_target_scope_signals (
+    user_id, mail_account_id, normalized_thread_id, machine_target_scope, reason_codes, matcher_version
+  ) values (
+    p_user_id, p_mail_account_id, p_normalized_thread_id, p_machine_target_scope,
+    coalesce(p_target_scope_reason_codes, '{}'), p_matcher_version
+  )
+  on conflict (mail_account_id, normalized_thread_id) do update
+    set machine_target_scope = excluded.machine_target_scope,
+        reason_codes = excluded.reason_codes,
+        matcher_version = excluded.matcher_version,
+        evaluated_at = now();
 
   -- TARGET OBSERVATIONS — reconcile, never overwrite identity fields.
   for v_observation in select * from jsonb_array_elements(coalesce(p_target_observations, '[]'::jsonb))
   loop
+    -- DURABLE, VERIFIED PROVENANCE (Finding 1/12): every asserted source
+    -- provider_message_id must actually belong to THIS thread/account's
+    -- CURRENT B04 evidence. A caller cannot assert provenance the database
+    -- has not itself proven — this is checked BEFORE the row can be created,
+    -- every time, regardless of whether this observation turns out to be new
+    -- or already reconciled below.
+    select array_length(coalesce((select array_agg(x) from jsonb_array_elements_text(v_observation -> 'source_provider_message_ids') x), '{}'), 1)
+      into v_asserted_count;
+
+    select count(distinct pm.x) into v_proven_count
+      from jsonb_array_elements_text(v_observation -> 'source_provider_message_ids') pm(x)
+      join private.gmail_normalized_messages m
+        on m.provider_message_id = pm.x
+       and m.mail_account_id = p_mail_account_id
+       and m.normalized_thread_id = p_normalized_thread_id;
+
+    if v_asserted_count is null or v_asserted_count = 0 or v_proven_count <> v_asserted_count then
+      raise exception
+        'target observation source provenance unproven: % of % asserted provider_message_id(s) actually belong to thread %',
+        coalesce(v_proven_count, 0), coalesce(v_asserted_count, 0), p_normalized_thread_id
+        using errcode = 'invalid_parameter_value';
+    end if;
+
     insert into private.gmail_outreach_target_observations (
       user_id, mail_account_id, normalized_thread_id, observation_fingerprint,
-      observed_name, observed_domain, target_kind_hint, source_message_ids
+      observed_name, observed_domain, target_kind_hint, source_provider_message_ids
     ) values (
       p_user_id, p_mail_account_id, p_normalized_thread_id, v_observation ->> 'observation_fingerprint',
       v_observation ->> 'observed_name', v_observation ->> 'observed_domain',
       coalesce(v_observation ->> 'target_kind_hint', 'unknown'),
-      coalesce((select array_agg(x::uuid) from jsonb_array_elements_text(v_observation -> 'source_message_ids') x), '{}')
+      (select array_agg(x) from jsonb_array_elements_text(v_observation -> 'source_provider_message_ids') x)
     )
     on conflict (mail_account_id, normalized_thread_id, observation_fingerprint) do nothing
     returning id into v_observation_id;
@@ -1143,19 +1394,38 @@ end;
 $$;
 
 revoke all on function public.gmail_outreach_commit_interpretation(
-  uuid, uuid, uuid, text, text, text, text, text[], uuid[], text, text, jsonb, jsonb, jsonb, bigint
+  uuid, uuid, uuid, text, text, text, text, text[], uuid[], text, text, jsonb, jsonb, jsonb, text, text[], bigint
 ) from public;
 
 -- ---------------------------------------------------------------------------
 -- 11d. CREATOR DECISIONS — the ONLY writer of the human ledger
 -- ---------------------------------------------------------------------------
 -- One generic, exhaustively-validated entrypoint for all four axes, rather
--- than four near-identical functions. `p_decided_by_user_id` must equal
--- `p_user_id` (no delegation) — enforced twice: once here explicitly, once
--- again by the table's own CHECK, so the invariant survives a future caller
--- that forgets this comment.
+-- than four near-identical functions.
+--
+-- EXTERNAL AUDIT AMENDMENT #1, Finding 2: the original version accepted
+-- `p_user_id` as a caller-supplied parameter and trusted it as the decision's
+-- author — indistinguishable, at the database, from any other service-role
+-- capability, including a machine worker. This is the one B05 write that
+-- claims to be unforgeable human truth, so it now derives the actor from
+-- `auth.uid()` — Postgres's read of the verified JWT claims PostgREST (or an
+-- explicit `set_config('request.jwt.claims', ...)`) attaches to THIS
+-- session — never from a parameter. `auth.uid() is null` (a service-role
+-- caller that never established a real end-user identity, e.g. any B05
+-- MACHINE RPC's own connection) is rejected outright: a machine path has no
+-- legitimate way to reach this function. The repository's own precedent for
+-- "acting as the user" is `@/lib/supabase/server`'s cookie-bound client
+-- (anon key + the caller's session, so `auth.uid()` is the real signed-in
+-- user) — `service.server.ts`'s `defaultCreatorDecisionDeps()` uses exactly
+-- that client for this one call, while every other B05 RPC keeps the
+-- service-role admin client B01-B04 already use for machine/system work.
+--
+-- EXTERNAL AUDIT AMENDMENT #1, Finding 3: every projection write below is
+-- now guarded by `event_seq` ordering — see gmail_outreach_creator_decisions,
+-- gmail_outreach_target_confirmations and gmail_outreach_target_contact_
+-- confirmed_members's own comments for why a bare upsert/delete was unsafe
+-- under real concurrency.
 create or replace function public.gmail_outreach_record_creator_decision(
-  p_user_id uuid,
   p_mail_account_id uuid,
   p_normalized_thread_id uuid,
   p_axis text,
@@ -1171,17 +1441,24 @@ security definer
 set search_path = public, private, pg_temp
 as $$
 declare
+  v_user_id uuid;
   v_account public.mail_accounts%rowtype;
   v_thread private.gmail_normalized_threads%rowtype;
   v_event_id uuid;
+  v_event_seq bigint;
   v_observed_state text;
 begin
+  v_user_id := auth.uid();
+  if v_user_id is null then
+    return jsonb_build_object('result', 'unauthenticated');
+  end if;
+
   if p_axis not in ('outreach', 'target_scope', 'target', 'target_contact') then
     raise exception 'invalid axis %', p_axis using errcode = 'invalid_parameter_value';
   end if;
 
   select m.* into v_account from public.mail_accounts m
-   where m.id = p_mail_account_id and m.user_id = p_user_id;
+   where m.id = p_mail_account_id and m.user_id = v_user_id;
 
   if not found then
     return jsonb_build_object('result', 'not_found');
@@ -1192,7 +1469,7 @@ begin
   end if;
 
   select t.* into v_thread from private.gmail_normalized_threads t
-   where t.id = p_normalized_thread_id and t.mail_account_id = p_mail_account_id and t.user_id = p_user_id;
+   where t.id = p_normalized_thread_id and t.mail_account_id = p_mail_account_id and t.user_id = v_user_id;
 
   if not found then
     return jsonb_build_object('result', 'thread_not_found');
@@ -1209,17 +1486,21 @@ begin
     insert into private.gmail_outreach_creator_decision_events (
       user_id, mail_account_id, normalized_thread_id, axis, decided_by_user_id, outreach_decision, observed_machine_state
     ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, 'outreach', p_user_id, p_outreach_decision, v_observed_state
-    ) returning id into v_event_id;
+      v_user_id, p_mail_account_id, p_normalized_thread_id, 'outreach', v_user_id, p_outreach_decision, v_observed_state
+    ) returning id, event_seq into v_event_id, v_event_seq;
 
     insert into private.gmail_outreach_creator_decisions (
-      user_id, mail_account_id, normalized_thread_id, outreach_decision, current_outreach_event_id
+      user_id, mail_account_id, normalized_thread_id, outreach_decision, current_outreach_event_id, current_outreach_event_seq
     ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, p_outreach_decision, v_event_id
+      v_user_id, p_mail_account_id, p_normalized_thread_id, p_outreach_decision, v_event_id, v_event_seq
     )
     on conflict (mail_account_id, normalized_thread_id) do update
       set outreach_decision = excluded.outreach_decision,
-          current_outreach_event_id = excluded.current_outreach_event_id;
+          current_outreach_event_id = excluded.current_outreach_event_id,
+          current_outreach_event_seq = excluded.current_outreach_event_seq,
+          updated_at = now()
+      where excluded.current_outreach_event_seq > private.gmail_outreach_creator_decisions.current_outreach_event_seq
+         or private.gmail_outreach_creator_decisions.current_outreach_event_seq is null;
 
   elsif p_axis = 'target_scope' then
     if p_target_scope_decision not in ('single_target', 'multiple_targets', 'portfolio_target', 'unresolved') then
@@ -1229,17 +1510,21 @@ begin
     insert into private.gmail_outreach_creator_decision_events (
       user_id, mail_account_id, normalized_thread_id, axis, decided_by_user_id, target_scope_decision
     ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, 'target_scope', p_user_id, p_target_scope_decision
-    ) returning id into v_event_id;
+      v_user_id, p_mail_account_id, p_normalized_thread_id, 'target_scope', v_user_id, p_target_scope_decision
+    ) returning id, event_seq into v_event_id, v_event_seq;
 
     insert into private.gmail_outreach_creator_decisions (
-      user_id, mail_account_id, normalized_thread_id, target_scope_decision, current_target_scope_event_id
+      user_id, mail_account_id, normalized_thread_id, target_scope_decision, current_target_scope_event_id, current_target_scope_event_seq
     ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, p_target_scope_decision, v_event_id
+      v_user_id, p_mail_account_id, p_normalized_thread_id, p_target_scope_decision, v_event_id, v_event_seq
     )
     on conflict (mail_account_id, normalized_thread_id) do update
       set target_scope_decision = excluded.target_scope_decision,
-          current_target_scope_event_id = excluded.current_target_scope_event_id;
+          current_target_scope_event_id = excluded.current_target_scope_event_id,
+          current_target_scope_event_seq = excluded.current_target_scope_event_seq,
+          updated_at = now()
+      where excluded.current_target_scope_event_seq > private.gmail_outreach_creator_decisions.current_target_scope_event_seq
+         or private.gmail_outreach_creator_decisions.current_target_scope_event_seq is null;
 
   elsif p_axis = 'target' then
     if p_target_action not in ('confirm', 'remove') or p_target_observation_id is null then
@@ -1257,21 +1542,20 @@ begin
     insert into private.gmail_outreach_creator_decision_events (
       user_id, mail_account_id, normalized_thread_id, axis, decided_by_user_id, target_action, target_observation_id
     ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, 'target', p_user_id, p_target_action, p_target_observation_id
-    ) returning id into v_event_id;
+      v_user_id, p_mail_account_id, p_normalized_thread_id, 'target', v_user_id, p_target_action, p_target_observation_id
+    ) returning id, event_seq into v_event_id, v_event_seq;
 
-    if p_target_action = 'confirm' then
-      insert into private.gmail_outreach_target_confirmations (
-        mail_account_id, normalized_thread_id, target_observation_id, confirming_event_id
-      ) values (
-        p_mail_account_id, p_normalized_thread_id, p_target_observation_id, v_event_id
-      )
-      on conflict (normalized_thread_id, target_observation_id) do update
-        set confirming_event_id = excluded.confirming_event_id;
-    else
-      delete from private.gmail_outreach_target_confirmations
-       where normalized_thread_id = p_normalized_thread_id and target_observation_id = p_target_observation_id;
-    end if;
+    insert into private.gmail_outreach_target_confirmations (
+      mail_account_id, normalized_thread_id, target_observation_id, is_confirmed, current_event_id, current_event_seq
+    ) values (
+      p_mail_account_id, p_normalized_thread_id, p_target_observation_id, (p_target_action = 'confirm'), v_event_id, v_event_seq
+    )
+    on conflict (normalized_thread_id, target_observation_id) do update
+      set is_confirmed = excluded.is_confirmed,
+          current_event_id = excluded.current_event_id,
+          current_event_seq = excluded.current_event_seq,
+          updated_at = now()
+      where excluded.current_event_seq > private.gmail_outreach_target_confirmations.current_event_seq;
 
   else -- target_contact
     if p_target_action not in ('confirm', 'remove') or p_observed_recipient_id is null then
@@ -1289,29 +1573,28 @@ begin
     insert into private.gmail_outreach_creator_decision_events (
       user_id, mail_account_id, normalized_thread_id, axis, decided_by_user_id, target_action, observed_recipient_id
     ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, 'target_contact', p_user_id, p_target_action, p_observed_recipient_id
-    ) returning id into v_event_id;
+      v_user_id, p_mail_account_id, p_normalized_thread_id, 'target_contact', v_user_id, p_target_action, p_observed_recipient_id
+    ) returning id, event_seq into v_event_id, v_event_seq;
 
-    if p_target_action = 'confirm' then
-      insert into private.gmail_outreach_target_contact_confirmed_members (
-        mail_account_id, normalized_thread_id, observed_recipient_id, confirming_event_id
-      ) values (
-        p_mail_account_id, p_normalized_thread_id, p_observed_recipient_id, v_event_id
-      )
-      on conflict (normalized_thread_id, observed_recipient_id) do update
-        set confirming_event_id = excluded.confirming_event_id;
-    else
-      delete from private.gmail_outreach_target_contact_confirmed_members
-       where normalized_thread_id = p_normalized_thread_id and observed_recipient_id = p_observed_recipient_id;
-    end if;
+    insert into private.gmail_outreach_target_contact_confirmed_members (
+      mail_account_id, normalized_thread_id, observed_recipient_id, is_confirmed, current_event_id, current_event_seq
+    ) values (
+      p_mail_account_id, p_normalized_thread_id, p_observed_recipient_id, (p_target_action = 'confirm'), v_event_id, v_event_seq
+    )
+    on conflict (normalized_thread_id, observed_recipient_id) do update
+      set is_confirmed = excluded.is_confirmed,
+          current_event_id = excluded.current_event_id,
+          current_event_seq = excluded.current_event_seq,
+          updated_at = now()
+      where excluded.current_event_seq > private.gmail_outreach_target_contact_confirmed_members.current_event_seq;
   end if;
 
-  return jsonb_build_object('result', 'ok', 'event_id', v_event_id);
+  return jsonb_build_object('result', 'ok', 'event_id', v_event_id, 'event_seq', v_event_seq);
 end;
 $$;
 
 revoke all on function public.gmail_outreach_record_creator_decision(
-  uuid, uuid, uuid, text, text, text, text, uuid, uuid
+  uuid, uuid, text, text, text, text, uuid, uuid
 ) from public;
 
 -- ---------------------------------------------------------------------------
@@ -1353,14 +1636,18 @@ begin
   select count(*)::int into v_observations
     from private.gmail_outreach_target_observations where mail_account_id = p_mail_account_id;
 
+  -- `is_confirmed = true`, never row presence — a 'remove' leaves a
+  -- tombstone row behind (Finding 3), so counting rows would over-count.
   select count(*)::int into v_confirmed_targets
-    from private.gmail_outreach_target_confirmations where mail_account_id = p_mail_account_id;
+    from private.gmail_outreach_target_confirmations
+   where mail_account_id = p_mail_account_id and is_confirmed = true;
 
   select count(*)::int into v_recipients
     from private.gmail_outreach_observed_recipients where mail_account_id = p_mail_account_id;
 
   select count(*)::int into v_confirmed_contacts
-    from private.gmail_outreach_target_contact_confirmed_members where mail_account_id = p_mail_account_id;
+    from private.gmail_outreach_target_contact_confirmed_members
+   where mail_account_id = p_mail_account_id and is_confirmed = true;
 
   return jsonb_build_object(
     'result', 'ok',
@@ -1452,6 +1739,10 @@ begin
 
   delete from private.gmail_outreach_target_contact_signals where mail_account_id = p_mail_account_id;
 
+  -- Standalone thread-level row (no FK into any other B05 table), so it has
+  -- no cascade to rely on — must be purged explicitly.
+  delete from private.gmail_outreach_target_scope_signals where mail_account_id = p_mail_account_id;
+
   return jsonb_build_object(
     'result', 'ok',
     'thread_signals_removed', v_signals,
@@ -1465,18 +1756,20 @@ $$;
 revoke all on function public.gmail_outreach_purge_for_deletion(uuid, uuid, uuid) from public;
 
 -- ===========================================================================
--- 12. EXECUTE PRIVILEGES — service_role AND NOBODY ELSE
+-- 12. EXECUTE PRIVILEGES
 -- ===========================================================================
+-- MACHINE RPCs: service_role only. Never authenticated, never anon — these
+-- are the functions that can write the MACHINE layer, and none of them ever
+-- touches the HUMAN ledger (Finding 2).
 do $$
 declare
   fn text;
 begin
   foreach fn in array array[
     'public.gmail_outreach_current_catalog_epoch()',
-    'public.gmail_outreach_list_candidates(uuid,uuid,text,integer,uuid[])',
+    'public.gmail_outreach_list_candidates(uuid,uuid,text,text,bigint,integer,uuid[])',
     'public.gmail_outreach_get_thread_evidence(uuid,uuid,uuid)',
-    'public.gmail_outreach_commit_interpretation(uuid,uuid,uuid,text,text,text,text,text[],uuid[],text,text,jsonb,jsonb,jsonb,bigint)',
-    'public.gmail_outreach_record_creator_decision(uuid,uuid,uuid,text,text,text,text,uuid,uuid)',
+    'public.gmail_outreach_commit_interpretation(uuid,uuid,uuid,text,text,text,text,text[],uuid[],text,text,jsonb,jsonb,jsonb,text,text[],bigint)',
     'public.gmail_outreach_status(uuid,uuid)',
     'public.gmail_outreach_purge_for_deletion(uuid,uuid,uuid)'
   ] loop
@@ -1485,6 +1778,23 @@ begin
   end loop;
 end;
 $$;
+
+-- THE CREATOR-DECISION RPC (EXTERNAL AUDIT AMENDMENT #1, Finding 2): the one
+-- write that claims to be unforgeable human truth derives its actor from
+-- `auth.uid()`, never a parameter, so it is safe to expose to `authenticated`
+-- — and IS granted to it, because a real end-user session (the repository's
+-- `@/lib/supabase/server` client) is how the actual product calls it.
+-- `service_role` keeps EXECUTE too, for the same reason every other B0X
+-- consent/decision RPC does — but the function's own `auth.uid()` check,
+-- not this grant, is what actually decides whether a call may proceed: a
+-- service-role connection that never established a real end-user identity
+-- gets `unauthenticated` regardless of this grant.
+revoke all on function public.gmail_outreach_record_creator_decision(
+  uuid, uuid, text, text, text, text, uuid, uuid
+) from public, anon;
+grant execute on function public.gmail_outreach_record_creator_decision(
+  uuid, uuid, text, text, text, text, uuid, uuid
+) to authenticated, service_role;
 
 -- ===========================================================================
 -- 13. WHAT 0039 DOES NOT CREATE

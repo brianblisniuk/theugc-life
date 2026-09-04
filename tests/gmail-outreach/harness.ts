@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 
 import { Client } from "pg";
 
-import type { OutreachDeps } from "@/lib/gmail/outreach/service";
+import {
+  recordCreatorDecision,
+  type OutreachDeps,
+  type RecordCreatorDecisionInput,
+  type RecordCreatorDecisionResult,
+} from "@/lib/gmail/outreach/service";
 import { GMAIL_NORMALIZER_VERSION } from "@/lib/gmail/normalize/contract";
 import { normalizeOneCandidate } from "@/lib/gmail/normalize/service";
 import { createRpcClient, createTestUser } from "../gmail/rpc-harness";
@@ -25,6 +30,28 @@ export { connectedMailbox, createTestUser };
 
 interface ThenableResult<T> {
   then<R>(resolve: (v: { data: T[] | null; error: Error | null }) => R): Promise<R>;
+}
+
+/**
+ * Parses a PostgREST-style `.or("col.op.value,col.op.value")` filter string
+ * into a SQL WHERE clause. Only `eq` and `ilike` are needed by B05's own
+ * queries — the exact operators `getCatalogSnapshot` uses (EXTERNAL AUDIT
+ * AMENDMENT #1, Finding 4/5's bounded, case-insensitive catalog lookup).
+ */
+function parseOrFilter(filterString: string): { clause: string; params: unknown[] } {
+  const parts = filterString.split(",").map((p) => p.trim());
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  for (const part of parts) {
+    const match = /^([a-z_]+)\.(eq|ilike)\.(.*)$/i.exec(part);
+    if (!match) throw new Error(`test .or() shim: unsupported filter clause "${part}"`);
+    const [, column, op, rawValue] = match;
+    params.push(rawValue);
+    clauses.push(
+      op === "eq" ? `${column} = $${params.length}` : `${column} ilike $${params.length}`,
+    );
+  }
+  return { clause: clauses.length > 0 ? `(${clauses.join(" or ")})` : "false", params };
 }
 
 /** Adds the minimal `.from(table).select(cols)[.in(col, values)]` shim `OutreachDeps.db` needs, over a real pg client. */
@@ -53,10 +80,45 @@ export function outreachDeps(client: Client): OutreachDeps {
             },
           } as ThenableResult<unknown>;
         },
+        or(filterString: string): ThenableResult<unknown> {
+          const { clause, params } = parseOrFilter(filterString);
+          return {
+            then<R>(
+              resolve: (v: { data: unknown[] | null; error: Error | null }) => R,
+            ): Promise<R> {
+              return run(`where ${clause}`, params).then(resolve);
+            },
+          } as ThenableResult<unknown>;
+        },
       };
     },
   });
   return { db: { ...rpc, from } as unknown as OutreachDeps["db"] };
+}
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #1, Finding 2: `recordCreatorDecision` no longer
+ * accepts a `userId` — it derives the actor from `auth.uid()`, which reads
+ * the `request.jwt.claims` GUC PostgREST would normally set from a real
+ * user's session. This test harness talks to Postgres directly over one
+ * persistent connection (no PostgREST in front of it), so it simulates that
+ * exact mechanism itself: `set_config('request.jwt.claims', ..., false)`
+ * (session-scoped, so it survives past this one statement) on `client`
+ * BEFORE calling the real `recordCreatorDecision`, naming the human this
+ * call is impersonating. This is the ONLY place in the B05 test suite that
+ * needs to simulate a real creator identity — every other B05 RPC remains
+ * service-role/machine and never reads `auth.uid()` at all.
+ */
+export async function recordCreatorDecisionAs(
+  client: Client,
+  userId: string,
+  deps: OutreachDeps,
+  input: { mailAccountId: string; normalizedThreadId: string } & RecordCreatorDecisionInput,
+): Promise<RecordCreatorDecisionResult> {
+  await client.query("select set_config('request.jwt.claims', $1, false)", [
+    JSON.stringify({ sub: userId, role: "authenticated" }),
+  ]);
+  return recordCreatorDecision(deps, input);
 }
 
 /** Insert a raw B03 message and normalize it via B04, in one step, for B05 fixtures. */

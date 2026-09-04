@@ -76,16 +76,21 @@ describe("B05 evaluation harness: canonical target matching", () => {
     let wrongTargetOnStrongMatch = 0;
 
     for (const example of TARGET_MATCH_CORPUS) {
-      const hotelIdByContactEmail = new Map(Object.entries(example.hotelContactEmails));
+      const hotelIdByContactEmail = new Map(
+        Object.entries(example.hotelContactEmails).map(([email, id]) => [email, new Set([id])]),
+      );
       const organizationIdByContactEmail = new Map(
-        Object.entries(example.organizationContactEmails),
+        Object.entries(example.organizationContactEmails).map(([email, id]) => [
+          email,
+          new Set([id]),
+        ]),
       );
       const observation = {
         observationFingerprint: "a".repeat(64),
         observedName: example.observedName,
         observedDomain: example.observedDomain,
         targetKindHint: "unknown" as const,
-        sourceMessageIds: [],
+        sourceProviderMessageIds: ["provider-msg-1"],
         machineCanonicalLinkAssessment: "insufficient_evidence" as const,
         candidateSetFingerprint: "b".repeat(64),
       };

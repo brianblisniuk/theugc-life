@@ -328,7 +328,9 @@ export const CONTACT_CORPUS: readonly ContactExample[] = [
   },
   {
     id: "ct-6",
-    gold: "strong_match",
+    // Finding 8: a lone `to` recipient at a GENERIC inbox is no longer an
+    // automatic strong_match — role alone is not corroborating evidence.
+    gold: "needs_review",
     recipients: [
       recipientFixture({ role: "to", sourceParticipantId: "p1", localPart: "partnerships" }),
     ],

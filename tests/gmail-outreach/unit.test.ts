@@ -9,6 +9,7 @@ import { classifyOutreach } from "@/lib/gmail/outreach/interpreter";
 import { assessTargetContacts } from "@/lib/gmail/outreach/recipients";
 import { buildClassifierInputForMessage } from "@/lib/gmail/outreach/text-transform";
 import {
+  deriveMachineTargetScope,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation,
@@ -112,6 +113,40 @@ describe("B05 unit: text-transform.ts (classifier-input, D4/H)", () => {
     const parts = [part({ decodeStatus: "empty_decoded", decodedText: "" })];
     expect(buildClassifierInputForMessage(parts)).toBe("");
   });
+
+  it("Finding 10: truncates at a Gmail-style quote introducer, keeping only newly-authored text", () => {
+    const parts = [
+      part({
+        decodedText:
+          "Thanks!\n\nOn Mon, Jan 1, 2026 at 9:00 AM Hotel Marketing <marketing@acmehotel.example> wrote:\nWe'd love to collaborate on UGC content.",
+      }),
+    ];
+    expect(buildClassifierInputForMessage(parts)).toBe("Thanks!");
+  });
+
+  it("Finding 10: truncates at a contiguous run of `>`-quoted lines with no introducer", () => {
+    const parts = [
+      part({
+        decodedText:
+          "Sounds good.\n> We'd love to collaborate on a paid partnership.\n> Let us know.",
+      }),
+    ];
+    expect(buildClassifierInputForMessage(parts)).toBe("Sounds good.");
+  });
+
+  it("Finding 10: truncates at the RFC 3676 signature delimiter", () => {
+    const parts = [
+      part({
+        decodedText: "Just checking in, thanks!\n-- \nJane Doe — UGC Creator / Influencer",
+      }),
+    ];
+    expect(buildClassifierInputForMessage(parts)).toBe("Just checking in, thanks!");
+  });
+
+  it("Finding 10: an unrecognized quote format passes through untouched (not lossless, may abstain)", () => {
+    const parts = [part({ decodedText: "Hi there, hope you are well." })];
+    expect(buildClassifierInputForMessage(parts)).toBe("Hi there, hope you are well.");
+  });
 });
 
 describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", () => {
@@ -199,6 +234,48 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
     expect(result.status).toBe("insufficient_evidence");
   });
 
+  it("Finding 10: new text 'Thanks' + quoted hotel 'we'd love to collaborate' is NOT qualified_outreach — the quote is not creator-authored", () => {
+    const result = classifyOutreach({
+      messages: [sentMsg],
+      sentTextParts: [
+        textPart(
+          "m1",
+          "Thanks!\n\nOn Mon, Jan 1, 2026 at 9:00 AM Hotel <marketing@acmehotel.example> wrote:\nWe'd love to collaborate on some UGC content.",
+        ),
+      ],
+      subjects: [],
+    });
+    expect(result.status).not.toBe("qualified_outreach");
+  });
+
+  it("Finding 10: a signature reading 'UGC Creator / Influencer' on an otherwise plain email is NOT qualified_outreach", () => {
+    const result = classifyOutreach({
+      messages: [sentMsg],
+      sentTextParts: [
+        textPart(
+          "m1",
+          "Just checking in on the dates, thanks!\n-- \nJane Doe — UGC Creator / Influencer",
+        ),
+      ],
+      subjects: [],
+    });
+    expect(result.status).not.toBe("qualified_outreach");
+  });
+
+  it("Finding 10: a genuine creator-authored pitch ABOVE a quote still classifies as qualified_outreach", () => {
+    const result = classifyOutreach({
+      messages: [sentMsg],
+      sentTextParts: [
+        textPart(
+          "m1",
+          "Following up — I'd love to collaborate on a paid partnership for a stay next month.\n\nOn Mon wrote:\nsome unrelated quoted text",
+        ),
+      ],
+      subjects: [],
+    });
+    expect(result.status).toBe("qualified_outreach");
+  });
+
   it("insufficient_evidence: no usable SENT text at all (undecodable)", () => {
     const result = classifyOutreach({ messages: [sentMsg], sentTextParts: [], subjects: [] });
     expect(result.status).toBe("insufficient_evidence");
@@ -231,14 +308,23 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
 });
 
 describe("B05 unit: recipients.ts (observed recipient vs target-contact)", () => {
-  it("a `to` recipient yields strong_match; a lone `bcc` (e.g. creator's own second address) never does", () => {
-    const toOnly = assessTargetContacts([recipient({ role: "to", sourceParticipantId: "p1" })]);
+  it("a lone `to` recipient with corroborating named-person evidence yields strong_match; a lone `bcc` (e.g. creator's own second address) never does", () => {
+    const toOnly = assessTargetContacts([
+      recipient({ role: "to", sourceParticipantId: "p1", localPart: "jane.doe" }),
+    ]);
     expect(toOnly.matchQuality).toBe("strong_match");
 
     const bccOnly = assessTargetContacts([
       recipient({ role: "bcc", sourceParticipantId: "p2", localPart: "me" }),
     ]);
     expect(bccOnly.matchQuality).toBe("insufficient_evidence");
+  });
+
+  it("a lone `to` recipient at a GENERIC inbox is needs_review, never strong_match (Finding 8 — role alone is not target identity)", () => {
+    const result = assessTargetContacts([
+      recipient({ role: "to", sourceParticipantId: "p1", localPart: "marketing" }),
+    ]);
+    expect(result.matchQuality).toBe("needs_review");
   });
 
   it("a lone `cc` (e.g. a manager) yields needs_review, never strong_match", () => {
@@ -287,6 +373,8 @@ describe("B05 unit: recipients.ts (observed recipient vs target-contact)", () =>
   });
 });
 
+const PROVIDER_ID_MAP = new Map([["msg-1", "provider-msg-1"]]);
+
 describe("B05 unit: target-extraction.ts (private target observations, D028 conservatism)", () => {
   it("extractDomain strips scheme and www, lower-cases", () => {
     expect(extractDomain("https://www.AcmeHotel.example/path")).toBe("acmehotel.example");
@@ -296,40 +384,85 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
   });
 
   it("generates one observation per distinct non-freemail `to` domain; never from cc/bcc alone", () => {
-    const observations = extractTargetObservations([
-      recipient({ role: "to", domainLower: "acmehotel.example", sourceParticipantId: "p1" }),
-      recipient({ role: "cc", domainLower: "other-domain.example", sourceParticipantId: "p2" }),
-    ]);
+    const observations = extractTargetObservations(
+      [
+        recipient({ role: "to", domainLower: "acmehotel.example", sourceParticipantId: "p1" }),
+        recipient({ role: "cc", domainLower: "other-domain.example", sourceParticipantId: "p2" }),
+      ],
+      PROVIDER_ID_MAP,
+    );
     expect(observations).toHaveLength(1);
     expect(observations[0]!.observedDomain).toBe("acmehotel.example");
   });
 
   it("excludes freemail domains entirely — never a target observation for gmail.com etc", () => {
-    const observations = extractTargetObservations([
-      recipient({
-        role: "to",
-        domainLower: "gmail.com",
-        addrSpec: "someone@gmail.com",
-        sourceParticipantId: "p1",
-      }),
-    ]);
+    const observations = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "gmail.com",
+          addrSpec: "someone@gmail.com",
+          sourceParticipantId: "p1",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
     expect(observations).toHaveLength(0);
   });
 
   it("observation fingerprint is stable for the same domain across independent extractions (reconciliation key)", () => {
-    const a = extractTargetObservations([
-      recipient({ role: "to", domainLower: "acmehotel.example" }),
-    ]);
-    const b = extractTargetObservations([
-      recipient({ role: "to", domainLower: "acmehotel.example", sourceParticipantId: "different" }),
-    ]);
+    const a = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const b = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "acmehotel.example",
+          sourceParticipantId: "different",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
     expect(a[0]!.observationFingerprint).toBe(b[0]!.observationFingerprint);
   });
 
+  it("never asserts a source provenance id the database has not itself proven (Finding 1/12): sourceProviderMessageIds carries provider_message_id, not a B04 row uuid", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example" })],
+      PROVIDER_ID_MAP,
+    );
+    expect(observation!.sourceProviderMessageIds).toEqual(["provider-msg-1"]);
+  });
+
+  it("never synthesizes observedName from the domain (Finding 9 — one signal must not masquerade as two)", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example", displayName: null })],
+      PROVIDER_ID_MAP,
+    );
+    expect(observation!.observedName).toBeNull();
+  });
+
+  it("uses genuine recipient display-name evidence when present, never a domain-derived label", () => {
+    const [observation] = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "acmehotel.example",
+          displayName: "Acme Hotel Marketing",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
+    expect(observation!.observedName).toBe("Acme Hotel Marketing");
+  });
+
   it("matchTargetObservation: exact domain agreement alone yields needs_review, never strong_match (D028 — one signal is not enough)", () => {
-    const [observation] = extractTargetObservations([
-      recipient({ role: "to", domainLower: "acmehotel.example" }),
-    ]);
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example" })],
+      PROVIDER_ID_MAP,
+    );
     const result = matchTargetObservation(observation!, [], {
       epoch: 1,
       hotels: [{ id: "hotel-1", name: "Something Unrelated", websiteDomain: "acmehotel.example" }],
@@ -343,23 +476,46 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
   });
 
   it("matchTargetObservation: domain AND contact-email agreement together yields strong_match", () => {
-    const [observation] = extractTargetObservations([
-      recipient({ role: "to", domainLower: "acmehotel.example" }),
-    ]);
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example" })],
+      PROVIDER_ID_MAP,
+    );
     const result = matchTargetObservation(observation!, ["marketing@acmehotel.example"], {
       epoch: 1,
       hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: "acmehotel.example" }],
       organizations: [],
-      hotelIdByContactEmail: new Map([["marketing@acmehotel.example", "hotel-1"]]),
+      hotelIdByContactEmail: new Map([["marketing@acmehotel.example", new Set(["hotel-1"])]]),
       organizationIdByContactEmail: new Map(),
     });
     expect(result.observation.machineCanonicalLinkAssessment).toBe("strong_match");
   });
 
+  it("matchTargetObservation: the SAME email matching TWO hotel_contacts is preserved as ambiguous evidence, never collapsed to one (Finding 5)", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "sharedemail.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(observation!, ["shared@sharedemail.example"], {
+      epoch: 1,
+      hotels: [
+        { id: "hotel-1", name: "Hotel One", websiteDomain: null },
+        { id: "hotel-2", name: "Hotel Two", websiteDomain: null },
+      ],
+      organizations: [],
+      hotelIdByContactEmail: new Map([
+        ["shared@sharedemail.example", new Set(["hotel-1", "hotel-2"])],
+      ]),
+      organizationIdByContactEmail: new Map(),
+    });
+    const withContactEvidence = result.links.filter((l) => l.contactEvidence === "agrees");
+    expect(withContactEvidence).toHaveLength(2);
+  });
+
   it("matchTargetObservation: two equally-strong candidates yields ambiguous, never an arbitrary pick", () => {
-    const [observation] = extractTargetObservations([
-      recipient({ role: "to", domainLower: "sharedchain.example" }),
-    ]);
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "sharedchain.example" })],
+      PROVIDER_ID_MAP,
+    );
     const result = matchTargetObservation(observation!, [], {
       epoch: 1,
       hotels: [
@@ -375,9 +531,10 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
   });
 
   it("matchTargetObservation: zero candidates yields insufficient_evidence, a valid B05 state, never an error", () => {
-    const [observation] = extractTargetObservations([
-      recipient({ role: "to", domainLower: "unknown-brand.example" }),
-    ]);
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "unknown-brand.example" })],
+      PROVIDER_ID_MAP,
+    );
     const result = matchTargetObservation(observation!, [], {
       epoch: 1,
       hotels: [],
@@ -390,18 +547,45 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
   });
 
   it("an organization is a legitimate target kind in its own right (D029), never forced into a hotel", () => {
-    const [observation] = extractTargetObservations([
-      recipient({ role: "to", domainLower: "agencyx.example" }),
-    ]);
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "agencyx.example" })],
+      PROVIDER_ID_MAP,
+    );
     const result = matchTargetObservation(observation!, ["contact@agencyx.example"], {
       epoch: 1,
       hotels: [],
       organizations: [{ id: "org-1", name: "Agency X", websiteDomain: "agencyx.example" }],
       hotelIdByContactEmail: new Map(),
-      organizationIdByContactEmail: new Map([["contact@agencyx.example", "org-1"]]),
+      organizationIdByContactEmail: new Map([["contact@agencyx.example", new Set(["org-1"])]]),
     });
     expect(result.links[0]!.targetKind).toBe("organization");
     expect(result.links[0]!.targetOrganizationId).toBe("org-1");
     expect(result.links[0]!.targetHotelId).toBeUndefined();
+  });
+});
+
+describe("B05 unit: target-extraction.ts (deriveMachineTargetScope, Finding 6)", () => {
+  it("zero observations is unresolved", () => {
+    expect(deriveMachineTargetScope([]).scope).toBe("unresolved");
+  });
+
+  it("exactly one observation is single_target", () => {
+    const observations = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example" })],
+      PROVIDER_ID_MAP,
+    );
+    expect(deriveMachineTargetScope(observations).scope).toBe("single_target");
+  });
+
+  it("two or more observations is multiple_targets — never a fabricated portfolio_target (no evidence source exists for it in V1)", () => {
+    const observations = extractTargetObservations(
+      [
+        recipient({ role: "to", domainLower: "hotel-a.example", sourceParticipantId: "p1" }),
+        recipient({ role: "to", domainLower: "hotel-b.example", sourceParticipantId: "p2" }),
+      ],
+      PROVIDER_ID_MAP,
+    );
+    const result = deriveMachineTargetScope(observations);
+    expect(result.scope).toBe("multiple_targets");
   });
 });
