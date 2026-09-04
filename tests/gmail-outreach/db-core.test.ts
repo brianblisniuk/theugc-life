@@ -568,6 +568,10 @@ d("B05: cross-account isolation", () => {
       mailAccountId: accountA.mailAccountId,
       providerMessageId: randomProviderId("msg"),
       providerThreadId: sharedProviderThreadId,
+      // EXTERNAL AUDIT AMENDMENT #4, Finding 1: proposal language alone no
+      // longer qualifies — a real commercial-target/representative recipient
+      // is required too.
+      toRecipients: ["marketing@cross-account-hotel.example"],
       bodyText: "collaborate on a paid partnership",
     });
     const threadB = await insertNormalizedThread(client, {

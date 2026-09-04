@@ -27,9 +27,11 @@ import { classifyOutreach as classifyOutreachDefault } from "@/lib/gmail/outreac
 import { assessTargetContacts } from "@/lib/gmail/outreach/recipients";
 import { buildClassifierInputForMessage } from "@/lib/gmail/outreach/text-transform";
 import {
+  computeAuthoredTextTargetEvidence,
   computeRelevantCandidateFingerprint,
   deriveMachineTargetScope,
   detectScopeLanguage,
+  extractAuthoredTextNameCandidates,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation as matchTargetObservationDefault,
@@ -306,17 +308,23 @@ interface CatalogSnapshotResponse {
  */
 export async function getCatalogSnapshot(
   deps: OutreachDeps,
-  input: { associatedAddresses: readonly string[]; observedDomains: readonly string[] },
+  input: {
+    associatedAddresses: readonly string[];
+    observedDomains: readonly string[];
+    /** EXTERNAL AUDIT AMENDMENT #4, Finding 2: deterministic candidate phrases from the creator's own authored SENT text — lets a real canonical business enter the bounded snapshot even when unreachable via domain/contact. */
+    authoredTextCandidateNames?: readonly string[];
+  },
 ): Promise<CatalogSnapshot> {
   const epoch = await getCurrentCatalogEpoch(deps);
 
   const lowerAddresses = [...new Set(input.associatedAddresses.map((a) => a.toLowerCase()))];
   const domains = [...new Set(input.observedDomains.map((d) => d.toLowerCase()))];
+  const candidateNames = [...new Set(input.authoredTextCandidateNames ?? [])];
 
   const hotelIdByContactEmail = new Map<string, Set<string>>();
   const organizationIdByContactEmail = new Map<string, Set<string>>();
 
-  if (lowerAddresses.length === 0 && domains.length === 0) {
+  if (lowerAddresses.length === 0 && domains.length === 0 && candidateNames.length === 0) {
     return {
       epoch,
       hotels: [],
@@ -330,6 +338,7 @@ export async function getCatalogSnapshot(
   const { data, error } = await deps.db.rpc("gmail_outreach_catalog_snapshot", {
     p_addresses: lowerAddresses,
     p_domains: domains,
+    p_candidate_names: candidateNames,
   });
   if (error || !data) {
     throw new Error(`gmail_outreach_catalog_snapshot failed: ${error?.message ?? "no data"}`);
@@ -479,19 +488,38 @@ export async function interpretOneThread(
     .map((o) => o.observedDomain)
     .filter((d): d is string => d !== null);
 
+  // EXTERNAL AUDIT AMENDMENT #4, Finding 2: candidate business-name phrases
+  // from the creator's OWN clean (authored, non-quoted, non-uncertain-
+  // signature) sent text — computed once, thread-level, reused both to widen
+  // the bounded catalog snapshot below and to derive `deriveMachineTargetScope`'s
+  // scope-language text further down (Finding 5's own principle: read the
+  // SAME clean text an authorship claim is scored against, never a quoted or
+  // uncertain-authorship section).
+  const cleanSentTexts = evidence.messages
+    .filter((m) => m.providerSent)
+    .flatMap((m) =>
+      evidence.sentTextParts.filter((p) => p.normalizedMessageId === m.normalizedMessageId),
+    );
+  const cleanAuthoredText = buildScopeLanguageText(cleanSentTexts);
+  const authoredTextCandidateNames = extractAuthoredTextNameCandidates(cleanAuthoredText);
+
   const targetObservations: TargetObservationInput[] = [];
   const targetCanonicalLinks: Array<Record<string, unknown>> = [];
   const scopeCandidates: ScopeCandidate[] = [];
   let hotelOrganizationLinks: readonly HotelOrganizationLink[] = [];
   // Only touch the catalog when there is something to actually match against
-  // (EXTERNAL AUDIT AMENDMENT #1, Finding 4) — most threads extract zero raw
-  // observations (freemail-only, or no `to` recipients at all), and those
-  // threads have no reason to read `hotels`/`organizations` at all.
+  // (EXTERNAL AUDIT AMENDMENT #1, Finding 4, widened by Amendment #4 Finding
+  // 2): either a raw recipient-domain observation, OR the creator's own text
+  // named something worth checking against real canonical inventory.
   let catalogEpoch: number;
   let catalog: CatalogSnapshot | null = null;
 
-  if (rawObservations.length > 0) {
-    catalog = await getCatalogSnapshot(deps, { associatedAddresses, observedDomains });
+  if (rawObservations.length > 0 || authoredTextCandidateNames.length > 0) {
+    catalog = await getCatalogSnapshot(deps, {
+      associatedAddresses,
+      observedDomains,
+      authoredTextCandidateNames,
+    });
     catalogEpoch = catalog.epoch;
     hotelOrganizationLinks = catalog.hotelOrganizationLinks;
 
@@ -546,6 +574,7 @@ export async function interpretOneThread(
                 domainEvidence: "unavailable",
                 addressEvidence: "unavailable",
                 contactEvidence: best.contactEvidence,
+                authoredTextEvidence: "unavailable",
                 rank: 0,
               }
             : null,
@@ -553,7 +582,12 @@ export async function interpretOneThread(
         continue;
       }
 
-      const matched = matchObservation(raw, associatedAddresses, catalog);
+      const matched = matchObservation(
+        raw,
+        associatedAddresses,
+        catalog,
+        authoredTextCandidateNames,
+      );
       targetObservations.push(matched.observation);
       scopeCandidates.push(toScopeCandidate(matched.observation, matched.links));
       for (const link of matched.links) {
@@ -566,6 +600,7 @@ export async function interpretOneThread(
           domain_evidence: link.domainEvidence,
           address_evidence: link.addressEvidence,
           contact_evidence: link.contactEvidence,
+          authored_text_evidence: link.authoredTextEvidence,
           rank: link.rank,
         });
       }
@@ -573,6 +608,44 @@ export async function interpretOneThread(
   } else {
     catalogEpoch = await getCurrentCatalogEpoch(deps);
   }
+
+  // EXTERNAL AUDIT AMENDMENT #4, Finding 1: D070 requires literal creator-
+  // SENT evidence (A), creator-authored commercial-proposal evidence (B),
+  // AND evidence the proposal was directed at a potential commercial target
+  // or a representative of one (C) — jointly. `classify()` above can only
+  // ever prove A+B (it has no recipient/target evidence at all), so it
+  // never itself returns `qualified_outreach` any more (see interpreter.ts).
+  // This is the ONE place C is independently established and the ONLY place
+  // the upgrade to `qualified_outreach` may happen — conservatively, from
+  // real evidence already computed above: at least one non-freemail `to`-
+  // recipient domain observation (a plausible commercial target/
+  // representative), or the creator's own authored text exactly naming a
+  // REAL canonical hotel/organization. Absent BOTH, proposal language alone
+  // stays `needs_review` — an honest abstention, never silently upgraded and
+  // never silently discarded (a creator can still correct it either way).
+  const authoredTextMatchedRealBusiness =
+    catalog !== null &&
+    (() => {
+      const authoredEvidence = computeAuthoredTextTargetEvidence(
+        authoredTextCandidateNames,
+        catalog!,
+      );
+      return (
+        authoredEvidence.matchedHotelIds.size > 0 ||
+        authoredEvidence.matchedOrganizationIds.size > 0
+      );
+    })();
+  const hasCommercialTargetEvidence = rawObservations.length > 0 || authoredTextMatchedRealBusiness;
+  const outreachIsProposalLanguageOnly = outreach.reasonCodes.includes(
+    "creator_commercial_proposal_language_detected",
+  );
+  const finalOutreach =
+    outreachIsProposalLanguageOnly && hasCommercialTargetEvidence
+      ? {
+          status: "qualified_outreach" as const,
+          reasonCodes: [...outreach.reasonCodes, "commercial_target_evidence_present"],
+        }
+      : outreach;
 
   // EXTERNAL AUDIT AMENDMENT #2, Finding 6: target-contact `strong_match` now
   // requires genuinely INDEPENDENT corroboration — an exact canonical-contact
@@ -611,18 +684,10 @@ export async function interpretOneThread(
   // of observations. Portfolio/single-entity language is read from the SAME
   // clean (authored, non-quoted, non-uncertain-signature) text the outreach
   // classifier itself reads — never from a section of uncertain authorship
-  // (Finding 7's own principle applied here too).
-  const cleanSentTexts = evidence.messages
-    .filter((m) => m.providerSent)
-    .flatMap((m) =>
-      evidence.sentTextParts
-        .filter((p) => p.normalizedMessageId === m.normalizedMessageId)
-        .map((p) => p),
-    );
+  // (Finding 7's own principle applied here too). `cleanAuthoredText` was
+  // already computed once, above, for Finding 2's candidate-name extraction.
   const scopeLanguage = detectScopeLanguage(
-    [...evidence.subjects.map((s) => s.rawValue), buildScopeLanguageText(cleanSentTexts)].join(
-      " \n ",
-    ),
+    [...evidence.subjects.map((s) => s.rawValue), cleanAuthoredText].join(" \n "),
   );
   const machineScope = deriveMachineTargetScope(
     scopeCandidates,
@@ -637,8 +702,8 @@ export async function interpretOneThread(
     p_detector_version: requireVersionShape(OUTREACH_DETECTOR_VERSION, "detectorVersion"),
     p_matcher_version: requireVersionShape(TARGET_MATCHER_VERSION, "matcherVersion"),
     p_expected_evidence_digest: evidenceDigest,
-    p_outreach_status: outreach.status,
-    p_reason_codes: outreach.reasonCodes,
+    p_outreach_status: finalOutreach.status,
+    p_reason_codes: finalOutreach.reasonCodes,
     p_recipient_participant_ids: recipientParticipantIds,
     p_target_contact_match_quality: contactAssessment.matchQuality,
     p_target_contact_candidate_set_fingerprint: contactAssessment.candidateSetFingerprint,
@@ -665,7 +730,7 @@ export async function interpretOneThread(
   const data = rawData as CommitResponse;
   switch (data.result) {
     case "ok":
-      return { result: "ok", outreachStatus: outreach.status };
+      return { result: "ok", outreachStatus: finalOutreach.status };
     case "stale_source":
       return { result: "stale_source", currentEvidenceDigest: data.current_evidence_digest! };
     case "stale_catalog":

@@ -2059,6 +2059,36 @@ rewriting the old one's identity while its advisory columns drift ahead of
 it (Finding 3). No detector/matcher/transform version change — these
 findings corrected locking, gating, and identity/provenance discipline only.
 
+**EXTERNAL AUDIT AMENDMENT #4** (final semantic + governance hardening,
+D070 unchanged): `classifyOutreach` no longer self-certifies `qualified_
+outreach` from creator-SENT proposal language alone — it returns `needs_
+review` with `creator_commercial_proposal_language_detected`, and
+`interpretOneThread` is the only place the upgrade happens, requiring
+independently-established commercial-target/representative evidence (a
+non-freemail recipient domain, or an authored-text exact match against a
+real canonical business) per D070 §5's already-accepted three-part test
+(Finding 1). `extractAuthoredTextNameCandidates` deterministically extracts
+candidate business-name phrases from the creator's own clean SENT text —
+never NER, never itself an assertion a business exists — matched (via a new
+`private.normalize_business_name` and `gmail_outreach_catalog_snapshot`'s
+`p_candidate_names`) against real canonical hotel/organization names; a
+match widens the candidate universe regardless of recipient domain/contact
+and becomes a new, independent `authored_text_evidence` column on `gmail_
+outreach_target_canonical_links` — a candidate the text explicitly
+contradicts can never be assessed `strong_match` (Finding 2). The HTML
+classifier-input fallback now cuts at the first `<blockquote>` and turns
+`<br>`/block-closing tags into real newlines BEFORE collapsing whitespace,
+so the line-based quote/signature heuristics can see an HTML message's
+actual structure instead of one run-on line (Finding 3).
+`gmail_outreach_list_candidates`'s `source_stale` now compares the thread's
+current evidence digest (the same content-addressed shape the commit RPC
+itself verifies) against the stored one, replacing a `normalized_at >
+evaluated_at` timestamp-ordering comparison a concurrent B04 rebuild's own
+transaction-start timestamp could invert (Finding 4). `OUTREACH_DETECTOR_
+VERSION`/`TARGET_MATCHER_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION` are
+bumped to `_v4` (Findings 1-3); Finding 4 changes no version (a scheduling
+fix, not a classification/matching rule change).
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals

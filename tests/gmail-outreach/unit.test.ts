@@ -9,8 +9,10 @@ import { classifyOutreach } from "@/lib/gmail/outreach/interpreter";
 import { assessTargetContacts } from "@/lib/gmail/outreach/recipients";
 import { buildClassifierInputForMessage } from "@/lib/gmail/outreach/text-transform";
 import {
+  computeAuthoredTextTargetEvidence,
   deriveMachineTargetScope,
   detectScopeLanguage,
+  extractAuthoredTextNameCandidates,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation,
@@ -191,6 +193,56 @@ describe("B05 unit: text-transform.ts (classifier-input, D4/H)", () => {
       expect(result.uncertainAuthorshipText).toBeNull();
     });
   });
+
+  describe("EXTERNAL AUDIT AMENDMENT #4, Finding 3: HTML boundary preservation", () => {
+    it("HTML-only: a <blockquote> quoted reply is cut, not merged into the creator's own trailing sentence", () => {
+      const parts = [
+        part({
+          mimeType: "text/html",
+          decodedText:
+            '<div><p>Thanks!</p><blockquote class="gmail_quote">We\'d love to collaborate on UGC content.</blockquote></div>',
+        }),
+      ];
+      const result = buildClassifierInputForMessage(parts);
+      expect(result.cleanText).toBe("Thanks!");
+    });
+
+    it("HTML-only: an ordinary <br>-separated signature ('Thanks,' / name / title) splits into clean vs uncertain text exactly like the plain-text case", () => {
+      const parts = [
+        part({
+          mimeType: "text/html",
+          decodedText:
+            "<div>Just checking in on the dates for next month.<br><br>Thanks,<br>Jane Doe<br>UGC Creator<br>Travel Influencer</div>",
+        }),
+      ];
+      const result = buildClassifierInputForMessage(parts);
+      expect(result.cleanText).toBe("Just checking in on the dates for next month.");
+      expect(result.uncertainAuthorshipText).toContain("UGC Creator");
+    });
+
+    it("HTML-only: a genuine authored pitch ABOVE a <blockquote> quoted history is preserved in full", () => {
+      const parts = [
+        part({
+          mimeType: "text/html",
+          decodedText:
+            "<p>I'd love to collaborate on a paid partnership.</p><blockquote>some old unrelated thread</blockquote>",
+        }),
+      ];
+      const result = buildClassifierInputForMessage(parts);
+      expect(result.cleanText).toBe("I'd love to collaborate on a paid partnership.");
+    });
+
+    it("multipart/alternative still never double-counts: the plain part is chosen even when the HTML part has different (quoted) content", () => {
+      const parts = [
+        part({ mimeType: "text/plain", decodedText: "Thanks!" }),
+        part({
+          mimeType: "text/html",
+          decodedText: "<p>Thanks!</p><blockquote>We'd love to collaborate.</blockquote>",
+        }),
+      ];
+      expect(buildClassifierInputForMessage(parts).cleanText).toBe("Thanks!");
+    });
+  });
 });
 
 describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", () => {
@@ -219,7 +271,7 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
     };
   }
 
-  it("qualified_outreach: UGC/collaboration pitch in SENT text", () => {
+  it("EXTERNAL AUDIT AMENDMENT #4, Finding 1: a UGC/collaboration pitch in SENT text alone is needs_review, never a self-certified qualified_outreach — classifyOutreach has no target evidence to prove D070 §5's third requirement", () => {
     const result = classifyOutreach({
       messages: [sentMsg],
       sentTextParts: [
@@ -227,7 +279,8 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
       ],
       subjects: [],
     });
-    expect(result.status).toBe("qualified_outreach");
+    expect(result.status).toBe("needs_review");
+    expect(result.reasonCodes).toContain("creator_commercial_proposal_language_detected");
   });
 
   it("not_outreach: a reservation request", () => {
@@ -306,7 +359,7 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
     expect(result.status).not.toBe("qualified_outreach");
   });
 
-  it("Finding 10: a genuine creator-authored pitch ABOVE a quote still classifies as qualified_outreach", () => {
+  it("Finding 10: a genuine creator-authored pitch ABOVE a quote still detects proposal language (target evidence decided elsewhere, Amendment #4 Finding 1)", () => {
     const result = classifyOutreach({
       messages: [sentMsg],
       sentTextParts: [
@@ -317,7 +370,8 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
       ],
       subjects: [],
     });
-    expect(result.status).toBe("qualified_outreach");
+    expect(result.status).toBe("needs_review");
+    expect(result.reasonCodes).toContain("creator_commercial_proposal_language_detected");
   });
 
   it("Finding 7: 'UGC Creator / Travel Influencer' signature (no `-- ` delimiter) on an ordinary message is NOT qualified_outreach", () => {
@@ -336,7 +390,7 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
     expect(result.reasonCodes).toContain("positive_language_uncertain_authorship_only");
   });
 
-  it("Finding 7: the SAME positive vocabulary in the CLEAN body (above the signature) still qualifies", () => {
+  it("Finding 7: the SAME positive vocabulary in the CLEAN body (above the signature) still detects proposal language", () => {
     const result = classifyOutreach({
       messages: [sentMsg],
       sentTextParts: [
@@ -347,7 +401,8 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
       ],
       subjects: [],
     });
-    expect(result.status).toBe("qualified_outreach");
+    expect(result.status).toBe("needs_review");
+    expect(result.reasonCodes).toContain("creator_commercial_proposal_language_detected");
   });
 
   it("insufficient_evidence: no usable SENT text at all (undecodable)", () => {
@@ -377,7 +432,8 @@ describe("B05 unit: interpreter.ts (deterministic V1 outreach classification)", 
       ],
       subjects: [],
     });
-    expect(result.status).toBe("qualified_outreach");
+    expect(result.status).toBe("needs_review");
+    expect(result.reasonCodes).toContain("creator_commercial_proposal_language_detected");
   });
 });
 
@@ -699,6 +755,123 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
   });
 });
 
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #4, Finding 2 — authored-text target evidence)", () => {
+  it("extractAuthoredTextNameCandidates finds contiguous capitalized-word phrases, including internal connectors", () => {
+    const phrases = extractAuthoredTextNameCandidates(
+      "I'd love to collaborate with Hotel A and also Bank of America Resorts on a UGC campaign.",
+    );
+    expect(phrases).toContain("Hotel A");
+    expect(phrases).toContain("Bank of America Resorts");
+  });
+
+  it("never treats an ordinary sentence-leading capital or a person's name as evidence by itself — only a REAL catalog exact match counts", () => {
+    const evidence = computeAuthoredTextTargetEvidence(
+      extractAuthoredTextNameCandidates("Thanks! Best, Jane Doe"),
+      { hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: null }], organizations: [] },
+    );
+    expect(evidence.matchedHotelIds.size).toBe(0);
+  });
+
+  it("an exact (normalized) match against a real canonical hotel name is 'agrees' authored-text evidence", () => {
+    const evidence = computeAuthoredTextTargetEvidence(
+      extractAuthoredTextNameCandidates("I'd love to feature Acme Hotel on my channel."),
+      { hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: null }], organizations: [] },
+    );
+    expect(evidence.matchedHotelIds.has("hotel-1")).toBe(true);
+  });
+
+  it("a business explicitly named in authored text enters the candidate universe even with ZERO domain/contact evidence, and is scored (not silently dropped)", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "agencyx.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(
+      observation!,
+      [],
+      {
+        epoch: 1,
+        hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: "unrelated-domain.example" }],
+        organizations: [],
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      ["Acme Hotel"],
+    );
+    const acmeLink = result.links.find((l) => l.targetHotelId === "hotel-1");
+    expect(acmeLink).toBeDefined();
+    expect(acmeLink!.authoredTextEvidence).toBe("agrees");
+  });
+
+  it("Finding 2: authored text explicitly naming a DIFFERENT real business than the domain/contact-strong one caps it at needs_review, never strong_match", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "hotel-a.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(
+      observation!,
+      ["marketing@hotel-a.example"],
+      {
+        epoch: 1,
+        hotels: [
+          { id: "hotel-a", name: "Hotel A", websiteDomain: "hotel-a.example" },
+          { id: "hotel-b", name: "Hotel B", websiteDomain: "hotel-b.example" },
+        ],
+        organizations: [],
+        hotelIdByContactEmail: new Map([["marketing@hotel-a.example", new Set(["hotel-a"])]]),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      ["Hotel B"],
+    );
+    expect(result.observation.machineCanonicalLinkAssessment).toBe("needs_review");
+    const hotelALink = result.links.find((l) => l.targetHotelId === "hotel-a");
+    expect(hotelALink!.authoredTextEvidence).toBe("differs");
+  });
+
+  it("Finding 2: an agency recipient plus authored text naming TWO real businesses preserves BOTH as candidates under the same observation", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "agencyx.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(
+      observation!,
+      [],
+      {
+        epoch: 1,
+        hotels: [
+          { id: "hotel-a", name: "Hotel A", websiteDomain: "hotel-a.example" },
+          { id: "hotel-b", name: "Hotel B", websiteDomain: "hotel-b.example" },
+        ],
+        organizations: [],
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      ["Hotel A", "Hotel B"],
+    );
+    const agreeingLinks = result.links.filter((l) => l.authoredTextEvidence === "agrees");
+    expect(agreeingLinks.map((l) => l.targetHotelId).sort()).toEqual(["hotel-a", "hotel-b"]);
+  });
+
+  it("no authored-text candidate phrases at all leaves authoredTextEvidence unavailable, never a false contradiction", () => {
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "acmehotel.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(observation!, ["marketing@acmehotel.example"], {
+      epoch: 1,
+      hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: "acmehotel.example" }],
+      organizations: [],
+      hotelIdByContactEmail: new Map([["marketing@acmehotel.example", new Set(["hotel-1"])]]),
+      organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
+    });
+    expect(result.observation.machineCanonicalLinkAssessment).toBe("strong_match");
+    expect(result.links[0]!.authoredTextEvidence).toBe("unavailable");
+  });
+});
+
 describe("B05 unit: target-extraction.ts (detectScopeLanguage, Finding 5)", () => {
   it("detects portfolio/group language", () => {
     expect(
@@ -760,6 +933,7 @@ describe("B05 unit: target-extraction.ts (deriveMachineTargetScope, EXTERNAL AUD
     domainEvidence: "agrees" as const,
     addressEvidence: "unavailable" as const,
     contactEvidence: "unavailable" as const,
+    authoredTextEvidence: "unavailable" as const,
     rank: 0,
   };
   const sameOrgCandidate = [{ observation: orgObservation, bestLink: strongOrgLink }];

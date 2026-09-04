@@ -40,12 +40,17 @@ B04 itself exposes no read RPC for its own normalized content.
 
 ## 3. Exact outputs
 
-Eleven `private`-schema tables (§26), five of them MACHINE (advisory,
-replaceable), six of them HUMAN (immutable events + current projections,
-authoritative) — see §6 for the full layer definition. Nothing is written to
-`public.pipeline_items`, `public.outreach_events`, `public.collaborations`,
-trip state, or any canonical `public.hotels`/`public.organizations`/
-`public.hotel_contacts`/`public.organization_contacts` row.
+Thirteen `private`-schema tables (§26, the exact final inventory including
+`gmail_outreach_target_scope_signals` and the `gmail_outreach_catalog_epoch_
+lock` singleton added by the accepted amendment history): six MACHINE
+(advisory, replaceable), six HUMAN (immutable events + current projections,
+authoritative), and `gmail_outreach_observed_recipients` — the deterministic
+OBSERVED layer (§9), neither advisory interpretation nor human decision, plus
+the one internal locking primitive. See §6 for the full MACHINE/HUMAN layer
+definition. Nothing is written to `public.pipeline_items`, `public.outreach_
+events`, `public.collaborations`, trip state, or any canonical `public.
+hotels`/`public.organizations`/`public.hotel_contacts`/`public.organization_
+contacts` row.
 
 ## 4. Means / does-not-mean table
 
@@ -83,6 +88,17 @@ press/media correspondence.
 abstentions — never forced into a binary. `not_outreach` is a confident
 negative, distinct from `insufficient_evidence`'s "we don't have enough to
 say."
+
+EXTERNAL AUDIT AMENDMENT #4, Finding 1 corrected WHERE requirement 3 is
+actually enforced: `classifyOutreach` (interpreter.ts) proves only 1+2 — it
+has no recipient/target evidence at all — and now returns `needs_review`
+with `creator_commercial_proposal_language_detected` rather than `qualified_
+outreach` for that alone. `interpretOneThread` (service.ts) is the only place
+requirement 3 is independently established (a non-freemail `to`-recipient
+domain observation, or the creator's own authored text exactly naming a real
+canonical business, §7a) and the only place the upgrade to `qualified_
+outreach` may happen. Positive proposal language without requirement 3 stays
+`needs_review`, never silently upgraded and never silently discarded.
 
 ## 6. Machine-vs-human epistemic layers
 
@@ -133,6 +149,25 @@ its supporting evidence rather than being silently dropped or left to drift
 out of sync with the fact it supports. Explicit account deletion still
 purges every row regardless of which fingerprint it carries.
 
+## 7a. Creator-authored target-name evidence
+
+EXTERNAL AUDIT AMENDMENT #4, Finding 2: the creator's own SENT body may
+explicitly identify the business/property being pitched, independently of
+who the message was addressed to (an agency, an intermediary, a corporate
+group inbox). `extractAuthoredTextNameCandidates` (target-extraction.ts) is a
+deterministic, non-NER candidate-phrase extractor over the SAME clean
+(authored, non-quoted, non-uncertain-signature) text the outreach classifier
+reads — contiguous runs of capitalized words. This NEVER by itself asserts a
+business exists: a phrase is meaningful ONLY once it EXACTLY matches (case-
+and punctuation-normalized, full-string equality, never a substring/ILIKE
+match) a REAL canonical hotel or organization name, checked both to widen the
+bounded catalog snapshot (`gmail_outreach_catalog_snapshot`'s `p_candidate_
+names`, matched via `private.normalize_business_name` server-side) so such a
+business enters the candidate universe even when its domain/contact is
+unrelated to the recipient, and to assign `authored_text_evidence` (§8) per
+candidate. A false-positive phrase (a person's name, an ordinary closing)
+simply matches nothing and contributes no evidence either way.
+
 ## 8. Canonical target-link semantics
 
 `private.gmail_outreach_target_canonical_links` — zero, one, or many rows per
@@ -140,29 +175,44 @@ observation, each `target_kind` (`hotel`/`organization` today, closed and
 additively extensible) with exactly one populated kind-specific FK
 (`target_hotel_id`/`target_organization_id`), enforced by the table's own
 shape CHECK. Evidence columns (`name_evidence`/`domain_evidence`/`address_
-evidence`/`contact_evidence`, each `agrees`/`differs`/`unavailable`) mirror
-`source_property_reviews`' existing conservative-evidence shape — no numeric
-score, per D063 §12.2. Wholesale replaced per observation on each
-re-evaluation; never creates or mutates `public.hotels`/`public.
-organizations`.
+evidence`/`contact_evidence`/`authored_text_evidence`, each `agrees`/
+`differs`/`unavailable`) mirror `source_property_reviews`' existing
+conservative-evidence shape — no numeric score, per D063 §12.2.
+`authored_text_evidence` (§7a) is independent of the recipient's address/
+domain/contact entirely — it reads only the creator's own SENT text — and a
+candidate it `differs` for (the text explicitly named a DIFFERENT real
+business) can never be assessed `strong_match`, regardless of how strong its
+domain/contact evidence is: weaker positional evidence must never silently
+overrule what the creator plainly wrote (EXTERNAL AUDIT AMENDMENT #4,
+Finding 2). Wholesale replaced per observation on each re-evaluation; never
+creates or mutates `public.hotels`/`public.organizations`.
 
 ## 9. Observed recipients
 
 `private.gmail_outreach_observed_recipients` — every `to`/`cc`/`bcc`
 occurrence on a `provider_sent = true` message, unfiltered: self-addresses,
-manager/assistant CCs, malformed participants B04 preserved. Identity is a
-DURABLE source coordinate — `unique(mail_account_id, normalized_thread_id,
-provider_message_id, role, header_occurrence_index, participant_order)` —
-never a B04 row id (EXTERNAL AUDIT AMENDMENT #1, Finding 1): B04 is an
-explicitly replaceable projection (0038 §7) that deletes-and-recreates a
+manager/assistant CCs, malformed participants B04 preserved. Identity is the
+PAIR (a DURABLE source coordinate, `recipient_fingerprint`) — `unique(mail_
+account_id, normalized_thread_id, provider_message_id, role, header_
+occurrence_index, participant_order, recipient_fingerprint)`. The coordinate
+alone is never a B04 row id (EXTERNAL AUDIT AMENDMENT #1, Finding 1): B04 is
+an explicitly replaceable projection (0038 §7) that deletes-and-recreates a
 message's headers/participants under new ids on a raw-payload correction or
 normalizer-version bump, so keying identity on a B04 row would let an
-ordinary rebuild silently orphan a human confirmation. `current_normalized_
-message_id`/`current_source_header_id`/`current_source_participant_id` are a
-convenience cross-reference to whichever B04 row currently occupies that
-position (`on delete set null`, never cascade) — a re-extraction always
-upserts onto the same durable row id and reattaches these, so a later human
-confirmation referencing it (§10) is never orphaned by a B04 rebuild.
+ordinary rebuild silently orphan a human confirmation. `recipient_fingerprint`
+(EXTERNAL AUDIT AMENDMENT #2, Finding 1) is a digest over MATERIAL evidence
+(address/local-part/domain/parse-status, never the cosmetic `display_name`) —
+a B04 rebuild that reproduces the SAME material evidence at a coordinate
+reconciles the SAME row, but one that reproduces MATERIALLY DIFFERENT
+evidence forks a NEW row and marks the prior one `is_current = false`,
+leaving it (and any human confirmation of it) completely untouched; no human
+decision event is ever fabricated. `current_normalized_message_id`/`current_
+source_header_id`/`current_source_participant_id` are a convenience cross-
+reference to whichever B04 row currently occupies that position (`on delete
+set null`, never cascade) — a re-extraction that reconciles onto the SAME
+row reattaches these, so a later human confirmation referencing it (§10) is
+never orphaned by a B04 rebuild. Explicit account deletion purges every row
+regardless of `is_current`.
 
 ## 10. Commercial target-contact interpretation
 
@@ -220,12 +270,14 @@ scoring, canonical hashing, and all stored provenance itself.
 guarantee is "we can reconstruct exactly what evidence and configuration
 produced this stored result," never "calling the model again returns
 identical bytes." Every machine row records its detector/matcher version;
-V1's deterministic baseline (`gmail_outreach_rules_v3`/`gmail_outreach_match_
-rules_v3`/`gmail_outreach_text_v3` — bumped from `_v1` to `_v2` by EXTERNAL
-AUDIT AMENDMENT #1's quote/signature stripping and matcher fixes, and from
-`_v2` to `_v3` by EXTERNAL AUDIT AMENDMENT #2's scope/contact/authored-text
-findings, §21/§22) needs no model-identifier/prompt-version columns since it
-makes no external call, but
+V1's deterministic baseline (`gmail_outreach_rules_v4`/`gmail_outreach_match_
+rules_v4`/`gmail_outreach_text_v4` — bumped from `_v1` to `_v2` by EXTERNAL
+AUDIT AMENDMENT #1's quote/signature stripping and matcher fixes, from `_v2`
+to `_v3` by EXTERNAL AUDIT AMENDMENT #2's scope/contact/authored-text
+findings, and from `_v3` to `_v4` by EXTERNAL AUDIT AMENDMENT #4's target-
+evidence-gated qualification, authored-text target evidence, and HTML
+boundary fixes, §21/§22) needs no model-identifier/prompt-version columns
+since it makes no external call, but
 the schema (implicit in `reason_codes`/evidence columns, extensible via
 future columns) does not preclude adding them for a future model-backed
 adapter without breaking existing rows.
@@ -252,13 +304,25 @@ cross-table sequence (`private.gmail_outreach_catalog_epoch_seq`, bumped by a
 contacts`) means only "the candidate universe might have changed," never
 "every previous result is wrong." Every machine row that depends on canonical
 inventory (`gmail_outreach_target_contact_signals`, `gmail_outreach_target_
-observations`'s advisory columns) records the `evaluated_epoch` it read via
-`public.gmail_outreach_current_catalog_epoch()`. Staleness is a read-time
-comparison against the current epoch, never a write-time reject — the write
-always succeeds, honestly recording what catalog state it evaluated against,
-because the machine layer is advisory by construction (§6) and cannot become
-authoritative without a separate creator confirmation regardless of how
-current its catalog read was.
+scope_signals`, `gmail_outreach_target_observations`'s advisory columns)
+records the `evaluated_epoch` it read via `public.gmail_outreach_current_
+catalog_epoch()` — a READ-time comparison against the current epoch is what a
+caller uses to decide `catalog_stale` for a re-evaluation offer
+(`gmail_outreach_list_candidates`).
+
+At COMMIT time this is also a real write-time fence (EXTERNAL AUDIT
+AMENDMENT #2, Finding 3): `private.gmail_outreach_catalog_epoch_lock` is the
+one row every catalog-mutation trigger UPDATEs (in the same statement it
+advances the sequence) and `gmail_outreach_commit_interpretation` takes `for
+share` on it before comparing the epoch it was given against the current
+one — never the bare sequence's unlocked `last_value`. A mismatch refuses the
+ENTIRE commit (`result: 'stale_catalog'`) and writes nothing, exactly like
+§15's source-evidence fence; a concurrent catalog mutation and a commit can
+no longer interleave. The machine layer remains advisory by construction
+(§6) and cannot become authoritative without a separate creator confirmation
+regardless of how current its catalog read was — the write-time fence exists
+so a commit is never made against a KNOWN-stale universe, not to make the
+machine layer authoritative.
 
 ## 17. Creator decisions/corrections
 
@@ -282,10 +346,15 @@ Four independently-decidable axes — `outreach`, `target_scope`, `target`,
 (`gmail_outreach_creator_decision_events`, `decided_by_user_id = user_id`
 enforced by both the function and the table's own CHECK) and updating
 exactly the corresponding current-projection row/table. A `target` or
-`target_contact` "remove" action deletes the confirmation row (its
-authorizing event remains permanently in the ledger) rather than
-soft-deleting it, since "confirmed" is defined by presence, not by a status
-column that could itself drift.
+`target_contact` "remove" action UPDATEs the confirmation row's `is_
+confirmed` to `false` — a tombstone, never a delete — its own
+`current_event_seq` guarded by the same strictly-increasing check every
+other projection write uses, so a stale, delayed `confirm` from an earlier
+event can never resurrect a membership the creator already retired
+(EXTERNAL AUDIT AMENDMENT #1, Finding 3). `is_confirmed = true` is the
+membership test, never row presence — a status column, deliberately, because
+row presence alone cannot express "this WAS confirmed, then explicitly
+retired" the way a guarded tombstone can.
 
 ## 17a. The shared consent/lifecycle fence
 
@@ -415,11 +484,13 @@ deletion.
 
 | Concept | Table |
 |---|---|
+| Catalog-epoch lock (singleton) | `private.gmail_outreach_catalog_epoch_lock` |
 | Machine outreach signal | `private.gmail_outreach_thread_signals` |
 | Observed recipients (deterministic) | `private.gmail_outreach_observed_recipients` |
 | Canonical contact links (0..N) | `private.gmail_outreach_observed_recipient_canonical_links` |
 | Machine target-contact signal | `private.gmail_outreach_target_contact_signals` |
 | Machine target-contact candidates | `private.gmail_outreach_target_contact_candidates` |
+| Machine target-scope signal | `private.gmail_outreach_target_scope_signals` |
 | Private target observations | `private.gmail_outreach_target_observations` |
 | Canonical target links (0..N) | `private.gmail_outreach_target_canonical_links` |
 | Human current decisions (outreach + scope) | `private.gmail_outreach_creator_decisions` |
@@ -448,7 +519,7 @@ verified by test.
 ## Technology choice — V1 deterministic baseline only
 
 No AI/model provider is selected or called anywhere in this PR. `src/lib/
-gmail/outreach/interpreter.ts` implements `gmail_outreach_rules_v3`, a
+gmail/outreach/interpreter.ts` implements `gmail_outreach_rules_v4`, a
 conservative, provider-abstracted, deterministic rules interpreter behind an
 interface any future per-user model adapter could implement without a schema
 change. The baseline abstains (`insufficient_evidence`/`needs_review`)
@@ -695,3 +766,82 @@ redesigned.
 No detector, matcher, or classifier-input-transform version changes — none
 of these findings altered classification, matching, or transform output;
 they corrected locking, gating, and identity/provenance discipline only.
+
+## External Audit Amendment #4 — final semantic + governance hardening, D070 unchanged
+
+A five-finding follow-up against the Amendment #3 head — the first in this
+history to find real SEMANTIC gaps against D070 (§5's already-accepted
+three-part `qualified_outreach` test), not only locking/identity/governance
+defects. **No product decision in D070 was reopened.**
+
+1. **`qualified_outreach` now actually requires target evidence
+   (Finding 1).** `classifyOutreach` proves only D070 §5's requirements 1+2
+   (creator-SENT evidence, creator-authored commercial-proposal language) —
+   it has no recipient/target evidence at all — and now returns `needs_
+   review` with `creator_commercial_proposal_language_detected` rather than
+   self-certifying `qualified_outreach`. `interpretOneThread` is the only
+   place requirement 3 (a potential commercial target or representative) is
+   independently established — a non-freemail `to`-recipient domain
+   observation, or the creator's own authored text exactly naming a real
+   canonical business (Finding 2) — and the only place the upgrade happens.
+   A creator emailing themselves or an unrelated freemail contact with
+   plausible UGC language no longer qualifies; proposal language with a
+   genuine business recipient, or an intermediary recipient plus an
+   explicitly named real business, still can.
+2. **Creator-authored target-name evidence (Finding 2).**
+   `extractAuthoredTextNameCandidates` deterministically extracts capitalized
+   phrase candidates from the creator's own clean SENT text — never a general
+   NER model, never itself an assertion that a business exists. A phrase is
+   evidence only once it EXACTLY matches a real canonical hotel/organization
+   name, which now also widens the bounded catalog snapshot
+   (`gmail_outreach_catalog_snapshot`'s new `p_candidate_names`, matched via
+   `private.normalize_business_name`) so such a business enters the candidate
+   universe even when unrelated to the recipient's domain/contact.
+   `authored_text_evidence` is a new, independent evidence dimension on
+   `gmail_outreach_target_canonical_links` (§8); a candidate the text
+   explicitly contradicts (`differs`) can never be assessed `strong_match`
+   regardless of its domain/contact evidence — weaker positional evidence
+   can no longer silently overrule what the creator plainly wrote.
+3. **HTML boundary-preserving text transform (Finding 3).** The HTML
+   fallback used to strip every tag and collapse ALL whitespace (including
+   newlines) into single spaces BEFORE the line-based quote/signature
+   heuristics ran, destroying the exact structural boundaries they depend
+   on — a quoted `<blockquote>` reply could merge into what then read as the
+   creator's own trailing sentence. `stripHtmlHeuristically` now cuts at the
+   first `<blockquote>` (the standard Gmail/Outlook quoted-history
+   container) exactly like the plain-text transform cuts at its own quote
+   introducers, and turns `<br>`/block-closing tags into real newlines
+   before anything is collapsed.
+4. **Deterministic source-staleness identity (Finding 4).**
+   `gmail_outreach_list_candidates`'s `source_stale` used to compare
+   `normalized_at > evaluated_at` — timestamp ORDERING, not evidence
+   IDENTITY — which a concurrent B04 rebuild transaction's own start-time
+   timestamp could invert, permanently hiding a genuinely stale machine
+   projection from re-evaluation. It now compares the thread's CURRENT
+   evidence digest (the exact same content-addressed shape `gmail_outreach_
+   commit_interpretation` itself recomputes and verifies at commit time,
+   §15) against the stored `evidence_digest` — correct regardless of any
+   transaction's timing, because it depends only on committed content, never
+   on when anything happened to commit. Proven with a genuine two-session
+   regression: a rebuild transaction held open across a full evaluate-and-
+   commit cycle, its content change detected as stale afterward despite the
+   exact timestamp-inversion pattern that would have fooled the old check.
+5. **Normative documentation reconciled (Finding 5).** §3's table count and
+   §26's schema mapping now list all thirteen tables (including `gmail_
+   outreach_target_scope_signals` and `gmail_outreach_catalog_epoch_lock`,
+   both added by earlier accepted amendments but never added to these
+   sections); §9 now describes the `recipient_fingerprint` identity pair
+   (Amendment #2) instead of the pre-Amendment-2 durable-coordinate-only
+   shape; §16 now describes the real write-time `stale_catalog` fence
+   (Amendment #2) instead of "never a write-time reject"; §17 now describes
+   the tombstone (`is_confirmed = false`) removal semantics (Amendment #1)
+   instead of row deletion. Version references throughout are corrected to
+   `_v4`.
+
+`OUTREACH_DETECTOR_VERSION`, `TARGET_MATCHER_VERSION` and `CLASSIFIER_INPUT_
+TRANSFORM_VERSION` are all bumped to `_v4` to reflect Findings 1-3 changing
+real classification/matching/transform behavior — every previously-evaluated
+thread is offered for re-evaluation. Finding 4 changes no version (a
+scheduling-correctness fix, not a classification/matching rule change) but
+is itself the mechanism that ensures any thread whose evidence changed under
+the exact adversarial timing pattern is still offered.

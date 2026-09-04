@@ -46,7 +46,20 @@ describe("B05 evaluation harness: outreach classification", () => {
       const subjects = [{ normalizedMessageId: "m0", rawValue: example.subject }];
 
       const prediction = classifyOutreach({ messages, sentTextParts, subjects });
-      return { id: example.id, gold: example.gold, predicted: prediction.status };
+      // EXTERNAL AUDIT AMENDMENT #4, Finding 1: `classifyOutreach` alone can
+      // no longer produce `qualified_outreach` — it has no target evidence,
+      // so D070 §5's third requirement is resolved in `interpretOneThread`,
+      // not here. This corpus evaluates the CLASSIFIER's own contribution
+      // (creator-SENT proposal-language detection), so its `needs_review` +
+      // `creator_commercial_proposal_language_detected` output is mapped back
+      // to the `qualified_outreach` label it is evaluated against — the same
+      // signal the pre-Amendment-4 classifier expressed directly as a status.
+      const predicted = prediction.reasonCodes.includes(
+        "creator_commercial_proposal_language_detected",
+      )
+        ? "qualified_outreach"
+        : prediction.status;
+      return { id: example.id, gold: example.gold, predicted };
     });
 
     const report = evaluateCorpus(results);

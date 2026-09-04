@@ -11,11 +11,15 @@
  * matching. `_v3` (EXTERNAL AUDIT AMENDMENT #2, Finding 7): positive
  * vocabulary appearing ONLY inside a heuristically-detected, non-RFC
  * signature tail (uncertain authorship) no longer qualifies a thread as
- * `qualified_outreach` — another real behavior change, so every
+ * `qualified_outreach`. `_v4` (EXTERNAL AUDIT AMENDMENT #4, Finding 1):
+ * creator-commercial-proposal LANGUAGE alone (`classifyOutreach`'s own
+ * signal) no longer directly produces `qualified_outreach` — the final
+ * status now also requires independently-established commercial-target/
+ * representative evidence, resolved in `interpretOneThread`. Every
  * previously-classified thread is offered for re-evaluation via
  * `gmail_outreach_list_candidates`'s detector-version staleness check.
  */
-export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v3";
+export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v4";
 /**
  * V1 deterministic target/target-contact matcher. No external model call.
  * `_v2` (Finding 5/8/9): multimap contact-email evidence, a tightened
@@ -25,16 +29,27 @@ export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v3";
  * relationships, machine target-scope is intent-based rather than a
  * cardinality count, target-contact `strong_match` requires independent
  * canonical-contact + target corroboration rather than address morphology,
- * and the catalog snapshot query is exact-match rather than `ilike`.
+ * and the catalog snapshot query is exact-match rather than `ilike`. `_v4`
+ * (EXTERNAL AUDIT AMENDMENT #4, Finding 2): a deterministic exact-name match
+ * between the creator's own authored text and a real canonical business is
+ * now an independent evidence dimension that can also enter a business into
+ * the candidate universe regardless of recipient domain/contact, and a
+ * candidate the authored text explicitly contradicts can never be assessed
+ * `strong_match`.
  */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v3";
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v4";
 /**
  * Versioned heuristic classifier-input transform (quote/HTML handling,
  * signature stripping). `_v3` (Finding 7): also splits a message into a
  * confident-authorship `cleanText` and an `uncertainAuthorshipText` tail
- * (a heuristically-detected, non-RFC valediction/signature block).
+ * (a heuristically-detected, non-RFC valediction/signature block). `_v4`
+ * (EXTERNAL AUDIT AMENDMENT #4, Finding 3): the HTML fallback now preserves
+ * block-level structure (cutting at the first `<blockquote>`, turning `<br>`/
+ * block-closing tags into real newlines) BEFORE collapsing whitespace, so
+ * the line-based quote/signature heuristics can still see an HTML message's
+ * actual shape instead of one run-on line.
  */
-export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v3";
+export const CLASSIFIER_INPUT_TRANSFORM_VERSION = "gmail_outreach_text_v4";
 
 export type OutreachStatus =
   "qualified_outreach" | "not_outreach" | "needs_review" | "insufficient_evidence";
@@ -183,6 +198,15 @@ export interface TargetCanonicalLinkCandidateInput {
   domainEvidence: EvidenceAgreement;
   addressEvidence: EvidenceAgreement;
   contactEvidence: EvidenceAgreement;
+  /**
+   * EXTERNAL AUDIT AMENDMENT #4, Finding 2: an exact-name match between the
+   * creator's own authored SENT text and this real canonical business — an
+   * independent dimension from `nameEvidence` (which reads a RECIPIENT's
+   * display name, not the message body). `differs` means the text explicitly
+   * named a DIFFERENT real business instead, a genuine contradiction with
+   * this row's other evidence.
+   */
+  authoredTextEvidence: EvidenceAgreement;
   rank: number;
 }
 

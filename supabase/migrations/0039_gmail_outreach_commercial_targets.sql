@@ -634,6 +634,20 @@ create table private.gmail_outreach_target_canonical_links (
   domain_evidence text not null check (domain_evidence in ('agrees', 'differs', 'unavailable')),
   address_evidence text not null check (address_evidence in ('agrees', 'differs', 'unavailable')),
   contact_evidence text not null check (contact_evidence in ('agrees', 'differs', 'unavailable')),
+  -- EXTERNAL AUDIT AMENDMENT #4, Finding 2: an INDEPENDENT evidence
+  -- dimension from a deterministic exact-name match between the creator's
+  -- own authored SENT text and this real canonical business's name — never
+  -- derived from the recipient's address/domain/contact at all. `agrees`
+  -- means the creator's own text explicitly named THIS business; `differs`
+  -- means the creator's text explicitly named a DIFFERENT real canonical
+  -- business instead (a genuine, honest contradiction with whatever
+  -- domain/contact evidence this row otherwise carries); `unavailable` means
+  -- no deterministic exact business-name evidence was found in the text at
+  -- all. See `matchTargetObservation`'s contradiction handling: a candidate
+  -- with `differs` here can never be assessed `strong_match`, regardless of
+  -- how strong its domain/contact evidence is — weaker positional evidence
+  -- must never silently overrule what the creator explicitly wrote.
+  authored_text_evidence text not null default 'unavailable' check (authored_text_evidence in ('agrees', 'differs', 'unavailable')),
   rank integer not null check (rank >= 0),
 
   created_at timestamptz not null default now(),
@@ -1201,6 +1215,20 @@ begin
   --                   catalog snapshot cheaply and compares its fingerprint
   --                   before deciding whether matching needs to rerun at
   --                   all (service.ts's interpretOneThread).
+  --
+  -- EXTERNAL AUDIT AMENDMENT #4, Finding 4: `source_stale` used to compare
+  -- `m.normalized_at > s.evaluated_at` — timestamp ORDERING, not evidence
+  -- IDENTITY. A concurrent B04 rebuild transaction that begins before, but
+  -- commits after, this account's own commit can carry a `normalized_at`
+  -- from its transaction START, which can sort BEFORE the signal's
+  -- `evaluated_at` even though the content genuinely changed — a stale
+  -- machine projection could then never be offered for re-evaluation again.
+  -- `s.evidence_digest` is already the exact same deterministic, content-
+  -- addressed fence `gmail_outreach_commit_interpretation` itself recomputes
+  -- and verifies at commit time (§11c) — comparing the CURRENT digest
+  -- against it here is correct regardless of any transaction's timing,
+  -- because it depends only on the actual committed content of
+  -- `gmail_normalized_messages`, never on when anything happened to commit.
   select coalesce(jsonb_agg(row), '[]'::jsonb) into v_rows
     from (
       select jsonb_build_object(
@@ -1209,15 +1237,7 @@ begin
                'source_stale', (
                  s.id is null
                  or s.detector_version is distinct from p_detector_version
-                 or s.evidence_message_count <> (
-                      select count(*)::int from private.gmail_normalized_messages m
-                       where m.normalized_thread_id = t.id
-                    )
-                 or exists (
-                      select 1 from private.gmail_normalized_messages m
-                       where m.normalized_thread_id = t.id
-                         and m.normalized_at > s.evaluated_at
-                    )
+                 or s.evidence_digest is distinct from cur.evidence_digest
                ),
                'matcher_stale', (
                  tc.id is null
@@ -1237,21 +1257,30 @@ begin
           on tc.normalized_thread_id = t.id and tc.mail_account_id = t.mail_account_id
         left join private.gmail_outreach_target_scope_signals ts
           on ts.normalized_thread_id = t.id and ts.mail_account_id = t.mail_account_id
+        left join lateral (
+          select encode(
+                   digest(
+                     coalesce(
+                       string_agg(
+                         m.id::text || ':' || m.source_payload_sha256 || ':' || m.provider_sent::text,
+                         '|' order by m.id
+                       ),
+                       ''
+                     ),
+                     'sha256'
+                   ),
+                   'hex'
+                 ) as evidence_digest
+            from private.gmail_normalized_messages m
+           where m.normalized_thread_id = t.id
+        ) cur on true
        where t.mail_account_id = p_mail_account_id
          and t.user_id = p_user_id
          and not (t.id = any(coalesce(p_exclude_normalized_thread_ids, '{}'::uuid[])))
          and (
            s.id is null
            or s.detector_version is distinct from p_detector_version
-           or s.evidence_message_count <> (
-                select count(*)::int from private.gmail_normalized_messages m
-                 where m.normalized_thread_id = t.id
-              )
-           or exists (
-                select 1 from private.gmail_normalized_messages m
-                 where m.normalized_thread_id = t.id
-                   and m.normalized_at > s.evaluated_at
-              )
+           or s.evidence_digest is distinct from cur.evidence_digest
            or tc.id is null
            or tc.matcher_version is distinct from p_matcher_version
            or tc.evaluated_epoch is distinct from p_current_catalog_epoch
@@ -1295,9 +1324,26 @@ $$;
 
 revoke all on function private.escape_like_pattern(text) from public;
 
+-- EXTERNAL AUDIT AMENDMENT #4, Finding 2: mirrors `normalizeName()` in
+-- target-extraction.ts EXACTLY (lower-case, collapse every run of non-
+-- alphanumeric characters to one space, trim) so a deterministic candidate
+-- phrase extracted from creator-authored text and a real catalog name can be
+-- compared for TRUE equality on both the SQL bounding side and the TS
+-- evidence-assignment side without the two ever silently disagreeing.
+create or replace function private.normalize_business_name(value text)
+returns text
+language sql
+immutable
+as $$
+  select trim(regexp_replace(lower(coalesce(value, '')), '[^a-z0-9]+', ' ', 'g'));
+$$;
+
+revoke all on function private.normalize_business_name(text) from public;
+
 create or replace function public.gmail_outreach_catalog_snapshot(
   p_addresses text[],
-  p_domains text[]
+  p_domains text[],
+  p_candidate_names text[] default '{}'::text[]
 )
 returns jsonb
 language plpgsql
@@ -1308,6 +1354,7 @@ as $$
 declare
   v_addresses text[];
   v_domains text[];
+  v_candidate_names text[];
   v_hotel_contacts jsonb;
   v_organization_contacts jsonb;
   v_matched_hotel_ids uuid[];
@@ -1320,8 +1367,18 @@ begin
     from unnest(coalesce(p_addresses, '{}'::text[])) a;
   select coalesce(array_agg(distinct lower(d)), '{}') into v_domains
     from unnest(coalesce(p_domains, '{}'::text[])) d;
+  -- EXTERNAL AUDIT AMENDMENT #4, Finding 2: a canonical business explicitly
+  -- named in the creator's own authored text must enter the candidate
+  -- universe even when its domain/contact is unrelated to the recipient —
+  -- normalized here so the comparison below is exact, never a wildcard/ILIKE
+  -- broadening of any kind.
+  select coalesce(array_agg(distinct private.normalize_business_name(n)), '{}') into v_candidate_names
+    from unnest(coalesce(p_candidate_names, '{}'::text[])) n
+   where private.normalize_business_name(n) <> '';
 
-  if coalesce(array_length(v_addresses, 1), 0) = 0 and coalesce(array_length(v_domains, 1), 0) = 0 then
+  if coalesce(array_length(v_addresses, 1), 0) = 0
+     and coalesce(array_length(v_domains, 1), 0) = 0
+     and coalesce(array_length(v_candidate_names, 1), 0) = 0 then
     return jsonb_build_object(
       'hotels', '[]'::jsonb, 'organizations', '[]'::jsonb,
       'hotel_contacts', '[]'::jsonb, 'organization_contacts', '[]'::jsonb,
@@ -1345,6 +1402,7 @@ begin
     into v_hotels
     from public.hotels h
    where h.id = any(v_matched_hotel_ids)
+      or private.normalize_business_name(h.name) = any(v_candidate_names)
       or exists (
            select 1 from unnest(v_domains) d
             where h.website_url is not null
@@ -1355,6 +1413,7 @@ begin
     into v_organizations
     from public.organizations o
    where o.id = any(v_matched_organization_ids)
+      or private.normalize_business_name(o.name) = any(v_candidate_names)
       or exists (
            select 1 from unnest(v_domains) d
             where o.website_url is not null
@@ -1381,8 +1440,8 @@ begin
 end;
 $$;
 
-revoke all on function public.gmail_outreach_catalog_snapshot(text[], text[]) from public, anon, authenticated;
-grant execute on function public.gmail_outreach_catalog_snapshot(text[], text[]) to service_role;
+revoke all on function public.gmail_outreach_catalog_snapshot(text[], text[], text[]) from public, anon, authenticated;
+grant execute on function public.gmail_outreach_catalog_snapshot(text[], text[], text[]) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 11b. FULL B04 EVIDENCE BUNDLE FOR ONE THREAD
@@ -1992,7 +2051,8 @@ begin
         if v_link ->> 'observation_fingerprint' = v_observation ->> 'observation_fingerprint' then
           insert into private.gmail_outreach_target_canonical_links (
             target_observation_id, target_kind, target_hotel_id, target_organization_id,
-            name_evidence, domain_evidence, address_evidence, contact_evidence, rank
+            name_evidence, domain_evidence, address_evidence, contact_evidence,
+            authored_text_evidence, rank
           ) values (
             v_observation_id,
             v_link ->> 'target_kind',
@@ -2000,6 +2060,7 @@ begin
             nullif(v_link ->> 'target_organization_id', '')::uuid,
             v_link ->> 'name_evidence', v_link ->> 'domain_evidence',
             v_link ->> 'address_evidence', v_link ->> 'contact_evidence',
+            coalesce(v_link ->> 'authored_text_evidence', 'unavailable'),
             (v_link ->> 'rank')::int
           );
         end if;

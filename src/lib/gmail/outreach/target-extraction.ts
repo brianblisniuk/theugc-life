@@ -110,6 +110,109 @@ function nameOverlap(a: string | null, b: string): boolean {
   return na.includes(nb) || nb.includes(na);
 }
 
+function namesMatchExactly(a: string, b: string): boolean {
+  const na = normalizeName(a);
+  const nb = normalizeName(b);
+  return na.length > 0 && na === nb;
+}
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #4, Finding 2: a deterministic, non-NER candidate-
+ * phrase extractor over creator-authored (clean, non-quoted, non-uncertain-
+ * signature) text — contiguous runs of 1-6 capitalized words, allowing a
+ * handful of common lower-case connectors inside a phrase ("Bank of
+ * America"). This NEVER by itself asserts that a business exists: a phrase
+ * is only meaningful evidence once it is compared, via `computeAuthoredText
+ * TargetEvidence` below, against a REAL canonical hotel/organization name for
+ * EXACT equality — a false-positive phrase (a person's name, "Thanks Best")
+ * simply matches nothing and contributes no evidence.
+ */
+const CAPITALIZED_WORD = /^[A-Z][A-Za-z0-9''-]*$/;
+const PHRASE_CONNECTOR_WORDS = new Set(["of", "and", "the", "de", "la", "&"]);
+const TRAILING_CONNECTOR = /(?:\s+(?:of|and|the|de|la|&))+$/i;
+
+export function extractAuthoredTextNameCandidates(text: string): string[] {
+  const phrases = new Set<string>();
+  let current: string[] = [];
+
+  const flush = () => {
+    if (current.length > 0) phrases.add(current.join(" "));
+    current = [];
+  };
+
+  for (const rawWord of text.split(/\s+/)) {
+    const word = rawWord.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9''-]+$/g, "");
+    if (word === "") {
+      flush();
+      continue;
+    }
+    if (CAPITALIZED_WORD.test(word)) {
+      current.push(word);
+    } else if (PHRASE_CONNECTOR_WORDS.has(word.toLowerCase()) && current.length > 0) {
+      current.push(word);
+    } else {
+      flush();
+    }
+  }
+  flush();
+
+  // A connector can legitimately extend a single institutional name ("Bank
+  // of America") or join two SEPARATE ones ("Hotel Alpha and Hotel Beta") —
+  // this cannot be told apart deterministically without knowing the real
+  // names in advance. Rather than guess, ALSO decompose every recorded
+  // phrase on its connector words and keep both the joined and the split
+  // forms as candidates: over-generating is harmless (only an exact match
+  // against a REAL catalog name ever becomes evidence), but silently
+  // dropping one of two conjunction-joined business names would not be.
+  const decomposed = new Set<string>();
+  for (const phrase of phrases) {
+    decomposed.add(phrase);
+    for (const piece of phrase.split(/\s+(?:of|and|the|de|la|&)\s+/i)) {
+      if (piece.trim() !== "") decomposed.add(piece.trim());
+    }
+  }
+
+  return [...decomposed]
+    .map((p) => p.replace(TRAILING_CONNECTOR, "").trim())
+    .filter((p) => p.length > 0 && p.split(" ").length <= 6);
+}
+
+/**
+ * Which real canonical hotels/organizations the creator's own authored text
+ * explicitly, exactly named — computed against the (possibly authored-text-
+ * extended) bounded catalog snapshot. `hasAnyCandidatePhrase` distinguishes
+ * "the text named nothing at all" (evidence stays `unavailable` for every
+ * candidate) from "the text named something, just not THIS candidate"
+ * (evidence becomes `differs` for every candidate it didn't name — see
+ * `evaluateCandidate`).
+ */
+export interface AuthoredTextTargetEvidence {
+  matchedHotelIds: ReadonlySet<string>;
+  matchedOrganizationIds: ReadonlySet<string>;
+  hasAnyCandidatePhrase: boolean;
+}
+
+export function computeAuthoredTextTargetEvidence(
+  candidatePhrases: readonly string[],
+  catalog: Pick<CatalogSnapshot, "hotels" | "organizations">,
+): AuthoredTextTargetEvidence {
+  const matchedHotelIds = new Set<string>();
+  const matchedOrganizationIds = new Set<string>();
+  for (const phrase of candidatePhrases) {
+    for (const h of catalog.hotels) {
+      if (namesMatchExactly(phrase, h.name)) matchedHotelIds.add(h.id);
+    }
+    for (const o of catalog.organizations) {
+      if (namesMatchExactly(phrase, o.name)) matchedOrganizationIds.add(o.id);
+    }
+  }
+  return {
+    matchedHotelIds,
+    matchedOrganizationIds,
+    hasAnyCandidatePhrase: candidatePhrases.length > 0,
+  };
+}
+
 /**
  * EXTERNAL AUDIT AMENDMENT #3, Finding 3: the private target fact's
  * reconciliation key must incorporate every MATERIAL semantic-matching
@@ -322,12 +425,15 @@ export interface TargetMatchResult {
 interface ScoredCandidate {
   candidate: TargetCanonicalLinkCandidateInput;
   agreements: number;
+  /** EXTERNAL AUDIT AMENDMENT #4, Finding 2: the creator's own authored text explicitly named a DIFFERENT real business than this one. */
+  textContradicted: boolean;
 }
 
 function evaluateCandidate(
   observation: TargetObservationInput,
   addresses: readonly string[],
   catalog: CatalogSnapshot,
+  authoredTextEvidence: AuthoredTextTargetEvidence,
   kind: TargetKind,
   id: string,
   name: string,
@@ -354,9 +460,22 @@ function evaluateCandidate(
     ? "agrees"
     : "unavailable";
 
-  const agreements = [domainEvidence, nameEvidence, contactEvidence].filter(
+  const matchedIds =
+    kind === "hotel"
+      ? authoredTextEvidence.matchedHotelIds
+      : authoredTextEvidence.matchedOrganizationIds;
+  const authoredText: EvidenceAgreement = matchedIds.has(id)
+    ? "agrees"
+    : authoredTextEvidence.hasAnyCandidatePhrase
+      ? "differs"
+      : "unavailable";
+
+  const agreements = [domainEvidence, nameEvidence, contactEvidence, authoredText].filter(
     (e) => e === "agrees",
   ).length;
+  // A candidate the creator's own text explicitly named enters the universe
+  // even with zero other agreements (Finding 2) — the domain/contact
+  // evidence alone would otherwise have excluded it entirely.
   if (agreements === 0) return null;
 
   const candidate: TargetCanonicalLinkCandidateInput = {
@@ -367,9 +486,10 @@ function evaluateCandidate(
     domainEvidence,
     addressEvidence: "unavailable",
     contactEvidence,
+    authoredTextEvidence: authoredText,
     rank: 0,
   };
-  return { candidate, agreements };
+  return { candidate, agreements, textContradicted: authoredText === "differs" };
 }
 
 /**
@@ -421,8 +541,13 @@ export function matchTargetObservation(
   observation: TargetObservationInput,
   associatedAddresses: readonly string[],
   catalog: CatalogSnapshot,
+  authoredTextCandidateNames: readonly string[] = [],
 ): TargetMatchResult {
   const addresses = associatedAddresses.map((a) => a.toLowerCase());
+  const authoredTextEvidence = computeAuthoredTextTargetEvidence(
+    authoredTextCandidateNames,
+    catalog,
+  );
   const scored: ScoredCandidate[] = [];
 
   for (const h of catalog.hotels) {
@@ -430,6 +555,7 @@ export function matchTargetObservation(
       observation,
       addresses,
       catalog,
+      authoredTextEvidence,
       "hotel",
       h.id,
       h.name,
@@ -442,6 +568,7 @@ export function matchTargetObservation(
       observation,
       addresses,
       catalog,
+      authoredTextEvidence,
       "organization",
       o.id,
       o.name,
@@ -456,12 +583,25 @@ export function matchTargetObservation(
   });
 
   const maxAgreements = scored.length > 0 ? Math.max(...scored.map((s) => s.agreements)) : 0;
-  const strongCandidates = scored.filter((s) => s.agreements === maxAgreements);
+  const topScored = scored.filter((s) => s.agreements === maxAgreements);
+
+  // EXTERNAL AUDIT AMENDMENT #4, Finding 2: the candidate(s) that would
+  // otherwise be the STRONGEST (or tied-strongest) by domain/name/contact
+  // evidence alone can never win an assessment when the creator's own
+  // authored text explicitly contradicts them — weaker positional evidence
+  // (a shared recipient domain, a contact-email match) must never silently
+  // overrule what the creator plainly wrote. This is checked BEFORE the
+  // ordinary strong/ambiguous/needs_review ladder below, not folded into the
+  // additive agreement count, so a contradiction can never be masked by an
+  // otherwise-high score.
+  const topContradicted = topScored.some((s) => s.textContradicted);
 
   let assessment: MatchQuality;
   if (scored.length === 0) {
     assessment = "insufficient_evidence";
-  } else if (strongCandidates.length > 1) {
+  } else if (topContradicted) {
+    assessment = "needs_review";
+  } else if (topScored.length > 1) {
     assessment = "ambiguous";
   } else if (maxAgreements >= 2) {
     assessment = "strong_match";

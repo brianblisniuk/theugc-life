@@ -59,14 +59,15 @@ export function classifyOutreach(input: {
   }
 
   // EXTERNAL AUDIT AMENDMENT #2, Finding 7: the confident-authorship
-  // haystack (subjects + clean body text) is what may prove `qualified_
-  // outreach`. The uncertain-authorship haystack (a non-RFC signature/
-  // closing tail `stripQuotedHistoryAndSignature` could not safely remove
-  // outright) is read for EXCLUSION language only, and to detect the one
-  // adversarial case this finding names directly: positive vocabulary that
-  // appears ONLY inside that uncertain tail (e.g. a "UGC Creator / Travel
-  // Influencer" signature under an otherwise ordinary message) — that is
-  // never allowed to manufacture `qualified_outreach` on its own.
+  // haystack (subjects + clean body text) is what may prove creator-
+  // commercial-proposal language. The uncertain-authorship haystack (a
+  // non-RFC signature/closing tail `stripQuotedHistoryAndSignature` could
+  // not safely remove outright) is read for EXCLUSION language only, and to
+  // detect the one adversarial case this finding names directly: positive
+  // vocabulary that appears ONLY inside that uncertain tail (e.g. a "UGC
+  // Creator / Travel Influencer" signature under an otherwise ordinary
+  // message) — that is never allowed to manufacture a positive claim on its
+  // own.
   const cleanHaystack = [...cleanTexts, ...subjectTexts].join(" \n ").toLowerCase();
   const uncertainHaystack = uncertainTexts.join(" \n ").toLowerCase();
   const fullHaystack = [cleanHaystack, uncertainHaystack].filter((h) => h !== "").join(" \n ");
@@ -85,10 +86,24 @@ export function classifyOutreach(input: {
 
   const positiveMatched = positiveMatchedClean;
 
+  // EXTERNAL AUDIT AMENDMENT #4, Finding 1: D070 requires THREE things,
+  // jointly, for a positive `qualified_outreach` claim — (A) literal
+  // creator-SENT evidence, (B) creator-authored commercial-proposal
+  // evidence, and (C) evidence the proposal was directed at a potential
+  // commercial target or a representative of one. This function proves A+B
+  // only — it has no access to recipient/target evidence at all — so it
+  // must never itself return `qualified_outreach`; doing so would let text
+  // alone (a creator emailing themselves, or an unrelated freemail contact,
+  // with plausible-sounding UGC language) satisfy a claim requiring three
+  // independent things. `creator_commercial_proposal_language_detected` is
+  // the real, versioned signal this function contributes; `interpretOneThread`
+  // (which HAS the extracted target evidence) is the only place that may
+  // upgrade this to `qualified_outreach`, and only when C is independently
+  // established — never conflate the two.
   if (positiveMatched && !exclusionMatched) {
     return {
-      status: "qualified_outreach",
-      reasonCodes: ["sent_evidence_present", "collaboration_language_detected"],
+      status: "needs_review",
+      reasonCodes: ["sent_evidence_present", "creator_commercial_proposal_language_detected"],
     };
   }
   if (exclusionMatched && !positiveMatched) {

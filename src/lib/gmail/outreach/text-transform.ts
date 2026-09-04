@@ -150,16 +150,38 @@ function stripQuotedHistoryAndSignature(text: string): string {
  * A crude, versioned, non-lossless tag stripper. Never treat the result as
  * safe-renderable HTML-derived text — it exists only to feed a text
  * classifier, and it is allowed to be wrong.
+ *
+ * EXTERNAL AUDIT AMENDMENT #4, Finding 3: this used to strip every tag and
+ * collapse ALL whitespace (including newlines) into single spaces before
+ * `stripQuotedHistoryAndSignature`/`splitUncertainAuthorshipTail` ever ran —
+ * both of those are LINE-based heuristics, so flattening an HTML message to
+ * one run-on line destroyed the exact structural boundaries they depend on.
+ * A quoted `<blockquote>` reply could merge into what then read as the
+ * creator's own trailing sentence. Block-level structure is now preserved
+ * (or cut) BEFORE that collapse: a `<blockquote>` — the standard Gmail/
+ * Outlook quoted-history container — is cut at its first occurrence exactly
+ * like the plain-text transform cuts at its own quote introducers, and
+ * `<br>`/block-closing tags become real newlines so the line-based
+ * heuristics downstream still see the message's actual shape.
  */
 function stripHtmlHeuristically(html: string): string {
-  return html
+  const blockquoteIndex = html.search(/<blockquote\b/i);
+  const withoutQuotedHistory = blockquoteIndex === -1 ? html : html.slice(0, blockquoteIndex);
+
+  return withoutQuotedHistory
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|table|h[1-6])\s*>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
