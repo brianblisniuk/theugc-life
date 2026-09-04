@@ -249,7 +249,14 @@ create table private.gmail_normalized_headers (
 
   -- NO DUPLICATE GLOBAL POSITION PER MESSAGE.
   constraint gmail_normalized_headers_order_uidx
-    unique (normalized_message_id, global_order)
+    unique (normalized_message_id, global_order),
+
+  -- THE COMPOSITE TARGET for participants'/reference-tokens' FK below, so a
+  -- child row's `source_header_id` can be constrained to belong to the SAME
+  -- `normalized_message_id` it also carries — not merely to SOME header row
+  -- anywhere in the table.
+  constraint gmail_normalized_headers_id_message_uidx
+    unique (id, normalized_message_id)
 );
 
 comment on table private.gmail_normalized_headers is
@@ -273,11 +280,19 @@ create table private.gmail_normalized_participants (
   id uuid primary key default gen_random_uuid(),
 
   normalized_message_id uuid not null references private.gmail_normalized_messages(id) on delete cascade,
-  source_header_id uuid not null references private.gmail_normalized_headers(id) on delete cascade,
+  source_header_id uuid not null,
 
-  -- Denormalized for cheap filtering; the write path (the one and only writer,
-  -- `gmail_normalize_commit_message`) guarantees it matches the linked header's
-  -- `header_name`.
+  -- DERIVED FROM THE LINKED HEADER, NEVER A SEPARATE CALLER ASSERTION. Early
+  -- in this migration's life the write path selected `header_role` straight
+  -- out of the caller's jsonb — matched against `source_header_name` for the
+  -- JOIN, but persisted from a DIFFERENT, independently-supplied field. A
+  -- caller could therefore submit `source_header_name = 'from'` alongside
+  -- `header_role = 'to'`: each value satisfies its own CHECK in isolation, so
+  -- nothing rejected the pair, and an internally contradictory row was
+  -- reachable through the ONLY writer this schema has. `gmail_normalize_
+  -- commit_message` now selects `h.header_name` for this column — the
+  -- matched header row IS the source of truth for its own role, and there is
+  -- no second value left to disagree with it.
   header_role text not null check (header_role in ('from', 'sender', 'reply-to', 'to', 'cc', 'bcc')),
 
   -- 0-based order of this entry AMONG the entries parsed from the SAME header
@@ -307,7 +322,20 @@ create table private.gmail_normalized_participants (
 
   -- NO DUPLICATE ORDER WITHIN ONE HEADER OCCURRENCE.
   constraint gmail_normalized_participants_order_uidx
-    unique (source_header_id, participant_order)
+    unique (source_header_id, participant_order),
+
+  -- THE LINKED HEADER MUST BELONG TO THE SAME MESSAGE. A composite FK against
+  -- `gmail_normalized_headers (id, normalized_message_id)` — not a plain FK on
+  -- `source_header_id` alone — so a child row cannot name a header row that
+  -- happens to exist somewhere in the table but under a DIFFERENT message.
+  -- `service_role` holds no direct write privilege on this table at all (the
+  -- RPC is the only door, see §14), so this could previously be reached only
+  -- at table-owner/superuser level; the cost of closing it structurally is one
+  -- constraint, so it is closed regardless of who could theoretically reach it.
+  constraint gmail_normalized_participants_header_fk
+    foreign key (source_header_id, normalized_message_id)
+    references private.gmail_normalized_headers (id, normalized_message_id)
+    on delete cascade
 );
 
 comment on table private.gmail_normalized_participants is
@@ -334,8 +362,12 @@ create table private.gmail_normalized_reference_tokens (
   id uuid primary key default gen_random_uuid(),
 
   normalized_message_id uuid not null references private.gmail_normalized_messages(id) on delete cascade,
-  source_header_id uuid not null references private.gmail_normalized_headers(id) on delete cascade,
+  source_header_id uuid not null,
 
+  -- DERIVED FROM THE LINKED HEADER — see the identical note on
+  -- `gmail_normalized_participants.header_role` above. `gmail_normalize_
+  -- commit_message` selects `h.header_name` for this column, never a
+  -- caller-supplied value independent of the header it is joined against.
   header_role text not null check (header_role in ('message-id', 'in-reply-to', 'references')),
 
   -- 0-based order among tokens parsed from the SAME header occurrence —
@@ -349,7 +381,15 @@ create table private.gmail_normalized_reference_tokens (
   created_at timestamptz not null default now(),
 
   constraint gmail_normalized_reference_tokens_order_uidx
-    unique (source_header_id, token_order)
+    unique (source_header_id, token_order),
+
+  -- THE LINKED HEADER MUST BELONG TO THE SAME MESSAGE — the identical
+  -- composite-FK invariant as `gmail_normalized_participants`, for the same
+  -- reason.
+  constraint gmail_normalized_reference_tokens_header_fk
+    foreign key (source_header_id, normalized_message_id)
+    references private.gmail_normalized_headers (id, normalized_message_id)
+    on delete cascade
 );
 
 comment on table private.gmail_normalized_reference_tokens is
@@ -579,12 +619,22 @@ create constraint trigger gmail_normalized_messages_absent_when_deleted
 -- lock, because planning what to normalize is not the operation that needs
 -- one — the commit RPC below re-validates everything it needs under its own
 -- lock regardless of what this returned.
+--
+-- `p_exclude_provider_message_ids` exists for the operator worker's own
+-- forward-progress guarantee (0038 §9e / `service.server.ts`): the ordering
+-- below is fixed, so a raw message this run has already found permanently
+-- unnormalizable (a `structural_error`, or a `stale_source` race that keeps
+-- recurring) would otherwise occupy the SAME position at the front of every
+-- subsequent call, starving every candidate behind it from ever being
+-- listed. Excluding it lets the caller see past it without abandoning the
+-- deterministic order for everything else.
 create or replace function public.gmail_normalize_list_candidates(
   p_user_id uuid,
   p_mail_account_id uuid,
   p_normalizer_version text,
   p_limit integer,
-  p_provider_message_id text default null
+  p_provider_message_id text default null,
+  p_exclude_provider_message_ids text[] default '{}'::text[]
 )
 returns jsonb
 language plpgsql
@@ -596,6 +646,15 @@ declare
 begin
   if p_normalizer_version !~ '^[a-z][a-z0-9_]{0,63}$' then
     raise exception 'invalid normalizer version %', p_normalizer_version
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- REJECT, do not clamp. A caller that means "no limit" or mistypes a
+  -- negative/zero/fractional value gets an explicit error, not a query
+  -- silently coerced to `limit 1` — that clamp previously hid bad input
+  -- behind behavior indistinguishable from a deliberate `--limit 1`.
+  if p_limit is null or p_limit < 1 or p_limit <> trunc(p_limit) then
+    raise exception 'p_limit must be a positive integer, got %', p_limit
       using errcode = 'invalid_parameter_value';
   end if;
 
@@ -617,20 +676,21 @@ begin
        where r.mail_account_id = p_mail_account_id
          and r.user_id = p_user_id
          and (p_provider_message_id is null or r.provider_message_id = p_provider_message_id)
+         and not (r.provider_message_id = any(coalesce(p_exclude_provider_message_ids, '{}'::text[])))
          and (
            n.id is null
            or n.source_payload_sha256 is distinct from r.payload_sha256
            or n.normalizer_version is distinct from p_normalizer_version
          )
        order by r.internal_date asc, r.provider_message_id asc
-       limit greatest(coalesce(p_limit, 1), 1)
+       limit p_limit
     ) candidates;
 
   return jsonb_build_object('result', 'ok', 'candidates', v_rows);
 end;
 $$;
 
-revoke all on function public.gmail_normalize_list_candidates(uuid, uuid, text, integer, text) from public;
+revoke all on function public.gmail_normalize_list_candidates(uuid, uuid, text, integer, text, text[]) from public;
 
 -- ---------------------------------------------------------------------------
 -- 9b. COMMIT ONE NORMALIZED MESSAGE — atomic, CAS'd against the raw digest
@@ -801,11 +861,17 @@ begin
   select count(*)::int into v_expected_count
     from jsonb_array_elements(coalesce(p_participants, '[]'::jsonb));
 
+  -- `header_role` is `h.header_name` — THE MATCHED HEADER ROW'S OWN NAME —
+  -- never a value read out of the caller's jsonb. A caller-supplied role
+  -- independent of `source_header_name` could previously disagree with the
+  -- header it was linked to (`source_header_name = 'from'` alongside
+  -- `header_role = 'to'`) and still satisfy every CHECK in isolation. There
+  -- is no longer a second value to disagree with the first.
   insert into private.gmail_normalized_participants (
     normalized_message_id, source_header_id, header_role, participant_order,
     display_name, addr_spec, local_part, domain, domain_lower, raw_fragment, parse_status
   )
-  select v_message_id, h.id, p ->> 'header_role', (p ->> 'participant_order')::int,
+  select v_message_id, h.id, h.header_name, (p ->> 'participant_order')::int,
          p ->> 'display_name', p ->> 'addr_spec', p ->> 'local_part', p ->> 'domain',
          p ->> 'domain_lower', p ->> 'raw_fragment', p ->> 'parse_status'
     from jsonb_array_elements(coalesce(p_participants, '[]'::jsonb)) as p
@@ -825,10 +891,12 @@ begin
   select count(*)::int into v_expected_count
     from jsonb_array_elements(coalesce(p_reference_tokens, '[]'::jsonb));
 
+  -- Same derivation as participants above: `header_role` is `h.header_name`,
+  -- not a caller-supplied value independent of `source_header_name`.
   insert into private.gmail_normalized_reference_tokens (
     normalized_message_id, source_header_id, header_role, token_order, raw_token, parse_status
   )
-  select v_message_id, h.id, t ->> 'header_role', (t ->> 'token_order')::int,
+  select v_message_id, h.id, h.header_name, (t ->> 'token_order')::int,
          t ->> 'raw_token', t ->> 'parse_status'
     from jsonb_array_elements(coalesce(p_reference_tokens, '[]'::jsonb)) as t
     join private.gmail_normalized_headers h
@@ -1050,7 +1118,7 @@ declare
   fn text;
 begin
   foreach fn in array array[
-    'public.gmail_normalize_list_candidates(uuid,uuid,text,integer,text)',
+    'public.gmail_normalize_list_candidates(uuid,uuid,text,integer,text,text[])',
     'public.gmail_normalize_commit_message(uuid,uuid,text,text,text,jsonb,jsonb,jsonb,jsonb)',
     'public.gmail_normalize_status(uuid,uuid,text)',
     'public.gmail_normalize_purge_for_deletion(uuid,uuid,uuid)'

@@ -1,7 +1,7 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { normalizeBatch } from "@/lib/gmail/normalize/service.server";
+import { normalizeBatch } from "@/lib/gmail/normalize/service";
 
 import {
   buildSanitizedMessage,
@@ -245,6 +245,72 @@ d("B04 MIME structure and decoding", () => {
     expect(textParts[0].decode_status).toBe("conflicting_charset");
     expect(textParts[0].declared_charset).toBeNull();
     expect(textParts[0].content_type_values).toHaveLength(2);
+  });
+
+  // --- EXTERNAL AUDIT AMENDMENT #1, Finding 3 ---------------------------
+  // The charset regex previously used a non-global `.exec()`, so it only
+  // ever saw the FIRST `charset=` parameter in each Content-Type value. A
+  // single malformed occurrence repeating the parameter
+  // (`charset=UTF-8; charset=ISO-8859-1`) was silently read as unambiguous
+  // UTF-8 — exactly the "first wins" behavior the documented policy forbids.
+
+  it("Finding 3 (1): two conflicting charset params inside ONE Content-Type occurrence -> conflicting_charset", async () => {
+    const { textParts } = await normalizeWithPayload({
+      mimeType: "text/plain",
+      headers: [{ name: "content-type", value: "text/plain; charset=UTF-8; charset=ISO-8859-1" }],
+      body: { size: 4, data: b64url("text") },
+    });
+    expect(textParts[0].decode_status).toBe("conflicting_charset");
+    expect(textParts[0].declared_charset).toBeNull();
+    expect(textParts[0].content_type_values).toHaveLength(1);
+  });
+
+  it("Finding 3 (2): the same charset repeated (case-insensitively) inside ONE occurrence is not a conflict", async () => {
+    const { textParts } = await normalizeWithPayload({
+      mimeType: "text/plain",
+      headers: [{ name: "content-type", value: "text/plain; charset=UTF-8; charset=utf-8" }],
+      body: { size: 4, data: b64url("text") },
+    });
+    expect(textParts[0].decode_status).toBe("decoded");
+    expect(textParts[0].declared_charset).toBe("UTF-8");
+  });
+
+  it("Finding 3 (4): quoted and unquoted charset parameter forms are both recognized", async () => {
+    const quoted = await normalizeWithPayload({
+      mimeType: "text/plain",
+      headers: [{ name: "content-type", value: 'text/plain; charset="UTF-8"' }],
+      body: { size: 4, data: b64url("text") },
+    });
+    expect(quoted.textParts[0].decode_status).toBe("decoded");
+    expect(quoted.textParts[0].declared_charset).toBe("UTF-8");
+
+    // A quoted declaration conflicting with an unquoted one in the SAME value
+    // must still be caught — quoting must not hide a second parameter from
+    // the scan.
+    const conflict = await normalizeWithPayload({
+      mimeType: "text/plain",
+      headers: [{ name: "content-type", value: 'text/plain; charset="UTF-8"; charset=ISO-8859-1' }],
+      body: { size: 4, data: b64url("text") },
+    });
+    expect(conflict.textParts[0].decode_status).toBe("conflicting_charset");
+  });
+
+  it("Finding 3 (5): an empty charset parameter does not erase a real declaration, in either order", async () => {
+    const emptyFirst = await normalizeWithPayload({
+      mimeType: "text/plain",
+      headers: [{ name: "content-type", value: "text/plain; charset=; charset=UTF-8" }],
+      body: { size: 4, data: b64url("text") },
+    });
+    expect(emptyFirst.textParts[0].decode_status).toBe("decoded");
+    expect(emptyFirst.textParts[0].declared_charset).toBe("UTF-8");
+
+    const emptySecond = await normalizeWithPayload({
+      mimeType: "text/plain",
+      headers: [{ name: "content-type", value: "text/plain; charset=UTF-8; charset=" }],
+      body: { size: 4, data: b64url("text") },
+    });
+    expect(emptySecond.textParts[0].decode_status).toBe("decoded");
+    expect(emptySecond.textParts[0].declared_charset).toBe("UTF-8");
   });
 
   it("56-58. Content-Transfer-Encoding never triggers a second decode", async () => {

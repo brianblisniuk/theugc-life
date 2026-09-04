@@ -14,10 +14,17 @@
 import { Client } from "pg";
 
 import { GMAIL_NORMALIZER_VERSION } from "@/lib/gmail/normalize/contract";
+// Deliberately `./service`, NOT `./service.server`: the latter carries
+// `import "server-only"`, which throws unconditionally outside Next.js's
+// bundler (the `react-server` export condition it relies on is never set by
+// plain `tsx`/Node) — see `service.ts`'s own doc comment. This CLI builds its
+// own `pg`-backed RPC client below and has no reason to load a Supabase admin
+// client at all.
 import {
   normalizeMailboxUntilIdle,
+  requirePositiveInteger,
   type NormalizeDeps,
-} from "@/lib/gmail/normalize/service.server";
+} from "@/lib/gmail/normalize/service";
 
 interface Args {
   command: string;
@@ -32,11 +39,17 @@ function parseArgs(argv: readonly string[]): Args {
     return i >= 0 && argv[i + 1] ? argv[i + 1]! : null;
   };
   const limitRaw = get("limit");
+  // `Number("")` and `Number(null)` are both 0, so a coercion alone would
+  // accept an accidental empty flag value as a legitimate small batch size.
+  // `requirePositiveInteger` below is what actually rejects 0/negative/NaN/
+  // fractional input — this parse step only turns the raw string into the
+  // number that check inspects.
+  const limit = limitRaw === null ? 50 : Number(limitRaw);
   return {
     command: argv[0] ?? "",
     userId: get("user-id"),
     mailAccountId: get("mail-account-id"),
-    limit: limitRaw ? Number(limitRaw) : 50,
+    limit,
   };
 }
 
@@ -77,6 +90,9 @@ async function main(): Promise<void> {
   if (!args.userId || !args.mailAccountId) {
     throw new Error("--user-id and --mail-account-id are required.");
   }
+  if (args.command === "run") {
+    requirePositiveInteger(args.limit, "--limit");
+  }
 
   const client = new Client({ connectionString: requireDatabaseUrl() });
   await client.connect();
@@ -98,7 +114,16 @@ async function main(): Promise<void> {
         { db },
         { userId: args.userId, mailAccountId: args.mailAccountId, batchSize: args.limit },
       );
-      console.log(JSON.stringify(summary, null, 2));
+      // `outcomes` carries provider message ids for the library's own
+      // retry bookkeeping; this operator surface never prints one.
+      const { outcomes: _outcomes, ...reportable } = summary;
+      console.log(JSON.stringify(reportable, null, 2));
+      if (!summary.completed) {
+        console.error(
+          `gmail:normalize:run did not reach idle: ${summary.gaveUpCount} candidate(s) did not normalize this run.`,
+        );
+        process.exitCode = 1;
+      }
       return;
     }
 

@@ -87,7 +87,6 @@ export function parseParticipants(
       {
         source_header_name: headerName,
         source_header_occurrence_index: occurrenceIndex,
-        header_role: headerName,
         participant_order: 0,
         display_name: null,
         addr_spec: null,
@@ -112,7 +111,6 @@ export function parseParticipants(
       return {
         source_header_name: headerName,
         source_header_occurrence_index: occurrenceIndex,
-        header_role: headerName,
         participant_order: participantOrder,
         display_name: name.length > 0 ? name : null,
         addr_spec: null,
@@ -128,7 +126,6 @@ export function parseParticipants(
       return {
         source_header_name: headerName,
         source_header_occurrence_index: occurrenceIndex,
-        header_role: headerName,
         participant_order: participantOrder,
         display_name: null,
         addr_spec: null,
@@ -145,7 +142,6 @@ export function parseParticipants(
       return {
         source_header_name: headerName,
         source_header_occurrence_index: occurrenceIndex,
-        header_role: headerName,
         participant_order: participantOrder,
         display_name: name.length > 0 ? name : null,
         addr_spec: null,
@@ -160,7 +156,6 @@ export function parseParticipants(
     return {
       source_header_name: headerName,
       source_header_occurrence_index: occurrenceIndex,
-      header_role: headerName,
       participant_order: participantOrder,
       display_name: name.length > 0 ? name : null,
       addr_spec: address,

@@ -30,7 +30,6 @@ export function parseReferenceTokens(
   return matches.map((raw, tokenOrder) => ({
     source_header_name: headerName,
     source_header_occurrence_index: occurrenceIndex,
-    header_role: headerName,
     token_order: tokenOrder,
     raw_token: raw,
     parse_status: VALID_MSGID.test(raw) ? "valid_msgid" : "malformed",

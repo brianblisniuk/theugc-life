@@ -1,7 +1,7 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { normalizeMailboxUntilIdle } from "@/lib/gmail/normalize/service.server";
+import { normalizeMailboxUntilIdle } from "@/lib/gmail/normalize/service";
 
 import {
   buildSanitizedMessage,

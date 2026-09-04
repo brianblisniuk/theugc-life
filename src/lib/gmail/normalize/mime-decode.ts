@@ -3,20 +3,28 @@ import type { CharsetSource, TextPartDecodeStatus } from "@/lib/gmail/normalize/
 /**
  * GMAIL BODY DATA DECODING — THE LOCKED V1 RULE.
  *
- * Gmail's API returns `MessagePartBody.data` as a base64url-encoded string —
- * the TRANSPORT encoding of the body Gmail already parsed out of the raw MIME
- * message. B04 decodes that encoding EXACTLY ONCE, then interprets the
- * resulting bytes under the declared (or, absent one, strict UTF-8 fallback)
- * charset.
+ * OFFICIAL DOCUMENTED FACT (Gmail API `users.messages` discovery schema):
+ * `MessagePartBody.data` is described only as "the body data of a MIME
+ * message part... as a base64url encoded string". The schema documents no
+ * relationship between `data` and `Content-Transfer-Encoding` at all.
  *
- * `Content-Transfer-Encoding` is preserved as SOURCE MIME EVIDENCE — see the
- * caller, which stores every surviving occurrence verbatim — and is NEVER
- * inspected here to trigger a second decode. A body whose Content-Transfer-
- * Encoding header says `base64` or `quoted-printable` has ALREADY been
- * unwrapped by Gmail before `data` was populated; re-decoding it a second time
- * on the strength of that header would corrupt content that decoded correctly
- * the first time, including the case where the correctly-decoded bytes
- * themselves happen to look like base64 text.
+ * EMPIRICAL PROVIDER BEHAVIOR (not documented by Google, observed in
+ * practice): decoding `data` as base64url once yields the final body bytes
+ * directly, even when the source message's `Content-Transfer-Encoding`
+ * header says `base64` or `quoted-printable` — i.e. Gmail appears to have
+ * already unwrapped that transfer encoding before populating `data`.
+ *
+ * OUR V1 POLICY, built on that empirical observation and not on an official
+ * guarantee: B04 decodes `data` as base64url EXACTLY ONCE, then interprets
+ * the resulting bytes under the declared (or, absent one, strict UTF-8
+ * fallback) charset. `Content-Transfer-Encoding` is preserved as SOURCE MIME
+ * EVIDENCE — see the caller, which stores every surviving occurrence
+ * verbatim — and is NEVER inspected here to trigger a second decode, so a
+ * false decode never overwrites the original evidence needed to detect it.
+ * If this provider assumption is ever falsified for some message, the raw
+ * B03 payload remains fully reconstructable and a future normalizer version
+ * can reprocess it; this file does not double-decode speculatively to guard
+ * against that possibility, per the locked V1 rule.
  */
 
 const BASE64URL_SHAPE = /^[A-Za-z0-9_-]*$/;
@@ -30,23 +38,35 @@ function decodeBase64Url(data: string): Buffer | null {
 }
 
 /**
- * Extract the CHARSET parameter from every surviving `Content-Type`
+ * Extract the CHARSET parameter from EVERY surviving `Content-Type`
  * occurrence, conservatively. Distinct, non-empty, case-insensitively
  * differing declarations are a CONFLICT — never resolved by "first wins" or
  * "last wins", the exact lesson B03's MIME safety work already paid for.
+ *
+ * The regex is GLOBAL and every value is scanned to exhaustion: a single
+ * malformed occurrence can itself repeat the parameter
+ * (`charset=UTF-8; charset=ISO-8859-1`), and a non-global `.exec()` would see
+ * only the first, silently treating a self-contradictory header as
+ * unambiguous. `lastIndex` is reset before each value because a global
+ * regex's match position is stateful across calls to `.exec()`.
  */
-const CHARSET_PARAM = /charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;]+))/i;
+const CHARSET_PARAM = /charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;]+))/gi;
 
 export function extractDeclaredCharset(
   contentTypeValues: readonly string[],
 ): { conflicting: false; charset: string | null } | { conflicting: true } {
   const declared = new Map<string, string>(); // lowercased -> as-first-seen
   for (const value of contentTypeValues) {
-    const match = CHARSET_PARAM.exec(value);
-    const raw = (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
-    if (raw.length === 0) continue;
-    const key = raw.toLowerCase();
-    if (!declared.has(key)) declared.set(key, raw);
+    CHARSET_PARAM.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = CHARSET_PARAM.exec(value)) !== null) {
+      const raw = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+      // An empty declaration (`charset=`) must not erase a real one already
+      // found — it is simply not evidence of any charset.
+      if (raw.length === 0) continue;
+      const key = raw.toLowerCase();
+      if (!declared.has(key)) declared.set(key, raw);
+    }
   }
   if (declared.size > 1) return { conflicting: true };
   if (declared.size === 0) return { conflicting: false, charset: null };

@@ -1,7 +1,7 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { normalizeBatch } from "@/lib/gmail/normalize/service.server";
+import { normalizeBatch } from "@/lib/gmail/normalize/service";
 
 import {
   buildSanitizedMessage,
@@ -132,7 +132,7 @@ d("B04 semantic boundary", () => {
 
   it("the RPC surface is executable by service_role and by nobody else, and every function pins search_path", async () => {
     const functions = [
-      "public.gmail_normalize_list_candidates(uuid,uuid,text,integer,text)",
+      "public.gmail_normalize_list_candidates(uuid,uuid,text,integer,text,text[])",
       "public.gmail_normalize_commit_message(uuid,uuid,text,text,text,jsonb,jsonb,jsonb,jsonb)",
       "public.gmail_normalize_status(uuid,uuid,text)",
       "public.gmail_normalize_purge_for_deletion(uuid,uuid,uuid)",

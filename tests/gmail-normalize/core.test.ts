@@ -2,7 +2,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { GMAIL_NORMALIZER_VERSION } from "@/lib/gmail/normalize/contract";
-import { normalizeBatch, normalizeOneCandidate } from "@/lib/gmail/normalize/service.server";
+import { normalizeBatch, normalizeOneCandidate } from "@/lib/gmail/normalize/service";
 
 import {
   buildSanitizedMessage,

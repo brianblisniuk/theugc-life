@@ -2468,9 +2468,12 @@ its results become facts, and that check belongs where the facts are written.
 
 ## D069 — Private Gmail normalization
 
-Status: Accepted — decides how B03's raw evidence becomes B04's normalized
-projection, and what that projection is still forbidden to claim
-Depends on D067, D068; implemented by migration `0038_gmail_private_normalization.sql`
+Status: Proposed in PR #36 — pending human acceptance — decides how B03's raw
+evidence becomes B04's normalized projection, and what that projection is
+still forbidden to claim
+Depends on D067, D068; implemented by migration `0038_gmail_private_normalization.sql`;
+mechanism-level detail lives in `docs/B04_GMAIL_PRIVATE_NORMALIZATION_CONTRACT.md`,
+not here
 
 B03 stored a sanitized snapshot and interpreted none of it — headers stayed
 opaque lists, and there was no thread, no participant, no address anywhere in
@@ -2515,13 +2518,11 @@ than being fixed forever by a single-value CHECK.
 B03 legitimately updates a raw row when the provider snapshot changes. The
 old normalized projection must not survive that as if it were current, and
 "the next worker will notice" is not a mechanism — it is a race with a name.
-An `AFTER UPDATE OF payload_sha256` trigger on `private.gmail_raw_messages`,
-installed additively from 0038, deletes the stale projection inside the SAME
-transaction that changes the digest. Two real PostgreSQL sessions prove both
-orderings: a normalizer that wins the row lock commits, and the waiting raw
-update invalidates it immediately after; a raw update that wins the lock
-commits first, and a normalizer that started against the old digest observes
-the compare-and-swap failure and writes nothing.
+Invalidation happens inside the SAME transaction that changes the digest, and
+is proven safe under real concurrent access, not just in the single-writer
+case. The exact trigger and locking mechanism is implementation detail
+specified in the B04 technical contract, not a product decision to freeze
+here.
 
 ### Repeated approved headers remain evidence
 
@@ -2551,16 +2552,16 @@ contracted block.
 
 Only `text/plain` and `text/html` parts get a row — the same list B03 was
 willing to keep body data for — identified by structural position because
-B03 never promised Gmail's `partId` survived sanitization. Gmail's API
-`body.data` is base64url, decoded EXACTLY ONCE; `Content-Transfer-Encoding`
-is preserved as evidence and never inspected to trigger a second decode.
-Charset handling is conservative and explicit: a single declared charset
-decodes strictly, conflicting declarations across occurrences are never
-resolved by first- or last-wins, and the absence of a declaration falls back
-to strict UTF-8 only — never a fallback chosen merely because it produces
-characters. Plain and HTML bodies are stored independently, never
+B03 never promised Gmail's `partId` survived sanitization. Decoding is
+conservative and one-way: text is decoded from the provider's evidence
+exactly once, an ambiguous or conflicting encoding declaration is never
+resolved by guessing (first- or last-wins), and the raw evidence is preserved
+so a later normalizer version can reprocess if an assumption made here is
+ever falsified. Plain and HTML bodies are stored independently, never
 concatenated, never stripped of quotes or signatures, and decoded HTML is
-private source text, not declared safe to render.
+private source text, not declared safe to render. The exact decode and
+charset-conflict mechanism, and the evidence behind each provider-behavior
+assumption it relies on, is specified in the B04 technical contract.
 
 ### B04 does not infer outreach, hotel, reply, outcome or network intelligence
 

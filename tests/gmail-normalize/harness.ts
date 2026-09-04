@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { Client } from "pg";
 
-import type { NormalizeDeps } from "@/lib/gmail/normalize/service.server";
+import type { NormalizeDeps } from "@/lib/gmail/normalize/service";
 import { createRpcClient, createTestUser } from "../gmail/rpc-harness";
 
 export { connectedMailbox, setConnectionState, startDeletion } from "../gmail-import/harness";

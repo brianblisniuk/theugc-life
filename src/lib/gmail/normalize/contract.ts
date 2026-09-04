@@ -92,11 +92,21 @@ export interface NormalizedHeaderInput {
   raw_value: string;
 }
 
-/** One participant row, ready for `gmail_normalize_commit_message`. */
+/**
+ * One participant row, ready for `gmail_normalize_commit_message`.
+ *
+ * Deliberately carries NO `header_role` field. The persisted `header_role`
+ * column is derived by the RPC from the matched header row's own
+ * `header_name` (0038 §4) — a separate caller-supplied role next to
+ * `source_header_name` was found, during external audit, to be independently
+ * checked but never compared against it, so a caller could submit
+ * self-contradictory linkage (`source_header_name: 'from'` alongside a role
+ * of `'to'`) and have it persist. Removing the field here removes the
+ * temptation to reintroduce that gap from the TypeScript side.
+ */
 export interface NormalizedParticipantInput {
   source_header_name: AddressHeaderName;
   source_header_occurrence_index: number;
-  header_role: AddressHeaderName;
   participant_order: number;
   display_name: string | null;
   addr_spec: string | null;
@@ -107,11 +117,15 @@ export interface NormalizedParticipantInput {
   parse_status: ParticipantParseStatus;
 }
 
-/** One reference-token row, ready for `gmail_normalize_commit_message`. */
+/**
+ * One reference-token row, ready for `gmail_normalize_commit_message`.
+ *
+ * No `header_role` field, for the identical reason `NormalizedParticipantInput`
+ * has none — see there.
+ */
 export interface NormalizedReferenceTokenInput {
   source_header_name: ReferenceHeaderName;
   source_header_occurrence_index: number;
-  header_role: ReferenceHeaderName;
   token_order: number;
   raw_token: string;
   parse_status: ReferenceTokenParseStatus;

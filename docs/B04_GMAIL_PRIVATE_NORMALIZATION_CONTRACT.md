@@ -342,15 +342,34 @@ hold attachment bytes, and no code path that calls
 `users.messages.attachments.get` — that method does not exist anywhere in
 this codebase.
 
-**The locked V1 decoding rule.** Gmail's API returns `MessagePartBody.data`
-as base64url — the TRANSPORT encoding of a body Gmail already extracted from
-the raw MIME message. B04 decodes that encoding **exactly once**, then
-interprets the resulting bytes under a charset. `Content-Transfer-Encoding`
-is preserved as **source MIME evidence** (every occurrence, verbatim) and is
-**never** inspected to trigger a second decode — a body whose CTE says
-`base64` or `quoted-printable` has already been unwrapped by Gmail before
-`data` was populated, and decoded bytes that themselves happen to look like
-base64 text stay literal.
+**The locked V1 decoding rule**, and the evidence behind it, kept in three
+explicit layers so a documented fact is never confused with an observed
+behavior or with our own policy choice:
+
+- **Official documented fact.** The Gmail API discovery schema for
+  `users.messages` describes `MessagePartBody.data` only as "the body data
+  of a MIME message part... as a base64url encoded string." It says nothing
+  anywhere about `Content-Transfer-Encoding` or about whether that header's
+  transfer encoding has already been applied to `data`. There is no official
+  guarantee to rely on here.
+- **Empirical provider behavior (not documented by Google).** In practice,
+  decoding `data` as base64url exactly once yields the final body bytes even
+  when the source message's `Content-Transfer-Encoding` header says `base64`
+  or `quoted-printable` — Gmail appears to unwrap that transfer encoding
+  before populating `data`. This is an observation about the provider's
+  behavior, not a contractual guarantee, and it could be falsified for some
+  message in the future.
+- **Our V1 policy**, built on that observation: B04 decodes `MessagePartBody.data`
+  as base64url — the TRANSPORT encoding of a body Gmail already extracted
+  from the raw MIME message — **exactly once**, then interprets the
+  resulting bytes under a charset. `Content-Transfer-Encoding` is preserved
+  as **source MIME evidence** (every occurrence, verbatim) and is **never**
+  inspected to trigger a second decode, so decoded bytes that happen to look
+  like base64 text stay literal rather than being re-decoded. B04
+  deliberately does not double-decode speculatively to hedge against the
+  empirical assumption being wrong; instead, because B03's raw payload is
+  fully preserved and reconstructable, a future normalizer version can
+  reprocess affected messages if the assumption is ever falsified.
 
 **Charset policy**, applied to every surviving `Content-Type` occurrence on
 the part, never just the first:
