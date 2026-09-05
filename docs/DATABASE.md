@@ -2140,6 +2140,33 @@ duplicate (Finding 4). `TARGET_MATCHER_VERSION` is bumped to `_v6` (Findings
 `OUTREACH_DETECTOR_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION` are
 unchanged.
 
+**EXTERNAL AUDIT AMENDMENT #7** (canonical-independent target facts +
+current-read + safe name segmentation, D070 unchanged): a target-directed
+authored name that matches ZERO real canonical businesses today is no longer
+discarded — it now still creates its private `authored_text_name`
+observation (`insufficient_evidence`, zero canonical links), reconciling onto
+the SAME fingerprint if a matching canonical row is later added or removed,
+so a catalog mutation can never make a durable Gmail fact silently non-
+current (Finding 1). Coordinated-list segmentation is now catalog-aware and
+conservative: `of`/`the`/`de`/`la` are never split points anywhere (a
+fragment like "America" from "Bank of America", or "Paris" from "Hotel de
+Paris", is never generated), and the genuinely ambiguous `and`/`&` connectors
+only split into a real multi-target list when AT LEAST ONE segment matches a
+real canonical business (a non-matching segment is not thereby discarded — it
+still becomes its own unresolved private fact per Finding 1); the full span
+wins outright when it itself matches one real business, so "Johnson &
+Johnson" is never split into "Johnson" + "Johnson" (Finding 2). `gmail_outreach_get_
+thread_evidence`'s `machine_state.target_observations` — the array
+`interpretOneThread`'s fast path actually reads — now filters `machine_is_
+current = true` directly in SQL, so a historical observation never again
+silently mixes into ordinary current-state processing merely because the
+durable row still exists; `gmail_outreach_status` now exposes
+`target_observations_current` alongside the historical-total `target_
+observations` (Finding 3). `TARGET_MATCHER_VERSION` is bumped to `_v7`
+(Findings 1/2); Finding 3 is a read-path change and triggers no version bump
+on its own. `OUTREACH_DETECTOR_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION`
+are unchanged.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals

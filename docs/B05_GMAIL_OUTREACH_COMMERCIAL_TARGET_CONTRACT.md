@@ -110,10 +110,18 @@ has no recipient/target evidence at all — and now returns `needs_review`
 with `creator_commercial_proposal_language_detected` rather than `qualified_
 outreach` for that alone. `interpretOneThread` (service.ts) is the only place
 requirement 3 is independently established (a non-freemail `to`-recipient
-domain observation, or the creator's own authored text exactly naming a real
+domain observation, or the creator's own authored text RESOLVING TO a real
 canonical business, §7a) and the only place the upgrade to `qualified_
 outreach` may happen. Positive proposal language without requirement 3 stays
 `needs_review`, never silently upgraded and never silently discarded.
+
+EXTERNAL AUDIT AMENDMENT #7, Finding 1: an `authored_text_name` observation
+that exists as a private fact but resolves to ZERO real canonical businesses
+(§7a) does NOT by itself satisfy requirement 3 — preserving the evidence as a
+private fact (D070 §8) and using that evidence to upgrade the machine's
+outreach confidence are deliberately kept separate. Requirement 3 still
+requires either a non-freemail domain observation, or an authored-text
+observation that actually resolved at least one real canonical link.
 
 ## 6. Machine-vs-human epistemic layers
 
@@ -186,11 +194,24 @@ touched either way. A fact that later genuinely reappears in current evidence
 simply flips back to `true` on the SAME durable row, never fabricating a new
 human decision. `interpretOneThread`'s own scope/target-contact-corroboration
 computations naturally only ever see the CURRENT call's freshly-extracted
-observations — they never need a separate current-only filter — but any
-OTHER reader of this table (a future review surface, an audit query) should
-filter on `machine_is_current = true` for "the machine's current
-interpretation" and drop the filter only when it deliberately wants full
-history.
+observations — they never need a separate current-only filter.
+
+**The ordinary read surface is current-only by construction** (EXTERNAL AUDIT
+AMENDMENT #7, Finding 3): `gmail_outreach_get_thread_evidence`'s `machine_
+state.target_observations` — the array `interpretOneThread`'s own two-level
+fast path reads back as `MachineStateSnapshot.targetObservations` — filters
+`machine_is_current = true` directly in SQL. A historical observation (one
+that has gone `machine_is_current = false`) is NEVER mixed into this array
+merely because the durable row still exists; it remains fully queryable
+directly against `private.gmail_outreach_target_observations` for a
+deliberate audit/history read (as `gmail_outreach_status`'s historical-total
+count, or a future explicit history view), but it never silently participates
+in ordinary current-state processing (fast-path reuse, scope/target-contact
+corroboration, or any consumer of the machine-state snapshot) again.
+`gmail_outreach_status.target_observations` is the historical-total count
+(every durable fact, current or not); `target_observations_current` is the
+count actually matching what the read surface exposes per thread — the two
+are never left ambiguous with each other.
 
 ## 7a. Creator-authored target-name evidence — an INDEPENDENT private observation
 
@@ -212,38 +233,73 @@ of capitalized words. This never by itself asserts a business exists, and
 (EXTERNAL AUDIT AMENDMENT #5, Finding 2) a phrase that matches no real
 business contributes NO evidence at all — never a false `differs` against an
 unrelated candidate merely because some capitalized phrase existed in the
-text. A phrase becomes real target evidence only when BOTH:
+text.
 
-1. it EXACTLY matches (case- and punctuation-normalized, full-string
-   equality, never a substring/ILIKE match) a REAL canonical hotel or
-   organization name — checked against the bounded catalog snapshot
-   (`gmail_outreach_catalog_snapshot`'s `p_candidate_names`, matched via
-   `private.normalize_business_name` server-side) so such a business enters
-   the candidate universe even when its domain/contact is unrelated to the
-   recipient; AND
-2. (EXTERNAL AUDIT AMENDMENT #5, Finding 3; extended by AMENDMENT #6, Finding
-   1) the exact match sits in a conservative, deterministic, versioned
-   TARGET-DIRECTED context — `isTargetDirectedContext` requires a verb phrase
-   such as "collaborate with", "partnership with", "feature", "pitch to",
-   "stay at" or "work with" immediately preceding the matched name, OR the
-   matched name is a member of a bounded coordinated LIST immediately
-   following such a verb phrase ("collaborate with Hotel A and Hotel B",
-   "feature Hotel A, Hotel B and Hotel C") — a maximal run of capitalized-
-   word chunks joined solely by commas/"and"/"&"/"of"/"the"/"de"/"la",
-   stopping at the first token that is none of those, and NEVER crossing a
-   sentence/paragraph boundary or a semicolon (each clause is scanned
-   independently). Amendment #4/#5's original per-phrase check required the
-   verb immediately before EACH name, so a natural list like "collaborate
-   with Hotel A and Hotel B" only ever recognized Hotel A — multi-property/
-   multi-brand outreach is a core real-world case this now handles. A bare
-   business-name MENTION is still not automatically a mention DIRECTED AT
-   that business as a commercial target: "I worked with Marriott last year"
-   must not satisfy D070 §5's requirement 3 merely because "Marriott"
-   exact-matches a real canonical business, and "Hotel A was a previous
-   client; I'd like to collaborate with Hotel B" must never let Hotel A's
-   historical mention compete with Hotel B's genuine directed evidence.
-   Precision over recall — the check abstains whenever it is uncertain,
-   never inferred from general proximity or sentiment.
+**A phrase becomes a private target-observation FACT (EXTERNAL AUDIT AMENDMENT
+#7, Finding 1) as soon as it sits in a conservative, deterministic, versioned
+TARGET-DIRECTED context** — this is the ONLY requirement for the fact's
+EXISTENCE, and it does NOT depend on canonical inventory at all (D070 §8: "a
+commercial target is first a private fact, independent of canonical
+inventory"). A REAL canonical exact-name match is a SEPARATE, secondary
+judgement — §8's 0..N canonical link — never a precondition for the private
+fact itself:
+
+1. (EXTERNAL AUDIT AMENDMENT #5, Finding 3; extended by AMENDMENT #6, Finding
+   1; segmentation hardened by AMENDMENT #7, Finding 2) the phrase sits in a
+   TARGET-DIRECTED context — `isTargetDirectedContext`/`computeTargetDirected
+   Phrases` requires a verb phrase such as "collaborate with", "partnership
+   with", "feature", "pitch to", "stay at" or "work with" immediately
+   preceding the phrase, OR the phrase is a member of a bounded coordinated
+   LIST immediately following such a verb phrase ("collaborate with Hotel A
+   and Hotel B", "feature Hotel A, Hotel B and Hotel C"). A bare business-name
+   MENTION is still not automatically a mention DIRECTED AT that business as a
+   commercial target: "I worked with Marriott last year" must not satisfy
+   D070 §5's requirement 3 merely because "Marriott" resembles a real
+   canonical business, and "Hotel A was a previous client; I'd like to
+   collaborate with Hotel B" must never let Hotel A's historical mention
+   compete with Hotel B's genuine directed evidence. Precision over recall —
+   the check abstains whenever it is uncertain, never inferred from general
+   proximity or sentiment.
+2. **Safe coordinated-list segmentation** (EXTERNAL AUDIT AMENDMENT #7,
+   Finding 2): a maximal run of capitalized-word chunks immediately following
+   the verb phrase, joined by commas/"and"/"&"/"of"/"the"/"de"/"la", stopping
+   at the first token that is none of those (and never crossing a
+   sentence/paragraph boundary or a semicolon — each clause is scanned
+   independently). Within that run, comma is always a genuine list separator,
+   and `of`/`the`/`de`/`la` are NEVER separators at all — they remain
+   permanently internal to one institutional name ("Bank of America", "Hotel
+   de Paris"), so a bare fragment like "America" or "Paris" is never even
+   generated as a candidate. Only `and`/`&` are genuinely ambiguous
+   ("Hotel A and Hotel B" vs. "Johnson & Johnson"), and that ambiguity is
+   resolved conservatively, with REAL catalog evidence, never a guess: if the
+   FULL span exactly matches one real canonical business, it is ONE target
+   (never split, even if it contains "and"/"&" internally — "Johnson &
+   Johnson" is never split into "Johnson" + "Johnson" merely because a
+   separate "Johnson" also happens to exist in the catalog); otherwise, if AT
+   LEAST ONE segment exactly matches a real canonical business, that is
+   genuine evidence this IS a coordinated list, not one run-on name — every
+   segment is then split out as its own candidate (a segment that itself
+   matches nothing is not thereby discarded — EXTERNAL AUDIT AMENDMENT #7,
+   Finding 1: it still becomes its own unresolved private fact, e.g. a
+   coordinated list naming one business the catalog doesn't know about yet
+   alongside one it does); otherwise — NEITHER the whole span nor any segment
+   matches anything real — the structure is genuinely ambiguous and the safe
+   choice is ONE unresolved private observation for the whole span, never a
+   fabricated split into several target identities out of thin air. With no
+   catalog to check against at all, no split is ever made. Amendment #4/#5's
+   original per-phrase check
+   required the verb immediately before EACH name, so a natural list like
+   "collaborate with Hotel A and Hotel B" only ever recognized Hotel A —
+   multi-property/multi-brand outreach is a core real-world case this now
+   handles, without fabricating targets out of one institutional name.
+
+An observation whose phrase resolves to ZERO real canonical businesses today
+is still created — `machine_canonical_link_assessment = 'insufficient_
+evidence'`, zero canonical links (§8) — and reconciles onto the SAME
+`observation_fingerprint` if a matching canonical row is later added (or an
+existing one removed): canonical linkage never gates the fact's existence,
+only its (separate, advisory) resolution. See required regression cases A-E
+in the EXTERNAL AUDIT AMENDMENT #7 appendix below.
 
 Extraction runs per-SENT-message (never over a thread-joined blob) so
 provenance identifies the EXACT provider message(s) that named the target,
@@ -254,16 +310,17 @@ later SENT message unions its provenance onto the SAME durable observation
 (§7); a materially different authored name forks a new, additional
 observation, leaving the old one and any human confirmation of it untouched.
 `gmail_outreach_target_canonical_links` under an `authored_text_name`
-observation is always `authored_text_evidence = 'agrees'` for the matched
-business — it is the evidence that CREATED the independent observation, not
+observation is always `authored_text_evidence = 'agrees'` for a matched
+business (there may legitimately be ZERO link rows at all, per Finding 1
+above) — it is the evidence that CREATED the independent observation, not
 corroboration for an unrelated one. `authored_text_evidence` remains
 available as an EXTRA corroboration (or contradiction) dimension on a
-`recipient_domain` observation's own candidates too, but — Finding 1 — it can
-no longer, by itself, justify an otherwise-unrelated business entering that
-observation's candidate universe; a real target-directed authored-text match
-with no other core evidence relationship to a given `recipient_domain`
-observation always becomes its own independent `authored_text_name`
-observation instead.
+`recipient_domain` observation's own candidates too, but — Finding 1 (Amendment
+#5) — it can no longer, by itself, justify an otherwise-unrelated business
+entering that observation's candidate universe; a real target-directed
+authored-text match with no other core evidence relationship to a given
+`recipient_domain` observation always becomes its own independent
+`authored_text_name` observation instead.
 
 ## 8. Canonical target-link semantics
 
@@ -1164,3 +1221,77 @@ evaluated thread is offered for re-evaluation. Finding 3 is a schema/
 bookkeeping addition, not a classification/matching rule change, and does
 not itself trigger the bump. `OUTREACH_DETECTOR_VERSION` and `CLASSIFIER_
 INPUT_TRANSFORM_VERSION` are unchanged.
+
+## External Audit Amendment #7 — canonical-independent target facts + current-read + safe name segmentation, D070 unchanged
+
+A three-finding contract-compliance follow-up against the Amendment #6 head.
+**No product decision in D070 was reopened** — all three findings correct
+implementation contradictions with rules D070 already states. Every fix
+listed in Amendments #1-#6 remains exactly as accepted.
+
+1. **Private target facts exist independently of canonical inventory
+   (Finding 1).** D070 §8 already states "a commercial target is first a
+   private fact, independent of canonical inventory" — but
+   `extractAuthoredTextTargetObservations` discarded a target-directed
+   authored name entirely (`continue`, no observation created) whenever it
+   matched ZERO real canonical businesses, reversing the accepted epistemic
+   dependency (Gmail text -> canonical business must exist -> private
+   observation, instead of Gmail text -> private observation -> 0..N optional
+   canonical links). This meant, among other things, that DELETING a matching
+   canonical row could make a durable Gmail fact silently vanish from the
+   next evaluation's complete current set and get marked `machine_is_current
+   = false` — a canonical catalog mutation changing the answer to "what did
+   the creator's Gmail evidence support", which D070 forbids. A target-
+   directed authored name with zero canonical matches now still creates its
+   private observation, with `machine_canonical_link_assessment =
+   'insufficient_evidence'` and zero canonical links, reconciling onto the
+   SAME `observation_fingerprint` if a matching canonical row is later added
+   or removed. §5's requirement-3 upgrade boundary is deliberately
+   unchanged in scope: an authored-text observation only satisfies
+   requirement 3 when it actually resolves at least one real canonical link —
+   preserving the fact must never, by itself, open a new false-positive path
+   to `qualified_outreach`.
+2. **Safe coordinated-list segmentation (Finding 2).** Amendment #6's
+   coordinated-list fix reused `extractAuthoredTextNameCandidates`'s existing
+   decomposition, which ALSO split every recorded phrase on `of`/`the`/`de`/
+   `la`/`and`/`&` unconditionally — meaning "Bank of America", "Bank of
+   America Resorts", "Hotel de Paris" and "Johnson & Johnson" could each
+   silently fragment into "Bank"/"America"/"America Resorts"/"Paris"/
+   "Johnson", and if the catalog happened to contain a REAL business under one
+   of those fragment names, B05 could fabricate an extra target the creator
+   never actually named. `of`/`the`/`de`/`la` are now NEVER split points
+   anywhere in target-extraction.ts — permanently internal to one
+   institutional name. `and`/`&` remain genuinely ambiguous and are now
+   resolved with real catalog evidence (`resolveTargetDirectedPhrases`): the
+   full span wins if it itself matches one real business; otherwise, AT LEAST
+   ONE segment matching a real business is genuine evidence this IS a
+   coordinated list, and every segment then splits out as its own candidate
+   (an unmatched segment is not thereby discarded — it still becomes its own
+   unresolved private fact per Finding 1, e.g. a list naming one business the
+   catalog knows and one it doesn't yet); only when NEITHER the full span nor
+   any segment matches anything real is the safe choice ONE unresolved phrase
+   for the whole span. §7a is rewritten to describe this precisely.
+3. **The ordinary machine-state read surface is current-only by construction
+   (Finding 3).** Amendment #6 added `machine_is_current` and correctly wrote
+   it, but `gmail_outreach_get_thread_evidence`'s `machine_state.target_
+   observations` query — the array `interpretOneThread`'s fast path and
+   `MachineStateSnapshot.targetObservations` actually read — had no `machine_
+   is_current = true` filter, so a historical and a current observation could
+   sit side by side in the same array with no way for a caller to
+   distinguish them. The query now filters `machine_is_current = true`
+   directly; a historical observation remains fully queryable directly
+   against the table for a deliberate audit/history read, but never again
+   silently mixes into ordinary current-state processing merely because the
+   durable row still exists. `gmail_outreach_status` now also exposes
+   `target_observations_current` alongside the pre-existing (now explicitly
+   documented as historical-total) `target_observations`, removing the
+   ambiguity between the two now that currentness is a real, separate
+   concept.
+
+`TARGET_MATCHER_VERSION` is bumped to `_v7` to reflect Findings 1/2 changing
+real matching/observation-identity behavior — every previously-evaluated
+thread is offered for re-evaluation. Finding 3 is a read-path change (no
+stored assessment changes shape or value because of it), so it alone would
+not require a bump; it is bumped anyway because Findings 1/2 already require
+it. `OUTREACH_DETECTOR_VERSION` and `CLASSIFIER_INPUT_TRANSFORM_VERSION` are
+unchanged.

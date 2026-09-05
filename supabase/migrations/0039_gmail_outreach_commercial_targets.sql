@@ -1628,6 +1628,18 @@ begin
                from private.gmail_outreach_target_observations o
               where o.normalized_thread_id = p_normalized_thread_id
                 and o.mail_account_id = p_mail_account_id
+                -- EXTERNAL AUDIT AMENDMENT #7, Finding 3: `machine_state.
+                -- target_observations` means the machine's CURRENT
+                -- interpretation, never a mix of current and historical
+                -- facts. A historical observation (machine_is_current =
+                -- false) remains durably queryable directly against
+                -- gmail_outreach_target_observations for audit/history
+                -- purposes, but must never silently participate in ordinary
+                -- current-state processing (the two-level fast path's stored-
+                -- fingerprint reuse, target-scope/target-contact
+                -- corroboration, or any other reader of this machine-state
+                -- snapshot) merely because the row still durably exists.
+                and o.machine_is_current = true
            )
          )
     into v_machine_state;
@@ -2363,6 +2375,7 @@ declare
   v_threads_classified integer;
   v_qualified integer;
   v_observations integer;
+  v_observations_current integer;
   v_confirmed_targets integer;
   v_recipients integer;
   v_confirmed_contacts integer;
@@ -2383,8 +2396,18 @@ begin
     from private.gmail_outreach_thread_signals
    where mail_account_id = p_mail_account_id and outreach_status = 'qualified_outreach';
 
+  -- EXTERNAL AUDIT AMENDMENT #7, Finding 3: `target_observations` here is
+  -- explicitly the HISTORICAL-TOTAL count (every durable fact ever observed,
+  -- current or not) — never left ambiguous now that machine_is_current
+  -- exists. `target_observations_current` is the count that actually matches
+  -- what `gmail_outreach_get_thread_evidence`'s machine-state read surface
+  -- exposes per thread.
   select count(*)::int into v_observations
     from private.gmail_outreach_target_observations where mail_account_id = p_mail_account_id;
+
+  select count(*)::int into v_observations_current
+    from private.gmail_outreach_target_observations
+   where mail_account_id = p_mail_account_id and machine_is_current = true;
 
   -- `is_confirmed = true`, never row presence — a 'remove' leaves a
   -- tombstone row behind (Finding 3), so counting rows would over-count.
@@ -2405,6 +2428,7 @@ begin
     'threads_classified', v_threads_classified,
     'qualified_outreach_threads', v_qualified,
     'target_observations', v_observations,
+    'target_observations_current', v_observations_current,
     'confirmed_targets', v_confirmed_targets,
     'observed_recipients', v_recipients,
     'confirmed_target_contacts', v_confirmed_contacts

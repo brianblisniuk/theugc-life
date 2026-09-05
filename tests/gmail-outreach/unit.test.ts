@@ -1167,6 +1167,191 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #6, Finding 1
   });
 });
 
+const emptyCatalogFields = {
+  epoch: 1,
+  hotelIdByContactEmail: new Map<string, ReadonlySet<string>>(),
+  organizationIdByContactEmail: new Map<string, ReadonlySet<string>>(),
+  hotelOrganizationLinks: [],
+};
+
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #7, Finding 1 — canonical-independent private target facts)", () => {
+  it("required case E: a target-directed authored name with ZERO canonical rows still becomes its own private observation, with insufficient_evidence and zero links (D070: private fact independent of canonical inventory)", () => {
+    const text = "I'd love to collaborate with Nike on this campaign.";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { hotels: [], organizations: [], ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Nike");
+    expect(results[0]!.observation.observationSourceKind).toBe("authored_text_name");
+    expect(results[0]!.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
+    expect(results[0]!.links).toHaveLength(0);
+  });
+});
+
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #7, Finding 2 — safe coordinated-name segmentation)", () => {
+  it('required test 1: "collaborate with Bank of America" never produces a fragment "America", even when a real "America" business also exists', () => {
+    const text = "collaborate with Bank of America";
+    const catalog = {
+      hotels: [],
+      organizations: [
+        { id: "boa", name: "Bank of America", websiteDomain: null },
+        { id: "america", name: "America", websiteDomain: null },
+      ],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Bank of America");
+  });
+
+  it('required test 2: "collaborate with Bank of America Resorts" never produces a fragment "America Resorts"', () => {
+    const text = "collaborate with Bank of America Resorts";
+    const catalog = {
+      hotels: [
+        { id: "boar", name: "Bank of America Resorts", websiteDomain: null },
+        { id: "ar", name: "America Resorts", websiteDomain: null },
+      ],
+      organizations: [],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Bank of America Resorts");
+  });
+
+  it('required test 3: "collaborate with Hotel de Paris" never produces a fragment "Paris"', () => {
+    const text = "collaborate with Hotel de Paris";
+    const catalog = {
+      hotels: [
+        { id: "hdp", name: "Hotel de Paris", websiteDomain: null },
+        { id: "paris", name: "Paris", websiteDomain: null },
+      ],
+      organizations: [],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Hotel de Paris");
+  });
+
+  it('required test 4: "collaborate with Johnson & Johnson" is never split into "Johnson" + "Johnson"', () => {
+    const text = "collaborate with Johnson & Johnson";
+    const catalog = {
+      hotels: [],
+      organizations: [
+        { id: "jj", name: "Johnson & Johnson", websiteDomain: null },
+        { id: "j", name: "Johnson", websiteDomain: null },
+      ],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Johnson & Johnson");
+  });
+
+  it('required test 5: a genuine coordinated list "Hotel A and Hotel B" (no combined-name catalog entry) still yields TWO independent targets', () => {
+    const text = "collaborate with Hotel A and Hotel B";
+    const catalog = {
+      hotels: [
+        { id: "a", name: "Hotel A", websiteDomain: null },
+        { id: "b", name: "Hotel B", websiteDomain: null },
+      ],
+      organizations: [],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(2);
+  });
+
+  it('required test 6: comma list "Hotel A, Hotel B and Hotel C" yields THREE independent targets', () => {
+    const text = "collaborate with Hotel A, Hotel B and Hotel C";
+    const catalog = {
+      hotels: [
+        { id: "a", name: "Hotel A", websiteDomain: null },
+        { id: "b", name: "Hotel B", websiteDomain: null },
+        { id: "c", name: "Hotel C", websiteDomain: null },
+      ],
+      organizations: [],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(3);
+  });
+
+  it('required test 7: historical boundary — "I worked with Hotel A last year. I\'d love to collaborate with Hotel B." yields Hotel B only', () => {
+    const text = "I worked with Hotel A last year. I'd love to collaborate with Hotel B.";
+    const catalog = {
+      hotels: [
+        { id: "a", name: "Hotel A", websiteDomain: null },
+        { id: "b", name: "Hotel B", websiteDomain: null },
+      ],
+      organizations: [],
+    };
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { ...catalog, ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Hotel B");
+  });
+
+  it("required test 8: an ambiguous coordinated span with NO canonical rows preserves ONE unresolved private observation, never a fabricated split", () => {
+    const text = "collaborate with Acme Corp and Widget Co";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { hotels: [], organizations: [], ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Acme Corp and Widget Co");
+    expect(results[0]!.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
+  });
+
+  it("a coordinated list where only ONE item matches a real canonical business is still split into TWO independent targets — the unmatched one becomes its own unresolved fact (Finding 1), never silently absorbed into an ambiguous merged phrase", () => {
+    const text =
+      "I'd love to collaborate with New Startup Hotel and A7 Split Hotel Beta during my trip.";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        hotels: [{ id: "beta", name: "A7 Split Hotel Beta", websiteDomain: null }],
+        organizations: [],
+        ...emptyCatalogFields,
+      },
+      [],
+    );
+    expect(results).toHaveLength(2);
+    const unresolved = results.find((r) => r.observation.observedName === "New Startup Hotel");
+    const resolved = results.find((r) => r.observation.observedName === "A7 Split Hotel Beta");
+    expect(unresolved).toBeDefined();
+    expect(unresolved!.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
+    expect(unresolved!.links).toHaveLength(0);
+    expect(resolved).toBeDefined();
+    expect(resolved!.observation.machineCanonicalLinkAssessment).toBe("strong_match");
+    expect(resolved!.links).toHaveLength(1);
+  });
+});
+
 describe("B05 unit: target-extraction.ts (detectScopeLanguage, Finding 5)", () => {
   it("detects portfolio/group language", () => {
     expect(

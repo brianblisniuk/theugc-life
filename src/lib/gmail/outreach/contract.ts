@@ -65,8 +65,28 @@ export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v4";
  * forking a spurious duplicate. (Finding 3's explicit machine current-
  * membership flag is a schema/bookkeeping addition, not a classification or
  * matching RULE change, so it does not itself trigger this version bump.)
+ * `_v7` (EXTERNAL AUDIT AMENDMENT #7, Findings 1/2): (a) a target-directed
+ * authored name that matches ZERO real canonical businesses today is no
+ * longer discarded — it is preserved as its own private target-observation
+ * fact with `insufficient_evidence`/zero links, reconciling onto the SAME
+ * fingerprint if a matching canonical row is later added or removed (D070:
+ * a commercial target is first a private fact, independent of canonical
+ * inventory); (b) coordinated-list segmentation is now catalog-aware and
+ * conservative — `of`/`the`/`de`/`la` are never split points at all (never
+ * again fabricating a fragment like "America" from "Bank of America"), and
+ * the ambiguous `and`/`&` connectors split into a genuine multi-target list
+ * when AT LEAST ONE resulting segment matches a real canonical business (a
+ * non-matching segment is not thereby discarded — it still becomes its own
+ * unresolved private observation), or are preserved undivided when the whole
+ * span itself matches one real business ("Johnson & Johnson" is never split
+ * into "Johnson" + "Johnson"); a span where NEITHER the whole nor any segment
+ * matches anything real is preserved as ONE unresolved phrase rather than
+ * fabricating a split. (Finding 3's current-only
+ * machine-state read surface is a read-path change, not a matching rule, so
+ * it alone would not require a bump — it is bumped anyway because Findings
+ * 1/2 already require it.)
  */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v6";
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v7";
 /**
  * Versioned heuristic classifier-input transform (quote/HTML handling,
  * signature stripping). `_v3` (Finding 7): also splits a message into a

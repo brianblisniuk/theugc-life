@@ -123,8 +123,27 @@ function namesMatchExactly(a: string, b: string): boolean {
 const CAPITALIZED_WORD = /^[A-Z][A-Za-z0-9''-]*$/;
 const PHRASE_CONNECTOR_WORDS = new Set(["of", "and", "the", "de", "la", "&"]);
 const TRAILING_CONNECTOR = /(?:\s+(?:of|and|the|de|la|&))+$/i;
+/**
+ * EXTERNAL AUDIT AMENDMENT #7, Finding 2: the ONLY genuinely ambiguous
+ * connector words — sometimes a list separator ("Hotel A and Hotel B"),
+ * sometimes part of one legal/brand name ("Johnson & Johnson"). `of`/`the`/
+ * `de`/`la` are NEVER separators — they remain permanently internal to one
+ * institutional name ("Bank of America", "Hotel de Paris") and are never a
+ * split point anywhere in this module, so a bare fragment like "America" or
+ * "Paris" is never even generated as a candidate.
+ */
+const AMBIGUOUS_LIST_CONNECTOR = /\s+(?:and|&)\s+/i;
 
-export function extractAuthoredTextNameCandidates(text: string): string[] {
+/**
+ * EXTERNAL AUDIT AMENDMENT #7, Finding 2 (was Amendment #4, Finding 2): the
+ * base tokenizer — contiguous runs of 1-6 capitalized words, allowing a
+ * handful of common lower-case connectors inside a phrase. Unlike the
+ * exported `extractAuthoredTextNameCandidates` below, this NEVER decomposes
+ * a run into pieces — it returns exactly the maximal joined phrase(s), which
+ * is what "safe segmentation" (Finding 2) needs as its starting point before
+ * any catalog-aware list-vs-name decision is made.
+ */
+function tokenizeCapitalizedRuns(text: string): string[] {
   const phrases = new Set<string>();
   let current: string[] = [];
 
@@ -148,6 +167,19 @@ export function extractAuthoredTextNameCandidates(text: string): string[] {
       flush();
       continue;
     }
+    // EXTERNAL AUDIT AMENDMENT #7, Finding 2 (latent-bug fix): `&` is
+    // entirely non-alphanumeric, so the generic word-stripping regex below
+    // would reduce it to an EMPTY string before `PHRASE_CONNECTOR_WORDS.has()`
+    // ever got a chance to recognize it as a connector — silently flushing
+    // ("Johnson" | "Johnson") into two separate phrases from "Johnson &
+    // Johnson" instead of extending the run, exactly the fragmentation bug
+    // this amendment otherwise fixes at the segmentation-resolution layer.
+    // Handled as its own explicit case, mirroring how `,`/`;` etc. are
+    // handled above, rather than trying to survive the generic strip.
+    if (rawWord === "&") {
+      if (current.length > 0) current.push("&");
+      continue;
+    }
     const word = rawWord.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9''-]+$/g, "");
     if (word === "") {
       flush();
@@ -163,25 +195,49 @@ export function extractAuthoredTextNameCandidates(text: string): string[] {
   }
   flush();
 
-  // A connector can legitimately extend a single institutional name ("Bank
-  // of America") or join two SEPARATE ones ("Hotel Alpha and Hotel Beta") —
-  // this cannot be told apart deterministically without knowing the real
-  // names in advance. Rather than guess, ALSO decompose every recorded
-  // phrase on its connector words and keep both the joined and the split
-  // forms as candidates: over-generating is harmless (only an exact match
-  // against a REAL catalog name ever becomes evidence), but silently
-  // dropping one of two conjunction-joined business names would not be.
-  const decomposed = new Set<string>();
-  for (const phrase of phrases) {
-    decomposed.add(phrase);
-    for (const piece of phrase.split(/\s+(?:of|and|the|de|la|&)\s+/i)) {
-      if (piece.trim() !== "") decomposed.add(piece.trim());
+  // EXTERNAL AUDIT AMENDMENT #7, Finding 2: the 6-word sanity cap is applied
+  // by CALLERS, never here — a maximal joined span can legitimately span a
+  // genuine multi-item coordinated list well past 6 words ("Hotel Alpha and
+  // Hotel Beta and Hotel Charlie"), and truncating it HERE, before
+  // segmentation resolution ever runs, would silently discard a real,
+  // well-formed list. The cap belongs on each FINAL candidate name, not on
+  // the container span it may have been split out of.
+  return [...phrases]
+    .map((p) => p.replace(TRAILING_CONNECTOR, "").trim())
+    .filter((p) => p.length > 0);
+}
+
+const MAX_CANDIDATE_WORDS = 6;
+
+/**
+ * A conservative, deterministic candidate-phrase extractor over
+ * creator-authored (clean, non-quoted, non-uncertain-signature) text. This
+ * NEVER by itself asserts that a business exists: a phrase is only
+ * meaningful evidence once it is compared, elsewhere, against a REAL
+ * canonical hotel/organization name for EXACT equality — a false-positive
+ * phrase (a person's name, "Thanks Best") simply matches nothing and
+ * contributes no evidence.
+ *
+ * EXTERNAL AUDIT AMENDMENT #7, Finding 2: `of`/`the`/`de`/`la` are NEVER
+ * split points here any more — a bare fragment like "America" (from "Bank of
+ * America") or "Paris" (from "Hotel de Paris") is never generated as a
+ * candidate at all. Only `and`/`&` — the genuinely ambiguous connectors — are
+ * ALSO decomposed alongside the full joined phrase (over-generating a
+ * candidate list for catalog-snapshot search-widening is harmless; the
+ * catalog-aware decision about which form is REAL evidence for an actual
+ * target-directed fact happens in `resolveTargetDirectedPhrases` below,
+ * never here).
+ */
+export function extractAuthoredTextNameCandidates(text: string): string[] {
+  const joined = tokenizeCapitalizedRuns(text);
+  const all = new Set<string>();
+  for (const phrase of joined) {
+    all.add(phrase);
+    for (const piece of phrase.split(AMBIGUOUS_LIST_CONNECTOR)) {
+      if (piece.trim() !== "") all.add(piece.trim());
     }
   }
-
-  return [...decomposed]
-    .map((p) => p.replace(TRAILING_CONNECTOR, "").trim())
-    .filter((p) => p.length > 0 && p.split(" ").length <= 6);
+  return [...all].filter((p) => p.length > 0 && p.split(" ").length <= MAX_CANDIDATE_WORDS);
 }
 
 /**
@@ -231,15 +287,99 @@ const TARGET_DIRECTED_VERB_PHRASES: readonly string[] = [
  * and NEVER crosses a sentence/paragraph boundary or a semicolon — each
  * clause is scanned independently, so "Hotel A was a previous client;
  * collaborate with Hotel B" can never leak Hotel A's non-relationship into
- * Hotel B's, or vice versa. List-item splitting reuses the SAME decomposition
- * `extractAuthoredTextNameCandidates` already performs (comma/`and`/`&`
- * aware), so there is exactly one definition of "how a list of names
- * decomposes", never a second, subtly different one here.
+ * Hotel B's, or vice versa. List-item splitting is resolved by
+ * `resolveTargetDirectedPhrases` below (EXTERNAL AUDIT AMENDMENT #7, Finding
+ * 2) — comma is always a hard split, but "and"/"&" only split into distinct
+ * targets with real catalog evidence that each side is a genuine, separate
+ * business (never merely because the word "and" appears).
  */
 const LIST_CHUNK = "(?:[A-Z][A-Za-z0-9''-]*|of|and|the|de|la|&|,)";
 const LIST_TAIL_PATTERN = new RegExp(`^${LIST_CHUNK}(?:\\s+${LIST_CHUNK})*`);
 
-function computeTargetDirectedPhrases(text: string): ReadonlySet<string> {
+function matchesAnyCanonicalName(
+  phrase: string,
+  catalog: Pick<CatalogSnapshot, "hotels" | "organizations">,
+): boolean {
+  return (
+    catalog.hotels.some((h) => namesMatchExactly(phrase, h.name)) ||
+    catalog.organizations.some((o) => namesMatchExactly(phrase, o.name))
+  );
+}
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #7, Finding 2: safe coordinated-list segmentation.
+ * `of`/`the`/`de`/`la` are already settled by `tokenizeCapitalizedRuns` —
+ * never separators, always internal to one name, so they never reach here at
+ * all. `and`/`&` remain genuinely ambiguous ("Hotel A and Hotel B" vs.
+ * "Johnson & Johnson"), and this resolves that ambiguity conservatively, with
+ * REAL evidence, never a guess:
+ *
+ *   1. if the FULL joined span exactly matches ONE real canonical business,
+ *      it is ONE target — never split, regardless of an internal "and"/"&"
+ *      ("Johnson & Johnson" is never split into "Johnson" + "Johnson" when
+ *      "Johnson & Johnson" itself is a real business, even if a SEPARATE
+ *      "Johnson" also happens to exist in the catalog);
+ *   2. otherwise, if AT LEAST ONE segment exactly matches a real canonical
+ *      business, that is genuine evidence this IS a coordinated list, not one
+ *      run-on institutional name — every segment is then split out as its
+ *      own candidate. A segment that itself matches nothing is NOT thereby
+ *      discarded (EXTERNAL AUDIT AMENDMENT #7, Finding 1: it still becomes
+ *      its own unresolved private fact — a genuine real-world case, e.g. "I'd
+ *      love to collaborate with New Startup Hotel and Acme Hotel" naming one
+ *      business the catalog doesn't know about yet alongside one it does);
+ *   3. otherwise — NEITHER the whole span NOR any individual segment matches
+ *      anything real — the structure is genuinely ambiguous with no evidence
+ *      for either reading, and the safe choice is to preserve ONE unresolved
+ *      phrase for the whole span rather than fabricate several separate
+ *      target identities out of thin air.
+ *
+ * With no catalog to check against at all (`catalog === null`), there is no
+ * evidence to justify ANY split — the full joined phrase is always preserved
+ * undivided.
+ */
+function resolveTargetDirectedPhrases(
+  span: string,
+  catalog: Pick<CatalogSnapshot, "hotels" | "organizations"> | null,
+): string[] {
+  const joined = tokenizeCapitalizedRuns(span);
+  const resolved = new Set<string>();
+  for (const phrase of joined) {
+    const segments = phrase
+      .split(AMBIGUOUS_LIST_CONNECTOR)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (segments.length <= 1 || !catalog) {
+      resolved.add(phrase);
+      continue;
+    }
+    if (matchesAnyCanonicalName(phrase, catalog)) {
+      resolved.add(phrase);
+      continue;
+    }
+    if (segments.some((s) => matchesAnyCanonicalName(s, catalog))) {
+      for (const s of segments) resolved.add(s);
+      continue;
+    }
+    resolved.add(phrase);
+  }
+  // The 6-word sanity cap applies to each FINAL resolved candidate — never
+  // to the (potentially much longer) joined span a real multi-item list is
+  // segmented out of.
+  return [...resolved].filter((p) => p.split(" ").length <= MAX_CANDIDATE_WORDS);
+}
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #7, Finding 2: now optionally catalog-aware — see
+ * `resolveTargetDirectedPhrases`. `catalog` is omitted for `isTargetDirected
+ * Context`'s bare text/phrase check (kept for API/test compatibility, never
+ * called from real interpretation code) — with no catalog, no split is ever
+ * made, which is the safe, conservative default.
+ */
+function computeTargetDirectedPhrases(
+  text: string,
+  catalog: Pick<CatalogSnapshot, "hotels" | "organizations"> | null = null,
+): ReadonlySet<string> {
   const directed = new Set<string>();
   // Never propagate a target-directed relationship across a sentence,
   // paragraph, or semicolon boundary — each clause is its own bounded scope.
@@ -253,7 +393,7 @@ function computeTargetDirectedPhrases(text: string): ReadonlySet<string> {
         const tail = clause.slice(match.index + match[0].length);
         const tailMatch = LIST_TAIL_PATTERN.exec(tail);
         if (!tailMatch) continue;
-        for (const phrase of extractAuthoredTextNameCandidates(tailMatch[0])) {
+        for (const phrase of resolveTargetDirectedPhrases(tailMatch[0], catalog)) {
           directed.add(phrase);
         }
       }
@@ -291,9 +431,17 @@ export function computeAuthoredTextTargetEvidence(
 ): AuthoredTextTargetEvidence {
   const matchedHotelIds = new Set<string>();
   const matchedOrganizationIds = new Set<string>();
-  const directedPhrases = computeTargetDirectedPhrases(sourceText);
-  for (const phrase of candidatePhrases) {
-    if (!directedPhrases.has(phrase)) continue;
+  // EXTERNAL AUDIT AMENDMENT #7, Finding 2: `computeTargetDirectedPhrases`
+  // now resolves list-vs-single-name segmentation using this SAME catalog —
+  // never a second, independent decision. `candidatePhrases` (the caller's
+  // own pre-computed, over-generated candidate set) is cross-checked as a
+  // defense-in-depth bound: every resolved phrase is, by construction, always
+  // a member of that over-generated set, so this never excludes real
+  // evidence — it only guards against the two ever silently diverging.
+  const candidateSet = new Set(candidatePhrases);
+  const directedPhrases = computeTargetDirectedPhrases(sourceText, catalog);
+  for (const phrase of directedPhrases) {
+    if (!candidateSet.has(phrase)) continue;
     for (const h of catalog.hotels) {
       if (namesMatchExactly(phrase, h.name)) matchedHotelIds.add(h.id);
     }
@@ -778,6 +926,16 @@ function hasContactEvidence(
  * observation's. A phrase matching more than one distinct real business (a
  * genuine name collision) yields one observation with an `ambiguous`
  * assessment and one link per distinct business, never a silent pick.
+ *
+ * EXTERNAL AUDIT AMENDMENT #7, Finding 1: a phrase matching ZERO real
+ * businesses is NOT discarded either — D070 already requires "a commercial
+ * target is first a private fact, independent of canonical inventory". The
+ * observation is still created, with `machine_canonical_link_assessment =
+ * 'insufficient_evidence'` and zero canonical links, and reconciles onto the
+ * SAME fingerprint if a matching canonical row is added (or removed) later —
+ * canonical linkage is always a separate, secondary judgement over an
+ * already-existing private fact, never a precondition for that fact's
+ * existence.
  */
 export function extractAuthoredTextTargetObservations(
   sources: readonly AuthoredTextObservationSource[],
@@ -799,11 +957,14 @@ export function extractAuthoredTextTargetObservations(
   const groups = new Map<string, Group>();
 
   for (const source of sources) {
-    const candidatePhrases = extractAuthoredTextNameCandidates(source.text);
-    const directedPhrases = computeTargetDirectedPhrases(source.text);
-    for (const phrase of candidatePhrases) {
-      if (!directedPhrases.has(phrase)) continue;
-
+    // EXTERNAL AUDIT AMENDMENT #7, Finding 2: `computeTargetDirectedPhrases`
+    // already performs the full catalog-aware segmentation resolution — its
+    // output IS the final decided phrase set, so it is iterated directly
+    // rather than re-filtering a separately over-generated candidate list
+    // (avoiding two definitions of "which phrase is directed" that could
+    // silently disagree).
+    const directedPhrases = computeTargetDirectedPhrases(source.text, catalog);
+    for (const phrase of directedPhrases) {
       const matchedHere: Match[] = [];
       for (const h of catalog.hotels) {
         if (namesMatchExactly(phrase, h.name)) {
@@ -815,7 +976,14 @@ export function extractAuthoredTextTargetObservations(
           matchedHere.push({ kind: "organization", id: o.id, websiteDomain: o.websiteDomain });
         }
       }
-      if (matchedHere.length === 0) continue;
+      // EXTERNAL AUDIT AMENDMENT #7, Finding 1: D070 already requires "a
+      // commercial target is first a private fact, independent of canonical
+      // inventory" — `matchedHere` may legitimately be EMPTY here (no
+      // canonical hotel/organization currently matches this name), and the
+      // observation below is still created, with zero canonical links. A
+      // later catalog addition/removal reconciles onto this SAME fingerprint
+      // (see `computeTargetObservationFingerprint` — identity never depends
+      // on canonical-match outcome), never forking or discarding the fact.
 
       const key = normalizeName(phrase);
       const group = groups.get(key) ?? {
@@ -845,7 +1013,12 @@ export function extractAuthoredTextTargetObservations(
       targetKindHint: "unknown",
       observationSourceKind: "authored_text_name",
       sourceProviderMessageIds: [...group.providerMessageIds],
-      machineCanonicalLinkAssessment: group.matches.length === 1 ? "strong_match" : "ambiguous",
+      machineCanonicalLinkAssessment:
+        group.matches.length === 0
+          ? "insufficient_evidence"
+          : group.matches.length === 1
+            ? "strong_match"
+            : "ambiguous",
       candidateSetFingerprint: computeRelevantCandidateFingerprint(associatedAddresses, catalog),
     };
     const links: TargetCanonicalLinkCandidateInput[] = group.matches.map((m, rank) => ({

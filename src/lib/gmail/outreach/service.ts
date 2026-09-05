@@ -675,7 +675,18 @@ export async function interpretOneThread(
   // never be reached from authored-text evidence with zero corresponding
   // private fact actually persisted (the freemail + target-directed exact
   // canonical match case).
-  const hasCommercialTargetEvidence = rawObservations.length > 0 || authoredTextMatches.length > 0;
+  //
+  // EXTERNAL AUDIT AMENDMENT #7, Finding 1: `authoredTextMatches` can now
+  // itself legitimately carry an UNRESOLVED observation (a target-directed
+  // name with zero canonical links, catalog absent) — that private fact must
+  // still be preserved, but its mere existence must NOT by itself broaden
+  // this upgrade boundary into a new false-positive path. An authored-text
+  // match only counts as commercial-target evidence for this purpose when it
+  // actually resolved to a real canonical business (`links.length > 0`);
+  // domain-observation evidence (a plausible commercial representative) is
+  // unchanged and still sufficient on its own, exactly as before.
+  const hasCommercialTargetEvidence =
+    rawObservations.length > 0 || authoredTextMatches.some((m) => m.links.length > 0);
   const outreachIsProposalLanguageOnly = outreach.reasonCodes.includes(
     "creator_commercial_proposal_language_detected",
   );
@@ -1052,7 +1063,10 @@ export interface OutreachStatusCounts {
   normalizedThreads: number;
   threadsClassified: number;
   qualifiedOutreachThreads: number;
+  /** EXTERNAL AUDIT AMENDMENT #7, Finding 3: the HISTORICAL-TOTAL count — every durable target-observation fact ever recorded, current or not. See `targetObservationsCurrent` for the machine's current interpretation only. */
   targetObservations: number;
+  /** EXTERNAL AUDIT AMENDMENT #7, Finding 3: observations with `machine_is_current = true` — what the machine currently, actively supports. */
+  targetObservationsCurrent: number;
   confirmedTargets: number;
   observedRecipients: number;
   confirmedTargetContacts: number;
@@ -1077,6 +1091,7 @@ export async function getOutreachStatus(
     threads_classified?: number;
     qualified_outreach_threads?: number;
     target_observations?: number;
+    target_observations_current?: number;
     confirmed_targets?: number;
     observed_recipients?: number;
     confirmed_target_contacts?: number;
@@ -1096,6 +1111,7 @@ export async function getOutreachStatus(
       threadsClassified: data.threads_classified ?? 0,
       qualifiedOutreachThreads: data.qualified_outreach_threads ?? 0,
       targetObservations: data.target_observations ?? 0,
+      targetObservationsCurrent: data.target_observations_current ?? 0,
       confirmedTargets: data.confirmed_targets ?? 0,
       observedRecipients: data.observed_recipients ?? 0,
       confirmedTargetContacts: data.confirmed_target_contacts ?? 0,

@@ -256,6 +256,26 @@ export const FINAL_INTERPRETATION_CORPUS: readonly FinalInterpretationExample[] 
     toRecipient: "someone@gmail.com",
     hotelName: "FI Multi Hotel Beta",
   },
+  {
+    // EXTERNAL AUDIT AMENDMENT #7, Finding 2: real end-to-end regression for
+    // safe coordinated-name segmentation. Before the fix, `of` was treated as
+    // a generic decomposition split point, so "Bank of America" could
+    // fragment into "Bank" + "America" — and if the catalog happens to
+    // contain an UNRELATED business literally named "America" (as it does
+    // here), that fragment would wrongly match it, creating a spurious
+    // resolved canonical link and (via a FREEMAIL recipient, so domain
+    // evidence can't independently qualify this thread) incorrectly flipping
+    // the final status to `qualified_outreach`. With the fix, "of" is never a
+    // split point at all — "Bank of America" is evaluated as ONE phrase,
+    // matches nothing in this catalog, and the thread honestly stays
+    // `needs_review`.
+    id: "fi-7",
+    gold: "needs_review",
+    subject: "Collaboration opportunity",
+    sentBodies: ["I'd love to collaborate with Bank of America on this campaign."],
+    toRecipient: "someone@gmail.com",
+    hotelName: "America",
+  },
 ];
 
 export interface TargetMatchExample {
