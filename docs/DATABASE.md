@@ -2167,6 +2167,29 @@ observations` (Finding 3). `TARGET_MATCHER_VERSION` is bumped to `_v7`
 on its own. `OUTREACH_DETECTOR_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION`
 are unchanged.
 
+**Amendment #7's own "AT LEAST ONE segment matches" coordinated-list rule
+above was ITSELF a D070 §8 violation — see EXTERNAL AUDIT AMENDMENT #8
+below, which supersedes it.**
+
+**EXTERNAL AUDIT AMENDMENT #8** (source-stable private-target segmentation,
+D070 unchanged): Amendment #7's coordinated-list rule still let canonical
+inventory decide a private fact's SHAPE (whether "at least one segment"
+matched a real business) — so "Smith & Jones" (one real company) could
+fragment into "Smith" + "Jones" merely because an unrelated canonical
+"Smith" existed, and adding that unrelated row later could change the
+CURRENT private-observation set for unchanged Gmail evidence. Source-fact
+segmentation (`resolveTargetDirectedPhrases`/`computeTargetDirectedPhrases`)
+now takes NO catalog parameter at all — a pure function of source text alone,
+producing an identical `observation_fingerprint` set for any catalog state.
+`&` is now NEVER a split point (more conservative than "and" — "Johnson &
+Johnson"/"Smith & Jones" always stay one phrase); "and" only splits when
+every resulting segment is multi-word and shares the identical leading word
+("Hotel A and Hotel B"); any other "and"/"&" span with no such source-only
+evidence ("Nike and Adidas") is preserved as ONE unresolved private fact.
+`TARGET_MATCHER_VERSION` is bumped to `_v8` (Finding 1 changes real
+segmentation/observation-identity behavior). `OUTREACH_DETECTOR_VERSION`/
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals

@@ -1327,28 +1327,173 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #7, Finding 2
     expect(results[0]!.observation.observedName).toBe("Acme Corp and Widget Co");
     expect(results[0]!.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
   });
+});
 
-  it("a coordinated list where only ONE item matches a real canonical business is still split into TWO independent targets — the unmatched one becomes its own unresolved fact (Finding 1), never silently absorbed into an ambiguous merged phrase", () => {
-    const text =
-      "I'd love to collaborate with New Startup Hotel and A7 Split Hotel Beta during my trip.";
-    const results = extractAuthoredTextTargetObservations(
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #8, Finding 1 — source-only, catalog-independent segmentation)", () => {
+  // EXTERNAL AUDIT AMENDMENT #8: this describe block REPLACES the Amendment
+  // #7 test previously here ("a coordinated list where only ONE item matches
+  // a real canonical business is still split into TWO independent targets"),
+  // which asserted the now-explicitly-REJECTED behavior of letting canonical
+  // inventory decide a private fact's SHAPE. That behavior violated D070 §8
+  // ("a commercial target is first a private fact, independent of canonical
+  // inventory") one level deeper than Amendment #7 fixed: canonical
+  // membership of "at least one segment" was itself being used as
+  // grammatical-list evidence. Segmentation is now a pure function of source
+  // text alone — see `resolveTargetDirectedPhrases`/
+  // `computeTargetDirectedPhrases`, which take no catalog parameter at all.
+
+  it("required test A: an unknown single brand joined by '&' with a COLLIDING canonical fragment stays ONE private observation, never split into the fragment + remainder", () => {
+    const text = "I'd love to collaborate with Smith & Jones.";
+    const withCollidingFragment = extractAuthoredTextTargetObservations(
       [{ providerMessageId: "msg-1", text }],
       {
-        hotels: [{ id: "beta", name: "A7 Split Hotel Beta", websiteDomain: null }],
+        hotels: [],
+        organizations: [{ id: "smith", name: "Smith", websiteDomain: null }],
+        ...emptyCatalogFields,
+      },
+      [],
+    );
+    expect(withCollidingFragment).toHaveLength(1);
+    expect(withCollidingFragment[0]!.observation.observedName).toBe("Smith & Jones");
+    expect(withCollidingFragment[0]!.observation.machineCanonicalLinkAssessment).toBe(
+      "insufficient_evidence",
+    );
+    expect(withCollidingFragment[0]!.links).toHaveLength(0);
+  });
+
+  it("required test D: 'Johnson & Johnson' segments identically whether or not the bare fragment 'Johnson' also exists in the catalog", () => {
+    const text = "I'd love to collaborate with Johnson & Johnson.";
+    const withoutFragment = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { hotels: [], organizations: [], ...emptyCatalogFields },
+      [],
+    );
+    const withFragment = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        hotels: [],
+        organizations: [{ id: "johnson", name: "Johnson", websiteDomain: null }],
+        ...emptyCatalogFields,
+      },
+      [],
+    );
+    for (const results of [withoutFragment, withFragment]) {
+      expect(results).toHaveLength(1);
+      expect(results[0]!.observation.observedName).toBe("Johnson & Johnson");
+    }
+    // Identity (fingerprint) is byte-identical across catalog states.
+    expect(withoutFragment[0]!.observation.observationFingerprint).toBe(
+      withFragment[0]!.observation.observationFingerprint,
+    );
+  });
+
+  it("required test H: an ambiguous 'and' span with no repeated-leading-word source evidence ('Nike and Adidas') preserves ONE unresolved phrase, never consulting the catalog to decide", () => {
+    const text = "I'd love to collaborate with Nike and Adidas.";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { hotels: [], organizations: [], ...emptyCatalogFields },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Nike and Adidas");
+  });
+
+  it("required test F (the key proof): 'Hotel A and Hotel B' produces the SAME private-observation-fingerprint set regardless of catalog membership — only links/assessment differ", () => {
+    const text = "I'd love to collaborate with Hotel A and Hotel B.";
+    const neitherInCatalog = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { hotels: [], organizations: [], ...emptyCatalogFields },
+      [],
+    );
+    const onlyAInCatalog = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        hotels: [{ id: "a", name: "Hotel A", websiteDomain: null }],
         organizations: [],
         ...emptyCatalogFields,
       },
       [],
     );
-    expect(results).toHaveLength(2);
-    const unresolved = results.find((r) => r.observation.observedName === "New Startup Hotel");
-    const resolved = results.find((r) => r.observation.observedName === "A7 Split Hotel Beta");
-    expect(unresolved).toBeDefined();
-    expect(unresolved!.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
-    expect(unresolved!.links).toHaveLength(0);
-    expect(resolved).toBeDefined();
-    expect(resolved!.observation.machineCanonicalLinkAssessment).toBe("strong_match");
-    expect(resolved!.links).toHaveLength(1);
+    const bothInCatalog = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        hotels: [
+          { id: "a", name: "Hotel A", websiteDomain: null },
+          { id: "b", name: "Hotel B", websiteDomain: null },
+        ],
+        organizations: [],
+        ...emptyCatalogFields,
+      },
+      [],
+    );
+    const fingerprintsOf = (results: typeof neitherInCatalog) =>
+      results.map((r) => r.observation.observationFingerprint).sort();
+    expect(neitherInCatalog).toHaveLength(2);
+    expect(fingerprintsOf(onlyAInCatalog)).toEqual(fingerprintsOf(neitherInCatalog));
+    expect(fingerprintsOf(bothInCatalog)).toEqual(fingerprintsOf(neitherInCatalog));
+    // Only the resolution differs.
+    expect(neitherInCatalog.every((r) => r.links.length === 0)).toBe(true);
+    expect(onlyAInCatalog.filter((r) => r.links.length > 0)).toHaveLength(1);
+    expect(bothInCatalog.filter((r) => r.links.length > 0)).toHaveLength(2);
+  });
+
+  it("required test G: comma list 'Hotel A, Hotel B, Hotel C' produces the SAME private-observation set regardless of which of A/B/C exist in the catalog", () => {
+    const text = "collaborate with Hotel A, Hotel B, Hotel C";
+    const none = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      { hotels: [], organizations: [], ...emptyCatalogFields },
+      [],
+    );
+    const all = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        hotels: [
+          { id: "a", name: "Hotel A", websiteDomain: null },
+          { id: "b", name: "Hotel B", websiteDomain: null },
+          { id: "c", name: "Hotel C", websiteDomain: null },
+        ],
+        organizations: [],
+        ...emptyCatalogFields,
+      },
+      [],
+    );
+    const fingerprintsOf = (results: typeof none) =>
+      results.map((r) => r.observation.observationFingerprint).sort();
+    expect(none).toHaveLength(3);
+    expect(fingerprintsOf(all)).toEqual(fingerprintsOf(none));
+  });
+
+  it("F2: direct property-style invariance proof — for one fixed source text, the private-observation-fingerprint SET is identical across arbitrary catalog-only changes", () => {
+    const text =
+      "I'd love to collaborate with Smith & Jones. I'd also love to feature Hotel A and Hotel B. I'd love to work with Bank of America.";
+    // Deliberately includes DISTRACTOR catalog rows that would have caused
+    // fragmentation under the pre-Amendment-8 catalog-aware algorithm
+    // ("Jones" and "America" colliding with fragments of "Smith & Jones" and
+    // "Bank of America") — none of them may perturb segmentation now.
+    const catalogStateA = { hotels: [], organizations: [], ...emptyCatalogFields };
+    const catalogStateB = {
+      hotels: [
+        { id: "a", name: "Hotel A", websiteDomain: null },
+        { id: "jones", name: "Jones", websiteDomain: null },
+        { id: "america", name: "America", websiteDomain: null },
+      ],
+      organizations: [{ id: "smith", name: "Smith", websiteDomain: null }],
+      ...emptyCatalogFields,
+    };
+    const resultsA = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      catalogStateA,
+      [],
+    );
+    const resultsB = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      catalogStateB,
+      [],
+    );
+    const fingerprintsOf = (results: typeof resultsA) =>
+      results.map((r) => r.observation.observationFingerprint).sort();
+    expect(resultsA).toHaveLength(4); // Smith & Jones, Hotel A, Hotel B, Bank of America
+    expect(fingerprintsOf(resultsB)).toEqual(fingerprintsOf(resultsA));
   });
 });
 

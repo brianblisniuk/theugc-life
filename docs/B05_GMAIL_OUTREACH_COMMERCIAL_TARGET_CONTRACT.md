@@ -260,38 +260,39 @@ fact itself:
    compete with Hotel B's genuine directed evidence. Precision over recall —
    the check abstains whenever it is uncertain, never inferred from general
    proximity or sentiment.
-2. **Safe coordinated-list segmentation** (EXTERNAL AUDIT AMENDMENT #7,
-   Finding 2): a maximal run of capitalized-word chunks immediately following
-   the verb phrase, joined by commas/"and"/"&"/"of"/"the"/"de"/"la", stopping
-   at the first token that is none of those (and never crossing a
-   sentence/paragraph boundary or a semicolon — each clause is scanned
-   independently). Within that run, comma is always a genuine list separator,
-   and `of`/`the`/`de`/`la` are NEVER separators at all — they remain
-   permanently internal to one institutional name ("Bank of America", "Hotel
-   de Paris"), so a bare fragment like "America" or "Paris" is never even
-   generated as a candidate. Only `and`/`&` are genuinely ambiguous
-   ("Hotel A and Hotel B" vs. "Johnson & Johnson"), and that ambiguity is
-   resolved conservatively, with REAL catalog evidence, never a guess: if the
-   FULL span exactly matches one real canonical business, it is ONE target
-   (never split, even if it contains "and"/"&" internally — "Johnson &
-   Johnson" is never split into "Johnson" + "Johnson" merely because a
-   separate "Johnson" also happens to exist in the catalog); otherwise, if AT
-   LEAST ONE segment exactly matches a real canonical business, that is
-   genuine evidence this IS a coordinated list, not one run-on name — every
-   segment is then split out as its own candidate (a segment that itself
-   matches nothing is not thereby discarded — EXTERNAL AUDIT AMENDMENT #7,
-   Finding 1: it still becomes its own unresolved private fact, e.g. a
-   coordinated list naming one business the catalog doesn't know about yet
-   alongside one it does); otherwise — NEITHER the whole span nor any segment
-   matches anything real — the structure is genuinely ambiguous and the safe
-   choice is ONE unresolved private observation for the whole span, never a
-   fabricated split into several target identities out of thin air. With no
-   catalog to check against at all, no split is ever made. Amendment #4/#5's
-   original per-phrase check
-   required the verb immediately before EACH name, so a natural list like
-   "collaborate with Hotel A and Hotel B" only ever recognized Hotel A —
-   multi-property/multi-brand outreach is a core real-world case this now
-   handles, without fabricating targets out of one institutional name.
+2. **Safe, SOURCE-ONLY coordinated-list segmentation** (EXTERNAL AUDIT
+   AMENDMENT #8, Finding 1, superseding Amendment #7's catalog-aware version
+   of this rule — see the Amendment #8 appendix below for why that version
+   was itself a D070 §8 violation one level deeper): a maximal run of
+   capitalized-word chunks immediately following the verb phrase, joined by
+   commas/"and"/"&"/"of"/"the"/"de"/"la", stopping at the first token that is
+   none of those (and never crossing a sentence/paragraph boundary or a
+   semicolon — each clause is scanned independently). This entire
+   segmentation step — `resolveTargetDirectedPhrases`/
+   `computeTargetDirectedPhrases` — takes NO catalog parameter at all; it is a
+   pure function of the source text alone, so the exact same private-fact
+   phrase set is produced no matter what canonical inventory currently
+   contains. Within the run: comma is always a genuine list separator;
+   `of`/`the`/`de`/`la` are NEVER separators at all — permanently internal to
+   one institutional name ("Bank of America", "Hotel de Paris"), so a bare
+   fragment like "America" or "Paris" is never even generated as a candidate.
+   `&` is NEVER a split point at all — treated even MORE conservatively than
+   "and" because it is extremely common inside one real legal/brand name
+   ("Johnson & Johnson", "Smith & Jones", "Procter & Gamble" are always ONE
+   phrase, regardless of what canonical inventory does or does not contain).
+   "and" MAY split into independent phrases, but ONLY when the source text
+   itself shows strong, deterministic structural evidence of a genuine
+   parallel list: every resulting segment is multi-word AND shares the
+   identical leading word ("Hotel A and Hotel B", "Resort Alpha and Resort
+   Beta" — the repeated "type word" is real textual evidence). Any other
+   "and" span ("Nike and Adidas", "Smith and Jones") has no such source-only
+   evidence either way and is preserved as ONE unresolved phrase — precision
+   over recall; a human or a future, separately-versioned matcher may resolve
+   it later. Amendment #4/#5's original per-phrase check required the verb
+   immediately before EACH name, so a natural list like "collaborate with
+   Hotel A and Hotel B" only ever recognized Hotel A — multi-property/
+   multi-brand outreach is a core real-world case this now handles, without
+   ever letting canonical inventory decide a private fact's shape.
 
 An observation whose phrase resolves to ZERO real canonical businesses today
 is still created — `machine_canonical_link_assessment = 'insufficient_
@@ -1295,3 +1296,60 @@ stored assessment changes shape or value because of it), so it alone would
 not require a bump; it is bumped anyway because Findings 1/2 already require
 it. `OUTREACH_DETECTOR_VERSION` and `CLASSIFIER_INPUT_TRANSFORM_VERSION` are
 unchanged.
+
+## External Audit Amendment #8 — source-stable private-target segmentation, D070 unchanged
+
+One P0 contract-compliance finding against the Amendment #7 head. **No
+product decision in D070 was reopened.** Every fix listed in Amendments
+#1-#7 remains exactly as accepted, EXCEPT that Amendment #7's own
+coordinated-list segmentation rule (§7a item 2, "at least one segment
+matches a real canonical business") is itself corrected below — it was a
+genuine, real regression against D070 §8 that Amendment #7 did not go far
+enough to fix.
+
+1. **Private target observation segmentation must not depend on canonical
+   inventory (Finding 1).** D070 §8 says a commercial target is FIRST a
+   private fact, independent of canonical inventory — canonical linkage is a
+   later, separate 0..N judgement. Amendment #7 correctly applied this to
+   whether an ALREADY-SEGMENTED phrase gets discarded for lacking a canonical
+   match, but its coordinated-list segmentation itself still let canonical
+   inventory decide the SHAPE of a private fact: "at least one `and`/`&`
+   segment matches a real canonical business" was used as evidence that a
+   span was a genuine list. This meant a source phrase like "collaborate with
+   Smith & Jones" (one real company) could be fragmented into "Smith" +
+   "Jones" purely because an UNRELATED canonical business happened to be
+   named "Smith" — and, worse, a later catalog-only mutation (adding that
+   unrelated "Smith" row) could change the CURRENT set of private
+   observations for unchanged Gmail evidence, exactly the D070 §8 violation
+   this contract exists to prevent.
+
+   The fix makes source-fact segmentation (`resolveTargetDirectedPhrases`/
+   `computeTargetDirectedPhrases`) a pure function of the SOURCE TEXT ALONE —
+   it takes no catalog parameter at all, so the exact same private-fact
+   phrase set (and the exact same `observation_fingerprint` set) is produced
+   for the same Gmail text regardless of what canonical inventory currently
+   contains. Canonical matching (`computeAuthoredTextTargetEvidence`/
+   `extractAuthoredTextTargetObservations`) still receives the catalog, but
+   strictly for STEP B — resolving an already-fixed phrase to 0..N canonical
+   links — never for deciding which phrases exist as private facts (STEP A).
+
+   The new source-only segmentation rule: `of`/`the`/`de`/`la` remain never
+   separators (unchanged from Amendment #7). `&` is now NEVER a split point
+   at all — treated even MORE conservatively than "and" because it is
+   extremely common inside one real legal/brand name ("Johnson & Johnson",
+   "Smith & Jones", "Procter & Gamble" always stay one phrase, regardless of
+   catalog state). "and" may split into independent phrases ONLY when the
+   source text itself shows strong, deterministic structural evidence — every
+   resulting segment is multi-word and shares the identical leading word
+   ("Hotel A and Hotel B", "Resort Alpha and Resort Beta"). Any other "and"
+   span ("Nike and Adidas") has no such evidence and is preserved as ONE
+   unresolved private fact — precision over recall, never a guess informed by
+   canonical inventory. Amendment #7's own unit test asserting that a partial
+   canonical match causes a split ("only ONE item matches... still split into
+   TWO independent targets") encoded exactly the now-rejected behavior and
+   has been replaced with tests proving the opposite.
+
+`TARGET_MATCHER_VERSION` is bumped to `_v8` to reflect Finding 1 changing
+real segmentation/observation-identity behavior — every previously-evaluated
+thread is offered for re-evaluation. `OUTREACH_DETECTOR_VERSION` and
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged.

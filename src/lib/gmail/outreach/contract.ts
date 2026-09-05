@@ -85,8 +85,26 @@ export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v4";
  * machine-state read surface is a read-path change, not a matching rule, so
  * it alone would not require a bump — it is bumped anyway because Findings
  * 1/2 already require it.)
+ * `_v8` (EXTERNAL AUDIT AMENDMENT #8, Finding 1): `_v7`'s coordinated-list
+ * segmentation was ITSELF still a D070 §8 violation — canonical inventory
+ * (whether "at least one segment" happened to match a real business) decided
+ * the SHAPE/IDENTITY of a private Gmail fact, so adding or removing an
+ * unrelated canonical row could change which private facts exist and their
+ * current-vs-historical membership, never just their resolution. Source-fact
+ * segmentation (`resolveTargetDirectedPhrases`/`computeTargetDirectedPhrases`)
+ * no longer accepts a catalog parameter AT ALL — it is now a pure function of
+ * the source text alone, so the exact same private-observation-fingerprint
+ * set is produced for any catalog state. `&` is now NEVER a split point
+ * (more conservative than `and` — "Johnson & Johnson", "Smith & Jones" are
+ * always one phrase, regardless of what canonical inventory contains); `and`
+ * only splits when the source text itself shows two multi-word segments
+ * sharing an identical leading word ("Hotel A and Hotel B", "Resort Alpha and
+ * Resort Beta") — real, deterministic, source-only structural evidence of a
+ * parallel list. Any other `and`/`&` span with no such source-only evidence
+ * ("Nike and Adidas") is preserved as ONE unresolved private fact — a
+ * conservative abstention, not a guess informed by canonical inventory.
  */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v7";
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v8";
 /**
  * Versioned heuristic classifier-input transform (quote/HTML handling,
  * signature stripping). `_v3` (Finding 7): also splits a message into a
