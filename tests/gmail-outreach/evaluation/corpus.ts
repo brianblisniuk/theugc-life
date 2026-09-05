@@ -232,6 +232,30 @@ export const FINAL_INTERPRETATION_CORPUS: readonly FinalInterpretationExample[] 
     sentBodies: ["Hi there, hope you are well. Talk soon."],
     toRecipient: "someone@fi-other-hotel.example",
   },
+  {
+    // EXTERNAL AUDIT AMENDMENT #6, Finding 6: a NATURAL coordinated
+    // multi-target list — the commercial verb is NOT repeated before each
+    // item — is exactly the real-world phrasing this evaluation must guard
+    // against regressing (Finding 1's fix). Deliberately distinct from
+    // "collaborate with Hotel A and also collaborate with Hotel B", which
+    // would pass even without the coordinated-list fix. A FREEMAIL recipient
+    // means `qualified_outreach` can ONLY be reached via the authored-text
+    // coordinated-list match succeeding — a non-freemail recipient would
+    // qualify via domain evidence alone regardless of whether the
+    // coordinated-list fix regresses. Only "FI Multi Hotel Beta" (the
+    // SECOND, non-verb-adjacent item) is a real catalog hotel — recognizing
+    // it can ONLY happen via the coordinated-list fix, never the original
+    // per-phrase-adjacency-only check (which only ever recognized the FIRST
+    // item, directly next to the verb).
+    id: "fi-6",
+    gold: "qualified_outreach",
+    subject: "Multi-property collaboration",
+    sentBodies: [
+      "I'd love to collaborate with FI Multi Hotel Alpha and FI Multi Hotel Beta during my upcoming trip.",
+    ],
+    toRecipient: "someone@gmail.com",
+    hotelName: "FI Multi Hotel Beta",
+  },
 ];
 
 export interface TargetMatchExample {

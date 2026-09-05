@@ -149,7 +149,13 @@ is a deterministic digest over `(observation_source_kind, observed_domain,
 normalized observed_name)` (`computeTargetObservationFingerprint`) — the
 source kind is itself part of the digest so the two kinds can never collide,
 even when they end up pointing at the same canonical business via their own
-independent canonical links. Identity fields (`observed_name`,
+independent canonical links. EXTERNAL AUDIT AMENDMENT #6, Finding 4: the name
+is normalized with the EXACT SAME `normalizeName()` definition canonical
+exact-matching (`namesMatchExactly`, SQL's `private.normalize_business_name`)
+already uses — never a separate, laxer `trim().toLowerCase()` — so a
+punctuation/case-only variant of the same authored name across a B04 rebuild
+("Acme-Hotel" vs "Acme Hotel") reconciles onto the SAME private fact instead
+of forking a spurious duplicate. Identity fields (`observed_name`,
 `observed_domain`, `target_kind_hint`, `observation_source_kind`) are written
 once per `(mail_account_id, normalized_thread_id, observation_fingerprint)`
 and never rewritten by a later re-run — the commit RPC's `on conflict ... do
@@ -166,6 +172,25 @@ so an additional SENT follow-up naming the same target fact honestly adds to
 its supporting evidence rather than being silently dropped or left to drift
 out of sync with the fact it supports. Explicit account deletion still
 purges every row regardless of which fingerprint it carries.
+
+**Machine current-membership vs durable historical existence** (EXTERNAL
+AUDIT AMENDMENT #6, Finding 3): `machine_is_current` is an explicit ADVISORY
+flag, distinct from the row's own durable existence. `gmail_outreach_commit_
+interpretation` sets it `true` for every observation fingerprint present in
+the COMPLETE current set it was given for a thread (recipient/target
+extraction runs unconditionally on every evaluation, EXTERNAL AUDIT AMENDMENT
+#1 Finding 7 — so this set is always the true current picture, never a
+partial delta), and `false` for every OTHER previously-current row for that
+thread absent from it — identity fields and any human confirmation are never
+touched either way. A fact that later genuinely reappears in current evidence
+simply flips back to `true` on the SAME durable row, never fabricating a new
+human decision. `interpretOneThread`'s own scope/target-contact-corroboration
+computations naturally only ever see the CURRENT call's freshly-extracted
+observations — they never need a separate current-only filter — but any
+OTHER reader of this table (a future review surface, an audit query) should
+filter on `machine_is_current = true` for "the machine's current
+interpretation" and drop the filter only when it deliberately wants full
+history.
 
 ## 7a. Creator-authored target-name evidence — an INDEPENDENT private observation
 
@@ -196,16 +221,29 @@ text. A phrase becomes real target evidence only when BOTH:
    `private.normalize_business_name` server-side) so such a business enters
    the candidate universe even when its domain/contact is unrelated to the
    recipient; AND
-2. (EXTERNAL AUDIT AMENDMENT #5, Finding 3) the exact match sits in a
-   conservative, deterministic, versioned TARGET-DIRECTED context —
-   `isTargetDirectedContext` requires a verb phrase such as "collaborate
-   with", "partnership with", "feature", "pitch to", "stay at" or "work
-   with" immediately preceding the matched name. A bare business-name
-   MENTION is not automatically a mention DIRECTED AT that business as a
-   commercial target: "I worked with Marriott last year" must not satisfy
-   D070 §5's requirement 3 merely because "Marriott" exact-matches a real
-   canonical business. Precision over recall — the check abstains whenever
-   it is uncertain, never inferred from general proximity or sentiment.
+2. (EXTERNAL AUDIT AMENDMENT #5, Finding 3; extended by AMENDMENT #6, Finding
+   1) the exact match sits in a conservative, deterministic, versioned
+   TARGET-DIRECTED context — `isTargetDirectedContext` requires a verb phrase
+   such as "collaborate with", "partnership with", "feature", "pitch to",
+   "stay at" or "work with" immediately preceding the matched name, OR the
+   matched name is a member of a bounded coordinated LIST immediately
+   following such a verb phrase ("collaborate with Hotel A and Hotel B",
+   "feature Hotel A, Hotel B and Hotel C") — a maximal run of capitalized-
+   word chunks joined solely by commas/"and"/"&"/"of"/"the"/"de"/"la",
+   stopping at the first token that is none of those, and NEVER crossing a
+   sentence/paragraph boundary or a semicolon (each clause is scanned
+   independently). Amendment #4/#5's original per-phrase check required the
+   verb immediately before EACH name, so a natural list like "collaborate
+   with Hotel A and Hotel B" only ever recognized Hotel A — multi-property/
+   multi-brand outreach is a core real-world case this now handles. A bare
+   business-name MENTION is still not automatically a mention DIRECTED AT
+   that business as a commercial target: "I worked with Marriott last year"
+   must not satisfy D070 §5's requirement 3 merely because "Marriott"
+   exact-matches a real canonical business, and "Hotel A was a previous
+   client; I'd like to collaborate with Hotel B" must never let Hotel A's
+   historical mention compete with Hotel B's genuine directed evidence.
+   Precision over recall — the check abstains whenever it is uncertain,
+   never inferred from general proximity or sentiment.
 
 Extraction runs per-SENT-message (never over a thread-joined blob) so
 provenance identifies the EXACT provider message(s) that named the target,
@@ -253,6 +291,18 @@ contact relevance into a `recipient_domain` observation's own universe
 always `agrees` for its one identifying business. Wholesale replaced per
 observation on each re-evaluation; never creates or mutates `public.hotels`/
 `public.organizations`.
+
+`name_evidence` is always `unavailable` in V1 (EXTERNAL AUDIT AMENDMENT #6,
+Finding 2) — it is reserved for genuine BUSINESS-name evidence, and a
+recipient's display name ("Jane Smith") is contact/person evidence, never
+that. A prior implementation compared a recipient's display name against a
+candidate's canonical name via loose substring containment, which could turn
+a contact literally or partially named after a property (e.g. a person named
+"Marriott") into a false `agrees` for "Marriott Miami Biscayne Bay" — D028
+already rejects fuzzy similarity as identity-resolving evidence, and this
+was exactly that. The field remains in the shape so a future, separately-
+contracted, explicitly business-name evidence source can populate it without
+a schema change.
 
 ## 9. Observed recipients
 
@@ -1048,3 +1098,69 @@ thread is offered for re-evaluation. `OUTREACH_DETECTOR_VERSION` and
 `CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged (Findings 1-3 land
 entirely in target-extraction/service, not the classifier or the text
 transform).
+
+## External Audit Amendment #6 — final target-fact identity + currentness hardening, D070 unchanged
+
+A four-finding follow-up against the Amendment #5 head. **No product decision
+in D070 was reopened**, and every fix listed in Amendments #1-#5 remains
+exactly as accepted.
+
+1. **Natural coordinated commercial-target lists preserve every target
+   (Finding 1).** The target-directed-context check (§7a) required a verb
+   phrase IMMEDIATELY before EACH extracted business name — "I'd love to
+   collaborate with Hotel A and Hotel B" therefore only ever recognized
+   Hotel A, since Hotel B is preceded by "and", not by another "collaborate
+   with". Multi-property/multi-brand outreach is a core real-world case.
+   `isTargetDirectedContext` now also recognizes a bounded, conservative
+   coordinated LIST immediately following the verb phrase — a maximal run of
+   capitalized-word chunks joined solely by commas/"and"/"&"/"of"/"the"/
+   "de"/"la", stopping at the first token that is none of those. This NEVER
+   propagates across a sentence, paragraph, or semicolon boundary — each
+   clause is scanned independently, so "Hotel A was a previous client;
+   collaborate with Hotel B" still recognizes Hotel B only, and a historical
+   mention still never competes with a genuine directed pitch to a different
+   target. `extractAuthoredTextNameCandidates` itself was also corrected to
+   treat `,`/`;`/`.`/`!`/`?`/`:` as phrase-breaking separators rather than
+   silently stripping them from a word's trailing edge, which had been
+   merging phrases across list-item and even clause boundaries into one
+   garbled string that could exact-match no real business at all.
+2. **A recipient's display NAME is contact/person evidence, never business-
+   target identity (Finding 2).** `recipient_domain` observation identity and
+   `name_evidence` used to read a recipient's display name as if it were
+   independent business-name corroboration (substring containment) — a
+   contact literally or partially named after a property could falsely
+   corroborate that property as the target, and a contact-person change at
+   the SAME domain (a hire, a departure) could in principle disturb a stable
+   fact. `observed_name` is now always `null` and `name_evidence` always
+   `unavailable` for `recipient_domain` observations; identity is the
+   BUSINESS DOMAIN alone. A recipient's display name remains exactly where
+   it belongs — `gmail_outreach_observed_recipients`, contact/person
+   evidence — never conflated with commercial-target identity again.
+3. **Explicit machine current-membership (Finding 3).** §7's
+   `machine_is_current` flag distinguishes "the machine's CURRENT
+   interpretation includes this fact" from "this fact was ever durably
+   observed" — human-history preservation (a row is never deleted just
+   because a later interpretation stops supporting it) was already correct,
+   but there was previously no way to tell the two apart. Set by
+   `gmail_outreach_commit_interpretation` from the COMPLETE current
+   observation set every evaluation always computes (recipient/target
+   extraction runs unconditionally, Amendment #1 Finding 7) — never
+   disturbed by a catalog-only fast-path refresh whose source membership
+   hasn't changed, and correctly reactivated (never re-fabricating a human
+   decision) when a fact genuinely reappears in current evidence.
+4. **Authored-target identity normalization parity (Finding 4).**
+   `computeTargetObservationFingerprint` normalized `observedName` with a
+   bare `trim().toLowerCase()`, a laxer definition than the
+   `normalizeName()`/`private.normalize_business_name` semantics canonical
+   exact-matching already uses (lower-case, every run of non-alphanumeric
+   characters collapsed to one space, trim) — so a punctuation-only rebuild
+   variant of the SAME authored name ("Acme-Hotel" vs "Acme Hotel") could
+   fork a spurious duplicate private fact despite resolving to the identical
+   canonical business. Both now share the ONE normalization definition.
+
+`TARGET_MATCHER_VERSION` is bumped to `_v6` to reflect Findings 1/2/4
+changing real matching/observation-identity behavior — every previously-
+evaluated thread is offered for re-evaluation. Finding 3 is a schema/
+bookkeeping addition, not a classification/matching rule change, and does
+not itself trigger the bump. `OUTREACH_DETECTOR_VERSION` and `CLASSIFIER_
+INPUT_TRANSFORM_VERSION` are unchanged.

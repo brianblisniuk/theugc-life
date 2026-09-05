@@ -597,6 +597,19 @@ create table private.gmail_outreach_target_observations (
   matcher_version text check (matcher_version ~ '^[a-z][a-z0-9_]{0,63}$'),
   evaluated_epoch bigint,
   candidate_set_fingerprint text check (candidate_set_fingerprint ~ '^[0-9a-f]{64}$'),
+  -- EXTERNAL AUDIT AMENDMENT #6, Finding 3: explicit MACHINE current-
+  -- membership, distinct from durable historical existence. Human-history
+  -- preservation (this row is never deleted just because a later
+  -- interpretation stops supporting it) is correct and unchanged — but
+  -- without this flag there was no way to tell "the machine's CURRENT
+  -- interpretation still includes this fact" apart from "this fact was ever
+  -- observed". `gmail_outreach_commit_interpretation` sets this `true` for
+  -- every observation fingerprint present in the COMPLETE current set it
+  -- was given for a thread, and `false` for every OTHER previously-current
+  -- row for that thread absent from it — never touching identity fields or
+  -- any human confirmation. A fact that later genuinely reappears in current
+  -- evidence simply flips back to `true` on the SAME durable row.
+  machine_is_current boolean not null default true,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -2036,11 +2049,17 @@ begin
     -- represented, not silently dropped. It only ever GROWS (a distinct
     -- union), never loses a previously-proven id, and every id in it has
     -- already been proven above to belong to this exact thread/account.
+    -- EXTERNAL AUDIT AMENDMENT #6, Finding 3: every observation present in
+    -- THIS call's complete current set is (re)marked current — including one
+    -- that had gone `machine_is_current = false` after an earlier run
+    -- stopped supporting it and has now genuinely reappeared (a real fact
+    -- reactivation, never a fabricated human decision).
     update private.gmail_outreach_target_observations
        set machine_canonical_link_assessment = v_observation ->> 'machine_canonical_link_assessment',
            matcher_version = p_matcher_version,
            evaluated_epoch = p_catalog_epoch,
            candidate_set_fingerprint = v_observation ->> 'candidate_set_fingerprint',
+           machine_is_current = true,
            source_provider_message_ids = (
              select array_agg(distinct x)
                from unnest(
@@ -2084,6 +2103,26 @@ begin
     v_observation_id := null;
     v_existing_observation_fingerprint := null;
   end loop;
+
+  -- EXTERNAL AUDIT AMENDMENT #6, Finding 3: `p_target_observations` is
+  -- ALWAYS the COMPLETE current set for this thread — target/recipient
+  -- extraction runs unconditionally on every evaluation (EXTERNAL AUDIT
+  -- AMENDMENT #1, Finding 7), never a partial delta — so every OTHER
+  -- previously-current row for this thread that this call did NOT include
+  -- genuinely no longer has current support and is marked historical here.
+  -- This NEVER deletes the row (durable historical existence is preserved,
+  -- exactly like a fingerprint fork leaves an old fact's row alone) and
+  -- NEVER touches a human confirmation — only the MACHINE `machine_is_
+  -- current` advisory flag changes.
+  update private.gmail_outreach_target_observations o
+     set machine_is_current = false
+   where o.mail_account_id = p_mail_account_id
+     and o.normalized_thread_id = p_normalized_thread_id
+     and o.machine_is_current = true
+     and not exists (
+       select 1 from jsonb_array_elements(coalesce(p_target_observations, '[]'::jsonb)) v
+        where v ->> 'observation_fingerprint' = o.observation_fingerprint
+     );
 
   return jsonb_build_object('result', 'ok', 'normalized_thread_id', p_normalized_thread_id);
 end;

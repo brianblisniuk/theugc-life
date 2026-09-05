@@ -13,6 +13,7 @@ import { buildSanitizedMessage, insertRawMessage } from "../gmail-normalize/harn
 import { createRpcClient } from "../gmail/rpc-harness";
 import {
   connectedMailbox,
+  insertHotel,
   observedRecipientsOf,
   outreachDeps,
   randomProviderId,
@@ -186,12 +187,14 @@ async function normalizeFixture(input: {
   providerThreadId: string;
   internalDateMs: number;
   to: string;
+  body?: string;
 }) {
   const normalizeDeps = {
     db: createRpcClient(
       client,
     ) as unknown as import("@/lib/gmail/normalize/service").NormalizeDeps["db"],
   };
+  const bodyText = input.body ?? "I'd love to collaborate on a partnership";
   const sanitized = buildSanitizedMessage({
     providerMessageId: input.providerMessageId,
     providerThreadId: input.providerThreadId,
@@ -203,10 +206,7 @@ async function normalizeFixture(input: {
     ],
     payload: {
       mimeType: "text/plain",
-      body: {
-        size: 40,
-        data: Buffer.from("I'd love to collaborate on a partnership", "utf8").toString("base64url"),
-      },
+      body: { size: bodyText.length, data: Buffer.from(bodyText, "utf8").toString("base64url") },
     },
   });
   const raw = await insertRawMessage(client, {
@@ -650,11 +650,23 @@ d("B05 Finding 2: a creator decision is ALSO new processing, gated identically",
 d(
   "B05 Finding 3: private target observations are provenance-stable — material evidence changes fork a NEW fact",
   () => {
-    it("A: a material change in observed target name at the SAME domain forks a NEW fact; the old confirmed fact is untouched; canonical links never cross-contaminate; no creator event is fabricated", async () => {
+    it("A: a material change in the authored-text target name forks a NEW fact; the old confirmed fact is untouched; canonical links never cross-contaminate; no creator event is fabricated", async () => {
+      // EXTERNAL AUDIT AMENDMENT #6, Finding 2: `recipient_domain` observation
+      // identity no longer depends on any name at all (a recipient's display
+      // name is contact/person evidence, never business identity — see
+      // unit.test.ts) — a `recipient_domain` observation at the SAME domain
+      // can no longer fork on a "name" change, because it never carried a
+      // business name in the first place. The fork-on-material-evidence-
+      // change PRINCIPLE this test proves now lives on the authored-text-name
+      // observation path instead (EXTERNAL AUDIT AMENDMENT #5, Finding 1) — a
+      // freemail recipient isolates the test to that path alone, exactly like
+      // the analogous case in audit-amendment-5.test.ts.
       const { userId, mailAccountId } = await connectedMailbox(client, "b05-a3-f3-fork");
       const deps = outreachDeps(client);
       const providerThreadId = randomProviderId("thread");
       const providerMessageId = randomProviderId("msg");
+      await insertHotel(client, { name: "A3F3 Hotel Alpha" });
+      await insertHotel(client, { name: "A3F3 Hotel Beta" });
 
       const { normalizedThreadId } = await normalizeFixture({
         userId,
@@ -662,7 +674,8 @@ d(
         providerMessageId,
         providerThreadId,
         internalDateMs: 1_700_000_000_000,
-        to: "Hotel A <marketing@a3f3-chain.example>",
+        to: "someone@gmail.com",
+        body: "I'd love to collaborate with A3F3 Hotel Alpha on a partnership",
       });
       const outcome1 = await interpretOneThread(deps, {
         userId,
@@ -673,7 +686,8 @@ d(
 
       const observationsV1 = await targetObservationsOf(client, normalizedThreadId);
       expect(observationsV1).toHaveLength(1);
-      expect(observationsV1[0]!.observed_name).toBe("Hotel A");
+      expect(observationsV1[0]!.observed_name).toBe("A3F3 Hotel Alpha");
+      expect(observationsV1[0]!.observation_source_kind).toBe("authored_text_name");
       const originalObservationId = observationsV1[0]!.id;
 
       const confirm = await recordCreatorDecisionAs(client, userId, deps, {
@@ -687,10 +701,11 @@ d(
 
       // SOURCE REBUILD/CHANGE (the audit's own scenario): the SAME message is
       // corrected — a real B04 invalidation-and-rebuild (0038 §7) — and the
-      // corrected evidence names a MATERIALLY DIFFERENT target at the SAME
-      // domain. This is not a second message; it is the existing message's
-      // own evidence changing underneath the same durable thread.
+      // corrected evidence names a MATERIALLY DIFFERENT authored target. This
+      // is not a second message; it is the existing message's own evidence
+      // changing underneath the same durable thread.
       const { updateRawMessage } = await import("../gmail-normalize/harness");
+      const bodyV2 = "Actually, I'd love to collaborate with A3F3 Hotel Beta instead.";
       const sanitizedV2 = buildSanitizedMessage({
         providerMessageId,
         providerThreadId,
@@ -698,16 +713,11 @@ d(
         labelIds: ["SENT"],
         messageHeaders: [
           { name: "subject", value: "Collaboration opportunity" },
-          { name: "to", value: "Hotel B <marketing@a3f3-chain.example>" },
+          { name: "to", value: "someone@gmail.com" },
         ],
         payload: {
           mimeType: "text/plain",
-          body: {
-            size: 40,
-            data: Buffer.from("I'd love to collaborate on a partnership", "utf8").toString(
-              "base64url",
-            ),
-          },
+          body: { size: bodyV2.length, data: Buffer.from(bodyV2, "utf8").toString("base64url") },
         },
       });
       const raw2 = await updateRawMessage(client, {
@@ -743,8 +753,13 @@ d(
 
       const oldFact = observationsV2.find((o) => o.id === originalObservationId)!;
       const newFact = observationsV2.find((o) => o.id !== originalObservationId)!;
-      expect(oldFact.observed_name).toBe("Hotel A"); // identity never rewritten
-      expect(newFact.observed_name).toBe("Hotel B");
+      expect(oldFact.observed_name).toBe("A3F3 Hotel Alpha"); // identity never rewritten
+      expect(newFact.observed_name).toBe("A3F3 Hotel Beta");
+      // EXTERNAL AUDIT AMENDMENT #6, Finding 3: the superseded fact is
+      // preserved for history but is no longer part of the machine's CURRENT
+      // interpretation; the new fact is.
+      expect(oldFact.machine_is_current).toBe(false);
+      expect(newFact.machine_is_current).toBe(true);
 
       // The old fact's confirmation is untouched.
       const oldConfirmation = await client.query(
@@ -766,21 +781,18 @@ d(
       expect(events.rows[0].n).toBe(1);
 
       // Canonical links for the new fact are never attached to the old fact
-      // and vice versa.
-      const oldLinksBelongToOld = await client.query(
-        "select count(*)::int as n from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
+      // and vice versa — each has exactly its OWN matched hotel, never both.
+      const oldLinks = await client.query(
+        "select target_hotel_id from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
         [originalObservationId],
       );
-      const newLinksBelongToNew = await client.query(
-        "select count(*)::int as n from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
+      const newLinks = await client.query(
+        "select target_hotel_id from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
         [newFact.id],
       );
-      // (No canonical catalog rows exist in this test, so both are legitimately
-      // zero — the assertion that matters is that querying by the WRONG
-      // observation id never returns the other fact's links, proven by the
-      // FK-scoped queries above returning independently-computed counts.)
-      expect(oldLinksBelongToOld.rows[0].n).toBe(0);
-      expect(newLinksBelongToNew.rows[0].n).toBe(0);
+      expect(oldLinks.rows).toHaveLength(1);
+      expect(newLinks.rows).toHaveLength(1);
+      expect(oldLinks.rows[0].target_hotel_id).not.toBe(newLinks.rows[0].target_hotel_id);
     });
 
     it("B: the SAME target named again in an additional SENT follow-up reconciles onto the SAME fact, and its provenance honestly grows", async () => {

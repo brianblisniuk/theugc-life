@@ -103,14 +103,6 @@ function normalizeName(name: string): string {
     .trim();
 }
 
-function nameOverlap(a: string | null, b: string): boolean {
-  if (!a) return false;
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
-  if (na.length === 0 || nb.length === 0) return false;
-  return na.includes(nb) || nb.includes(na);
-}
-
 function namesMatchExactly(a: string, b: string): boolean {
   const na = normalizeName(a);
   const nb = normalizeName(b);
@@ -141,7 +133,21 @@ export function extractAuthoredTextNameCandidates(text: string): string[] {
     current = [];
   };
 
-  for (const rawWord of text.split(/\s+/)) {
+  // EXTERNAL AUDIT AMENDMENT #6, Finding 1: `,`/`;`/`.`/`!`/`?`/`:` are
+  // SEPARATORS — between distinct list items ("Hotel A, Hotel B, and Hotel
+  // C") or between distinct clauses/sentences ("Hotel A; Hotel B was a
+  // previous client") — never part of a real institutional name. Spaced out
+  // into their own tokens so they always FLUSH the phrase-in-progress,
+  // rather than being silently stripped from a word's trailing edge (which
+  // previously merged e.g. "Hotel A; Hotel B" into one garbled "Hotel A
+  // Hotel B" phrase spanning a clause boundary it should never have crossed,
+  // and could exact-match neither real name).
+  const DELIMITERS = new Set([",", ";", ".", "!", "?", ":"]);
+  for (const rawWord of text.replace(/[,;.!?:]/g, " $& ").split(/\s+/)) {
+    if (DELIMITERS.has(rawWord)) {
+      flush();
+      continue;
+    }
     const word = rawWord.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9''-]+$/g, "");
     if (word === "") {
       flush();
@@ -209,15 +215,55 @@ const TARGET_DIRECTED_VERB_PHRASES: readonly string[] = [
   "reaching out to",
 ];
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * EXTERNAL AUDIT AMENDMENT #6, Finding 1: natural coordinated commercial-
+ * target lists must preserve every target. "I'd love to collaborate with
+ * Hotel A and Hotel B" must recognize BOTH — the original per-phrase check
+ * required the verb phrase immediately before EACH name, so only Hotel A
+ * (directly adjacent) was ever recognized. This is a conservative,
+ * deterministic, versioned coordinated-list rule: once a FIRST business name
+ * is established in a genuinely target-directed context, subsequent exact
+ * canonical names may inherit that same relationship ONLY when they are
+ * members of the SAME bounded grammatical list — a maximal run, immediately
+ * following the verb phrase, of capitalized-word chunks joined solely by
+ * commas or "and"/"&"/"of"/"the"/"de"/"la". The run stops at the first token
+ * that is not one of those (an ordinary lowercase word, e.g. "during"),
+ * and NEVER crosses a sentence/paragraph boundary or a semicolon — each
+ * clause is scanned independently, so "Hotel A was a previous client;
+ * collaborate with Hotel B" can never leak Hotel A's non-relationship into
+ * Hotel B's, or vice versa. List-item splitting reuses the SAME decomposition
+ * `extractAuthoredTextNameCandidates` already performs (comma/`and`/`&`
+ * aware), so there is exactly one definition of "how a list of names
+ * decomposes", never a second, subtly different one here.
+ */
+const LIST_CHUNK = "(?:[A-Z][A-Za-z0-9''-]*|of|and|the|de|la|&|,)";
+const LIST_TAIL_PATTERN = new RegExp(`^${LIST_CHUNK}(?:\\s+${LIST_CHUNK})*`);
+
+function computeTargetDirectedPhrases(text: string): ReadonlySet<string> {
+  const directed = new Set<string>();
+  // Never propagate a target-directed relationship across a sentence,
+  // paragraph, or semicolon boundary — each clause is its own bounded scope.
+  const clauses = text.split(/[.!?;\n]+/);
+  for (const rawClause of clauses) {
+    const clause = rawClause.replace(/,/g, " , ");
+    for (const verb of TARGET_DIRECTED_VERB_PHRASES) {
+      const verbRegex = new RegExp(`\\b${verb}\\s+(?:a\\s+|the\\s+|your\\s+)?`, "gi");
+      let match: RegExpExecArray | null;
+      while ((match = verbRegex.exec(clause)) !== null) {
+        const tail = clause.slice(match.index + match[0].length);
+        const tailMatch = LIST_TAIL_PATTERN.exec(tail);
+        if (!tailMatch) continue;
+        for (const phrase of extractAuthoredTextNameCandidates(tailMatch[0])) {
+          directed.add(phrase);
+        }
+      }
+    }
+  }
+  return directed;
 }
 
 export function isTargetDirectedContext(text: string, phrase: string): boolean {
-  const escapedPhrase = escapeRegExp(phrase);
-  return TARGET_DIRECTED_VERB_PHRASES.some((verb) =>
-    new RegExp(`\\b${verb}\\s+(?:a\\s+|the\\s+|your\\s+)?${escapedPhrase}\\b`, "i").test(text),
-  );
+  return computeTargetDirectedPhrases(text).has(phrase);
 }
 
 /**
@@ -245,8 +291,9 @@ export function computeAuthoredTextTargetEvidence(
 ): AuthoredTextTargetEvidence {
   const matchedHotelIds = new Set<string>();
   const matchedOrganizationIds = new Set<string>();
+  const directedPhrases = computeTargetDirectedPhrases(sourceText);
   for (const phrase of candidatePhrases) {
-    if (!isTargetDirectedContext(sourceText, phrase)) continue;
+    if (!directedPhrases.has(phrase)) continue;
     for (const h of catalog.hotels) {
       if (namesMatchExactly(phrase, h.name)) matchedHotelIds.add(h.id);
     }
@@ -281,13 +328,24 @@ export function computeAuthoredTextTargetEvidence(
  * observation that happens to share a normalized name, and the two are never
  * the same private fact even when they end up pointing at the same canonical
  * business via their own independent canonical links.
+ *
+ * EXTERNAL AUDIT AMENDMENT #6, Finding 4: `observedName` is normalized with
+ * the EXACT SAME `normalizeName()` definition `namesMatchExactly` (and SQL's
+ * `private.normalize_business_name`) already use — lower-case, every run of
+ * non-alphanumeric characters collapsed to one space, trim — never a
+ * separate, laxer `trim().toLowerCase()`. Two authored-text extractions of
+ * the SAME real business across a B04 rebuild ("Acme-Hotel" vs "Acme Hotel")
+ * must reconcile onto the SAME private fact, exactly as they already
+ * resolve to the SAME canonical business under exact-match evidence — a
+ * THIRD, subtly different normalization definition here would let identity
+ * and matching silently disagree about what counts as "the same name".
  */
 export function computeTargetObservationFingerprint(
   sourceKind: ObservationSourceKind,
   domain: string | null,
   observedName: string | null,
 ): string {
-  const normalizedName = (observedName ?? "").trim().toLowerCase();
+  const normalizedName = normalizeName(observedName ?? "");
   return digestOfString(`${sourceKind}|${domain ?? ""}|${normalizedName}`);
 }
 
@@ -307,10 +365,7 @@ export function extractTargetObservations(
   recipients: readonly EvidenceRecipient[],
   messageIdToProviderId: ReadonlyMap<string, string>,
 ): TargetObservationInput[] {
-  const byDomain = new Map<
-    string,
-    { sourceProviderMessageIds: Set<string>; displayName: string | null }
-  >();
+  const byDomain = new Map<string, { sourceProviderMessageIds: Set<string> }>();
 
   for (const r of recipients) {
     if (r.role !== "to") continue;
@@ -318,31 +373,26 @@ export function extractTargetObservations(
     if (!domain || FREEMAIL_DOMAINS.has(domain)) continue;
     const providerMessageId = messageIdToProviderId.get(r.normalizedMessageId);
     if (!providerMessageId) continue;
-    const entry = byDomain.get(domain) ?? {
-      sourceProviderMessageIds: new Set<string>(),
-      displayName: null,
-    };
+    const entry = byDomain.get(domain) ?? { sourceProviderMessageIds: new Set<string>() };
     entry.sourceProviderMessageIds.add(providerMessageId);
-    // A recipient's display name is genuine, independently-observed name
-    // evidence (a human wrote it) — unlike a label mechanically derived from
-    // the domain string itself, which would let ONE signal (the domain)
-    // masquerade as two independent agreements once compared against a
-    // catalog row's name (Finding 9). No domain-derived fallback: absent
-    // real display-name evidence, `observedName` stays null — an honest
-    // abstention, not a fabricated signal.
-    entry.displayName ??= r.displayName;
     byDomain.set(domain, entry);
   }
 
   const observations: TargetObservationInput[] = [];
   for (const [domain, entry] of byDomain) {
     observations.push({
-      observationFingerprint: computeTargetObservationFingerprint(
-        "recipient_domain",
-        domain,
-        entry.displayName,
-      ),
-      observedName: entry.displayName,
+      // EXTERNAL AUDIT AMENDMENT #6, Finding 2: `recipient_domain` identity
+      // is the BUSINESS DOMAIN, never a recipient PERSON's display name — a
+      // contact leaving (Jane Smith -> John Brown) at the exact same domain
+      // must reconcile onto the SAME commercial-target fact, not fork a new
+      // one. `observedName` is a business-name identity dimension
+      // (`matchTargetObservation` reads it as canonical-matching evidence),
+      // and a person's name is contact/recipient evidence (preserved in
+      // `gmail_outreach_observed_recipients`), never business-name evidence
+      // — so it stays `null` here unless a future, separately-contracted,
+      // explicitly-business-name evidence source exists.
+      observationFingerprint: computeTargetObservationFingerprint("recipient_domain", domain, null),
+      observedName: null,
       observedDomain: domain,
       targetKindHint: "unknown",
       observationSourceKind: "recipient_domain",
@@ -497,7 +547,6 @@ function evaluateCandidate(
   authoredTextEvidence: AuthoredTextTargetEvidence,
   kind: TargetKind,
   id: string,
-  name: string,
   websiteDomain: string | null,
 ): ScoredCandidate | null {
   const domainEvidence: EvidenceAgreement =
@@ -509,11 +558,18 @@ function evaluateCandidate(
           ? "differs"
           : "unavailable";
 
-  const nameEvidence: EvidenceAgreement = observation.observedName
-    ? nameOverlap(observation.observedName, name)
-      ? "agrees"
-      : "differs"
-    : "unavailable";
+  // EXTERNAL AUDIT AMENDMENT #6, Finding 2: `recipient_domain` observations
+  // never carry `observedName` any more (a recipient's display NAME is
+  // contact/person evidence, not business-name evidence — D028), so this
+  // dimension has no real evidence source in V1 and stays an honest
+  // `unavailable` rather than a fuzzy substring guess. A prior version used
+  // `nameOverlap()` (substring-containment) against a recipient's display
+  // name as if it were independent business-name corroboration — capable of
+  // turning e.g. a contact literally named "Marriott" into a false `agrees`
+  // for "Marriott Miami Biscayne Bay". Kept as a real dimension (never
+  // removed from the shape) so a future, separately-contracted business-name
+  // evidence source can populate it without a schema change.
+  const nameEvidence: EvidenceAgreement = "unavailable";
 
   const contactMap =
     kind === "hotel" ? catalog.hotelIdByContactEmail : catalog.organizationIdByContactEmail;
@@ -631,7 +687,6 @@ export function matchTargetObservation(
       authoredTextEvidence,
       "hotel",
       h.id,
-      h.name,
       h.websiteDomain,
     );
     if (result) scored.push(result);
@@ -644,7 +699,6 @@ export function matchTargetObservation(
       authoredTextEvidence,
       "organization",
       o.id,
-      o.name,
       o.websiteDomain,
     );
     if (result) scored.push(result);
@@ -746,8 +800,9 @@ export function extractAuthoredTextTargetObservations(
 
   for (const source of sources) {
     const candidatePhrases = extractAuthoredTextNameCandidates(source.text);
+    const directedPhrases = computeTargetDirectedPhrases(source.text);
     for (const phrase of candidatePhrases) {
-      if (!isTargetDirectedContext(source.text, phrase)) continue;
+      if (!directedPhrases.has(phrase)) continue;
 
       const matchedHere: Match[] = [];
       for (const h of catalog.hotels) {

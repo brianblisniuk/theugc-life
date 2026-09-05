@@ -50,8 +50,23 @@ export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v4";
  * (Finding 1). Authored-text evidence remains available as an EXTRA
  * corroboration dimension for a domain-based observation's candidate that is
  * already independently relevant via domain/name/contact evidence.
+ * `_v6` (EXTERNAL AUDIT AMENDMENT #6, Findings 1/2/4): (a) a target-directed
+ * authored-text match now recognizes every member of a bounded, conservative
+ * coordinated list following the verb phrase ("collaborate with Hotel A and
+ * Hotel B"), not only the item immediately adjacent to it; (b) a
+ * `recipient_domain` observation's identity and matching no longer depend on
+ * a recipient's display NAME at all — it is contact/person evidence, never
+ * business identity, so `nameEvidence` is always `unavailable` in V1 and a
+ * contact-person change at the same domain can never fork or falsely
+ * corroborate a target fact; (c) an `authored_text_name` observation's
+ * identity now normalizes with the exact same `normalizeName()` definition
+ * canonical exact-matching already uses, so a punctuation/case-only variant
+ * of the same authored name reconciles onto the same private fact instead of
+ * forking a spurious duplicate. (Finding 3's explicit machine current-
+ * membership flag is a schema/bookkeeping addition, not a classification or
+ * matching RULE change, so it does not itself trigger this version bump.)
  */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v5";
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v6";
 /**
  * Versioned heuristic classifier-input transform (quote/HTML handling,
  * signature stripping). `_v3` (Finding 7): also splits a message into a
@@ -220,6 +235,16 @@ export interface TargetCanonicalLinkCandidateInput {
   targetKind: TargetKind;
   targetHotelId?: string;
   targetOrganizationId?: string;
+  /**
+   * A RECIPIENT's display-name evidence dimension — always `unavailable` in
+   * V1 (EXTERNAL AUDIT AMENDMENT #6, Finding 2): a recipient's display name
+   * is contact/person evidence (a human's name — "Jane Smith"), never
+   * business-name evidence, and treating it as the latter let a person
+   * literally named after (or a fuzzy substring of) a real property's name
+   * falsely corroborate that property as the commercial target. Kept in the
+   * shape, never removed, so a future, separately-contracted, explicitly
+   * BUSINESS-name evidence source can populate it without a schema change.
+   */
   nameEvidence: EvidenceAgreement;
   domainEvidence: EvidenceAgreement;
   addressEvidence: EvidenceAgreement;
@@ -227,10 +252,10 @@ export interface TargetCanonicalLinkCandidateInput {
   /**
    * EXTERNAL AUDIT AMENDMENT #4, Finding 2: an exact-name match between the
    * creator's own authored SENT text and this real canonical business — an
-   * independent dimension from `nameEvidence` (which reads a RECIPIENT's
-   * display name, not the message body). `differs` means the text explicitly
-   * named a DIFFERENT real business instead, a genuine contradiction with
-   * this row's other evidence.
+   * independent dimension from `nameEvidence` (which, when populated, would
+   * read a RECIPIENT's display name, not the message body). `differs` means
+   * the text explicitly named a DIFFERENT real, target-directed business
+   * instead, a genuine contradiction with this row's other evidence.
    */
   authoredTextEvidence: EvidenceAgreement;
   rank: number;

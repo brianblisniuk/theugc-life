@@ -13,6 +13,7 @@ import {
   deriveMachineTargetScope,
   detectScopeLanguage,
   extractAuthoredTextNameCandidates,
+  extractAuthoredTextTargetObservations,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation,
@@ -580,6 +581,27 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
     expect(observations[0]!.observedDomain).toBe("acmehotel.example");
   });
 
+  it("EXTERNAL AUDIT AMENDMENT #6, Finding 2, required test E: two different people at the SAME domain in one thread do not create two commercial-target facts merely because their display names differ", () => {
+    const observations = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "acmehotel.example",
+          displayName: "Jane Smith",
+          sourceParticipantId: "p1",
+        }),
+        recipient({
+          role: "to",
+          domainLower: "acmehotel.example",
+          displayName: "John Brown",
+          sourceParticipantId: "p2",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
+    expect(observations).toHaveLength(1);
+  });
+
   it("excludes freemail domains entirely — never a target observation for gmail.com etc", () => {
     const observations = extractTargetObservations(
       [
@@ -629,7 +651,7 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
     expect(observation!.observedName).toBeNull();
   });
 
-  it("uses genuine recipient display-name evidence when present, never a domain-derived label", () => {
+  it("EXTERNAL AUDIT AMENDMENT #6, Finding 2: a recipient's display name is contact/person evidence, never business-target identity — observedName stays null even when a display name is present", () => {
     const [observation] = extractTargetObservations(
       [
         recipient({
@@ -640,7 +662,65 @@ describe("B05 unit: target-extraction.ts (private target observations, D028 cons
       ],
       PROVIDER_ID_MAP,
     );
-    expect(observation!.observedName).toBe("Acme Hotel Marketing");
+    expect(observation!.observedName).toBeNull();
+  });
+
+  it("EXTERNAL AUDIT AMENDMENT #6, Finding 2: recipient_domain observation identity does not depend on the recipient's display name at all — a contact-person change at the SAME domain reconciles onto the SAME fingerprint", () => {
+    const [withJane] = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "acmehotel.example",
+          displayName: "Jane Smith",
+          sourceParticipantId: "p1",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
+    const [withJohn] = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "acmehotel.example",
+          displayName: "John Brown",
+          sourceParticipantId: "p2",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
+    expect(withJohn!.observationFingerprint).toBe(withJane!.observationFingerprint);
+  });
+
+  it("EXTERNAL AUDIT AMENDMENT #6, Finding 2: a substring relation between a contact/display name and a real canonical property name never becomes approved business-name evidence, and never contributes the extra agreement needed for strong_match", () => {
+    const [observation] = extractTargetObservations(
+      [
+        recipient({
+          role: "to",
+          domainLower: "marriott-miami.example",
+          displayName: "Marriott",
+        }),
+      ],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(observation!, [], {
+      epoch: 1,
+      hotels: [
+        {
+          id: "hotel-1",
+          name: "Marriott Miami Biscayne Bay",
+          websiteDomain: "marriott-miami.example",
+        },
+      ],
+      organizations: [],
+      hotelIdByContactEmail: new Map(),
+      organizationIdByContactEmail: new Map(),
+      hotelOrganizationLinks: [],
+    });
+    // Domain agreement alone (1 core agreement) — never strong_match, and
+    // nameEvidence must never silently supply the second agreement via a
+    // fuzzy substring match against the recipient's display name.
+    expect(result.observation.machineCanonicalLinkAssessment).toBe("needs_review");
+    expect(result.links[0]!.nameEvidence).toBe("unavailable");
   });
 
   it("matchTargetObservation: exact domain agreement alone yields needs_review, never strong_match (D028 — one signal is not enough)", () => {
@@ -957,6 +1037,133 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #5, Finding 3
       text,
     );
     expect(evidence.matchedHotelIds.size).toBe(0);
+  });
+});
+
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #6, Finding 1 — coordinated commercial-target lists)", () => {
+  const twoHotelCatalog = {
+    hotels: [
+      { id: "hotel-a", name: "Hotel A", websiteDomain: null },
+      { id: "hotel-b", name: "Hotel B", websiteDomain: null },
+    ],
+    organizations: [],
+  };
+  const threeHotelCatalog = {
+    hotels: [
+      { id: "hotel-a", name: "Hotel A", websiteDomain: null },
+      { id: "hotel-b", name: "Hotel B", websiteDomain: null },
+      { id: "hotel-c", name: "Hotel C", websiteDomain: null },
+    ],
+    organizations: [],
+  };
+
+  it('required test 1: "I\'d love to collaborate with Hotel A and Hotel B" => TWO independent authored_text_name observations', () => {
+    const text = "I'd love to collaborate with Hotel A and Hotel B";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        ...twoHotelCatalog,
+        epoch: 1,
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      [],
+    );
+    expect(results).toHaveLength(2);
+    const names = results.map((r) => r.observation.observedName).sort();
+    expect(names).toEqual(["Hotel A", "Hotel B"]);
+    for (const r of results) {
+      expect(r.observation.machineCanonicalLinkAssessment).toBe("strong_match");
+    }
+  });
+
+  it('required test 2: "collaborate with Hotel A, Hotel B and Hotel C" => THREE independent observations', () => {
+    const text = "collaborate with Hotel A, Hotel B and Hotel C";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        ...threeHotelCatalog,
+        epoch: 1,
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      [],
+    );
+    expect(results).toHaveLength(3);
+    const names = results.map((r) => r.observation.observedName).sort();
+    expect(names).toEqual(["Hotel A", "Hotel B", "Hotel C"]);
+  });
+
+  it('required test 3: "I worked with Hotel A last year. I\'d love to collaborate with Hotel B" => Hotel B only', () => {
+    const text = "I worked with Hotel A last year. I'd love to collaborate with Hotel B";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        ...twoHotelCatalog,
+        epoch: 1,
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Hotel B");
+  });
+
+  it('required test 4: "I\'d love to collaborate with Hotel A; Hotel B was a previous client" => Hotel A only', () => {
+    const text = "I'd love to collaborate with Hotel A; Hotel B was a previous client";
+    const results = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        ...twoHotelCatalog,
+        epoch: 1,
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      [],
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.observation.observedName).toBe("Hotel A");
+  });
+
+  it("required test 5 (natural agency case): a coordinated two-hotel list to an agency yields the agency domain observation PLUS two independent authored observations, verb not repeated before each item", () => {
+    const text = "I'd love to collaborate with Hotel A and Hotel B during my trip.";
+    const domainObservations = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "agency.example", sourceParticipantId: "p1" })],
+      PROVIDER_ID_MAP,
+    );
+    expect(domainObservations).toHaveLength(1);
+
+    const authoredResults = extractAuthoredTextTargetObservations(
+      [{ providerMessageId: "msg-1", text }],
+      {
+        ...twoHotelCatalog,
+        epoch: 1,
+        hotelIdByContactEmail: new Map(),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      [],
+    );
+    expect(authoredResults).toHaveLength(2);
+    const names = authoredResults.map((r) => r.observation.observedName).sort();
+    expect(names).toEqual(["Hotel A", "Hotel B"]);
+    // "during my trip" never leaks into the list — the coordinated-list span
+    // stops at the first non-list token.
+    for (const r of authoredResults) {
+      expect(r.observation.observedName).not.toContain("during");
+    }
+  });
+
+  it("comma-only lists (no 'and') decompose correctly: \"Hotel A, Hotel B\" extracts BOTH names, never one garbled phrase", () => {
+    const phrases = extractAuthoredTextNameCandidates("Hotel A, Hotel B");
+    expect(phrases).toContain("Hotel A");
+    expect(phrases).toContain("Hotel B");
+    expect(phrases).not.toContain("Hotel A Hotel B");
   });
 });
 
