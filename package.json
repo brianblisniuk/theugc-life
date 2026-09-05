@@ -55,7 +55,9 @@
     "gmail:import:resume": "tsx scripts/gmail-import/cli.ts resume",
     "gmail:import:status": "tsx scripts/gmail-import/cli.ts status",
     "gmail:normalize:run": "tsx scripts/gmail-normalize/cli.ts run",
-    "gmail:normalize:status": "tsx scripts/gmail-normalize/cli.ts status"
+    "gmail:normalize:status": "tsx scripts/gmail-normalize/cli.ts status",
+    "gmail:outreach:run": "tsx scripts/gmail-outreach/cli.ts run",
+    "gmail:outreach:status": "tsx scripts/gmail-outreach/cli.ts status"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
