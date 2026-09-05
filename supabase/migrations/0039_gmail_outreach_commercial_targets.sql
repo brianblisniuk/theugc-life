@@ -562,6 +562,18 @@ create table private.gmail_outreach_target_observations (
   observed_name text,
   observed_domain text,
   target_kind_hint text not null default 'unknown' check (target_kind_hint in ('hotel', 'organization', 'unknown')),
+  -- EXTERNAL AUDIT AMENDMENT #5, Finding 1: the explicit observation-source
+  -- distinction. `recipient_domain` (the historical shape) is derived purely
+  -- from a non-freemail `to`-recipient's domain; `authored_text_name` is a
+  -- commercial target the creator's OWN authored SENT text explicitly, exactly
+  -- named in a target-directed context, independent of any recipient address
+  -- (`observed_domain` is null for this kind). Part of the fingerprint's own
+  -- input (see `computeTargetObservationFingerprint`), so the two kinds can
+  -- never collide even when they end up naming the same canonical business —
+  -- the canonical row remains only ever a 0..N LINK (table 7), never this
+  -- fact's identity, for either kind.
+  observation_source_kind text not null default 'recipient_domain'
+    check (observation_source_kind in ('recipient_domain', 'authored_text_name')),
 
   -- DURABLE, VERIFIED, EVOLVING PROVENANCE (Finding 1/12; grows per
   -- Amendment #3 Finding 3). `provider_message_id` — Gmail's own permanent
@@ -1989,11 +2001,13 @@ begin
 
     insert into private.gmail_outreach_target_observations (
       user_id, mail_account_id, normalized_thread_id, observation_fingerprint,
-      observed_name, observed_domain, target_kind_hint, source_provider_message_ids
+      observed_name, observed_domain, target_kind_hint, observation_source_kind,
+      source_provider_message_ids
     ) values (
       p_user_id, p_mail_account_id, p_normalized_thread_id, v_observation ->> 'observation_fingerprint',
       v_observation ->> 'observed_name', v_observation ->> 'observed_domain',
       coalesce(v_observation ->> 'target_kind_hint', 'unknown'),
+      coalesce(v_observation ->> 'observation_source_kind', 'recipient_domain'),
       (select array_agg(x) from jsonb_array_elements_text(v_observation -> 'source_provider_message_ids') x)
     )
     on conflict (mail_account_id, normalized_thread_id, observation_fingerprint) do nothing

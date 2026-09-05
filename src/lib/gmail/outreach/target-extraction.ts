@@ -4,6 +4,7 @@ import type {
   EvidenceRecipient,
   MachineTargetScopeResult,
   MatchQuality,
+  ObservationSourceKind,
   TargetCanonicalLinkCandidateInput,
   TargetKind,
   TargetObservationInput,
@@ -178,27 +179,74 @@ export function extractAuthoredTextNameCandidates(text: string): string[] {
 }
 
 /**
+ * EXTERNAL AUDIT AMENDMENT #5, Finding 3: a business NAME MENTION is not
+ * automatically a mention DIRECTED AT that business as a commercial target —
+ * "I worked with Marriott last year" must not satisfy D070 §5's "directed at
+ * a target" requirement merely because "Marriott" exact-matches a real
+ * canonical business. This is a conservative, deterministic, versioned
+ * pattern check around the exact-matched phrase: precision over recall,
+ * abstain when uncertain. A verb phrase must appear immediately before the
+ * candidate name (with at most one leading article), never inferred from
+ * general proximity or sentence-level sentiment.
+ */
+const TARGET_DIRECTED_VERB_PHRASES: readonly string[] = [
+  "collaborate with",
+  "collaborating with",
+  "collaboration with",
+  "partner with",
+  "partnering with",
+  "partnership with",
+  "content for",
+  "feature",
+  "featuring",
+  "pitch to",
+  "pitch for",
+  "stay at",
+  "work with",
+  "working with",
+  "proposal for",
+  "reach out to",
+  "reaching out to",
+];
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function isTargetDirectedContext(text: string, phrase: string): boolean {
+  const escapedPhrase = escapeRegExp(phrase);
+  return TARGET_DIRECTED_VERB_PHRASES.some((verb) =>
+    new RegExp(`\\b${verb}\\s+(?:a\\s+|the\\s+|your\\s+)?${escapedPhrase}\\b`, "i").test(text),
+  );
+}
+
+/**
  * Which real canonical hotels/organizations the creator's own authored text
- * explicitly, exactly named — computed against the (possibly authored-text-
- * extended) bounded catalog snapshot. `hasAnyCandidatePhrase` distinguishes
- * "the text named nothing at all" (evidence stays `unavailable` for every
- * candidate) from "the text named something, just not THIS candidate"
- * (evidence becomes `differs` for every candidate it didn't name — see
- * `evaluateCandidate`).
+ * explicitly, exactly named IN A TARGET-DIRECTED CONTEXT (Finding 3) —
+ * computed against the (possibly authored-text-extended) bounded catalog
+ * snapshot. `hasAnyRealAuthoredTargetMatch` (EXTERNAL AUDIT AMENDMENT #5,
+ * Finding 2 — renamed from `hasAnyCandidatePhrase`) is true ONLY when a
+ * phrase actually resolved to a real, target-directed business — a harmless
+ * capitalized phrase that matched nothing real ("Hi Jane", "Thanks Best,
+ * Jane Doe") must never, by its mere existence, mark every OTHER candidate
+ * `differs` — that contradicted the contract's own stated false-positive-
+ * phrase-contributes-no-evidence claim.
  */
 export interface AuthoredTextTargetEvidence {
   matchedHotelIds: ReadonlySet<string>;
   matchedOrganizationIds: ReadonlySet<string>;
-  hasAnyCandidatePhrase: boolean;
+  hasAnyRealAuthoredTargetMatch: boolean;
 }
 
 export function computeAuthoredTextTargetEvidence(
   candidatePhrases: readonly string[],
   catalog: Pick<CatalogSnapshot, "hotels" | "organizations">,
+  sourceText: string,
 ): AuthoredTextTargetEvidence {
   const matchedHotelIds = new Set<string>();
   const matchedOrganizationIds = new Set<string>();
   for (const phrase of candidatePhrases) {
+    if (!isTargetDirectedContext(sourceText, phrase)) continue;
     for (const h of catalog.hotels) {
       if (namesMatchExactly(phrase, h.name)) matchedHotelIds.add(h.id);
     }
@@ -209,7 +257,7 @@ export function computeAuthoredTextTargetEvidence(
   return {
     matchedHotelIds,
     matchedOrganizationIds,
-    hasAnyCandidatePhrase: candidatePhrases.length > 0,
+    hasAnyRealAuthoredTargetMatch: matchedHotelIds.size > 0 || matchedOrganizationIds.size > 0,
   };
 }
 
@@ -226,13 +274,21 @@ export function computeAuthoredTextTargetEvidence(
  * cased/trimmed before hashing so cosmetic capitalization differences across
  * two otherwise-identical extractions don't fork a fact that didn't actually
  * change.
+ *
+ * EXTERNAL AUDIT AMENDMENT #5, Finding 1: `sourceKind` is now itself part of
+ * the digest — an `authored_text_name` observation (no recipient domain at
+ * all, `domain` is null) must never collide with a `recipient_domain`
+ * observation that happens to share a normalized name, and the two are never
+ * the same private fact even when they end up pointing at the same canonical
+ * business via their own independent canonical links.
  */
 export function computeTargetObservationFingerprint(
-  domain: string,
+  sourceKind: ObservationSourceKind,
+  domain: string | null,
   observedName: string | null,
 ): string {
   const normalizedName = (observedName ?? "").trim().toLowerCase();
-  return digestOfString(`${domain}|${normalizedName}`);
+  return digestOfString(`${sourceKind}|${domain ?? ""}|${normalizedName}`);
 }
 
 /**
@@ -281,10 +337,15 @@ export function extractTargetObservations(
   const observations: TargetObservationInput[] = [];
   for (const [domain, entry] of byDomain) {
     observations.push({
-      observationFingerprint: computeTargetObservationFingerprint(domain, entry.displayName),
+      observationFingerprint: computeTargetObservationFingerprint(
+        "recipient_domain",
+        domain,
+        entry.displayName,
+      ),
       observedName: entry.displayName,
       observedDomain: domain,
       targetKindHint: "unknown",
+      observationSourceKind: "recipient_domain",
       sourceProviderMessageIds: [...entry.sourceProviderMessageIds],
       // Filled in by matchTargetObservation below.
       machineCanonicalLinkAssessment: "insufficient_evidence",
@@ -464,19 +525,29 @@ function evaluateCandidate(
     kind === "hotel"
       ? authoredTextEvidence.matchedHotelIds
       : authoredTextEvidence.matchedOrganizationIds;
+  // EXTERNAL AUDIT AMENDMENT #5, Finding 2: `differs` requires a phrase to
+  // have actually resolved to a REAL, different, target-directed business —
+  // never merely "some candidate phrase existed in the text".
   const authoredText: EvidenceAgreement = matchedIds.has(id)
     ? "agrees"
-    : authoredTextEvidence.hasAnyCandidatePhrase
+    : authoredTextEvidence.hasAnyRealAuthoredTargetMatch
       ? "differs"
       : "unavailable";
 
-  const agreements = [domainEvidence, nameEvidence, contactEvidence, authoredText].filter(
+  // EXTERNAL AUDIT AMENDMENT #5, Finding 1: authored-text evidence alone can
+  // no longer justify a business entering THIS (recipient-domain) observation's
+  // candidate universe — a real target-directed authored-text match becomes
+  // its OWN independent private observation (see
+  // `extractAuthoredTextTargetObservations`), never canonical-link evidence
+  // bolted onto an unrelated domain observation's identity. It remains
+  // available here purely as EXTRA corroboration (or contradiction) once the
+  // candidate is already independently relevant via domain/name/contact.
+  const coreAgreements = [domainEvidence, nameEvidence, contactEvidence].filter(
     (e) => e === "agrees",
   ).length;
-  // A candidate the creator's own text explicitly named enters the universe
-  // even with zero other agreements (Finding 2) — the domain/contact
-  // evidence alone would otherwise have excluded it entirely.
-  if (agreements === 0) return null;
+  if (coreAgreements === 0) return null;
+
+  const agreements = coreAgreements + (authoredText === "agrees" ? 1 : 0);
 
   const candidate: TargetCanonicalLinkCandidateInput = {
     observationFingerprint: observation.observationFingerprint,
@@ -542,11 +613,13 @@ export function matchTargetObservation(
   associatedAddresses: readonly string[],
   catalog: CatalogSnapshot,
   authoredTextCandidateNames: readonly string[] = [],
+  authoredSourceText = "",
 ): TargetMatchResult {
   const addresses = associatedAddresses.map((a) => a.toLowerCase());
   const authoredTextEvidence = computeAuthoredTextTargetEvidence(
     authoredTextCandidateNames,
     catalog,
+    authoredSourceText,
   );
   const scored: ScoredCandidate[] = [];
 
@@ -619,4 +692,119 @@ export function matchTargetObservation(
     },
     links: scored.map((s) => s.candidate),
   };
+}
+
+/** One SENT message's clean (authored, non-quoted, non-uncertain-signature) text, with its durable provenance. */
+export interface AuthoredTextObservationSource {
+  providerMessageId: string;
+  text: string;
+}
+
+function hasContactEvidence(
+  kind: TargetKind,
+  id: string,
+  addresses: readonly string[],
+  catalog: CatalogSnapshot,
+): EvidenceAgreement {
+  const contactMap =
+    kind === "hotel" ? catalog.hotelIdByContactEmail : catalog.organizationIdByContactEmail;
+  return addresses.some((a) => contactMap.get(a)?.has(id)) ? "agrees" : "unavailable";
+}
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #5, Finding 1: a creator-authored-text commercial
+ * target is FIRST a private, independent target FACT — never merely
+ * canonical-link evidence bolted onto an unrelated recipient-domain
+ * observation. Runs per-SENT-message (never over a thread-joined blob) so
+ * provenance identifies the EXACT provider message(s) that named the target,
+ * and unions onto the SAME durable observation when the same normalized name
+ * is named again in a later message. Grouped by NORMALIZED PHRASE, never by
+ * canonical hotel/organization id — identity is the private fact, the
+ * canonical row(s) are only ever a 0..N link, exactly like a recipient-domain
+ * observation's. A phrase matching more than one distinct real business (a
+ * genuine name collision) yields one observation with an `ambiguous`
+ * assessment and one link per distinct business, never a silent pick.
+ */
+export function extractAuthoredTextTargetObservations(
+  sources: readonly AuthoredTextObservationSource[],
+  catalog: CatalogSnapshot,
+  associatedAddresses: readonly string[],
+): TargetMatchResult[] {
+  const addresses = associatedAddresses.map((a) => a.toLowerCase());
+
+  interface Match {
+    kind: TargetKind;
+    id: string;
+    websiteDomain: string | null;
+  }
+  interface Group {
+    phrase: string;
+    matches: Match[];
+    providerMessageIds: Set<string>;
+  }
+  const groups = new Map<string, Group>();
+
+  for (const source of sources) {
+    const candidatePhrases = extractAuthoredTextNameCandidates(source.text);
+    for (const phrase of candidatePhrases) {
+      if (!isTargetDirectedContext(source.text, phrase)) continue;
+
+      const matchedHere: Match[] = [];
+      for (const h of catalog.hotels) {
+        if (namesMatchExactly(phrase, h.name)) {
+          matchedHere.push({ kind: "hotel", id: h.id, websiteDomain: h.websiteDomain });
+        }
+      }
+      for (const o of catalog.organizations) {
+        if (namesMatchExactly(phrase, o.name)) {
+          matchedHere.push({ kind: "organization", id: o.id, websiteDomain: o.websiteDomain });
+        }
+      }
+      if (matchedHere.length === 0) continue;
+
+      const key = normalizeName(phrase);
+      const group = groups.get(key) ?? {
+        phrase,
+        matches: [],
+        providerMessageIds: new Set<string>(),
+      };
+      group.providerMessageIds.add(source.providerMessageId);
+      for (const m of matchedHere) {
+        if (!group.matches.some((x) => x.kind === m.kind && x.id === m.id)) group.matches.push(m);
+      }
+      groups.set(key, group);
+    }
+  }
+
+  const results: TargetMatchResult[] = [];
+  for (const group of groups.values()) {
+    const observationFingerprint = computeTargetObservationFingerprint(
+      "authored_text_name",
+      null,
+      group.phrase,
+    );
+    const observation: TargetObservationInput = {
+      observationFingerprint,
+      observedName: group.phrase,
+      observedDomain: null,
+      targetKindHint: "unknown",
+      observationSourceKind: "authored_text_name",
+      sourceProviderMessageIds: [...group.providerMessageIds],
+      machineCanonicalLinkAssessment: group.matches.length === 1 ? "strong_match" : "ambiguous",
+      candidateSetFingerprint: computeRelevantCandidateFingerprint(associatedAddresses, catalog),
+    };
+    const links: TargetCanonicalLinkCandidateInput[] = group.matches.map((m, rank) => ({
+      observationFingerprint,
+      targetKind: m.kind,
+      ...(m.kind === "hotel" ? { targetHotelId: m.id } : { targetOrganizationId: m.id }),
+      nameEvidence: "unavailable",
+      domainEvidence: "unavailable",
+      addressEvidence: "unavailable",
+      contactEvidence: hasContactEvidence(m.kind, m.id, addresses, catalog),
+      authoredTextEvidence: "agrees",
+      rank,
+    }));
+    results.push({ observation, links });
+  }
+  return results;
 }

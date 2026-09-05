@@ -178,6 +178,62 @@ export const OUTREACH_CORPUS: readonly OutreachExample[] = [
   },
 ];
 
+/**
+ * EXTERNAL AUDIT AMENDMENT #5, Finding 4: unlike `OUTREACH_CORPUS` (which
+ * evaluates ONLY `classifyOutreach`'s own proposal-language signal), this
+ * corpus exercises the REAL end-to-end `interpretOneThread` combination
+ * against a real Postgres database — the actual final B05 outreach status a
+ * creator would see, including D070 §5's third (target-directed) requirement.
+ */
+export interface FinalInterpretationExample {
+  readonly id: string;
+  readonly gold: OutreachStatus;
+  readonly subject: string;
+  readonly sentBodies: readonly string[];
+  readonly toRecipient: string;
+  /** When set, a real canonical hotel row is inserted with this exact name before interpretation. */
+  readonly hotelName?: string;
+}
+
+export const FINAL_INTERPRETATION_CORPUS: readonly FinalInterpretationExample[] = [
+  {
+    id: "fi-1",
+    gold: "qualified_outreach",
+    subject: "Collaboration opportunity",
+    sentBodies: ["I'd love to collaborate with your hotel on some UGC content."],
+    toRecipient: "marketing@fi-business-hotel.example",
+  },
+  {
+    id: "fi-2",
+    gold: "needs_review",
+    subject: "Collaboration opportunity",
+    sentBodies: ["I'd love to collaborate on some UGC content and a paid partnership."],
+    toRecipient: "me@gmail.com",
+  },
+  {
+    id: "fi-3",
+    gold: "qualified_outreach",
+    subject: "Collaboration via agency",
+    sentBodies: ["I'd love to collaborate with FI Ambassador Hotel on a paid partnership."],
+    toRecipient: "jane@fi-agency.example",
+    hotelName: "FI Ambassador Hotel",
+  },
+  {
+    id: "fi-4",
+    gold: "not_outreach",
+    subject: "Booking question",
+    sentBodies: ["I would like a reservation for two nights, check-in Friday check-out Sunday."],
+    toRecipient: "frontdesk@fi-quiet-hotel.example",
+  },
+  {
+    id: "fi-5",
+    gold: "insufficient_evidence",
+    subject: "Hi",
+    sentBodies: ["Hi there, hope you are well. Talk soon."],
+    toRecipient: "someone@fi-other-hotel.example",
+  },
+];
+
 export interface TargetMatchExample {
   readonly id: string;
   readonly gold: "strong_match" | "needs_review" | "ambiguous" | "insufficient_evidence";

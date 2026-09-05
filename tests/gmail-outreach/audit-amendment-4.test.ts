@@ -1,12 +1,14 @@
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { TARGET_MATCHER_VERSION } from "@/lib/gmail/outreach/contract";
 import { interpretOneThread } from "@/lib/gmail/outreach/service";
 import { normalizeOneCandidate } from "@/lib/gmail/normalize/service";
 import { updateRawMessage } from "../gmail-normalize/harness";
 import { createRpcClient } from "../gmail/rpc-harness";
 import {
   connectedMailbox,
+  insertHotel,
   insertNormalizedThread,
   outreachDeps,
   randomProviderId,
@@ -51,21 +53,6 @@ async function session(): Promise<Client> {
   await c.connect();
   openSessions.push(c);
   return c;
-}
-
-async function insertHotel(
-  c: Client,
-  input: { name: string; websiteUrl?: string | null },
-): Promise<string> {
-  const dest = await c.query(
-    `insert into public.destinations (id, name, slug, type) values (gen_random_uuid(), $1, $2, 'city') returning id`,
-    [`${input.name} destination`, randomProviderId("dest")],
-  );
-  const hotel = await c.query(
-    `insert into public.hotels (name, slug, destination_id, website_url) values ($1, $2, $3, $4) returning id`,
-    [input.name, randomProviderId("hotel"), dest.rows[0].id, input.websiteUrl ?? null],
-  );
-  return hotel.rows[0].id as string;
 }
 
 d(
@@ -146,11 +133,21 @@ d(
       expect(signal.outreach_status).toBe("qualified_outreach");
       expect(signal.reason_codes).toContain("commercial_target_evidence_present");
 
+      // EXTERNAL AUDIT AMENDMENT #5, Finding 1: the authored-text-named
+      // business is now its OWN independent private observation
+      // (`observation_source_kind = 'authored_text_name'`) — never a
+      // canonical-link entry bolted onto the agency's unrelated domain
+      // observation — alongside the agency domain observation itself.
       const observations = await targetObservationsOf(client, normalizedThreadId);
-      expect(observations).toHaveLength(1);
+      expect(observations).toHaveLength(2);
+      const authoredObservation = observations.find(
+        (o) => o.observation_source_kind === "authored_text_name",
+      );
+      expect(authoredObservation).toBeDefined();
+      expect(authoredObservation!.observed_domain).toBeNull();
       const links = await client.query(
         "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
-        [observations[0].id],
+        [authoredObservation!.id],
       );
       const hotelLink = links.rows.find((r) => r.target_hotel_id === hotelId);
       expect(hotelLink).toBeDefined();
@@ -169,7 +166,7 @@ d(
         name: "A4 Hotel A",
         websiteUrl: "https://a4-hotel-a.example",
       });
-      await insertHotel(client, { name: "A4 Hotel B" });
+      const hotelBId = await insertHotel(client, { name: "A4 Hotel B" });
       await client.query(
         "insert into public.hotel_contacts (hotel_id, email) values ($1, 'marketing@a4-hotel-a.example')",
         [hotelAId],
@@ -187,20 +184,37 @@ d(
 
       await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
 
+      // EXTERNAL AUDIT AMENDMENT #5, Finding 1: two observations now exist —
+      // the domain observation (hotel-a.example, contradicted by the
+      // authored text) AND an independent authored-text observation for the
+      // REAL, target-directed business the text actually named (Hotel B).
       const observations = await targetObservationsOf(client, normalizedThreadId);
-      expect(observations).toHaveLength(1);
-      expect(observations[0].machine_canonical_link_assessment).not.toBe("strong_match");
-      expect(observations[0].machine_canonical_link_assessment).toBe("needs_review");
+      expect(observations).toHaveLength(2);
+      const domainObservation = observations.find(
+        (o) => o.observation_source_kind === "recipient_domain",
+      );
+      const authoredObservation = observations.find(
+        (o) => o.observation_source_kind === "authored_text_name",
+      );
+      expect(domainObservation!.machine_canonical_link_assessment).not.toBe("strong_match");
+      expect(domainObservation!.machine_canonical_link_assessment).toBe("needs_review");
+      expect(authoredObservation!.machine_canonical_link_assessment).toBe("strong_match");
 
       const links = await client.query(
         "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
-        [observations[0].id],
+        [domainObservation!.id],
       );
       const hotelALink = links.rows.find((r) => r.target_hotel_id === hotelAId);
       expect(hotelALink!.authored_text_evidence).toBe("differs");
+
+      const authoredLinks = await client.query(
+        "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
+        [authoredObservation!.id],
+      );
+      expect(authoredLinks.rows[0]!.target_hotel_id).toBe(hotelBId);
     });
 
-    it("an agency recipient plus authored text naming a real business the agency has no domain/contact relation to still surfaces that business as a candidate", async () => {
+    it("an agency recipient plus authored text naming a real business the agency has no domain/contact relation to surfaces it as its own independent private observation (EXTERNAL AUDIT AMENDMENT #5, Finding 1)", async () => {
       const { userId, mailAccountId } = await connectedMailbox(client, "b05-a4-f2-agency-named");
       const deps = outreachDeps(client);
       const hotelId = await insertHotel(client, { name: "A4 Named Hotel" });
@@ -217,17 +231,22 @@ d(
       await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
 
       const observations = await targetObservationsOf(client, normalizedThreadId);
-      expect(observations).toHaveLength(1);
+      expect(observations).toHaveLength(2);
+      const authoredObservation = observations.find(
+        (o) => o.observation_source_kind === "authored_text_name",
+      );
+      expect(authoredObservation).toBeDefined();
+      expect(authoredObservation!.observed_domain).toBeNull();
       const links = await client.query(
         "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
-        [observations[0].id],
+        [authoredObservation!.id],
       );
       const namedLink = links.rows.find((r) => r.target_hotel_id === hotelId);
       expect(namedLink).toBeDefined();
       expect(namedLink!.authored_text_evidence).toBe("agrees");
     });
 
-    it("an agency recipient plus authored text naming TWO real businesses preserves both as candidates under the same observation", async () => {
+    it("an agency recipient plus authored text naming TWO real businesses creates TWO independent private observations, never one shared observation with two candidates (EXTERNAL AUDIT AMENDMENT #5, Finding 1, required case B)", async () => {
       const { userId, mailAccountId } = await connectedMailbox(client, "b05-a4-f2-agency-multi");
       const deps = outreachDeps(client);
       const hotelAId = await insertHotel(client, { name: "A4 Multi Hotel Alpha" });
@@ -240,19 +259,29 @@ d(
         providerThreadId: randomProviderId("thread"),
         toRecipients: ["contact@a4-multi-agency.example"],
         bodyText:
-          "I'd love to collaborate with A4 Multi Hotel Alpha and A4 Multi Hotel Beta on a paid partnership.",
+          "I'd love to collaborate with A4 Multi Hotel Alpha and also collaborate with A4 Multi Hotel Beta on a paid partnership.",
       });
 
       await interpretOneThread(deps, { userId, mailAccountId, normalizedThreadId });
 
       const observations = await targetObservationsOf(client, normalizedThreadId);
-      expect(observations).toHaveLength(1);
-      const links = await client.query(
-        "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1 and authored_text_evidence = 'agrees'",
-        [observations[0].id],
+      const authoredObservations = observations.filter(
+        (o) => o.observation_source_kind === "authored_text_name",
       );
-      const matchedIds = links.rows.map((r) => r.target_hotel_id).sort();
-      expect(matchedIds).toEqual([hotelAId, hotelBId].sort());
+      // The agency domain observation PLUS two independent authored-text observations.
+      expect(observations).toHaveLength(3);
+      expect(authoredObservations).toHaveLength(2);
+      const matchedHotelIds = new Set<string>();
+      for (const obs of authoredObservations) {
+        const links = await client.query(
+          "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1",
+          [obs.id],
+        );
+        expect(links.rows).toHaveLength(1);
+        expect(links.rows[0]!.authored_text_evidence).toBe("agrees");
+        matchedHotelIds.add(links.rows[0]!.target_hotel_id);
+      }
+      expect([...matchedHotelIds].sort()).toEqual([hotelAId, hotelBId].sort());
     });
   },
 );
@@ -351,7 +380,7 @@ d(
         p_user_id: userId,
         p_mail_account_id: mailAccountId,
         p_detector_version: "gmail_outreach_rules_v4",
-        p_matcher_version: "gmail_outreach_match_rules_v4",
+        p_matcher_version: TARGET_MATCHER_VERSION,
         p_current_catalog_epoch: 0,
         p_limit: 10,
       });

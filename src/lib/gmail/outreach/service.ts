@@ -27,17 +27,19 @@ import { classifyOutreach as classifyOutreachDefault } from "@/lib/gmail/outreac
 import { assessTargetContacts } from "@/lib/gmail/outreach/recipients";
 import { buildClassifierInputForMessage } from "@/lib/gmail/outreach/text-transform";
 import {
-  computeAuthoredTextTargetEvidence,
   computeRelevantCandidateFingerprint,
   deriveMachineTargetScope,
   detectScopeLanguage,
   extractAuthoredTextNameCandidates,
+  extractAuthoredTextTargetObservations,
   extractDomain,
   extractTargetObservations,
   matchTargetObservation as matchTargetObservationDefault,
+  type AuthoredTextObservationSource,
   type CatalogSnapshot,
   type HotelOrganizationLink,
   type ScopeCandidate,
+  type TargetMatchResult,
 } from "@/lib/gmail/outreach/target-extraction";
 
 /**
@@ -495,17 +497,27 @@ export async function interpretOneThread(
   // scope-language text further down (Finding 5's own principle: read the
   // SAME clean text an authorship claim is scored against, never a quoted or
   // uncertain-authorship section).
-  const cleanSentTexts = evidence.messages
+  const cleanSentTextsByMessage = evidence.messages
     .filter((m) => m.providerSent)
-    .flatMap((m) =>
-      evidence.sentTextParts.filter((p) => p.normalizedMessageId === m.normalizedMessageId),
-    );
-  const cleanAuthoredText = buildScopeLanguageText(cleanSentTexts);
+    .map((m) => ({
+      providerMessageId: m.providerMessageId,
+      parts: evidence.sentTextParts.filter((p) => p.normalizedMessageId === m.normalizedMessageId),
+    }));
+  // EXTERNAL AUDIT AMENDMENT #5, Finding 1: per-message clean text, each
+  // still tagged with its OWN durable provider_message_id — an authored-text
+  // target observation's provenance must identify the EXACT SENT message(s)
+  // that named it, never a thread-joined blob that loses which message said
+  // what.
+  const authoredTextSources: AuthoredTextObservationSource[] = cleanSentTextsByMessage
+    .map((m) => ({ providerMessageId: m.providerMessageId, text: buildScopeLanguageText(m.parts) }))
+    .filter((s) => s.text !== "");
+  const cleanAuthoredText = authoredTextSources.map((s) => s.text).join(" \n ");
   const authoredTextCandidateNames = extractAuthoredTextNameCandidates(cleanAuthoredText);
 
   const targetObservations: TargetObservationInput[] = [];
   const targetCanonicalLinks: Array<Record<string, unknown>> = [];
   const scopeCandidates: ScopeCandidate[] = [];
+  let authoredTextMatches: readonly TargetMatchResult[] = [];
   let hotelOrganizationLinks: readonly HotelOrganizationLink[] = [];
   // Only touch the catalog when there is something to actually match against
   // (EXTERNAL AUDIT AMENDMENT #1, Finding 4, widened by Amendment #4 Finding
@@ -587,10 +599,42 @@ export async function interpretOneThread(
         associatedAddresses,
         catalog,
         authoredTextCandidateNames,
+        cleanAuthoredText,
       );
       targetObservations.push(matched.observation);
       scopeCandidates.push(toScopeCandidate(matched.observation, matched.links));
       for (const link of matched.links) {
+        targetCanonicalLinks.push({
+          observation_fingerprint: link.observationFingerprint,
+          target_kind: link.targetKind,
+          target_hotel_id: link.targetHotelId ?? "",
+          target_organization_id: link.targetOrganizationId ?? "",
+          name_evidence: link.nameEvidence,
+          domain_evidence: link.domainEvidence,
+          address_evidence: link.addressEvidence,
+          contact_evidence: link.contactEvidence,
+          authored_text_evidence: link.authoredTextEvidence,
+          rank: link.rank,
+        });
+      }
+    }
+
+    // EXTERNAL AUDIT AMENDMENT #5, Finding 1: a creator-authored-text
+    // commercial target is its OWN independent private observation — never
+    // canonical-link evidence bolted onto an unrelated recipient-domain
+    // observation. Extracted per-SENT-message (durable provenance), grouped
+    // by normalized name (never by canonical id), and always recomputed
+    // fresh here (no reuse fast-path — this is cheap, bounded work, and only
+    // runs at all when the catalog was already fetched above).
+    authoredTextMatches = extractAuthoredTextTargetObservations(
+      authoredTextSources,
+      catalog,
+      associatedAddresses,
+    );
+    for (const match of authoredTextMatches) {
+      targetObservations.push(match.observation);
+      scopeCandidates.push(toScopeCandidate(match.observation, match.links));
+      for (const link of match.links) {
         targetCanonicalLinks.push({
           observation_fingerprint: link.observationFingerprint,
           target_kind: link.targetKind,
@@ -620,22 +664,18 @@ export async function interpretOneThread(
   // real evidence already computed above: at least one non-freemail `to`-
   // recipient domain observation (a plausible commercial target/
   // representative), or the creator's own authored text exactly naming a
-  // REAL canonical hotel/organization. Absent BOTH, proposal language alone
-  // stays `needs_review` — an honest abstention, never silently upgraded and
-  // never silently discarded (a creator can still correct it either way).
-  const authoredTextMatchedRealBusiness =
-    catalog !== null &&
-    (() => {
-      const authoredEvidence = computeAuthoredTextTargetEvidence(
-        authoredTextCandidateNames,
-        catalog!,
-      );
-      return (
-        authoredEvidence.matchedHotelIds.size > 0 ||
-        authoredEvidence.matchedOrganizationIds.size > 0
-      );
-    })();
-  const hasCommercialTargetEvidence = rawObservations.length > 0 || authoredTextMatchedRealBusiness;
+  // REAL canonical hotel/organization in a target-directed context. Absent
+  // BOTH, proposal language alone stays `needs_review` — an honest
+  // abstention, never silently upgraded and never silently discarded (a
+  // creator can still correct it either way).
+  //
+  // EXTERNAL AUDIT AMENDMENT #5, Finding 1: `authoredTextMatches` is now the
+  // exact same array of INDEPENDENT PRIVATE OBSERVATIONS committed above —
+  // never a separately-recomputed boolean — so `qualified_outreach` can
+  // never be reached from authored-text evidence with zero corresponding
+  // private fact actually persisted (the freemail + target-directed exact
+  // canonical match case).
+  const hasCommercialTargetEvidence = rawObservations.length > 0 || authoredTextMatches.length > 0;
   const outreachIsProposalLanguageOnly = outreach.reasonCodes.includes(
     "creator_commercial_proposal_language_detected",
   );
@@ -713,6 +753,7 @@ export async function interpretOneThread(
       observed_name: o.observedName,
       observed_domain: o.observedDomain,
       target_kind_hint: o.targetKindHint,
+      observation_source_kind: o.observationSourceKind,
       source_provider_message_ids: o.sourceProviderMessageIds,
       machine_canonical_link_assessment: o.machineCanonicalLinkAssessment,
       candidate_set_fingerprint: o.candidateSetFingerprint,

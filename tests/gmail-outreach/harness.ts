@@ -199,6 +199,22 @@ export async function targetObservationsOf(client: Client, normalizedThreadId: s
   return res.rows;
 }
 
+export async function targetScopeSignalRow(client: Client, normalizedThreadId: string) {
+  const res = await client.query(
+    "select * from private.gmail_outreach_target_scope_signals where normalized_thread_id = $1",
+    [normalizedThreadId],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function canonicalLinksOf(client: Client, targetObservationId: string) {
+  const res = await client.query(
+    "select * from private.gmail_outreach_target_canonical_links where target_observation_id = $1 order by rank",
+    [targetObservationId],
+  );
+  return res.rows;
+}
+
 export async function confirmedTargetsOf(client: Client, normalizedThreadId: string) {
   const res = await client.query(
     "select * from private.gmail_outreach_target_confirmations where normalized_thread_id = $1",
@@ -217,6 +233,34 @@ export async function decisionEventsOf(client: Client, normalizedThreadId: strin
 
 export function randomProviderId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+}
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #5, Finding 6: `name` is DELIBERATELY NOT
+ * randomized — callers pass names their fixture body text names EXACTLY
+ * (`namesMatchExactly`), and appending a random suffix would silently break
+ * every authored-text-matching test that depends on that literal equality.
+ * The Amendment #4 local flake this helper was suspected of causing was a
+ * NON-reset local `theugc_test` database accumulating duplicate same-named
+ * rows across repeated manual test-file re-runs — structurally impossible in
+ * real CI, which always starts every job from a fresh, empty `postgres:16`
+ * service container (`.github/workflows/ci.yml`) with no prior state to
+ * accumulate. See the Amendment #5 report's CI-determinism section for the
+ * full evidence trail; no source change was warranted here.
+ */
+export async function insertHotel(
+  c: Client,
+  input: { name: string; websiteUrl?: string | null },
+): Promise<string> {
+  const dest = await c.query(
+    `insert into public.destinations (id, name, slug, type) values (gen_random_uuid(), $1, $2, 'city') returning id`,
+    [`${input.name} destination`, randomProviderId("dest")],
+  );
+  const hotel = await c.query(
+    `insert into public.hotels (name, slug, destination_id, website_url) values ($1, $2, $3, $4) returning id`,
+    [input.name, randomProviderId("hotel"), dest.rows[0].id, input.websiteUrl ?? null],
+  );
+  return hotel.rows[0].id as string;
 }
 
 /** A syntactically valid sha256-shaped fingerprint for fixtures that insert `observation_fingerprint` directly. */

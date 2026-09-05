@@ -765,26 +765,31 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #4, Finding 2
   });
 
   it("never treats an ordinary sentence-leading capital or a person's name as evidence by itself — only a REAL catalog exact match counts", () => {
+    const text = "Thanks! Best, Jane Doe";
     const evidence = computeAuthoredTextTargetEvidence(
-      extractAuthoredTextNameCandidates("Thanks! Best, Jane Doe"),
+      extractAuthoredTextNameCandidates(text),
       { hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: null }], organizations: [] },
+      text,
     );
     expect(evidence.matchedHotelIds.size).toBe(0);
   });
 
-  it("an exact (normalized) match against a real canonical hotel name is 'agrees' authored-text evidence", () => {
+  it("an exact (normalized) match against a real canonical hotel name IN A TARGET-DIRECTED CONTEXT is 'agrees' authored-text evidence", () => {
+    const text = "I'd love to feature Acme Hotel on my channel.";
     const evidence = computeAuthoredTextTargetEvidence(
-      extractAuthoredTextNameCandidates("I'd love to feature Acme Hotel on my channel."),
+      extractAuthoredTextNameCandidates(text),
       { hotels: [{ id: "hotel-1", name: "Acme Hotel", websiteDomain: null }], organizations: [] },
+      text,
     );
     expect(evidence.matchedHotelIds.has("hotel-1")).toBe(true);
   });
 
-  it("a business explicitly named in authored text enters the candidate universe even with ZERO domain/contact evidence, and is scored (not silently dropped)", () => {
+  it("EXTERNAL AUDIT AMENDMENT #5, Finding 1: a business explicitly named in authored text with ZERO domain/contact relation to THIS observation no longer enters ITS candidate universe at all — it becomes its own independent observation instead (see audit-amendment-5.test.ts)", () => {
     const [observation] = extractTargetObservations(
       [recipient({ role: "to", domainLower: "agencyx.example" })],
       PROVIDER_ID_MAP,
     );
+    const text = "I'd love to feature Acme Hotel on my channel.";
     const result = matchTargetObservation(
       observation!,
       [],
@@ -797,13 +802,14 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #4, Finding 2
         hotelOrganizationLinks: [],
       },
       ["Acme Hotel"],
+      text,
     );
-    const acmeLink = result.links.find((l) => l.targetHotelId === "hotel-1");
-    expect(acmeLink).toBeDefined();
-    expect(acmeLink!.authoredTextEvidence).toBe("agrees");
+    expect(result.links.find((l) => l.targetHotelId === "hotel-1")).toBeUndefined();
+    expect(result.observation.machineCanonicalLinkAssessment).toBe("insufficient_evidence");
   });
 
   it("Finding 2: authored text explicitly naming a DIFFERENT real business than the domain/contact-strong one caps it at needs_review, never strong_match", () => {
+    const text = "I'd like to collaborate with Hotel B instead.";
     const [observation] = extractTargetObservations(
       [recipient({ role: "to", domainLower: "hotel-a.example" })],
       PROVIDER_ID_MAP,
@@ -823,35 +829,35 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #4, Finding 2
         hotelOrganizationLinks: [],
       },
       ["Hotel B"],
+      text,
     );
     expect(result.observation.machineCanonicalLinkAssessment).toBe("needs_review");
     const hotelALink = result.links.find((l) => l.targetHotelId === "hotel-a");
     expect(hotelALink!.authoredTextEvidence).toBe("differs");
   });
 
-  it("Finding 2: an agency recipient plus authored text naming TWO real businesses preserves BOTH as candidates under the same observation", () => {
+  it("Finding 2: authored text agreeing with the domain-strong candidate ADDS corroboration (extra agreement), never displacing it", () => {
+    const text = "I'd love to work with Hotel A on a paid partnership.";
     const [observation] = extractTargetObservations(
-      [recipient({ role: "to", domainLower: "agencyx.example" })],
+      [recipient({ role: "to", domainLower: "hotel-a.example" })],
       PROVIDER_ID_MAP,
     );
     const result = matchTargetObservation(
       observation!,
-      [],
+      ["marketing@hotel-a.example"],
       {
         epoch: 1,
-        hotels: [
-          { id: "hotel-a", name: "Hotel A", websiteDomain: "hotel-a.example" },
-          { id: "hotel-b", name: "Hotel B", websiteDomain: "hotel-b.example" },
-        ],
+        hotels: [{ id: "hotel-a", name: "Hotel A", websiteDomain: "hotel-a.example" }],
         organizations: [],
-        hotelIdByContactEmail: new Map(),
+        hotelIdByContactEmail: new Map([["marketing@hotel-a.example", new Set(["hotel-a"])]]),
         organizationIdByContactEmail: new Map(),
         hotelOrganizationLinks: [],
       },
-      ["Hotel A", "Hotel B"],
+      ["Hotel A"],
+      text,
     );
-    const agreeingLinks = result.links.filter((l) => l.authoredTextEvidence === "agrees");
-    expect(agreeingLinks.map((l) => l.targetHotelId).sort()).toEqual(["hotel-a", "hotel-b"]);
+    expect(result.observation.machineCanonicalLinkAssessment).toBe("strong_match");
+    expect(result.links[0]!.authoredTextEvidence).toBe("agrees");
   });
 
   it("no authored-text candidate phrases at all leaves authoredTextEvidence unavailable, never a false contradiction", () => {
@@ -869,6 +875,88 @@ describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #4, Finding 2
     });
     expect(result.observation.machineCanonicalLinkAssessment).toBe("strong_match");
     expect(result.links[0]!.authoredTextEvidence).toBe("unavailable");
+  });
+});
+
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #5, Finding 2 — differs vs unavailable)", () => {
+  it("required regression: strong domain/contact match for Hotel A + body naming no real business ('Hi Jane, I'd love to collaborate with your hotel.') stays 'unavailable', never 'differs'", () => {
+    const text = "Hi Jane, I'd love to collaborate with your hotel.";
+    const [observation] = extractTargetObservations(
+      [recipient({ role: "to", domainLower: "hotel-a.example" })],
+      PROVIDER_ID_MAP,
+    );
+    const result = matchTargetObservation(
+      observation!,
+      ["marketing@hotel-a.example"],
+      {
+        epoch: 1,
+        hotels: [{ id: "hotel-a", name: "Hotel A", websiteDomain: "hotel-a.example" }],
+        organizations: [],
+        hotelIdByContactEmail: new Map([["marketing@hotel-a.example", new Set(["hotel-a"])]]),
+        organizationIdByContactEmail: new Map(),
+        hotelOrganizationLinks: [],
+      },
+      extractAuthoredTextNameCandidates(text),
+      text,
+    );
+    expect(result.observation.machineCanonicalLinkAssessment).toBe("strong_match");
+    expect(result.links[0]!.authoredTextEvidence).toBe("unavailable");
+  });
+});
+
+describe("B05 unit: target-extraction.ts (EXTERNAL AUDIT AMENDMENT #5, Finding 3 — target-directed context)", () => {
+  const catalog = {
+    hotels: [{ id: "hotel-marriott", name: "Marriott", websiteDomain: null }],
+    organizations: [],
+  };
+
+  it("required regression: a bare historical mention ('I worked with Marriott last year') is NOT target-directed evidence", () => {
+    const text = "I worked with Marriott last year on a similar campaign.";
+    const evidence = computeAuthoredTextTargetEvidence(
+      extractAuthoredTextNameCandidates(text),
+      catalog,
+      text,
+    );
+    expect(evidence.matchedHotelIds.size).toBe(0);
+    expect(evidence.hasAnyRealAuthoredTargetMatch).toBe(false);
+  });
+
+  it("required regression: genuine target-directed phrasing ('I'd love to collaborate with Marriott') IS target evidence", () => {
+    const text = "I'd love to collaborate with Marriott on a UGC campaign.";
+    const evidence = computeAuthoredTextTargetEvidence(
+      extractAuthoredTextNameCandidates(text),
+      catalog,
+      text,
+    );
+    expect(evidence.matchedHotelIds.has("hotel-marriott")).toBe(true);
+  });
+
+  it("required regression: 'Hotel A was a previous client; I'd like to collaborate with Hotel B' — only Hotel B is current target evidence, Hotel A's historical mention never competes", () => {
+    const text = "Hotel A was a previous client; I'd like to collaborate with Hotel B this year.";
+    const twoHotelCatalog = {
+      hotels: [
+        { id: "hotel-a", name: "Hotel A", websiteDomain: null },
+        { id: "hotel-b", name: "Hotel B", websiteDomain: null },
+      ],
+      organizations: [],
+    };
+    const evidence = computeAuthoredTextTargetEvidence(
+      extractAuthoredTextNameCandidates(text),
+      twoHotelCatalog,
+      text,
+    );
+    expect(evidence.matchedHotelIds.has("hotel-b")).toBe(true);
+    expect(evidence.matchedHotelIds.has("hotel-a")).toBe(false);
+  });
+
+  it("required regression: an ordinary proper name never becomes target evidence absent the full target-directed rule", () => {
+    const text = "Marriott is a well-known hotel brand.";
+    const evidence = computeAuthoredTextTargetEvidence(
+      extractAuthoredTextNameCandidates(text),
+      catalog,
+      text,
+    );
+    expect(evidence.matchedHotelIds.size).toBe(0);
   });
 });
 
@@ -921,6 +1009,7 @@ describe("B05 unit: target-extraction.ts (deriveMachineTargetScope, EXTERNAL AUD
     observedName: "Acme Hospitality Group",
     observedDomain: "acmegroup.example",
     targetKindHint: "organization" as const,
+    observationSourceKind: "recipient_domain" as const,
     sourceProviderMessageIds: ["provider-msg-1"],
     machineCanonicalLinkAssessment: "strong_match" as const,
     candidateSetFingerprint: "fp",

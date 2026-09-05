@@ -2089,6 +2089,30 @@ VERSION`/`TARGET_MATCHER_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION` are
 bumped to `_v4` (Findings 1-3); Finding 4 changes no version (a scheduling
 fix, not a classification/matching rule change).
 
+**EXTERNAL AUDIT AMENDMENT #5** (bounded final target-fact + evaluation
+correction, D070 unchanged): `gmail_outreach_target_observations` now carries
+an explicit `observation_source_kind` (`recipient_domain` | `authored_text_
+name`), part of `observation_fingerprint`'s own digest — a creator-authored
+business match is now FIRST its own independent private observation
+(`observed_domain = null`, identity keyed on source kind + normalized name,
+never on a canonical id), never canonical-link evidence bolted onto an
+unrelated recipient-domain observation, correcting Amendment #4 Finding 2's
+representation; a freemail recipient with a real target-directed authored
+match now both qualifies AND persists the corresponding private observation,
+and the target-scope layer sees two independently-established authored
+targets as two real candidates (Finding 1). `computeAuthoredTextTargetEvidence`'s
+`differs` now requires a phrase to have actually resolved to a real, target-
+directed business — never merely that some capitalized phrase existed in the
+text (Finding 2) — gated by a new conservative, deterministic `isTargetDirectedContext`
+verb-phrase check so a bare business-name mention ("I worked with Marriott
+last year") is no longer target evidence at all absent genuine directed
+phrasing (Finding 3). The synthetic evaluation harness now runs two
+explicitly-separate evaluations — the proposal-language detector alone, and
+a new real-Postgres, end-to-end `interpretOneThread` final-interpretation
+evaluation with no test-side status rewriting (Finding 4). `TARGET_MATCHER_
+VERSION` is bumped to `_v5` (Findings 1-3); `OUTREACH_DETECTOR_VERSION`/
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals

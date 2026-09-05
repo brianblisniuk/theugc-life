@@ -42,15 +42,30 @@ B04 itself exposes no read RPC for its own normalized content.
 
 Thirteen `private`-schema tables (§26, the exact final inventory including
 `gmail_outreach_target_scope_signals` and the `gmail_outreach_catalog_epoch_
-lock` singleton added by the accepted amendment history): six MACHINE
-(advisory, replaceable), six HUMAN (immutable events + current projections,
-authoritative), and `gmail_outreach_observed_recipients` — the deterministic
-OBSERVED layer (§9), neither advisory interpretation nor human decision, plus
-the one internal locking primitive. See §6 for the full MACHINE/HUMAN layer
-definition. Nothing is written to `public.pipeline_items`, `public.outreach_
-events`, `public.collaborations`, trip state, or any canonical `public.
-hotels`/`public.organizations`/`public.hotel_contacts`/`public.organization_
-contacts` row.
+lock` singleton added by the accepted amendment history), classified exactly
+per §26's own row-by-row list and §6's MACHINE/HUMAN definition — EXTERNAL
+AUDIT AMENDMENT #5, Finding 5 corrected a stale "six MACHINE / six HUMAN"
+claim here that did not actually add up against that inventory:
+
+- **Seven MACHINE** (advisory, replaceable, §6): `gmail_outreach_thread_
+  signals`, `gmail_outreach_observed_recipient_canonical_links`, `gmail_
+  outreach_target_contact_signals`, `gmail_outreach_target_contact_
+  candidates`, `gmail_outreach_target_scope_signals`, `gmail_outreach_target_
+  observations` (its advisory columns only — see §7 for its identity fields),
+  `gmail_outreach_target_canonical_links`.
+- **Four HUMAN** (immutable events + current projections, authoritative,
+  §6): `gmail_outreach_creator_decision_events`, `gmail_outreach_creator_
+  decisions`, `gmail_outreach_target_confirmations`, `gmail_outreach_target_
+  contact_confirmed_members`.
+- **One OBSERVED** (§9): `gmail_outreach_observed_recipients` — deterministic
+  extraction, neither advisory interpretation nor human decision.
+- **One internal locking primitive**: `gmail_outreach_catalog_epoch_lock`
+  (singleton).
+
+7 + 4 + 1 + 1 = 13. Nothing is written to `public.pipeline_items`,
+`public.outreach_events`, `public.collaborations`, trip state, or any
+canonical `public.hotels`/`public.organizations`/`public.hotel_contacts`/
+`public.organization_contacts` row.
 
 ## 4. Means / does-not-mean table
 
@@ -124,23 +139,26 @@ audit, never as authorization).
 ## 7. Private target observations
 
 `private.gmail_outreach_target_observations` — a private, stable fact
-independent of canonical inventory (§8 of D070). `observation_fingerprint`
-is a deterministic digest over every dimension of MATERIAL matching
-evidence the caller extracted — domain **and** normalized observed name
-(`computeTargetObservationFingerprint`) — never domain alone, because
-`observed_name` is read as independent canonical-matching evidence by
-`matchTargetObservation`, not merely a cosmetic label (the same epistemic
-principle §9's `recipient_fingerprint` already applies to observed
-recipients). Identity fields (`observed_name`, `observed_domain`,
-`target_kind_hint`) are written once per `(mail_account_id,
-normalized_thread_id, observation_fingerprint)` and never rewritten by a
-later re-run — the commit RPC's `on conflict ... do nothing` on the
-fingerprint, followed by a separate `update` that touches only the advisory
-columns, is what enforces this. A re-run that reproduces the SAME
-fingerprint reconciles onto the SAME row; one that reproduces a MATERIALLY
-DIFFERENT name at the same domain (a different fingerprint) creates a new,
-additional observation rather than overwriting the old one — the prior row,
-and any human confirmation of it, is left completely untouched.
+independent of canonical inventory (§8 of D070). Every observation carries an
+explicit `observation_source_kind` (EXTERNAL AUDIT AMENDMENT #5, Finding 1):
+`recipient_domain` (§7's historical shape — derived purely from a non-freemail
+`to`-recipient's domain) or `authored_text_name` (§7a — a business the
+creator's own authored text explicitly, exactly named in a target-directed
+context, independent of any recipient's address). `observation_fingerprint`
+is a deterministic digest over `(observation_source_kind, observed_domain,
+normalized observed_name)` (`computeTargetObservationFingerprint`) — the
+source kind is itself part of the digest so the two kinds can never collide,
+even when they end up pointing at the same canonical business via their own
+independent canonical links. Identity fields (`observed_name`,
+`observed_domain`, `target_kind_hint`, `observation_source_kind`) are written
+once per `(mail_account_id, normalized_thread_id, observation_fingerprint)`
+and never rewritten by a later re-run — the commit RPC's `on conflict ... do
+nothing` on the fingerprint, followed by a separate `update` that touches
+only the advisory columns, is what enforces this. A re-run that reproduces
+the SAME fingerprint reconciles onto the SAME row; one that reproduces a
+MATERIALLY DIFFERENT name (a different fingerprint) creates a new, additional
+observation rather than overwriting the old one — the prior row, and any
+human confirmation of it, is left completely untouched.
 `source_provider_message_ids` is the one field that is allowed to EVOLVE on
 a recognized row: every reconciliation grows it via a distinct union with
 the newly-asserted, server-verified ids (never a rewrite, never a shrink),
@@ -149,24 +167,65 @@ its supporting evidence rather than being silently dropped or left to drift
 out of sync with the fact it supports. Explicit account deletion still
 purges every row regardless of which fingerprint it carries.
 
-## 7a. Creator-authored target-name evidence
+## 7a. Creator-authored target-name evidence — an INDEPENDENT private observation
 
-EXTERNAL AUDIT AMENDMENT #4, Finding 2: the creator's own SENT body may
-explicitly identify the business/property being pitched, independently of
-who the message was addressed to (an agency, an intermediary, a corporate
-group inbox). `extractAuthoredTextNameCandidates` (target-extraction.ts) is a
-deterministic, non-NER candidate-phrase extractor over the SAME clean
-(authored, non-quoted, non-uncertain-signature) text the outreach classifier
-reads — contiguous runs of capitalized words. This NEVER by itself asserts a
-business exists: a phrase is meaningful ONLY once it EXACTLY matches (case-
-and punctuation-normalized, full-string equality, never a substring/ILIKE
-match) a REAL canonical hotel or organization name, checked both to widen the
-bounded catalog snapshot (`gmail_outreach_catalog_snapshot`'s `p_candidate_
-names`, matched via `private.normalize_business_name` server-side) so such a
-business enters the candidate universe even when its domain/contact is
-unrelated to the recipient, and to assign `authored_text_evidence` (§8) per
-candidate. A false-positive phrase (a person's name, an ordinary closing)
-simply matches nothing and contributes no evidence either way.
+EXTERNAL AUDIT AMENDMENT #4, Finding 2 first introduced authored-text-name
+matching; EXTERNAL AUDIT AMENDMENT #5, Finding 1 corrected its representation
+— a creator-authored business name is FIRST a private, independent target
+FACT of its own (`observation_source_kind = 'authored_text_name'`,
+`observed_domain = null`), never merely canonical-link evidence bolted onto
+an unrelated `recipient_domain` observation's identity. The creator's own
+SENT body may explicitly identify the business/property being pitched,
+independently of who the message was addressed to (an agency, an
+intermediary, a corporate group inbox, or even a freemail address that would
+otherwise generate NO `recipient_domain` observation at all — D028).
+
+`extractAuthoredTextNameCandidates` (target-extraction.ts) is a deterministic,
+non-NER candidate-phrase extractor over the SAME clean (authored, non-quoted,
+non-uncertain-signature) text the outreach classifier reads — contiguous runs
+of capitalized words. This never by itself asserts a business exists, and
+(EXTERNAL AUDIT AMENDMENT #5, Finding 2) a phrase that matches no real
+business contributes NO evidence at all — never a false `differs` against an
+unrelated candidate merely because some capitalized phrase existed in the
+text. A phrase becomes real target evidence only when BOTH:
+
+1. it EXACTLY matches (case- and punctuation-normalized, full-string
+   equality, never a substring/ILIKE match) a REAL canonical hotel or
+   organization name — checked against the bounded catalog snapshot
+   (`gmail_outreach_catalog_snapshot`'s `p_candidate_names`, matched via
+   `private.normalize_business_name` server-side) so such a business enters
+   the candidate universe even when its domain/contact is unrelated to the
+   recipient; AND
+2. (EXTERNAL AUDIT AMENDMENT #5, Finding 3) the exact match sits in a
+   conservative, deterministic, versioned TARGET-DIRECTED context —
+   `isTargetDirectedContext` requires a verb phrase such as "collaborate
+   with", "partnership with", "feature", "pitch to", "stay at" or "work
+   with" immediately preceding the matched name. A bare business-name
+   MENTION is not automatically a mention DIRECTED AT that business as a
+   commercial target: "I worked with Marriott last year" must not satisfy
+   D070 §5's requirement 3 merely because "Marriott" exact-matches a real
+   canonical business. Precision over recall — the check abstains whenever
+   it is uncertain, never inferred from general proximity or sentiment.
+
+Extraction runs per-SENT-message (never over a thread-joined blob) so
+provenance identifies the EXACT provider message(s) that named the target,
+grouped by NORMALIZED PHRASE (never by canonical hotel/organization id — the
+canonical row remains only ever a 0..N LINK, §8, exactly like a
+`recipient_domain` observation's). The same normalized name named again in a
+later SENT message unions its provenance onto the SAME durable observation
+(§7); a materially different authored name forks a new, additional
+observation, leaving the old one and any human confirmation of it untouched.
+`gmail_outreach_target_canonical_links` under an `authored_text_name`
+observation is always `authored_text_evidence = 'agrees'` for the matched
+business — it is the evidence that CREATED the independent observation, not
+corroboration for an unrelated one. `authored_text_evidence` remains
+available as an EXTRA corroboration (or contradiction) dimension on a
+`recipient_domain` observation's own candidates too, but — Finding 1 — it can
+no longer, by itself, justify an otherwise-unrelated business entering that
+observation's candidate universe; a real target-directed authored-text match
+with no other core evidence relationship to a given `recipient_domain`
+observation always becomes its own independent `authored_text_name`
+observation instead.
 
 ## 8. Canonical target-link semantics
 
@@ -180,12 +239,20 @@ evidence`/`contact_evidence`/`authored_text_evidence`, each `agrees`/
 conservative-evidence shape — no numeric score, per D063 §12.2.
 `authored_text_evidence` (§7a) is independent of the recipient's address/
 domain/contact entirely — it reads only the creator's own SENT text — and a
-candidate it `differs` for (the text explicitly named a DIFFERENT real
-business) can never be assessed `strong_match`, regardless of how strong its
-domain/contact evidence is: weaker positional evidence must never silently
-overrule what the creator plainly wrote (EXTERNAL AUDIT AMENDMENT #4,
-Finding 2). Wholesale replaced per observation on each re-evaluation; never
-creates or mutates `public.hotels`/`public.organizations`.
+candidate it `differs` for on a `recipient_domain` observation (the text
+explicitly named a DIFFERENT real, target-directed business) can never be
+assessed `strong_match`, regardless of how strong its domain/contact evidence
+is: weaker positional evidence must never silently overrule what the creator
+plainly wrote (EXTERNAL AUDIT AMENDMENT #4, Finding 2). `differs` requires an
+actual real-business, target-directed match — never merely that some
+capitalized phrase existed in the text (EXTERNAL AUDIT AMENDMENT #5, Finding
+2) — and it can no longer, alone, admit a candidate with zero domain/name/
+contact relevance into a `recipient_domain` observation's own universe
+(Finding 1): that candidate instead becomes its own independent
+`authored_text_name` observation (§7a), where `authored_text_evidence` is
+always `agrees` for its one identifying business. Wholesale replaced per
+observation on each re-evaluation; never creates or mutates `public.hotels`/
+`public.organizations`.
 
 ## 9. Observed recipients
 
@@ -250,7 +317,10 @@ before, target identity is resolved. No trigger enforces a hard consistency
 constraint between scope and the confirmed-member set; a review surface may
 compute and show a `consistent`/`pending_target_resolution`/`contradictory`
 status by comparing `target_scope_decision`'s cardinality implication against
-`count(*) from gmail_outreach_target_confirmations` for the thread — this is
+`count(*) from gmail_outreach_target_confirmations where is_confirmed = true`
+for the thread (EXTERNAL AUDIT AMENDMENT #5, Finding 5 — corrected for the
+tombstone semantics §9b/Amendment #1 Finding 3 introduced: a row surviving a
+`remove` decision is not membership, `is_confirmed = true` is) — this is
 diagnostic, never a write-time gate.
 
 ## 13. Qualitative machine states
@@ -271,12 +341,14 @@ guarantee is "we can reconstruct exactly what evidence and configuration
 produced this stored result," never "calling the model again returns
 identical bytes." Every machine row records its detector/matcher version;
 V1's deterministic baseline (`gmail_outreach_rules_v4`/`gmail_outreach_match_
-rules_v4`/`gmail_outreach_text_v4` — bumped from `_v1` to `_v2` by EXTERNAL
+rules_v5`/`gmail_outreach_text_v4` — bumped from `_v1` to `_v2` by EXTERNAL
 AUDIT AMENDMENT #1's quote/signature stripping and matcher fixes, from `_v2`
 to `_v3` by EXTERNAL AUDIT AMENDMENT #2's scope/contact/authored-text
-findings, and from `_v3` to `_v4` by EXTERNAL AUDIT AMENDMENT #4's target-
+findings, from `_v3` to `_v4` by EXTERNAL AUDIT AMENDMENT #4's target-
 evidence-gated qualification, authored-text target evidence, and HTML
-boundary fixes, §21/§22) needs no model-identifier/prompt-version columns
+boundary fixes, and the matcher from `_v4` to `_v5` by EXTERNAL AUDIT
+AMENDMENT #5's independent authored-text observations, differs/unavailable
+fix and target-directed-context gate, §21/§22) needs no model-identifier/prompt-version columns
 since it makes no external call, but
 the schema (implicit in `reason_codes`/evidence columns, extensible via
 future columns) does not preclude adding them for a future model-backed
@@ -425,6 +497,23 @@ canonical-contact-link correctness/false-link rate. All explicitly labeled
 **synthetic/evaluation-harness metrics** — never "real-world precision/
 recall." No numeric go-live threshold is fixed, because none exists in any
 accepted source (D070's closing section).
+
+EXTERNAL AUDIT AMENDMENT #5, Finding 4: `tests/gmail-outreach/evaluation/
+harness.test.ts` keeps TWO explicitly-separate outreach evaluations, never
+conflated as if one measured the other:
+
+- **Proposal-language detector** — `classifyOutreach` alone, over
+  `OUTREACH_CORPUS`. This measures only requirements 1+2 of §5's joint test
+  (creator-SENT proposal language) — it has no recipient/target evidence at
+  all, and its `needs_review` + `creator_commercial_proposal_language_
+  detected` output is relabeled to `qualified_outreach` SOLELY to score this
+  one signal against the corpus, never reported as the final production
+  qualified-outreach precision.
+- **Final B05 outreach interpretation** — the real, end-to-end
+  `interpretOneThread` combination (classifier + target extraction/matching
+  + the §5 requirement-3 upgrade) against a real Postgres database and
+  `FINAL_INTERPRETATION_CORPUS`, scored with NO test-side status rewriting.
+  This is the metric that actually corresponds to what a creator sees.
 
 ## 21. B06/B07/B08 boundaries
 
@@ -845,3 +934,117 @@ thread is offered for re-evaluation. Finding 4 changes no version (a
 scheduling-correctness fix, not a classification/matching rule change) but
 is itself the mechanism that ensures any thread whose evidence changed under
 the exact adversarial timing pattern is still offered.
+
+## External Audit Amendment #5 — bounded final target-fact + evaluation correction, D070 unchanged
+
+A six-finding follow-up against the Amendment #4 head. **No product decision
+in D070 was reopened**; every fix listed in Amendments #1-#4 (private_gmail_
+processing gate, deletion-start lock, machine-vs-human capability boundary,
+human `event_seq` monotonic projections/tombstones, durable observed-
+recipient fingerprints, target observation provenance, real catalog lock/
+CAS, two-level relevant fingerprint fast path, 0..N canonical contacts,
+semantic target scope, independent target-contact corroboration, quote/
+signature authored-text protection, HTML blockquote handling, deterministic
+B04 evidence-digest source staleness) remains exactly as accepted.
+
+1. **Authored-text-named commercial targets are now INDEPENDENT private
+   target facts (Finding 1).** Amendment #4's authored-text evidence was
+   representationally wrong: a business the creator's authored text
+   explicitly named entered an UNRELATED `recipient_domain` observation's
+   canonical-link candidate set, rather than becoming its own private fact —
+   violating D070's own "a commercial target is FIRST a private fact,
+   canonical links are evidence" model. Every `gmail_outreach_target_
+   observations` row now carries an explicit `observation_source_kind`
+   (`recipient_domain` | `authored_text_name`); an authored-text match is
+   `observed_domain = null`, identity keyed on `(observation_source_kind,
+   normalized observed_name)` — never on a canonical hotel/organization id,
+   which remains only ever a 0..N link (§7a). Extraction runs per-SENT-
+   message so provenance identifies the EXACT message(s) that named the
+   target; the same name across multiple messages unions provenance onto the
+   SAME durable observation; a materially different name forks a new,
+   additional observation, leaving the old one and any human confirmation of
+   it completely untouched (the same fork-on-material-change discipline
+   Amendment #3 Finding 3 already established for `recipient_domain`
+   observations). A freemail recipient with a real target-directed authored
+   match now both qualifies AND persists the corresponding private
+   observation — Amendment #4's version could reach `qualified_outreach`
+   with zero corresponding private fact when no `recipient_domain`
+   observation existed at all. The target-scope layer (§12) now sees TWO
+   independently-established authored observations as two real candidates,
+   never one observation artificially carrying two canonical link
+   candidates — `deriveMachineTargetScope` correctly reports
+   `multiple_targets` from real independent evidence. Each observation is
+   independently confirmable/rejectable via the existing `target` axis
+   (`gmail_outreach_target_confirmations`), with no schema change needed
+   there at all.
+2. **The `differs`-vs-`unavailable` false-positive-phrase bug (Finding 2).**
+   `computeAuthoredTextTargetEvidence`'s `hasAnyCandidatePhrase` gated
+   `differs` on "some capitalized phrase was extracted", not "a phrase
+   actually resolved to a real, different business" — a harmless phrase like
+   "Hi Jane" could mark an unrelated, legitimately-matched candidate `differs`
+   purely because it existed in the text, contradicting the contract's own
+   claim that a false-positive phrase contributes no evidence. Renamed to
+   `hasAnyRealAuthoredTargetMatch`, now true only when a phrase resolved to an
+   actual real, target-directed business (Finding 3) — `differs` requires
+   that, never mere phrase existence.
+3. **Target-directed context (Finding 3).** A business NAME MENTION is not
+   automatically a mention DIRECTED AT that business as a commercial target
+   — "I worked with Marriott last year" must not satisfy D070 §5's
+   requirement 3 merely because "Marriott" exact-matches a real canonical
+   business. `isTargetDirectedContext` is a conservative, deterministic,
+   versioned pattern check (verb phrases — "collaborate with", "partnership
+   with", "feature", "pitch to", "stay at", "work with", et al. —
+   immediately preceding the matched name) applied before an exact match is
+   treated as real target evidence anywhere in the matcher (both §7a's
+   independent observations and a `recipient_domain` observation's own
+   corroboration dimension). Precision over recall — abstains when uncertain,
+   never inferred from general proximity or sentiment. A historical mention
+   alongside a genuine pitch to a DIFFERENT target ("Hotel A was a previous
+   client; I'd like to collaborate with Hotel B") now correctly yields target
+   evidence for Hotel B only — Hotel A's historical mention never competes.
+4. **The synthetic evaluation harness measures the real final interpretation
+   (Finding 4).** The outreach-classification evaluation used to relabel
+   `classifyOutreach`'s `needs_review` + `creator_commercial_proposal_
+   language_detected` output back to `qualified_outreach` before scoring,
+   measuring only the proposal-language DETECTOR — never the real final B05
+   interpretation (which also requires D070 §5's requirement 3). §20 now
+   documents, and the harness now runs, TWO explicitly-separate evaluations:
+   the proposal-language detector (renamed, never claimed as final
+   precision) and a NEW final-B05-outreach-interpretation evaluation
+   exercising the real, end-to-end `interpretOneThread` combination against
+   a real Postgres database, with no test-side status rewriting. Stale
+   `_v1` version-string display labels in the harness's console-log output
+   are also corrected to reference the live version constants.
+5. **Governance reconciliation (Finding 5).** §3's table-count arithmetic
+   ("six MACHINE / six HUMAN") did not actually add up against §26's exact
+   thirteen-table inventory — corrected to the real classification (seven
+   MACHINE, four HUMAN, one OBSERVED, one lock singleton). §12's target-scope
+   diagnostic text is corrected to `count(*) from gmail_outreach_target_
+   confirmations where is_confirmed = true`, matching the tombstone semantics
+   Amendment #1 Finding 3 introduced (row presence alone is not membership).
+   §7/§7a/§8 are rewritten to describe authored-text targets as independent
+   private observations (Finding 1), not canonical evidence attached to a
+   `recipient_domain` observation's identity.
+6. **CI determinism follow-up (Finding 6).** The Amendment #4 push-run
+   attempt-1 CI failure's exact root cause could not be retrieved via
+   available log-fetching tools (`get_job_logs` returned only the Postgres
+   service-container's own stderr for the failed step; the presigned Azure
+   blob log URL is unreachable through this sandbox's egress proxy). Rather
+   than claim an unverified code fix, the harness's `insertHotel` helper is
+   documented in place (`tests/gmail-outreach/harness.ts`) explaining exactly
+   why it deliberately does NOT randomize the `name` column — doing so would
+   silently break every authored-text exact-match test that depends on a
+   fixture's literal name — and why the suspected local-only duplicate-row
+   flake (re-running the same test file against a non-reset local database)
+   is structurally impossible in real CI, which always starts every job from
+   a fresh, empty `postgres:16` service container with no prior state to
+   accumulate. `insertHotel` itself moved to the shared test harness (used by
+   both Amendment #4's and Amendment #5's real-Postgres suites) to remove
+   duplication, a genuine change that is actually committed.
+
+`TARGET_MATCHER_VERSION` is bumped to `_v5` to reflect Findings 1-3 changing
+real matching/observation-identity behavior — every previously-evaluated
+thread is offered for re-evaluation. `OUTREACH_DETECTOR_VERSION` and
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged (Findings 1-3 land
+entirely in target-extraction/service, not the classifier or the text
+transform).

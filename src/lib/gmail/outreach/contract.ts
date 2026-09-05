@@ -35,9 +35,23 @@ export const OUTREACH_DETECTOR_VERSION = "gmail_outreach_rules_v4";
  * now an independent evidence dimension that can also enter a business into
  * the candidate universe regardless of recipient domain/contact, and a
  * candidate the authored text explicitly contradicts can never be assessed
- * `strong_match`.
+ * `strong_match`. `_v5` (EXTERNAL AUDIT AMENDMENT #5, Findings 1/2/3): a
+ * creator-authored-text business match is now (a) gated on a conservative,
+ * deterministic target-directed-context pattern around the exact name match
+ * — a bare historical mention ("I worked with Marriott last year") is no
+ * longer target evidence at all (Finding 3); (b) only ever `differs` when a
+ * phrase actually resolved to a real, different, target-directed business —
+ * never merely because SOME capitalized phrase existed in the text (Finding
+ * 2); and (c) no longer alone justifies a business entering an UNRELATED
+ * recipient-domain observation's candidate set — a real target-directed
+ * authored-text match instead becomes its OWN independent private target
+ * observation (`observation_source_kind = 'authored_text_name'`), never
+ * canonical-link evidence bolted onto a different observation's identity
+ * (Finding 1). Authored-text evidence remains available as an EXTRA
+ * corroboration dimension for a domain-based observation's candidate that is
+ * already independently relevant via domain/name/contact evidence.
  */
-export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v4";
+export const TARGET_MATCHER_VERSION = "gmail_outreach_match_rules_v5";
 /**
  * Versioned heuristic classifier-input transform (quote/HTML handling,
  * signature stripping). `_v3` (Finding 7): also splits a message into a
@@ -59,6 +73,18 @@ export type MatchQuality = "strong_match" | "needs_review" | "ambiguous" | "insu
 export type TargetScope = "single_target" | "multiple_targets" | "portfolio_target" | "unresolved";
 
 export type TargetKind = "hotel" | "organization";
+
+/**
+ * EXTERNAL AUDIT AMENDMENT #5, Finding 1: the explicit observation-source
+ * distinction. `recipient_domain` — the historical shape — is derived purely
+ * from a non-freemail `to`-recipient's domain. `authored_text_name` is a
+ * commercial target the creator's OWN authored SENT text explicitly, exactly
+ * named in a target-directed context, independent of any recipient's
+ * address/domain — never keyed on a canonical hotel/organization id (the
+ * canonical row is only ever a 0..N LINK, exactly like a recipient-domain
+ * observation's). Never rewritten once an observation is created.
+ */
+export type ObservationSourceKind = "recipient_domain" | "authored_text_name";
 
 export type CanonicalContactKind = "hotel_contact" | "organization_contact";
 
@@ -215,6 +241,8 @@ export interface TargetObservationInput {
   observedName: string | null;
   observedDomain: string | null;
   targetKindHint: TargetKind | "unknown";
+  /** EXTERNAL AUDIT AMENDMENT #5, Finding 1 — see `ObservationSourceKind`. */
+  observationSourceKind: ObservationSourceKind;
   /**
    * Gmail's own permanent message ids (never a B04 row uuid) — durable
    * provenance that survives a B04 rebuild, and verified server-side against
