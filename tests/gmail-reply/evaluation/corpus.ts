@@ -28,10 +28,16 @@ export interface CorpusMessage {
   sent: boolean;
   atMs: number;
   from?: string;
+  /** Closure pass §9: more than one "from" occurrence, e.g. repeated/conflicting evidence. Overrides `from` when set. */
+  froms?: readonly string[];
   messageId?: string;
+  /** Additional Message-ID declarations from OTHER local messages sharing the same literal token — closure pass §11. */
+  extraMessageIdOwners?: readonly { ownerId: string; token: string }[];
   inReplyTo?: string;
   references?: string;
   subject?: string;
+  /** Closure pass §10: more than one Subject occurrence. Overrides `subject` when set. */
+  subjects?: readonly string[];
   bodyText?: string;
   /** Gold labels — required for every non-SENT message. */
   goldResponseClass?: ResponseClass;
@@ -42,7 +48,7 @@ export interface CorpusCase {
   id: string;
   description: string;
   messages: readonly CorpusMessage[];
-  mailAccountEmail: string;
+  mailAccountEmail: string | null;
   observedThroughAtMs: number | null;
   goldObservationState: ObservationState;
   goldLatencyFromFirstCreatorSentMs?: number | null;
@@ -422,6 +428,131 @@ export const CORPUS: readonly CorpusCase[] = [
     observedThroughAtMs: null,
     goldObservationState: "observation_horizon_unknown",
   },
+  {
+    id: "18-null-routing-email",
+    description:
+      "closure pass §7: null mailbox routing address + clean external-looking sender + human text -> ambiguous, never qualifying",
+    messages: [
+      { id: "s1", sent: true, atMs: 0, subject: "Collab?" },
+      {
+        id: "r1",
+        sent: false,
+        atMs: HOUR,
+        from: "person@hotel.example",
+        subject: "Re: Collab?",
+        bodyText: "Thanks so much, I would love to collaborate on this!",
+        goldResponseClass: "ambiguous_inbound",
+        goldRelationStatus: "thread_sequence_only",
+      },
+    ],
+    mailAccountEmail: null,
+    observedThroughAtMs: 5 * DAY,
+    goldObservationState: "ambiguous_response_observed",
+  },
+  {
+    id: "19-repeated-conflicting-from",
+    description:
+      "closure pass §9: two DIFFERENT parsed From addresses on the same message cannot safely resolve to one sender",
+    messages: [
+      { id: "s1", sent: true, atMs: 0, subject: "Collab?" },
+      {
+        id: "r1",
+        sent: false,
+        atMs: HOUR,
+        froms: ["person@hotel.example", "other@hotel.example"],
+        subject: "Re: Collab?",
+        bodyText: "Sure, let's talk.",
+        goldResponseClass: "ambiguous_inbound",
+        goldRelationStatus: "thread_sequence_only",
+      },
+    ],
+    mailAccountEmail: CREATOR_EMAIL,
+    observedThroughAtMs: 5 * DAY,
+    goldObservationState: "ambiguous_response_observed",
+  },
+  {
+    id: "20-repeated-subject-automation-in-second",
+    description:
+      "closure pass §10: automation language present only in a SECOND Subject occurrence is still honored",
+    messages: [
+      { id: "s1", sent: true, atMs: 0, subject: "Collab?" },
+      {
+        id: "r1",
+        sent: false,
+        atMs: HOUR,
+        from: "person@hotel.example",
+        subjects: ["Re: Collab?", "Automatic reply"],
+        bodyText: "n/a",
+        goldResponseClass: "automated_response",
+        goldRelationStatus: "thread_sequence_only",
+      },
+    ],
+    mailAccountEmail: CREATOR_EMAIL,
+    observedThroughAtMs: 5 * DAY,
+    goldObservationState: "only_automated_or_delivery_observed",
+  },
+  {
+    id: "21-duplicate-message-id-creator-and-nonsent",
+    description:
+      "closure pass §11: a Message-ID token shared by a creator-SENT message AND a non-SENT local message is ambiguous, never silently resolved to the creator-sent one",
+    messages: [
+      { id: "s1", sent: true, atMs: 0, messageId: "<dup@x.example>", subject: "Collab?" },
+      {
+        id: "other-inbound",
+        // Strictly BEFORE s1 — genuinely no preceding creator send of its
+        // own, so it stays a clean not_reply and never competes to become
+        // the thread's first qualifying reply. Its only role here is to
+        // OWN the duplicate Message-ID token.
+        sent: false,
+        atMs: -HOUR,
+        from: "unrelated@example.com",
+        extraMessageIdOwners: [{ ownerId: "other-inbound", token: "<dup@x.example>" }],
+        subject: "Unrelated",
+        bodyText: "unrelated message that happens to share the literal Message-ID",
+        goldResponseClass: "not_reply",
+        goldRelationStatus: "no_preceding_creator_sent",
+      },
+      {
+        id: "r1",
+        sent: false,
+        atMs: HOUR,
+        from: "person@hotel.example",
+        inReplyTo: "<dup@x.example>",
+        subject: "Re: Collab?",
+        bodyText: "Sure!",
+        goldResponseClass: "ambiguous_inbound",
+        goldRelationStatus: "ambiguous_reference",
+      },
+    ],
+    mailAccountEmail: CREATOR_EMAIL,
+    observedThroughAtMs: 5 * DAY,
+    goldObservationState: "ambiguous_response_observed",
+  },
+  {
+    id: "22-tied-first-creator-send",
+    description:
+      "closure pass §17: two creator sends tied for earliest -> known timestamp, ambiguous singular identity, latency still computed",
+    messages: [
+      { id: "s1", sent: true, atMs: 0, subject: "Collab?" },
+      { id: "s2", sent: true, atMs: 0, subject: "Collab? (cc)" },
+      {
+        id: "r1",
+        sent: false,
+        atMs: 2 * HOUR,
+        from: "person@hotel.example",
+        subject: "Re: Collab?",
+        bodyText: "Sounds great!",
+        goldResponseClass: "qualifying_human_reply",
+        goldRelationStatus: "thread_sequence_only",
+      },
+    ],
+    mailAccountEmail: CREATOR_EMAIL,
+    observedThroughAtMs: 5 * DAY,
+    goldObservationState: "qualifying_human_reply_observed",
+    goldLatencyFromFirstCreatorSentMs: 2 * HOUR,
+    goldLatencyFromLatestCreatorSentMs: 2 * HOUR,
+    goldCreatorSentCountBeforeFirstHumanReply: 2,
+  },
 ];
 
 export function toEvidence(testCase: CorpusCase): {
@@ -454,6 +585,15 @@ export function toEvidence(testCase: CorpusCase): {
         parseStatus: "valid_msgid",
       });
     }
+    for (const extra of m.extraMessageIdOwners ?? []) {
+      referenceTokens.push({
+        providerMessageId: extra.ownerId,
+        headerRole: "message-id",
+        tokenOrder: 0,
+        rawToken: extra.token,
+        parseStatus: "valid_msgid",
+      });
+    }
     if (m.inReplyTo) {
       referenceTokens.push({
         providerMessageId: m.id,
@@ -473,7 +613,17 @@ export function toEvidence(testCase: CorpusCase): {
       });
     }
 
-    if (m.from !== undefined) {
+    if (m.froms !== undefined) {
+      for (const addr of m.froms) {
+        participants.push({
+          providerMessageId: m.id,
+          role: "from",
+          addrSpec: addr,
+          domainLower: addr.split("@")[1] ?? null,
+          parseStatus: "parsed",
+        });
+      }
+    } else if (m.from !== undefined) {
       participants.push({
         providerMessageId: m.id,
         role: "from",
@@ -491,7 +641,11 @@ export function toEvidence(testCase: CorpusCase): {
       });
     }
 
-    if (m.subject !== undefined) subjects.push({ providerMessageId: m.id, rawValue: m.subject });
+    if (m.subjects !== undefined) {
+      for (const value of m.subjects) subjects.push({ providerMessageId: m.id, rawValue: value });
+    } else if (m.subject !== undefined) {
+      subjects.push({ providerMessageId: m.id, rawValue: m.subject });
+    }
     if (m.bodyText !== undefined) {
       textParts.push({
         providerMessageId: m.id,

@@ -19,29 +19,40 @@ export interface RelationResult {
    * The creator-sent touch with the greatest internal_date STRICTLY before
    * this candidate, independent of whether a direct/references relationship
    * was ALSO established — feeds CLOCK B (contract §10) for whichever
-   * candidate becomes the first qualifying human reply.
+   * candidate becomes the first qualifying human reply. Null when there is
+   * no preceding creator send, OR when two or more TIE for the latest one
+   * (closure pass §17) — `latestPrecedingCreatorSentAtMs` still carries the
+   * known timestamp in that case, since a tied SINGULAR identity must never
+   * destroy an otherwise-knowable latency.
    */
   latestPrecedingCreatorSentProviderMessageId: string | null;
+  latestPrecedingCreatorSentAtMs: number | null;
   chronologyConflict: boolean;
 }
 
 /**
- * `Message-ID` is evidence only (contract §7) — provider message identity
- * remains `(mail_account_id, provider_message_id)`. Repeated/duplicate
- * Message-ID tokens across different creator-sent messages are preserved as
- * ambiguity, never silently resolved to one (contract §7, "Repeated/
- * ambiguous Message-ID evidence").
+ * Every LOCAL message's own `Message-ID` declaration, keyed by the raw
+ * token — regardless of whether that message is creator-sent. CLOSURE PASS
+ * §11: a prior version indexed creator-sent messages' own Message-IDs only,
+ * so a non-SENT message that (via duplicate/malformed evidence) ALSO
+ * declared the identical literal Message-ID as some creator-sent message
+ * was invisible to this index — an `In-Reply-To`/`References` token
+ * pointing at that shared literal string then resolved, silently and
+ * incorrectly, to the creator-sent message alone. Indexing every local
+ * owner and treating >1 owner as ambiguous (below) closes that gap: D071
+ * requires that when one token could name more than one LOCAL message, B06
+ * must not silently pick one.
  */
-function buildCreatorSentMessageIdIndex(
-  creatorSentMessages: readonly ReplyEvidenceMessage[],
+function buildMessageIdOwnerIndex(
+  messages: readonly ReplyEvidenceMessage[],
   referenceTokens: readonly ReplyEvidenceReferenceToken[],
 ): Map<string, Set<string>> {
-  const creatorSentIds = new Set(creatorSentMessages.map((m) => m.providerMessageId));
+  const localIds = new Set(messages.map((m) => m.providerMessageId));
   const index = new Map<string, Set<string>>();
 
   for (const token of referenceTokens) {
     if (token.headerRole !== "message-id" || token.parseStatus !== "valid_msgid") continue;
-    if (!creatorSentIds.has(token.providerMessageId)) continue;
+    if (!localIds.has(token.providerMessageId)) continue;
 
     const existing = index.get(token.rawToken);
     if (existing) {
@@ -54,14 +65,22 @@ function buildCreatorSentMessageIdIndex(
   return index;
 }
 
-/** Union of every creator-sent provider id any of `tokens` resolves to, via `index`. */
+/**
+ * The set of creator-sent provider ids any of `tokens` unambiguously
+ * resolves to, via `ownerIndex` — a token whose raw string names MORE THAN
+ * ONE local message (any owner, not just creator-sent ones) contributes
+ * nothing here; it is surfaced as ambiguous by the caller instead of being
+ * silently narrowed to whichever owner happens to be creator-sent.
+ */
 function matchTokens(
   tokens: readonly ReplyEvidenceReferenceToken[],
   headerRole: "in-reply-to" | "references",
   candidateProviderMessageId: string,
-  index: Map<string, Set<string>>,
-): Set<string> {
+  ownerIndex: Map<string, Set<string>>,
+  creatorSentIds: ReadonlySet<string>,
+): { matched: Set<string>; sawAmbiguousLocalOwner: boolean } {
   const matched = new Set<string>();
+  let sawAmbiguousLocalOwner = false;
   for (const token of tokens) {
     if (
       token.providerMessageId !== candidateProviderMessageId ||
@@ -70,12 +89,16 @@ function matchTokens(
     ) {
       continue;
     }
-    const resolved = index.get(token.rawToken);
-    if (resolved) {
-      for (const id of resolved) matched.add(id);
+    const owners = ownerIndex.get(token.rawToken);
+    if (!owners) continue;
+    if (owners.size > 1) {
+      sawAmbiguousLocalOwner = true;
+      continue;
     }
+    const [ownerId] = owners;
+    if (ownerId && creatorSentIds.has(ownerId)) matched.add(ownerId);
   }
-  return matched;
+  return { matched, sawAmbiguousLocalOwner };
 }
 
 /**
@@ -100,7 +123,8 @@ export function computeRelations(
   );
 
   const creatorSentMessages = sorted.filter((m) => m.providerSent);
-  const messageIdIndex = buildCreatorSentMessageIdIndex(creatorSentMessages, referenceTokens);
+  const creatorSentIds = new Set(creatorSentMessages.map((m) => m.providerMessageId));
+  const messageIdOwnerIndex = buildMessageIdOwnerIndex(sorted, referenceTokens);
   const byProviderMessageId = new Map(sorted.map((m) => [m.providerMessageId, m]));
 
   const results = new Map<string, RelationResult>();
@@ -110,72 +134,88 @@ export function computeRelations(
 
     // The creator-sent touch with the greatest internal_date STRICTLY
     // before this candidate — independent of reference-token evidence.
-    let latestPreceding: ReplyEvidenceMessage | null = null;
+    // CLOSURE PASS §17: two or more creator sends sharing that maximal
+    // preceding timestamp is a TIE — the identity is null, but the
+    // timestamp survives so CLOCK B's latency need not be destroyed.
+    let latestPrecedingAtMs: number | null = null;
+    let latestPrecedingId: string | null = null;
+    let latestPrecedingTieCount = 0;
     for (const sent of creatorSentMessages) {
       if (sent.internalDateMs >= candidate.internalDateMs) continue;
-      if (!latestPreceding || sent.internalDateMs > latestPreceding.internalDateMs) {
-        latestPreceding = sent;
+      if (latestPrecedingAtMs === null || sent.internalDateMs > latestPrecedingAtMs) {
+        latestPrecedingAtMs = sent.internalDateMs;
+        latestPrecedingId = sent.providerMessageId;
+        latestPrecedingTieCount = 1;
+      } else if (sent.internalDateMs === latestPrecedingAtMs) {
+        latestPrecedingTieCount += 1;
       }
     }
-    const latestPrecedingId = latestPreceding?.providerMessageId ?? null;
+    if (latestPrecedingTieCount > 1) latestPrecedingId = null;
 
-    const directMatches = matchTokens(
+    const direct = matchTokens(
       referenceTokens,
       "in-reply-to",
       candidate.providerMessageId,
-      messageIdIndex,
+      messageIdOwnerIndex,
+      creatorSentIds,
     );
-    if (directMatches.size === 1) {
-      const referencedId = [...directMatches][0]!;
+    if (direct.matched.size === 1 && !direct.sawAmbiguousLocalOwner) {
+      const referencedId = [...direct.matched][0]!;
       results.set(candidate.providerMessageId, {
         relationStatus: "direct_in_reply_to",
         referencedCreatorSentProviderMessageId: referencedId,
         latestPrecedingCreatorSentProviderMessageId: latestPrecedingId,
+        latestPrecedingCreatorSentAtMs: latestPrecedingAtMs,
         chronologyConflict: isChronologyConflict(byProviderMessageId, referencedId, candidate),
       });
       continue;
     }
-    if (directMatches.size > 1) {
+    if (direct.matched.size > 1 || direct.sawAmbiguousLocalOwner) {
       results.set(candidate.providerMessageId, {
         relationStatus: "ambiguous_reference",
         referencedCreatorSentProviderMessageId: null,
         latestPrecedingCreatorSentProviderMessageId: latestPrecedingId,
+        latestPrecedingCreatorSentAtMs: latestPrecedingAtMs,
         chronologyConflict: false,
       });
       continue;
     }
 
-    const referencesMatches = matchTokens(
+    const references = matchTokens(
       referenceTokens,
       "references",
       candidate.providerMessageId,
-      messageIdIndex,
+      messageIdOwnerIndex,
+      creatorSentIds,
     );
-    if (referencesMatches.size === 1) {
-      const referencedId = [...referencesMatches][0]!;
+    if (references.matched.size === 1 && !references.sawAmbiguousLocalOwner) {
+      const referencedId = [...references.matched][0]!;
       results.set(candidate.providerMessageId, {
         relationStatus: "references_chain",
         referencedCreatorSentProviderMessageId: referencedId,
         latestPrecedingCreatorSentProviderMessageId: latestPrecedingId,
+        latestPrecedingCreatorSentAtMs: latestPrecedingAtMs,
         chronologyConflict: isChronologyConflict(byProviderMessageId, referencedId, candidate),
       });
       continue;
     }
-    if (referencesMatches.size > 1) {
+    if (references.matched.size > 1 || references.sawAmbiguousLocalOwner) {
       results.set(candidate.providerMessageId, {
         relationStatus: "ambiguous_reference",
         referencedCreatorSentProviderMessageId: null,
         latestPrecedingCreatorSentProviderMessageId: latestPrecedingId,
+        latestPrecedingCreatorSentAtMs: latestPrecedingAtMs,
         chronologyConflict: false,
       });
       continue;
     }
 
-    if (latestPreceding) {
+    if (latestPrecedingAtMs !== null) {
       results.set(candidate.providerMessageId, {
         relationStatus: "thread_sequence_only",
         referencedCreatorSentProviderMessageId: null,
         latestPrecedingCreatorSentProviderMessageId: latestPrecedingId,
+        latestPrecedingCreatorSentAtMs: latestPrecedingAtMs,
         chronologyConflict: false,
       });
       continue;
@@ -185,6 +225,7 @@ export function computeRelations(
       relationStatus: "no_preceding_creator_sent",
       referencedCreatorSentProviderMessageId: null,
       latestPrecedingCreatorSentProviderMessageId: null,
+      latestPrecedingCreatorSentAtMs: null,
       chronologyConflict: false,
     });
   }

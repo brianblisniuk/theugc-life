@@ -2106,6 +2106,85 @@ remains. `gmail_reply_purge_for_deletion` removes B06's own layer on an
 explicit, running, in-scope deletion request; it never touches B01/B03/B04/
 B05's own rows, exactly like B05's purge function never touches B03/B04's.
 
+**CONSOLIDATED CLOSURE PASS (same migration, 0040 amended in place before
+merge — no 0041)**: an internal pre-launch hardening pass moved several
+literal facts and the entire thread summary from caller-trusted JSON to
+database-derived truth, and closed a real eligibility-race gap a plain
+re-SELECT could not close.
+
+- **The eligibility-race fence is now a REAL lock, not just a fresh read**:
+  `gmail_reply_commit_interpretation` takes `for update` on
+  `public.mail_accounts` immediately after `assert_may_process_locked`'s own
+  `for share` (same relative lock order every B05/B06 caller already uses,
+  so no new deadlock against B01's consent-withdrawal/deletion-start
+  writers). This forces total serialization against every other writer that
+  also locks that row — a concurrent B05 human rejection, a concurrent
+  machine-eligibility change, or another B06 commit on the same account —
+  so the immediately-following eligibility re-check is provably fresh, not
+  merely likely to be. Two commits racing the SAME account is the one live
+  self-deadlock this creates (both hold `for share`, both then request `for
+  update`); Postgres detects it (`40P01`) and aborts one side, which the
+  service layer (`commitInterpretation`) treats exactly like `stale_source`
+  and retries.
+- **The commit RPC now derives literal facts itself, never trusts a caller
+  copy** (closure pass, contract §14 hardened): `internal_date`,
+  `source_payload_sha256`, `current_normalized_message_id`, and — for every
+  non-SENT message — `latest_preceding_creator_sent_provider_message_id`/
+  `_at` and `chronology_conflict` are all computed from the locked, current
+  `gmail_normalized_messages` row inside the commit function. A caller
+  claiming `response_class = 'creator_sent_touch'` for an actually non-SENT
+  message (or the reverse) is refused with a raised exception, never
+  silently coerced. `referenced_creator_sent_provider_message_id` (a
+  genuinely TS-owned semantic choice from Message-ID evidence) is validated
+  — must resolve to a current, creator-sent message in this thread — but
+  never re-derived; a referenced send's timestamp landing at or after the
+  candidate's own is the EXPECTED `chronology_conflict` case, not a
+  rejection.
+- **Exact set equality, enforced before any write**: the commit payload must
+  name exactly one observation per currently-locked message — no missing
+  message, no duplicate `provider_message_id`, no foreign id from another
+  thread or account — checked via plain `SELECT`s before either INSERT
+  statement runs, so a violation refuses the WHOLE commit with zero partial
+  writes (contract §12/§13, "validate everything, then write everything").
+- **The thread summary is DERIVED, not accepted**: `gmail_reply_commit_
+  interpretation` no longer takes a `p_thread_summary` parameter at all —
+  first creator-sent time, first qualifying-reply time, the creator-send
+  count, and both latency clocks are computed inside the function from the
+  observation rows it just wrote, plus a freshly-recomputed `private.
+  gmail_reply_observed_through_at` (never a caller-supplied horizon
+  reading). A caller cannot invent timing arithmetic this function does not
+  itself recompute.
+- **Equal-time ties are first-class, not silently resolved** (`first_
+  creator_sent_tied`, `first_qualifying_human_reply_tied`, `latest_creator_
+  sent_before_reply_tied`, all `boolean not null default false`): when two
+  or more messages share the deciding timestamp, the paired
+  `_provider_message_id` column is `NULL` while the timestamp/latency/count
+  — which depend only on the KNOWN timestamp, not on which message "wins" a
+  lexical tie-break — stay fully populated. Enforced by three CHECK
+  constraints binding each `_tied` flag to its id column.
+- **`text_transform_version` honestly embeds its upstream dependency**:
+  `TS's TEXT_TRANSFORM_VERSION` is now
+  `gmail_reply_text_transform_v1+<B05's CLASSIFIER_INPUT_TRANSFORM_VERSION>`
+  — B06 reuses B05's quote/signature-stripping transform unmodified, so a
+  future bump to B05's own version string changes this one automatically,
+  which is what lets it participate in B06's existing staleness checks. The
+  column's `CHECK` shape widened to allow `.`/`+` for this one column only
+  (the other two rule-version columns are unaffected).
+- **`gmail_reply_list_candidates` also detects horizon staleness**: a stored
+  summary whose `observed_through_at` no longer matches the CURRENT
+  `private.gmail_reply_observed_through_at(...)` reading is re-offered
+  (`horizon_stale`, a dimension independent of `source_stale`/`rules_stale`)
+  — without this, a thread stuck at `observation_horizon_unknown` because no
+  B03 run had completed yet would never be re-evaluated once a later run
+  proves a horizon, even though zero message evidence changed.
+- **`current_summary_is_stale`** (returned by `gmail_reply_get_thread_
+  evidence`) and **`stale_thread_summaries`** (returned by `gmail_reply_
+  status`) distinguish a RETAINED summary from a CURRENTLY-VALID one — true
+  whenever the stored `evidence_digest`/`observed_through_at`/`eligibility`
+  no longer matches the fresh values computed in the same call. Retained
+  history is never deleted on becoming stale; callers are simply told not to
+  present it as current.
+
 Five `SECURITY DEFINER` functions in `public`, all `EXECUTE`-granted to
 `service_role` alone — there is no human-writer RPC in this round:
 `gmail_reply_list_candidates`, `gmail_reply_get_thread_evidence`,

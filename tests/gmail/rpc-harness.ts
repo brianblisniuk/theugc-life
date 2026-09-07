@@ -13,7 +13,8 @@ import { Client } from "pg";
  */
 export interface RpcResult<T = unknown> {
   data: T | null;
-  error: { message: string } | null;
+  /** `code` is the raw Postgres SQLSTATE (e.g. `40P01` deadlock_detected) when `pg` provides one — additive, optional. */
+  error: { message: string; code?: string } | null;
 }
 
 export interface FakeAdminClient {
@@ -62,7 +63,7 @@ export function createRpcClient(client: Client): FakeAdminClient {
       try {
         signature = await loadSignature(client, name);
       } catch (error) {
-        return { data: null, error: { message: (error as Error).message } };
+        return { data: null, error: { message: (error as Error).message, code: pgCode(error) } };
       }
 
       const declaredType = (key: string): string | null => {
@@ -100,10 +101,17 @@ export function createRpcClient(client: Client): FakeAdminClient {
         const res = await client.query(`select public.${name}(${named}) as value`, values);
         return { data: (res.rows[0]?.value ?? null) as T, error: null };
       } catch (error) {
-        return { data: null, error: { message: (error as Error).message } };
+        return { data: null, error: { message: (error as Error).message, code: pgCode(error) } };
       }
     },
   };
+}
+
+/** `pg` attaches the Postgres SQLSTATE as `.code` on the thrown error; extracted defensively. */
+function pgCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? ((error as { code?: unknown }).code as string | undefined)
+    : undefined;
 }
 
 /** A creator, created directly because B02 does not own user provisioning. */

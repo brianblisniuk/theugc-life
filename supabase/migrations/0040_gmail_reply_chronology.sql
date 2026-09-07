@@ -126,19 +126,36 @@ create table private.gmail_reply_message_observations (
   -- The latest creator-sent touch strictly preceding this message in the
   -- stored chronology, when determinable — independent of whether a direct/
   -- references relationship was ALSO established. Feeds CLOCK B (contract
-  -- §10) for a qualifying human reply.
+  -- §10) for a qualifying human reply. THIS COLUMN AND THE NEXT ARE
+  -- DB-DERIVED (closure pass finding, §14/§15/§17): computed by
+  -- `gmail_reply_commit_interpretation` directly from the locked, current
+  -- creator-sent internal_date values for this thread — never trusted from
+  -- caller JSON. Null when there is no preceding creator send, OR when two or
+  -- more creator sends TIE for the latest preceding position (closure pass
+  -- §17 — a tie means the TIMESTAMP is known but the SINGULAR identity is
+  -- not; `latest_preceding_creator_sent_at` still carries the known
+  -- timestamp in that case).
   latest_preceding_creator_sent_provider_message_id text,
+  latest_preceding_creator_sent_at timestamptz,
 
   -- `internal_date` said this response preceded its own referenced creator
   -- send. The relation is preserved; timing is not trusted (contract §10 —
-  -- "Timestamp conflicts").
+  -- "Timestamp conflicts"). DB-DERIVED (closure pass finding, §14): computed
+  -- from the locked referenced creator send's own `internal_date`, never
+  -- trusted from caller JSON.
   chronology_conflict boolean not null default false,
 
   relation_rule_version text not null check (relation_rule_version ~ '^[a-z][a-z0-9_]{0,63}$'),
   classification_rule_version text not null check (classification_rule_version ~ '^[a-z][a-z0-9_]{0,63}$'),
   -- Null for `creator_sent_touch`: no reply-text extraction applies to a
   -- creator's own send.
-  text_transform_version text check (text_transform_version ~ '^[a-z][a-z0-9_]{0,63}$'),
+  -- Closure pass §20: this version string HONESTLY embeds the upstream B05
+  -- text-transform version it depends on (`gmail_reply_text_transform_v1+
+  -- gmail_outreach_text_v4`, computed in TS from B05's own exported
+  -- constant) — a wider shape than the other two rule-version columns so a
+  -- future B05 text-transform bump changes this string and therefore
+  -- participates in staleness (contract §19) automatically.
+  text_transform_version text check (text_transform_version ~ '^[a-z][a-z0-9_.+]{0,127}$'),
 
   evaluated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -162,6 +179,7 @@ create table private.gmail_reply_message_observations (
       and relation_status is null
       and referenced_creator_sent_provider_message_id is null
       and latest_preceding_creator_sent_provider_message_id is null
+      and latest_preceding_creator_sent_at is null
       and chronology_conflict = false
       and text_transform_version is null)
     or
@@ -170,9 +188,23 @@ create table private.gmail_reply_message_observations (
       and text_transform_version is not null)
   ),
 
+  -- Closure pass §15: a referenced id is present IFF relation_status is
+  -- direct/references — the ORIGINAL one-directional check let a
+  -- `direct_in_reply_to`/`references_chain` claim through with no
+  -- referenced id at all, which the contract's own schema treats as
+  -- incoherent (those two statuses exist ONLY to carry a resolved id).
   constraint gmail_reply_message_observations_referenced_shape check (
-    referenced_creator_sent_provider_message_id is null
-    or relation_status in ('direct_in_reply_to', 'references_chain')
+    (referenced_creator_sent_provider_message_id is not null)
+    = (relation_status in ('direct_in_reply_to', 'references_chain'))
+  ),
+
+  -- Closure pass §17: a known timestamp with an ambiguous (tied) singular
+  -- identity is `latest_preceding_creator_sent_at is not null and
+  -- latest_preceding_creator_sent_provider_message_id is null` — never the
+  -- reverse (an id can never be stored without its own timestamp).
+  constraint gmail_reply_message_observations_latest_preceding_shape check (
+    latest_preceding_creator_sent_provider_message_id is null
+    or latest_preceding_creator_sent_at is not null
   )
 );
 
@@ -233,12 +265,22 @@ create table private.gmail_reply_thread_summaries (
     'observation_horizon_unknown'
   )),
 
+  -- Closure pass §17 (equal-time/tie semantics): a `_tied` flag true means
+  -- two or more messages shared the deciding timestamp — the TIMESTAMP
+  -- column stays populated (still knowable and reported) but the paired
+  -- provider-message-id column is NULL (the SINGULAR identity is not safely
+  -- knowable). A tie is never resolved by falling back to lexical/reading
+  -- order — D071/contract §10 explicitly forbids treating deterministic
+  -- ordering as proof of causal order.
   first_creator_sent_provider_message_id text,
   first_creator_sent_at timestamptz,
+  first_creator_sent_tied boolean not null default false,
   first_qualifying_human_reply_provider_message_id text,
   first_qualifying_human_reply_at timestamptz,
+  first_qualifying_human_reply_tied boolean not null default false,
   creator_sent_count_before_first_human_reply integer check (creator_sent_count_before_first_human_reply >= 0),
   latest_creator_sent_before_reply_provider_message_id text,
+  latest_creator_sent_before_reply_tied boolean not null default false,
 
   -- CLOCK A (contract §10): first creator-SENT -> first qualifying human reply.
   latency_from_first_creator_sent_ms bigint check (latency_from_first_creator_sent_ms >= 0),
@@ -261,7 +303,9 @@ create table private.gmail_reply_thread_summaries (
 
   relation_rule_version text not null check (relation_rule_version ~ '^[a-z][a-z0-9_]{0,63}$'),
   classification_rule_version text not null check (classification_rule_version ~ '^[a-z][a-z0-9_]{0,63}$'),
-  text_transform_version text not null check (text_transform_version ~ '^[a-z][a-z0-9_]{0,63}$'),
+  -- Closure pass §20: see the identical-shape comment on
+  -- gmail_reply_message_observations.text_transform_version above.
+  text_transform_version text not null check (text_transform_version ~ '^[a-z][a-z0-9_.+]{0,127}$'),
 
   evaluated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -278,11 +322,35 @@ create table private.gmail_reply_thread_summaries (
   constraint gmail_reply_thread_summaries_identity_uidx
     unique (mail_account_id, normalized_thread_id),
 
-  -- A qualifying reply was observed iff its provider id/time are populated.
+  -- A qualifying reply was observed iff its timestamp is populated; the
+  -- provider-message-id is populated XOR the tie flag is set (closure pass
+  -- §17 — known timestamp, possibly-ambiguous identity).
   constraint gmail_reply_thread_summaries_reply_shape check (
-    (observation_state = 'qualifying_human_reply_observed')
-    = (first_qualifying_human_reply_provider_message_id is not null
-       and first_qualifying_human_reply_at is not null)
+    (observation_state = 'qualifying_human_reply_observed') = (first_qualifying_human_reply_at is not null)
+    and (
+      observation_state <> 'qualifying_human_reply_observed'
+      or ((first_qualifying_human_reply_provider_message_id is not null) <> first_qualifying_human_reply_tied)
+    )
+    and (observation_state = 'qualifying_human_reply_observed' or not first_qualifying_human_reply_tied)
+  ),
+
+  -- A creator send exists (at all, regardless of observation_state) iff its
+  -- timestamp is populated; same known-timestamp/ambiguous-identity shape.
+  constraint gmail_reply_thread_summaries_creator_sent_shape check (
+    (first_creator_sent_at is null and first_creator_sent_provider_message_id is null and not first_creator_sent_tied)
+    or (first_creator_sent_at is not null
+        and ((first_creator_sent_provider_message_id is not null) <> first_creator_sent_tied))
+  ),
+
+  -- The latest-preceding-creator-send tie flag only ever applies alongside an
+  -- observed qualifying reply, and only ever nulls the id (the CLOCK B
+  -- latency itself, derived from the known tied timestamp, is untouched —
+  -- closure pass §17: "do not destroy a valid timestamp latency merely
+  -- because singular message identity is ambiguous").
+  constraint gmail_reply_thread_summaries_latest_before_reply_shape check (
+    not latest_creator_sent_before_reply_tied
+    or (observation_state = 'qualifying_human_reply_observed'
+        and latest_creator_sent_before_reply_provider_message_id is null)
   ),
 
   -- Latency is meaningful ONLY for an observed qualifying reply, and (contract
@@ -519,7 +587,7 @@ declare
 begin
   if p_relation_version !~ '^[a-z][a-z0-9_]{0,63}$'
      or p_classification_version !~ '^[a-z][a-z0-9_]{0,63}$'
-     or p_text_transform_version !~ '^[a-z][a-z0-9_]{0,63}$' then
+     or p_text_transform_version !~ '^[a-z][a-z0-9_.+]{0,127}$' then
     raise exception 'invalid relation/classification/text-transform version' using errcode = 'invalid_parameter_value';
   end if;
 
@@ -533,6 +601,13 @@ begin
     return jsonb_build_object('result', v_may_process, 'candidates', '[]'::jsonb);
   end if;
 
+  -- CLOSURE PASS §5: a thread's `observed_through_at` can advance (a B03 run
+  -- completes for the exact provider thread) with zero change to the B04
+  -- message digest. Without comparing the CURRENT DB-authoritative horizon
+  -- against what the stored summary last saw, a thread stuck at
+  -- `observation_horizon_unknown` — or one whose window merely widened —
+  -- would never be re-offered. `horizon_stale` makes that its own,
+  -- independent staleness dimension, never folded into `source_stale`.
   select coalesce(jsonb_agg(row), '[]'::jsonb) into v_rows
     from (
       select jsonb_build_object(
@@ -547,6 +622,11 @@ begin
                  or sm.relation_rule_version is distinct from p_relation_version
                  or sm.classification_rule_version is distinct from p_classification_version
                  or sm.text_transform_version is distinct from p_text_transform_version
+               ),
+               'horizon_stale', (
+                 sm.id is null
+                 or sm.observed_through_at is distinct from
+                    private.gmail_reply_observed_through_at(p_mail_account_id, t.provider_thread_id)
                )
              ) as row
         from private.gmail_normalized_threads t
@@ -579,6 +659,8 @@ begin
            or sm.relation_rule_version is distinct from p_relation_version
            or sm.classification_rule_version is distinct from p_classification_version
            or sm.text_transform_version is distinct from p_text_transform_version
+           or sm.observed_through_at is distinct from
+              private.gmail_reply_observed_through_at(p_mail_account_id, t.provider_thread_id)
          )
        order by t.id asc
        limit p_limit
@@ -626,6 +708,7 @@ declare
   v_subjects jsonb;
   v_current_digest text;
   v_current_summary jsonb;
+  v_current_summary_is_stale boolean;
   v_current_observations jsonb;
 begin
   v_may_process := private.gmail_outreach_may_process(p_mail_account_id);
@@ -722,8 +805,17 @@ begin
    where m.normalized_thread_id = p_normalized_thread_id
      and h.header_name = 'subject';
 
-  select to_jsonb(sm) - 'id' - 'user_id' - 'mail_account_id' - 'normalized_thread_id'
-    into v_current_summary
+  -- CLOSURE PASS §18/§19: `current_summary_is_stale` distinguishes a
+  -- RETAINED summary (still stored, potentially still human-relevant) from a
+  -- CURRENTLY-VALID one — true whenever ANY tracked dependency (source
+  -- evidence, horizon, eligibility, or a rule/shared-transform version) has
+  -- moved since this summary was last committed. A caller must never present
+  -- a stale summary as describing the CURRENT state of the mailbox.
+  select to_jsonb(sm) - 'id' - 'user_id' - 'mail_account_id' - 'normalized_thread_id',
+         (sm.evidence_digest is distinct from v_current_digest
+           or sm.observed_through_at is distinct from v_observed_through_at
+           or sm.eligibility is distinct from v_eligibility)
+    into v_current_summary, v_current_summary_is_stale
     from private.gmail_reply_thread_summaries sm
    where sm.mail_account_id = p_mail_account_id
      and sm.normalized_thread_id = p_normalized_thread_id;
@@ -753,6 +845,7 @@ begin
     'subjects', v_subjects,
     'evidence_digest', v_current_digest,
     'current_summary', v_current_summary,
+    'current_summary_is_stale', coalesce(v_current_summary_is_stale, false),
     'current_message_observations', v_current_observations
   );
 end;
@@ -763,18 +856,58 @@ revoke all on function public.gmail_reply_get_thread_evidence(uuid, uuid, uuid) 
 -- ---------------------------------------------------------------------------
 -- 7c. COMMIT ONE THREAD'S REPLY-CHRONOLOGY INTERPRETATION — atomic, fenced
 -- ---------------------------------------------------------------------------
--- TS has already computed, from the evidence above, one response_class/
--- relation_status/... row for every message in the thread and the resulting
--- thread summary. This function is the sole authority on whether that work
--- may become the current MACHINE projection, and it writes no HUMAN table
--- (there is none in B06 — B07 owns creator correction).
+-- CLOSURE PASS REWRITE. TS supplies only SEMANTIC interpretation it alone can
+-- derive (`response_class` for non-SENT messages, `relation_status`, which
+-- creator-sent message a direct/references relationship points at). Every
+-- LITERAL source fact — `internal_date`, `source_payload_sha256`,
+-- `provider_sent`, current normalized-message identity, thread/account
+-- membership — is looked up HERE from the locked, current row, never trusted
+-- from caller JSON (closure pass §14). `latest_preceding_creator_sent_*` and
+-- `chronology_conflict` are likewise DB-DERIVED from the same locked rows
+-- (closure pass §15/§17) — a pure function of already-validated timestamps,
+-- so there is nothing left for a caller to lie about. The thread summary
+-- (first creator send, first qualifying reply, counts, both clocks) is
+-- DERIVED ENTIRELY HERE from the just-written, just-validated observation
+-- rows (closure pass §16) — there is no `p_thread_summary` parameter any
+-- more; a caller cannot invent arithmetic this function does not itself
+-- recompute.
 --
--- p_expected_evidence_digest is the fence, re-verified here under a `for key
--- share` lock on the thread's current normalized messages, exactly like
--- B05's `gmail_outreach_commit_interpretation`. Eligibility is ALSO
--- re-verified here, under the SAME transaction, so a concurrent B05 human
--- `outreach_rejected` decision racing this commit is caught rather than
--- silently written past.
+-- VALIDATE EVERYTHING, THEN WRITE EVERYTHING (closure pass §12): every
+-- refusal below — `stale_source` (staleness, an ordinary expected outcome)
+-- and a raised exception (a caller-side data-shape violation that can never
+-- legitimately occur once the evidence digest has matched, per the analysis
+-- in each check's own comment) — happens strictly BEFORE the two INSERT
+-- statements. Each INSERT is a SINGLE atomic set-based statement over every
+-- message in the thread at once (never a per-message loop with an early
+-- RETURN partway through), so either the whole thread's interpretation
+-- becomes current or nothing does.
+--
+-- CLOSURE PASS §6/§13: the `for update` lock below is the REAL transactional
+-- fence closing the "concurrent B05 human rejection / machine eligibility
+-- change races this commit" gap a plain re-SELECT cannot close — a
+-- check-then-act gap remains a gap no matter how fresh the check, unless
+-- something forces genuine serialization against every other writer that
+-- could flip the answer. `private.gmail_outreach_assert_may_process_locked`
+-- (reused, unmodified from 0039) takes `for share` on `public.mail_accounts`
+-- as its OWN last step; every OTHER B05/B06 writer that touches this thread
+-- reaches that exact same call (`gmail_outreach_record_creator_decision`,
+-- `gmail_outreach_commit_interpretation`, and this function). Upgrading THIS
+-- call's hold on that row to `for update` — in the SAME relative position in
+-- the lock order (consent, then mail_accounts) every caller already uses, so
+-- it introduces no new deadlock against B01's consent-withdrawal/deletion-
+-- start writers — forces total serialization against every one of them:
+-- whichever transaction reaches this point first fully completes (commits or
+-- rolls back) before any other proceeds, so a decision that "wins" before
+-- this commit's write is always visible to the immediately-following fresh
+-- eligibility re-check, and a decision that lands after this commit's own
+-- completion correctly governs only the NEXT commit. Two concurrent B06
+-- commits on the SAME mail account (both already holding `for share` via
+-- their own `assert_may_process_locked` call, both then requesting `for
+-- update`) is the one live self-deadlock this creates; Postgres detects it
+-- (error `40P01`) and aborts one — the caller (`commitInterpretation` in
+-- service.ts) treats that exactly like `stale_source` and retries the whole
+-- read-compute-commit cycle, the same shape B05's own CAS retry already
+-- uses.
 create or replace function public.gmail_reply_commit_interpretation(
   p_user_id uuid,
   p_mail_account_id uuid,
@@ -783,8 +916,7 @@ create or replace function public.gmail_reply_commit_interpretation(
   p_classification_version text,
   p_text_transform_version text,
   p_expected_evidence_digest text,
-  p_message_observations jsonb,
-  p_thread_summary jsonb
+  p_message_observations jsonb
 )
 returns jsonb
 language plpgsql
@@ -797,13 +929,16 @@ declare
   v_thread private.gmail_normalized_threads%rowtype;
   v_current_digest text;
   v_current_count integer;
-  v_obs jsonb;
-  v_normalized_message_id uuid;
-  v_provider_message_id text;
+  v_payload_count integer;
+  v_payload_distinct_count integer;
+  v_set_mismatch boolean;
+  v_shape_mismatch boolean;
+  v_bad_reference boolean;
+  v_observed_through_at timestamptz;
 begin
   if p_relation_version !~ '^[a-z][a-z0-9_]{0,63}$'
      or p_classification_version !~ '^[a-z][a-z0-9_]{0,63}$'
-     or p_text_transform_version !~ '^[a-z][a-z0-9_]{0,63}$' then
+     or p_text_transform_version !~ '^[a-z][a-z0-9_.+]{0,127}$' then
     raise exception 'invalid relation/classification/text-transform version' using errcode = 'invalid_parameter_value';
   end if;
 
@@ -814,6 +949,12 @@ begin
     return jsonb_build_object('result', v_may_process);
   end if;
 
+  -- THE ELIGIBILITY-RACE FENCE. See this function's own header comment for
+  -- the full deadlock-safety argument. Must come immediately after the call
+  -- above (same relative lock order: consent, then mail_accounts) and
+  -- strictly before the eligibility re-check below.
+  perform 1 from public.mail_accounts where id = p_mail_account_id for update;
+
   select t.* into v_thread
     from private.gmail_normalized_threads t
    where t.id = p_normalized_thread_id and t.mail_account_id = p_mail_account_id;
@@ -822,9 +963,11 @@ begin
     return jsonb_build_object('result', 'thread_not_found');
   end if;
 
-  -- ELIGIBILITY, RE-VERIFIED UNDER THIS SAME TRANSACTION. A concurrent B05
-  -- human `outreach_rejected` decision racing this commit must win — new
-  -- B06 processing is refused, exactly like a concurrent consent withdrawal.
+  -- ELIGIBILITY, RE-VERIFIED UNDER THE EXCLUSIVE LOCK ABOVE. A concurrent B05
+  -- human `outreach_rejected` decision, or a concurrent machine eligibility
+  -- change with no human override, that reaches `for update` on
+  -- `mail_accounts` before this statement is now GUARANTEED visible here —
+  -- not merely likely, per the header comment's serialization argument.
   v_eligibility := private.gmail_reply_thread_eligibility(p_mail_account_id, p_normalized_thread_id);
   if v_eligibility = 'not_eligible' then
     return jsonb_build_object('result', 'not_eligible');
@@ -847,96 +990,307 @@ begin
     return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', v_current_digest);
   end if;
 
-  -- MESSAGE OBSERVATIONS. Upsert on the STABLE identity
-  -- (mail_account_id, provider_message_id) — never on this row's own id.
-  for v_obs in select * from jsonb_array_elements(coalesce(p_message_observations, '[]'::jsonb))
-  loop
-    v_provider_message_id := v_obs ->> 'provider_message_id';
-
-    select m.id into v_normalized_message_id
+  -- CLOSURE PASS §13: EXACT SET EQUALITY. `locked` below re-issues the SAME
+  -- `for key share` request the digest computation above already made —
+  -- idempotent within one transaction, not a second lock acquisition. No
+  -- missing message, no duplicate payload entry, no foreign/extra provider
+  -- id may become — or silently fail to become — part of the current
+  -- projection.
+  with locked as (
+    select m.provider_message_id
       from private.gmail_normalized_messages m
-     where m.mail_account_id = p_mail_account_id
-       and m.normalized_thread_id = p_normalized_thread_id
-       and m.provider_message_id = v_provider_message_id;
+     where m.normalized_thread_id = p_normalized_thread_id
+     for key share
+  ),
+  payload as (
+    select elem ->> 'provider_message_id' as provider_message_id
+      from jsonb_array_elements(coalesce(p_message_observations, '[]'::jsonb)) as elem
+  )
+  select
+    count(*)::int,
+    count(distinct provider_message_id)::int,
+    exists (select 1 from locked l where not exists (select 1 from payload p where p.provider_message_id = l.provider_message_id))
+    or exists (select 1 from payload p where not exists (select 1 from locked l where l.provider_message_id = p.provider_message_id))
+    into v_payload_count, v_payload_distinct_count, v_set_mismatch
+    from payload;
 
-    if not found then
-      -- Evidence named a message no longer (or never) present in THIS
-      -- thread under lock. Refuse the whole commit rather than write a
-      -- partial, possibly evidence-mismatched result.
-      return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', v_current_digest);
-    end if;
+  if v_payload_count <> v_payload_distinct_count or v_set_mismatch then
+    -- A duplicate payload entry, a missing current message, or a foreign/
+    -- extra provider id: refuse the whole commit rather than write a
+    -- partial, possibly evidence-mismatched result.
+    return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', v_current_digest);
+  end if;
 
-    insert into private.gmail_reply_message_observations (
-      user_id, mail_account_id, normalized_thread_id, provider_message_id, internal_date,
-      current_normalized_message_id, last_evaluated_source_payload_sha256,
-      response_class, relation_status,
-      referenced_creator_sent_provider_message_id, latest_preceding_creator_sent_provider_message_id,
-      chronology_conflict, relation_rule_version, classification_rule_version, text_transform_version
-    ) values (
-      p_user_id, p_mail_account_id, p_normalized_thread_id, v_provider_message_id,
-      to_timestamp((v_obs ->> 'internal_date_ms')::numeric / 1000.0),
-      v_normalized_message_id, v_obs ->> 'source_payload_sha256',
-      v_obs ->> 'response_class', v_obs ->> 'relation_status',
-      v_obs ->> 'referenced_creator_sent_provider_message_id',
-      v_obs ->> 'latest_preceding_creator_sent_provider_message_id',
-      coalesce((v_obs ->> 'chronology_conflict')::boolean, false),
-      p_relation_version, p_classification_version,
-      case when v_obs ->> 'response_class' = 'creator_sent_touch' then null else p_text_transform_version end
-    )
-    on conflict (mail_account_id, provider_message_id) do update
-      set normalized_thread_id = excluded.normalized_thread_id,
-          internal_date = excluded.internal_date,
-          current_normalized_message_id = excluded.current_normalized_message_id,
-          last_evaluated_source_payload_sha256 = excluded.last_evaluated_source_payload_sha256,
-          response_class = excluded.response_class,
-          relation_status = excluded.relation_status,
-          referenced_creator_sent_provider_message_id = excluded.referenced_creator_sent_provider_message_id,
-          latest_preceding_creator_sent_provider_message_id = excluded.latest_preceding_creator_sent_provider_message_id,
-          chronology_conflict = excluded.chronology_conflict,
-          relation_rule_version = excluded.relation_rule_version,
-          classification_rule_version = excluded.classification_rule_version,
-          text_transform_version = excluded.text_transform_version,
-          evaluated_at = now();
-  end loop;
+  -- CLOSURE PASS §14: `actual provider_sent = true IFF response_class =
+  -- 'creator_sent_touch'`. Once the digest above has matched, `locked`'s
+  -- `provider_sent` is PROVABLY identical to what TS read to decide
+  -- `response_class` — so a mismatch here can only be a caller-side logic
+  -- defect, never a legitimate race outcome, and is a loud failure, not a
+  -- silent coercion or a soft refusal.
+  with locked as (
+    select m.provider_message_id, m.provider_sent
+      from private.gmail_normalized_messages m
+     where m.normalized_thread_id = p_normalized_thread_id
+     for key share
+  )
+  select exists (
+    select 1
+      from jsonb_array_elements(coalesce(p_message_observations, '[]'::jsonb)) as elem
+      join locked l on l.provider_message_id = elem ->> 'provider_message_id'
+     where (l.provider_sent and elem ->> 'response_class' <> 'creator_sent_touch')
+        or (not l.provider_sent and elem ->> 'response_class' = 'creator_sent_touch')
+  ) into v_shape_mismatch;
 
-  -- THREAD SUMMARY. One current row per thread, replaced wholesale — the
-  -- exact same replace-atomically shape as B05's thread_signals.
+  if v_shape_mismatch then
+    raise exception 'response_class does not match the actual provider_sent state for one or more messages'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- CLOSURE PASS §15: any supplied `referenced_creator_sent_provider_message_id`
+  -- must exist in the current locked set for THIS mail account/thread and be
+  -- an actual creator-sent message. (A referenced send's TIMESTAMP being at
+  -- or after the candidate's own is NOT rejected here — that is exactly
+  -- `chronology_conflict`, contract §10's preserved, expected case, derived
+  -- below.)
+  with locked as (
+    select m.provider_message_id, m.provider_sent
+      from private.gmail_normalized_messages m
+     where m.normalized_thread_id = p_normalized_thread_id
+     for key share
+  )
+  select exists (
+    select 1
+      from jsonb_array_elements(coalesce(p_message_observations, '[]'::jsonb)) as elem
+     where elem ->> 'referenced_creator_sent_provider_message_id' is not null
+       and not exists (
+         select 1 from locked l
+          where l.provider_message_id = elem ->> 'referenced_creator_sent_provider_message_id'
+            and l.provider_sent
+       )
+  ) into v_bad_reference;
+
+  if v_bad_reference then
+    raise exception 'referenced_creator_sent_provider_message_id does not resolve to a current creator-sent message in this thread'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- EVERYTHING VALIDATED. FROM HERE ON, ONLY WRITES — nothing above this
+  -- point has mutated any B06 row.
+
+  -- MESSAGE OBSERVATIONS: one atomic set-based upsert on the STABLE identity
+  -- (mail_account_id, provider_message_id) — never on this row's own id.
+  -- `latest_preceding_creator_sent_*` and `chronology_conflict` are DERIVED
+  -- here, from the locked rows' own `internal_date`/`provider_sent` — never
+  -- taken from caller JSON (closure pass §14/§15/§17).
+  with locked as (
+    select m.id as normalized_message_id, m.provider_message_id, m.source_payload_sha256,
+           m.provider_sent, m.internal_date
+      from private.gmail_normalized_messages m
+     where m.normalized_thread_id = p_normalized_thread_id
+     for key share
+  ),
+  payload as (
+    select elem ->> 'provider_message_id' as provider_message_id,
+           elem ->> 'response_class' as response_class,
+           elem ->> 'relation_status' as relation_status,
+           elem ->> 'referenced_creator_sent_provider_message_id' as referenced_creator_sent_provider_message_id
+      from jsonb_array_elements(coalesce(p_message_observations, '[]'::jsonb)) as elem
+  )
+  insert into private.gmail_reply_message_observations (
+    user_id, mail_account_id, normalized_thread_id, provider_message_id, internal_date,
+    current_normalized_message_id, last_evaluated_source_payload_sha256,
+    response_class, relation_status,
+    referenced_creator_sent_provider_message_id,
+    latest_preceding_creator_sent_provider_message_id, latest_preceding_creator_sent_at,
+    chronology_conflict, relation_rule_version, classification_rule_version, text_transform_version
+  )
+  select
+    p_user_id, p_mail_account_id, p_normalized_thread_id, l.provider_message_id, l.internal_date,
+    l.normalized_message_id, l.source_payload_sha256,
+    py.response_class, py.relation_status, py.referenced_creator_sent_provider_message_id,
+    lp.provider_message_id, lp.at,
+    coalesce(ref.internal_date >= l.internal_date, false),
+    p_relation_version, p_classification_version,
+    case when l.provider_sent then null else p_text_transform_version end
+    from locked l
+    join payload py on py.provider_message_id = l.provider_message_id
+    left join locked ref on ref.provider_message_id = py.referenced_creator_sent_provider_message_id
+    left join lateral (
+      -- The creator-sent touch with the greatest internal_date STRICTLY
+      -- before `l` — tie-aware (closure pass §17): if two or more
+      -- creator-sent messages share that maximal preceding timestamp,
+      -- `provider_message_id` is null while `at` still carries the known
+      -- timestamp, so CLOCK B's latency need not be destroyed merely
+      -- because the singular identity is ambiguous.
+      with preceding as (
+        select cs.provider_message_id, cs.internal_date
+          from locked cs
+         where cs.provider_sent and cs.internal_date < l.internal_date
+      ),
+      maxed as (
+        select max(internal_date) as at from preceding
+      )
+      select maxed.at,
+             case when count(preceding.provider_message_id) = 1 then min(preceding.provider_message_id) end
+               as provider_message_id
+        from maxed
+        left join preceding on preceding.internal_date = maxed.at
+       group by maxed.at
+    ) lp on not l.provider_sent
+  on conflict (mail_account_id, provider_message_id) do update
+    set normalized_thread_id = excluded.normalized_thread_id,
+        internal_date = excluded.internal_date,
+        current_normalized_message_id = excluded.current_normalized_message_id,
+        last_evaluated_source_payload_sha256 = excluded.last_evaluated_source_payload_sha256,
+        response_class = excluded.response_class,
+        relation_status = excluded.relation_status,
+        referenced_creator_sent_provider_message_id = excluded.referenced_creator_sent_provider_message_id,
+        latest_preceding_creator_sent_provider_message_id = excluded.latest_preceding_creator_sent_provider_message_id,
+        latest_preceding_creator_sent_at = excluded.latest_preceding_creator_sent_at,
+        chronology_conflict = excluded.chronology_conflict,
+        relation_rule_version = excluded.relation_rule_version,
+        classification_rule_version = excluded.classification_rule_version,
+        text_transform_version = excluded.text_transform_version,
+        evaluated_at = now();
+
+  -- THE OBSERVATION HORIZON, RECOMPUTED FRESH HERE (closure pass §5) — never
+  -- trusted from a caller-supplied reading. A horizon that advanced (or
+  -- newly resolved) between evidence-read and commit is reflected in THIS
+  -- commit's summary automatically, by construction, with no separate
+  -- staleness dimension to compare.
+  v_observed_through_at := private.gmail_reply_observed_through_at(p_mail_account_id, v_thread.provider_thread_id);
+
+  -- THREAD SUMMARY: DERIVED ENTIRELY HERE (closure pass §16) from the
+  -- observation rows just written above — a caller cannot invent a first-
+  -- reply id, a latency, a creator-send count or a horizon this function
+  -- does not itself recompute. Ties (closure pass §17) null the identity
+  -- column while keeping the timestamp/latency/count, which depend only on
+  -- the KNOWN timestamp, fully populated.
+  with obs as (
+    select * from private.gmail_reply_message_observations
+     where mail_account_id = p_mail_account_id and normalized_thread_id = p_normalized_thread_id
+  ),
+  creator as (
+    select provider_message_id, internal_date from obs where response_class = 'creator_sent_touch'
+  ),
+  first_creator_at as (
+    select min(internal_date) as at from creator
+  ),
+  first_creator_rows as (
+    select c.provider_message_id from creator c, first_creator_at fca where c.internal_date = fca.at
+  ),
+  qualifying as (
+    select provider_message_id, internal_date, chronology_conflict,
+           latest_preceding_creator_sent_provider_message_id, latest_preceding_creator_sent_at
+      from obs where response_class = 'qualifying_human_reply'
+  ),
+  first_reply_at as (
+    select min(internal_date) as at from qualifying
+  ),
+  first_reply_rows as (
+    select q.* from qualifying q, first_reply_at fra where q.internal_date = fra.at
+  ),
+  summary as (
+    select
+      fca.at as first_creator_sent_at,
+      (select count(*)::int from first_creator_rows) as first_creator_row_count,
+      (select provider_message_id from first_creator_rows limit 1) as first_creator_id_if_unique,
+      fra.at as first_reply_at,
+      (select count(*)::int from first_reply_rows) as first_reply_row_count,
+      (select provider_message_id from first_reply_rows limit 1) as first_reply_id_if_unique,
+      -- Two or more first-reply rows share the IDENTICAL first_reply_at
+      -- timestamp by construction, so "which creator sends precede it" is
+      -- the SAME question for every one of them — they cannot legitimately
+      -- disagree on latest-preceding identity/timestamp, or on whether
+      -- their OWN relation evidence contradicted its timestamp. Reading any
+      -- one tied row's already-correct (possibly itself tie-null) fields is
+      -- therefore exact, not an approximation.
+      (select latest_preceding_creator_sent_provider_message_id from first_reply_rows limit 1) as first_reply_lp_id,
+      (select latest_preceding_creator_sent_at from first_reply_rows limit 1) as first_reply_lp_at,
+      (select bool_or(chronology_conflict) from first_reply_rows) as first_reply_any_conflict,
+      exists (select 1 from obs where response_class = 'ambiguous_inbound') as has_ambiguous,
+      exists (select 1 from obs where response_class in ('automated_response', 'delivery_status')) as has_auto_or_delivery
+    from first_creator_at fca, first_reply_at fra
+  ),
+  -- `conflicted` (contract §10): the relation survives on the per-message
+  -- row, but this THREAD's latency/latest-preceding-identity fields must be
+  -- NULL, never fabricated, whenever the first reply's own relation evidence
+  -- contradicted its timestamp, or there is no creator send for CLOCK A to
+  -- measure from, or the resulting CLOCK A latency would be negative.
+  summary2 as (
+    select s.*,
+      s.first_reply_at is not null and (
+        s.first_creator_sent_at is null
+        or extract(epoch from (s.first_reply_at - s.first_creator_sent_at)) < 0
+        or s.first_reply_any_conflict
+      ) as conflicted
+    from summary s
+  )
   insert into private.gmail_reply_thread_summaries (
     user_id, mail_account_id, normalized_thread_id, eligibility, observation_state,
-    first_creator_sent_provider_message_id, first_creator_sent_at,
-    first_qualifying_human_reply_provider_message_id, first_qualifying_human_reply_at,
-    creator_sent_count_before_first_human_reply, latest_creator_sent_before_reply_provider_message_id,
+    first_creator_sent_provider_message_id, first_creator_sent_at, first_creator_sent_tied,
+    first_qualifying_human_reply_provider_message_id, first_qualifying_human_reply_at, first_qualifying_human_reply_tied,
+    creator_sent_count_before_first_human_reply,
+    latest_creator_sent_before_reply_provider_message_id, latest_creator_sent_before_reply_tied,
     latency_from_first_creator_sent_ms, latency_from_latest_creator_sent_ms, reply_chronology_conflict,
     observed_through_at, evidence_digest, evidence_message_count,
     relation_rule_version, classification_rule_version, text_transform_version
-  ) values (
-    p_user_id, p_mail_account_id, p_normalized_thread_id, v_eligibility,
-    p_thread_summary ->> 'observation_state',
-    p_thread_summary ->> 'first_creator_sent_provider_message_id',
-    case when p_thread_summary ->> 'first_creator_sent_at_ms' is not null
-      then to_timestamp((p_thread_summary ->> 'first_creator_sent_at_ms')::numeric / 1000.0) end,
-    p_thread_summary ->> 'first_qualifying_human_reply_provider_message_id',
-    case when p_thread_summary ->> 'first_qualifying_human_reply_at_ms' is not null
-      then to_timestamp((p_thread_summary ->> 'first_qualifying_human_reply_at_ms')::numeric / 1000.0) end,
-    (p_thread_summary ->> 'creator_sent_count_before_first_human_reply')::integer,
-    p_thread_summary ->> 'latest_creator_sent_before_reply_provider_message_id',
-    (p_thread_summary ->> 'latency_from_first_creator_sent_ms')::bigint,
-    (p_thread_summary ->> 'latency_from_latest_creator_sent_ms')::bigint,
-    coalesce((p_thread_summary ->> 'reply_chronology_conflict')::boolean, false),
-    case when p_thread_summary ->> 'observed_through_at_ms' is not null
-      then to_timestamp((p_thread_summary ->> 'observed_through_at_ms')::numeric / 1000.0) end,
-    v_current_digest, v_current_count,
-    p_relation_version, p_classification_version, p_text_transform_version
   )
+  select
+    p_user_id, p_mail_account_id, p_normalized_thread_id, v_eligibility,
+    case
+      when s.first_reply_at is not null then 'qualifying_human_reply_observed'
+      when s.has_ambiguous then 'ambiguous_response_observed'
+      when s.has_auto_or_delivery then 'only_automated_or_delivery_observed'
+      when v_observed_through_at is not null then 'no_qualifying_response_observed_in_window'
+      else 'observation_horizon_unknown'
+    end,
+    case when s.first_creator_row_count = 1 then s.first_creator_id_if_unique end,
+    s.first_creator_sent_at,
+    s.first_creator_row_count > 1,
+    case when s.first_reply_row_count = 1 then s.first_reply_id_if_unique end,
+    s.first_reply_at,
+    s.first_reply_row_count > 1,
+    case when s.first_reply_at is not null then
+      (select count(*)::int from creator c where c.internal_date < s.first_reply_at)
+    end,
+    -- Under `conflicted`, CLOCK B's identity/tie/latency are ALL withheld —
+    -- not merely the latency (contract §10: the relation survives on the
+    -- per-message row; nothing about it may be reported as thread-level
+    -- timing once the thread's OWN first-reply timing is already unsound).
+    case when not s.conflicted then s.first_reply_lp_id end,
+    not s.conflicted and s.first_reply_at is not null
+      and s.first_reply_lp_id is null and s.first_reply_lp_at is not null,
+    case
+      when s.conflicted then null
+      when s.first_reply_at is null then null
+      when s.first_creator_sent_at is null then null
+      else (extract(epoch from (s.first_reply_at - s.first_creator_sent_at)) * 1000)::bigint
+    end,
+    -- `preceding.internal_date < l.internal_date` in the per-message lateral
+    -- above makes a negative CLOCK B latency structurally impossible once
+    -- `first_reply_lp_at` is non-null — nothing further to guard here.
+    case
+      when s.conflicted then null
+      when s.first_reply_at is null or s.first_reply_lp_at is null then null
+      else (extract(epoch from (s.first_reply_at - s.first_reply_lp_at)) * 1000)::bigint
+    end,
+    s.conflicted,
+    v_observed_through_at, v_current_digest, v_current_count,
+    p_relation_version, p_classification_version, p_text_transform_version
+    from summary2 s
   on conflict (mail_account_id, normalized_thread_id) do update
     set eligibility = excluded.eligibility,
         observation_state = excluded.observation_state,
         first_creator_sent_provider_message_id = excluded.first_creator_sent_provider_message_id,
         first_creator_sent_at = excluded.first_creator_sent_at,
+        first_creator_sent_tied = excluded.first_creator_sent_tied,
         first_qualifying_human_reply_provider_message_id = excluded.first_qualifying_human_reply_provider_message_id,
         first_qualifying_human_reply_at = excluded.first_qualifying_human_reply_at,
+        first_qualifying_human_reply_tied = excluded.first_qualifying_human_reply_tied,
         creator_sent_count_before_first_human_reply = excluded.creator_sent_count_before_first_human_reply,
         latest_creator_sent_before_reply_provider_message_id = excluded.latest_creator_sent_before_reply_provider_message_id,
+        latest_creator_sent_before_reply_tied = excluded.latest_creator_sent_before_reply_tied,
         latency_from_first_creator_sent_ms = excluded.latency_from_first_creator_sent_ms,
         latency_from_latest_creator_sent_ms = excluded.latency_from_latest_creator_sent_ms,
         reply_chronology_conflict = excluded.reply_chronology_conflict,
@@ -953,7 +1307,7 @@ end;
 $$;
 
 revoke all on function public.gmail_reply_commit_interpretation(
-  uuid, uuid, uuid, text, text, text, text, jsonb, jsonb
+  uuid, uuid, uuid, text, text, text, text, jsonb
 ) from public;
 
 -- ---------------------------------------------------------------------------
@@ -1003,6 +1357,21 @@ as $$
       select count(*) from private.gmail_reply_thread_summaries
        where user_id = p_user_id and mail_account_id = p_mail_account_id
          and observation_state = 'observation_horizon_unknown'
+    ),
+    -- CLOSURE PASS §18/§19: how much of the retained history above is
+    -- CURRENTLY stale (source evidence, horizon, or eligibility moved since
+    -- last committed) — an operator/B07 signal, never a reason to delete
+    -- anything on its own.
+    'stale_thread_summaries', (
+      select count(*) from private.gmail_reply_thread_summaries sm
+       where sm.user_id = p_user_id and sm.mail_account_id = p_mail_account_id
+         and (
+           sm.eligibility is distinct from private.gmail_reply_thread_eligibility(sm.mail_account_id, sm.normalized_thread_id)
+           or sm.observed_through_at is distinct from (
+             select private.gmail_reply_observed_through_at(sm.mail_account_id, t.provider_thread_id)
+               from private.gmail_normalized_threads t where t.id = sm.normalized_thread_id
+           )
+         )
     )
   );
 $$;
@@ -1089,7 +1458,7 @@ begin
   foreach fn in array array[
     'public.gmail_reply_list_candidates(uuid,uuid,text,text,text,integer,uuid[])',
     'public.gmail_reply_get_thread_evidence(uuid,uuid,uuid)',
-    'public.gmail_reply_commit_interpretation(uuid,uuid,uuid,text,text,text,text,jsonb,jsonb)',
+    'public.gmail_reply_commit_interpretation(uuid,uuid,uuid,text,text,text,text,jsonb)',
     'public.gmail_reply_status(uuid,uuid)',
     'public.gmail_reply_purge_for_deletion(uuid,uuid,uuid)'
   ] loop

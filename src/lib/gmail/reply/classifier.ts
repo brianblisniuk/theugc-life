@@ -1,5 +1,4 @@
 import type {
-  ParticipantHeaderRole,
   ReplyEvidenceParticipant,
   ReplyEvidenceSubject,
   ReplyEvidenceTextPart,
@@ -30,12 +29,46 @@ export interface ClassificationResult {
   responseClass: ResponseClass;
 }
 
-function findParticipant(
+/**
+ * CLOSURE PASS §9: resolves ALL "from" occurrences for one message, never
+ * just the first. B04 preserves repeated/conflicting header occurrences on
+ * purpose; a decisive external-sender judgement must not be first-row-wins.
+ * Identical parsed addresses collapse safely (repetition, not conflict).
+ * Anything else — zero occurrences, any malformed/empty_group occurrence, or
+ * two or more DIFFERENT parsed addresses — cannot safely resolve to a single
+ * sender identity.
+ */
+function resolveFromAddress(
   participants: readonly ReplyEvidenceParticipant[],
   providerMessageId: string,
-  role: ParticipantHeaderRole,
-): ReplyEvidenceParticipant | undefined {
-  return participants.find((p) => p.providerMessageId === providerMessageId && p.role === role);
+): string | null {
+  const occurrences = participants.filter(
+    (p) => p.providerMessageId === providerMessageId && p.role === "from",
+  );
+  if (occurrences.length === 0) return null;
+  if (occurrences.some((p) => p.parseStatus !== "parsed" || !p.addrSpec)) return null;
+
+  const distinctAddresses = new Set(occurrences.map((p) => p.addrSpec!.toLowerCase()));
+  return distinctAddresses.size === 1 ? [...distinctAddresses][0]! : null;
+}
+
+/**
+ * CLOSURE PASS §8: addresses literally observed as the FROM sender of a
+ * creator-SENT message in this thread — used exclusively as NEGATIVE
+ * evidence against externality (never invented Gmail alias/dot/plus
+ * semantics, never a positive substitute for a known routing address).
+ */
+export function observedCreatorSentFromAddresses(
+  messages: readonly { providerMessageId: string; providerSent: boolean }[],
+  participants: readonly ReplyEvidenceParticipant[],
+): ReadonlySet<string> {
+  const addresses = new Set<string>();
+  for (const message of messages) {
+    if (!message.providerSent) continue;
+    const address = resolveFromAddress(participants, message.providerMessageId);
+    if (address) addresses.add(address);
+  }
+  return addresses;
 }
 
 /**
@@ -52,6 +85,8 @@ export function classifyCandidate(input: {
   participants: readonly ReplyEvidenceParticipant[];
   subjects: readonly ReplyEvidenceSubject[];
   textParts: readonly ReplyEvidenceTextPart[];
+  /** Closure pass §8: addresses directly observed sending a creator-SENT message in this thread. */
+  observedCreatorSentFromAddresses?: ReadonlySet<string>;
 }): ClassificationResult {
   // An established relation whose own timestamps contradict it is not a safe
   // basis for ANY positive classification (contract §8.1 requirement 6).
@@ -59,47 +94,62 @@ export function classifyCandidate(input: {
     return { responseClass: "ambiguous_inbound" };
   }
 
-  const subject =
-    input.subjects.find((s) => s.providerMessageId === input.providerMessageId)?.rawValue ?? "";
+  // CLOSURE PASS §10: every Subject occurrence for this message, never just
+  // the first — identical repeats collapse trivially (testing the same
+  // string twice changes nothing); a conflicting repeat gets no special
+  // treatment either way, since ANY occurrence carrying the explicit
+  // language is honored (`.some`), and NONE carrying it leaves the result
+  // unchanged — a materially different repeat can never suppress evidence a
+  // single occurrence already provided, nor manufacture evidence alone.
+  const subjects = input.subjects
+    .filter((s) => s.providerMessageId === input.providerMessageId)
+    .map((s) => s.rawValue);
   const ownTextParts = input.textParts.filter(
     (tp) => tp.providerMessageId === input.providerMessageId,
   );
   const { cleanText } = extractReplyTextForMessage(ownTextParts);
 
-  const fromParticipant = findParticipant(input.participants, input.providerMessageId, "from");
+  const fromAddress = resolveFromAddress(input.participants, input.providerMessageId);
 
   // DELIVERY STATUS: mechanical sender pattern AND explicit failure language.
-  const mechanicalSender =
-    fromParticipant?.parseStatus === "parsed" &&
-    !!fromParticipant.addrSpec &&
-    MECHANICAL_DELIVERY_SENDER_PATTERN.test(fromParticipant.addrSpec);
+  const mechanicalSender = !!fromAddress && MECHANICAL_DELIVERY_SENDER_PATTERN.test(fromAddress);
   const deliveryLanguage =
-    DELIVERY_FAILURE_LANGUAGE_PATTERN.test(subject) ||
+    subjects.some((s) => DELIVERY_FAILURE_LANGUAGE_PATTERN.test(s)) ||
     DELIVERY_FAILURE_LANGUAGE_PATTERN.test(cleanText ?? "");
   if (mechanicalSender && deliveryLanguage) {
     return { responseClass: "delivery_status" };
   }
 
-  // AUTOMATED RESPONSE: explicit language in the subject or the CONFIDENT-
-  // AUTHORSHIP text only (quote/signature already stripped upstream) —
-  // never sender morphology alone, never quoted history.
+  // AUTOMATED RESPONSE: explicit language in any Subject occurrence or the
+  // CONFIDENT-AUTHORSHIP text only (quote/signature already stripped
+  // upstream) — never sender morphology alone, never quoted history.
   if (
-    AUTOMATED_RESPONSE_LANGUAGE_PATTERN.test(subject) ||
+    subjects.some((s) => AUTOMATED_RESPONSE_LANGUAGE_PATTERN.test(s)) ||
     AUTOMATED_RESPONSE_LANGUAGE_PATTERN.test(cleanText ?? "")
   ) {
     return { responseClass: "automated_response" };
   }
 
-  // EXTERNAL-PARTICIPANT REQUIREMENT (contract §8.1 requirement 3): the
-  // sender must be a parsed address, and it must not be the connected
-  // mailbox's own current routing address. A missing/malformed From, or a
-  // send that is (oddly, for a non-SENT message) from the mailbox itself,
-  // cannot safely be called a human reply from someone else.
+  // EXTERNAL-PARTICIPANT REQUIREMENT (contract §8.1 requirement 3, hardened
+  // by closure pass §7/§8): a single, cleanly-resolved sender address is
+  // required (see `resolveFromAddress` — repeated/conflicting/malformed From
+  // evidence already resolves to null above). Externality can be
+  // ESTABLISHED only by a KNOWN mailbox routing address the sender
+  // provably differs from — a null routing address never becomes positive
+  // "this is external" evidence merely by its own absence (closure pass
+  // §7). A sender address that matches one directly observed on a
+  // creator-SENT message in this exact thread is NEGATIVE evidence against
+  // externality regardless of the routing address (closure pass §8) — it
+  // overrides what would otherwise be a positive routing-based match, but
+  // is never itself a substitute source of positive externality.
+  const matchesObservedCreatorSelf = !!(
+    fromAddress && input.observedCreatorSentFromAddresses?.has(fromAddress)
+  );
   const isExternalParticipant =
-    fromParticipant?.parseStatus === "parsed" &&
-    !!fromParticipant.addrSpec &&
-    (!input.mailAccountEmail ||
-      fromParticipant.addrSpec.toLowerCase() !== input.mailAccountEmail.toLowerCase());
+    !!fromAddress &&
+    !!input.mailAccountEmail &&
+    fromAddress !== input.mailAccountEmail.toLowerCase() &&
+    !matchesObservedCreatorSelf;
   if (!isExternalParticipant) {
     return { responseClass: "ambiguous_inbound" };
   }

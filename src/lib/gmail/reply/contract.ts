@@ -3,13 +3,23 @@
  * docs/B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md for the full contract these
  * types implement.
  */
+import { CLASSIFIER_INPUT_TRANSFORM_VERSION as UPSTREAM_TEXT_TRANSFORM_VERSION } from "@/lib/gmail/outreach/text-transform";
 
 /** V1 deterministic relationship classifier. No external model call. */
 export const RELATION_RULE_VERSION = "gmail_reply_relation_rules_v1";
 /** V1 deterministic human/automated/delivery classifier. No external model call. */
 export const CLASSIFICATION_RULE_VERSION = "gmail_reply_classification_rules_v1";
-/** V1 versioned inbound quote/signature text transform (reuses B05's primitive). */
-export const TEXT_TRANSFORM_VERSION = "gmail_reply_text_transform_v1";
+/**
+ * V1 versioned inbound quote/signature text transform. CLOSURE PASS §20:
+ * B06 reuses B05's `buildClassifierInputForMessage` transform UNCHANGED, so
+ * this version string HONESTLY embeds the upstream version it depends on —
+ * a future bump to `CLASSIFIER_INPUT_TRANSFORM_VERSION` changes THIS string
+ * automatically, which is what makes it participate in B06's own staleness
+ * checks (list_candidates/commit already compare it against what a stored
+ * summary last saw). Never hand-edit the reply-specific half without also
+ * considering whether the underlying B05 transform actually changed.
+ */
+export const TEXT_TRANSFORM_VERSION = `gmail_reply_text_transform_v1+${UPSTREAM_TEXT_TRANSFORM_VERSION}`;
 
 export type ResponseClass =
   | "creator_sent_touch"
@@ -44,6 +54,17 @@ export type ReferenceHeaderRole = "message-id" | "in-reply-to" | "references";
 export type ParticipantHeaderRole = "from" | "sender" | "reply-to";
 
 const VERSION_SHAPE = /^[a-z][a-z0-9_]{0,63}$/;
+/** Wider shape for TEXT_TRANSFORM_VERSION alone — see its own doc comment for why. */
+const TEXT_TRANSFORM_VERSION_SHAPE = /^[a-z][a-z0-9_.+]{0,127}$/;
+
+export function requireTextTransformVersionShape(value: string, name: string): string {
+  if (!TEXT_TRANSFORM_VERSION_SHAPE.test(value)) {
+    throw new RangeError(
+      `${name} must match ${TEXT_TRANSFORM_VERSION_SHAPE}, got ${JSON.stringify(value)}`,
+    );
+  }
+  return value;
+}
 
 export function requireVersionShape(value: string, name: string): string {
   if (!VERSION_SHAPE.test(value)) {
@@ -109,10 +130,14 @@ export interface CurrentThreadSummarySnapshot {
   observationState: ObservationState;
   firstCreatorSentProviderMessageId: string | null;
   firstCreatorSentAt: string | null;
+  /** Closure pass §17: known timestamp, ambiguous singular identity — see `ThreadSummaryInput`. */
+  firstCreatorSentTied: boolean;
   firstQualifyingHumanReplyProviderMessageId: string | null;
   firstQualifyingHumanReplyAt: string | null;
+  firstQualifyingHumanReplyTied: boolean;
   creatorSentCountBeforeFirstHumanReply: number | null;
   latestCreatorSentBeforeReplyProviderMessageId: string | null;
+  latestCreatorSentBeforeReplyTied: boolean;
   latencyFromFirstCreatorSentMs: number | null;
   latencyFromLatestCreatorSentMs: number | null;
   replyChronologyConflict: boolean;
@@ -138,12 +163,16 @@ export interface ThreadEvidence {
   subjects: readonly ReplyEvidenceSubject[];
   evidenceDigest: string;
   currentSummary: CurrentThreadSummarySnapshot | null;
+  /** Closure pass §18/§19: true iff `currentSummary` no longer describes the CURRENT source/horizon/eligibility. */
+  currentSummaryIsStale: boolean;
   currentMessageObservations: readonly CurrentMessageObservationSnapshot[];
 }
 
 export interface CandidateStaleness {
   sourceStale: boolean;
   rulesStale: boolean;
+  /** Closure pass §5: the DB-authoritative observation horizon moved since the stored summary last saw it. */
+  horizonStale: boolean;
 }
 
 export interface ReplyCandidate {
@@ -153,7 +182,17 @@ export interface ReplyCandidate {
   staleness: CandidateStaleness;
 }
 
-/** One message's computed relationship/classification result, ready to commit. */
+/**
+ * One message's computed relationship/classification result. `providerSent`,
+ * `internalDateMs` and `sourcePayloadSha256` are the ONLY reason `messages`
+ * is threaded back through here for tests/evaluation — the commit RPC never
+ * trusts a caller's copy of these (closure pass §14): it derives them itself
+ * from the locked, current row. `latestPrecedingCreatorSentProviderMessageId`
+ * is likewise a hint the RPC independently re-derives and does not trust;
+ * kept here because it is genuinely useful stored evidence and TS's own
+ * predicted `ThreadSummaryInput` (used by tests/the evaluation harness, never
+ * sent to the RPC) is built from it.
+ */
 export interface MessageObservationInput {
   providerMessageId: string;
   internalDateMs: number;
@@ -161,19 +200,33 @@ export interface MessageObservationInput {
   responseClass: ResponseClass;
   relationStatus: RelationStatus | null;
   referencedCreatorSentProviderMessageId: string | null;
+  /** Closure pass §17: null when there is no preceding creator send, OR when two or more tie for the latest one. */
   latestPrecedingCreatorSentProviderMessageId: string | null;
+  /** The tied/unambiguous timestamp itself — populated whenever a preceding creator send exists, tied or not. */
+  latestPrecedingCreatorSentAtMs: number | null;
   chronologyConflict: boolean;
 }
 
-/** The computed thread-level summary, ready to commit. */
+/**
+ * The PREDICTED thread-level summary — used by tests and the evaluation
+ * harness to check TS's own arithmetic against gold values, and by nothing
+ * else: `commitInterpretation` no longer sends this to the database. The
+ * DATABASE derives and persists the actual current summary itself, from the
+ * just-validated observation rows (closure pass §16) — this type exists so
+ * the same, provably-matching arithmetic can be exercised and asserted on
+ * without a database round-trip.
+ */
 export interface ThreadSummaryInput {
   observationState: ObservationState;
   firstCreatorSentProviderMessageId: string | null;
   firstCreatorSentAtMs: number | null;
+  firstCreatorSentTied: boolean;
   firstQualifyingHumanReplyProviderMessageId: string | null;
   firstQualifyingHumanReplyAtMs: number | null;
+  firstQualifyingHumanReplyTied: boolean;
   creatorSentCountBeforeFirstHumanReply: number | null;
   latestCreatorSentBeforeReplyProviderMessageId: string | null;
+  latestCreatorSentBeforeReplyTied: boolean;
   latencyFromFirstCreatorSentMs: number | null;
   latencyFromLatestCreatorSentMs: number | null;
   replyChronologyConflict: boolean;

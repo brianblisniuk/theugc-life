@@ -363,7 +363,6 @@ d("B06 source-evidence CAS (contract §13/§19)", () => {
       normalizedThreadId,
       expectedEvidenceDigest: evidence.evidence.evidenceDigest,
       messageObservations: interpretation.messageObservations,
-      threadSummary: interpretation.threadSummary,
     });
     expect(commit.result).toBe("stale_source");
   });
@@ -537,7 +536,7 @@ d("B06 credential boundary (B02-B05's own pattern)", () => {
     const functions = [
       "public.gmail_reply_list_candidates(uuid,uuid,text,text,text,integer,uuid[])",
       "public.gmail_reply_get_thread_evidence(uuid,uuid,uuid)",
-      "public.gmail_reply_commit_interpretation(uuid,uuid,uuid,text,text,text,text,jsonb,jsonb)",
+      "public.gmail_reply_commit_interpretation(uuid,uuid,uuid,text,text,text,text,jsonb)",
       "public.gmail_reply_status(uuid,uuid)",
       "public.gmail_reply_purge_for_deletion(uuid,uuid,uuid)",
     ];

@@ -112,33 +112,47 @@ d("B06 true multi-session concurrency", () => {
       observedThroughAtMs: null,
     });
 
-    // Two independent sessions, each committing the SAME evidence.
+    // Two independent sessions, each committing the SAME evidence. CLOSURE
+    // PASS §6: the commit function now takes `for update` on `mail_accounts`
+    // as its real eligibility-race fence (see the migration's own header
+    // comment on `gmail_reply_commit_interpretation`) — two commits racing
+    // the SAME account both hold `for share` via `assert_may_process_locked`
+    // and then both request `for update`, the textbook lock-upgrade
+    // deadlock. Postgres detects it and aborts exactly one side with
+    // `commit_conflict_retry`; that side must retry (a fresh read+commit
+    // cycle, exactly like a `stale_source` retry) to converge.
+    const commitOnce = (deps: ReturnType<typeof replyDeps>) =>
+      commitInterpretation(deps, {
+        userId,
+        mailAccountId,
+        normalizedThreadId: sent.normalizedThreadId,
+        expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+        messageObservations: interpretation.messageObservations,
+      });
+
     const s1 = await session();
     const s2 = await session();
-    const deps1 = replyDeps(s1);
-    const deps2 = replyDeps(s2);
+    const [r1, r2] = await Promise.all([commitOnce(replyDeps(s1)), commitOnce(replyDeps(s2))]);
 
-    const [r1, r2] = await Promise.all([
-      commitInterpretation(deps1, {
+    const results = [r1, r2];
+    const okCount = results.filter((r) => r.result === "ok").length;
+    const retryCount = results.filter((r) => r.result === "commit_conflict_retry").length;
+    // Real concurrent execution: either neither side deadlocked (both simply
+    // serialized on the lock and both succeeded), or exactly one did.
+    expect(okCount + retryCount).toBe(2);
+    expect(retryCount).toBeLessThanOrEqual(1);
+
+    if (retryCount === 1) {
+      const loserDeps = replyDeps(r1.result === "commit_conflict_retry" ? s1 : s2);
+      const retried = await commitInterpretation(loserDeps, {
         userId,
         mailAccountId,
         normalizedThreadId: sent.normalizedThreadId,
         expectedEvidenceDigest: evidence.evidence.evidenceDigest,
         messageObservations: interpretation.messageObservations,
-        threadSummary: interpretation.threadSummary,
-      }),
-      commitInterpretation(deps2, {
-        userId,
-        mailAccountId,
-        normalizedThreadId: sent.normalizedThreadId,
-        expectedEvidenceDigest: evidence.evidence.evidenceDigest,
-        messageObservations: interpretation.messageObservations,
-        threadSummary: interpretation.threadSummary,
-      }),
-    ]);
-
-    expect(r1.result).toBe("ok");
-    expect(r2.result).toBe("ok");
+      });
+      expect(retried.result).toBe("ok");
+    }
 
     const summaries = await client.query(
       "select id from private.gmail_reply_thread_summaries where normalized_thread_id = $1",
@@ -232,7 +246,6 @@ d("B06 true multi-session concurrency", () => {
       normalizedThreadId: sent.normalizedThreadId,
       expectedEvidenceDigest: evidence.evidence.evidenceDigest,
       messageObservations: interpretation.messageObservations,
-      threadSummary: interpretation.threadSummary,
     });
     await sA.query("commit");
     expect(commitResult.result).toBe("ok");

@@ -1,4 +1,4 @@
-import { classifyCandidate } from "@/lib/gmail/reply/classifier";
+import { classifyCandidate, observedCreatorSentFromAddresses } from "@/lib/gmail/reply/classifier";
 import {
   CLASSIFICATION_RULE_VERSION,
   RELATION_RULE_VERSION,
@@ -44,6 +44,7 @@ export function interpretThread(input: {
 }): ThreadInterpretation {
   const ordered = sortReadingOrder(input.messages);
   const relations = computeRelations(input.messages, input.referenceTokens);
+  const selfAddresses = observedCreatorSentFromAddresses(input.messages, input.participants);
 
   const messageObservations: MessageObservationInput[] = ordered.map((message) => {
     if (message.providerSent) {
@@ -55,6 +56,7 @@ export function interpretThread(input: {
         relationStatus: null,
         referencedCreatorSentProviderMessageId: null,
         latestPrecedingCreatorSentProviderMessageId: null,
+        latestPrecedingCreatorSentAtMs: null,
         chronologyConflict: false,
       };
     }
@@ -77,6 +79,7 @@ export function interpretThread(input: {
               participants: input.participants,
               subjects: input.subjects,
               textParts: input.textParts,
+              observedCreatorSentFromAddresses: selfAddresses,
             }).responseClass;
 
     return {
@@ -88,6 +91,7 @@ export function interpretThread(input: {
       referencedCreatorSentProviderMessageId: relation.referencedCreatorSentProviderMessageId,
       latestPrecedingCreatorSentProviderMessageId:
         relation.latestPrecedingCreatorSentProviderMessageId,
+      latestPrecedingCreatorSentAtMs: relation.latestPrecedingCreatorSentAtMs,
       chronologyConflict: relation.chronologyConflict,
     };
   });
@@ -97,36 +101,52 @@ export function interpretThread(input: {
   return { messageObservations, threadSummary };
 }
 
+/**
+ * TS's own PREDICTION of the thread summary the database will independently
+ * derive (closure pass §16) — used by tests/the evaluation harness only; see
+ * `ThreadSummaryInput`'s own doc comment. Mirrors the SQL derivation in
+ * `gmail_reply_commit_interpretation` exactly, including tie handling
+ * (closure pass §17): two or more messages sharing the deciding timestamp
+ * null the identity field while keeping the timestamp/latency/count, which
+ * depend only on the KNOWN timestamp.
+ */
 function computeThreadSummary(
   observations: readonly MessageObservationInput[],
   observedThroughAtMs: number | null,
 ): ThreadSummaryInput {
-  const creatorSends = observations
-    .filter((o) => o.responseClass === "creator_sent_touch")
-    .sort(
-      (a, b) =>
-        a.internalDateMs - b.internalDateMs ||
-        a.providerMessageId.localeCompare(b.providerMessageId),
-    );
+  const creatorSends = observations.filter((o) => o.responseClass === "creator_sent_touch");
+  const firstCreatorSentAtMs =
+    creatorSends.length > 0 ? Math.min(...creatorSends.map((o) => o.internalDateMs)) : null;
+  const firstCreatorSentRows = creatorSends.filter(
+    (o) => o.internalDateMs === firstCreatorSentAtMs,
+  );
+  const firstCreatorSentTied = firstCreatorSentRows.length > 1;
+  const firstCreatorSentProviderMessageId = firstCreatorSentTied
+    ? null
+    : (firstCreatorSentRows[0]?.providerMessageId ?? null);
 
-  const firstCreatorSent = creatorSends[0] ?? null;
-
-  const qualifyingReplies = observations
-    .filter((o) => o.responseClass === "qualifying_human_reply")
-    .sort(
-      (a, b) =>
-        a.internalDateMs - b.internalDateMs ||
-        a.providerMessageId.localeCompare(b.providerMessageId),
-    );
-
-  const firstReply = qualifyingReplies[0] ?? null;
+  const qualifyingReplies = observations.filter(
+    (o) => o.responseClass === "qualifying_human_reply",
+  );
+  const firstReplyAtMs =
+    qualifyingReplies.length > 0
+      ? Math.min(...qualifyingReplies.map((o) => o.internalDateMs))
+      : null;
+  const firstReplyRows = qualifyingReplies.filter((o) => o.internalDateMs === firstReplyAtMs);
+  const firstReplyTied = firstReplyRows.length > 1;
+  // Every tied first-reply row shares the identical internalDateMs, so "which
+  // creator sends precede it" is the same question for all of them — they
+  // cannot legitimately disagree on latest-preceding identity/timestamp or
+  // on their own chronology_conflict; reading the first is exact.
+  const firstReplyRow = firstReplyRows[0] ?? null;
 
   const base = {
-    firstCreatorSentProviderMessageId: firstCreatorSent?.providerMessageId ?? null,
-    firstCreatorSentAtMs: firstCreatorSent?.internalDateMs ?? null,
+    firstCreatorSentProviderMessageId,
+    firstCreatorSentAtMs,
+    firstCreatorSentTied,
   };
 
-  if (!firstReply) {
+  if (!firstReplyRow) {
     const hasAmbiguous = observations.some((o) => o.responseClass === "ambiguous_inbound");
     const hasAutomatedOrDelivery = observations.some(
       (o) => o.responseClass === "automated_response" || o.responseClass === "delivery_status",
@@ -148,8 +168,10 @@ function computeThreadSummary(
       observationState,
       firstQualifyingHumanReplyProviderMessageId: null,
       firstQualifyingHumanReplyAtMs: null,
+      firstQualifyingHumanReplyTied: false,
       creatorSentCountBeforeFirstHumanReply: null,
       latestCreatorSentBeforeReplyProviderMessageId: null,
+      latestCreatorSentBeforeReplyTied: false,
       latencyFromFirstCreatorSentMs: null,
       latencyFromLatestCreatorSentMs: null,
       replyChronologyConflict: false,
@@ -157,45 +179,38 @@ function computeThreadSummary(
     };
   }
 
-  // A chronology conflict on the FIRST qualifying reply itself — or a
-  // (defensive) negative computed latency that should be structurally
-  // impossible if the conflict flag is honest — means the relation
-  // survives but latency must be NULL, never negative (contract §10).
   const latencyFromFirst =
-    firstReply.internalDateMs - (firstCreatorSent?.internalDateMs ?? Number.NaN);
-  const latencyFromLatest = firstReply.latestPrecedingCreatorSentProviderMessageId
-    ? firstReply.internalDateMs -
-      creatorSends.find(
-        (s) => s.providerMessageId === firstReply.latestPrecedingCreatorSentProviderMessageId,
-      )!.internalDateMs
-    : Number.NaN;
+    firstCreatorSentAtMs !== null ? firstReplyAtMs! - firstCreatorSentAtMs : Number.NaN;
 
   const conflicted =
-    firstReply.chronologyConflict ||
-    !firstCreatorSent ||
-    !Number.isFinite(latencyFromFirst) ||
-    latencyFromFirst < 0 ||
-    (firstReply.latestPrecedingCreatorSentProviderMessageId !== null &&
-      (!Number.isFinite(latencyFromLatest) || latencyFromLatest < 0));
+    firstReplyRow.chronologyConflict || firstCreatorSentAtMs === null || latencyFromFirst < 0;
 
   const creatorSentCountBeforeFirstHumanReply = creatorSends.filter(
-    (s) => s.internalDateMs < firstReply.internalDateMs,
+    (s) => s.internalDateMs < firstReplyAtMs!,
   ).length;
+
+  // `latestPrecedingCreatorSentAtMs`/`...ProviderMessageId` come straight
+  // from `computeRelations` (relation.ts), which already nulls the id alone
+  // on a per-message tie — never destroying the known timestamp.
+  const latestPrecedingAtMs = firstReplyRow.latestPrecedingCreatorSentAtMs;
+  const latestPrecedingId = firstReplyRow.latestPrecedingCreatorSentProviderMessageId;
+  const latestCreatorSentBeforeReplyTied =
+    !conflicted && latestPrecedingAtMs !== null && latestPrecedingId === null;
 
   return {
     ...base,
     observationState: "qualifying_human_reply_observed",
-    firstQualifyingHumanReplyProviderMessageId: firstReply.providerMessageId,
-    firstQualifyingHumanReplyAtMs: firstReply.internalDateMs,
-    creatorSentCountBeforeFirstHumanReply,
-    latestCreatorSentBeforeReplyProviderMessageId: conflicted
+    firstQualifyingHumanReplyProviderMessageId: firstReplyTied
       ? null
-      : firstReply.latestPrecedingCreatorSentProviderMessageId,
+      : firstReplyRow.providerMessageId,
+    firstQualifyingHumanReplyAtMs: firstReplyAtMs,
+    firstQualifyingHumanReplyTied: firstReplyTied,
+    creatorSentCountBeforeFirstHumanReply,
+    latestCreatorSentBeforeReplyProviderMessageId: conflicted ? null : latestPrecedingId,
+    latestCreatorSentBeforeReplyTied,
     latencyFromFirstCreatorSentMs: conflicted ? null : latencyFromFirst,
     latencyFromLatestCreatorSentMs:
-      conflicted || !firstReply.latestPrecedingCreatorSentProviderMessageId
-        ? null
-        : latencyFromLatest,
+      conflicted || latestPrecedingAtMs === null ? null : firstReplyAtMs! - latestPrecedingAtMs,
     replyChronologyConflict: conflicted,
     observedThroughAtMs,
   };

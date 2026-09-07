@@ -139,4 +139,100 @@ describe("B06 relation.ts: reply-relationship evidence (contract §7)", () => {
       latestPrecedingCreatorSentProviderMessageId: "sent-2",
     });
   });
+
+  describe("closure pass §17: latest-preceding-creator-send ties", () => {
+    it("two creator sends tied for the latest preceding position: timestamp known, identity null", () => {
+      const messages = [
+        msg("sent-1", true, 1000),
+        msg("sent-2", true, 1000),
+        msg("reply-1", false, 5000),
+      ];
+      const result = computeRelations(messages, []);
+      expect(result.get("reply-1")).toMatchObject({
+        relationStatus: "thread_sequence_only",
+        latestPrecedingCreatorSentProviderMessageId: null,
+        latestPrecedingCreatorSentAtMs: 1000,
+      });
+    });
+
+    it("a tie for latest-preceding does not affect an EARLIER, non-tied creator send's own uniqueness elsewhere", () => {
+      const messages = [
+        msg("sent-0", true, 100),
+        msg("sent-1", true, 1000),
+        msg("sent-2", true, 1000),
+        msg("reply-1", false, 5000),
+      ];
+      const result = computeRelations(messages, []);
+      // The latest (tied) pair still wins over the earlier untied one.
+      expect(result.get("reply-1")!.latestPrecedingCreatorSentAtMs).toBe(1000);
+      expect(result.get("reply-1")!.latestPrecedingCreatorSentProviderMessageId).toBeNull();
+    });
+  });
+
+  describe("closure pass §11: duplicate Message-ID across a creator-SENT AND a non-SENT local message", () => {
+    it("a token matching a creator-sent AND a non-SENT message's own Message-ID is ambiguous_reference, never silently resolved to the creator-sent one", () => {
+      const messages = [
+        msg("sent-1", true, 1000),
+        msg("other-inbound", false, 1500),
+        msg("reply-1", false, 2000),
+      ];
+      const tokens = [
+        ref("sent-1", "message-id", "<dup@x>"),
+        // A DIFFERENT, non-SENT local message ALSO declares the identical
+        // literal Message-ID (duplicate/malformed real-world evidence).
+        ref("other-inbound", "message-id", "<dup@x>"),
+        ref("reply-1", "in-reply-to", "<dup@x>"),
+      ];
+      const result = computeRelations(messages, tokens);
+      expect(result.get("reply-1")).toMatchObject({
+        relationStatus: "ambiguous_reference",
+        referencedCreatorSentProviderMessageId: null,
+      });
+    });
+
+    it("the same duplicate-across-creator-and-non-SENT case for a References (not In-Reply-To) token", () => {
+      const messages = [
+        msg("sent-1", true, 1000),
+        msg("other-inbound", false, 1500),
+        msg("reply-1", false, 2000),
+      ];
+      const tokens = [
+        ref("sent-1", "message-id", "<dup@x>"),
+        ref("other-inbound", "message-id", "<dup@x>"),
+        ref("reply-1", "references", "<dup@x>"),
+      ];
+      const result = computeRelations(messages, tokens);
+      expect(result.get("reply-1")!.relationStatus).toBe("ambiguous_reference");
+    });
+
+    it("a token uniquely matching only a creator-sent message's Message-ID (no non-SENT duplicate) still resolves normally", () => {
+      const messages = [msg("sent-1", true, 1000), msg("reply-1", false, 2000)];
+      const tokens = [
+        ref("sent-1", "message-id", "<solo@x>"),
+        ref("reply-1", "in-reply-to", "<solo@x>"),
+      ];
+      const result = computeRelations(messages, tokens);
+      expect(result.get("reply-1")).toMatchObject({
+        relationStatus: "direct_in_reply_to",
+        referencedCreatorSentProviderMessageId: "sent-1",
+      });
+    });
+
+    it("a token matching ONLY a non-SENT message's Message-ID (never a creator send) resolves to no match, falling through to sequence-only", () => {
+      const messages = [
+        msg("sent-1", true, 1000),
+        msg("other-inbound", false, 1200),
+        msg("reply-1", false, 2000),
+      ];
+      const tokens = [
+        ref("other-inbound", "message-id", "<inbound-only@x>"),
+        ref("reply-1", "in-reply-to", "<inbound-only@x>"),
+      ];
+      const result = computeRelations(messages, tokens);
+      expect(result.get("reply-1")).toMatchObject({
+        relationStatus: "thread_sequence_only",
+        referencedCreatorSentProviderMessageId: null,
+      });
+    });
+  });
 });
