@@ -1904,6 +1904,292 @@ outcome/network-intelligence row or column, and adds no client-readable view
 of Gmail content for any role. Every normalized row is written later, by the
 application, one message at a time, through `gmail_normalize_commit_message`.
 
+## 5l. Gmail private creator-outreach interpretation (migration 0039)
+
+B05 (D070). The first layer that answers a business question over B04's
+normalized evidence — is a thread creator-commercial outreach, who/what was
+the creator trying to reach, and which recipients were actually targeted as
+commercial contacts — kept in two epistemic layers that are never conflated.
+
+**MACHINE** (advisory, replaceable, never creator truth): `gmail_outreach_
+thread_signals` (current outreach classification, one row per thread,
+fenced by an `evidence_digest` re-verified at commit time under `for key
+share`), `gmail_outreach_observed_recipient_canonical_links` (zero/one/many
+exact-email links from an observed recipient to `hotel_contacts`/
+`organization_contacts`, computed inside the commit RPC, never trusted from
+the caller), `gmail_outreach_target_contact_signals`/`_candidates` (which
+observed recipient, if any, is the real target contact), `gmail_outreach_
+target_observations` (a **private, stable target fact independent of
+canonical inventory** — see below) and its advisory columns, `gmail_
+outreach_target_canonical_links` (zero/one/many `hotel`/`organization`
+candidates per observation, closed-and-additively-extensible `target_kind`).
+
+Also MACHINE: `gmail_outreach_target_scope_signals` (added by EXTERNAL AUDIT
+AMENDMENT #1, Finding 6 — the thread-level advisory `single_target`/
+`multiple_targets`/`unresolved` hint; V1 never fabricates `portfolio_target`).
+
+**HUMAN** (immutable events + current projection, authoritative): `gmail_
+outreach_creator_decision_events` (append-only, `event_seq generated always
+as identity` the sole ordering authority, four axes — `outreach`, `target_
+scope`, `target`, `target_contact` — one shared ledger with an `axis`
+discriminator and a shape CHECK per axis), `gmail_outreach_creator_
+decisions` (current scalar outreach + target-scope decisions, each guarded by
+a denormalized `current_*_event_seq` so a concurrent correction can never
+move it backwards — Finding 3), `gmail_outreach_target_confirmations` and
+`gmail_outreach_target_contact_confirmed_members` (current confirmed
+**sets**, since scope can be `multiple_targets`/`portfolio_target`; each row
+is a tombstone that survives a `remove` — `is_confirmed = true` is the
+membership test, never row presence, so a stale delayed `confirm` can never
+resurrect a retired membership). A machine re-run never writes to any HUMAN
+table; a canonical link gained later never rewrites a creator's existing
+confirmation, because confirmations anchor to the private observation/
+observed-recipient row, never to a canonical FK directly.
+`gmail_outreach_record_creator_decision` derives its actor from `auth.uid()`,
+never a caller parameter (Finding 2) — it is the one B05 write reachable from
+`authenticated`, called via the app's user-scoped Supabase client, never the
+service-role client every other B05 function uses. Since EXTERNAL AUDIT
+AMENDMENT #3 Finding 2, it also calls the same locked consent/lifecycle
+fence the machine writer uses (below) before writing any new decision event
+— authorship via `auth.uid()` is not authorization to process after consent
+withdrawal or during account deletion; RETENTION of existing decisions is
+unaffected either way.
+
+**Deterministic observed recipients**: `gmail_outreach_observed_recipients`
+preserves every `to`/`cc`/`bcc` occurrence on a creator-SENT message,
+unfiltered (self-addresses, manager/assistant CCs, malformed participants
+included), keyed on a DURABLE Gmail coordinate — `provider_message_id`/
+`role`/`header_occurrence_index`/`participant_order` — never a B04 row id
+(Finding 1): B04 deletes-and-recreates a message's headers/participants
+under new ids on a rebuild (0038 §7), so re-extraction always upserts onto
+the same durable row and never orphans a human confirmation through one.
+`current_normalized_message_id`/`current_source_header_id`/`current_source_
+participant_id` are a convenience cross-reference to whichever B04 row
+currently occupies that position (`on delete set null`). The same durable
+treatment applies to `gmail_outreach_target_observations.source_provider_
+message_ids` (Gmail's own message ids, verified server-side against the
+thread's current evidence before the row can be created) — and, since
+EXTERNAL AUDIT AMENDMENT #3 Finding 3, that array now GROWS on every
+reconciliation (a distinct union, never a rewrite or a shrink) rather than
+being frozen at first write. That amendment also folded the observed name
+into `gmail_outreach_target_observations.observation_fingerprint` itself
+(domain **and** normalized name, not domain alone) because `observed_name`
+is read as independent canonical-matching evidence, not a cosmetic label —
+a materially different name at the same domain now forks a new, additional
+observation instead of silently rewriting the old one's identity.
+
+**Catalog staleness** is two-level: a cheap, monotonic, cross-table sequence
+(`private.gmail_outreach_catalog_epoch_seq`, bumped by a statement-level
+trigger on `hotels`/`hotel_source_identities`/`hotel_contacts`/
+`organizations`/`hotel_organizations`/`organization_contacts`, and primed
+once at migration time — a fresh sequence's own first `nextval()` returns
+exactly its start value, which would otherwise make the very first catalog
+mutation in a new database invisible to an epoch comparison) means only "the
+candidate universe might have changed"; each machine row's own `evaluated_
+epoch` is what a reader compares against the current epoch to decide
+staleness for a READ. The commit RPC additionally re-verifies the epoch
+under lock at COMMIT time and refuses as `stale_catalog` if it moved
+(Finding 4) — the one write-time reject in this migration, mirroring the
+evidence-digest fence's own shape. The catalog snapshot itself is bounded to
+hotels/organizations reachable from the thread's own evidence, never the
+full tables, and contact-email lookups are multimaps (Finding 5) —
+`hotel_contacts`/`organization_contacts` carry no unique-email constraint,
+so one address can legitimately match several rows.
+
+Eight `SECURITY DEFINER` functions in `public`: seven MACHINE functions
+`EXECUTE`-granted to `service_role` alone — `gmail_outreach_current_catalog_
+epoch`, `gmail_outreach_list_candidates`, `gmail_outreach_catalog_snapshot`
+(EXTERNAL AUDIT AMENDMENT #2, Finding 8 — exact, parameterized bounded
+catalog reads), `gmail_outreach_get_thread_evidence` (the read path B04
+itself never needed to expose), `gmail_outreach_commit_interpretation` (the
+sole machine writer), `gmail_outreach_status`, `gmail_outreach_purge_for_
+deletion` — plus `gmail_outreach_record_creator_decision` (the sole human
+writer), granted to `authenticated` and `service_role` but gated by
+`auth.uid()`, never by the grant alone.
+
+**0039 writes nothing to `public.pipeline_items`, `public.outreach_events`
+or `public.collaborations`**, and creates or mutates no canonical hotel,
+organization, brand or contact row. `public.is_admin_or_editor()` appears
+nowhere in this migration. Full contract in
+[`B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md`](B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md).
+
+**EXTERNAL AUDIT AMENDMENT #2** (six further findings, D070 unchanged):
+`gmail_outreach_observed_recipients` identity is now the pair (durable
+coordinate, `recipient_fingerprint` over material evidence) — a materially
+different recipient at the same coordinate forks a new row (`is_current =
+false` on the old one) instead of overwriting it (Finding 1).
+`gmail_outreach_list_candidates`/`_get_thread_evidence`/`_commit_
+interpretation` now bind to B01's actual `public.mail_account_has_consent`
+rather than `connection_state <> 'deleted'` alone, with the commit path
+taking a real `for share` lock on the consent row so a withdrawal and an
+in-flight commit are mutually exclusive (Finding 2). The catalog-epoch fence
+is now a real lock — `private.gmail_outreach_catalog_epoch_lock`, taken `for
+share` at commit time and updated by every catalog-mutation trigger under
+the same statement that advances the epoch sequence — never the bare
+sequence's unlocked `last_value` (Finding 3). `interpretOneThread` now
+reuses a previously-committed classification/match result whenever the
+source is fresh and the relevant candidate-set fingerprint (now including
+`hotel_organizations`) is unchanged, provably skipping the classifier/matcher
+(Finding 4). `deriveMachineTargetScope` reads actual portfolio/single-entity
+language plus `hotel_organizations` evidence, never observation cardinality
+(Finding 5). `assessTargetContacts`'s `strong_match` requires independent
+canonical-contact + target corroboration, never address morphology alone
+(Finding 6). The classifier-input transform detects non-RFC signature tails
+and never lets positive vocabulary found only there qualify a thread
+(Finding 7). `gmail_outreach_catalog_snapshot` replaced PostgREST `.or()`
+filter strings with exact/escaped parameterized comparisons (Finding 8).
+
+**EXTERNAL AUDIT AMENDMENT #3** (final lifecycle + target-provenance
+hardening, D070 unchanged): `gmail_outreach_commit_interpretation`'s
+lifecycle check is now a real lock
+(`private.gmail_outreach_assert_may_process_locked` — `for share` on the
+consent row, then `for share` on `mail_accounts`, B01's own withdrawal-writer
+order) rather than an unlocked read that only caught an already-`deletion_
+pending` mailbox, so a deletion-start racing an in-flight commit is now
+mutually exclusive with it in both directions (Finding 1).
+`gmail_outreach_record_creator_decision` calls the same locked fence before
+writing any new decision event — authorship via `auth.uid()` is not
+authorization to process after withdrawal or during deletion; existing
+decisions are retained regardless (Finding 2).
+`gmail_outreach_target_observations.observation_fingerprint` now
+incorporates the normalized observed name alongside the domain, and
+`source_provider_message_ids` now grows via union on each reconciliation
+instead of being frozen at first write — a materially different name at the
+same domain forks a new, additional observation rather than silently
+rewriting the old one's identity while its advisory columns drift ahead of
+it (Finding 3). No detector/matcher/transform version change — these
+findings corrected locking, gating, and identity/provenance discipline only.
+
+**EXTERNAL AUDIT AMENDMENT #4** (final semantic + governance hardening,
+D070 unchanged): `classifyOutreach` no longer self-certifies `qualified_
+outreach` from creator-SENT proposal language alone — it returns `needs_
+review` with `creator_commercial_proposal_language_detected`, and
+`interpretOneThread` is the only place the upgrade happens, requiring
+independently-established commercial-target/representative evidence (a
+non-freemail recipient domain, or an authored-text exact match against a
+real canonical business) per D070 §5's already-accepted three-part test
+(Finding 1). `extractAuthoredTextNameCandidates` deterministically extracts
+candidate business-name phrases from the creator's own clean SENT text —
+never NER, never itself an assertion a business exists — matched (via a new
+`private.normalize_business_name` and `gmail_outreach_catalog_snapshot`'s
+`p_candidate_names`) against real canonical hotel/organization names; a
+match widens the candidate universe regardless of recipient domain/contact
+and becomes a new, independent `authored_text_evidence` column on `gmail_
+outreach_target_canonical_links` — a candidate the text explicitly
+contradicts can never be assessed `strong_match` (Finding 2). The HTML
+classifier-input fallback now cuts at the first `<blockquote>` and turns
+`<br>`/block-closing tags into real newlines BEFORE collapsing whitespace,
+so the line-based quote/signature heuristics can see an HTML message's
+actual structure instead of one run-on line (Finding 3).
+`gmail_outreach_list_candidates`'s `source_stale` now compares the thread's
+current evidence digest (the same content-addressed shape the commit RPC
+itself verifies) against the stored one, replacing a `normalized_at >
+evaluated_at` timestamp-ordering comparison a concurrent B04 rebuild's own
+transaction-start timestamp could invert (Finding 4). `OUTREACH_DETECTOR_
+VERSION`/`TARGET_MATCHER_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION` are
+bumped to `_v4` (Findings 1-3); Finding 4 changes no version (a scheduling
+fix, not a classification/matching rule change).
+
+**EXTERNAL AUDIT AMENDMENT #5** (bounded final target-fact + evaluation
+correction, D070 unchanged): `gmail_outreach_target_observations` now carries
+an explicit `observation_source_kind` (`recipient_domain` | `authored_text_
+name`), part of `observation_fingerprint`'s own digest — a creator-authored
+business match is now FIRST its own independent private observation
+(`observed_domain = null`, identity keyed on source kind + normalized name,
+never on a canonical id), never canonical-link evidence bolted onto an
+unrelated recipient-domain observation, correcting Amendment #4 Finding 2's
+representation; a freemail recipient with a real target-directed authored
+match now both qualifies AND persists the corresponding private observation,
+and the target-scope layer sees two independently-established authored
+targets as two real candidates (Finding 1). `computeAuthoredTextTargetEvidence`'s
+`differs` now requires a phrase to have actually resolved to a real, target-
+directed business — never merely that some capitalized phrase existed in the
+text (Finding 2) — gated by a new conservative, deterministic `isTargetDirectedContext`
+verb-phrase check so a bare business-name mention ("I worked with Marriott
+last year") is no longer target evidence at all absent genuine directed
+phrasing (Finding 3). The synthetic evaluation harness now runs two
+explicitly-separate evaluations — the proposal-language detector alone, and
+a new real-Postgres, end-to-end `interpretOneThread` final-interpretation
+evaluation with no test-side status rewriting (Finding 4). `TARGET_MATCHER_
+VERSION` is bumped to `_v5` (Findings 1-3); `OUTREACH_DETECTOR_VERSION`/
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged.
+
+**EXTERNAL AUDIT AMENDMENT #6** (final target-fact identity + currentness
+hardening, D070 unchanged): the target-directed-context check now also
+recognizes a bounded, conservative coordinated LIST following a commercial
+verb phrase ("collaborate with Hotel A and Hotel B"), not only the item
+immediately adjacent to it, and `extractAuthoredTextNameCandidates` now
+treats `,`/`;`/`.`/`!`/`?`/`:` as phrase-breaking separators instead of
+silently stripping them (Finding 1). `recipient_domain` observations no
+longer read a recipient's display NAME as business-name evidence at all —
+`observed_name`/`name_evidence` are always `null`/`unavailable` for that
+source kind, since a display name is contact/person evidence, never
+business identity, and a contact-person change at the same domain can no
+longer disturb (or falsely corroborate) a stable commercial-target fact
+(Finding 2). `gmail_outreach_target_observations` gained an explicit
+`machine_is_current` flag, set from the COMPLETE current observation set
+every evaluation always computes — durable historical existence is
+unchanged, but the machine's CURRENT interpretation is now distinguishable
+from a fact that used to be current and no longer is, without ever
+disturbing a human confirmation or a catalog-only refresh's unrelated
+observations (Finding 3). `computeTargetObservationFingerprint` now
+normalizes an authored name with the SAME `normalizeName()` definition
+canonical exact-matching already uses, so a punctuation/case-only rebuild
+variant reconciles onto the same private fact instead of forking a spurious
+duplicate (Finding 4). `TARGET_MATCHER_VERSION` is bumped to `_v6` (Findings
+1/2/4); Finding 3 is schema/bookkeeping only and triggers no version bump.
+`OUTREACH_DETECTOR_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION` are
+unchanged.
+
+**EXTERNAL AUDIT AMENDMENT #7** (canonical-independent target facts +
+current-read + safe name segmentation, D070 unchanged): a target-directed
+authored name that matches ZERO real canonical businesses today is no longer
+discarded — it now still creates its private `authored_text_name`
+observation (`insufficient_evidence`, zero canonical links), reconciling onto
+the SAME fingerprint if a matching canonical row is later added or removed,
+so a catalog mutation can never make a durable Gmail fact silently non-
+current (Finding 1). Coordinated-list segmentation is now catalog-aware and
+conservative: `of`/`the`/`de`/`la` are never split points anywhere (a
+fragment like "America" from "Bank of America", or "Paris" from "Hotel de
+Paris", is never generated), and the genuinely ambiguous `and`/`&` connectors
+only split into a real multi-target list when AT LEAST ONE segment matches a
+real canonical business (a non-matching segment is not thereby discarded — it
+still becomes its own unresolved private fact per Finding 1); the full span
+wins outright when it itself matches one real business, so "Johnson &
+Johnson" is never split into "Johnson" + "Johnson" (Finding 2). `gmail_outreach_get_
+thread_evidence`'s `machine_state.target_observations` — the array
+`interpretOneThread`'s fast path actually reads — now filters `machine_is_
+current = true` directly in SQL, so a historical observation never again
+silently mixes into ordinary current-state processing merely because the
+durable row still exists; `gmail_outreach_status` now exposes
+`target_observations_current` alongside the historical-total `target_
+observations` (Finding 3). `TARGET_MATCHER_VERSION` is bumped to `_v7`
+(Findings 1/2); Finding 3 is a read-path change and triggers no version bump
+on its own. `OUTREACH_DETECTOR_VERSION`/`CLASSIFIER_INPUT_TRANSFORM_VERSION`
+are unchanged.
+
+**Amendment #7's own "AT LEAST ONE segment matches" coordinated-list rule
+above was ITSELF a D070 §8 violation — see EXTERNAL AUDIT AMENDMENT #8
+below, which supersedes it.**
+
+**EXTERNAL AUDIT AMENDMENT #8** (source-stable private-target segmentation,
+D070 unchanged): Amendment #7's coordinated-list rule still let canonical
+inventory decide a private fact's SHAPE (whether "at least one segment"
+matched a real business) — so "Smith & Jones" (one real company) could
+fragment into "Smith" + "Jones" merely because an unrelated canonical
+"Smith" existed, and adding that unrelated row later could change the
+CURRENT private-observation set for unchanged Gmail evidence. Source-fact
+segmentation (`resolveTargetDirectedPhrases`/`computeTargetDirectedPhrases`)
+now takes NO catalog parameter at all — a pure function of source text alone,
+producing an identical `observation_fingerprint` set for any catalog state.
+`&` is now NEVER a split point (more conservative than "and" — "Johnson &
+Johnson"/"Smith & Jones" always stay one phrase); "and" only splits when
+every resulting segment is multi-word and shares the identical leading word
+("Hotel A and Hotel B"); any other "and"/"&" span with no such source-only
+evidence ("Nike and Adidas") is preserved as ONE unresolved private fact.
+`TARGET_MATCHER_VERSION` is bumped to `_v8` (Finding 1 changes real
+segmentation/observation-identity behavior). `OUTREACH_DETECTOR_VERSION`/
+`CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -2249,5 +2535,23 @@ At minimum:
     stale projection in the same transaction as a B03 snapshot replacement, and
     the same deleted-state invariant extended to B04's own tables. Performs zero
     Gmail network activity and infers no outreach, reply or outcome fact. See §5k
+25. Gmail private creator-outreach interpretation (0039) — the first business
+    interpretation over B04's normalized evidence, kept in two epistemic layers
+    that are never conflated: a replaceable MACHINE projection (outreach
+    classification, target/target-contact candidates, canonical links) and an
+    immutable-event-backed HUMAN decision layer across four independent axes
+    (outreach, target scope, target, target contact) that a machine re-run can
+    never overwrite. A commercial target is first a private, stable fact
+    independent of canonical inventory, resolved to zero/one/many canonical
+    hotel/organization candidates separately from the creator's confirmation of
+    it, so a later canonical link never rewrites a creator's historical
+    decision; the same zero/one/many discipline applies to canonical contact
+    links. Every to/cc/bcc recipient on creator-SENT evidence is preserved
+    deterministically and unfiltered, distinct from the separate judgement of
+    which recipient was the actual commercial target contact. A two-level
+    catalog-staleness signal (a cheap cross-table epoch plus a per-result
+    fingerprint) avoids forcing wholesale re-evaluation on an unrelated
+    catalog write. Writes nothing to the live CRM ledger and creates or
+    mutates no canonical row. See §5l
 
 Every migration must be reproducible from an empty database.

@@ -128,9 +128,10 @@ d("B02 credential boundary (0036)", () => {
          where n.nspname = 'public' and p.proname like 'gmail\\_%'
            and p.proname not like 'gmail\\_historical\\_import\\_%'
            and p.proname not like 'gmail\\_normalize\\_%'
+           and p.proname not like 'gmail\\_outreach\\_%'
       `);
-      // B02's own surface. B03 adds definer functions of its own in 0037 and
-      // B04 adds its own in 0038, and each asserts the same two properties
+      // B02's own surface. B03 adds definer functions of its own in 0037,
+      // B04 in 0038, and B05 in 0039 — each asserts the same two properties
       // about its own functions in its own boundary suite — a count over
       // every `gmail_%` function would stop being a statement about B02 the
       // moment a later block did its job.

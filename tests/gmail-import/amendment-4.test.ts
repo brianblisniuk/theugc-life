@@ -116,12 +116,25 @@ d("A. a thread is a candidate only with an exact-window SENT root", () => {
       ],
     });
 
-    // The SENT at end+150ms is INSIDE the provider's rounded-up `before:`, which
-    // is exactly why Gmail offered this thread — and why the local proof has to
-    // exist.
-    const before = Number(/before:(\d+)/.exec(buildSentWindowQuery(run.startMs, run.endMs))![1]);
-    expect(Math.floor((run.endMs + 150) / 1000)).toBeLessThan(before);
-
+    // The SENT at end+150ms is INSIDE the provider's rounded-up `before:` —
+    // that's exactly why Gmail's outward, second-rounded query (proved fixed
+    // and deterministic by A10 below) can legitimately offer this thread even
+    // though its SENT root is outside `[start, end)`. This test's job is the
+    // database's exact candidacy re-proof, not a second, redundant proof of
+    // the provider's rounding arithmetic.
+    //
+    // A previous version of this assertion additionally re-derived that
+    // rounding fact here, from the REAL current wall clock, via
+    // `expect(Math.floor((run.endMs + 150) / 1000)).toBeLessThan(before)`
+    // where `before = ceil(run.endMs / 1000)`. That is only true when
+    // `run.endMs`'s millisecond-within-second component is below 850 — once
+    // it lands at .850 or later (e.g. .900), `endMs + 150` crosses into the
+    // SAME rounded-up second as `before`, making the assertion mathematically
+    // false (`N < N`) on an unpredictable fraction of real-clock runs. Since
+    // `run.endMs` is the database's real `now()`-derived `window_end_at`, this
+    // was flaky by construction, not by accident. A10 already proves the
+    // rounding rule deterministically against fixed timestamps, so this test
+    // no longer depends on the current millisecond position at all.
     expect(result.stored).toHaveLength(0);
     expect(result.threads[0].status).toBe("filtered_out");
     expect(result.row.threads_filtered_out).toBe(1);
