@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { classifyCandidate, observedCreatorSentFromAddresses } from "@/lib/gmail/reply/classifier";
-import type {
-  ReplyEvidenceParticipant,
-  ReplyEvidenceSubject,
-  ReplyEvidenceTextPart,
+import {
+  normalizeRoutingEmail,
+  type ReplyEvidenceParticipant,
+  type ReplyEvidenceSubject,
+  type ReplyEvidenceTextPart,
 } from "@/lib/gmail/reply/contract";
 
 const MSG = "reply-1";
@@ -282,5 +283,52 @@ describe("B06 classifier.ts: observedCreatorSentFromAddresses (closure pass §8)
     ];
     const messages = [{ providerMessageId: "sent-1", providerSent: true }];
     expect(observedCreatorSentFromAddresses(messages, participants).size).toBe(0);
+  });
+});
+
+describe("AUDIT CORRECTION, FINDING 2: routing normalization parity — the classifier and the DB routing-context digest must agree on what counts as the SAME routing identity", () => {
+  it("A: a sender exactly equal to the mailbox's routing address is never external", () => {
+    expect(
+      classify({
+        mailAccountEmail: "creator@example.com",
+        participants: from("creator@example.com"),
+      }).responseClass,
+    ).toBe("ambiguous_inbound");
+  });
+
+  it("B: a whitespace/case-only mailbox routing variant produces the SAME classification as A", () => {
+    expect(
+      classify({
+        mailAccountEmail: "  CREATOR@EXAMPLE.COM  ",
+        participants: from("creator@example.com"),
+      }).responseClass,
+    ).toBe("ambiguous_inbound");
+  });
+
+  it("a genuinely external sender is unaffected by whitespace/case on the mailbox's OWN address", () => {
+    expect(
+      classify({
+        mailAccountEmail: "  CREATOR@EXAMPLE.COM  ",
+        participants: from("guest@hotel.example"),
+        textParts: plainText("Sounds great, let's do it!"),
+      }).responseClass,
+    ).toBe("qualifying_human_reply");
+  });
+
+  it("normalizeRoutingEmail(A's mailbox) === normalizeRoutingEmail(B's mailbox) — the SAME digest input the DB fingerprint would hash", () => {
+    expect(normalizeRoutingEmail("  CREATOR@EXAMPLE.COM  ")).toBe(
+      normalizeRoutingEmail("creator@example.com"),
+    );
+    expect(normalizeRoutingEmail("  CREATOR@EXAMPLE.COM  ")).toBe("creator@example.com");
+  });
+
+  it("normalizeRoutingEmail trims ONLY ASCII spaces, never other whitespace — exact parity with Postgres btrim(), never JS's broader .trim()", () => {
+    // A tab/newline is NOT stripped by Postgres `btrim(x)` with no second
+    // argument (space-only) — normalizeRoutingEmail must not silently strip
+    // more than the DB does, or the two would diverge on this input.
+    expect(normalizeRoutingEmail("\tcreator@example.com\n")).toBe(
+      "\tcreator@example.com\n".toLowerCase(),
+    );
+    expect(normalizeRoutingEmail("\tcreator@example.com\n")).not.toBe("creator@example.com");
   });
 });

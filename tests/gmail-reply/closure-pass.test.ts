@@ -298,6 +298,34 @@ async function reevaluateAndCommit(
   expect(res.rows[0].result.result, JSON.stringify(res.rows[0].result)).toBe("ok");
 }
 
+/**
+ * AUDIT CORRECTION, FINDING 1: the zero-write proof shared by every
+ * already-current/mismatch adversarial test below — deep equality (not
+ * merely row counts) of every id/`evaluated_at`/`updated_at`/`xmin` proves a
+ * rejected commit attempt touched NOTHING.
+ */
+async function snapshotThreadRows(normalizedThreadId: string) {
+  return {
+    observations: (
+      await client.query(
+        `select id, evaluated_at, updated_at, xmin::text as xmin
+           from private.gmail_reply_message_observations
+          where normalized_thread_id = $1
+          order by provider_message_id`,
+        [normalizedThreadId],
+      )
+    ).rows,
+    summary: (
+      await client.query(
+        `select id, evaluated_at, updated_at, xmin::text as xmin
+           from private.gmail_reply_thread_summaries
+          where normalized_thread_id = $1`,
+        [normalizedThreadId],
+      )
+    ).rows,
+  };
+}
+
 /** One creator-SENT message + one qualifying human reply, machine-eligible, ready to commit. */
 async function eligibleThreadWithReply(label: string) {
   const { userId, mailAccountId } = await connectedMailbox(client, label);
@@ -1274,6 +1302,437 @@ d("B06 FINAL CLOSURE §B: exact zero-write replay", () => {
 });
 
 d(
+  "B06 AUDIT CORRECTION, FINDING 1: already_current requires an IDENTICAL semantic payload, not merely a matching context",
+  () => {
+    it("case 1 — omitting one observation from an already-current thread is refused as stale_source, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-omit");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const incomplete = fixture.observations.filter(
+        (o) => o.provider_message_id !== fixture.replyProviderMessageId,
+      );
+      const res = await commitRaw(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        observations: incomplete,
+      });
+      expect(res.rows[0].result.result).toBe("stale_source");
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("case 2 — duplicating one observation on an already-current thread is refused as stale_source, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-duplicate");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const duplicated = [
+        ...fixture.observations,
+        fixture.observations.find((o) => o.provider_message_id === fixture.replyProviderMessageId)!,
+      ];
+      const res = await commitRaw(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        observations: duplicated,
+      });
+      expect(res.rows[0].result.result).toBe("stale_source");
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("case 3 — a foreign provider_message_id from ANOTHER thread on an already-current thread is refused as stale_source, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-foreign");
+      const donor = await eligibleThreadWithReply("b06-ac1-foreign-donor");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const withForeign = [
+        ...fixture.observations,
+        {
+          provider_message_id: donor.sentProviderMessageId,
+          response_class: "creator_sent_touch",
+          relation_status: null,
+          referenced_creator_sent_provider_message_id: null,
+        },
+      ];
+      const res = await commitRaw(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        observations: withForeign,
+      });
+      expect(res.rows[0].result.result).toBe("stale_source");
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("case 4 — changing a non-SENT response_class alone (structurally valid, semantically DIFFERENT) is refused as interpretation_mismatch, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-response-class");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const sabotaged = fixture.observations.map((o) =>
+        o.provider_message_id === fixture.replyProviderMessageId
+          ? { ...o, response_class: "ambiguous_inbound" }
+          : o,
+      );
+      await expect(
+        commitRaw(client, {
+          userId: fixture.userId,
+          mailAccountId: fixture.mailAccountId,
+          normalizedThreadId: fixture.normalizedThreadId,
+          expectedEvidenceDigest: fixture.evidenceDigest,
+          expectedRoutingContextDigest: fixture.routingContextDigest,
+          observations: sabotaged,
+        }),
+      ).rejects.toThrow(/interpretation_mismatch/);
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("case 5 — falsely reporting the SENT message's response_class as anything other than creator_sent_touch is refused via the existing shape check, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-sent-shape");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const sabotaged = fixture.observations.map((o) =>
+        o.provider_message_id === fixture.sentProviderMessageId
+          ? {
+              ...o,
+              response_class: "qualifying_human_reply",
+              relation_status: "thread_sequence_only",
+            }
+          : o,
+      );
+      await expect(
+        commitRaw(client, {
+          userId: fixture.userId,
+          mailAccountId: fixture.mailAccountId,
+          normalizedThreadId: fixture.normalizedThreadId,
+          expectedEvidenceDigest: fixture.evidenceDigest,
+          expectedRoutingContextDigest: fixture.routingContextDigest,
+          observations: sabotaged,
+        }),
+      ).rejects.toThrow(/response_class does not match/);
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("case 6 — changing relation_status alone (structurally valid, semantically DIFFERENT) is refused as interpretation_mismatch, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-relation-status");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      // Leaves `referenced_creator_sent_provider_message_id` untouched (still
+      // resolving validly) so ONLY `relation_status` differs — proving this
+      // is caught by the NEW semantic comparison, not the pre-existing
+      // reference-resolution check.
+      const sabotaged = fixture.observations.map((o) =>
+        o.provider_message_id === fixture.replyProviderMessageId
+          ? { ...o, relation_status: "thread_sequence_only" }
+          : o,
+      );
+      await expect(
+        commitRaw(client, {
+          userId: fixture.userId,
+          mailAccountId: fixture.mailAccountId,
+          normalizedThreadId: fixture.normalizedThreadId,
+          expectedEvidenceDigest: fixture.evidenceDigest,
+          expectedRoutingContextDigest: fixture.routingContextDigest,
+          observations: sabotaged,
+        }),
+      ).rejects.toThrow(/interpretation_mismatch/);
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("case 7 — an invalid referenced creator-send id is refused via the existing reference-validation check, never already_current, zero writes", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-bad-reference");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const sabotaged = fixture.observations.map((o) =>
+        o.provider_message_id === fixture.replyProviderMessageId
+          ? {
+              ...o,
+              referenced_creator_sent_provider_message_id: randomProviderId("nonexistent"),
+            }
+          : o,
+      );
+      await expect(
+        commitRaw(client, {
+          userId: fixture.userId,
+          mailAccountId: fixture.mailAccountId,
+          normalizedThreadId: fixture.normalizedThreadId,
+          expectedEvidenceDigest: fixture.evidenceDigest,
+          expectedRoutingContextDigest: fixture.routingContextDigest,
+          observations: sabotaged,
+        }),
+      ).rejects.toThrow(/does not resolve to a current creator-sent message/);
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+
+    it("the genuinely IDENTICAL payload still returns already_current/committed:false, with the same zero-write proof", async () => {
+      const fixture = await eligibleThreadWithReply("b06-ac1-true-replay");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+
+      const before = await snapshotThreadRows(fixture.normalizedThreadId);
+      const replay = await commitRaw(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        observations: fixture.observations,
+      });
+      expect(replay.rows[0].result).toEqual({
+        result: "already_current",
+        evidence_digest: fixture.evidenceDigest,
+        committed: false,
+      });
+      expect(await snapshotThreadRows(fixture.normalizedThreadId)).toEqual(before);
+    });
+  },
+);
+
+d("B06 AUDIT CORRECTION, FINDING 2: routing normalization parity (DB-level)", () => {
+  it("C: a whitespace/case-only mailbox storage change leaves the routing digest, and the committed summary's currentness, UNCHANGED", async () => {
+    const fixture = await eligibleThreadWithReply("b06-ac2-whitespace-case");
+    const deps = replyDeps(client);
+    const commit1 = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      messageObservations: fixture.messageObservations,
+    });
+    expect(commit1.result).toBe("ok");
+
+    const original = await client.query(
+      "select email_address from public.mail_accounts where id = $1",
+      [fixture.mailAccountId],
+    );
+    const originalEmail = original.rows[0].email_address as string;
+    const whitespaceVariant = `  ${originalEmail.toUpperCase()}  `;
+    await client.query("update public.mail_accounts set email_address = $2 where id = $1", [
+      fixture.mailAccountId,
+      whitespaceVariant,
+    ]);
+
+    const evidence = await getThreadEvidence(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+    });
+    if (evidence.result !== "ok") throw new Error("unreachable");
+    expect(evidence.evidence.routingContextDigest).toBe(fixture.routingContextDigest);
+    expect(evidence.evidence.currentSummaryIsStale).toBe(false);
+
+    const candidates = await listCandidates(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      limit: 10,
+    });
+    expect(
+      candidates.candidates.some((c) => c.normalizedThreadId === fixture.normalizedThreadId),
+    ).toBe(false);
+
+    const status = await getStatus(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+    });
+    expect(status.staleThreadSummaries).toBe(0);
+
+    // No qualifying-human false positive: classification computed under
+    // the whitespace/case-variant mailbox value is byte-identical to what
+    // was computed (and committed) under the original value.
+    const interpretation = interpretThread({
+      messages: evidence.evidence.messages,
+      referenceTokens: evidence.evidence.referenceTokens,
+      participants: evidence.evidence.participants,
+      subjects: evidence.evidence.subjects,
+      textParts: evidence.evidence.textParts,
+      mailAccountEmail: evidence.evidence.mailAccountEmail,
+      observedThroughAtMs: null,
+    });
+    expect(interpretation.messageObservations).toEqual(fixture.messageObservations);
+
+    // The now-current routing digest still commits as an ordinary replay
+    // — it was never actually stale.
+    const replay = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
+      messageObservations: interpretation.messageObservations,
+    });
+    expect(replay).toEqual({
+      result: "ok",
+      evidenceDigest: fixture.evidenceDigest,
+      committed: false,
+    });
+  });
+
+  it("D: a genuinely DIFFERENT mailbox address changes the routing digest, flips staleness, refuses the old interpretation, and a fresh evaluation uses the new identity", async () => {
+    const fixture = await eligibleThreadWithReply("b06-ac2-genuine-change");
+    const deps = replyDeps(client);
+    const commit1 = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      messageObservations: fixture.messageObservations,
+    });
+    expect(commit1.result).toBe("ok");
+
+    await client.query("update public.mail_accounts set email_address = $2 where id = $1", [
+      fixture.mailAccountId,
+      "genuinely-different@example.invalid",
+    ]);
+
+    const evidence = await getThreadEvidence(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+    });
+    if (evidence.result !== "ok") throw new Error("unreachable");
+    expect(evidence.evidence.routingContextDigest).not.toBe(fixture.routingContextDigest);
+    expect(evidence.evidence.currentSummaryIsStale).toBe(true);
+
+    const candidates = await listCandidates(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      limit: 10,
+    });
+    const entry = candidates.candidates.find(
+      (c) => c.normalizedThreadId === fixture.normalizedThreadId,
+    );
+    expect(entry).toBeDefined();
+    expect(entry!.staleness.routingStale).toBe(true);
+
+    const status = await getStatus(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+    });
+    expect(status.staleThreadSummaries).toBe(1);
+
+    // The OLD interpretation (computed under the OLD routing address) can
+    // no longer commit.
+    const staleAttempt = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      messageObservations: fixture.messageObservations,
+    });
+    expect(staleAttempt.result).toBe("stale_source");
+
+    // A fresh evaluation under the NEW routing identity succeeds.
+    const interpretation = interpretThread({
+      messages: evidence.evidence.messages,
+      referenceTokens: evidence.evidence.referenceTokens,
+      participants: evidence.evidence.participants,
+      subjects: evidence.evidence.subjects,
+      textParts: evidence.evidence.textParts,
+      mailAccountEmail: evidence.evidence.mailAccountEmail,
+      observedThroughAtMs: null,
+    });
+    const freshCommit = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
+      messageObservations: interpretation.messageObservations,
+    });
+    expect(freshCommit).toEqual({
+      result: "ok",
+      evidenceDigest: evidence.evidence.evidenceDigest,
+      committed: true,
+    });
+  });
+});
+
+d(
   "B06 FINAL CLOSURE §C: unified current/stale definition (parameterized dependency matrix)",
   () => {
     it("B04 source: a new normalized message alone flips staleness on all three read surfaces; reevaluation clears it", async () => {
@@ -1426,7 +1885,7 @@ d(
       expect(commit1.result).toBe("ok");
       await assertUnifiedStaleness(fixture, false);
 
-      const bumped = { classificationVersion: "gmail_reply_classification_rules_v2" };
+      const bumped = { classificationVersion: "gmail_reply_classification_rules_v3" };
       await assertUnifiedStaleness(fixture, true, bumped);
 
       await reevaluateAndCommit(fixture, bumped);

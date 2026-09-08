@@ -1067,7 +1067,8 @@ declare
   v_set_mismatch boolean;
   v_shape_mismatch boolean;
   v_bad_reference boolean;
-  v_already_current boolean;
+  v_context_matches boolean;
+  v_payload_differs boolean;
 begin
   if p_relation_version !~ '^[a-z][a-z0-9_]{0,63}$'
      or p_classification_version !~ '^[a-z][a-z0-9_]{0,63}$'
@@ -1139,33 +1140,6 @@ begin
 
   if v_current_digest is distinct from p_expected_evidence_digest then
     return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', v_current_digest);
-  end if;
-
-  -- FINAL CLOSURE, BLOCKER B: EXACT, ZERO-WRITE REPLAY. Every dependency
-  -- this commit's derivation could possibly depend on — source, routing
-  -- context, horizon, eligibility, all three rule/shared-transform versions
-  -- — is ALREADY computed above, under the SAME locks/fences that protect
-  -- an ordinary write. If a stored summary already reflects this EXACT
-  -- tuple, the derivation below is PROVABLY byte-identical to what is
-  -- already current (both are the same pure function of the same inputs) —
-  -- writing it again would only move `evaluated_at`/`updated_at` for no
-  -- semantic reason. Nothing is written; not even the observation rows.
-  select true into v_already_current
-    from private.gmail_reply_thread_summaries sm
-   where sm.mail_account_id = p_mail_account_id
-     and sm.normalized_thread_id = p_normalized_thread_id
-     and sm.evidence_digest = v_current_digest
-     and sm.routing_context_digest = v_current_routing_context_digest
-     and sm.observed_through_at is not distinct from v_observed_through_at
-     and sm.eligibility = v_eligibility
-     and sm.relation_rule_version = p_relation_version
-     and sm.classification_rule_version = p_classification_version
-     and sm.text_transform_version = p_text_transform_version;
-
-  if v_already_current then
-    return jsonb_build_object(
-      'result', 'already_current', 'evidence_digest', v_current_digest, 'committed', false
-    );
   end if;
 
   -- CLOSURE PASS §13: EXACT SET EQUALITY. `locked` below re-issues the SAME
@@ -1250,6 +1224,69 @@ begin
   if v_bad_reference then
     raise exception 'referenced_creator_sent_provider_message_id does not resolve to a current creator-sent message in this thread'
       using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- AUDIT CORRECTION, FINDING 1: EXACT, ZERO-WRITE REPLAY, CORRECTLY GATED.
+  -- Every dependency this commit's derivation could possibly depend on —
+  -- source, routing context, horizon, eligibility, all three rule/shared-
+  -- transform versions — is already re-verified above, and the incoming
+  -- payload has ALREADY passed every structural/source validation above
+  -- (exact-set-equality, provider_sent/response_class shape, referenced-
+  -- creator-send resolution). Only NOW is it safe to ask "does a stored
+  -- summary already reflect this exact context" — computing it any earlier
+  -- (the prior round's defect) let a malformed or semantically DIFFERENT
+  -- payload return `already_current` merely because the CONTEXT matched,
+  -- without ever proving the requested projection was actually identical.
+  select true into v_context_matches
+    from private.gmail_reply_thread_summaries sm
+   where sm.mail_account_id = p_mail_account_id
+     and sm.normalized_thread_id = p_normalized_thread_id
+     and sm.evidence_digest = v_current_digest
+     and sm.routing_context_digest = v_current_routing_context_digest
+     and sm.observed_through_at is not distinct from v_observed_through_at
+     and sm.eligibility = v_eligibility
+     and sm.relation_rule_version = p_relation_version
+     and sm.classification_rule_version = p_classification_version
+     and sm.text_transform_version = p_text_transform_version;
+
+  if v_context_matches then
+    -- The ACTUAL `already_current` acceptance criterion (Finding 1): the
+    -- incoming SEMANTIC projection — `response_class`/`relation_status`/
+    -- `referenced_creator_sent_provider_message_id` per message — must be
+    -- byte-identical to what is already stored, never merely a matching
+    -- CONTEXT. The payload has already passed exact-set-equality above, so
+    -- every payload entry has exactly one corresponding stored observation
+    -- row for the same `provider_message_id`; comparing their semantic
+    -- fields is therefore a complete, exact comparison, not a sample.
+    select exists (
+      select 1
+        from jsonb_array_elements(coalesce(p_message_observations, '[]'::jsonb)) as elem
+        join private.gmail_reply_message_observations o
+          on o.mail_account_id = p_mail_account_id
+         and o.normalized_thread_id = p_normalized_thread_id
+         and o.provider_message_id = elem ->> 'provider_message_id'
+       where o.response_class is distinct from (elem ->> 'response_class')
+          or o.relation_status is distinct from (elem ->> 'relation_status')
+          or o.referenced_creator_sent_provider_message_id
+             is distinct from (elem ->> 'referenced_creator_sent_provider_message_id')
+    ) into v_payload_differs;
+
+    if v_payload_differs then
+      -- Identical source/routing/horizon/eligibility/versions but a
+      -- DIFFERENT semantic projection is never a legitimate new evaluation:
+      -- B06's classification is a pure, deterministic function of exactly
+      -- these inputs (contract §16), so identical inputs can only produce
+      -- an identical output. A difference here is a caller/implementation
+      -- defect, not new information — loud failure, zero writes, never a
+      -- silent overwrite of the current projection under an unchanged
+      -- context, and never `already_current` either.
+      raise exception 'interpretation_mismatch: incoming message observations differ from the currently stored projection under an otherwise unchanged source/routing/horizon/eligibility/version context'
+        using errcode = 'invalid_parameter_value';
+    end if;
+
+    return jsonb_build_object(
+      'result', 'already_current', 'evidence_digest', v_current_digest, 'committed', false
+    );
   end if;
 
   -- EVERYTHING VALIDATED. FROM HERE ON, ONLY WRITES — nothing above this

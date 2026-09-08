@@ -1,8 +1,9 @@
-import type {
-  ReplyEvidenceParticipant,
-  ReplyEvidenceSubject,
-  ReplyEvidenceTextPart,
-  ResponseClass,
+import {
+  normalizeRoutingEmail,
+  type ReplyEvidenceParticipant,
+  type ReplyEvidenceSubject,
+  type ReplyEvidenceTextPart,
+  type ResponseClass,
 } from "@/lib/gmail/reply/contract";
 import { extractReplyTextForMessage } from "@/lib/gmail/reply/text-transform";
 
@@ -145,10 +146,15 @@ export function classifyCandidate(input: {
   const matchesObservedCreatorSelf = !!(
     fromAddress && input.observedCreatorSentFromAddresses?.has(fromAddress)
   );
+  // FINAL AUDIT CORRECTION, FINDING 2: `normalizeRoutingEmail` is the EXACT
+  // same normalization the DB's `routing_context_digest` fingerprint uses
+  // (trim ASCII spaces, then lowercase) — never an independently-drifting
+  // `.toLowerCase()` alone. A routing address that the DB considers
+  // UNCHANGED (same digest) must never flip this comparison's outcome.
   const isExternalParticipant =
     !!fromAddress &&
     !!input.mailAccountEmail &&
-    fromAddress !== input.mailAccountEmail.toLowerCase() &&
+    fromAddress !== normalizeRoutingEmail(input.mailAccountEmail) &&
     !matchesObservedCreatorSelf;
   if (!isExternalParticipant) {
     return { responseClass: "ambiguous_inbound" };

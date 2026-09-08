@@ -7,8 +7,34 @@ import { CLASSIFIER_INPUT_TRANSFORM_VERSION as UPSTREAM_TEXT_TRANSFORM_VERSION }
 
 /** V1 deterministic relationship classifier. No external model call. */
 export const RELATION_RULE_VERSION = "gmail_reply_relation_rules_v1";
-/** V1 deterministic human/automated/delivery classifier. No external model call. */
-export const CLASSIFICATION_RULE_VERSION = "gmail_reply_classification_rules_v1";
+/**
+ * V2 deterministic human/automated/delivery classifier. No external model
+ * call. Bumped from v1 (FINAL AUDIT CORRECTION, FINDING 2): v1 compared the
+ * mailbox routing address with `.toLowerCase()` alone, never trimmed,
+ * while the DB's own `routing_context_digest` fingerprint already trimmed
+ * it — so a routing address with incidental leading/trailing spaces could
+ * report the SAME digest (no staleness) while the classifier's self/
+ * external decision changed underneath it. `normalizeRoutingEmail` below is
+ * now the ONE normalization both sides use, so this is a genuine,
+ * reachable-input behavior change and must bump the version honestly.
+ */
+export const CLASSIFICATION_RULE_VERSION = "gmail_reply_classification_rules_v2";
+
+/**
+ * FINAL AUDIT CORRECTION, FINDING 2: the ONE routing-address normalization
+ * B06 uses anywhere a routing address participates in classification or in
+ * currentness — literally: trim only ASCII space characters from both ends
+ * (never JS's broader `.trim()`, which also strips tabs/newlines/other
+ * Unicode whitespace `btrim` does not), then lowercase. No Gmail dot-
+ * normalization, no plus-tag stripping, no alias inference. This is the
+ * EXACT TS-side mirror of the DB's `lower(btrim(email_address))` in
+ * `private.gmail_reply_routing_context_digest` (Postgres `btrim` with no
+ * second argument trims plain spaces only) — the two must never
+ * independently define "the same routing identity" differently again.
+ */
+export function normalizeRoutingEmail(value: string): string {
+  return value.replace(/^ +| +$/g, "").toLowerCase();
+}
 /**
  * V1 versioned inbound quote/signature text transform. CLOSURE PASS §20:
  * B06 reuses B05's `buildClassifierInputForMessage` transform UNCHANGED, so
