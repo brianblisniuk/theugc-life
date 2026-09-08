@@ -127,6 +127,7 @@ d("B06 true multi-session concurrency", () => {
         mailAccountId,
         normalizedThreadId: sent.normalizedThreadId,
         expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+        expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
         messageObservations: interpretation.messageObservations,
       });
 
@@ -149,6 +150,7 @@ d("B06 true multi-session concurrency", () => {
         mailAccountId,
         normalizedThreadId: sent.normalizedThreadId,
         expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+        expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
         messageObservations: interpretation.messageObservations,
       });
       expect(retried.result).toBe("ok");
@@ -245,6 +247,7 @@ d("B06 true multi-session concurrency", () => {
       mailAccountId,
       normalizedThreadId: sent.normalizedThreadId,
       expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
       messageObservations: interpretation.messageObservations,
     });
     await sA.query("commit");

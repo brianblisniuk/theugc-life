@@ -1,7 +1,12 @@
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { commitInterpretation, getThreadEvidence, listCandidates } from "@/lib/gmail/reply/service";
+import {
+  commitInterpretation,
+  getStatus,
+  getThreadEvidence,
+  listCandidates,
+} from "@/lib/gmail/reply/service";
 import { interpretThread } from "@/lib/gmail/reply/interpreter";
 import {
   CLASSIFICATION_RULE_VERSION,
@@ -84,26 +89,213 @@ async function commitRaw(
     mailAccountId: string;
     normalizedThreadId: string;
     expectedEvidenceDigest: string;
+    expectedRoutingContextDigest: string;
     observations: unknown[];
+    /** FINAL CLOSURE §D: lets the unified-staleness-matrix test simulate a rule-version bump without recompiling. */
+    relationVersion?: string;
+    classificationVersion?: string;
+    textTransformVersion?: string;
   },
 ) {
   return c.query(
     `select public.gmail_reply_commit_interpretation(
        p_user_id := $1::uuid, p_mail_account_id := $2::uuid, p_normalized_thread_id := $3::uuid,
        p_relation_version := $4, p_classification_version := $5, p_text_transform_version := $6,
-       p_expected_evidence_digest := $7, p_message_observations := $8::jsonb
+       p_expected_evidence_digest := $7, p_expected_routing_context_digest := $8,
+       p_message_observations := $9::jsonb
      ) as result`,
     [
       args.userId,
       args.mailAccountId,
       args.normalizedThreadId,
-      RELATION_RULE_VERSION,
-      CLASSIFICATION_RULE_VERSION,
-      TEXT_TRANSFORM_VERSION,
+      args.relationVersion ?? RELATION_RULE_VERSION,
+      args.classificationVersion ?? CLASSIFICATION_RULE_VERSION,
+      args.textTransformVersion ?? TEXT_TRANSFORM_VERSION,
       args.expectedEvidenceDigest,
+      args.expectedRoutingContextDigest,
       JSON.stringify(args.observations),
     ],
   );
+}
+
+/** Direct RPC access to `gmail_reply_list_candidates` with overridable versions (FINAL CLOSURE §D). */
+async function listCandidatesRaw(
+  c: Client,
+  args: {
+    userId: string;
+    mailAccountId: string;
+    relationVersion?: string;
+    classificationVersion?: string;
+    textTransformVersion?: string;
+    limit?: number;
+  },
+): Promise<{ result: string; candidates: Array<{ normalized_thread_id: string }> }> {
+  const res = await c.query(
+    `select public.gmail_reply_list_candidates(
+       p_user_id := $1::uuid, p_mail_account_id := $2::uuid,
+       p_relation_version := $3, p_classification_version := $4, p_text_transform_version := $5,
+       p_limit := $6
+     ) as result`,
+    [
+      args.userId,
+      args.mailAccountId,
+      args.relationVersion ?? RELATION_RULE_VERSION,
+      args.classificationVersion ?? CLASSIFICATION_RULE_VERSION,
+      args.textTransformVersion ?? TEXT_TRANSFORM_VERSION,
+      args.limit ?? 10,
+    ],
+  );
+  return res.rows[0].result;
+}
+
+/** Direct RPC access to `gmail_reply_get_thread_evidence` with overridable versions (FINAL CLOSURE §D). */
+async function getThreadEvidenceRaw(
+  c: Client,
+  args: {
+    userId: string;
+    mailAccountId: string;
+    normalizedThreadId: string;
+    relationVersion?: string;
+    classificationVersion?: string;
+    textTransformVersion?: string;
+  },
+): Promise<{ result: string; current_summary_is_stale?: boolean }> {
+  const res = await c.query(
+    `select public.gmail_reply_get_thread_evidence(
+       p_user_id := $1::uuid, p_mail_account_id := $2::uuid, p_normalized_thread_id := $3::uuid,
+       p_relation_version := $4, p_classification_version := $5, p_text_transform_version := $6
+     ) as result`,
+    [
+      args.userId,
+      args.mailAccountId,
+      args.normalizedThreadId,
+      args.relationVersion ?? RELATION_RULE_VERSION,
+      args.classificationVersion ?? CLASSIFICATION_RULE_VERSION,
+      args.textTransformVersion ?? TEXT_TRANSFORM_VERSION,
+    ],
+  );
+  return res.rows[0].result;
+}
+
+/** Direct RPC access to `gmail_reply_status` with overridable versions (FINAL CLOSURE §D). */
+async function statusRaw(
+  c: Client,
+  args: {
+    userId: string;
+    mailAccountId: string;
+    relationVersion?: string;
+    classificationVersion?: string;
+    textTransformVersion?: string;
+  },
+): Promise<{ stale_thread_summaries: number }> {
+  const res = await c.query(
+    `select public.gmail_reply_status(
+       p_user_id := $1::uuid, p_mail_account_id := $2::uuid,
+       p_relation_version := $3, p_classification_version := $4, p_text_transform_version := $5
+     ) as result`,
+    [
+      args.userId,
+      args.mailAccountId,
+      args.relationVersion ?? RELATION_RULE_VERSION,
+      args.classificationVersion ?? CLASSIFICATION_RULE_VERSION,
+      args.textTransformVersion ?? TEXT_TRANSFORM_VERSION,
+    ],
+  );
+  return res.rows[0].result;
+}
+
+/**
+ * FINAL CLOSURE, BLOCKER C: asserts `list_candidates`/`get_thread_evidence`/
+ * `status` agree — all three read surfaces must report the SAME
+ * current-vs-stale verdict for one thread, since all three call the ONE
+ * shared `private.gmail_reply_thread_summary_is_stale` definition. `versions`
+ * lets a test simulate "the version actually running now differs from what
+ * is stored" without recompiling a new TS constant.
+ */
+async function assertUnifiedStaleness(
+  ctx: { userId: string; mailAccountId: string; normalizedThreadId: string },
+  expectedStale: boolean,
+  versions: {
+    relationVersion?: string;
+    classificationVersion?: string;
+    textTransformVersion?: string;
+  } = {},
+): Promise<void> {
+  const candidates = await listCandidatesRaw(client, {
+    userId: ctx.userId,
+    mailAccountId: ctx.mailAccountId,
+    limit: 50,
+    ...versions,
+  });
+  const offered = (candidates.candidates ?? []).some(
+    (c) => c.normalized_thread_id === ctx.normalizedThreadId,
+  );
+  expect(offered, "list_candidates offer").toBe(expectedStale);
+
+  const evidence = await getThreadEvidenceRaw(client, {
+    userId: ctx.userId,
+    mailAccountId: ctx.mailAccountId,
+    normalizedThreadId: ctx.normalizedThreadId,
+    ...versions,
+  });
+  expect(evidence.result).toBe("ok");
+  expect(evidence.current_summary_is_stale, "get_thread_evidence current_summary_is_stale").toBe(
+    expectedStale,
+  );
+
+  const status = await statusRaw(client, {
+    userId: ctx.userId,
+    mailAccountId: ctx.mailAccountId,
+    ...versions,
+  });
+  // Each fixture below uses its own freshly-connected mailbox with exactly
+  // one thread, so the account-scoped stale count is unambiguous.
+  expect(status.stale_thread_summaries, "status stale_thread_summaries").toBe(
+    expectedStale ? 1 : 0,
+  );
+}
+
+/** Re-reads evidence and commits a fresh interpretation — the "reevaluation" half of each matrix case. */
+async function reevaluateAndCommit(
+  ctx: { userId: string; mailAccountId: string; normalizedThreadId: string },
+  versions: {
+    relationVersion?: string;
+    classificationVersion?: string;
+    textTransformVersion?: string;
+  } = {},
+): Promise<void> {
+  const deps = replyDeps(client);
+  const evidence = await getThreadEvidence(deps, ctx);
+  if (evidence.result !== "ok") throw new Error("unreachable");
+  const interpretation = interpretThread({
+    messages: evidence.evidence.messages,
+    referenceTokens: evidence.evidence.referenceTokens,
+    participants: evidence.evidence.participants,
+    subjects: evidence.evidence.subjects,
+    textParts: evidence.evidence.textParts,
+    mailAccountEmail: evidence.evidence.mailAccountEmail,
+    observedThroughAtMs: evidence.evidence.observedThroughAt
+      ? Date.parse(evidence.evidence.observedThroughAt)
+      : null,
+  });
+  const observations = interpretation.messageObservations.map((o) => ({
+    provider_message_id: o.providerMessageId,
+    response_class: o.responseClass,
+    relation_status: o.relationStatus,
+    referenced_creator_sent_provider_message_id: o.referencedCreatorSentProviderMessageId,
+  }));
+  const res = await commitRaw(client, {
+    userId: ctx.userId,
+    mailAccountId: ctx.mailAccountId,
+    normalizedThreadId: ctx.normalizedThreadId,
+    expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+    expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
+    observations,
+    relationVersion: versions.relationVersion,
+    classificationVersion: versions.classificationVersion,
+    textTransformVersion: versions.textTransformVersion,
+  });
+  expect(res.rows[0].result.result, JSON.stringify(res.rows[0].result)).toBe("ok");
 }
 
 /** One creator-SENT message + one qualifying human reply, machine-eligible, ready to commit. */
@@ -171,6 +363,7 @@ async function eligibleThreadWithReply(label: string) {
     sentMid,
     replyProviderMessageId,
     evidenceDigest: evidence.evidence.evidenceDigest,
+    routingContextDigest: evidence.evidence.routingContextDigest,
     /** Full TS-side interpretation, for `commitInterpretation` (the service wrapper). */
     messageObservations: interpretation.messageObservations,
     /** The raw wire shape, for `commitRaw` (direct adversarial RPC calls). */
@@ -203,6 +396,7 @@ d("B06 closure pass: commit RPC fail-before-write (§12)", () => {
         mailAccountId: fixture.mailAccountId,
         normalizedThreadId: fixture.normalizedThreadId,
         expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
         observations: sabotaged,
       }),
     ).rejects.toThrow(/response_class does not match/);
@@ -230,6 +424,7 @@ d("B06 closure pass: commit RPC fail-before-write (§12)", () => {
         mailAccountId: fixture.mailAccountId,
         normalizedThreadId: fixture.normalizedThreadId,
         expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
         observations: sabotaged,
       }),
     ).rejects.toThrow(/response_class does not match/);
@@ -250,6 +445,7 @@ d("B06 closure pass: exact set equality (§13)", () => {
       mailAccountId: fixture.mailAccountId,
       normalizedThreadId: fixture.normalizedThreadId,
       expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
       observations: incomplete,
     });
     expect(res.rows[0].result.result).toBe("stale_source");
@@ -268,6 +464,7 @@ d("B06 closure pass: exact set equality (§13)", () => {
       mailAccountId: fixture.mailAccountId,
       normalizedThreadId: fixture.normalizedThreadId,
       expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
       observations: duplicated,
     });
     expect(res.rows[0].result.result).toBe("stale_source");
@@ -292,6 +489,7 @@ d("B06 closure pass: exact set equality (§13)", () => {
       mailAccountId: fixture.mailAccountId,
       normalizedThreadId: fixture.normalizedThreadId,
       expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
       observations: withForeign,
     });
     expect(res.rows[0].result.result).toBe("stale_source");
@@ -320,6 +518,7 @@ d("B06 closure pass: referenced-creator-send validation (§15)", () => {
         mailAccountId: fixture.mailAccountId,
         normalizedThreadId: fixture.normalizedThreadId,
         expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
         observations: sabotaged,
       }),
     ).rejects.toThrow(/does not resolve to a current creator-sent message/);
@@ -345,6 +544,7 @@ d("B06 closure pass: referenced-creator-send validation (§15)", () => {
         mailAccountId: fixture.mailAccountId,
         normalizedThreadId: fixture.normalizedThreadId,
         expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
         observations: sabotaged,
       }),
     ).rejects.toThrow(/does not resolve to a current creator-sent message/);
@@ -369,6 +569,7 @@ d("B06 closure pass: referenced-creator-send validation (§15)", () => {
         mailAccountId: fixture.mailAccountId,
         normalizedThreadId: fixture.normalizedThreadId,
         expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
         observations: sabotaged,
       }),
     ).rejects.toThrow();
@@ -401,6 +602,7 @@ d("B06 closure pass: real B05-eligibility race (§6)", () => {
       mailAccountId: fixture.mailAccountId,
       normalizedThreadId: fixture.normalizedThreadId,
       expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
       observations: fixture.observations,
     });
 
@@ -470,6 +672,7 @@ d("B06 closure pass: observation-horizon staleness scheduling (§5)", () => {
       mailAccountId: fixture.mailAccountId,
       normalizedThreadId: fixture.normalizedThreadId,
       expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
       messageObservations: fixture.messageObservations,
     });
     expect(commit1.result).toBe("ok");
@@ -543,6 +746,7 @@ d("B06 closure pass: cross-user/cross-account hostile RPC (§22)", () => {
       mailAccountId: a.mailAccountId,
       normalizedThreadId: a.normalizedThreadId,
       expectedEvidenceDigest: a.evidenceDigest,
+      expectedRoutingContextDigest: a.routingContextDigest,
       observations: withCrossAccountId,
     });
     expect(res.rows[0].result.result).toBe("stale_source");
@@ -566,6 +770,7 @@ d("B06 closure pass: cross-user/cross-account hostile RPC (§22)", () => {
         mailAccountId: b.mailAccountId,
         normalizedThreadId: b.normalizedThreadId,
         expectedEvidenceDigest: b.evidenceDigest,
+        expectedRoutingContextDigest: b.routingContextDigest,
         observations: b.observations,
       }),
     ).rejects.toThrow(/foreign key constraint/);
@@ -627,6 +832,7 @@ d("B06 closure pass: equal-time/tie semantics, DB round-trip (§17)", () => {
       mailAccountId,
       normalizedThreadId: sentA.normalizedThreadId,
       expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
       messageObservations: interpretation.messageObservations,
     });
     expect(commit.result).toBe("ok");
@@ -707,6 +913,7 @@ d("B06 closure pass: equal-time/tie semantics, DB round-trip (§17)", () => {
       mailAccountId,
       normalizedThreadId: sent.normalizedThreadId,
       expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
       messageObservations: interpretation.messageObservations,
     });
     expect(commit.result).toBe("ok");
@@ -745,6 +952,7 @@ d("B06 closure pass: zero side-effect boundary, comprehensive (§24)", () => {
       mailAccountId: fixture.mailAccountId,
       normalizedThreadId: fixture.normalizedThreadId,
       expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
       messageObservations: fixture.messageObservations,
     });
     expect(commit.result).toBe("ok");
@@ -759,3 +967,493 @@ d("B06 closure pass: zero side-effect boundary, comprehensive (§24)", () => {
     }
   });
 });
+
+// =============================================================================
+// B06 FINAL CLOSURE — three remaining external-review invariants
+// =============================================================================
+// Blocker A: the mailbox's own routing address is a classification
+// DEPENDENCY (contract §8.1) that lives entirely outside the B04
+// message-evidence digest — a routing change must be fenced exactly like a
+// source-evidence change. Blocker B: an EXACT replay (identical source,
+// routing, horizon, eligibility, and all three rule/transform versions) must
+// perform ZERO writes. Blocker C: `list_candidates`/`get_thread_evidence`/
+// `status` must agree on current-vs-stale for EVERY dependency, because all
+// three now call the ONE shared `private.gmail_reply_thread_summary_is_stale`.
+
+d("B06 FINAL CLOSURE §A: routing-context fence (real sessions)", () => {
+  it("a routing-address change committed WHILE a commit is blocked on mail_accounts is seen by the fresh re-check — the stale, A-computed commit is refused with zero mutation, then list_candidates re-offers and a fresh B-computed evaluation succeeds", async () => {
+    const fixture = await eligibleThreadWithReply("b06-fc-routing-race");
+
+    // Session A: hold `for update` on mail_accounts, simulating "the routing
+    // change's own transaction is open, not yet committed" — the SAME shape
+    // as the existing B05-eligibility-race test above.
+    const sA = await session();
+    await sA.query("begin");
+    await sA.query("select 1 from public.mail_accounts where id = $1 for update", [
+      fixture.mailAccountId,
+    ]);
+
+    // Session B: the REAL commit RPC, carrying the STALE routing digest
+    // `fixture` read BEFORE any change — this is "Session A" from the
+    // prompt's own naming (the commit computed under the OLD routing
+    // address); it must block behind the row lock above.
+    const sB = await session();
+    const pidB = await backendPid(sB);
+    const staleCommitPromise = commitRaw(sB, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      observations: fixture.observations,
+    });
+
+    const blockers = await waitUntilBlocked(pidB, 8000);
+    expect(blockers).toContain(await backendPid(sA));
+
+    // WHILE the stale commit is blocked: the routing address actually
+    // changes and that change commits.
+    const newEmail = `${fixture.mailAccountId}-changed@example.invalid`;
+    await sA.query("update public.mail_accounts set email_address = $2 where id = $1", [
+      fixture.mailAccountId,
+      newEmail,
+    ]);
+    await sA.query("commit");
+
+    // The stale commit's `for update` now succeeds; its FRESH routing digest
+    // (recomputed from the just-committed row) no longer matches what it was
+    // told to expect — refused, zero mutation.
+    const staleResult = await staleCommitPromise;
+    expect(staleResult.rows[0].result.result).toBe("stale_source");
+    expect(await messageObservationsOf(client, fixture.normalizedThreadId)).toHaveLength(0);
+    expect(await threadSummaryOf(client, fixture.normalizedThreadId)).toBeNull();
+
+    // `list_candidates` must re-offer the thread. No summary was ever
+    // successfully committed (the stale attempt above wrote nothing), so
+    // every per-dimension flag reports true trivially (`sm.id is null`) —
+    // the dedicated "zero B04 message change" proof, with an EXISTING
+    // summary to compare against, lives in the §C routing matrix case below.
+    const deps = replyDeps(client);
+    const candidates = await listCandidates(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      limit: 10,
+    });
+    const entry = candidates.candidates.find(
+      (c) => c.normalizedThreadId === fixture.normalizedThreadId,
+    );
+    expect(entry).toBeDefined();
+    expect(entry!.staleness.routingStale).toBe(true);
+
+    // A fresh evaluation under the NEW routing address succeeds and commits.
+    const freshEvidence = await getThreadEvidence(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+    });
+    if (freshEvidence.result !== "ok") throw new Error("unreachable");
+    expect(freshEvidence.evidence.mailAccountEmail).toBe(newEmail);
+    expect(freshEvidence.evidence.routingContextDigest).not.toBe(fixture.routingContextDigest);
+
+    const freshInterpretation = interpretThread({
+      messages: freshEvidence.evidence.messages,
+      referenceTokens: freshEvidence.evidence.referenceTokens,
+      participants: freshEvidence.evidence.participants,
+      subjects: freshEvidence.evidence.subjects,
+      textParts: freshEvidence.evidence.textParts,
+      mailAccountEmail: freshEvidence.evidence.mailAccountEmail,
+      observedThroughAtMs: null,
+    });
+    const freshCommit = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: freshEvidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: freshEvidence.evidence.routingContextDigest,
+      messageObservations: freshInterpretation.messageObservations,
+    });
+    expect(freshCommit).toEqual({
+      result: "ok",
+      evidenceDigest: freshEvidence.evidence.evidenceDigest,
+      committed: true,
+    });
+    expect(await threadSummaryOf(client, fixture.normalizedThreadId)).not.toBeNull();
+  });
+
+  it("A -> NULL routing email: a commit carrying the OLD (non-null) routing digest is refused as stale", async () => {
+    const fixture = await eligibleThreadWithReply("b06-fc-routing-to-null");
+    await client.query("update public.mail_accounts set email_address = null where id = $1", [
+      fixture.mailAccountId,
+    ]);
+
+    const res = await commitRaw(client, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      observations: fixture.observations,
+    });
+    expect(res.rows[0].result.result).toBe("stale_source");
+    expect(await messageObservationsOf(client, fixture.normalizedThreadId)).toHaveLength(0);
+  });
+
+  it("NULL -> A routing email: a commit carrying the OLD (null-sentinel) routing digest is refused as stale", async () => {
+    const { userId, mailAccountId } = await connectedMailbox(client, "b06-fc-routing-from-null");
+    await client.query("update public.mail_accounts set email_address = null where id = $1", [
+      mailAccountId,
+    ]);
+    const providerThreadId = randomProviderId("thread");
+    const sent = await insertMessage(client, {
+      userId,
+      mailAccountId,
+      providerMessageId: randomProviderId("sent"),
+      providerThreadId,
+      internalDateMs: Date.now() - DAY,
+      sent: true,
+    });
+    await setOutreachMachineStatus(client, {
+      userId,
+      mailAccountId,
+      normalizedThreadId: sent.normalizedThreadId,
+      outreachStatus: "qualified_outreach",
+    });
+
+    const deps = replyDeps(client);
+    const evidence = await getThreadEvidence(deps, {
+      userId,
+      mailAccountId,
+      normalizedThreadId: sent.normalizedThreadId,
+    });
+    if (evidence.result !== "ok") throw new Error("unreachable");
+    expect(evidence.evidence.mailAccountEmail).toBeNull();
+    const staleRoutingDigest = evidence.evidence.routingContextDigest;
+    const interpretation = interpretThread({
+      messages: evidence.evidence.messages,
+      referenceTokens: evidence.evidence.referenceTokens,
+      participants: evidence.evidence.participants,
+      subjects: evidence.evidence.subjects,
+      textParts: evidence.evidence.textParts,
+      mailAccountEmail: evidence.evidence.mailAccountEmail,
+      observedThroughAtMs: null,
+    });
+
+    await client.query("update public.mail_accounts set email_address = $2 where id = $1", [
+      mailAccountId,
+      "creator@example.invalid",
+    ]);
+
+    const res = await commitRaw(client, {
+      userId,
+      mailAccountId,
+      normalizedThreadId: sent.normalizedThreadId,
+      expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: staleRoutingDigest,
+      observations: interpretation.messageObservations.map((o) => ({
+        provider_message_id: o.providerMessageId,
+        response_class: o.responseClass,
+        relation_status: o.relationStatus,
+        referenced_creator_sent_provider_message_id: o.referencedCreatorSentProviderMessageId,
+      })),
+    });
+    expect(res.rows[0].result.result).toBe("stale_source");
+    expect(await messageObservationsOf(client, sent.normalizedThreadId)).toHaveLength(0);
+  });
+
+  it("a case/whitespace-only routing-address change normalizes to the SAME digest — no stale refusal", async () => {
+    const fixture = await eligibleThreadWithReply("b06-fc-routing-case-only");
+    const original = await client.query(
+      "select email_address from public.mail_accounts where id = $1",
+      [fixture.mailAccountId],
+    );
+    const changedCase = `  ${(original.rows[0].email_address as string).toUpperCase()}  `;
+    await client.query("update public.mail_accounts set email_address = $2 where id = $1", [
+      fixture.mailAccountId,
+      changedCase,
+    ]);
+
+    const commit = await commitRaw(client, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      observations: fixture.observations,
+    });
+    expect(commit.rows[0].result.result).toBe("ok");
+    expect(commit.rows[0].result.committed).toBe(true);
+  });
+});
+
+d("B06 FINAL CLOSURE §B: exact zero-write replay", () => {
+  it("an EXACT replay (identical source/routing/horizon/eligibility/versions) is already_current/committed:false and performs ZERO writes — unchanged ids, evaluated_at, updated_at, and row version (xmin)", async () => {
+    const fixture = await eligibleThreadWithReply("b06-fc-exact-replay");
+    const deps = replyDeps(client);
+
+    const first = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: fixture.evidenceDigest,
+      expectedRoutingContextDigest: fixture.routingContextDigest,
+      messageObservations: fixture.messageObservations,
+    });
+    expect(first).toEqual({
+      result: "ok",
+      evidenceDigest: fixture.evidenceDigest,
+      committed: true,
+    });
+
+    const rowSnapshot = async () => ({
+      observations: (
+        await client.query(
+          `select id, evaluated_at, updated_at, xmin::text as xmin
+             from private.gmail_reply_message_observations
+            where normalized_thread_id = $1
+            order by provider_message_id`,
+          [fixture.normalizedThreadId],
+        )
+      ).rows,
+      summary: (
+        await client.query(
+          `select id, evaluated_at, updated_at, xmin::text as xmin
+             from private.gmail_reply_thread_summaries
+            where normalized_thread_id = $1`,
+          [fixture.normalizedThreadId],
+        )
+      ).rows,
+    });
+
+    const before = await rowSnapshot();
+    expect(before.observations.length).toBeGreaterThan(0);
+    expect(before.summary).toHaveLength(1);
+
+    // Re-read fresh evidence exactly as a real caller would before ANY
+    // commit attempt — identical source/routing/horizon/eligibility/versions.
+    const evidence = await getThreadEvidence(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+    });
+    if (evidence.result !== "ok") throw new Error("unreachable");
+    const interpretation = interpretThread({
+      messages: evidence.evidence.messages,
+      referenceTokens: evidence.evidence.referenceTokens,
+      participants: evidence.evidence.participants,
+      subjects: evidence.evidence.subjects,
+      textParts: evidence.evidence.textParts,
+      mailAccountEmail: evidence.evidence.mailAccountEmail,
+      observedThroughAtMs: evidence.evidence.observedThroughAt
+        ? Date.parse(evidence.evidence.observedThroughAt)
+        : null,
+    });
+
+    const replay = await commitInterpretation(deps, {
+      userId: fixture.userId,
+      mailAccountId: fixture.mailAccountId,
+      normalizedThreadId: fixture.normalizedThreadId,
+      expectedEvidenceDigest: evidence.evidence.evidenceDigest,
+      expectedRoutingContextDigest: evidence.evidence.routingContextDigest,
+      messageObservations: interpretation.messageObservations,
+    });
+    // The DB's own already_current no-op verdict, surfaced as an ordinary
+    // `ok` with `committed: false` — never a distinct result variant.
+    expect(replay).toEqual({
+      result: "ok",
+      evidenceDigest: fixture.evidenceDigest,
+      committed: false,
+    });
+
+    const after = await rowSnapshot();
+    // Deep equality — not merely "same count" — proves every id, every
+    // evaluated_at, every updated_at, and every row's own Postgres row
+    // version (xmin) is byte-identical: the replay touched NOTHING.
+    expect(after.observations).toEqual(before.observations);
+    expect(after.summary).toEqual(before.summary);
+  });
+});
+
+d(
+  "B06 FINAL CLOSURE §C: unified current/stale definition (parameterized dependency matrix)",
+  () => {
+    it("B04 source: a new normalized message alone flips staleness on all three read surfaces; reevaluation clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-source");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      await insertMessage(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        providerMessageId: randomProviderId("reply2"),
+        providerThreadId: fixture.providerThreadId,
+        internalDateMs: Date.now(),
+        sent: false,
+        from: "brand@example.com",
+        subject: "Re: Collaboration idea",
+        bodyText: "Following up!",
+      });
+      await assertUnifiedStaleness(fixture, true);
+
+      await reevaluateAndCommit(fixture);
+      await assertUnifiedStaleness(fixture, false);
+    });
+
+    it("B03 horizon: proving a horizon with ZERO message change flips staleness on all three read surfaces; reevaluation clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-horizon");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      await insertObservedHorizon(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        providerThreadId: fixture.providerThreadId,
+        windowStartAt: new Date(Date.now() - DAY),
+        windowEndAt: new Date(),
+      });
+      await assertUnifiedStaleness(fixture, true);
+
+      await reevaluateAndCommit(fixture);
+      await assertUnifiedStaleness(fixture, false);
+    });
+
+    it("B05 eligibility: an eligibility-changing human decision flips staleness on all three read surfaces; reevaluation clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-eligibility");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      await setOutreachHumanDecision(client, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        outreachDecision: "outreach_confirmed",
+      });
+      await assertUnifiedStaleness(fixture, true);
+
+      await reevaluateAndCommit(fixture);
+      await assertUnifiedStaleness(fixture, false);
+    });
+
+    it("routing context: a mailbox routing-address change with ZERO message mutation flips staleness on all three read surfaces; reevaluation clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-routing");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      const before = await messageObservationsOf(client, fixture.normalizedThreadId);
+      await client.query("update public.mail_accounts set email_address = $2 where id = $1", [
+        fixture.mailAccountId,
+        "changed-routing@example.invalid",
+      ]);
+      await assertUnifiedStaleness(fixture, true);
+
+      // ZERO B04 message change — this staleness comes purely from routing.
+      const afterChange = await messageObservationsOf(client, fixture.normalizedThreadId);
+      expect(afterChange.map((o) => o.last_evaluated_source_payload_sha256)).toEqual(
+        before.map((o) => o.last_evaluated_source_payload_sha256),
+      );
+
+      await reevaluateAndCommit(fixture);
+      await assertUnifiedStaleness(fixture, false);
+    });
+
+    it("relation rule version: a running-version bump with unchanged evidence flips staleness on all three read surfaces; reevaluation under the new version clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-relation-version");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      const bumped = { relationVersion: "gmail_reply_relation_rules_v2" };
+      await assertUnifiedStaleness(fixture, true, bumped);
+
+      await reevaluateAndCommit(fixture, bumped);
+      await assertUnifiedStaleness(fixture, false, bumped);
+    });
+
+    it("classification rule version: a running-version bump with unchanged evidence flips staleness on all three read surfaces; reevaluation under the new version clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-classification-version");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      const bumped = { classificationVersion: "gmail_reply_classification_rules_v2" };
+      await assertUnifiedStaleness(fixture, true, bumped);
+
+      await reevaluateAndCommit(fixture, bumped);
+      await assertUnifiedStaleness(fixture, false, bumped);
+    });
+
+    it("text-transform version: a running-version bump with unchanged evidence flips staleness on all three read surfaces; reevaluation under the new version clears it", async () => {
+      const fixture = await eligibleThreadWithReply("b06-fc-matrix-text-transform-version");
+      const deps = replyDeps(client);
+      const commit1 = await commitInterpretation(deps, {
+        userId: fixture.userId,
+        mailAccountId: fixture.mailAccountId,
+        normalizedThreadId: fixture.normalizedThreadId,
+        expectedEvidenceDigest: fixture.evidenceDigest,
+        expectedRoutingContextDigest: fixture.routingContextDigest,
+        messageObservations: fixture.messageObservations,
+      });
+      expect(commit1.result).toBe("ok");
+      await assertUnifiedStaleness(fixture, false);
+
+      const bumped = {
+        textTransformVersion: "gmail_reply_text_transform_v2+gmail_outreach_text_v5",
+      };
+      await assertUnifiedStaleness(fixture, true, bumped);
+
+      await reevaluateAndCommit(fixture, bumped);
+      await assertUnifiedStaleness(fixture, false, bumped);
+    });
+  },
+);

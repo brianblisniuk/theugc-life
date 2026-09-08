@@ -162,6 +162,14 @@ export interface ThreadEvidence {
   textParts: readonly ReplyEvidenceTextPart[];
   subjects: readonly ReplyEvidenceSubject[];
   evidenceDigest: string;
+  /**
+   * FINAL CLOSURE, BLOCKER A: sha256 fingerprint of the mailbox's own routing
+   * address (lowercased/trimmed, or an explicit null sentinel) AT READ TIME.
+   * The exact value `commitInterpretation` must echo back as
+   * `expectedRoutingContextDigest` so the commit RPC can refuse as stale if
+   * the routing address changed underneath this evaluation.
+   */
+  routingContextDigest: string;
   currentSummary: CurrentThreadSummarySnapshot | null;
   /** Closure pass §18/§19: true iff `currentSummary` no longer describes the CURRENT source/horizon/eligibility. */
   currentSummaryIsStale: boolean;
@@ -173,6 +181,8 @@ export interface CandidateStaleness {
   rulesStale: boolean;
   /** Closure pass §5: the DB-authoritative observation horizon moved since the stored summary last saw it. */
   horizonStale: boolean;
+  /** FINAL CLOSURE, BLOCKER A: the mailbox's own routing address changed since the stored summary last saw it. */
+  routingStale: boolean;
 }
 
 export interface ReplyCandidate {

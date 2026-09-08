@@ -301,6 +301,16 @@ create table private.gmail_reply_thread_summaries (
   evidence_digest text not null check (evidence_digest ~ '^[0-9a-f]{64}$'),
   evidence_message_count integer not null check (evidence_message_count >= 0),
 
+  -- FINAL CLOSURE, BLOCKER A: the mailbox's own routing address is a
+  -- classification DEPENDENCY (contract §8.1's external-participant
+  -- requirement reads it directly) that lives on `mail_accounts`, entirely
+  -- outside the B04 message-evidence digest. `private.gmail_reply_routing_
+  -- context_digest` normalizes it (lowercased/trimmed, or an explicit null
+  -- sentinel) to a sha256 fingerprint — the SAME shape as `evidence_digest`
+  -- — so a routing-address change participates in staleness/currentness
+  -- exactly like a source-evidence change, never silently forgotten.
+  routing_context_digest text not null check (routing_context_digest ~ '^[0-9a-f]{64}$'),
+
   relation_rule_version text not null check (relation_rule_version ~ '^[a-z][a-z0-9_]{0,63}$'),
   classification_rule_version text not null check (classification_rule_version ~ '^[a-z][a-z0-9_]{0,63}$'),
   -- Closure pass §20: see the identical-shape comment on
@@ -459,6 +469,103 @@ $$;
 revoke all on function private.gmail_reply_observed_through_at(uuid, text) from public;
 
 -- ===========================================================================
+-- 4b. ROUTING-CONTEXT FINGERPRINT (FINAL CLOSURE, BLOCKER A)
+-- ===========================================================================
+-- `mail_accounts.email_address` is a classification DEPENDENCY read directly
+-- by the external-participant test (contract §8.1) — entirely independent of
+-- the B04 message-evidence digest, and therefore capable of changing between
+-- evidence-read and commit with ZERO change to that digest. Normalizes to
+-- the SAME sha256-hex shape as `evidence_digest` so the two fences compose
+-- identically everywhere they are compared. An explicit, distinct sentinel
+-- byte for NULL email ensures "no routing address" can never collide with
+-- any real (however short) normalized address string.
+create or replace function private.gmail_reply_routing_context_digest(
+  p_mail_account_id uuid
+)
+returns text
+language sql
+stable
+as $$
+  select encode(
+           digest(
+             coalesce(lower(btrim(m.email_address)), E'\\x00_no_routing_email'),
+             'sha256'
+           ),
+           'hex'
+         )
+    from public.mail_accounts m
+   where m.id = p_mail_account_id;
+$$;
+
+revoke all on function private.gmail_reply_routing_context_digest(uuid) from public;
+
+-- ===========================================================================
+-- 4c. THE ONE DEFINITION OF "IS THIS STORED SUMMARY CURRENT" (FINAL CLOSURE,
+-- BLOCKER C)
+-- ===========================================================================
+-- Every dependency B06's semantic output can possibly depend on, compared in
+-- ONE place: B04 source evidence, B03 observation horizon, B05 eligibility,
+-- the routing-context fingerprint (§4b), and all three rule/shared-transform
+-- versions. `gmail_reply_list_candidates`, `gmail_reply_get_thread_evidence`
+-- and `gmail_reply_status` all call THIS function rather than each keeping
+-- its own copy of the staleness formula — the exact defect the final
+-- external audit found (three independently-written formulas that could
+-- silently drift apart). A thread with NO stored summary at all is,
+-- trivially, stale (a candidate for first evaluation).
+create or replace function private.gmail_reply_thread_summary_is_stale(
+  p_mail_account_id uuid,
+  p_normalized_thread_id uuid,
+  p_relation_version text,
+  p_classification_version text,
+  p_text_transform_version text
+)
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(
+    (
+      select
+        sm.evidence_digest is distinct from cur.evidence_digest
+        or sm.observed_through_at is distinct from
+           private.gmail_reply_observed_through_at(p_mail_account_id, t.provider_thread_id)
+        or sm.eligibility is distinct from
+           private.gmail_reply_thread_eligibility(p_mail_account_id, p_normalized_thread_id)
+        or sm.routing_context_digest is distinct from
+           private.gmail_reply_routing_context_digest(p_mail_account_id)
+        or sm.relation_rule_version is distinct from p_relation_version
+        or sm.classification_rule_version is distinct from p_classification_version
+        or sm.text_transform_version is distinct from p_text_transform_version
+      from private.gmail_reply_thread_summaries sm
+      join private.gmail_normalized_threads t
+        on t.id = sm.normalized_thread_id and t.mail_account_id = sm.mail_account_id
+      left join lateral (
+        select encode(
+                 digest(
+                   coalesce(
+                     string_agg(
+                       m.id::text || ':' || m.source_payload_sha256 || ':' || m.provider_sent::text,
+                       '|' order by m.id
+                     ),
+                     ''
+                   ),
+                   'sha256'
+                 ),
+                 'hex'
+               ) as evidence_digest
+          from private.gmail_normalized_messages m
+         where m.normalized_thread_id = sm.normalized_thread_id
+      ) cur on true
+      where sm.mail_account_id = p_mail_account_id
+        and sm.normalized_thread_id = p_normalized_thread_id
+    ),
+    true
+  );
+$$;
+
+revoke all on function private.gmail_reply_thread_summary_is_stale(uuid, uuid, text, text, text) from public;
+
+-- ===========================================================================
 -- 5. DELETION MUST PURGE B06 TOO (extends D067's invariant)
 -- ===========================================================================
 -- Identical shape to B05's own `assert_gmail_outreach_data_absent_when_
@@ -601,13 +708,15 @@ begin
     return jsonb_build_object('result', v_may_process, 'candidates', '[]'::jsonb);
   end if;
 
-  -- CLOSURE PASS §5: a thread's `observed_through_at` can advance (a B03 run
-  -- completes for the exact provider thread) with zero change to the B04
-  -- message digest. Without comparing the CURRENT DB-authoritative horizon
-  -- against what the stored summary last saw, a thread stuck at
-  -- `observation_horizon_unknown` — or one whose window merely widened —
-  -- would never be re-offered. `horizon_stale` makes that its own,
-  -- independent staleness dimension, never folded into `source_stale`.
+  -- FINAL CLOSURE, BLOCKER C: the WHERE-clause offer decision below calls
+  -- the SAME `private.gmail_reply_thread_summary_is_stale` that
+  -- `gmail_reply_get_thread_evidence` and `gmail_reply_status` call — one
+  -- definition of "current", never three independently-written formulas
+  -- that could drift apart. The per-dimension flags in the payload
+  -- (`source_stale`/`rules_stale`/`horizon_stale`/`routing_stale`) remain
+  -- informational breakdowns of that SAME underlying comparison, computed
+  -- inline here only because a caller may find the breakdown useful; the
+  -- OFFER decision itself never re-derives its own copy of the formula.
   select coalesce(jsonb_agg(row), '[]'::jsonb) into v_rows
     from (
       select jsonb_build_object(
@@ -627,6 +736,11 @@ begin
                  sm.id is null
                  or sm.observed_through_at is distinct from
                     private.gmail_reply_observed_through_at(p_mail_account_id, t.provider_thread_id)
+               ),
+               'routing_stale', (
+                 sm.id is null
+                 or sm.routing_context_digest is distinct from
+                    private.gmail_reply_routing_context_digest(p_mail_account_id)
                )
              ) as row
         from private.gmail_normalized_threads t
@@ -653,15 +767,9 @@ begin
          and t.user_id = p_user_id
          and not (t.id = any(coalesce(p_exclude_normalized_thread_ids, '{}'::uuid[])))
          and private.gmail_reply_thread_eligibility(p_mail_account_id, t.id) <> 'not_eligible'
-         and (
-           sm.id is null
-           or sm.evidence_digest is distinct from cur.evidence_digest
-           or sm.relation_rule_version is distinct from p_relation_version
-           or sm.classification_rule_version is distinct from p_classification_version
-           or sm.text_transform_version is distinct from p_text_transform_version
-           or sm.observed_through_at is distinct from
-              private.gmail_reply_observed_through_at(p_mail_account_id, t.provider_thread_id)
-         )
+         and private.gmail_reply_thread_summary_is_stale(
+               p_mail_account_id, t.id, p_relation_version, p_classification_version, p_text_transform_version
+             )
        order by t.id asc
        limit p_limit
     ) candidates;
@@ -688,7 +796,15 @@ revoke all on function public.gmail_reply_list_candidates(uuid, uuid, text, text
 create or replace function public.gmail_reply_get_thread_evidence(
   p_user_id uuid,
   p_mail_account_id uuid,
-  p_normalized_thread_id uuid
+  p_normalized_thread_id uuid,
+  -- FINAL CLOSURE, BLOCKER C: the caller already knows the B06 semantic
+  -- versions actually running now — currentness must be judged against
+  -- those, not against whatever an already-stored row happens to remember.
+  -- Required (no default): a caller that omits them gets a clear argument
+  -- error, never a silently-wrong "always current" answer.
+  p_relation_version text,
+  p_classification_version text,
+  p_text_transform_version text
 )
 returns jsonb
 language plpgsql
@@ -701,6 +817,7 @@ declare
   v_account_email text;
   v_eligibility text;
   v_observed_through_at timestamptz;
+  v_routing_context_digest text;
   v_messages jsonb;
   v_reference_tokens jsonb;
   v_participants jsonb;
@@ -711,6 +828,12 @@ declare
   v_current_summary_is_stale boolean;
   v_current_observations jsonb;
 begin
+  if p_relation_version !~ '^[a-z][a-z0-9_]{0,63}$'
+     or p_classification_version !~ '^[a-z][a-z0-9_]{0,63}$'
+     or p_text_transform_version !~ '^[a-z][a-z0-9_.+]{0,127}$' then
+    raise exception 'invalid relation/classification/text-transform version' using errcode = 'invalid_parameter_value';
+  end if;
+
   v_may_process := private.gmail_outreach_may_process(p_mail_account_id);
   if v_may_process <> 'ok' then
     return jsonb_build_object('result', v_may_process);
@@ -730,6 +853,7 @@ begin
 
   v_eligibility := private.gmail_reply_thread_eligibility(p_mail_account_id, p_normalized_thread_id);
   v_observed_through_at := private.gmail_reply_observed_through_at(p_mail_account_id, v_thread.provider_thread_id);
+  v_routing_context_digest := private.gmail_reply_routing_context_digest(p_mail_account_id);
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'provider_message_id', m.provider_message_id,
@@ -805,20 +929,22 @@ begin
    where m.normalized_thread_id = p_normalized_thread_id
      and h.header_name = 'subject';
 
-  -- CLOSURE PASS §18/§19: `current_summary_is_stale` distinguishes a
-  -- RETAINED summary (still stored, potentially still human-relevant) from a
-  -- CURRENTLY-VALID one — true whenever ANY tracked dependency (source
-  -- evidence, horizon, eligibility, or a rule/shared-transform version) has
-  -- moved since this summary was last committed. A caller must never present
-  -- a stale summary as describing the CURRENT state of the mailbox.
-  select to_jsonb(sm) - 'id' - 'user_id' - 'mail_account_id' - 'normalized_thread_id',
-         (sm.evidence_digest is distinct from v_current_digest
-           or sm.observed_through_at is distinct from v_observed_through_at
-           or sm.eligibility is distinct from v_eligibility)
-    into v_current_summary, v_current_summary_is_stale
+  -- CLOSURE PASS §18/§19, FINAL CLOSURE BLOCKER C: `current_summary_is_stale`
+  -- distinguishes a RETAINED summary from a CURRENTLY-VALID one, using the
+  -- SAME `private.gmail_reply_thread_summary_is_stale` that
+  -- `gmail_reply_list_candidates`/`gmail_reply_status` call — never an
+  -- independent, potentially-drifting copy of the formula. A caller must
+  -- never present a stale summary as describing the CURRENT state.
+  select to_jsonb(sm) - 'id' - 'user_id' - 'mail_account_id' - 'normalized_thread_id'
+    into v_current_summary
     from private.gmail_reply_thread_summaries sm
    where sm.mail_account_id = p_mail_account_id
      and sm.normalized_thread_id = p_normalized_thread_id;
+
+  v_current_summary_is_stale := private.gmail_reply_thread_summary_is_stale(
+    p_mail_account_id, p_normalized_thread_id,
+    p_relation_version, p_classification_version, p_text_transform_version
+  );
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'provider_message_id', o.provider_message_id,
@@ -844,6 +970,7 @@ begin
     'text_parts', v_text_parts,
     'subjects', v_subjects,
     'evidence_digest', v_current_digest,
+    'routing_context_digest', v_routing_context_digest,
     'current_summary', v_current_summary,
     'current_summary_is_stale', coalesce(v_current_summary_is_stale, false),
     'current_message_observations', v_current_observations
@@ -851,7 +978,7 @@ begin
 end;
 $$;
 
-revoke all on function public.gmail_reply_get_thread_evidence(uuid, uuid, uuid) from public;
+revoke all on function public.gmail_reply_get_thread_evidence(uuid, uuid, uuid, text, text, text) from public;
 
 -- ---------------------------------------------------------------------------
 -- 7c. COMMIT ONE THREAD'S REPLY-CHRONOLOGY INTERPRETATION — atomic, fenced
@@ -916,6 +1043,9 @@ create or replace function public.gmail_reply_commit_interpretation(
   p_classification_version text,
   p_text_transform_version text,
   p_expected_evidence_digest text,
+  -- FINAL CLOSURE, BLOCKER A: the routing-context fingerprint TS evaluated
+  -- at read time — re-verified against the CURRENT, locked value below.
+  p_expected_routing_context_digest text,
   p_message_observations jsonb
 )
 returns jsonb
@@ -929,12 +1059,15 @@ declare
   v_thread private.gmail_normalized_threads%rowtype;
   v_current_digest text;
   v_current_count integer;
+  v_current_routing_context_digest text;
+  v_current_account_email text;
+  v_observed_through_at timestamptz;
   v_payload_count integer;
   v_payload_distinct_count integer;
   v_set_mismatch boolean;
   v_shape_mismatch boolean;
   v_bad_reference boolean;
-  v_observed_through_at timestamptz;
+  v_already_current boolean;
 begin
   if p_relation_version !~ '^[a-z][a-z0-9_]{0,63}$'
      or p_classification_version !~ '^[a-z][a-z0-9_]{0,63}$'
@@ -952,8 +1085,12 @@ begin
   -- THE ELIGIBILITY-RACE FENCE. See this function's own header comment for
   -- the full deadlock-safety argument. Must come immediately after the call
   -- above (same relative lock order: consent, then mail_accounts) and
-  -- strictly before the eligibility re-check below.
-  perform 1 from public.mail_accounts where id = p_mail_account_id for update;
+  -- strictly before the eligibility re-check below. Reading `email_address`
+  -- from THIS locked row (rather than a separate, later, unlocked SELECT)
+  -- is what makes the routing-context comparison below a real fence, not
+  -- merely a fresh-looking read (FINAL CLOSURE, BLOCKER A).
+  select email_address into v_current_account_email
+    from public.mail_accounts where id = p_mail_account_id for update;
 
   select t.* into v_thread
     from private.gmail_normalized_threads t
@@ -973,6 +1110,20 @@ begin
     return jsonb_build_object('result', 'not_eligible');
   end if;
 
+  -- FINAL CLOSURE, BLOCKER A: the routing-context fingerprint, computed from
+  -- the SAME locked row read above — never a second, separate, unlocked
+  -- SELECT that could observe a DIFFERENT value than what was actually
+  -- serialized against concurrent writers.
+  v_current_routing_context_digest := encode(
+    digest(coalesce(lower(btrim(v_current_account_email)), E'\\x00_no_routing_email'), 'sha256'),
+    'hex'
+  );
+  if v_current_routing_context_digest is distinct from p_expected_routing_context_digest then
+    return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', null);
+  end if;
+
+  v_observed_through_at := private.gmail_reply_observed_through_at(p_mail_account_id, v_thread.provider_thread_id);
+
   -- THE SOURCE-EVIDENCE FENCE, identical shape to B05's own.
   with locked as (
     select m.id, m.source_payload_sha256, m.provider_sent
@@ -988,6 +1139,33 @@ begin
 
   if v_current_digest is distinct from p_expected_evidence_digest then
     return jsonb_build_object('result', 'stale_source', 'current_evidence_digest', v_current_digest);
+  end if;
+
+  -- FINAL CLOSURE, BLOCKER B: EXACT, ZERO-WRITE REPLAY. Every dependency
+  -- this commit's derivation could possibly depend on — source, routing
+  -- context, horizon, eligibility, all three rule/shared-transform versions
+  -- — is ALREADY computed above, under the SAME locks/fences that protect
+  -- an ordinary write. If a stored summary already reflects this EXACT
+  -- tuple, the derivation below is PROVABLY byte-identical to what is
+  -- already current (both are the same pure function of the same inputs) —
+  -- writing it again would only move `evaluated_at`/`updated_at` for no
+  -- semantic reason. Nothing is written; not even the observation rows.
+  select true into v_already_current
+    from private.gmail_reply_thread_summaries sm
+   where sm.mail_account_id = p_mail_account_id
+     and sm.normalized_thread_id = p_normalized_thread_id
+     and sm.evidence_digest = v_current_digest
+     and sm.routing_context_digest = v_current_routing_context_digest
+     and sm.observed_through_at is not distinct from v_observed_through_at
+     and sm.eligibility = v_eligibility
+     and sm.relation_rule_version = p_relation_version
+     and sm.classification_rule_version = p_classification_version
+     and sm.text_transform_version = p_text_transform_version;
+
+  if v_already_current then
+    return jsonb_build_object(
+      'result', 'already_current', 'evidence_digest', v_current_digest, 'committed', false
+    );
   end if;
 
   -- CLOSURE PASS §13: EXACT SET EQUALITY. `locked` below re-issues the SAME
@@ -1153,12 +1331,9 @@ begin
         text_transform_version = excluded.text_transform_version,
         evaluated_at = now();
 
-  -- THE OBSERVATION HORIZON, RECOMPUTED FRESH HERE (closure pass §5) — never
-  -- trusted from a caller-supplied reading. A horizon that advanced (or
-  -- newly resolved) between evidence-read and commit is reflected in THIS
-  -- commit's summary automatically, by construction, with no separate
-  -- staleness dimension to compare.
-  v_observed_through_at := private.gmail_reply_observed_through_at(p_mail_account_id, v_thread.provider_thread_id);
+  -- `v_observed_through_at` was already computed earlier (before the
+  -- already-current/no-op check) under the same locks — reused here as-is,
+  -- never recomputed a second time within the same transaction.
 
   -- THREAD SUMMARY: DERIVED ENTIRELY HERE (closure pass §16) from the
   -- observation rows just written above — a caller cannot invent a first-
@@ -1233,7 +1408,7 @@ begin
     creator_sent_count_before_first_human_reply,
     latest_creator_sent_before_reply_provider_message_id, latest_creator_sent_before_reply_tied,
     latency_from_first_creator_sent_ms, latency_from_latest_creator_sent_ms, reply_chronology_conflict,
-    observed_through_at, evidence_digest, evidence_message_count,
+    observed_through_at, evidence_digest, evidence_message_count, routing_context_digest,
     relation_rule_version, classification_rule_version, text_transform_version
   )
   select
@@ -1276,7 +1451,7 @@ begin
       else (extract(epoch from (s.first_reply_at - s.first_reply_lp_at)) * 1000)::bigint
     end,
     s.conflicted,
-    v_observed_through_at, v_current_digest, v_current_count,
+    v_observed_through_at, v_current_digest, v_current_count, v_current_routing_context_digest,
     p_relation_version, p_classification_version, p_text_transform_version
     from summary2 s
   on conflict (mail_account_id, normalized_thread_id) do update
@@ -1297,17 +1472,21 @@ begin
         observed_through_at = excluded.observed_through_at,
         evidence_digest = excluded.evidence_digest,
         evidence_message_count = excluded.evidence_message_count,
+        routing_context_digest = excluded.routing_context_digest,
         relation_rule_version = excluded.relation_rule_version,
         classification_rule_version = excluded.classification_rule_version,
         text_transform_version = excluded.text_transform_version,
         evaluated_at = now();
 
-  return jsonb_build_object('result', 'ok', 'evidence_digest', v_current_digest);
+  -- `committed: true` — a genuinely new (or changed) projection was written.
+  -- The `already_current` path above is the ONLY way this function reports
+  -- `committed: false`, and it does so having written nothing at all.
+  return jsonb_build_object('result', 'ok', 'evidence_digest', v_current_digest, 'committed', true);
 end;
 $$;
 
 revoke all on function public.gmail_reply_commit_interpretation(
-  uuid, uuid, uuid, text, text, text, text, jsonb
+  uuid, uuid, uuid, text, text, text, text, text, jsonb
 ) from public;
 
 -- ---------------------------------------------------------------------------
@@ -1315,7 +1494,12 @@ revoke all on function public.gmail_reply_commit_interpretation(
 -- ---------------------------------------------------------------------------
 create or replace function public.gmail_reply_status(
   p_user_id uuid,
-  p_mail_account_id uuid
+  p_mail_account_id uuid,
+  -- FINAL CLOSURE, BLOCKER C: required, no default — see the identical
+  -- rationale on `gmail_reply_get_thread_evidence`.
+  p_relation_version text,
+  p_classification_version text,
+  p_text_transform_version text
 )
 returns jsonb
 language sql
@@ -1358,25 +1542,24 @@ as $$
        where user_id = p_user_id and mail_account_id = p_mail_account_id
          and observation_state = 'observation_horizon_unknown'
     ),
-    -- CLOSURE PASS §18/§19: how much of the retained history above is
-    -- CURRENTLY stale (source evidence, horizon, or eligibility moved since
-    -- last committed) — an operator/B07 signal, never a reason to delete
-    -- anything on its own.
+    -- CLOSURE PASS §18/§19, FINAL CLOSURE BLOCKER C: how much of the
+    -- retained history above is CURRENTLY stale — an operator/B07 signal,
+    -- never a reason to delete anything on its own. Uses the SAME
+    -- `private.gmail_reply_thread_summary_is_stale` that
+    -- `gmail_reply_list_candidates`/`gmail_reply_get_thread_evidence` call —
+    -- one definition of "current", everywhere.
     'stale_thread_summaries', (
       select count(*) from private.gmail_reply_thread_summaries sm
        where sm.user_id = p_user_id and sm.mail_account_id = p_mail_account_id
-         and (
-           sm.eligibility is distinct from private.gmail_reply_thread_eligibility(sm.mail_account_id, sm.normalized_thread_id)
-           or sm.observed_through_at is distinct from (
-             select private.gmail_reply_observed_through_at(sm.mail_account_id, t.provider_thread_id)
-               from private.gmail_normalized_threads t where t.id = sm.normalized_thread_id
-           )
-         )
+         and private.gmail_reply_thread_summary_is_stale(
+               sm.mail_account_id, sm.normalized_thread_id,
+               p_relation_version, p_classification_version, p_text_transform_version
+             )
     )
   );
 $$;
 
-revoke all on function public.gmail_reply_status(uuid, uuid) from public;
+revoke all on function public.gmail_reply_status(uuid, uuid, text, text, text) from public;
 
 -- ---------------------------------------------------------------------------
 -- 7e. DELETION PURGE (explicit deletion request only)
@@ -1457,9 +1640,9 @@ declare
 begin
   foreach fn in array array[
     'public.gmail_reply_list_candidates(uuid,uuid,text,text,text,integer,uuid[])',
-    'public.gmail_reply_get_thread_evidence(uuid,uuid,uuid)',
-    'public.gmail_reply_commit_interpretation(uuid,uuid,uuid,text,text,text,text,jsonb)',
-    'public.gmail_reply_status(uuid,uuid)',
+    'public.gmail_reply_get_thread_evidence(uuid,uuid,uuid,text,text,text)',
+    'public.gmail_reply_commit_interpretation(uuid,uuid,uuid,text,text,text,text,text,jsonb)',
+    'public.gmail_reply_status(uuid,uuid,text,text,text)',
     'public.gmail_reply_purge_for_deletion(uuid,uuid,uuid)'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', fn);

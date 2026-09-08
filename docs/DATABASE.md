@@ -2185,6 +2185,61 @@ re-SELECT could not close.
   history is never deleted on becoming stale; callers are simply told not to
   present it as current.
 
+**FINAL CLOSURE (same migration, further amended before merge — still no
+0041)**: an external architectural review of the closure pass above found
+three remaining invariants it did not fully close: the mailbox's own routing
+address was a classification dependency living entirely outside the fence
+above; a claimed "true no-op" replay could still move `evaluated_at`/
+`updated_at`; and the three read surfaces computed staleness from three
+independently-written formulas that were not actually equivalent.
+
+- **The routing address is now a FENCED dependency, not a silent read**
+  (Blocker A): `private.gmail_reply_routing_context_digest(mail_account_id)`
+  normalizes `mail_accounts.email_address` — lowercased/trimmed, or an
+  explicit `E'\x00_no_routing_email'` sentinel when null — to a sha256
+  fingerprint in the SAME shape as `evidence_digest`, and
+  `gmail_reply_thread_summaries.routing_context_digest` stores it alongside
+  the summary it produced. `gmail_reply_get_thread_evidence` returns the
+  CURRENT fingerprint; a caller passes it back as `gmail_reply_commit_
+  interpretation`'s new required `p_expected_routing_context_digest`. The
+  commit function computes the CURRENT fingerprint from the `email_address`
+  it already read under its own `for update` lock (the SAME read that fences
+  the B05-eligibility race — no second lock acquisition) and refuses as
+  `stale_source` on any mismatch, writing nothing. A routing-address change
+  therefore behaves exactly like a source-evidence change: it fences a
+  stale-context commit, it is one of the dimensions `private.gmail_reply_
+  thread_summary_is_stale` compares, and `gmail_reply_list_candidates`
+  reports it as its own `routing_stale` flag. Case/whitespace-only changes
+  normalize to the identical digest — never spuriously flagged stale.
+- **An exact replay is now a REAL, DB-decided zero-write no-op, not merely a
+  claim** (Blocker B): immediately after the source-evidence fence succeeds
+  — under the SAME lock/context validation that would otherwise perform the
+  write — `gmail_reply_commit_interpretation` compares the freshly computed
+  context signature (`evidence_digest`, `routing_context_digest`,
+  `observed_through_at`, `eligibility`, and all three rule/transform
+  versions) against the exact values already stored on the current summary
+  row. An exact match returns `{result: 'already_current', evidence_digest,
+  committed: false}` and performs ZERO writes — not even the message-
+  observation upsert — so no `evaluated_at`, no `updated_at`, and no row's
+  own Postgres row version move. The service layer (`commitInterpretation`)
+  surfaces this as an ordinary `{result: 'ok', committed: false}`, never a
+  distinct caller-visible result variant, since callers already only care
+  whether a NEW projection was written.
+- **ONE definition of current-vs-stale, not three** (Blocker C): `private.
+  gmail_reply_thread_summary_is_stale(mail_account_id, normalized_thread_id,
+  relation_version, classification_version, text_transform_version)` is now
+  the SOLE comparison — covering B04 source evidence, B03 observation
+  horizon, B05 eligibility, routing context, and all three rule/transform
+  versions — called by `gmail_reply_list_candidates` (the offer decision,
+  replacing hand-rolled OR conditions), `gmail_reply_get_thread_evidence`
+  (`current_summary_is_stale`), and `gmail_reply_status`
+  (`stale_thread_summaries`). `gmail_reply_get_thread_evidence` and
+  `gmail_reply_status` both now take the three rule/transform versions as
+  REQUIRED parameters (no default) — the caller already knows the versions
+  actually running now, and a silent default could otherwise mask a caller
+  that forgot to pass them and get a wrong "always current" answer. Any
+  future dependency this formula should compare need only be added ONCE.
+
 Five `SECURITY DEFINER` functions in `public`, all `EXECUTE`-granted to
 `service_role` alone — there is no human-writer RPC in this round:
 `gmail_reply_list_candidates`, `gmail_reply_get_thread_evidence`,

@@ -77,6 +77,7 @@ interface RawEvidenceResponse {
   }>;
   subjects?: Array<{ provider_message_id: string; raw_value: string }>;
   evidence_digest?: string;
+  routing_context_digest?: string;
   current_summary?: {
     eligibility: Eligibility;
     observation_state: ObservationState;
@@ -124,6 +125,11 @@ export async function getThreadEvidence(
     p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
     p_normalized_thread_id: input.normalizedThreadId,
+    // FINAL CLOSURE, BLOCKER C: currentness must be judged against the
+    // versions actually running now, not whatever a stored row remembers.
+    p_relation_version: RELATION_RULE_VERSION,
+    p_classification_version: CLASSIFICATION_RULE_VERSION,
+    p_text_transform_version: TEXT_TRANSFORM_VERSION,
   });
 
   if (error || !rawData) {
@@ -234,6 +240,7 @@ export async function getThreadEvidence(
       textParts,
       subjects,
       evidenceDigest: data.evidence_digest!,
+      routingContextDigest: data.routing_context_digest!,
       currentSummary,
       currentSummaryIsStale: data.current_summary_is_stale ?? false,
       currentMessageObservations,
@@ -249,7 +256,7 @@ export async function getThreadEvidence(
 const DEADLOCK_DETECTED_SQLSTATE = "40P01";
 
 export type CommitInterpretationResult =
-  | { result: "ok"; evidenceDigest: string }
+  | { result: "ok"; evidenceDigest: string; committed: boolean }
   | { result: "not_found" }
   | { result: "account_deleted" }
   | { result: "deletion_pending" }
@@ -266,6 +273,8 @@ export async function commitInterpretation(
     mailAccountId: string;
     normalizedThreadId: string;
     expectedEvidenceDigest: string;
+    /** FINAL CLOSURE, BLOCKER A: the routing-context fingerprint TS evaluated at read time. */
+    expectedRoutingContextDigest: string;
     messageObservations: readonly MessageObservationInput[];
   },
 ): Promise<CommitInterpretationResult> {
@@ -281,6 +290,7 @@ export async function commitInterpretation(
     p_classification_version: CLASSIFICATION_RULE_VERSION,
     p_text_transform_version: TEXT_TRANSFORM_VERSION,
     p_expected_evidence_digest: input.expectedEvidenceDigest,
+    p_expected_routing_context_digest: input.expectedRoutingContextDigest,
     // CLOSURE PASS §14: only genuinely TS-owned SEMANTIC interpretation is
     // sent. `internal_date_ms`, `source_payload_sha256`,
     // `latest_preceding_creator_sent_*` and `chronology_conflict` are all
@@ -313,6 +323,7 @@ export async function commitInterpretation(
     result: string;
     evidence_digest?: string;
     current_evidence_digest?: string | null;
+    committed?: boolean;
   };
 
   if (
@@ -328,13 +339,21 @@ export async function commitInterpretation(
   if (data.result === "stale_source") {
     return { result: "stale_source", currentEvidenceDigest: data.current_evidence_digest ?? null };
   }
+  // FINAL CLOSURE, BLOCKER B: `already_current` is the DB's own zero-write
+  // no-op verdict (decided under the same lock/context validation that would
+  // otherwise perform the write) — surfaced here as an ordinary `ok` with
+  // `committed: false`, never a distinct caller-visible result variant, since
+  // callers already only care whether a NEW projection was written.
+  if (data.result === "already_current") {
+    return { result: "ok", evidenceDigest: data.evidence_digest!, committed: false };
+  }
   if (data.result !== "ok") {
     throw new ReplyStructuralError(
       `gmail_reply_commit_interpretation returned unknown result: ${data.result}`,
     );
   }
 
-  return { result: "ok", evidenceDigest: data.evidence_digest! };
+  return { result: "ok", evidenceDigest: data.evidence_digest!, committed: data.committed ?? true };
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +400,7 @@ export async function interpretOneThread(
     mailAccountId: input.mailAccountId,
     normalizedThreadId: input.normalizedThreadId,
     expectedEvidenceDigest: evidence.evidenceDigest,
+    expectedRoutingContextDigest: evidence.routingContextDigest,
     messageObservations: interpretation.messageObservations,
   });
 
@@ -388,7 +408,7 @@ export async function interpretOneThread(
     return { result: "stale_source_retry" };
   }
   if (commitResult.result === "ok") {
-    return { result: "ok", committed: true };
+    return { result: "ok", committed: commitResult.committed };
   }
   return { result: commitResult.result };
 }
@@ -431,6 +451,7 @@ export async function listCandidates(
       source_stale: boolean;
       rules_stale: boolean;
       horizon_stale: boolean;
+      routing_stale: boolean;
     }>;
   };
 
@@ -442,6 +463,7 @@ export async function listCandidates(
       sourceStale: c.source_stale,
       rulesStale: c.rules_stale,
       horizonStale: c.horizon_stale,
+      routingStale: c.routing_stale,
     } satisfies CandidateStaleness,
   }));
 
@@ -531,6 +553,9 @@ export async function getStatus(
   const { data: rawData, error } = await deps.db.rpc("gmail_reply_status", {
     p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
+    p_relation_version: RELATION_RULE_VERSION,
+    p_classification_version: CLASSIFICATION_RULE_VERSION,
+    p_text_transform_version: TEXT_TRANSFORM_VERSION,
   });
 
   if (error || !rawData) {
