@@ -2,10 +2,10 @@
 
 **Purpose:** self-contained handoff for any AI, engineer, technical advisor, investor, implementation agent, or vendor evaluator that needs to understand what TheUGC.life is, what has already been built, what remains before launch, and what AI architecture the company actually needs.
 
-**Snapshot date:** 2026-09-07  
+**Snapshot date:** 2026-09-11  
 **Repository:** `brianblisniuk/theugc-life`  
-**Main at this snapshot:** `356430d1ee700032d32e71b47f922422ee99ced2` before this documentation commit  
-**Implementation frontier:** B05 merged; D071/B06 contract accepted; B06 implementation is next  
+**Main at this snapshot:** `c6cd180ea27a3901a365526a29371121f8cedc5c`  
+**Implementation frontier:** B06 merged (PR #38); D072/B07 contract accepted; B07 implementation is next  
 **Payment provider:** Rebill (`rebill.com`) — accepted  
 **Initial market:** travel UGC creators  
 **Long-term company:** Creator Operating System across multiple verticals
@@ -930,8 +930,8 @@ Private creator-commercial outreach interpretation:
 - no CRM materialization;
 - no G3/network output.
 
-### B06 — CONTRACT ACCEPTED / NEXT
-D071 accepted.
+### B06 — DONE (merged)
+D071 accepted and implemented; PR #38 merged into `main` at `c6cd180ea27a3901a365526a29371121f8cedc5c`.
 
 B06 reconstructs **reply chronology**, not outcome.
 
@@ -963,10 +963,24 @@ no qualifying reply observed in imported window
 
 B06 is local computation: zero Gmail API calls.
 
-### B07 — PLANNED
-Reply/outcome classification + creator correction.
+### B07 — CONTRACT ACCEPTED / NEXT
+D072 accepted (`docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`).
 
-This is where commercial meaning will enter. Exact taxonomy must be contracted before implementation.
+B07 attaches **commercial meaning** to B06's reply chronology, not the other way around.
+
+It distinguishes, per message: disposition (`positive`/`negative`/`neutral`/`mixed`/`ambiguous`) and a commercial-signal SET (`interest`/`request_information`/`redirect`/`terms_discussion`/`offer`/`agreement`/`rejection`/`timing_constraint`/`other_commercial`). Per thread: a machine-advisory state (`unresolved`/`engaged`/`negotiating`/`agreement_observed`/`declined_observed`/`ambiguous`) and a separate creator-confirmed business outcome (`open`/`won`/`lost`/`ghosted`/`uncertain`).
+
+Critical rules carried over from B06/D070/D045:
+
+```text
+offer alone != agreement
+agreement_observed != deal_won
+no reply observed in imported window != machine ghosted (human-confirmed only)
+unknown compensation != unpaid
+creator correction of B06 reply-nature is an overlay, never a B06 rewrite
+```
+
+B07 is local computation over already-stored evidence: zero Gmail API calls, zero new OAuth scopes. Machine inference may eventually be non-deterministic (unlike B06), so every result is provenance-bound and same-input replay must not oscillate current state by default. This contract is provider-neutral — no AI vendor is named or selected.
 
 ### B08 — PLANNED
 Incremental Gmail sync + pilot instrumentation.
@@ -1759,22 +1773,23 @@ A cheap model can be expensive if it hallucinates, fails schemas, needs second p
 If speed matters:
 
 ```text
-1. Finish B06 deterministic reply chronology.
-2. Contract B07 outcome taxonomy.
-3. Benchmark LLM vendors on B07's exact semantic tasks.
-4. Build B08 + historical/ongoing pilot instrumentation.
-5. Decide whether outcome density supports Intelligence V1.
-6. Build C01–C05 only to the level real evidence justifies.
-7. Build Trips + Contact Hub.
-8. Add AI Gateway / Composer.
-9. Add Gmail send + follow-up automation.
-10. Unify Inbox ↔ Pipeline.
-11. Complete Collaboration/Deliverables/Profile/Personal Analytics.
-12. Build coherent production UX.
-13. Integrate Rebill + entitlement audit.
-14. E2E/privacy/security/DataOps.
-15. Paid beta.
-16. Commercial Travel V1.
+1. ~~Finish B06 deterministic reply chronology.~~ Done — B06 merged (PR #38).
+2. ~~Contract B07 outcome taxonomy.~~ Done — D072 accepted.
+3. Benchmark candidate inference approaches — deterministic/rules-based where useful, and model-backed candidates (evaluated on their merits, provider-neutral) — against B07's exact semantic tasks (§3–§8 of the B07 contract). No inference strategy is pre-selected; the benchmark decides.
+4. Use that evidence to decide B07's inference-engine/provider strategy, subject to the separate vendor/privacy approval any external model requires (D072, §19 of the B07 contract).
+5. Implement B07 against the chosen strategy, without coupling durable schema, provenance or human-truth history to one model vendor.
+6. Build B08 + historical/ongoing pilot instrumentation.
+7. Decide whether outcome density supports Intelligence V1.
+8. Build C01–C05 only to the level real evidence justifies.
+9. Build Trips + Contact Hub.
+10. Add AI Gateway / Composer.
+11. Add Gmail send + follow-up automation.
+12. Unify Inbox ↔ Pipeline.
+13. Complete Collaboration/Deliverables/Profile/Personal Analytics.
+14. Integrate Rebill + entitlement audit.
+15. E2E/privacy/security/DataOps.
+16. Paid beta.
+17. Commercial Travel V1.
 ```
 
 Accelerate by:
@@ -1812,6 +1827,7 @@ Important files:
 - `docs/B04_GMAIL_PRIVATE_NORMALIZATION_CONTRACT.md`
 - `docs/B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md`
 - `docs/B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md`
+- `docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`
 - `docs/PERMISSIONS.md`
 - `docs/DATABASE.md`
 
@@ -1823,12 +1839,13 @@ Relevant Gmail migrations:
 0037 — historical import
 0038 — private normalization
 0039 — commercial outreach/targets
-0040 — expected B06 reply chronology
+0040 — reply chronology (B06, merged)
+0041 — expected B07 commercial meaning (RESERVED, not yet implemented)
 ```
 
-At this snapshot 0040 is not yet implemented.
+At this snapshot 0040 is implemented and merged; 0041 does not exist yet.
 
-Note: `MASTER_PLAN_TRACKER.md` still contained stale B05/B06 status at the moment D071 was accepted; the B06 implementation PR is instructed to reconcile B05 DONE / B06 current. The actual state in this document is the current project state.
+Note: `docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md` is the accepted B07 contract (D072); the B07 implementation PR is instructed to reconcile B07 NEXT to B07 DONE in `docs/MASTER_PLAN_TRACKER.md` with its real migration number, PR and merge SHA. The actual state in this document is the current project state.
 
 ---
 
@@ -1847,7 +1864,10 @@ Treat these as accepted unless explicitly reopened:
 - organizations/agencies may be legitimate commercial targets;
 - recipient ≠ target contact ≠ canonical contact;
 - Gmail reply chronology ≠ outcome;
-- no-reply-observed ≠ ghosted;
+- no-reply-observed ≠ ghosted, and this stays true in B07: historical machine processing may never auto-assign `ghosted` — human-confirmed only;
+- an offer ≠ agreement; agreement_observed ≠ deal_won; won ≠ collaboration completed (D045 unchanged);
+- unknown compensation structure ≠ unpaid;
+- creator correction of B06 reply-nature is a B07 overlay, never a B06 rewrite, and a later model/prompt/B06 change never silently overwrites a creator's B07 decision;
 - AI inference never silently becomes verified fact;
 - unknown ≠ zero;
 - no misleading precision;
@@ -1863,8 +1883,8 @@ Treat these as accepted unless explicitly reopened:
 
 Legitimate open questions:
 
-- B06 implementation details within accepted D071;
-- B07 exact outcome taxonomy;
+- B07 implementation details within accepted D072;
+- AI vendor benchmark results and eventual vendor selection for B07;
 - exact network aggregate thresholds/UX;
 - contact provider selection;
 - AI provider selection;

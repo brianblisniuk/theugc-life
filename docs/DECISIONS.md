@@ -2764,3 +2764,151 @@ meaning and creator correction; B08 owns incremental sync.
 
 Full contract, evidence rules, schema shape, evaluation requirements and
 acceptance gates: `docs/B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md`.
+
+## D072 — Gmail commercial meaning is private, multi-axis, provenance-bound and human-correctable (B07)
+
+Status: Accepted — product/architecture strategy locked by the product owner
+for this contract round; implementation (schema, migration, application
+code, model/vendor selection) is separately gated and has not started
+Depends on D067, D068, D069, D070, D071; expected migration
+`0041_gmail_commercial_meaning.sql` (RESERVED number, not implemented)
+
+B06 answered what happened chronologically after a creator's sends —
+which later messages are plausible responses, which are qualifying human
+replies versus automated/delivery noise, and how much time elapsed. B07 is
+the first layer that answers a BUSINESS question over that chronology: what
+commercial meaning is supported by the observed conversation, and what has
+the creator explicitly confirmed or corrected about that meaning.
+
+### Three epistemic layers, never collapsed
+
+```
+OBSERVED COMMUNICATION
+  → MACHINE COMMERCIAL INTERPRETATION
+    → CREATOR CORRECTION / CONFIRMATION
+```
+
+This extends D070's OBSERVED → INTERPRETED → ... → HUMAN-CONFIRMED ladder one
+rung further into commercial meaning. A machine interpretation is never
+presented as creator truth, and a creator's confirmed decision is never
+silently overwritten by a later machine rerun, a model upgrade, or a prompt
+change.
+
+### Five independent taxonomies, none of them CRM state
+
+Message-level machine **commercial disposition** —
+`positive`/`negative`/`neutral`/`mixed`/`ambiguous` — is a BUSINESS
+judgement, not sentiment; politeness alone ("thanks for reaching out") is
+never sufficient for `positive`. Message-level machine **commercial
+signals** are a SET, not a single label, from a bounded V1 vocabulary
+(`interest`/`request_information`/`redirect`/`terms_discussion`/`offer`/
+`agreement`/`rejection`/`timing_constraint`/`other_commercial`), because one
+reply routinely expresses more than one commercial act at once. Thread-level
+machine **commercial state**
+(`unresolved`/`engaged`/`negotiating`/`agreement_observed`/
+`declined_observed`/`ambiguous`) is advisory, never CRM state: an `offer`
+alone is never `agreement_observed`, and a current `declined_observed` may
+be superseded by a later reopening without deleting the earlier observation.
+Creator-confirmed **business outcome**
+(`open`/`won`/`lost`/`ghosted`/`uncertain`) is a separate human axis; `won`
+does not mean the collaboration completed — D045 is unchanged — and B07
+historical machine processing may NEVER auto-assign `ghosted` from B06's
+window-bounded, right-censored absence (D071 §11); for B07, `ghosted` is
+human-confirmed only. Where a creator confirms `lost`, the reason vocabulary
+(`rejected`/`not_a_fit`/`timing`/`other`) is deliberately a strict subset of
+D043's `deal_lost` reasons, omitting `no_reply` on purpose — `ghosted` is not
+a backdoor for asserting D043's `no_reply` from Gmail silence, and any
+future mapping between the two is explicitly not B07. **Commercial/
+compensation structure** (`paid`/`in_kind`/`hybrid`/`unpaid`/`other`/
+`unknown`) never lets `unknown` mean `unpaid`; exact amounts, currency,
+deliverables and payment status remain out of scope for a later Deal/
+Collaboration/Deliverables contract.
+
+### B07 owns creator correction of B06 reply nature, without rewriting B06
+
+A creator may record a human correction of a message's reply nature
+(`human_reply`/`automated`/`delivery`/`not_reply`/`uncertain`) anchored to
+B06's own stable provider-message coordinate. This is an OVERLAY on B06,
+never an update to B06's machine `response_class` — a future B06 rerun may
+change machine belief, but it may never overwrite this creator decision.
+
+Reply nature is also, uniquely among the five human axes, a **machine
+currentness dependency**: it gates whether a message is an eligible input to
+B07 semantic processing at all, so a change to the creator's current reply-
+nature decision (including clearing it) that alters effective eligibility
+makes a prior machine interpretation stale for ordinary effective use, even
+though nothing about B04/B06/the model/prompt changed. The other four human
+axes (disposition, signal set, thread outcome, compensation structure)
+remain overlays/confirmations or independent human truth that never gate or
+rewrite machine currentness this way (full contract, §21).
+
+### The B05 append-only pattern, extended to five axes
+
+All human decisions — message reply nature, message disposition, message
+signal set, thread outcome, thread compensation structure — follow D070's
+proven B05 pattern exactly: immutable decision events, a database-owned
+strictly-increasing `event_seq`, a current projection that can never point
+at a stale or wrong-axis event, an explicit clear/withdraw action recorded
+as a new event rather than a delete, and the same shared locked consent/
+lifecycle fence gating both machine and human writers before either touches
+its table. Message decisions anchor to `(mail_account_id,
+provider_message_id)`; thread decisions anchor to `(mail_account_id,
+provider_thread_id)` — never to a replaceable B04/B06 row id.
+
+### Machine inference may be non-deterministic; B07 does not pretend otherwise
+
+Unlike B06's deterministic rules, B07 machine meaning may eventually use
+non-deterministic model inference. Every successful interpretation is
+provenance-bound to mail account, durable coordinates, exact source digest,
+relevant B06 state/version, B07 schema/transform version, and
+inference-engine/model/prompt identity when applicable — the same
+reconstruct-what-produced-this guarantee D070 already gives B05, extended to
+a world where re-running the computation may not return identical bytes. The
+same input, schema, transform, model and prompt version must not
+automatically oscillate current state by default; a deliberate
+re-evaluation path may exist, but only as an explicit, auditable action.
+
+### Provider-neutral, minimization-first AI policy
+
+This decision does not select an AI vendor and must be implementable without
+naming one. Any future external model use first requires a separate
+vendor/privacy approval (no training on submitted data, acceptable
+retention, no advertising use, input minimization, security, version
+traceability, structured-output reliability) and must send only the minimum
+thread evidence a specific task needs — never the whole mailbox, unrelated
+threads, or unrelated CRM/network history.
+
+### Privacy, CRM and acquisition boundaries are unchanged
+
+Everything B07 stores is G2 (D067). `private_gmail_processing` gates all new
+B07 work under the same locked fence B05/B06 use; `network_intelligence_
+contribution` is irrelevant to B07, which creates zero G3 rows. B07 performs
+zero Gmail API calls, zero new OAuth scopes, zero sending and zero
+incremental sync (B08's domain). B07 writes nothing to `pipeline_items`,
+`outreach_events`, `collaborations`, trip state or canonical hotel/
+organization/contact rows: a positive reply is not a CRM event, a rejection
+is not `deal_lost`, `agreement_observed` is not `deal_won`, a confirmed
+`won` does not auto-create a collaboration, and `ghosted` does not
+auto-close anything. B07 does not reconsider B05's outreach/target/
+canonical-linkage determinations or B06's chronology; it consumes them.
+
+Reason:
+B06 shipped a deterministic, outcome-neutral chronology precisely so a later
+layer could safely attach commercial meaning without re-litigating identity,
+consent or chronology. That later layer needs its own explicit epistemic
+discipline — otherwise the same collapse D070 already prevented once
+(observed fact silently becoming canonical truth, machine output silently
+becoming human truth) recurs one layer up, this time with the added risk of
+non-deterministic model inference and real business consequences (won/lost/
+compensation) if a machine guess is ever mistaken for a creator's word.
+
+Consequence:
+Implementation is gated on this contract being accepted. The B07
+implementation PR reserves migration `0041`, implements the five taxonomies
+and the append-only human-decision pattern above, and updates
+`docs/MASTER_PLAN_TRACKER.md` from B07 NEXT to B07 DONE with its real PR and
+merge SHA.
+
+Full contract, taxonomy, human correction model, provenance model, failure
+matrix and adversarial cases:
+`docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`.
