@@ -546,8 +546,8 @@ convention rather than a guarantee.
 
 ### `superseded_reason`
 Set ONLY by candidate generation, and only to `no_current_blocking_rule`: no
-current blocking rule supports this pair any more. A pending candidate is a claim
-about CURRENT evidence, but `pending` alone does **not** establish generator
+current blocking rule supports this pair. A pending candidate is a claim about
+CURRENT evidence, but `pending` alone does **not** establish generator
 ownership. The generator stands down only its own stale rows:
 `candidate_kind = 'source_identity'` AND `status = 'pending'` AND
 `match_method like 'blocking:%'`. It deletes nothing, rewrites no evidence, and
@@ -2012,6 +2012,255 @@ organization, brand or contact row. `public.is_admin_or_editor()` appears
 nowhere in this migration. Full contract in
 [`B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md`](B05_GMAIL_OUTREACH_COMMERCIAL_TARGET_CONTRACT.md).
 
+## 5m. Gmail private reply chronology (migration 0040)
+
+B06 (D071). The first layer that answers what happened CHRONOLOGICALLY after
+creator-SENT messages in a B05-eligible thread — which later messages are
+plausible responses, which are qualifying human replies versus automated/
+delivery noise or ambiguity, and how much observed time elapsed relative to
+the creator's sends. MACHINE/OBSERVED only — no creator-correction table
+exists in this migration; B07 owns that loop and B06 leaves it a stable
+anchor.
+
+**Stable identity, replaceable interpretation**: `gmail_reply_message_
+observations` keys on `(mail_account_id, provider_message_id)` — the durable
+Gmail coordinate, never `gmail_normalized_messages.id`, which 0038 §7
+deletes-and-recreates under a new id on a raw-payload rebuild.
+`current_normalized_message_id` is an `on delete set null` foreign key to
+that replaceable row, which doubles as the per-message currency signal with
+no extra bookkeeping trigger: it goes `null` the instant B04 invalidates that
+exact message's projection, and a later re-evaluation reconciles the SAME
+stable observation row onto the new projection once it reappears. One row
+exists per message B06 has evaluated in an eligible thread, creator-SENT
+touches included (`response_class = 'creator_sent_touch'`), so a future B07
+correction anchor is never restricted to non-SENT messages only.
+
+**Two axes, never collapsed**: `response_class` (`creator_sent_touch`,
+`qualifying_human_reply`, `automated_response`, `delivery_status`,
+`ambiguous_inbound`, `not_reply`) and `relation_status`
+(`direct_in_reply_to`, `references_chain`, `thread_sequence_only`,
+`ambiguous_reference`, `no_preceding_creator_sent`) are separate columns —
+"this message belongs after a creator send" is never conflated with "a human
+replied". `referenced_creator_sent_provider_message_id` names the
+unambiguous creator-sent parent only when `relation_status` is
+`direct_in_reply_to`/`references_chain`; a duplicate/conflicting
+`Message-ID` match is preserved as `ambiguous_reference` rather than silently
+resolved to one candidate. `chronology_conflict` is true when reference
+evidence says "reply" but `internal_date` places the response at or before
+its own referenced send — the relation survives; a thread's latency built
+from a conflicted reply is `NULL`, never negative (two `CHECK (... >= 0)`
+constraints back this at the schema level, independent of application code).
+
+**Thread-level summary**: `gmail_reply_thread_summaries` is one current,
+replaceable row per eligible thread, computed atomically alongside the
+message observations above from the identical `evidence_digest` fence B05's
+`gmail_outreach_thread_signals` uses (same sha256-over-sorted-`(id,
+source_payload_sha256, provider_sent)`-tuples shape, re-verified under a
+`for key share` lock at commit time). `observation_state` is one of
+`qualifying_human_reply_observed`, `ambiguous_response_observed`,
+`only_automated_or_delivery_observed`, `no_qualifying_response_observed_
+in_window`, `observation_horizon_unknown` — outcome-neutral, never `won`/
+`lost`/`ghosted`/`interested`/`rejected`. Two timing clocks are stored for
+the first qualifying reply: `latency_from_first_creator_sent_ms` (first
+creator-SENT touch in the thread) and `latency_from_latest_creator_sent_ms`
+(the latest creator-SENT touch strictly before that reply) — both `NULL`
+unless `observation_state = 'qualifying_human_reply_observed'` and the
+chronology is uncontradicted. `observed_through_at` is the proven historical
+observation horizon — the greatest `window_end_at` among **completed** B03
+import runs whose thread-work row for this exact provider thread is
+`complete` (`private.gmail_reply_observed_through_at`) — never "latest
+mailbox import end", since a later run may never have fetched this specific
+thread; `observation_state = 'no_qualifying_response_observed_in_window'`
+requires a proven horizon, and `'observation_horizon_unknown'` requires the
+opposite, both enforced by CHECK constraints.
+
+**Eligibility reads B05, writes nothing there**
+(`private.gmail_reply_thread_eligibility`): a current human
+`outreach_confirmed` decision makes a thread eligible regardless of machine
+state; a current human `not_outreach_confirmed` suppresses NEW B06
+processing regardless of machine state; absent a human decision, machine
+`qualified_outreach` is eligible and `needs_review` is eligible for private
+advisory chronology only. Eligibility is re-verified fresh inside
+`gmail_reply_commit_interpretation` under the same transaction as the
+source-evidence fence, so a concurrent B05 human decision racing a B06
+commit is caught, not silently written past. A later ineligibility never
+deletes or rewrites existing B06 rows — retention and permission-to-process
+remain distinct, exactly as D067/D070 already established for other layers.
+
+**The consent/lifecycle fence is REUSED, not reimplemented**:
+`gmail_reply_list_candidates` calls `private.gmail_outreach_may_process`
+(0039 §10b, unlocked/cheap) and `gmail_reply_commit_interpretation` calls
+`private.gmail_outreach_assert_may_process_locked` (0039 §10c, the real
+two-lock transactional fence) DIRECTLY, unmodified. Both functions are
+provably generic despite their name — their bodies touch only
+`public.mail_accounts`/`public.mail_account_consents`, check the exact same
+`'private_gmail_processing'` consent kind B06's own contract requires, and
+contain no B05-specific table reference at all. Reimplementing the identical
+lock-ordering-sensitive logic in 0040 would only risk drifting out of sync
+with B05's copy for zero behavioral gain.
+
+**Deletion**: `public.assert_gmail_reply_data_absent_when_deleted` extends
+D067's invariant with the identical deferred-constraint-trigger shape B05
+uses — a mail account cannot reach `deleted` while any `gmail_reply_*` row
+remains. `gmail_reply_purge_for_deletion` removes B06's own layer on an
+explicit, running, in-scope deletion request; it never touches B01/B03/B04/
+B05's own rows, exactly like B05's purge function never touches B03/B04's.
+
+**CONSOLIDATED CLOSURE PASS (same migration, 0040 amended in place before
+merge — no 0041)**: an internal pre-launch hardening pass moved several
+literal facts and the entire thread summary from caller-trusted JSON to
+database-derived truth, and closed a real eligibility-race gap a plain
+re-SELECT could not close.
+
+- **The eligibility-race fence is now a REAL lock, not just a fresh read**:
+  `gmail_reply_commit_interpretation` takes `for update` on
+  `public.mail_accounts` immediately after `assert_may_process_locked`'s own
+  `for share` (same relative lock order every B05/B06 caller already uses,
+  so no new deadlock against B01's consent-withdrawal/deletion-start
+  writers). This forces total serialization against every other writer that
+  also locks that row — a concurrent B05 human rejection, a concurrent
+  machine-eligibility change, or another B06 commit on the same account —
+  so the immediately-following eligibility re-check is provably fresh, not
+  merely likely to be. Two commits racing the SAME account is the one live
+  self-deadlock this creates (both hold `for share`, both then request `for
+  update`); Postgres detects it (`40P01`) and aborts one side, which the
+  service layer (`commitInterpretation`) treats exactly like `stale_source`
+  and retries.
+- **The commit RPC now derives literal facts itself, never trusts a caller
+  copy** (closure pass, contract §14 hardened): `internal_date`,
+  `source_payload_sha256`, `current_normalized_message_id`, and — for every
+  non-SENT message — `latest_preceding_creator_sent_provider_message_id`/
+  `_at` and `chronology_conflict` are all computed from the locked, current
+  `gmail_normalized_messages` row inside the commit function. A caller
+  claiming `response_class = 'creator_sent_touch'` for an actually non-SENT
+  message (or the reverse) is refused with a raised exception, never
+  silently coerced. `referenced_creator_sent_provider_message_id` (a
+  genuinely TS-owned semantic choice from Message-ID evidence) is validated
+  — must resolve to a current, creator-sent message in this thread — but
+  never re-derived; a referenced send's timestamp landing at or after the
+  candidate's own is the EXPECTED `chronology_conflict` case, not a
+  rejection.
+- **Exact set equality, enforced before any write**: the commit payload must
+  name exactly one observation per currently-locked message — no missing
+  message, no duplicate `provider_message_id`, no foreign id from another
+  thread or account — checked via plain `SELECT`s before either INSERT
+  statement runs, so a violation refuses the WHOLE commit with zero partial
+  writes (contract §12/§13, "validate everything, then write everything").
+- **The thread summary is DERIVED, not accepted**: `gmail_reply_commit_
+  interpretation` no longer takes a `p_thread_summary` parameter at all —
+  first creator-sent time, first qualifying-reply time, the creator-send
+  count, and both latency clocks are computed inside the function from the
+  observation rows it just wrote, plus a freshly-recomputed `private.
+  gmail_reply_observed_through_at` (never a caller-supplied horizon
+  reading). A caller cannot invent timing arithmetic this function does not
+  itself recompute.
+- **Equal-time ties are first-class, not silently resolved** (`first_
+  creator_sent_tied`, `first_qualifying_human_reply_tied`, `latest_creator_
+  sent_before_reply_tied`, all `boolean not null default false`): when two
+  or more messages share the deciding timestamp, the paired
+  `_provider_message_id` column is `NULL` while the timestamp/latency/count
+  — which depend only on the KNOWN timestamp, not on which message "wins" a
+  lexical tie-break — stay fully populated. Enforced by three CHECK
+  constraints binding each `_tied` flag to its id column.
+- **`text_transform_version` honestly embeds its upstream dependency**:
+  `TS's TEXT_TRANSFORM_VERSION` is now
+  `gmail_reply_text_transform_v1+<B05's CLASSIFIER_INPUT_TRANSFORM_VERSION>`
+  — B06 reuses B05's quote/signature-stripping transform unmodified, so a
+  future bump to B05's own version string changes this one automatically,
+  which is what lets it participate in B06's existing staleness checks. The
+  column's `CHECK` shape widened to allow `.`/`+` for this one column only
+  (the other two rule-version columns are unaffected).
+- **`gmail_reply_list_candidates` also detects horizon staleness**: a stored
+  summary whose `observed_through_at` no longer matches the CURRENT
+  `private.gmail_reply_observed_through_at(...)` reading is re-offered
+  (`horizon_stale`, a dimension independent of `source_stale`/`rules_stale`)
+  — without this, a thread stuck at `observation_horizon_unknown` because no
+  B03 run had completed yet would never be re-evaluated once a later run
+  proves a horizon, even though zero message evidence changed.
+- **Retained-vs-current signaling**: `current_summary_is_stale` (returned by
+  `gmail_reply_get_thread_evidence`) and `stale_thread_summaries` (returned by
+  `gmail_reply_status`) distinguish RETAINED history from CURRENTLY-VALID
+  history. The final shared definition below supersedes this closure pass's
+  earlier partial comparison and covers all seven independent dependencies:
+  B04 source evidence, B03 observation horizon, B05 eligibility, routing
+  context, relation-rule version, classification-rule version and text-
+  transform/shared-transform version. Stale retained history is never deleted
+  merely for becoming stale; callers are told not to present it as current.
+
+**FINAL CLOSURE + AUDIT CORRECTION (same migration, further amended before
+merge — still no 0041)**: the external architectural review first found three
+remaining invariants the closure pass above did not fully close — the mailbox's
+own routing address lived outside the fence; a claimed "true no-op" replay could
+still move `evaluated_at`/`updated_at`; and the three read surfaces had driftable
+staleness formulas. A final external audit then found two narrower implementation
+defects in the replay check's ordering/acceptance criterion and in routing-
+normalization parity. The final state below includes both correction rounds.
+
+- **The routing address is now a FENCED, normalized dependency, not a silent
+  read** (Blocker A + final audit correction):
+  `private.gmail_reply_routing_context_digest(mail_account_id)` fingerprints
+  `mail_accounts.email_address` after the exact routing-identity normalization:
+  trim ASCII space characters from both ends, then lowercase; NULL uses the
+  explicit `E'\x00_no_routing_email'` sentinel. The TypeScript classifier uses
+  `normalizeRoutingEmail` with those same semantics, while PostgreSQL
+  independently mirrors the contract with `lower(btrim(email_address))`.
+  Neither side performs Gmail-dot normalization, plus-tag stripping or alias
+  inference. They are two implementations of one normalization contract, and
+  parity is tested — the database does not call the TypeScript helper. A case/
+  ASCII-space-only storage change therefore leaves both classification identity
+  and `routing_context_digest` unchanged; a genuinely different address makes
+  the stored summary stale and fences a stale-context commit. The digest is one
+  of the dimensions `private.gmail_reply_thread_summary_is_stale` compares and
+  `gmail_reply_list_candidates` reports it as `routing_stale`.
+  `CLASSIFICATION_RULE_VERSION` was bumped from
+  `gmail_reply_classification_rules_v1` to `_v2` because this changed reachable
+  classifier behavior rather than merely refactoring an implementation detail.
+- **An exact replay is a REAL, DB-decided zero-write no-op only after the whole
+  incoming projection has proved valid and identical** (Blocker B + final audit
+  correction). The commit path first passes the lifecycle/consent fence, routing
+  and eligibility fence, B04 source-digest fence, exact-set-equality check,
+  actual `provider_sent` ↔ `response_class` shape validation, and referenced-
+  creator-send validation. Only after those checks may it compare the stored
+  context signature (`evidence_digest`, `routing_context_digest`,
+  `observed_through_at`, `eligibility`, and all three rule/transform versions).
+  If that context matches, the incoming TS-owned semantic projection is then
+  compared per message against the currently stored observations across
+  `response_class`, `relation_status`, and
+  `referenced_creator_sent_provider_message_id`. Only a semantically IDENTICAL
+  payload returns `{result: 'already_current', evidence_digest, committed:
+  false}` and performs ZERO writes — not even an observation upsert, timestamp
+  move or Postgres row-version (`xmin`) change. A structurally-valid but
+  semantically DIFFERENT payload under otherwise-identical context is a caller/
+  implementation defect and raises `interpretation_mismatch`, also with zero
+  writes; matching context alone is never sufficient for `already_current`.
+  The service layer surfaces the true no-op as ordinary `{result: 'ok',
+  committed: false}`.
+- **ONE definition of current-vs-stale, not three** (Blocker C): `private.
+  gmail_reply_thread_summary_is_stale(mail_account_id, normalized_thread_id,
+  relation_version, classification_version, text_transform_version)` is the
+  SOLE comparison — covering B04 source evidence, B03 observation horizon,
+  B05 eligibility, routing context, and all three rule/transform versions —
+  called by `gmail_reply_list_candidates` (the offer decision),
+  `gmail_reply_get_thread_evidence` (`current_summary_is_stale`), and
+  `gmail_reply_status` (`stale_thread_summaries`). `gmail_reply_get_thread_
+  evidence` and `gmail_reply_status` both take the three rule/transform versions
+  as REQUIRED parameters (no default), so currentness is judged against the
+  versions actually running now rather than whatever a stored row remembers.
+  Any future dependency this formula should compare needs to be added only once.
+
+Five `SECURITY DEFINER` functions in `public`, all `EXECUTE`-granted to
+`service_role` alone — there is no human-writer RPC in this round:
+`gmail_reply_list_candidates`, `gmail_reply_get_thread_evidence`,
+`gmail_reply_commit_interpretation` (the sole machine writer),
+`gmail_reply_status`, `gmail_reply_purge_for_deletion`.
+
+**0040 writes nothing to `public.pipeline_items`, `public.outreach_events`
+or `public.collaborations`**, creates or mutates no canonical hotel,
+organization, brand or contact row, and performs zero Gmail network
+activity, zero OAuth changes, zero quota consumption — every input already
+lives in B03/B04/B05's tables. Full contract in
+[`B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md`](B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md).
+
 **EXTERNAL AUDIT AMENDMENT #2** (six further findings, D070 unchanged):
 `gmail_outreach_observed_recipients` identity is now the pair (durable
 coordinate, `recipient_fingerprint` over material evidence) — a materially
@@ -2553,5 +2802,25 @@ At minimum:
     fingerprint) avoids forcing wholesale re-evaluation on an unrelated
     catalog write. Writes nothing to the live CRM ledger and creates or
     mutates no canonical row. See §5l
+26. Gmail private reply chronology (0040) — MACHINE/OBSERVED only, no
+    creator-correction table: what happened chronologically after
+    creator-SENT messages in a B05-eligible thread. Stable message identity
+    is the durable `(mail_account_id, provider_message_id)` coordinate, never
+    a replaceable B04 row id, with per-message currency signaled by an
+    `on delete set null` foreign key rather than a separate bookkeeping
+    trigger. Reply-relationship evidence (`direct_in_reply_to`/`references_
+    chain`/`thread_sequence_only`/`ambiguous_reference`/`no_preceding_
+    creator_sent`) is a separate axis from human/automated/delivery
+    classification; a duplicate Message-ID is preserved as ambiguity, never
+    silently resolved. Two timing clocks (first-creator-send and
+    latest-creator-send to the first qualifying human reply) are computed
+    only when chronology is uncontradicted, never negative. Absence is
+    right-censored by a proven historical observation horizon derived
+    exclusively from completed B03 import runs whose thread-work row for
+    that exact provider thread is `complete` — never "ghosted". The
+    consent/lifecycle fence is the identical B05 function, called directly
+    and unmodified rather than reimplemented. Performs zero Gmail network
+    activity and writes nothing to the live CRM ledger or any canonical row.
+    See §5m
 
 Every migration must be reproducible from an empty database.

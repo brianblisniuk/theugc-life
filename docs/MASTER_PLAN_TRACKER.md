@@ -290,8 +290,8 @@ is B02.
 | B02 | **DONE** — PR #34, merge `f8d088b9` | Gmail OAuth connection / reconnect / disconnect | minimum approved scopes; secrets server-only; DB permission tests |
 | B03 | **DONE** — PR #35, merge `1a579ca1` | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | **DONE** — PR #36, merge `773556f38bfa17ac4b078efae51953024babab52` | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
-| B05 | **CURRENT PR** | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
-| B06 | GATED | sent/reply/time-to-reply extraction | qualifying human reply semantics explicit; auto/delivery noise separated |
+| B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
+| B06 | **CURRENT PR** | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
 | B07 | GATED | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
 | B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
@@ -618,12 +618,20 @@ over from before the merge, caught and corrected in this same round.
 `773556f38bfa17ac4b078efae51953024babab52` into `main`, after an external
 audit amendment round and explicit human acceptance of D069.
 
+**B05 (PR #37) is merged**, as merge commit
+`029d19a4236ea042b03cfcc0ba7d63a376a55691` into `main`, after eight external
+audit amendment rounds (canonical-independent private target facts,
+catalog-independent coordinated-name segmentation, current-only machine-state
+reads, and a final CI-stabilization round for an unrelated pre-existing B03
+timing flake) and explicit human acceptance.
+
 The open implementation block is:
 
-> **B05 — Gmail private creator-outreach interpretation: qualified-outreach
-> classification, private commercial-target observations, observed
-> recipients and target-contact interpretation. Open PR, not merged, awaiting
-> external audit and the human merge gate.**
+> **B06 — Gmail private reply chronology (D071): stable provider-message
+> reply observations, reply-relationship evidence separated from human/
+> automated/delivery classification, two creator-send-to-reply timing
+> clocks, and a window-bounded, right-censored observation horizon. Open PR,
+> not merged, awaiting external audit and the human merge gate.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

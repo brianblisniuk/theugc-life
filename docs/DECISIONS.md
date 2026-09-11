@@ -2734,3 +2734,33 @@ history may be promoted into the live creator workflow ledger (a future,
 separately contracted feature); any real-world precision/recall threshold for
 B05's classifiers, since synthetic evaluation measures implementation
 correctness only and no accepted source fixes a production quality bar.
+
+## D071 — Gmail reply chronology is private, message-anchored, window-bounded and outcome-neutral (B06)
+
+Status: Accepted — explicitly approved by human owner on 2026-09-07
+Depends on D067, D068, D069, D070; implemented by migration
+`0040_gmail_reply_chronology.sql`
+
+This entry mirrors, without changing, the concise decision record in
+`docs/B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md` §20. That document is the
+normative source; this entry exists so the decision is discoverable from
+`docs/DECISIONS.md` alongside every other accepted product/architecture
+decision.
+
+B06 may interpret current stored Gmail evidence only when current
+private-processing permission permits new G2 work. It preserves every
+creator-SENT message as a touch, separates reply-relationship evidence from
+human/automated/delivery classification, stores stable provider-message
+observations plus replaceable machine interpretation, computes both
+first-send-to-human-reply and latest-touch-to-human-reply latency when
+chronology is valid, and treats absence as right-censored by the proven
+historical observation horizon. `provider_sent = false` alone never means
+reply; automation ambiguity is explicit; canonical identity is unnecessary
+for a reply to exist; no reply classification becomes sentiment,
+negotiation, ghosting, CRM state or network intelligence in B06. B03's
+current omission of `Auto-Submitted` is an acknowledged evidence ceiling,
+not permission to infer humanity from absence. B07 owns reply/outcome
+meaning and creator correction; B08 owns incremental sync.
+
+Full contract, evidence rules, schema shape, evaluation requirements and
+acceptance gates: `docs/B06_GMAIL_REPLY_CHRONOLOGY_CONTRACT.md`.
