@@ -546,8 +546,8 @@ convention rather than a guarantee.
 
 ### `superseded_reason`
 Set ONLY by candidate generation, and only to `no_current_blocking_rule`: no
-current blocking rule supports this pair any more. A pending candidate is a claim
-about CURRENT evidence, but `pending` alone does **not** establish generator
+current blocking rule supports this pair. A pending candidate is a claim about
+CURRENT evidence, but `pending` alone does **not** establish generator
 ownership. The generator stands down only its own stale rows:
 `candidate_kind = 'source_identity'` AND `status = 'pending'` AND
 `match_method like 'blocking:%'`. It deletes nothing, rewrites no evidence, and
@@ -2177,68 +2177,76 @@ re-SELECT could not close.
   — without this, a thread stuck at `observation_horizon_unknown` because no
   B03 run had completed yet would never be re-evaluated once a later run
   proves a horizon, even though zero message evidence changed.
-- **`current_summary_is_stale`** (returned by `gmail_reply_get_thread_
-  evidence`) and **`stale_thread_summaries`** (returned by `gmail_reply_
-  status`) distinguish a RETAINED summary from a CURRENTLY-VALID one — true
-  whenever the stored `evidence_digest`/`observed_through_at`/`eligibility`
-  no longer matches the fresh values computed in the same call. Retained
-  history is never deleted on becoming stale; callers are simply told not to
-  present it as current.
+- **Retained-vs-current signaling**: `current_summary_is_stale` (returned by
+  `gmail_reply_get_thread_evidence`) and `stale_thread_summaries` (returned by
+  `gmail_reply_status`) distinguish RETAINED history from CURRENTLY-VALID
+  history. The final shared definition below supersedes this closure pass's
+  earlier partial comparison and covers all seven independent dependencies:
+  B04 source evidence, B03 observation horizon, B05 eligibility, routing
+  context, relation-rule version, classification-rule version and text-
+  transform/shared-transform version. Stale retained history is never deleted
+  merely for becoming stale; callers are told not to present it as current.
 
-**FINAL CLOSURE (same migration, further amended before merge — still no
-0041)**: an external architectural review of the closure pass above found
-three remaining invariants it did not fully close: the mailbox's own routing
-address was a classification dependency living entirely outside the fence
-above; a claimed "true no-op" replay could still move `evaluated_at`/
-`updated_at`; and the three read surfaces computed staleness from three
-independently-written formulas that were not actually equivalent.
+**FINAL CLOSURE + AUDIT CORRECTION (same migration, further amended before
+merge — still no 0041)**: the external architectural review first found three
+remaining invariants the closure pass above did not fully close — the mailbox's
+own routing address lived outside the fence; a claimed "true no-op" replay could
+still move `evaluated_at`/`updated_at`; and the three read surfaces had driftable
+staleness formulas. A final external audit then found two narrower implementation
+defects in the replay check's ordering/acceptance criterion and in routing-
+normalization parity. The final state below includes both correction rounds.
 
-- **The routing address is now a FENCED dependency, not a silent read**
-  (Blocker A): `private.gmail_reply_routing_context_digest(mail_account_id)`
-  normalizes `mail_accounts.email_address` — lowercased/trimmed, or an
-  explicit `E'\x00_no_routing_email'` sentinel when null — to a sha256
-  fingerprint in the SAME shape as `evidence_digest`, and
-  `gmail_reply_thread_summaries.routing_context_digest` stores it alongside
-  the summary it produced. `gmail_reply_get_thread_evidence` returns the
-  CURRENT fingerprint; a caller passes it back as `gmail_reply_commit_
-  interpretation`'s new required `p_expected_routing_context_digest`. The
-  commit function computes the CURRENT fingerprint from the `email_address`
-  it already read under its own `for update` lock (the SAME read that fences
-  the B05-eligibility race — no second lock acquisition) and refuses as
-  `stale_source` on any mismatch, writing nothing. A routing-address change
-  therefore behaves exactly like a source-evidence change: it fences a
-  stale-context commit, it is one of the dimensions `private.gmail_reply_
-  thread_summary_is_stale` compares, and `gmail_reply_list_candidates`
-  reports it as its own `routing_stale` flag. Case/whitespace-only changes
-  normalize to the identical digest — never spuriously flagged stale.
-- **An exact replay is now a REAL, DB-decided zero-write no-op, not merely a
-  claim** (Blocker B): immediately after the source-evidence fence succeeds
-  — under the SAME lock/context validation that would otherwise perform the
-  write — `gmail_reply_commit_interpretation` compares the freshly computed
+- **The routing address is now a FENCED, normalized dependency, not a silent
+  read** (Blocker A + final audit correction):
+  `private.gmail_reply_routing_context_digest(mail_account_id)` fingerprints
+  `mail_accounts.email_address` after the exact routing-identity normalization:
+  trim ASCII space characters from both ends, then lowercase; NULL uses the
+  explicit `E'\x00_no_routing_email'` sentinel. The TypeScript classifier uses
+  `normalizeRoutingEmail` with those same semantics, while PostgreSQL
+  independently mirrors the contract with `lower(btrim(email_address))`.
+  Neither side performs Gmail-dot normalization, plus-tag stripping or alias
+  inference. They are two implementations of one normalization contract, and
+  parity is tested — the database does not call the TypeScript helper. A case/
+  ASCII-space-only storage change therefore leaves both classification identity
+  and `routing_context_digest` unchanged; a genuinely different address makes
+  the stored summary stale and fences a stale-context commit. The digest is one
+  of the dimensions `private.gmail_reply_thread_summary_is_stale` compares and
+  `gmail_reply_list_candidates` reports it as `routing_stale`.
+  `CLASSIFICATION_RULE_VERSION` was bumped from
+  `gmail_reply_classification_rules_v1` to `_v2` because this changed reachable
+  classifier behavior rather than merely refactoring an implementation detail.
+- **An exact replay is a REAL, DB-decided zero-write no-op only after the whole
+  incoming projection has proved valid and identical** (Blocker B + final audit
+  correction). The commit path first passes the lifecycle/consent fence, routing
+  and eligibility fence, B04 source-digest fence, exact-set-equality check,
+  actual `provider_sent` ↔ `response_class` shape validation, and referenced-
+  creator-send validation. Only after those checks may it compare the stored
   context signature (`evidence_digest`, `routing_context_digest`,
-  `observed_through_at`, `eligibility`, and all three rule/transform
-  versions) against the exact values already stored on the current summary
-  row. An exact match returns `{result: 'already_current', evidence_digest,
-  committed: false}` and performs ZERO writes — not even the message-
-  observation upsert — so no `evaluated_at`, no `updated_at`, and no row's
-  own Postgres row version move. The service layer (`commitInterpretation`)
-  surfaces this as an ordinary `{result: 'ok', committed: false}`, never a
-  distinct caller-visible result variant, since callers already only care
-  whether a NEW projection was written.
+  `observed_through_at`, `eligibility`, and all three rule/transform versions).
+  If that context matches, the incoming TS-owned semantic projection is then
+  compared per message against the currently stored observations across
+  `response_class`, `relation_status`, and
+  `referenced_creator_sent_provider_message_id`. Only a semantically IDENTICAL
+  payload returns `{result: 'already_current', evidence_digest, committed:
+  false}` and performs ZERO writes — not even an observation upsert, timestamp
+  move or Postgres row-version (`xmin`) change. A structurally-valid but
+  semantically DIFFERENT payload under otherwise-identical context is a caller/
+  implementation defect and raises `interpretation_mismatch`, also with zero
+  writes; matching context alone is never sufficient for `already_current`.
+  The service layer surfaces the true no-op as ordinary `{result: 'ok',
+  committed: false}`.
 - **ONE definition of current-vs-stale, not three** (Blocker C): `private.
   gmail_reply_thread_summary_is_stale(mail_account_id, normalized_thread_id,
-  relation_version, classification_version, text_transform_version)` is now
-  the SOLE comparison — covering B04 source evidence, B03 observation
-  horizon, B05 eligibility, routing context, and all three rule/transform
-  versions — called by `gmail_reply_list_candidates` (the offer decision,
-  replacing hand-rolled OR conditions), `gmail_reply_get_thread_evidence`
-  (`current_summary_is_stale`), and `gmail_reply_status`
-  (`stale_thread_summaries`). `gmail_reply_get_thread_evidence` and
-  `gmail_reply_status` both now take the three rule/transform versions as
-  REQUIRED parameters (no default) — the caller already knows the versions
-  actually running now, and a silent default could otherwise mask a caller
-  that forgot to pass them and get a wrong "always current" answer. Any
-  future dependency this formula should compare need only be added ONCE.
+  relation_version, classification_version, text_transform_version)` is the
+  SOLE comparison — covering B04 source evidence, B03 observation horizon,
+  B05 eligibility, routing context, and all three rule/transform versions —
+  called by `gmail_reply_list_candidates` (the offer decision),
+  `gmail_reply_get_thread_evidence` (`current_summary_is_stale`), and
+  `gmail_reply_status` (`stale_thread_summaries`). `gmail_reply_get_thread_
+  evidence` and `gmail_reply_status` both take the three rule/transform versions
+  as REQUIRED parameters (no default), so currentness is judged against the
+  versions actually running now rather than whatever a stored row remembers.
+  Any future dependency this formula should compare needs to be added only once.
 
 Five `SECURITY DEFINER` functions in `public`, all `EXECUTE`-granted to
 `service_role` alone — there is no human-writer RPC in this round:
