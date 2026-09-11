@@ -1775,17 +1775,17 @@ If speed matters:
 ```text
 1. ~~Finish B06 deterministic reply chronology.~~ Done — B06 merged (PR #38).
 2. ~~Contract B07 outcome taxonomy.~~ Done — D072 accepted.
-3. Implement B07 (deterministic V1 baseline first; no vendor call required to ship the taxonomy).
-4. Benchmark LLM vendors on B07's exact semantic tasks.
-5. Build B08 + historical/ongoing pilot instrumentation.
-6. Decide whether outcome density supports Intelligence V1.
-7. Build C01–C05 only to the level real evidence justifies.
-8. Build Trips + Contact Hub.
-9. Add AI Gateway / Composer.
-10. Add Gmail send + follow-up automation.
-11. Unify Inbox ↔ Pipeline.
-12. Complete Collaboration/Deliverables/Profile/Personal Analytics.
-13. Build coherent production UX.
+3. Benchmark candidate inference approaches — deterministic/rules-based where useful, and model-backed candidates (evaluated on their merits, provider-neutral) — against B07's exact semantic tasks (§3–§8 of the B07 contract). No inference strategy is pre-selected; the benchmark decides.
+4. Use that evidence to decide B07's inference-engine/provider strategy, subject to the separate vendor/privacy approval any external model requires (D072, §19 of the B07 contract).
+5. Implement B07 against the chosen strategy, without coupling durable schema, provenance or human-truth history to one model vendor.
+6. Build B08 + historical/ongoing pilot instrumentation.
+7. Decide whether outcome density supports Intelligence V1.
+8. Build C01–C05 only to the level real evidence justifies.
+9. Build Trips + Contact Hub.
+10. Add AI Gateway / Composer.
+11. Add Gmail send + follow-up automation.
+12. Unify Inbox ↔ Pipeline.
+13. Complete Collaboration/Deliverables/Profile/Personal Analytics.
 14. Integrate Rebill + entitlement audit.
 15. E2E/privacy/security/DataOps.
 16. Paid beta.

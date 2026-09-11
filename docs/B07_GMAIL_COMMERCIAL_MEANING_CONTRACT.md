@@ -193,6 +193,8 @@ Human truth must be independently recordable for each of these five axes — nev
 
 A decision on one axis must not fabricate a decision on another: confirming thread outcome `won` does not imply any particular message disposition, and confirming a message as `human_reply` does not imply any disposition or signal for that same message.
 
+Axis A carries one additional, narrow responsibility the other four axes do not: because reply nature gates whether a message is an eligible input to B07 semantic processing at all (§15), a creator's current Axis A decision is also a **machine currentness dependency** (§21) — a change that alters effective eligibility makes a prior machine interpretation stale for ordinary effective use. Axes B, C, D and E are overlays/confirmations of an existing machine value (or independent human thread truth, for D) and never rewrite, and never gate the currentness of, the machine interpretation they sit alongside.
+
 For axis C (signal sets), a correction REPLACES the full human-confirmed set for that decision event, rather than applying untraceable incremental add/remove mutations — the same "replace the whole set, event by event" discipline the disposition, outcome and structure axes already get for free by being single-valued.
 
 ---
@@ -271,7 +273,7 @@ If a creator has a current B07 human reply-nature decision (§9) for that messag
 
 - `human_reply` establishes human-reply eligibility for B07 semantic meaning;
 - `automated`, `delivery`, or `not_reply` SUPPRESS that message from effective human-reply semantics — B07 must not compute disposition/signals for a message the creator has confirmed is not a human reply;
-- `uncertain` must NOT be treated as confirmed human — it behaves like the absence of a correction for eligibility purposes (falling back to B06's own `qualifying_human_reply` classification), while still being visibly recorded as the creator's stated uncertainty.
+- `uncertain` must NOT be treated as confirmed human — it behaves like the absence of a correction for eligibility purposes (falling back to B06's own `qualifying_human_reply` classification), while still being visibly recorded as the creator's stated uncertainty. Machine advisory processing may still proceed on that fallback basis, but an effective read must never collapse "machine processing used the fallback" into "the creator confirmed human reply nature" — the creator's Axis A truth remains `uncertain`, displayed as such alongside whatever machine belief exists.
 
 This overlay never mutates B06. A message B06 currently classifies as `qualifying_human_reply` with no B07 correction, or with an `uncertain` correction, remains eligible for B07 semantic processing on B06's own classification.
 
@@ -363,10 +365,38 @@ B07's current machine interpretation must become stale when any dependency that 
 - B04 source message content identity;
 - B06 reply-nature/currentness/version dependencies;
 - B05 commercial eligibility / current human outreach decision, where applicable;
+- the current B07 human reply-nature decision for the message (Axis A, §9/§15), whenever it affects effective human-reply eligibility for that message;
 - B07 semantic schema version;
 - B07 text/input transform version;
 - inference model/provider version;
 - prompt/instruction version.
+
+### Axis A (human reply-nature) is a machine-currentness dependency; axes B–E are not
+
+§15 establishes that the creator's current Axis A decision changes effective human-reply eligibility. Because eligibility is a precondition for computing disposition/signals at all, a current B07 machine message/thread interpretation must be provenance/currentness-bound to the effective reply-nature basis it was computed against. That basis distinguishes at minimum:
+
+- no current human reply-nature decision (B06's own `qualifying_human_reply` governs eligibility);
+- current `human_reply`;
+- current `automated`;
+- current `delivery`;
+- current `not_reply`;
+- current `uncertain` (behaves as no confirmed correction for eligibility purposes, per §15, while remaining visibly recorded as the creator's stated uncertainty);
+- current CLEAR/WITHDRAW / no active override (equivalent to no current decision).
+
+A durable human-decision identity/version — e.g. the current Axis A decision event's identity/`event_seq` — is the natural implementation-time currentness key for this dependency. This contract does not choose the schema.
+
+**Currentness consequence:** if the current Axis A basis changes in a way that changes effective eligibility, any dependent B07 machine message/thread interpretation computed under the prior basis must no longer be presented as CURRENT for ordinary effective use. Candidate selection, ordinary reads, and status/reporting surfaces must agree on this (the single-shared-currentness-definition recommendation below applies here too). The stale interpretation may remain stored for history/provenance (§13); it must never masquerade as the current effective result. For example:
+
+- `qualifying_human_reply` with no override → machine semantics may be current;
+- creator sets `not_reply` → dependent machine semantics become suppressed/stale for ordinary effective use;
+- creator changes `not_reply` → `human_reply` → eligible again; the message becomes newly eligible for evaluation against that new effective input, subject to §14's no-oscillation discipline (a genuine eligibility change is a different input, not a same-input replay);
+- creator CLEARs the override → processing returns to whatever B06's CURRENT classification supports, and currentness must again reflect that effective input.
+
+This dependency is deliberately narrow and must not be generalized into "every human decision rewrites or gates machine state" (§10's axis table is otherwise unchanged):
+
+- **Axis A (reply nature)** participates in effective eligibility and therefore in machine currentness, exactly as above.
+- **Axis B (disposition)**, **Axis C (signal set)**, and **Axis E (compensation structure)** remain human overlays/confirmations of an existing machine value (§10) — they never rewrite the stored machine disposition, signal set, or interpretation they overlay, and machine and human beliefs stay separately inspectable. Human truth wins only for user-facing claims on the axis the creator actually decided.
+- **Axis D (thread business outcome)** is independent human thread truth (§6) and never rewrites the machine commercial state (§5).
 
 **Recommendation, not yet authorized to implement:** ONE authoritative currentness definition, used consistently by candidate selection, ordinary reads, and status/reporting surfaces — never independently-written, driftable formulas per surface. This directly extends B06's own hard-won lesson (D071's FINAL CLOSURE/AUDIT CORRECTION rounds): B06 shipped, was externally audited twice, and both audit rounds found exactly this failure mode — a shared staleness definition computed once and consumed everywhere, versus multiple formulas covering overlapping-but-not-identical dependency sets that silently drift apart. B07 should adopt the single-shared-definition pattern from the start rather than rediscovering the same defect. This contract records the recommendation; it does not implement it.
 
@@ -443,6 +473,7 @@ Historical Gmail → live workspace materialization remains a separate, future, 
 - B04 content changes → invalidates dependent B07 machine interpretation (§21).
 - B06 classification changes → invalidates dependent B07 machine interpretation (§21), but never a creator's B07 decision (§22).
 - Prompt/model version changes → invalidates dependent B07 machine interpretation (§21), but never a creator's B07 decision (§22).
+- Creator changes/clears Axis A (reply nature) in a way that changes effective eligibility → invalidates dependent B07 machine interpretation for ordinary effective use, even though nothing about B04/B06/the model/prompt changed (§21); axes B–E never invalidate machine currentness this way (§21).
 
 **CONCURRENCY**
 - Model inference races a creator correction → the correction is authoritative regardless of arrival order once both exist; the machine layer never overwrites it (§9, §11 fence discipline mirrors B05 §17a/§15).
@@ -532,6 +563,6 @@ Those require later, separately accepted contracts.
 
 ## 29. D072 concise decision record
 
-> **D072 — Gmail commercial meaning is private, multi-axis, provenance-bound and human-correctable.** B07 interprets B06's already-established reply chronology to answer what business meaning is supported by a commercially relevant Gmail thread, and what the creator has explicitly confirmed or corrected about that meaning — observed communication, machine commercial interpretation and creator correction remain three separate epistemic layers, never collapsed. Message-level disposition (`positive`/`negative`/`neutral`/`mixed`/`ambiguous`) and a signal SET (`interest`/`request_information`/`redirect`/`terms_discussion`/`offer`/`agreement`/`rejection`/`timing_constraint`/`other_commercial`) are machine-advisory only. Thread-level machine state (`unresolved`/`engaged`/`negotiating`/`agreement_observed`/`declined_observed`/`ambiguous`) is never CRM state: an offer is never agreement, and a decline is never permanent merely because it is current. Human business outcome (`open`/`won`/`lost`/`ghosted`/`uncertain`) is a separate, creator-confirmed axis; `won` does not mean collaboration completion (D045 unchanged), and B07 historical processing may never auto-assign `ghosted` from B06's window-bounded absence. Compensation structure (`paid`/`in_kind`/`hybrid`/`unpaid`/`other`/`unknown`) never lets `unknown` mean `unpaid`. B07 owns creator correction of B06's message reply-nature (`human_reply`/`automated`/`delivery`/`not_reply`/`uncertain`) as a durable overlay that a future B06 rerun can never overwrite. All human decisions follow B05's append-only pattern — immutable events, database-owned `event_seq`, a current projection, explicit clear/withdraw as a new event, machine writers never touching human tables — anchored to durable provider message/thread coordinates, never a replaceable B04/B06 row id. Machine inference, unlike B06's deterministic rules, may be non-deterministic; every successful interpretation is provenance-bound to source digest, B06 state/version, B07 schema/transform version, and inference-engine/model/prompt identity when applicable, and the same input must not oscillate current state by default. B07 performs zero Gmail API calls, zero new OAuth scopes, zero CRM materialization, and creates zero G3 rows; this decision does not select an AI vendor and requires input minimization and a separate privacy/vendor approval before any external model call.
+> **D072 — Gmail commercial meaning is private, multi-axis, provenance-bound and human-correctable.** B07 interprets B06's already-established reply chronology to answer what business meaning is supported by a commercially relevant Gmail thread, and what the creator has explicitly confirmed or corrected about that meaning — observed communication, machine commercial interpretation and creator correction remain three separate epistemic layers, never collapsed. Message-level disposition (`positive`/`negative`/`neutral`/`mixed`/`ambiguous`) and a signal SET (`interest`/`request_information`/`redirect`/`terms_discussion`/`offer`/`agreement`/`rejection`/`timing_constraint`/`other_commercial`) are machine-advisory only. Thread-level machine state (`unresolved`/`engaged`/`negotiating`/`agreement_observed`/`declined_observed`/`ambiguous`) is never CRM state: an offer is never agreement, and a decline is never permanent merely because it is current. Human business outcome (`open`/`won`/`lost`/`ghosted`/`uncertain`) is a separate, creator-confirmed axis; `won` does not mean collaboration completion (D045 unchanged), and B07 historical processing may never auto-assign `ghosted` from B06's window-bounded absence. Compensation structure (`paid`/`in_kind`/`hybrid`/`unpaid`/`other`/`unknown`) never lets `unknown` mean `unpaid`. B07 owns creator correction of B06's message reply-nature (`human_reply`/`automated`/`delivery`/`not_reply`/`uncertain`) as a durable overlay that a future B06 rerun can never overwrite; because reply nature also gates effective human-reply eligibility, a creator's current reply-nature decision is additionally a machine-currentness dependency, unlike the other four human axes, which are overlays/confirmations that never gate or rewrite machine state. All human decisions follow B05's append-only pattern — immutable events, database-owned `event_seq`, a current projection, explicit clear/withdraw as a new event, machine writers never touching human tables — anchored to durable provider message/thread coordinates, never a replaceable B04/B06 row id. Machine inference, unlike B06's deterministic rules, may be non-deterministic; every successful interpretation is provenance-bound to source digest, B06 state/version, B07 schema/transform version, and inference-engine/model/prompt identity when applicable, and the same input must not oscillate current state by default. B07 performs zero Gmail API calls, zero new OAuth scopes, zero CRM materialization, and creates zero G3 rows; this decision does not select an AI vendor and requires input minimization and a separate privacy/vendor approval before any external model call.
 
 Full contract, taxonomy, human correction model, provenance model, failure matrix and adversarial cases: `docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`.

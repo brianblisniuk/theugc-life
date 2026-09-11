@@ -2832,6 +2832,16 @@ B06's own stable provider-message coordinate. This is an OVERLAY on B06,
 never an update to B06's machine `response_class` — a future B06 rerun may
 change machine belief, but it may never overwrite this creator decision.
 
+Reply nature is also, uniquely among the five human axes, a **machine
+currentness dependency**: it gates whether a message is an eligible input to
+B07 semantic processing at all, so a change to the creator's current reply-
+nature decision (including clearing it) that alters effective eligibility
+makes a prior machine interpretation stale for ordinary effective use, even
+though nothing about B04/B06/the model/prompt changed. The other four human
+axes (disposition, signal set, thread outcome, compensation structure)
+remain overlays/confirmations or independent human truth that never gate or
+rewrite machine currentness this way (full contract, §21).
+
 ### The B05 append-only pattern, extended to five axes
 
 All human decisions — message reply nature, message disposition, message
