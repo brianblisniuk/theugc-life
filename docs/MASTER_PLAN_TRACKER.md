@@ -291,8 +291,8 @@ is B02.
 | B03 | **DONE** — PR #35, merge `1a579ca1` | historical import job pipeline | resumable/idempotent import; provider rate limits; no duplicate messages |
 | B04 | **DONE** — PR #36, merge `773556f38bfa17ac4b078efae51953024babab52` | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
-| B06 | **CURRENT PR** | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
-| B07 | GATED | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
+| B06 | **DONE** — PR #38, merge `c6cd180ea27a3901a365526a29371121f8cedc5c` | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
+| B07 | **NEXT** — contract accepted / implementation next (D072) | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
 | B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
 **Base rounds:** 8  
