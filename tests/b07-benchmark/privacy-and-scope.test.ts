@@ -12,7 +12,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { PRICE_BOOK, priceBookFor } from "../../scripts/b07-benchmark/config/pricing";
+import {
+  PRICE_BOOK,
+  priceBookFor,
+  estimateCaseCostUsd,
+} from "../../scripts/b07-benchmark/config/pricing";
 import { ALL_CANDIDATES } from "../../scripts/b07-benchmark/config/candidates";
 import {
   VENDOR_SCREEN,
@@ -89,16 +93,31 @@ describe("pricing provenance", () => {
     }
   });
 
-  it("19b. an unverified price is flagged and yields a visibly absurd zero, not a plausible guess", () => {
+  it("19b. an unverified price is flagged and is null, NEVER a plausible-looking zero (finding 8)", () => {
     for (const price of PRICE_BOOK) {
       if (price.verification === "published_page_fetched") {
         expect(price.input_usd_per_mtok).toBeGreaterThan(0);
         expect(price.output_usd_per_mtok).toBeGreaterThan(0);
       } else {
-        expect(price.input_usd_per_mtok).toBe(0);
-        expect(price.output_usd_per_mtok).toBe(0);
-        expect(price.notes ?? "").toMatch(/Placeholder/);
+        // NULL, never 0 — a $0 rate is decision-corrupting (it can make a
+        // candidate look free or falsely win a Pareto "cheaper" comparison).
+        expect(price.input_usd_per_mtok).toBeNull();
+        expect(price.output_usd_per_mtok).toBeNull();
+        expect(price.reasoning_usd_per_mtok).toBeNull();
       }
+    }
+  });
+
+  it("15. an unverified PriceBook entry never yields a numeric cost", () => {
+    for (const price of PRICE_BOOK) {
+      if (price.verification === "published_page_fetched") continue;
+      const cost = estimateCaseCostUsd(price, {
+        inputTokens: 1000,
+        outputTokens: 1000,
+        reasoningTokens: 1000,
+        cachedInputTokens: 0,
+      });
+      expect(cost).toBeNull();
     }
   });
 

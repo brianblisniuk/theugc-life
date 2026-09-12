@@ -29,11 +29,22 @@ function ensureDir(path: string): void {
   mkdirSync(dirname(path), { recursive: true });
 }
 
-const SECRETS = collectSecretValues();
+/**
+ * Recomputed on every write rather than cached at module-load time.
+ *
+ * FIXED (external audit finding 15): a module-level constant captured once at
+ * import time misses any secret-looking env var set (or changed) afterwards
+ * — a real, exploitable gap, since `loadLocalEnv()` and per-test/per-run key
+ * configuration both happen after this module is first imported. Every
+ * artifact write must be secret-safe against the CURRENT environment.
+ */
+function currentSecrets(): string[] {
+  return collectSecretValues();
+}
 
 /** Every artifact write passes through redaction. Defence in depth. */
 function safeSerialize(value: unknown): string {
-  return redactSecrets(JSON.stringify(value), SECRETS);
+  return redactSecrets(JSON.stringify(value), currentSecrets());
 }
 
 export function writeManifest(manifest: RunManifest): void {
@@ -69,13 +80,17 @@ export function readResults(runId: string): CaseResult[] {
 export function writeText(runId: string, filename: string, contents: string): string {
   const path = resolve(runDir(runId), filename);
   ensureDir(path);
-  writeFileSync(path, redactSecrets(contents, SECRETS), "utf8");
+  writeFileSync(path, redactSecrets(contents, currentSecrets()), "utf8");
   return path;
 }
 
 export function writeJson(runId: string, filename: string, value: unknown): string {
   const path = resolve(runDir(runId), filename);
   ensureDir(path);
-  writeFileSync(path, `${redactSecrets(JSON.stringify(value, null, 2), SECRETS)}\n`, "utf8");
+  writeFileSync(
+    path,
+    `${redactSecrets(JSON.stringify(value, null, 2), currentSecrets())}\n`,
+    "utf8",
+  );
   return path;
 }

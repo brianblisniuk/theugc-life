@@ -22,8 +22,17 @@ Flags (all stages): `--candidate <id>` (repeatable), `--split dev|holdout`,
 `--critical-only`, `--concurrency N`, `--max-schema-retries 0|1`, `--dry-run`,
 `--resume`, `--run <run-id>`.
 
+Stage-2-only flags (auditable finalist selection — see finding 14 of the
+integrity correction): `--from-run <stage-1-run-id>` (the screening run these
+finalists were drawn from) and `--finalist-reason "<why>"` (**required** when
+any selected candidate has `role: "ceiling"`).
+
 `--max-schema-retries` is capped at 1 on purpose: unlimited retries make a weak
 candidate look reliable.
+
+`final` **requires** at least one explicit `--candidate <id>` and fails before
+any provider call, corpus load or case selection if none is given — Stage 2
+never auto-runs every configured model or an implicit quality ceiling.
 
 ## API keys
 
@@ -34,6 +43,30 @@ A missing key is **not** an error. That candidate's cases are recorded
 `not_run_missing_key`, the report lists it under "Not run — recorded as absence
 of evidence, NOT as a result", and everything else still runs. Keys are never
 printed, never committed and never written into an artifact.
+
+`not_run_missing_key` is **not** a terminal state for `--resume`: once the
+required key is present, resuming the same `--run` id actually calls that
+provider for those cases instead of reusing the old absence.
+
+## Result identity
+
+A stored result is only reused on `--resume` when EVERY identity component
+matches: candidate, provider, the exact requested model, the effective
+inference configuration (reasoning/thinking effort, transport version — see
+`config/inference-config.ts`), case id, and the corpus/prompt/schema versions.
+Overriding a model id (`B07_BENCH_MODEL_...`) or changing the inference policy
+between two runs of the same `--run` id is therefore never silently mixed into
+one score — the affected cases are reported as an identity conflict and that
+candidate's row is marked invalidated rather than partially scored.
+
+## Exact selection reproducibility
+
+Every run manifest records the exact selected case ids and a digest over them
+(`selected_case_ids`, `case_set_digest`), not just `split`. `report --run`
+replays that exact set — a `--critical-only` run can never later be reported
+as though it had scored the full split — and refuses if the corpus can no
+longer produce a recorded case id or if the manifest's own digest doesn't
+match its own recorded ids.
 
 ## Renamed models
 

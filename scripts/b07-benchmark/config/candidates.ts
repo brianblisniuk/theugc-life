@@ -80,31 +80,32 @@ export const MODEL_CANDIDATES: readonly Candidate[] = [
   {
     id: "anthropic-haiku-4-5",
     providerId: "anthropic",
-    model: "claude-haiku-4-5",
+    model: "claude-haiku-4-5-20251001",
     role: "screening",
     family: "Anthropic Claude Haiku 4.5 (current efficient tier)",
     idVerification: "verified_at_authoring",
     notes:
-      "The round specification said 'Fable/efficient tier'. On the official lineup Fable is the MOST capable tier ($10/$50 per MTok), not the efficient one; Haiku 4.5 is the efficient tier. Both are configured — Haiku here as the efficient screening candidate, Fable is not included because a ceiling candidate at Opus tier is cheaper and sufficient.",
+      "The round specification said 'Fable/efficient tier'. On the official lineup Fable is the MOST capable tier ($10/$50 per MTok), not the efficient one; Haiku 4.5 is the efficient tier. Both are configured — Haiku here as the efficient screening candidate, Fable is not included because a ceiling candidate at Opus tier is cheaper and sufficient. FIXED (external audit finding 10): pinned to the exact dated API id `claude-haiku-4-5-20251001` rather than the floating `claude-haiku-4-5` alias, because a benchmark identity must be reproducible; the alias remains available as an override via B07_BENCH_MODEL_ANTHROPIC_HAIKU_4_5 if a later dated snapshot supersedes it.",
   },
   {
     id: "google-gemini-flash",
     providerId: "google",
-    model: "gemini-flash-latest",
+    model: "gemini-3.8-flash",
     role: "screening",
-    family: "Google Gemini Flash tier",
-    idVerification: "unverified_at_authoring",
+    family: "Google Gemini 3.8 Flash (stable, GA)",
+    idVerification: "verified_at_authoring",
     notes:
-      "Google model catalogue could not be confirmed from this host; verify at execution time or override with B07_BENCH_MODEL_GOOGLE_GEMINI_FLASH.",
+      "FIXED (external audit finding 10): `gemini-flash-latest` is a hot-swapped alias per Google's own documentation and is not an appropriate default identity for a reproducible benchmark. Pinned to the GA stable id `gemini-3.8-flash` (https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash, accessed 2026-09-12). Override with B07_BENCH_MODEL_GOOGLE_GEMINI_FLASH if this id moves.",
   },
   {
     id: "google-gemini-pro",
     providerId: "google",
-    model: "gemini-pro-latest",
+    model: "gemini-3.1-pro-preview",
     role: "screening",
-    family: "Google Gemini Pro tier",
-    idVerification: "unverified_at_authoring",
-    notes: "See google-gemini-flash note.",
+    family: "Google Gemini 3.1 Pro (PREVIEW — not GA)",
+    idVerification: "verified_at_authoring",
+    notes:
+      "FIXED (external audit finding 10): pinned away from the `gemini-pro-latest` alias to the current documented id `gemini-3.1-pro-preview` (https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview, accessed 2026-09-12). This id is explicitly labelled PREVIEW by Google, not GA — read its results with that caveat; no official price was captured for it this round (see config/pricing.ts), so its cost is reported as unverified, never $0.",
   },
   {
     id: "anthropic-opus-5",

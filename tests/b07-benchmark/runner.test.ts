@@ -159,48 +159,29 @@ describe("runner behaviour without API keys", () => {
 });
 
 describe("replay and resume safety", () => {
+  const baseIdentity = {
+    candidate_id: "c1",
+    provider_id: "openai",
+    requested_model: "m1",
+    inference_config_digest: "cfg1",
+    case_id: "m-en-dev-001",
+    corpus_version: "v1",
+    prompt_version: "p1",
+    schema_version: "s1",
+  };
+
   it("14. the resume key identifies a candidate/case pair uniquely", () => {
-    const a = resultCompatibilityKey({
-      candidate_id: "c1",
-      case_id: "m-en-dev-001",
-      corpus_version: "v1",
-      prompt_version: "p1",
-      schema_version: "s1",
-    });
-    const sameAgain = resultCompatibilityKey({
-      candidate_id: "c1",
-      case_id: "m-en-dev-001",
-      corpus_version: "v1",
-      prompt_version: "p1",
-      schema_version: "s1",
-    });
-    const otherCase = resultCompatibilityKey({
-      candidate_id: "c1",
-      case_id: "m-en-dev-002",
-      corpus_version: "v1",
-      prompt_version: "p1",
-      schema_version: "s1",
-    });
-    const otherCandidate = resultCompatibilityKey({
-      candidate_id: "c2",
-      case_id: "m-en-dev-001",
-      corpus_version: "v1",
-      prompt_version: "p1",
-      schema_version: "s1",
-    });
+    const a = resultCompatibilityKey(baseIdentity);
+    const sameAgain = resultCompatibilityKey({ ...baseIdentity });
+    const otherCase = resultCompatibilityKey({ ...baseIdentity, case_id: "m-en-dev-002" });
+    const otherCandidate = resultCompatibilityKey({ ...baseIdentity, candidate_id: "c2" });
     expect(a).toBe(sameAgain);
     expect(a).not.toBe(otherCase);
     expect(a).not.toBe(otherCandidate);
   });
 
   it("15. a changed prompt, schema or corpus version produces a different key, so results cannot be mixed", () => {
-    const base = {
-      candidate_id: "c1",
-      case_id: "m-en-dev-001",
-      corpus_version: "v1",
-      prompt_version: "p1",
-      schema_version: "s1",
-    };
+    const base = baseIdentity;
     expect(resultCompatibilityKey(base)).not.toBe(
       resultCompatibilityKey({ ...base, prompt_version: "p2" }),
     );
@@ -212,13 +193,32 @@ describe("replay and resume safety", () => {
     );
   });
 
+  it("1. a changed requested model produces a different key, so a model override cannot reuse an old result", () => {
+    const base = baseIdentity;
+    expect(resultCompatibilityKey(base)).not.toBe(
+      resultCompatibilityKey({ ...base, requested_model: "m2" }),
+    );
+  });
+
+  it("2. a changed effective inference-config digest produces a different key, so an effort/config change cannot reuse an old result", () => {
+    const base = baseIdentity;
+    expect(resultCompatibilityKey(base)).not.toBe(
+      resultCompatibilityKey({ ...base, inference_config_digest: "cfg2" }),
+    );
+  });
+
   it("14b. only settled work is reusable — a transient failure is retried, not frozen", () => {
     expect(isTerminalForResume("ok")).toBe(true);
     expect(isTerminalForResume("schema_failed")).toBe(true);
-    expect(isTerminalForResume("not_run_missing_key")).toBe(true);
     expect(isTerminalForResume("provider_error")).toBe(false);
     expect(isTerminalForResume("timeout")).toBe(false);
     expect(isTerminalForResume("dry_run")).toBe(false);
+  });
+
+  it("3. `not_run_missing_key` is NOT terminal for resume — an absence of evidence is re-runnable once the key exists", () => {
+    // Finding 2: a missing key is an absence of evidence, not completed model
+    // work. Once the key is present, resume must actually call the provider.
+    expect(isTerminalForResume("not_run_missing_key")).toBe(false);
   });
 });
 

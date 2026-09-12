@@ -31,6 +31,15 @@ export function evaluateQualityTargets(score: CandidateScore): TargetEvaluation 
   const r = score.reliability;
   const hasEvidence = r.cases_attempted > 0;
 
+  if (score.invalidated_reason) {
+    return {
+      candidate_id: score.candidate_id,
+      meetsAll: false,
+      misses: [score.invalidated_reason],
+      hasEvidence,
+    };
+  }
+
   if (!hasEvidence) {
     return {
       candidate_id: score.candidate_id,

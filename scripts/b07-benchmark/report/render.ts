@@ -10,8 +10,10 @@
  */
 import { QUALITY_TARGETS, evaluateQualityTargets } from "../scoring/targets";
 import type { CandidateScore } from "../scoring/score";
+import { MIN_RELIABLE_CLASS_SUPPORT } from "../scoring/metrics";
 import { VENDOR_SCREEN, VENDOR_SCREEN_STANDING_CONCLUSION } from "../privacy/vendor-screen";
 import type { CorpusStats } from "../corpus/load";
+import type { FinalistProvenance } from "../run/types";
 
 function pct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -33,6 +35,12 @@ export interface ReportInput {
   scores: readonly CandidateScore[];
   /** Candidates that produced no usable evidence, with the honest reason. */
   absences: { candidate_id: string; model: string; reason: string }[];
+  /** Auditable Stage-2 finalist selection, when this is a `final` run. */
+  finalistProvenance?: FinalistProvenance | null;
+}
+
+function classLabel(cls: string, support: number): string {
+  return support > 0 && support < MIN_RELIABLE_CLASS_SUPPORT ? `${cls} ⚠ low support` : cls;
 }
 
 export function renderReport(input: ReportInput): string {
@@ -68,8 +76,8 @@ export function renderReport(input: ReportInput): string {
     push("_No candidate produced any scored result in this run._", "");
   } else {
     push(
-      "| candidate | provider | requested model | returned model(s) | attempted | schema-valid |",
-      "| --- | --- | --- | --- | --- | --- |",
+      "| candidate | provider | requested model | returned model(s) | attempted | schema-valid | reasoning effort | transport version |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- |",
     );
     for (const s of input.scores) {
       push(
@@ -77,10 +85,38 @@ export function renderReport(input: ReportInput): string {
           s.reliability.returned_models.length > 0
             ? s.reliability.returned_models.map((m) => `\`${m}\``).join(", ")
             : "_not reported_"
-        } | ${s.reliability.cases_attempted}/${s.reliability.cases_selected} | ${s.reliability.final_schema_valid} |`,
+        } | ${s.reliability.cases_attempted}/${s.reliability.cases_selected} | ${s.reliability.final_schema_valid} | \`${s.inference_config?.reasoning_effort ?? "n/a"}\` | \`${s.inference_config?.structured_output_transport_version ?? "n/a"}\` |`,
       );
     }
+    push(
+      "",
+      `Inference policy version: \`${input.scores[0]?.inference_config?.policy_version ?? "n/a"}\` — every screening/ceiling candidate runs at its provider's stated normal-production reasoning effort (see \`config/inference-config.ts\`); this policy version participates in result identity, so a policy change never silently reuses an old result.`,
+    );
     push("");
+    const invalidated = input.scores.filter((s) => s.invalidated_reason);
+    if (invalidated.length > 0) {
+      push("### INVALIDATED — refused to score as one candidate", "");
+      for (const s of invalidated) {
+        push(`- \`${s.candidate_id}\`: ${s.invalidated_reason}`);
+      }
+      push("");
+    }
+  }
+
+  if (input.finalistProvenance) {
+    const fp = input.finalistProvenance;
+    push(
+      "### Stage-2 finalist provenance",
+      "",
+      `- originating Stage-1 (screening) run: ${fp.screen_run_id ? `\`${fp.screen_run_id}\`` : "_not stated_"}`,
+      `- finalists and roles: ${
+        Object.entries(fp.candidate_roles)
+          .map(([id, role]) => `\`${id}\` (${role})`)
+          .join(", ") || "_none_"
+      }`,
+      `- rationale: ${fp.finalist_reason ?? "_not stated_"}`,
+      "",
+    );
   }
 
   if (input.absences.length > 0) {
@@ -145,10 +181,12 @@ export function renderReport(input: ReportInput): string {
       );
       for (const [cls, metrics] of Object.entries(m.disposition.per_class)) {
         push(
-          `| ${cls} | ${metrics.support} | ${n(metrics.precision, 3)} | ${n(metrics.recall, 3)} | ${n(metrics.f1, 3)} |`,
+          `| ${classLabel(cls, metrics.support)} | ${metrics.support} | ${n(metrics.precision, 3)} | ${n(metrics.recall, 3)} | ${n(metrics.f1, 3)} |`,
         );
       }
       push(
+        "",
+        `_⚠ low support: fewer than ${MIN_RELIABLE_CLASS_SUPPORT} gold cases in this selection — read next to \`support\`, do not over-interpret (spec §14)._`,
         "",
         "Evidence-strength confusion (gold rows x predicted columns):",
         "",
@@ -176,7 +214,7 @@ export function renderReport(input: ReportInput): string {
       );
       for (const [cls, metrics] of Object.entries(t.thread_state.per_class)) {
         push(
-          `| ${cls} | ${metrics.support} | ${n(metrics.precision, 3)} | ${n(metrics.recall, 3)} | ${n(metrics.f1, 3)} |`,
+          `| ${classLabel(cls, metrics.support)} | ${metrics.support} | ${n(metrics.precision, 3)} | ${n(metrics.recall, 3)} | ${n(metrics.f1, 3)} |`,
         );
       }
       push(
@@ -216,15 +254,19 @@ export function renderReport(input: ReportInput): string {
     "figure. Latency here is an ordering signal for the Pareto comparison, not a",
     "production SLO.",
     "",
-    "| candidate | latency n | median ms | p95 ms | excluded failed calls | in tok | out tok | reasoning tok | est. cost | basis |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| candidate | latency n | median ms | p95 ms | excluded failed calls | in tok | cached in tok | out tok | reasoning tok (diagnostic) | est. cost | basis |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   );
   for (const s of input.scores) {
     const e = s.economics;
     push(
-      `| \`${s.candidate_id}\` | ${s.latency.n} | ${s.latency.median_ms ?? "n/a"} | ${s.latency.p95_ms ?? "n/a"} | ${s.latency_excluded_failed_calls} | ${e.total_input_tokens} | ${e.total_output_tokens} | ${e.total_reasoning_tokens} | ${usd(e.estimated_total_cost_usd)} | ${e.pricing_basis} |`,
+      `| \`${s.candidate_id}\` | ${s.latency.n} | ${s.latency.median_ms ?? "n/a"} | ${s.latency.p95_ms ?? "n/a"} | ${s.latency_excluded_failed_calls} | ${e.total_input_tokens} | ${e.total_cached_input_tokens} | ${e.total_output_tokens} | ${e.total_reasoning_tokens} | ${usd(e.estimated_total_cost_usd)} | ${e.pricing_basis} |`,
     );
   }
+  push(
+    "",
+    '`unverified` means a price record exists but lacks a verified rate for a token dimension this candidate actually used — the cost is `n/a`, NEVER `$0.00`. `no_pricing_metadata` means no price record exists at all. Neither basis supports a Pareto "cheaper" claim.',
+  );
   push("");
   push("Per-1,000 projections (ESTIMATED from published prices — not measured billing):", "");
   push(

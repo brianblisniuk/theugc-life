@@ -155,8 +155,17 @@ One canonical provider-neutral semantic prompt, `b07_benchmark_prompt_v1`
 One logical schema (`b07_benchmark_schema_v1`) in two kept-in-lockstep forms: a
 Zod schema for local validation and a plain JSON Schema for provider transports.
 Provider-specific transports are permitted (OpenAI `json_schema`, Anthropic
-`output_config.format`, Google `responseSchema` — the Gemini dialect translation
-is asserted to preserve the same enums and required fields).
+`output_config.format` — current shape is `{ type: "json_schema", schema }`,
+with no `name` field — Google `responseSchema` — the Gemini dialect
+translation is asserted to preserve the same enums, required fields AND
+`additionalProperties: false` strictness; Google's structured-output
+documentation supports that keyword, so it is never given a weaker
+server-side contract than OpenAI/Anthropic). Every adapter also sends an
+explicit, versioned effective inference configuration (reasoning/thinking
+effort — see §11a below) so the request is never at the mercy of an
+undocumented provider default. Mocked-fetch transport-contract tests
+(`tests/b07-benchmark/provider-transport.test.ts`) assert the literal request
+body, headers and endpoint for every adapter without needing a live key.
 
 Every response is validated locally. Recorded separately per case: first-pass
 schema success, whether a retry was required, final schema success, and the
@@ -195,6 +204,24 @@ reasoning/thinking tokens where the provider exposes them.
 retries**. Price metadata is timestamped, source-attributed and carries a
 `verification` field; estimated pricing is labelled
 `estimated_from_published_prices` and is never presented as measured billing.
+
+Reasoning/thinking tokens are billed **exactly once**, and the rule is
+provider-specific rather than copied across providers: OpenAI and Anthropic
+both report reasoning/thinking tokens as a diagnostic BREAKDOWN already
+included inside `output_tokens` (`reasoning_billed_separately_from_output:
+false` — pricing them again would double-charge); Google's own
+response-pricing documentation sums output tokens AND thinking tokens as
+separate billed quantities (`reasoning_billed_separately_from_output: true`).
+Cached input tokens, where a provider reports them, are priced at the
+provider's published cached rate rather than the full input rate, and are
+never counted as additional to `input_tokens`.
+
+An **unverified or missing price NEVER becomes a `$0` estimate.** A `PriceBook`
+entry with a `null` rate for a token dimension actually used produces a `null`
+cost and a `pricing_basis` of `unverified` (an entry exists but a needed rate
+is unverified) or `no_pricing_metadata` (no entry at all) — never a numeric
+zero that could make a candidate look free or falsely win a Pareto "cheaper"
+comparison.
 
 Scoring honours acceptable-answer sets identically for every candidate,
 including the baseline: a prediction inside the acceptable set is scored as if it
@@ -242,21 +269,68 @@ actually supports it.
   `B07_BENCH_MODEL_<CANDIDATE_ID>` — a renamed model never fails the round.
 - **Stage 2 — finalists.** The top approaches surviving the hard gates against
   the full `holdout`, optionally with one higher-cost frontier model as a quality
-  ceiling where that materially informs the decision.
+  ceiling where that materially informs the decision. `final` REQUIRES an
+  explicit `--candidate <id>` per finalist and fails before any provider call,
+  corpus load or case selection if none is given — it never auto-runs every
+  configured model, and a ceiling-role candidate additionally requires
+  `--finalist-reason "<why>"` stating why the ceiling is materially useful
+  here. The run manifest records this provenance (`finalist_provenance`:
+  originating Stage-1 run via `--from-run`, the stated reason, and each
+  finalist's role) so a later reader can see why each finalist was there
+  rather than a winner being hand-selected after seeing holdout results.
+
+## 11a. Effective inference configuration (versioned, part of result identity)
+
+Provider defaults for reasoning/thinking effort differ and are not stable
+undocumented behaviour to rely on. `config/inference-config.ts` states one
+explicit, versioned policy — a normal-production effort per provider family,
+not an artificial handicap for any of them — and every case result records
+exactly what ran (`inference_config`, plus its digest
+`inference_config_digest`). The digest participates in resume/result identity
+(§12) and the report prints the policy version and per-candidate effective
+effort. Where a provider exposes no equivalent knob, that is recorded as
+`not_supported` rather than silently omitted.
+
+## 11b. Model identity reproducibility
+
+Default candidate ids are pinned to explicit, dated or GA identities rather
+than a hot-swapped `-latest` alias (Google explicitly documents `-latest`
+aliases as being swapped when new releases arrive, which is incompatible with
+a reproducible benchmark identity). `google-gemini-flash` is pinned to the
+stable GA id `gemini-3.8-flash`; `google-gemini-pro` is pinned to
+`gemini-3.1-pro-preview` and is labelled PREVIEW everywhere it is reported;
+`anthropic-haiku-4-5` is pinned to the exact dated id
+`claude-haiku-4-5-20251001`. Every id remains overridable per run via
+`B07_BENCH_MODEL_<CANDIDATE_ID>` if it moves. Separately, if the PROVIDER
+itself returns materially different underlying model versions across cases
+for one logical candidate run, those results are never silently combined into
+one score — the candidate is marked invalidated and must be rerun (§4, §12).
 
 ## 12. Honesty rules the harness enforces
 
 - A missing API key yields `not_run_missing_key`. A model whose id is gone yields
   `unavailable`. Neither is a failure of the model, and neither may be presented
   as benchmark evidence: the report lists them in a separate "Not run — recorded
-  as absence of evidence" table.
+  as absence of evidence" table. `not_run_missing_key` is explicitly NOT terminal
+  for `--resume`: once the key is present, resume actually calls the provider
+  for those cases rather than reusing the old absence.
 - A provider exception can never become a semantic prediction. Only a
   schema-valid parse populates `prediction`.
-- Resume reuses a stored result only when candidate, case, corpus version, prompt
-  version and schema version ALL match, and only for settled work; a transient
-  provider error is retried rather than frozen. `report --run` refuses to render
-  a run produced under a different prompt/schema/corpus version.
-- Secrets are redacted from every log line and every artifact write.
+- Resume reuses a stored result only when EVERY identity component matches —
+  candidate, provider, the exact requested model, the effective inference
+  configuration digest (reasoning/thinking effort, structured-output transport
+  version), case id, and corpus/prompt/schema version — and only for settled
+  work (`ok` / `schema_failed`); a transient provider error or timeout is
+  retried rather than frozen. Two rows for the same case that disagree about
+  requested model or inference-config digest are never silently resolved by
+  "last row wins": that candidate is marked invalidated and must be rerun.
+  `report --run` refuses to render a run produced under a different
+  prompt/schema/corpus version, and separately refuses to render a run whose
+  recorded exact case selection cannot be reproduced (see §11).
+- Secrets are redacted from every log line and every artifact write, recomputed
+  against the current environment on every write (never cached from process
+  start), and redacted again at the point an error is normalised into
+  `error_summary` before it is ever persisted.
 - Run artifacts (`artifacts/b07-benchmark/`) are gitignored. Only the corpus,
   schemas, scoring logic, harness, tests, this specification and a derived,
   content-free summary are committed.
@@ -287,6 +361,12 @@ is worse than none:
   gold set (primary gold on a single case, plus several acceptable-answer sets).
   Its per-label F1 is therefore high-variance; read it next to its printed
   `support`, and read signal micro F1 as the headline instead of signal macro F1.
+  The report enforces this rather than only documenting it: any per-class row
+  with gold support below `MIN_RELIABLE_CLASS_SUPPORT` (3) is visibly flagged
+  ⚠ low support in every rendered table, so a high or low F1 on a
+  single-digit-support class cannot be read as a reliable per-class signal.
+  This corpus is not rewritten to manufacture additional examples merely to
+  equalize classes.
 - `evidence_strength` is the most subjective of the five fields. It is reported as
   a confusion matrix and is deliberately NOT a hard gate; many cases encode two
   adjacent acceptable values.

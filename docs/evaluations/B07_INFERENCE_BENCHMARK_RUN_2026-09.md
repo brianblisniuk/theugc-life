@@ -19,18 +19,26 @@ content and no secrets. Raw run artifacts live in the gitignored
 | `openai-gpt-5-6-luna` | OpenAI | `gpt-5.6-luna` | `not_run_missing_key` |
 | `openai-gpt-5-6-terra` | OpenAI | `gpt-5.6-terra` | `not_run_missing_key` |
 | `anthropic-sonnet-5` | Anthropic | `claude-sonnet-5` | `not_run_missing_key` |
-| `anthropic-haiku-4-5` | Anthropic | `claude-haiku-4-5` | `not_run_missing_key` |
-| `google-gemini-flash` | Google | `gemini-flash-latest` | `not_run_missing_key` |
-| `google-gemini-pro` | Google | `gemini-pro-latest` | `not_run_missing_key` |
+| `anthropic-haiku-4-5` | Anthropic | `claude-haiku-4-5-20251001` | `not_run_missing_key` |
+| `google-gemini-flash` | Google | `gemini-3.8-flash` | `not_run_missing_key` |
+| `google-gemini-pro` | Google | `gemini-3.1-pro-preview` (PREVIEW) | `not_run_missing_key` |
 | `anthropic-opus-5` | Anthropic | `claude-opus-5` | `not_run_missing_key` (ceiling, finals only) |
 
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` were all absent from
 the execution environment. **No external API call of any kind was made in this
-round**, so no model above may be cited as benchmark evidence. Their model ids
-could likewise not be verified against a live catalogue; ids marked
-`unverified_at_authoring` in `scripts/b07-benchmark/config/candidates.ts` must be
-re-checked (or overridden via `B07_BENCH_MODEL_<CANDIDATE_ID>`) before the
-screening stage is run for real.
+round**, so no model above may be cited as benchmark evidence.
+
+**Integrity correction (this round):** the Google model ids above were
+previously `gemini-flash-latest` / `gemini-pro-latest` — floating aliases
+Google's own documentation describes as hot-swapped, which is not a
+reproducible benchmark identity — and the Anthropic Haiku id was the floating
+`claude-haiku-4-5` alias. All three are now pinned to explicit, dated or GA
+identities (`gemini-3.8-flash` GA stable, `gemini-3.1-pro-preview` labelled
+PREVIEW, `claude-haiku-4-5-20251001` exact dated id); every id remains
+overridable via `B07_BENCH_MODEL_<CANDIDATE_ID>` if it moves. This is a
+correction to the recorded configuration, not a new external run — the
+outcome for every model candidate is still `not_run_missing_key`, and no
+model above may be cited as benchmark evidence until a real key is used.
 
 Scored set = 175 cases: the 180-case corpus minus the 5 few-shot exemplars, which
 are excluded from scoring because the candidate is shown their answers.

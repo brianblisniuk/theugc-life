@@ -6,6 +6,15 @@
  * the components and the decision method reads them separately.
  */
 
+/**
+ * Below this many gold cases, a class's per-class P/R/F1 is high-variance
+ * enough that reading it as a reliable signal would overinterpret the corpus
+ * (external audit corpus-coverage finding — e.g. `other_commercial`, which is
+ * deliberately rare under D072 and correspondingly rare in gold). The report
+ * flags such rows rather than the corpus being padded to equalize classes.
+ */
+export const MIN_RELIABLE_CLASS_SUPPORT = 3;
+
 export interface ClassMetrics {
   support: number;
   predicted: number;

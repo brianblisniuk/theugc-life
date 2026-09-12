@@ -2,10 +2,22 @@
  * Google Gemini adapter (benchmark only).
  *
  * Uses `generateContent` with `responseMimeType: application/json` plus a
- * `responseSchema`. Gemini's schema dialect does not accept
- * `additionalProperties`, so the schema is translated field-by-field from the
- * same logical schema rather than replaced — the enums and required fields are
- * identical, which is what fairness requires.
+ * `responseSchema`, translated field-by-field from the same logical schema —
+ * the enums and required fields are identical, which is what fairness
+ * requires.
+ *
+ * SCHEMA-PARITY NOTE (external audit correction): current official Gemini
+ * structured-output documentation lists `additionalProperties` as a supported
+ * object-schema keyword. An earlier revision of this adapter assumed the
+ * opposite and dropped it, which handed Google a structurally weaker
+ * server-side contract than OpenAI (`additionalProperties:false` +
+ * `strict:true`) and Anthropic got. `additionalProperties: false` is now
+ * carried through onto every OBJECT schema.
+ *
+ * BILLING NOTE: unlike OpenAI/Anthropic, Google's own response-pricing
+ * documentation sums output tokens AND thinking tokens as separate billed
+ * quantities — `config/pricing.ts` must NOT apply OpenAI's inclusive-output
+ * accounting here.
  */
 import {
   ProviderCallError,
@@ -30,9 +42,14 @@ interface GeminiSchema {
   items?: GeminiSchema;
   enum?: string[];
   propertyOrdering?: string[];
+  additionalProperties?: boolean;
 }
 
-/** Same enums, same required fields; only dialect-specific keys differ. */
+/**
+ * Same enums, same required fields, same `additionalProperties:false`
+ * strictness; only dialect-specific keys (STRING/OBJECT/ARRAY casing,
+ * `propertyOrdering`) differ from the logical schema.
+ */
 export function toGeminiSchema(schema: JsonObjectSchema): GeminiSchema {
   const properties: Record<string, GeminiSchema> = {};
   for (const [name, property] of Object.entries(schema.properties)) {
@@ -50,6 +67,7 @@ export function toGeminiSchema(schema: JsonObjectSchema): GeminiSchema {
     properties,
     required: [...schema.required],
     propertyOrdering: [...schema.required],
+    additionalProperties: schema.additionalProperties,
   };
 }
 
@@ -77,6 +95,9 @@ export const googleAdapter: ProviderAdapter = {
             maxOutputTokens: request.maxOutputTokens,
             responseMimeType: "application/json",
             responseSchema: toGeminiSchema(request.jsonSchema),
+            ...(request.inferenceConfig.reasoning_effort !== "not_supported"
+              ? { thinkingConfig: { thinkingLevel: request.inferenceConfig.reasoning_effort } }
+              : {}),
           },
         }),
       },
@@ -105,8 +126,14 @@ export const googleAdapter: ProviderAdapter = {
       text: extractText(body),
       usage: {
         input_tokens: readNumber(usage?.promptTokenCount),
+        // Google's own response-pricing sums this AND thoughtsTokenCount as
+        // separate billed quantities — see config/pricing.ts, which is why
+        // this provider's PriceBook entry sets
+        // reasoning_billed_separately_from_output: true, unlike OpenAI.
         output_tokens: readNumber(usage?.candidatesTokenCount),
         reasoning_tokens: readNumber(usage?.thoughtsTokenCount),
+        // A subset of promptTokenCount, billed at the cached-content rate.
+        cached_input_tokens: readNumber(usage?.cachedContentTokenCount),
       },
       returned_model: typeof body.modelVersion === "string" ? body.modelVersion : null,
       endpoint,

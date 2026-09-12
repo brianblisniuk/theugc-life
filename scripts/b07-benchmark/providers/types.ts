@@ -12,6 +12,7 @@
  * `ProviderCallError`. There is no third path that yields a semantic label.
  */
 import type { JsonObjectSchema } from "../schema";
+import type { EffectiveInferenceConfig } from "../config/inference-config";
 
 export interface ProviderRequest {
   systemPrompt: string;
@@ -20,16 +21,37 @@ export interface ProviderRequest {
   schemaName: string;
   maxOutputTokens: number;
   timeoutMs: number;
+  /** Versioned, explicit inference behaviour. See `config/inference-config.ts`. */
+  inferenceConfig: EffectiveInferenceConfig;
+}
+
+export interface ProviderUsage {
+  input_tokens: number | null;
+  /**
+   * Billed output tokens. For OpenAI and Anthropic this is INCLUSIVE of
+   * reasoning/thinking tokens (do not add reasoning again). Google bills
+   * thinking tokens ADDITIONALLY — see `config/pricing.ts` for the per-provider
+   * billing flag; this field is always "what the provider itself calls the
+   * output/candidates token count", never a benchmark-computed sum.
+   */
+  output_tokens: number | null;
+  /**
+   * OBSERVABLE reasoning/thinking token count, when the provider exposes one.
+   * This is a diagnostic breakdown, never by itself evidence of separate
+   * billing — whether it is billed again is `PriceBook.reasoning_billed_separately_from_output`.
+   */
+  reasoning_tokens: number | null;
+  /**
+   * OBSERVABLE cached-input token count (a subset of `input_tokens`, never
+   * additional to it), when the provider exposes one.
+   */
+  cached_input_tokens: number | null;
 }
 
 export interface ProviderResponse {
   /** Raw text the provider returned in the structured-output slot. */
   text: string | null;
-  usage: {
-    input_tokens: number | null;
-    output_tokens: number | null;
-    reasoning_tokens: number | null;
-  };
+  usage: ProviderUsage;
   /** Model/version string the provider reported, when exposed. */
   returned_model: string | null;
   endpoint: string;

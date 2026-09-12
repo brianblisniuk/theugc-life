@@ -6,6 +6,7 @@ import type { CorpusCase } from "../corpus/schema";
 import type { PriceBook } from "../config/pricing";
 import { estimateCaseCostUsd } from "../config/pricing";
 import type { CaseResult } from "../run/types";
+import type { EffectiveInferenceConfig } from "../config/inference-config";
 import type { MessageOutput, ThreadOutput } from "../schema";
 import {
   COMPENSATION_STRUCTURES,
@@ -81,8 +82,21 @@ export interface ReliabilityReport {
   returned_models: string[];
 }
 
+export const PRICING_BASES = [
+  "estimated_from_published_prices",
+  "unverified",
+  "no_pricing_metadata",
+] as const;
+export type PricingBasis = (typeof PRICING_BASES)[number];
+
 export interface EconomicsReport {
-  pricing_basis: "estimated_from_published_prices" | "no_pricing_metadata";
+  /**
+   * `estimated_from_published_prices`: a fully verified rate covers every
+   * token dimension actually observed. `unverified`: a PriceBook entry exists
+   * but lacks a verified rate for a dimension actually used (finding 8 —
+   * NEVER surfaced as $0). `no_pricing_metadata`: no PriceBook entry at all.
+   */
+  pricing_basis: PricingBasis;
   price_source: string | null;
   price_source_url: string | null;
   price_accessed_at: string | null;
@@ -90,6 +104,7 @@ export interface EconomicsReport {
   total_input_tokens: number;
   total_output_tokens: number;
   total_reasoning_tokens: number;
+  total_cached_input_tokens: number;
   estimated_total_cost_usd: number | null;
   estimated_cost_per_case_usd: number | null;
   estimated_cost_per_1k_messages_usd: number | null;
@@ -104,6 +119,21 @@ export interface CandidateScore {
   corpus_version: string;
   prompt_version: string;
   schema_version: string;
+  /**
+   * Non-null means this candidate's rows could not be safely combined into
+   * one score — either two rows for the same case disagree about which model
+   * / inference config produced them (a resume across a model or config
+   * change without a version bump), or the provider itself returned
+   * materially different model versions across cases for what was meant to
+   * be one logical run. Either way: NEVER silently blended. The decision
+   * layer (`scoring/targets.ts`) treats an invalidated candidate as
+   * ineligible regardless of its raw metrics.
+   */
+  invalidated_reason: string | null;
+  /** case_ids dropped because two incompatible identity rows existed for them. */
+  identity_conflicts: string[];
+  /** Effective inference config actually used, for report transparency (finding 13). */
+  inference_config: EffectiveInferenceConfig | null;
   reliability: ReliabilityReport;
   critical_suite: {
     cases: number;
@@ -152,25 +182,41 @@ export interface ScoreInput {
   priceBook: PriceBook | null;
 }
 
+interface NormalisedResults {
+  byCaseId: Map<string, CaseResult>;
+  /** case_ids where two or more rows disagreed about requested model / inference config. */
+  identityConflicts: string[];
+}
+
 /**
  * Reduce a raw result stream to exactly one row per selected case.
  *
- * Three separate hostile-review defects live here, and all three are fixed by
- * the same normalisation:
+ * Several separate hostile-review defects live here, and all are fixed by the
+ * same normalisation:
  *
  *  - REPLAY: a resumed run re-runs non-terminal work and APPENDS it, so
  *    `results.jsonl` can legitimately hold two rows for one candidate/case
  *    pair. Counting both would double-charge its tokens and double-count its
- *    reliability. The last row wins, because it is the one that settled.
+ *    reliability. The last row wins — BUT ONLY when every row for that case
+ *    shares the same requested model AND effective inference-config digest;
+ *    see IDENTITY SAFETY below.
  *  - VERSIONING: a row computed under a different prompt/schema/corpus version
  *    is not comparable and is dropped rather than silently mixed in.
- *  - IDENTITY: a row for a case outside the current selection (for example a
+ *  - SELECTION: a row for a case outside the current selection (for example a
  *    `--critical-only` run reported against the full corpus) is dropped, so
  *    economics and latency cover the selection they claim to cover.
+ *  - IDENTITY SAFETY (external audit finding 1): a candidate/case override or
+ *    an inference-config change between two runs sharing the same run id must
+ *    never let the newer row silently win over the older one, or vice versa —
+ *    that is "model A scored as model B" by construction. When rows for one
+ *    case disagree about requested model or inference-config digest, NEITHER
+ *    row is used: the case is reported as an identity conflict and the whole
+ *    candidate is later marked `invalidated_reason` rather than partially
+ *    scored on a silently-picked subset.
  */
-function normaliseResults(input: ScoreInput): Map<string, CaseResult> {
+function normaliseResults(input: ScoreInput): NormalisedResults {
   const selected = new Set(input.cases.map((c) => c.case_id));
-  const byCaseId = new Map<string, CaseResult>();
+  const rowsByCase = new Map<string, CaseResult[]>();
   for (const result of input.results) {
     if (result.candidate_id !== input.candidateId) continue;
     if (!selected.has(result.case_id)) continue;
@@ -181,13 +227,31 @@ function normaliseResults(input: ScoreInput): Map<string, CaseResult> {
     ) {
       continue;
     }
-    byCaseId.set(result.case_id, result);
+    const bucket = rowsByCase.get(result.case_id) ?? [];
+    bucket.push(result);
+    rowsByCase.set(result.case_id, bucket);
   }
-  return byCaseId;
+
+  const byCaseId = new Map<string, CaseResult>();
+  const identityConflicts: string[] = [];
+  for (const [caseId, rows] of rowsByCase) {
+    const identities = new Set(
+      rows.map((r) => `${r.requested_model}::${r.inference_config_digest}`),
+    );
+    if (identities.size > 1) {
+      identityConflicts.push(caseId);
+      continue;
+    }
+    // Every row for this case shares one identity; the last one is the one
+    // that settled (a resume appends, it never rewrites in place).
+    const last = rows[rows.length - 1];
+    if (last) byCaseId.set(caseId, last);
+  }
+  return { byCaseId, identityConflicts: identityConflicts.sort() };
 }
 
 export function scoreCandidate(input: ScoreInput): CandidateScore {
-  const byCaseId = normaliseResults(input);
+  const { byCaseId, identityConflicts } = normaliseResults(input);
   const results = [...byCaseId.values()];
 
   const reliability = buildReliability(input.cases, byCaseId);
@@ -201,6 +265,22 @@ export function scoreCandidate(input: ScoreInput): CandidateScore {
     (r) => r.status === "provider_error" || r.status === "timeout" || r.status === "schema_failed",
   ).length;
 
+  // RETURNED-MODEL DRIFT (external audit finding 1): if the provider itself
+  // returned materially different model versions across cases for what was
+  // meant to be one logical candidate run, that is not one comparable result
+  // set. The simpler/safer of the two allowed responses is chosen: invalidate
+  // rather than silently blend.
+  const modelDrift = input.providerId !== "local" && reliability.returned_models.length > 1;
+
+  let invalidatedReason: string | null = null;
+  if (identityConflicts.length > 0) {
+    const shown = identityConflicts.slice(0, 5).join(", ");
+    const more = identityConflicts.length > 5 ? `, +${identityConflicts.length - 5} more` : "";
+    invalidatedReason = `refusing to score ${identityConflicts.length} case(s) with incompatible result rows under one run id (requested model or inference-config digest changed without a version bump): ${shown}${more}. Rerun this candidate under a fresh run id instead of resuming across the identity change.`;
+  } else if (modelDrift) {
+    invalidatedReason = `refusing to combine into one score: the provider returned ${reliability.returned_models.length} distinct model versions across cases for candidate "${input.candidateId}" (${reliability.returned_models.join(", ")}). Split the comparison per returned model or rerun the candidate.`;
+  }
+
   return {
     candidate_id: input.candidateId,
     provider_id: input.providerId,
@@ -208,8 +288,13 @@ export function scoreCandidate(input: ScoreInput): CandidateScore {
     corpus_version: input.corpusVersion,
     prompt_version: input.promptVersion,
     schema_version: input.schemaVersion,
+    invalidated_reason: invalidatedReason,
+    identity_conflicts: identityConflicts,
+    inference_config: results[0]?.inference_config ?? null,
     reliability,
-    critical_suite: criticalSuite,
+    critical_suite: invalidatedReason
+      ? { ...criticalSuite, passes_hard_gate: false }
+      : criticalSuite,
     message_task: messageTask,
     thread_task: threadTask,
     latency,
@@ -424,11 +509,13 @@ function buildEconomics(
   let input = 0;
   let output = 0;
   let reasoning = 0;
+  let cached = 0;
   for (const r of billable) {
     for (const a of r.attempts) {
       input += a.usage.input_tokens ?? 0;
       output += a.usage.output_tokens ?? 0;
       reasoning += a.usage.reasoning_tokens ?? 0;
+      cached += a.usage.cached_input_tokens ?? 0;
     }
   }
 
@@ -441,6 +528,7 @@ function buildEconomics(
       total_input_tokens: input,
       total_output_tokens: output,
       total_reasoning_tokens: reasoning,
+      total_cached_input_tokens: cached,
       estimated_total_cost_usd: null,
       estimated_cost_per_case_usd: null,
       estimated_cost_per_1k_messages_usd: null,
@@ -453,10 +541,15 @@ function buildEconomics(
     inputTokens: input,
     outputTokens: output,
     reasoningTokens: reasoning,
+    cachedInputTokens: cached,
   });
+  // Unverified price: a PriceBook entry exists (source/URL recorded for later
+  // verification) but lacks a rate for a dimension actually used. NEVER $0.
+  const pricingBasis: EconomicsReport["pricing_basis"] =
+    total === null ? "unverified" : "estimated_from_published_prices";
   const messageCases = billable.filter((r) => r.task === "message").length;
   const threadCases = billable.filter((r) => r.task === "thread").length;
-  const perCase = billable.length === 0 ? null : total / billable.length;
+  const perCase = billable.length === 0 || total === null ? null : total / billable.length;
 
   const perThousandForTask = (task: "message" | "thread"): number | null => {
     const taskResults = billable.filter((r) => r.task === task);
@@ -464,29 +557,33 @@ function buildEconomics(
     let i = 0;
     let o = 0;
     let t = 0;
+    let c = 0;
     for (const r of taskResults) {
       for (const a of r.attempts) {
         i += a.usage.input_tokens ?? 0;
         o += a.usage.output_tokens ?? 0;
         t += a.usage.reasoning_tokens ?? 0;
+        c += a.usage.cached_input_tokens ?? 0;
       }
     }
     const cost = estimateCaseCostUsd(priceBook, {
       inputTokens: i,
       outputTokens: o,
       reasoningTokens: t,
+      cachedInputTokens: c,
     });
-    return (cost / taskResults.length) * 1000;
+    return cost === null ? null : (cost / taskResults.length) * 1000;
   };
 
   return {
-    pricing_basis: "estimated_from_published_prices",
+    pricing_basis: pricingBasis,
     price_source: priceBook.source,
     price_source_url: priceBook.source_url,
     price_accessed_at: priceBook.accessed_at,
     total_input_tokens: input,
     total_output_tokens: output,
     total_reasoning_tokens: reasoning,
+    total_cached_input_tokens: cached,
     estimated_total_cost_usd: total,
     estimated_cost_per_case_usd: perCase,
     estimated_cost_per_1k_messages_usd: messageCases === 0 ? null : perThousandForTask("message"),

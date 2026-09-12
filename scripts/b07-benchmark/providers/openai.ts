@@ -4,6 +4,15 @@
  * Uses the Responses API with a strict `json_schema` text format, which is
  * OpenAI's native structured-output transport. Same logical schema, same
  * instructions as every other candidate — only the transport differs.
+ *
+ * BILLING NOTE (external audit finding): `usage.output_tokens_details.
+ * reasoning_tokens` is a BREAKDOWN of `usage.output_tokens`, not additional
+ * tokens above it — the Responses API's own examples show
+ * `total_tokens = input_tokens + output_tokens`, never
+ * `input_tokens + output_tokens + reasoning_tokens`. This adapter records
+ * `reasoning_tokens` for diagnostics only; `config/pricing.ts` must price
+ * OpenAI output tokens exactly once (`reasoning_billed_separately_from_output:
+ * false`) or the benchmark double-charges every reasoning-heavy response.
  */
 import {
   ProviderCallError,
@@ -52,6 +61,9 @@ export const openaiAdapter: ProviderAdapter = {
               schema: request.jsonSchema,
             },
           },
+          ...(request.inferenceConfig.reasoning_effort !== "not_supported"
+            ? { reasoning: { effort: request.inferenceConfig.reasoning_effort } }
+            : {}),
         }),
       },
       request.timeoutMs,
@@ -75,13 +87,18 @@ export const openaiAdapter: ProviderAdapter = {
 
     const usage = asRecord(body.usage);
     const outputDetails = asRecord(usage?.output_tokens_details);
+    const inputDetails = asRecord(usage?.input_tokens_details);
 
     return {
       text: extractText(body),
       usage: {
         input_tokens: readNumber(usage?.input_tokens),
+        // Billed output total — ALREADY INCLUSIVE of reasoning_tokens below.
         output_tokens: readNumber(usage?.output_tokens),
+        // Diagnostic breakdown only. Never add this to output_tokens.
         reasoning_tokens: readNumber(outputDetails?.reasoning_tokens),
+        // A subset of input_tokens, billed at the cached rate, not additional.
+        cached_input_tokens: readNumber(inputDetails?.cached_tokens),
       },
       returned_model: typeof body.model === "string" ? body.model : null,
       endpoint,

@@ -5,6 +5,18 @@
  * structured-output transport — so the same logical JSON Schema is enforced
  * server-side, matching what the OpenAI and Google adapters get.
  *
+ * TRANSPORT NOTE (external audit correction): the current `JSONOutputFormat`
+ * shape is `{ type: "json_schema", schema }` — there is NO `name` field.
+ * Earlier revisions of this adapter sent `name` because it mirrored the
+ * OpenAI/Google shapes; a real key would have surfaced this as a request
+ * validation error, which is exactly why `tests/b07-benchmark/provider-
+ * transport.test.ts` asserts the literal request body without needing one.
+ *
+ * BILLING NOTE: adaptive thinking tokens are billed as, and counted inside,
+ * `usage.output_tokens` — `usage.output_tokens_details.thinking_tokens` is an
+ * OBSERVABLE breakdown of that total, recorded here for diagnostics only and
+ * never added a second time (see `config/pricing.ts`).
+ *
  * A note that matters for the PRIVACY screen, not just the transport: the
  * official retention documentation states that JSON schemas compiled for
  * structured outputs are cached separately from message content and do not
@@ -53,13 +65,17 @@ export const anthropicAdapter: ProviderAdapter = {
           max_tokens: request.maxOutputTokens,
           system: request.systemPrompt,
           messages: [{ role: "user", content: request.userPrompt }],
+          // Current shape: { type: "json_schema", schema }. No `name` field —
+          // see the transport note at the top of this file.
           output_config: {
             format: {
               type: "json_schema",
-              name: request.schemaName,
               schema: request.jsonSchema,
             },
           },
+          ...(request.inferenceConfig.reasoning_effort !== "not_supported"
+            ? { thinking: { type: "enabled", effort: request.inferenceConfig.reasoning_effort } }
+            : {}),
         }),
       },
       request.timeoutMs,
@@ -82,15 +98,25 @@ export const anthropicAdapter: ProviderAdapter = {
     }
 
     const usage = asRecord(body.usage);
+    const outputDetails = asRecord(usage?.output_tokens_details);
+    const cacheCreation = readNumber(usage?.cache_creation_input_tokens) ?? 0;
+    const cacheRead = readNumber(usage?.cache_read_input_tokens) ?? 0;
+    const cachedInput =
+      usage?.cache_creation_input_tokens === undefined &&
+      usage?.cache_read_input_tokens === undefined
+        ? null
+        : cacheCreation + cacheRead;
 
     return {
       text: extractText(body),
       usage: {
         input_tokens: readNumber(usage?.input_tokens),
+        // Billed output total — ALREADY INCLUSIVE of thinking_tokens below.
         output_tokens: readNumber(usage?.output_tokens),
-        // Adaptive thinking tokens are billed as, and counted inside,
-        // output_tokens. Reporting them again here would double-count.
-        reasoning_tokens: null,
+        // OBSERVABLE breakdown only (thinking_tokens <= output_tokens).
+        // Reporting it again in cost estimation would double-count.
+        reasoning_tokens: readNumber(outputDetails?.thinking_tokens),
+        cached_input_tokens: cachedInput,
       },
       returned_model: typeof body.model === "string" ? body.model : null,
       endpoint,

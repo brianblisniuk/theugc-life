@@ -26,14 +26,25 @@ import type { MessageOutput, ThreadOutput } from "../../scripts/b07-benchmark/sc
 const PRICE: PriceBook = {
   candidate_id: "test",
   input_usd_per_mtok: 2,
+  cached_input_usd_per_mtok: 0.2,
   output_usd_per_mtok: 10,
   reasoning_usd_per_mtok: 10,
-  reasoning_tokens_reported_separately: true,
+  reasoning_billed_separately_from_output: true,
   source: "test",
   source_url: "https://example.invalid/pricing",
   accessed_at: "2026-09-12",
   verification: "unverified_not_checked",
 };
+
+const TEST_INFERENCE_CONFIG = {
+  policy_version: "test-policy-v1",
+  provider_id: "openai" as const,
+  reasoning_effort: "medium" as const,
+  temperature: "provider_default" as const,
+  max_output_tokens: 512,
+  structured_output_transport_version: "test-transport-v1",
+};
+const TEST_INFERENCE_CONFIG_DIGEST = "test-config-digest";
 
 function messageCase(
   id: string,
@@ -82,6 +93,8 @@ function okResult(
     candidate_id: "c",
     provider_id: "openai",
     requested_model: "m",
+    inference_config: TEST_INFERENCE_CONFIG,
+    inference_config_digest: TEST_INFERENCE_CONFIG_DIGEST,
     endpoint: "https://example.invalid",
     case_id: caseId,
     task,
@@ -98,7 +111,12 @@ function okResult(
         http_status: 200,
         error_summary: null,
         latency_ms: 100,
-        usage: { input_tokens: 1000, output_tokens: 50, reasoning_tokens: 10 },
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 50,
+          reasoning_tokens: 10,
+          cached_input_tokens: 0,
+        },
         returned_model: "m-2026",
       },
     ],
@@ -107,7 +125,12 @@ function okResult(
     final_schema_valid: true,
     prediction,
     total_latency_ms: 100,
-    usage_totals: { input_tokens: 1000, output_tokens: 50, reasoning_tokens: 10 },
+    usage_totals: {
+      input_tokens: 1000,
+      output_tokens: 50,
+      reasoning_tokens: 10,
+      cached_input_tokens: 0,
+    },
     evaluated_at: "2026-09-12T00:00:00.000Z",
     ...overrides,
   };
@@ -488,7 +511,12 @@ describe("latency and cost accounting", () => {
         http_status: 200,
         error_summary: "bad",
         latency_ms: 120,
-        usage: { input_tokens: 1000, output_tokens: 40, reasoning_tokens: 500 },
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 40,
+          reasoning_tokens: 500,
+          cached_input_tokens: 0,
+        },
         returned_model: "m-2026",
       },
       {
@@ -498,7 +526,12 @@ describe("latency and cost accounting", () => {
         http_status: 200,
         error_summary: null,
         latency_ms: 130,
-        usage: { input_tokens: 1100, output_tokens: 30, reasoning_tokens: 200 },
+        usage: {
+          input_tokens: 1100,
+          output_tokens: 30,
+          reasoning_tokens: 200,
+          cached_input_tokens: 0,
+        },
         returned_model: "m-2026",
       },
     ];
@@ -520,7 +553,12 @@ describe("latency and cost accounting", () => {
     expect(score.economics.total_output_tokens).toBe(70);
     expect(score.economics.total_reasoning_tokens).toBe(700);
     expect(score.economics.estimated_total_cost_usd).toBeCloseTo(
-      estimateCaseCostUsd(PRICE, { inputTokens: 2100, outputTokens: 70, reasoningTokens: 700 }),
+      estimateCaseCostUsd(PRICE, {
+        inputTokens: 2100,
+        outputTokens: 70,
+        reasoningTokens: 700,
+        cachedInputTokens: 0,
+      }) ?? Number.NaN,
       12,
     );
     expect(score.economics.pricing_basis).toBe("estimated_from_published_prices");
@@ -531,13 +569,121 @@ describe("latency and cost accounting", () => {
   });
 
   it("does not charge reasoning tokens twice when the provider folds them into output", () => {
-    const folded: PriceBook = { ...PRICE, reasoning_tokens_reported_separately: false };
+    const folded: PriceBook = { ...PRICE, reasoning_billed_separately_from_output: false };
+    const withReasoning = estimateCaseCostUsd(folded, {
+      inputTokens: 0,
+      outputTokens: 100,
+      reasoningTokens: 900,
+      cachedInputTokens: 0,
+    });
+    const withoutReasoning = estimateCaseCostUsd(folded, {
+      inputTokens: 0,
+      outputTokens: 100,
+      reasoningTokens: 0,
+      cachedInputTokens: 0,
+    });
+    expect(withReasoning).not.toBeNull();
+    expect(withReasoning).toBeCloseTo(withoutReasoning ?? Number.NaN, 12);
+  });
+
+  it("does charge reasoning tokens when the provider bills them separately (Google semantics)", () => {
+    const separate: PriceBook = { ...PRICE, reasoning_billed_separately_from_output: true };
+    const withReasoning = estimateCaseCostUsd(separate, {
+      inputTokens: 0,
+      outputTokens: 100,
+      reasoningTokens: 900,
+      cachedInputTokens: 0,
+    });
+    const withoutReasoning = estimateCaseCostUsd(separate, {
+      inputTokens: 0,
+      outputTokens: 100,
+      reasoningTokens: 0,
+      cachedInputTokens: 0,
+    });
+    expect(withReasoning).not.toBeNull();
+    expect(withReasoning).toBeGreaterThan(withoutReasoning ?? 0);
+  });
+
+  it("prices cached input at the cached rate rather than the full input rate", () => {
+    const withCache = estimateCaseCostUsd(PRICE, {
+      inputTokens: 1000,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      cachedInputTokens: 1000,
+    });
+    const withoutCache = estimateCaseCostUsd(PRICE, {
+      inputTokens: 1000,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      cachedInputTokens: 0,
+    });
+    expect(withCache).not.toBeNull();
+    expect(withCache).toBeLessThan(withoutCache ?? Number.POSITIVE_INFINITY);
+    // Fully cached input priced at the cached rate: 1000 tok * $0.2/MTok.
+    expect(withCache).toBeCloseTo(0.0002, 10);
+  });
+
+  it("15. an unverified price NEVER becomes $0 — it is null, with a distinct pricing basis", () => {
+    const unverified: PriceBook = {
+      ...PRICE,
+      input_usd_per_mtok: null,
+      output_usd_per_mtok: null,
+      reasoning_usd_per_mtok: null,
+      cached_input_usd_per_mtok: null,
+      verification: "unverified_not_checked",
+    };
     expect(
-      estimateCaseCostUsd(folded, { inputTokens: 0, outputTokens: 100, reasoningTokens: 900 }),
-    ).toBeCloseTo(
-      estimateCaseCostUsd(folded, { inputTokens: 0, outputTokens: 100, reasoningTokens: 0 }),
-      12,
-    );
+      estimateCaseCostUsd(unverified, {
+        inputTokens: 1000,
+        outputTokens: 500,
+        reasoningTokens: 0,
+        cachedInputTokens: 0,
+      }),
+    ).toBeNull();
+
+    const cases = [
+      messageCase("m1", { disposition: "positive", signals: [], evidence_strength: "strong" }),
+    ];
+    const score = scoreCandidate({
+      candidateId: "c",
+      providerId: "openai",
+      requestedModel: "m",
+      corpusVersion: "v",
+      promptVersion: "p",
+      schemaVersion: "s",
+      cases,
+      results: [
+        okResult("m1", "message", {
+          disposition: "positive",
+          signals: [],
+          evidence_strength: "strong",
+        }),
+      ],
+      priceBook: unverified,
+    });
+    expect(score.economics.estimated_total_cost_usd).toBeNull();
+    expect(score.economics.pricing_basis).toBe("unverified");
+    expect(score.economics.pricing_basis).not.toBe("no_pricing_metadata");
+  });
+
+  it("a missing cached-input rate makes cost unavailable only when cached tokens were actually used", () => {
+    const noCachedRate: PriceBook = { ...PRICE, cached_input_usd_per_mtok: null };
+    expect(
+      estimateCaseCostUsd(noCachedRate, {
+        inputTokens: 1000,
+        outputTokens: 100,
+        reasoningTokens: 0,
+        cachedInputTokens: 0,
+      }),
+    ).not.toBeNull();
+    expect(
+      estimateCaseCostUsd(noCachedRate, {
+        inputTokens: 1000,
+        outputTokens: 100,
+        reasoningTokens: 0,
+        cachedInputTokens: 200,
+      }),
+    ).toBeNull();
   });
 
   it("reports no cost at all rather than a fabricated one when pricing is absent", () => {

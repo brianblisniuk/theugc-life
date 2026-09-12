@@ -16,10 +16,16 @@
 import { randomUUID } from "node:crypto";
 
 import { BASELINE_CANDIDATE, hasApiKey, resolveModel, type Candidate } from "../config/candidates";
+import {
+  effectiveInferenceConfig,
+  inferenceConfigDigest,
+  type EffectiveInferenceConfig,
+} from "../config/inference-config";
 import type { CorpusCase } from "../corpus/schema";
 import { baselineClassify } from "../baseline/rules-baseline";
 import { adapterFor } from "../providers/registry";
 import { ProviderCallError, type ProviderResponse } from "../providers/types";
+import { collectSecretValues, redactSecrets } from "../../provider-evaluation/redact";
 import {
   MESSAGE_JSON_SCHEMA,
   SCHEMA_NAMES,
@@ -61,21 +67,41 @@ export interface RunnerOptions {
 }
 
 function emptyUsage(): CaseAttempt["usage"] {
-  return { input_tokens: null, output_tokens: null, reasoning_tokens: null };
+  return {
+    input_tokens: null,
+    output_tokens: null,
+    reasoning_tokens: null,
+    cached_input_tokens: null,
+  };
 }
 
 function sumUsage(attempts: readonly CaseAttempt[]): CaseResult["usage_totals"] {
   let input: number | null = null;
   let output: number | null = null;
   let reasoning: number | null = null;
+  let cached: number | null = null;
   const add = (current: number | null, next: number | null): number | null =>
     next === null ? current : (current ?? 0) + next;
   for (const a of attempts) {
     input = add(input, a.usage.input_tokens);
     output = add(output, a.usage.output_tokens);
     reasoning = add(reasoning, a.usage.reasoning_tokens);
+    cached = add(cached, a.usage.cached_input_tokens);
   }
-  return { input_tokens: input, output_tokens: output, reasoning_tokens: reasoning };
+  return {
+    input_tokens: input,
+    output_tokens: output,
+    reasoning_tokens: reasoning,
+    cached_input_tokens: cached,
+  };
+}
+
+/** Redact known secrets at the exact point an error is normalised into text
+ * the harness will persist. Defence in depth beyond the artifact-write
+ * boundary — a persisted `error_summary` must never carry a credential even
+ * if a future write path forgets to redact. */
+function safeErrorSummary(text: string): string {
+  return redactSecrets(text, collectSecretValues()).slice(0, 500);
 }
 
 /** Parse and validate one raw provider body against the machine schema. */
@@ -112,12 +138,15 @@ async function runOneCase(
   options: RunnerOptions,
   corpusCase: CorpusCase,
   model: string,
+  inferenceConfig: EffectiveInferenceConfig,
 ): Promise<CaseResult> {
   const base = {
     run_id: options.runId,
     candidate_id: options.candidate.id,
     provider_id: options.candidate.providerId,
     requested_model: model,
+    inference_config: inferenceConfig,
+    inference_config_digest: inferenceConfigDigest(inferenceConfig),
     case_id: corpusCase.case_id,
     task: corpusCase.task,
     split: corpusCase.split,
@@ -226,6 +255,7 @@ async function runOneCase(
         schemaName,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        inferenceConfig,
       });
     } catch (caught) {
       error =
@@ -245,7 +275,7 @@ async function runOneCase(
         kind: isRetry ? "schema_retry" : "initial",
         outcome: error.kind === "timeout" ? "timeout" : "provider_error",
         http_status: error.httpStatus,
-        error_summary: `${error.kind}: ${error.message}`.slice(0, 500),
+        error_summary: safeErrorSummary(`${error.kind}: ${error.message}`),
         latency_ms: latency,
         usage: emptyUsage(),
         returned_model: null,
@@ -268,6 +298,7 @@ async function runOneCase(
             input_tokens: response.usage.input_tokens,
             output_tokens: response.usage.output_tokens,
             reasoning_tokens: response.usage.reasoning_tokens,
+            cached_input_tokens: response.usage.cached_input_tokens,
           }
         : emptyUsage(),
       returned_model: response?.returned_model ?? null,
@@ -333,6 +364,8 @@ export interface RunOutcome {
 
 export async function runCandidate(options: RunnerOptions): Promise<RunOutcome> {
   const model = resolveModel(options.candidate);
+  const inferenceConfig = effectiveInferenceConfig(options.candidate, MAX_OUTPUT_TOKENS);
+  const configDigest = inferenceConfigDigest(inferenceConfig);
 
   // Availability is verified at execution time. A model whose id has moved is
   // recorded honestly; it never fails the round and never fakes a result.
@@ -347,6 +380,12 @@ export async function runCandidate(options: RunnerOptions): Promise<RunOutcome> 
     availability = check === true ? "available" : check === false ? "unavailable" : "unknown";
   }
 
+  // `isTerminalForResume` DELIBERATELY excludes `not_run_missing_key`, so a
+  // resume after an operator adds the missing key actually calls the
+  // provider instead of reusing the old absence. The identity key below binds
+  // reuse to the EXACT requested model and effective inference config, so a
+  // model override or an effort change between runs can never reuse a result
+  // computed under the old identity.
   const priorByKey = new Map<string, CaseResult>();
   if (options.resume) {
     for (const prior of readResults(options.runId)) {
@@ -363,6 +402,9 @@ export async function runCandidate(options: RunnerOptions): Promise<RunOutcome> 
     async (corpusCase) => {
       const key = resultCompatibilityKey({
         candidate_id: options.candidate.id,
+        provider_id: options.candidate.providerId,
+        requested_model: model,
+        inference_config_digest: configDigest,
         case_id: corpusCase.case_id,
         corpus_version: CORPUS_VERSION,
         prompt_version: PROMPT_VERSION,
@@ -380,6 +422,8 @@ export async function runCandidate(options: RunnerOptions): Promise<RunOutcome> 
           candidate_id: options.candidate.id,
           provider_id: options.candidate.providerId,
           requested_model: model,
+          inference_config: inferenceConfig,
+          inference_config_digest: configDigest,
           endpoint: null,
           case_id: corpusCase.case_id,
           task: corpusCase.task,
@@ -399,7 +443,7 @@ export async function runCandidate(options: RunnerOptions): Promise<RunOutcome> 
         };
       }
 
-      const result = await runOneCase(options, corpusCase, model);
+      const result = await runOneCase(options, corpusCase, model, inferenceConfig);
       appendResult(options.runId, result);
       return result;
     },
