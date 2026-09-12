@@ -59,6 +59,13 @@ export function readManifest(runId: string): RunManifest | null {
   return JSON.parse(readFileSync(path, "utf8")) as RunManifest;
 }
 
+/** Generic JSON artifact reader — used to read a prior run's `scores-v2.json` etc. */
+export function readJsonArtifact<T>(runId: string, filename: string): T | null {
+  const path = resolve(runDir(runId), filename);
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
+
 export function appendResult(runId: string, result: CaseResult): void {
   const path = resultsPath(runId);
   ensureDir(path);

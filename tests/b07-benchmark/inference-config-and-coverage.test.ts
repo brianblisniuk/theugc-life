@@ -19,6 +19,7 @@ import {
 import { renderReport } from "../../scripts/b07-benchmark/report/render";
 import type { CorpusStats } from "../../scripts/b07-benchmark/corpus/load";
 import type { CandidateScore } from "../../scripts/b07-benchmark/scoring/score";
+import { SCORING_VERSION_V1 } from "../../scripts/b07-benchmark/scoring/scoring-version";
 
 describe("effective inference configuration (finding 13)", () => {
   it("states an explicit, non-'not_supported' effort for every real provider, and 'not_supported' for local", () => {
@@ -127,6 +128,7 @@ describe("corpus coverage audit: low-support classes are flagged, never manufact
     expect(disposition.per_class.negative?.support).toBeLessThan(MIN_RELIABLE_CLASS_SUPPORT);
 
     const score: CandidateScore = {
+      scoring_version: SCORING_VERSION_V1,
       candidate_id: "c",
       provider_id: "openai",
       requested_model: "m",

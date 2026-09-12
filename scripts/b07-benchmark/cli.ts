@@ -35,10 +35,18 @@ import type { CorpusCase } from "./corpus/schema";
 import { PROMPT_VERSION } from "./prompt/render";
 import { VENDOR_SCREEN, VENDOR_SCREEN_STANDING_CONCLUSION } from "./privacy/vendor-screen";
 import { renderReport } from "./report/render";
+import { renderReportV2 } from "./report/render-v2";
 import { B07_BENCHMARK_SCHEMA_VERSION } from "./schema";
 import { scoreCandidate, type CandidateScore } from "./scoring/score";
+import { scoreCandidateV2, type CandidateScoreV2 } from "./scoring/score-v2";
 import { decide } from "./scoring/targets";
-import { readManifest, readResults, writeJson, writeText } from "./run/artifacts";
+import {
+  checkHoldoutCanResolve,
+  evaluateCandidateV2,
+  holdoutSupportPreflight,
+} from "./scoring/targets-v2";
+import { SCORING_VERSION_V1, SCORING_VERSION_V2 } from "./scoring/scoring-version";
+import { readJsonArtifact, readManifest, readResults, writeJson, writeText } from "./run/artifacts";
 import { resolveSelection, reconstructSelection } from "./run/selection";
 import { newRunId, runCandidate } from "./run/runner";
 import type { CaseResult, FinalistProvenance, RunManifest } from "./run/types";
@@ -220,6 +228,51 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
     );
   }
 
+  // STAGE-2 HOLDOUT-SUPPORT PREFLIGHT (locked contract, this correction
+  // round, NOT exercised — no holdout call is made this round) — runs BEFORE
+  // the provider loop below and BEFORE any candidate is contacted: label
+  // support is calculated ONLY from the frozen holdout gold corpus
+  // (`holdoutSupportPreflight` takes `CorpusCase[]` only — there is no
+  // model-output parameter for a prediction to travel through, so it
+  // performs ZERO provider calls). Gated on at least one selected candidate
+  // actually being callable (an API key present) — a `final` invocation with
+  // no key for any candidate makes no provider call regardless, exactly like
+  // every other stage, so the preflight has nothing to protect there. If
+  // `--from-run` names the Stage-1 screening run, its own scoring-v2
+  // evaluation is read to find exactly which quality targets it left
+  // `insufficient_support`; without `--from-run` this defaults conservatively
+  // to checking every support-sensitive target (disposition macro F1, signal
+  // micro F1). Any target the holdout cannot resolve stops the run before any
+  // provider is contacted — never a silent proceed.
+  if (
+    stage === "final" &&
+    candidates.some((c) => c.providerId !== "local" && hasApiKey(c.providerId))
+  ) {
+    const preflight = holdoutSupportPreflight(cases);
+    let unresolvedKeys: string[] = ["disposition_macro_f1", "signal_micro_f1"];
+    if (args.fromRun) {
+      const priorV2 = readJsonArtifact<{ scores: CandidateScoreV2[] }>(
+        args.fromRun,
+        "scores-v2.json",
+      );
+      if (priorV2) {
+        const keys = new Set<string>();
+        for (const s of priorV2.scores) {
+          for (const t of evaluateCandidateV2(s).targets) {
+            if (t.state === "insufficient_support") keys.add(t.key);
+          }
+        }
+        unresolvedKeys = [...keys];
+      }
+    }
+    const check = checkHoldoutCanResolve(preflight, unresolvedKeys);
+    if (!check.canResolve) {
+      throw new Error(
+        `HOLDOUT_INSUFFICIENT_TO_RESOLVE_TARGET: the frozen holdout corpus lacks sufficient strict gold support to resolve: ${check.blockingTargets.join(", ")} (disposition insufficient classes: ${preflight.disposition_insufficient_classes.join(", ") || "none"}; signal insufficient labels: ${preflight.signals_insufficient_labels.join(", ") || "none"}). STOP BEFORE ANY PROVIDER CALL — no candidate was contacted. A separately-frozen supplemental evaluation set would be required to resolve this; do not invent one without explicit product sign-off.`,
+      );
+    }
+  }
+
   const finalistProvenance: FinalistProvenance | null =
     stage === "final"
       ? {
@@ -325,6 +378,7 @@ function emitReport(
   }
 
   const scores: CandidateScore[] = [];
+  const scoresV2: CandidateScoreV2[] = [];
   const absences: { candidate_id: string; model: string; reason: string }[] = [];
 
   for (const [candidateId, candidateResults] of byCandidate) {
@@ -343,22 +397,26 @@ function emitReport(
       absences.push({ candidate_id: candidateId, model, reason });
       continue;
     }
-    scores.push(
-      scoreCandidate({
-        candidateId,
-        providerId: candidateResults[0]?.provider_id ?? candidate?.providerId ?? "local",
-        requestedModel: model,
-        corpusVersion: CORPUS_VERSION,
-        promptVersion: PROMPT_VERSION,
-        schemaVersion: B07_BENCHMARK_SCHEMA_VERSION,
-        cases,
-        results: candidateResults,
-        priceBook: priceBookFor(candidateId),
-      }),
-    );
+    const scoreInput = {
+      candidateId,
+      providerId: candidateResults[0]?.provider_id ?? candidate?.providerId ?? "local",
+      requestedModel: model,
+      corpusVersion: CORPUS_VERSION,
+      promptVersion: PROMPT_VERSION,
+      schemaVersion: B07_BENCHMARK_SCHEMA_VERSION,
+      cases,
+      results: candidateResults,
+      priceBook: priceBookFor(candidateId),
+    };
+    // Scoring is a downstream interpretation of the SAME raw evidence — v1
+    // (preserved, unchanged) and v2 (the correction) are both computed from
+    // one identical `scoreInput`, never two different result sets.
+    scores.push(scoreCandidate(scoreInput));
+    scoresV2.push(scoreCandidateV2(scoreInput));
   }
 
   scores.sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
+  scoresV2.sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
 
   const decision = decide(scores, BASELINE_CANDIDATE.id);
   const markdown = renderReport({
@@ -370,14 +428,38 @@ function emitReport(
     absences,
     finalistProvenance,
   });
+  const markdownV2 = renderReportV2({
+    runId,
+    stage,
+    generatedAt: new Date().toISOString(),
+    corpus: corpusStats(),
+    scores: scoresV2,
+    absences,
+  });
 
   const reportPath = writeText(runId, "report.md", markdown);
-  const scoresPath = writeJson(runId, "scores.json", { scores, absences, decision });
+  // `scoring_version` is stamped at the wrapper level so a v1 score artifact
+  // can never be silently read as v2 evidence — v1's own `CandidateScore`
+  // additionally carries the same stamp per-candidate (see `scoring/score.ts`).
+  const scoresPath = writeJson(runId, "scores.json", {
+    scoring_version: SCORING_VERSION_V1,
+    scores,
+    absences,
+    decision,
+  });
+  const reportV2Path = writeText(runId, "report-v2.md", markdownV2);
+  const scoresV2Path = writeJson(runId, "scores-v2.json", {
+    scoring_version: SCORING_VERSION_V2,
+    scores: scoresV2,
+    absences,
+  });
 
   log("");
   log(markdown);
   log(`report  : ${reportPath}`);
   log(`scores  : ${scoresPath}`);
+  log(`report (scoring v2) : ${reportV2Path}`);
+  log(`scores (scoring v2) : ${scoresV2Path}`);
   log("");
   log(`DECISION: ${decision.outcome}`);
   for (const reason of decision.reasons) log(`  - ${reason}`);

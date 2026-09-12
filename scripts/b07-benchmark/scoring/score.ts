@@ -27,6 +27,7 @@ import {
   type MultiLabelReport,
   type SingleLabelReport,
 } from "./metrics";
+import { SCORING_VERSION_V1 } from "./scoring-version";
 
 /**
  * Resolve the effective gold for one field against the case's acceptable set.
@@ -113,6 +114,14 @@ export interface EconomicsReport {
 }
 
 export interface CandidateScore {
+  /**
+   * Stamped so a v1 report/score artifact can never be silently read as v2
+   * evidence (external audit finding, this correction round). This scorer's
+   * behaviour is UNCHANGED and preserved exactly as computed historically —
+   * see `scoring/score-v2.ts` for the corrected acceptable-answer/strict
+   * metric families and `scoring-version.ts` for the full defect writeup.
+   */
+  scoring_version: typeof SCORING_VERSION_V1;
   candidate_id: string;
   provider_id: string;
   requested_model: string;
@@ -164,7 +173,14 @@ export interface CandidateScore {
   economics: EconomicsReport;
 }
 
-function predictionFor(result: CaseResult): MessageOutput | ThreadOutput | null {
+/**
+ * Exported for `scoring/score-v2.ts`: reliability, critical-invariant
+ * evaluation, result-stream normalisation and economics are UNAFFECTED by the
+ * scoring-v1 candidate-dependent-support defect (they never touch
+ * `effectiveGold`/`effectiveGoldSignals`), so scoring v2 reuses these exact
+ * functions rather than forking a second copy that could drift from v1's.
+ */
+export function predictionFor(result: CaseResult): MessageOutput | ThreadOutput | null {
   // A provider exception or an unparsable body NEVER becomes a semantic
   // prediction. Only a schema-valid parse populates `prediction`.
   return result.status === "ok" && result.final_schema_valid ? result.prediction : null;
@@ -182,7 +198,7 @@ export interface ScoreInput {
   priceBook: PriceBook | null;
 }
 
-interface NormalisedResults {
+export interface NormalisedResults {
   byCaseId: Map<string, CaseResult>;
   /** case_ids where two or more rows disagreed about requested model / inference config. */
   identityConflicts: string[];
@@ -214,7 +230,7 @@ interface NormalisedResults {
  *    candidate is later marked `invalidated_reason` rather than partially
  *    scored on a silently-picked subset.
  */
-function normaliseResults(input: ScoreInput): NormalisedResults {
+export function normaliseResults(input: ScoreInput): NormalisedResults {
   const selected = new Set(input.cases.map((c) => c.case_id));
   const rowsByCase = new Map<string, CaseResult[]>();
   for (const result of input.results) {
@@ -282,6 +298,7 @@ export function scoreCandidate(input: ScoreInput): CandidateScore {
   }
 
   return {
+    scoring_version: SCORING_VERSION_V1,
     candidate_id: input.candidateId,
     provider_id: input.providerId,
     requested_model: input.requestedModel,
@@ -307,7 +324,7 @@ function rate(numerator: number, denominator: number): number {
   return denominator === 0 ? 0 : Math.round((numerator / denominator) * 10000) / 10000;
 }
 
-function buildReliability(
+export function buildReliability(
   cases: readonly CorpusCase[],
   byCaseId: Map<string, CaseResult>,
 ): ReliabilityReport {
@@ -349,7 +366,7 @@ function buildReliability(
   };
 }
 
-function buildCriticalSuite(
+export function buildCriticalSuite(
   cases: readonly CorpusCase[],
   byCaseId: Map<string, CaseResult>,
 ): CandidateScore["critical_suite"] {
@@ -496,7 +513,7 @@ function buildThreadTask(
   };
 }
 
-function buildEconomics(
+export function buildEconomics(
   results: readonly CaseResult[],
   priceBook: PriceBook | null,
 ): EconomicsReport {
