@@ -157,6 +157,10 @@ describe("20. a secret echoed in a provider error is absent from persisted artif
       inference_config: {
         policy_version: "v",
         provider_id: "openai",
+        model_capability_profile: "openai_provider_default_v1",
+        thinking_mode: "disabled",
+        effort: null,
+        budget_tokens: null,
         reasoning_effort: "medium",
         temperature: "provider_default",
         max_output_tokens: 512,

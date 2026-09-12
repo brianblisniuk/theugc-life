@@ -167,6 +167,24 @@ undocumented provider default. Mocked-fetch transport-contract tests
 (`tests/b07-benchmark/provider-transport.test.ts`) assert the literal request
 body, headers and endpoint for every adapter without needing a live key.
 
+**Anthropic thinking transport is model-capability-aware, never
+provider-wide (external audit correction).** An earlier revision derived
+Anthropic's `thinking` shape from `provider_id` alone and sent
+`thinking: { type: "enabled", effort: ... }` for every Anthropic candidate —
+not a valid current request for any model in the candidate matrix.
+Current-generation models (`claude-sonnet-5`) accept ONLY
+`thinking: { type: "adaptive" }`; manual `{type:"enabled",...}` returns HTTP
+400, and effort is a separate `output_config.effort` field. `claude-haiku-4-5*`
+supports neither adaptive thinking nor `output_config.effort` at all — this
+round's Haiku screening candidate runs in ordinary, non-thinking
+configuration (ADR/see `config/inference-config.ts`). The request shape is
+now derived per EXACT model id via a `model_capability_profile` +
+`thinking_mode` (`adaptive` / `extended` / `disabled`) + `effort` +
+`budget_tokens` tuple, never from `provider_id` alone, and the policy version
+bump (`b07_bench_inference_policy_v2_anthropic_model_capability_aware`)
+ensures no result computed under the earlier invalid shape can ever be
+resumed under the new one.
+
 Every response is validated locally. Recorded separately per case: first-pass
 schema success, whether a retry was required, final schema success, and the
 semantic result.
@@ -290,6 +308,15 @@ exactly what ran (`inference_config`, plus its digest
 (§12) and the report prints the policy version and per-candidate effective
 effort. Where a provider exposes no equivalent knob, that is recorded as
 `not_supported` rather than silently omitted.
+
+Within one provider, capability is NOT uniform across models either (external
+audit correction): Anthropic's `claude-sonnet-5` and `claude-haiku-4-5*` have
+different thinking/effort contracts, so the effective config is derived per
+exact model id and stamps a `model_capability_profile` alongside
+`thinking_mode`/`effort`/`budget_tokens` — two Anthropic candidates with
+different capabilities can never share a config identity, and a candidate is
+never labelled with an effort value a different model's config would have
+used.
 
 ## 11b. Model identity reproducibility
 

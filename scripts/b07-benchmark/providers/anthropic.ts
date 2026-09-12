@@ -5,12 +5,26 @@
  * structured-output transport — so the same logical JSON Schema is enforced
  * server-side, matching what the OpenAI and Google adapters get.
  *
- * TRANSPORT NOTE (external audit correction): the current `JSONOutputFormat`
+ * TRANSPORT NOTE (external audit correction #1): the current `JSONOutputFormat`
  * shape is `{ type: "json_schema", schema }` — there is NO `name` field.
  * Earlier revisions of this adapter sent `name` because it mirrored the
  * OpenAI/Google shapes; a real key would have surfaced this as a request
  * validation error, which is exactly why `tests/b07-benchmark/provider-
  * transport.test.ts` asserts the literal request body without needing one.
+ *
+ * TRANSPORT NOTE (external audit correction #2, this round): the adapter
+ * previously constructed `thinking: { type: "enabled", effort: ... }` for
+ * EVERY Anthropic candidate, derived from `provider_id` alone. That shape is
+ * not a valid current Anthropic request for any model in the candidate
+ * matrix: current-generation models (Claude Sonnet 5) reject manual
+ * `{type:"enabled",...}` with HTTP 400 — the only valid on-mode is
+ * `thinking:{type:"adaptive"}`, with effort moved to `output_config.effort`
+ * — and Claude Haiku 4.5 supports neither adaptive thinking nor
+ * `output_config.effort` at all. The request shape is now derived from
+ * `request.inferenceConfig.thinking_mode`/`.effort`/`.budget_tokens`, which
+ * `config/inference-config.ts` computes per EXACT model id, never from
+ * `provider_id` alone. See that file for the full per-model capability
+ * contract and its official sources.
  *
  * BILLING NOTE: adaptive thinking tokens are billed as, and counted inside,
  * `usage.output_tokens` — `usage.output_tokens_details.thinking_tokens` is an
@@ -65,17 +79,36 @@ export const anthropicAdapter: ProviderAdapter = {
           max_tokens: request.maxOutputTokens,
           system: request.systemPrompt,
           messages: [{ role: "user", content: request.userPrompt }],
-          // Current shape: { type: "json_schema", schema }. No `name` field —
-          // see the transport note at the top of this file.
           output_config: {
+            // Current shape: { type: "json_schema", schema }. No `name`
+            // field — see transport note #1 at the top of this file.
             format: {
               type: "json_schema",
               schema: request.jsonSchema,
             },
+            // Effort lives HERE, never inside `thinking` — and only when the
+            // active model actually supports the knob (`effort !== null`;
+            // e.g. Claude Haiku 4.5 has none). See transport note #2.
+            ...(request.inferenceConfig.effort !== null
+              ? { effort: request.inferenceConfig.effort }
+              : {}),
           },
-          ...(request.inferenceConfig.reasoning_effort !== "not_supported"
-            ? { thinking: { type: "enabled", effort: request.inferenceConfig.reasoning_effort } }
-            : {}),
+          // Thinking transport is model-capability-aware, never
+          // provider-wide — see transport note #2 and
+          // `config/inference-config.ts`.
+          ...(request.inferenceConfig.thinking_mode === "adaptive"
+            ? { thinking: { type: "adaptive" } }
+            : request.inferenceConfig.thinking_mode === "extended" &&
+                request.inferenceConfig.budget_tokens !== null
+              ? {
+                  thinking: {
+                    type: "enabled",
+                    budget_tokens: request.inferenceConfig.budget_tokens,
+                  },
+                }
+              : {}),
+          // thinking_mode === "disabled": no `thinking` param at all (e.g.
+          // Claude Haiku 4.5 in this round's screening configuration).
         }),
       },
       request.timeoutMs,

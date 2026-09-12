@@ -26,7 +26,10 @@ import { MESSAGE_JSON_SCHEMA, SCHEMA_NAMES } from "../../scripts/b07-benchmark/s
 import { effectiveInferenceConfig } from "../../scripts/b07-benchmark/config/inference-config";
 import { candidateById, MODEL_CANDIDATES } from "../../scripts/b07-benchmark/config/candidates";
 
-function baseRequest(providerId: "openai" | "anthropic" | "google"): ProviderRequest {
+function baseRequest(
+  providerId: "openai" | "anthropic" | "google",
+  model = "irrelevant-for-non-anthropic",
+): ProviderRequest {
   return {
     systemPrompt: "system-instructions",
     userPrompt: "user-case-text",
@@ -34,7 +37,7 @@ function baseRequest(providerId: "openai" | "anthropic" | "google"): ProviderReq
     schemaName: SCHEMA_NAMES.message,
     maxOutputTokens: 512,
     timeoutMs: 5_000,
-    inferenceConfig: effectiveInferenceConfig({ providerId }, 512),
+    inferenceConfig: effectiveInferenceConfig({ providerId, model }, 512),
   };
 }
 
@@ -153,7 +156,7 @@ describe("OpenAI adapter transport contract", () => {
 });
 
 describe("Anthropic adapter transport contract", () => {
-  it("FIXED transport: output_config.format is exactly {type, schema} — no `name` field", async () => {
+  it("FIXED transport (Sonnet 5): adaptive thinking + output_config.effort, never manual `enabled`", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-0123456789";
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(200, {
@@ -174,7 +177,10 @@ describe("Anthropic adapter transport contract", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await anthropicAdapter.invoke("claude-sonnet-5", baseRequest("anthropic"));
+    const response = await anthropicAdapter.invoke(
+      "claude-sonnet-5",
+      baseRequest("anthropic", "claude-sonnet-5"),
+    );
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(anthropicAdapter.endpointFor("claude-sonnet-5"));
@@ -182,10 +188,20 @@ describe("Anthropic adapter transport contract", () => {
     expect(headers["x-api-key"]).toBe("sk-ant-test-0123456789");
     expect(headers["anthropic-version"]).toBe("2023-06-01");
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
-    const format = (body.output_config as { format: Record<string, unknown> }).format;
-    expect(format).toEqual({ type: "json_schema", schema: MESSAGE_JSON_SCHEMA });
-    expect(format).not.toHaveProperty("name");
-    expect(body.thinking).toEqual({ type: "enabled", effort: "high" });
+    const outputConfig = body.output_config as { format: Record<string, unknown>; effort?: string };
+    expect(outputConfig.format).toEqual({ type: "json_schema", schema: MESSAGE_JSON_SCHEMA });
+    expect(outputConfig.format).not.toHaveProperty("name");
+
+    // Current Anthropic transport: adaptive thinking, effort at
+    // output_config.effort — NEVER the invalid manual `{type:"enabled",...}`
+    // shape the previous adapter revision sent.
+    expect(body.thinking).toEqual({ type: "adaptive" });
+    expect((body.thinking as { type: string }).type).not.toBe("enabled");
+    expect(outputConfig.effort).toBe("medium");
+    // No non-default sampling params — the round spec forbids them here.
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).not.toHaveProperty("top_p");
+    expect(body).not.toHaveProperty("top_k");
 
     // 11. thinking-token breakdown captured, never folded into a fabricated field.
     expect(response.usage.reasoning_tokens).toBe(25);
@@ -193,6 +209,45 @@ describe("Anthropic adapter transport contract", () => {
     expect(response.usage.cached_input_tokens).toBe(40);
     expect(response.returned_model).toBe("claude-sonnet-5-2026-06-01");
     delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it("FIXED transport (Haiku 4.5): no adaptive thinking, no output_config.effort, structured output stays on", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-0123456789";
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "text",
+            text: '{"disposition":"neutral","signals":[],"evidence_strength":"weak"}',
+          },
+        ],
+        usage: { input_tokens: 50, output_tokens: 10 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await anthropicAdapter.invoke(
+      "claude-haiku-4-5-20251001",
+      baseRequest("anthropic", "claude-haiku-4-5-20251001"),
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.model).toBe("claude-haiku-4-5-20251001");
+    const outputConfig = body.output_config as { format: Record<string, unknown> };
+    expect(outputConfig.format).toEqual({ type: "json_schema", schema: MESSAGE_JSON_SCHEMA });
+    expect(outputConfig).not.toHaveProperty("effort");
+    expect(body).not.toHaveProperty("thinking");
+
+    expect(response.usage.reasoning_tokens).toBeNull();
+    expect(response.usage.cached_input_tokens).toBeNull();
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it("Sonnet 5 uses the exact requested model id from candidates.ts", async () => {
+    const sonnet = candidateById("anthropic-sonnet-5");
+    expect(sonnet?.model).toBe("claude-sonnet-5");
   });
 
   it("records null reasoning/cached tokens when the provider does not report them, never a fabricated 0", async () => {
@@ -214,7 +269,7 @@ describe("Anthropic adapter transport contract", () => {
     );
     const response = await anthropicAdapter.invoke(
       "claude-haiku-4-5-20251001",
-      baseRequest("anthropic"),
+      baseRequest("anthropic", "claude-haiku-4-5-20251001"),
     );
     expect(response.usage.reasoning_tokens).toBeNull();
     expect(response.usage.cached_input_tokens).toBeNull();
@@ -233,7 +288,7 @@ describe("Anthropic adapter transport contract", () => {
       } as unknown as Response),
     );
     await expect(
-      anthropicAdapter.invoke("claude-sonnet-5", baseRequest("anthropic")),
+      anthropicAdapter.invoke("claude-sonnet-5", baseRequest("anthropic", "claude-sonnet-5")),
     ).rejects.toMatchObject({ kind: "malformed_provider_envelope" });
     delete process.env.ANTHROPIC_API_KEY;
   });

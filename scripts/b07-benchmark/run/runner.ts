@@ -364,7 +364,16 @@ export interface RunOutcome {
 
 export async function runCandidate(options: RunnerOptions): Promise<RunOutcome> {
   const model = resolveModel(options.candidate);
-  const inferenceConfig = effectiveInferenceConfig(options.candidate, MAX_OUTPUT_TOKENS);
+  // Derived from the RESOLVED model id, not `options.candidate.model` — a
+  // `B07_BENCH_MODEL_...` override to a model with a different capability
+  // contract (e.g. a future Anthropic snapshot) must never silently run
+  // under the authoring candidate's inference config (external audit
+  // finding, this round: config must be candidate/model specific, and that
+  // includes the actually-resolved model, not just the configured one).
+  const inferenceConfig = effectiveInferenceConfig(
+    { providerId: options.candidate.providerId, model },
+    MAX_OUTPUT_TOKENS,
+  );
   const configDigest = inferenceConfigDigest(inferenceConfig);
 
   // Availability is verified at execution time. A model whose id has moved is

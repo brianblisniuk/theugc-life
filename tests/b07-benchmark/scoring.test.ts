@@ -39,6 +39,10 @@ const PRICE: PriceBook = {
 const TEST_INFERENCE_CONFIG = {
   policy_version: "test-policy-v1",
   provider_id: "openai" as const,
+  model_capability_profile: "openai_provider_default_v1",
+  thinking_mode: "disabled" as const,
+  effort: null,
+  budget_tokens: null,
   reasoning_effort: "medium" as const,
   temperature: "provider_default" as const,
   max_output_tokens: 512,

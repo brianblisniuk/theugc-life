@@ -22,30 +22,76 @@ import type { CandidateScore } from "../../scripts/b07-benchmark/scoring/score";
 
 describe("effective inference configuration (finding 13)", () => {
   it("states an explicit, non-'not_supported' effort for every real provider, and 'not_supported' for local", () => {
-    expect(effectiveInferenceConfig({ providerId: "openai" }, 512).reasoning_effort).toBe("medium");
-    expect(effectiveInferenceConfig({ providerId: "anthropic" }, 512).reasoning_effort).toBe(
-      "high",
-    );
-    expect(effectiveInferenceConfig({ providerId: "google" }, 512).reasoning_effort).toBe("medium");
-    expect(effectiveInferenceConfig({ providerId: "local" }, 512).reasoning_effort).toBe(
-      "not_supported",
-    );
+    expect(
+      effectiveInferenceConfig({ providerId: "openai", model: "gpt-5.6-luna" }, 512)
+        .reasoning_effort,
+    ).toBe("medium");
+    expect(
+      effectiveInferenceConfig({ providerId: "google", model: "gemini-3.8-flash" }, 512)
+        .reasoning_effort,
+    ).toBe("medium");
+    expect(
+      effectiveInferenceConfig({ providerId: "local", model: "benchmark-lexical-rules-v1" }, 512)
+        .reasoning_effort,
+    ).toBe("not_supported");
   });
 
-  it("is versioned, and the version is stable across calls for the same provider", () => {
-    const a = effectiveInferenceConfig({ providerId: "openai" }, 512);
-    const b = effectiveInferenceConfig({ providerId: "openai" }, 512);
+  it("Anthropic effort/thinking is derived per EXACT model id, never provider-wide (this round's fix)", () => {
+    const sonnet = effectiveInferenceConfig(
+      { providerId: "anthropic", model: "claude-sonnet-5" },
+      512,
+    );
+    expect(sonnet.thinking_mode).toBe("adaptive");
+    expect(sonnet.effort).toBe("medium");
+    expect(sonnet.reasoning_effort).toBe("medium");
+    expect(sonnet.budget_tokens).toBeNull();
+
+    const haiku = effectiveInferenceConfig(
+      { providerId: "anthropic", model: "claude-haiku-4-5-20251001" },
+      512,
+    );
+    expect(haiku.thinking_mode).toBe("disabled");
+    expect(haiku.effort).toBeNull();
+    // Never falsely labelled "high" (or any effort) — Haiku 4.5 has no
+    // effort knob in this round's non-thinking configuration.
+    expect(haiku.reasoning_effort).toBe("not_supported");
+    expect(haiku.budget_tokens).toBeNull();
+
+    // Two Anthropic candidates, two different capability contracts: their
+    // profiles and full configs (hence digests) must never collide.
+    expect(sonnet.model_capability_profile).not.toBe(haiku.model_capability_profile);
+    expect(inferenceConfigDigest(sonnet)).not.toBe(inferenceConfigDigest(haiku));
+  });
+
+  it("is versioned, and the version is stable across calls for the same model", () => {
+    const a = effectiveInferenceConfig({ providerId: "openai", model: "gpt-5.6-luna" }, 512);
+    const b = effectiveInferenceConfig({ providerId: "openai", model: "gpt-5.6-luna" }, 512);
     expect(a.policy_version).toBe(INFERENCE_POLICY_VERSION);
     expect(a).toEqual(b);
     expect(inferenceConfigDigest(a)).toBe(inferenceConfigDigest(b));
   });
 
-  it("digest differs across providers and across maxOutputTokens (a materially different setting)", () => {
-    const openaiCfg = effectiveInferenceConfig({ providerId: "openai" }, 512);
-    const anthropicCfg = effectiveInferenceConfig({ providerId: "anthropic" }, 512);
-    expect(inferenceConfigDigest(openaiCfg)).not.toBe(inferenceConfigDigest(anthropicCfg));
+  it("digest differs across providers, across models within one provider, and across maxOutputTokens", () => {
+    const openaiCfg = effectiveInferenceConfig(
+      { providerId: "openai", model: "gpt-5.6-luna" },
+      512,
+    );
+    const sonnetCfg = effectiveInferenceConfig(
+      { providerId: "anthropic", model: "claude-sonnet-5" },
+      512,
+    );
+    expect(inferenceConfigDigest(openaiCfg)).not.toBe(inferenceConfigDigest(sonnetCfg));
 
-    const smallerBudget = effectiveInferenceConfig({ providerId: "openai" }, 256);
+    const haikuCfg = effectiveInferenceConfig(
+      { providerId: "anthropic", model: "claude-haiku-4-5-20251001" },
+      512,
+    );
+    expect(inferenceConfigDigest(sonnetCfg)).not.toBe(inferenceConfigDigest(haikuCfg));
+
+    const smallerBudget = effectiveInferenceConfig(
+      { providerId: "openai", model: "gpt-5.6-luna" },
+      256,
+    );
     expect(inferenceConfigDigest(openaiCfg)).not.toBe(inferenceConfigDigest(smallerBudget));
   });
 });
