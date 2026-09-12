@@ -208,6 +208,62 @@ describe("benchmark prompt", () => {
     // There is no provider argument anywhere in the prompt API, which is what
     // makes per-provider semantic tuning structurally impossible.
     expect(buildSystemPrompt.length).toBe(1);
-    expect(PROMPT_VERSION).toBe("b07_benchmark_prompt_v1");
+    expect(PROMPT_VERSION).toBe("b07_benchmark_prompt_v2");
+  });
+});
+
+describe("prompt v2 — provider-neutral conservative clarifications", () => {
+  it("contains all four rules, identically for message and thread tasks (byte-identical shared preamble)", () => {
+    const messageSystem = buildSystemPrompt("message");
+    const threadSystem = buildSystemPrompt("thread");
+    for (const marker of ["RULE A", "RULE B", "RULE C", "RULE D"]) {
+      expect(messageSystem).toContain(marker);
+      expect(threadSystem).toContain(marker);
+    }
+    // The rules text itself (everything up to "Four conservative rules"
+    // through RULE D) must be byte-identical between tasks — provider/task
+    // neutrality is a shared preamble property, not duplicated/diverged text.
+    const extractRules = (s: string): string => {
+      const start = s.indexOf("Four conservative rules");
+      const end = s.indexOf("Respond ONLY with the structured object");
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      return s.slice(start, end);
+    };
+    expect(extractRules(messageSystem)).toBe(extractRules(threadSystem));
+  });
+
+  it("does not quote any scored case id or gold_rationale text in the rule prose", () => {
+    const system = buildSystemPrompt("message") + buildSystemPrompt("thread");
+    for (const c of loadCorpus()) {
+      expect(system, `${c.case_id} id leaked into shared prompt`).not.toContain(c.case_id);
+      expect(system, `${c.case_id} rationale leaked into shared prompt`).not.toContain(
+        c.gold_rationale,
+      );
+    }
+  });
+
+  it("the RULE A/B fictional examples are not verbatim corpus message text (no case-content leakage)", () => {
+    // The five few-shot exemplars are DELIBERATELY embedded in the shared
+    // prompt (that is the whole point of a worked example) — excluded here,
+    // same discipline as test 16b's holdout-only check. Every OTHER case's
+    // message text (dev and holdout alike) must not appear, which is exactly
+    // what would happen if a RULE's "fictional" example were secretly copied
+    // from a real scored case.
+    const system = buildSystemPrompt("message") + buildSystemPrompt("thread");
+    for (const c of loadCorpus()) {
+      if (FEW_SHOT_CASE_IDS.includes(c.case_id)) continue;
+      for (const m of c.messages) {
+        expect(
+          system,
+          `${c.case_id} message text leaked into shared prompt: ${m.text}`,
+        ).not.toContain(m.text);
+      }
+    }
+  });
+
+  it("prompt version is bumped from v1 and only one v2 revision exists (no v3 constant defined)", () => {
+    expect(PROMPT_VERSION).not.toBe("b07_benchmark_prompt_v1");
+    expect(PROMPT_VERSION).toBe("b07_benchmark_prompt_v2");
   });
 });

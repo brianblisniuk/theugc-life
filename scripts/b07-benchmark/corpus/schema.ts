@@ -23,7 +23,20 @@ import {
   THREAD_STATES,
 } from "../taxonomy";
 
-export const CORPUS_VERSION = "b07_gold_corpus_v1";
+/**
+ * `b07_gold_corpus_v2` — the active gold corpus.
+ *
+ * v2 is a CORRECTION to v1, not a rewrite: `b07_gold_corpus_v1_message.jsonl`
+ * and `b07_gold_corpus_v1_thread.jsonl` remain on disk, byte-identical to the
+ * v1 round, as the historical record of what v1's Stage-1 evidence actually
+ * scored against. v2 changes exactly one case (`t-en-dev-009`, corrected per
+ * external audit against D072 §27 — see its `gold_rationale`); every other
+ * line in v2 is identical to v1. See
+ * `docs/evaluations/B07_INFERENCE_BENCHMARK_RUN_2026-09.md` §8 for the full
+ * audit rationale. No v1 scored result may be reported as v2 evidence, and
+ * `cli.ts`'s resume/report version checks refuse to mix the two.
+ */
+export const CORPUS_VERSION = "b07_gold_corpus_v2";
 
 /**
  * `creator` = a message the creator SENT (D072 §16 context only — it never gets

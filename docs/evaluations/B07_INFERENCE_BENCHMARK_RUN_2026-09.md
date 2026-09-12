@@ -1,10 +1,16 @@
 # B07 inference benchmark — run summary, 2026-09-12
 
-**Status:** ANTHROPIC STAGE 1 COMPLETE (real run, both candidates) — OpenAI and
-Google remain `not_run_missing_key`. See §7 for the real Anthropic evidence;
-§1–§6 below are the prior (baseline-only, no-key) round and are kept as
-historical record.
-**Corpus:** `b07_gold_corpus_v1` · **Prompt:** `b07_benchmark_prompt_v1` · **Schema:** `b07_benchmark_schema_v1`
+**Status:** PROMPT-V2 / CORPUS-V2 ANTHROPIC STAGE 1 COMPLETE (real run, both
+candidates) — OpenAI and Google remain `not_run_missing_key`. See §10 for the
+current (v2) Anthropic evidence and §8–§9 for the corpus correction and
+prompt revision that produced it. §1–§7 below are PRIOR ROUNDS
+(baseline-only/no-key, then the real v1 Anthropic run) and are kept, byte-for-
+byte, as historical record — **no v1 result is reused as v2 evidence**; see
+§8.4 for the explicit v1→v2 identity-separation statement.
+**Corpus:** `b07_gold_corpus_v1` (§1–§7, historical) → `b07_gold_corpus_v2`
+(§8–§10, current) · **Prompt:** `b07_benchmark_prompt_v1` (§1–§7, historical) →
+`b07_benchmark_prompt_v2` (§8–§10, current) · **Schema:** `b07_benchmark_schema_v1`
+(unchanged)
 **Specification:** [`docs/B07_INFERENCE_BENCHMARK_SPEC.md`](../B07_INFERENCE_BENCHMARK_SPEC.md)
 **Governing decision:** D072 — [`docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`](../B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md)
 
@@ -502,3 +508,520 @@ code change was required — every live invocation this round explicitly
 unset the variable — but this is recorded here because a future runner
 invocation in the same or a similar environment must do the same, or every
 result will silently degrade to `unavailable` rather than fail loudly.
+
+---
+
+## 8. DEV corpus audit correction — v1 → v2 (this round)
+
+External audit of the §7 v1 Anthropic run found ONE benchmark inconsistency:
+`t-en-dev-009` was internally over-constrained relative to what D072 §27
+actually permits. This section documents the correction, the sweep performed
+to check for analogous defects elsewhere in the corpus, and the resulting
+version bump.
+
+### 8.1 Finding 1 — `t-en-dev-009`
+
+The case: target previously declined ("Sorry, no — we're not doing creator
+collaborations this year."); later, target reopens ("Update: the policy
+changed last week. If you're still interested we'd very much like to pick
+this up. Are your October dates still free?").
+
+v1 tagging: primary gold `thread_state: engaged`; acceptable
+`["engaged", "unresolved"]`; `critical_invariants` included
+`interest_not_agreement`, whose predicate (`scoring/invariants.ts`) fires on
+`thread_state === "negotiating"` OR `"agreement_observed"` — meaning
+`negotiating` was flatly forbidden for this case regardless of what the
+reopened conversation actually contained.
+
+Why that is wrong under D072 §27 (quoted in full above, §27 bullet "A target
+says yes, but the creator never explicitly accepts" and the reopening
+bullet): D072 does not say every reopening must resolve to `engaged`. A
+reopened conversation that has moved into concrete scheduling/term
+exploration can legitimately be `negotiating`. "Are your October dates still
+free?" is a concrete scheduling question — prompt v1 itself already defines
+dates as a potential commercial term (`terms_discussion`: "engages with the
+commercial terms (rates, compensation, deliverables, dates as terms)"). Sonnet
+5 predicted `negotiating` on this case in v1 and was counted as a CRITICAL
+violation; the external audit found that reading defensible, not a semantic
+collapse, and found the invariant's blanket prohibition on this case
+specifically over-constrained.
+
+**Correction applied, in `b07_gold_corpus_v2_thread.jsonl` only:**
+
+| field | v1 | v2 |
+| --- | --- | --- |
+| `expected.thread_state` | `engaged` | `engaged` (**unchanged** — primary gold is not being changed to flatter any model) |
+| `acceptable.thread_state` | `["engaged", "unresolved"]` | `["engaged", "unresolved", "negotiating"]` |
+| `critical_invariants` | `["reopening_supersedes_decline", "unknown_not_unpaid", "interest_not_agreement", "unsupported_compensation_unknown"]` | `["reopening_supersedes_decline", "unknown_not_unpaid", "unsupported_compensation_unknown"]` (`interest_not_agreement` **removed**) |
+| `gold_rationale` | original text | original text **preserved**, with an appended `CORPUS v2 CORRECTION` paragraph explaining the change and its D072 §27 basis |
+
+`reopening_supersedes_decline`, `unknown_not_unpaid` and
+`unsupported_compensation_unknown` are unchanged and still apply — this
+correction touches exactly one invariant tag and one acceptable-answer array,
+nothing else about the case.
+
+### 8.2 Audit of every other case tagged `interest_not_agreement`
+
+Before bumping the corpus version, every case (dev AND holdout) carrying the
+`interest_not_agreement` tag was inspected for the same defect. The predicate
+only has two branches: message-level (fires on a predicted `agreement`
+signal) and thread-level (fires on `negotiating` or `agreement_observed`).
+The message-level branch was never at risk — it fires strictly on the
+`agreement` signal, so a message case correctly tagged `interest_not_agreement`
+remains correctly tagged even when it also contains real `terms_discussion`
+(D072 §27: "asking about rates opens a negotiation; it does not close one" —
+an `agreement` signal would be wrong there regardless). Message-level cases
+inspected and confirmed correctly tagged (no change): `m-en-dev-020`,
+`m-en-dev-023`, `m-en-hold-013`, `m-en-hold-018`, `m-en-hold-035`,
+`m-es-hold-011`, `m-es-hold-015`, `m-es-hold-018`.
+
+The thread-level branch is where the `t-en-dev-009` defect lived, so every
+OTHER thread case tagged `interest_not_agreement` was read in full and
+checked for actual terms/offer/rate/deliverable/concrete-scheduling
+discussion (the test for whether `negotiating` would be a defensible reading
+D072 forbids the tag from ruling out):
+
+| case | split | content | verdict |
+| --- | --- | --- | --- |
+| `t-en-dev-001` | dev | target asks for media kit + past work examples | interest/information-request only — **correctly tagged, unchanged** |
+| `t-es-dev-001` | dev | Spanish counterpart of the above | same — **unchanged** |
+| `t-pt-dev-001` | dev | Portuguese counterpart | same — **unchanged** |
+| `t-en-hold-001` | holdout | target says "great fit", asks for media kit, takes it to the GM | interest + internal progress only — **unchanged** |
+| `t-en-hold-016` | holdout | creator is shortlisted; board decides later | shortlisting is engagement, not term discussion — **unchanged** |
+| `t-en-hold-027` | holdout | three creator-sent follow-ups; target's one reply is "interested, can we speak next week" | target-side interest only, no terms — **unchanged** |
+| `t-es-hold-001` | holdout | Spanish counterpart of `t-en-hold-001` | same — **unchanged** |
+| `t-es-hold-013` | holdout | Spanish counterpart of `t-en-hold-027` | same — **unchanged** |
+
+None of these contain rates, price, deliverables, a concrete offer, or
+scheduling raised as an actual commercial term (as opposed to `t-en-dev-009`'s
+"are your October dates still free?" arriving inside a reopened, previously
+negotiated-adjacent thread). `negotiating` is correctly forbidden for all
+eight — they were left exactly as they were. A permanent regression test
+(`tests/b07-benchmark/corpus.test.ts`, describe block "v2 corpus correction
+(Finding 1...)") pins this exact list going forward.
+
+A companion sweep checked the inverse direction across the WHOLE corpus:
+does any case combine `interest_not_agreement` with an `acceptable.thread_state`
+that already includes `negotiating` or `agreement_observed` (a self-
+contradiction independent of any model result)? Zero hits, before or after
+the correction — `t-en-dev-009` was a "the tag is too strict for what D072
+actually allows" defect, not a "the acceptable set already contradicts the
+tag" defect.
+
+### 8.3 HOLDOUT check (no model result inspected)
+
+Per the round's constraint, no holdout model result exists to inspect, and
+none was created. The mechanical sweep above (§8.2) covers holdout cases
+tagged `interest_not_agreement` equally with dev cases, using only the
+case's own authored text and D072 — never a model prediction — as the basis
+for judgement. Two holdout cases, `t-en-hold-009` and `t-es-hold-009`, are
+independently notable: they are reopening cases structurally identical in
+shape to `t-en-dev-009` (prior decline → policy-change reopening → a
+scheduling question), and their **v1 tagging already gets this right** —
+`critical_invariants` on both is `["reopening_supersedes_decline",
+"unknown_not_unpaid", "unsupported_compensation_unknown"]` (no
+`interest_not_agreement`), and `acceptable.thread_state` already includes
+`negotiating`. This confirms `t-en-dev-009` was an isolated authoring
+oversight in the original v1 corpus, not evidence of a systematic mistagging
+pattern — the correct pattern was already present elsewhere in the same
+corpus. **No holdout case required a correction; none was touched.**
+
+### 8.4 Version bump and v1/v2 identity separation
+
+- New fixtures: `scripts/b07-benchmark/fixtures/b07_gold_corpus_v2_message.jsonl`
+  and `b07_gold_corpus_v2_thread.jsonl`. The v2 message fixture is
+  byte-for-byte identical to v1 (no message case changed); the v2 thread
+  fixture differs from v1 in exactly the one case described in §8.1.
+- `scripts/b07-benchmark/fixtures/b07_gold_corpus_v1_message.jsonl` and
+  `b07_gold_corpus_v1_thread.jsonl` remain on disk, **untouched** (confirmed
+  via `git diff` before this round's commit — zero diff against the base
+  head), as the permanent historical record backing §1–§7's v1 evidence.
+- `CORPUS_VERSION` (`scripts/b07-benchmark/corpus/schema.ts`) bumped
+  `b07_gold_corpus_v1` → `b07_gold_corpus_v2`; `FIXTURE_FILES`
+  (`scripts/b07-benchmark/corpus/load.ts`) now loads the v2 files.
+  `corpus_version` is baked into every run manifest and every result row
+  (`cli.ts`, `run/runner.ts`), and `cli.ts`'s own resume/report logic refuses
+  to mix a stored run computed under one corpus version into a report
+  rendered under a different one (`refusing to resume run ...: version
+  mismatch`) — so no v1 scored result can be silently presented as v2
+  evidence, structurally, not just by convention.
+- Every other corpus property is unchanged: 180 cases, 60 dev / 120 holdout,
+  the same 5 few-shot exemplar ids, the same taxonomy coverage, the same
+  critical-invariant suite membership (126 cases) except for the single
+  removed tag on `t-en-dev-009`.
+
+---
+
+## 9. Prompt v2 — provider-neutral conservative clarifications
+
+### 9.1 What changed and why
+
+v1's shared preamble already stated several D072 boundaries in prose (an
+offer is not agreement; interest is not agreement; rates-request opens
+rather than closes a negotiation), but the §7.3 v1 run showed two systematic
+collapses that v1's prompt text did not address as an explicit, actionable
+rule:
+
+1. a dated "no availability now" reply that also invites a retry later was
+   read as an outright `rejection`/permanent decline (both candidates, on
+   both an English and a Spanish case each — `temporary_timing_not_permanent_decline`);
+2. a one-sided target "yes" still awaiting the creator's own confirmation was
+   read as `agreement_observed` (both candidates, identically, on
+   `t-en-dev-006` — `offer_not_agreement`).
+
+`b07_benchmark_prompt_v2` (`scripts/b07-benchmark/prompt/render.ts`) adds
+four explicit rules (RULE A–D) to the shared preamble, restating D072 §27's
+own prose examples in generic, fictional wording:
+
+- **RULE A** (temporary unavailability is not rejection) — do not add a
+  `rejection` signal or classify `negative`/`declined_observed` merely
+  because a reply contains "no"/"can't"/"impossible"/"no availability" when
+  the SAME reply also explicitly invites a future retry; prefer
+  `timing_constraint` plus any genuinely supported `interest`/
+  `terms_discussion`, disposition usually `mixed` (sometimes `neutral`), not
+  `negative`.
+- **RULE B** (one-sided acceptance is not yet thread agreement) — a target's
+  `agreement`-shaped "yes" to a specific proposed term is real evidence for
+  THAT message, but `agreement_observed` at the thread level requires the
+  chronology to show BOTH sides confirming the SAME arrangement; absent a
+  later creator-side confirmation, the thread state is `negotiating`. Runs
+  symmetrically for an unconfirmed creator-sent acceptance.
+- **RULE C** (reopening is not read back into the decline it reopens) — a
+  reopening supersedes a current `declined_observed` summary, then the
+  reopened conversation is classified on its own merits: renewed interest
+  alone → `engaged`; concrete scheduling/term/offer discussion → `negotiating`;
+  explicit two-sided confirmation → `agreement_observed`; insufficient/
+  conflicting evidence → `unresolved`/`ambiguous`.
+- **RULE D** (a scheduling question is not agreement) — "are your dates
+  still free?" tests availability; depending on context it can support
+  `engaged` or `negotiating`, never `agreement_observed` alone.
+
+### 9.2 Provider neutrality — proof, not assertion
+
+- `PROMPT_VERSION` bumped `b07_benchmark_prompt_v1` → `b07_benchmark_prompt_v2`
+  (`scripts/b07-benchmark/prompt/render.ts`), participating in run/result
+  identity exactly like `CORPUS_VERSION`.
+- The four rules live in `SHARED_PREAMBLE`, the same single template string
+  every task/provider draws from — there is no provider argument anywhere in
+  the prompt-building API (`buildSystemPrompt(task)` takes only `"message" |
+  "thread"`), so per-provider tuning is structurally impossible, not merely
+  avoided by convention. `tests/b07-benchmark/schema-and-prompt.test.ts`
+  asserts the rules text is byte-identical between the message and thread
+  system prompts.
+- No OpenAI- or Anthropic-specific wording was added; the rules use the same
+  generic vocabulary (`timing_constraint`, `negotiating`, `agreement_observed`,
+  etc.) already defined in the taxonomy section of the prompt. When OpenAI
+  and Google are run in a future round, they receive this exact same prompt
+  text — no new adapter-side prompt branch was added for Anthropic.
+
+### 9.3 No leakage
+
+- No scored case id or `gold_rationale` text appears in the rule prose
+  (verified both by hand and by
+  `tests/b07-benchmark/schema-and-prompt.test.ts` iterating the full corpus
+  against the rendered system prompt).
+- The RULE A/B fictional examples ("We're full in November, but please
+  contact us for January." / "Could you cover a $500 fee?") are original
+  wording, not copied verbatim from any scored case's message text — the
+  same test suite asserts no non-few-shot case's message text appears
+  anywhere in the shared system prompt.
+- No new few-shot exemplar was added; the five existing exemplar ids
+  (`m-en-dev-001`, `m-en-dev-014`, `m-es-dev-005`, `t-en-dev-003`,
+  `t-en-dev-011`) are unchanged, still all `dev`, still excluded from every
+  scored set.
+
+### 9.4 One revision only
+
+This is the round's single prompt-v2 design. No prompt v3 was created after
+seeing the §10 results below, even though neither candidate is a full
+Stage-1 survivor — see §10.5/§13.
+
+---
+
+## 10. ANTHROPIC STAGE 1 v2 — REAL RUN, 2026-09-12 (this round)
+
+Run id: `stage1-anthropic-v2-20260912`. Full `screen` stage, `dev` split,
+`--candidate anthropic-sonnet-5 --candidate anthropic-haiku-4-5`, default
+concurrency 4, default bounded retry budget 1 — identical operational
+parameters to the §7.3 v1 run. Corpus: `b07_gold_corpus_v2`. Prompt:
+`b07_benchmark_prompt_v2`. Inference policy: unchanged from §7 —
+`b07_bench_inference_policy_v2_anthropic_model_capability_aware` (Sonnet 5:
+adaptive thinking, `output_config.effort: "medium"`; Haiku 4.5: no thinking
+parameter, no effort — neither transport was touched this round, per the
+round's explicit instruction not to change them). `ANTHROPIC_BASE_URL` was
+unset before every live invocation, same operational note as §7.0.
+
+### 10.0 Live smoke (before Stage 1)
+
+Case `m-en-dev-002` (same dev case used for the §7.2 v1 smoke), one call per
+candidate, under a smoke-only run id never reused for Stage 1:
+
+| | Sonnet 5 | Haiku 4.5 |
+| --- | --- | --- |
+| HTTP status | 200 | 200 |
+| structured output | valid, first pass | valid, first pass |
+| input tokens | 3,224 | 2,132 |
+| output tokens | 31 | 18 |
+| latency | 1,852 ms | 1,473 ms |
+| estimated cost | ≈$0.00676 | ≈$0.00222 |
+
+Input tokens rose ~38% over the §7.2 v1 smoke on the identical case (Sonnet
+2,329→3,224; Haiku 1,533→2,132), consistent with the added RULE A–D text —
+output tokens did not materially change. Projected full 55-case Stage-1 cost
+from this smoke: ≈$0.37 for Sonnet, ≈$0.12 for Haiku, ≈$0.49 total —
+comfortably inside the remaining account balance (already-spent total from
+the prior round plus this smoke stayed under $0.4). The complete Stage 1 was
+run in full for both candidates; §10.1 confirms the actual measured total
+matched this projection closely.
+
+### 10.1 Stage 1 — complete run, both candidates, identical case set
+
+Both candidates scored the identical 55-case set (60 `dev` cases minus the 5
+few-shot exemplars) — same set as §7.3, now under corpus v2/prompt v2.
+
+| | `anthropic-haiku-4-5` | `anthropic-sonnet-5` |
+| --- | --- | --- |
+| requested model | `claude-haiku-4-5-20251001` | `claude-sonnet-5` |
+| returned model(s) | `claude-haiku-4-5-20251001` (only) | `claude-sonnet-5` (only) |
+| cases attempted | 55/55 | 55/55 |
+| identity conflicts | none | none |
+
+**Reliability** (identical structure to §7.3, both candidates 100%/0%/100%,
+0 provider errors, 0 timeouts — see the table below):
+
+| | Haiku 4.5 | Sonnet 5 |
+| --- | --- | --- |
+| first-pass structured-output rate | 100.0% | 100.0% |
+| bounded-retry rate | 0.0% | 0.0% |
+| final structured-output rate | 100.0% | 100.0% |
+| provider errors | 0 | 0 |
+| timeouts | 0 | 0 |
+
+#### Critical invariant hard gate
+
+| | critical cases | evaluated | violations | gate |
+| --- | --- | --- | --- | --- |
+| Haiku 4.5 | 38 | 38 | **2** | **FAIL** |
+| Sonnet 5 | 38 | 38 | **0** | **PASS** |
+
+Sonnet 5 clears the critical-invariant hard gate under v2 — the first time
+either Anthropic candidate has done so in this benchmark. Haiku 4.5 still
+fails it (2 violations, both the same invariant as before).
+
+#### Semantic metrics
+
+**Task M (message, n=35 per candidate)**
+
+| | Haiku 4.5 | Sonnet 5 |
+| --- | --- | --- |
+| disposition accuracy | 91.4% | 94.3% |
+| disposition macro F1 | 0.9153 | **0.7596** |
+| signal exact-set accuracy | 80.0% (28/35) | 91.4% (32/35) |
+| signal micro F1 | 0.9109 | 0.9462 |
+| signal macro F1 | 0.8866 | 0.9442 |
+| signal over-prediction rate | 0.1458 | 0.0426 |
+| signal under-prediction rate | 0.0417 | 0.0638 |
+| evidence-strength accuracy | 71.4% | 71.4% |
+
+**Task T (thread, n=20 per candidate)**
+
+| | Haiku 4.5 | Sonnet 5 |
+| --- | --- | --- |
+| thread-state accuracy | 95.0% | 100.0% |
+| thread-state macro F1 | 0.8000 | 1.0000 |
+| compensation accuracy | 100.0% | 100.0% |
+| `unknown`→`unpaid` count | **0** | **0** |
+| evidence-strength accuracy | 80.0% | 95.0% |
+
+#### Performance and economics
+
+| | Haiku 4.5 | Sonnet 5 |
+| --- | --- | --- |
+| median latency | 1,235 ms | 1,717 ms |
+| p95 latency | 1,503 ms | 2,197 ms |
+| input tokens (all attempts) | 117,404 | 175,900 |
+| output tokens (all attempts) | 1,261 | 2,277 |
+| thinking tokens (diagnostic) | 0 | 164 |
+| estimated Stage-1 total cost | **$0.123709** | **$0.374570** |
+| estimated cost per case | $0.002249 | $0.006810 |
+| projected $ / 1,000 message interpretations | $2.2502 | $6.8441 |
+| projected $ / 1,000 thread interpretations | $2.2476 | $6.7513 |
+
+Pricing basis unchanged from §7.3: `estimated_from_published_prices`, same
+per-token rates, never measured invoice billing. Total measured spend this
+round (Stage 1 + smoke, both candidates): ≈$0.507.
+
+### 10.2 V1 → V2 comparison
+
+| metric | Haiku v1 | Haiku v2 | Δ | Sonnet v1 | Sonnet v2 | Δ |
+| --- | --- | --- | --- | --- | --- | --- |
+| critical violations | 3 | 2 | −1 | 5 (4 valid + 1 corrected) | 0 | −5 (−4 valid, −1 corrected) |
+| hard gate | FAIL | FAIL | unchanged | FAIL | **PASS** | flipped |
+| disposition macro F1 | 0.8981 | 0.9153 | +0.0172 | 0.7551 | 0.7596 | +0.0045 |
+| signal exact-set accuracy | 77.1% | 80.0% | +2.9pp | 77.1% | 91.4% | +14.3pp |
+| signal micro F1 | 0.8972 | 0.9109 | +0.0137 | 0.8713 | 0.9462 | +0.0749 |
+| thread-state accuracy | 85.0% | 95.0% | +10pp | 85.0% | 100.0% | +15pp |
+| thread-state macro F1 | 0.7187 | 0.8000 | +0.0813 | 0.8577 | 1.0000 | +0.1423 |
+| compensation accuracy | 100.0% | 100.0% | unchanged | 100.0% | 100.0% | unchanged |
+| first-pass schema valid | 100.0% | 100.0% | unchanged | 100.0% | 100.0% | unchanged |
+| median latency | 1,256 ms | 1,235 ms | −21 ms | 1,773 ms | 1,717 ms | −56 ms |
+| est. cost/case | $0.00165 | $0.002249 | +$0.0006 | $0.00500 | $0.006810 | +$0.0018 |
+
+Cost/latency moved slightly against both candidates (longer system prompt =
+more input tokens for the same output); this is the expected, disclosed
+price of the added rule text, not a reliability regression.
+
+**Separating (A) benchmark-correction improvement from (B) actual model
+improvement**, per-case, using the raw v1 predictions (§7.3) against the raw
+v2 predictions (this round's `results.jsonl`):
+
+| case | v1 prediction (violating) | v2 prediction | still a violation under v2? | why |
+| --- | --- | --- | --- | --- |
+| `t-en-dev-009` (Sonnet) | `negotiating` | `engaged` (exact primary gold) | no | **(B) actual model improvement.** Sonnet's v2 answer is the unmodified v1 primary gold value — it does not rely on the newly-added `negotiating` acceptable value at all. The corpus correction (§8.1) was NOT the reason this case stopped being a violation; RULE C's explicit "renewed interest alone → engaged" guidance was. |
+| `m-en-dev-012` / `m-es-dev-008` (Sonnet) | `negative`/`[rejection, timing_constraint]` | `mixed`/`[interest, timing_constraint]` (matches gold) | no | **(B) actual model improvement** — RULE A's explicit "do not add rejection when the reply also invites a retry" directly targets this exact pattern. |
+| `t-en-dev-006` (Sonnet + Haiku) | `agreement_observed` | `negotiating` (matches gold) — **both candidates** | no | **(B) actual model improvement** — RULE B's explicit "a one-sided yes... is negotiating, not agreement_observed" directly targets this. The hardest v1 case (both models missed it identically) is fixed for both under v2. |
+| `t-en-dev-008` (Sonnet) | `declined_observed` | `unresolved` (matches gold) | no | **(B) actual model improvement** — RULE A/C's timing-constraint guidance at the thread level. |
+| `m-en-dev-007` / `m-es-dev-007` (Haiku) | `mixed`/`[rejection, timing_constraint, interest]` | **unchanged**: `mixed`/`[rejection, timing_constraint, interest]` | **yes — still violating** | Neither (A) nor (B) — RULE A did not change Haiku's behavior on this exact pattern. See §10.3. |
+
+**Conclusion: 100% of the reduction in Sonnet's critical violations (5→0) is
+attributable to (B) genuine behavioral change under prompt v2, 0% to (A) the
+corpus correction.** Every one of Sonnet's v1-violating cases now resolves to
+its unmodified primary gold value under v2 — the loosened `t-en-dev-009`
+acceptable set was never actually exercised by either candidate's v2
+prediction. The corpus correction in §8 remains independently justified as a
+benchmark-integrity fix (an equally D072-defensible `negotiating` reading of
+that reopening must not be structurally forbidden for a *future* candidate),
+but it is not what changed Sonnet's score this round — this round's own
+outcome would have been identical (0 violations) even without it. Haiku's
+improvement (3→2) is 100% attributable to (B) as well (`t-en-dev-006` fixed),
+with its remaining 2 violations unmoved by (A) or (B) — a persistent, real
+weakness (§10.3).
+
+### 10.3 Remaining critical violations — full per-case audit
+
+**Only Haiku 4.5 has remaining violations. Sonnet 5 has zero.**
+
+| candidate | case | invariant | primary gold | acceptable | prediction | evidence | why predicate fired | semantic vs. mechanical |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Haiku 4.5 | `m-en-dev-007` | `temporary_timing_not_permanent_decline` | disposition `mixed`, signals `[interest, timing_constraint]` | (none declared beyond primary) | disposition `mixed`, signals `[rejection, timing_constraint, interest]` | Target: *"We have no availability in November — it's our busiest month. Please do reach out again for January, we'd be glad to look at it then."* | The invariant fires on message-level `disposition === "negative"` OR a predicted `rejection` signal; Haiku added `rejection` despite the same reply explicitly inviting a retry. | **Semantic, not mechanical.** RULE A in the v2 prompt states this exact pattern by name ("do not add a rejection signal... when that SAME reply also explicitly invites a future retry"). Haiku received this instruction and did not apply it — this is a real, reproduced model weakness, not a prompt-clarity gap (Sonnet, given the byte-identical instruction, correctly avoided the equivalent pattern on `m-en-dev-012`/`m-es-dev-008`, §10.2). The hostile-review question ("is the gold/tag wrong?") was checked and rejected: `disposition: mixed` + `signals: [interest, timing_constraint]` is exactly what D072 §27's own worked example calls for, and the invariant is not over-broad — it does not forbid `timing_constraint`, only `rejection`/`negative` on a reply that itself invites a retry. |
+| Haiku 4.5 | `m-es-dev-007` | `temporary_timing_not_permanent_decline` | disposition `mixed`, signals `[interest, timing_constraint]` | (none declared beyond primary) | disposition `mixed`, signals `[rejection, timing_constraint, interest]` | Spanish counterpart of `m-en-dev-007`, same "no disponibilidad en noviembre... vuelva a escribirnos en enero" pattern. | Same predicate, same collapse. | **Semantic**, and the SAME collapse reproduced in a second language — this is not an English-specific quirk, and it is the identical case pair Haiku failed in v1 (§7.3), meaning RULE A's added text had zero measurable effect on this specific failure mode for this model. |
+
+Both violations were checked against D072 §27 and against the round's
+"benchmark-mechanical vs. semantic" test (hostile-review requirement): the
+gold values, the acceptable-answer sets, and the invariant predicate are all
+unchanged from v1 (where the same two cases were also independently audited,
+§7.3) and were not touched by this round's corpus correction (§8), which
+only ever touched `t-en-dev-009`. There is no benchmark defect here — Haiku
+4.5 has a real, reproducible tendency to add a `rejection` signal onto a
+timing-bounded decline even when the same authored reply invites a retry,
+and an explicit provider-neutral prompt rule targeting exactly this pattern
+did not resolve it.
+
+### 10.4 Quality-target evaluation
+
+| target | threshold | Haiku 4.5 | Sonnet 5 |
+| --- | --- | --- | --- |
+| first-pass structured output | ≥ 99.0% | 100.0% — **PASS** | 100.0% — **PASS** |
+| final structured output | = 100.0% | 100.0% — **PASS** | 100.0% — **PASS** |
+| disposition macro F1 | ≥ 0.90 | 0.9153 — **PASS** | 0.7596 — **FAIL** |
+| signal micro F1 | ≥ 0.90 | 0.9109 — **PASS** | 0.9462 — **PASS** |
+| thread-state accuracy | ≥ 0.90 | 95.0% — **PASS** | 100.0% — **PASS** |
+| compensation accuracy | ≥ 0.95 | 100.0% — **PASS** | 100.0% — **PASS** |
+| critical invariant violations | = 0 | 2 — **FAIL** | 0 — **PASS** |
+
+**Haiku 4.5: FAILS the round.** Disqualified on the critical-invariant hard
+gate alone (2 violations, §10.3); every other quality target actually passes.
+
+**Sonnet 5: FAILS the round.** Clears the critical-invariant hard gate (the
+first Anthropic candidate to do so in this benchmark) and every other
+quality target, but misses `disposition macro F1 ≥ 0.90` (0.7596). Root
+cause, audited: Sonnet 5 predicted `disposition: neutral` for `m-en-dev-026`
+(target's entire authored reply is "See attached.", with the actual content
+of the attachment unobservable — primary gold `ambiguous`, no `acceptable`
+override declared, per D072 §15: "the attachment's content is not
+observable. No commercial meaning is supported by the authored text.").
+Sonnet's `evidence_strength` prediction for that same case was correctly
+`insufficient_evidence`, so the model recognised the evidence was thin but
+still emitted a concrete disposition rather than `ambiguous` — a genuine
+miss, not a corpus defect (checked: the gold value is exactly what D072 §15
+requires and no acceptable alternative was ever declared for this specific
+case). Because `ambiguous` had only one scorable gold instance in this
+55-case set (the corpus's other dev `ambiguous`-gold message case,
+`m-en-dev-011`, declares `acceptable.disposition: ["ambiguous", "neutral"]`,
+so Sonnet's `neutral` answer there is scored as correct and folds out of the
+`ambiguous` class's support count), this single miss produces `precision:
+0, recall: 0, f1: 0` for the whole `ambiguous` class and pulls macro F1 down
+from what would otherwise be ~0.95 to 0.7596. This is exactly the kind of
+low-support class-variance sensitivity the original spec flagged (§14) — it
+does not make the miss less real, but it does mean one message case decided
+this entire quality target for Sonnet 5 in this round.
+
+### 10.5 Stage-1 survivors
+
+**None.** A Stage-1 survivor must clear the critical-invariant hard gate AND
+every quality target (§10.4's own framing, unchanged from the round's
+"quality targets remain" instruction). Sonnet 5 is the closer candidate —
+first Anthropic model in this benchmark to clear the safety gate outright —
+but it does not meet the disposition-macro-F1 target, so it is not
+nominated as a production candidate. Haiku 4.5 fails outright on safety. The
+benchmark's own decision engine (`scoring/targets.ts` `decide()`) reaches
+`no_production_winner_yet` mechanically from the recorded evidence:
+`gate_passed = [anthropic-sonnet-5]`, `qualified = []`.
+
+### 10.6 Hostile-review findings (this round)
+
+1. **IDENTITY** — `stage1-anthropic-v2-20260912`'s manifest records
+   `corpus_version: b07_gold_corpus_v2`, `prompt_version:
+   b07_benchmark_prompt_v2`; no v1 row appears anywhere in this run's
+   `results.jsonl`/`scores.json`. Config digest for both candidates'
+   `inference_config` is unchanged from §7 (confirmed: `thinking_mode:
+   "adaptive"`/`effort: "medium"` for Sonnet, `thinking_mode: "disabled"`/
+   `effort: null` for Haiku) — this round changed the prompt and corpus,
+   never the transport.
+2. **LEAKAGE** — confirmed: `split: "dev"` on every result row; no holdout
+   case id appears anywhere in `results.jsonl`; the case-set digest
+   (`15d3f6da1370a29c`) matches the expected 55-case dev-minus-few-shot
+   selection; no scored case's message text or gold rationale appears in
+   the rendered system prompt (§9.3); no newly-scored case was added as a
+   few-shot exemplar.
+3. **BENCHMARK TRUTH** — every one of Haiku's 2 remaining critical
+   violations audited against D072 §27 in §10.3; the gold/tag/predicate for
+   both was independently re-examined and found NOT over-constrained (in
+   contrast with the corrected `t-en-dev-009`). The hostile-reviewer
+   question "is the model wrong, or is the benchmark wrong?" was answered
+   case-by-case, not assumed.
+4. **FAIRNESS** — confirmed: `buildSystemPrompt(task)` takes no provider
+   argument; both candidates received the byte-identical rendered prompt
+   for every case (verified: the prompt-building call site in
+   `run/runner.ts` is shared, not candidate-branched); identical case set,
+   identical retry budget (1), identical concurrency (4), identical scorer.
+5. **OVERFITTING** — confirmed: exactly one prompt-v2 revision was authored
+   before either candidate was called under it; no prompt edit was made
+   after seeing the v2 results above (§9.4). The four rules were derived
+   from the §7.3 failure PATTERNS (timing-constraint collapse,
+   one-sided-yes collapse), stated as D072-general rules, not fitted to any
+   individual case's exact wording — confirmed by the no-verbatim-leakage
+   tests in §9.3.
+6. **COST** — every attempt (both candidates had 0% retry rate, so
+   attempts = cases) is counted in §10.1's totals; the smoke calls (§10.0)
+   used separate run ids and are excluded from Stage-1 totals, same
+   discipline as §7.2.
+7. **SCOPE** — confirmed: only `scripts/b07-benchmark/`,
+   `tests/b07-benchmark/`, and `docs/` were touched this round; `src/` is
+   untouched; no migration file was added; no real Gmail data, no CRM
+   write, no Stage 2, no holdout case, no OpenAI/Google call, no
+   Opus/Fable call.
+8. **NO SILENT V1 REUSE** — confirmed: `cli.ts`'s resume/report paths
+   compare `corpus_version`/`prompt_version`/`schema_version` and refuse a
+   mismatch; this round used a fresh run id (`stage1-anthropic-v2-20260912`)
+   with `--resume` never passed, so no v1 result could be reused even if an
+   id had collided (none did).
+9. **NO API KEY LEAKED** — confirmed via a repository-wide
+   `grep -rn "sk-ant-"` sweep of everything staged for this round's commit
+   before push; the only match is the pre-existing fake test literal
+   `sk-ant-test-0123456789` in `tests/b07-benchmark/provider-transport.test.ts`.
+   The real key was read only via shell substitution from its external
+   scratchpad path directly into a child process's environment — never
+   echoed, logged, or written to any file inside this repository.
+
+---

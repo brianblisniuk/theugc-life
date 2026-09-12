@@ -21,6 +21,7 @@ import {
   FIXTURE_FILES,
   corpusStats,
   fixtureDir,
+  isThreadCase,
   loadCorpus,
   selectCases,
   taxonomyCoverage,
@@ -225,6 +226,107 @@ describe("B07 gold corpus", () => {
       if (c.task !== "message") continue;
       expect(c.messages[c.focus_index]?.from).toBe("target");
     }
+  });
+
+  describe("v2 corpus correction (Finding 1, external audit of the v1 Anthropic Stage-1 run)", () => {
+    it("t-en-dev-009: negotiating is now acceptable and interest_not_agreement no longer applies", () => {
+      const c = cases.find((x) => x.case_id === "t-en-dev-009");
+      expect(c).toBeDefined();
+      if (!c || c.task !== "thread") return;
+      // Primary gold is UNCHANGED — this is a corpus-tag correction, not a
+      // rewrite of what the "right" answer is.
+      expect(c.expected.thread_state).toBe("engaged");
+      expect(c.acceptable?.thread_state).toEqual(
+        expect.arrayContaining(["engaged", "unresolved", "negotiating"]),
+      );
+      expect(c.critical_invariants).not.toContain("interest_not_agreement");
+      // What the correction must NOT touch: the case still guards the actual
+      // decline-reopening and compensation collapses.
+      expect(c.critical_invariants).toEqual(
+        expect.arrayContaining([
+          "reopening_supersedes_decline",
+          "unknown_not_unpaid",
+          "unsupported_compensation_unknown",
+        ]),
+      );
+    });
+
+    it("no other case combines interest_not_agreement with an acceptable negotiating/agreement_observed thread state", () => {
+      // Reproduces, as a permanent regression guard, the exact audit sweep
+      // that found t-en-dev-009 was the ONLY case with this contradiction —
+      // see docs/evaluations/B07_INFERENCE_BENCHMARK_RUN_2026-09.md §8.2.
+      const offenders = cases
+        .filter(isThreadCase)
+        .filter((c) => c.critical_invariants.includes("interest_not_agreement"))
+        .filter((c) => {
+          const acc = c.acceptable?.thread_state ?? [];
+          return acc.includes("negotiating") || acc.includes("agreement_observed");
+        })
+        .map((c) => c.case_id);
+      expect(offenders).toEqual([]);
+    });
+
+    it("every other thread case still tagged interest_not_agreement contains interest only, no actual terms/offer discussion", () => {
+      // These are the cases audited by hand: media-kit requests, shortlisting,
+      // "let's talk next week" — none contain rates, price, deliverables, a
+      // concrete offer, or scheduling-as-commercial-terms. Their negotiating
+      // thread state is correctly forbidden; they must NOT be loosened.
+      const stillTagged = cases
+        .filter(isThreadCase)
+        .filter((c) => c.critical_invariants.includes("interest_not_agreement"))
+        .map((c) => c.case_id)
+        .sort();
+      expect(stillTagged).toEqual(
+        [
+          "t-en-dev-001",
+          "t-en-hold-001",
+          "t-en-hold-016",
+          "t-en-hold-027",
+          "t-es-dev-001",
+          "t-es-hold-001",
+          "t-es-hold-013",
+          "t-pt-dev-001",
+        ].sort(),
+      );
+      for (const id of stillTagged) {
+        const c = cases.find((x) => x.case_id === id);
+        if (!c || !isThreadCase(c)) throw new Error(`${id} must be a thread case`);
+        expect(c.acceptable?.thread_state ?? []).not.toContain("negotiating");
+      }
+    });
+
+    it("v1 fixture files remain on disk, untouched, as the historical v1 evidence record", () => {
+      const v1Message = readFileSync(
+        resolve(fixtureDir(), "b07_gold_corpus_v1_message.jsonl"),
+        "utf8",
+      );
+      const v1Thread = readFileSync(
+        resolve(fixtureDir(), "b07_gold_corpus_v1_thread.jsonl"),
+        "utf8",
+      );
+      // The v1 file must still carry the ORIGINAL (over-constrained) tagging
+      // for t-en-dev-009 — v1 is a historical record, never silently patched.
+      const v1Line = v1Thread
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as { case_id: string; critical_invariants: string[] })
+        .find((d) => d.case_id === "t-en-dev-009");
+      expect(v1Line).toBeDefined();
+      expect(v1Line?.critical_invariants).toContain("interest_not_agreement");
+      // v1 message fixture is read too, just to assert it parses/exists (no
+      // per-case assertion needed there — no message-level case changed).
+      expect(v1Message.length).toBeGreaterThan(0);
+      // Active loader must be reading v2, not v1.
+      expect(FIXTURE_FILES).toEqual([
+        "b07_gold_corpus_v2_message.jsonl",
+        "b07_gold_corpus_v2_thread.jsonl",
+      ]);
+    });
+
+    it("corpus version was bumped and v1 result identity cannot be silently resumed under it", () => {
+      expect(CORPUS_VERSION).toBe("b07_gold_corpus_v2");
+    });
   });
 });
 

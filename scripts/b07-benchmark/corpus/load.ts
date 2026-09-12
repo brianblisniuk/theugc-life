@@ -19,8 +19,8 @@ import type { CorpusCase, MessageCase, ThreadCase } from "./schema";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export const FIXTURE_FILES = [
-  "b07_gold_corpus_v1_message.jsonl",
-  "b07_gold_corpus_v1_thread.jsonl",
+  "b07_gold_corpus_v2_message.jsonl",
+  "b07_gold_corpus_v2_thread.jsonl",
 ] as const;
 
 export function fixtureDir(): string {
@@ -28,7 +28,9 @@ export function fixtureDir(): string {
 }
 
 /**
- * Case ids used as few-shot examples in `b07_benchmark_prompt_v1`.
+ * Case ids used as few-shot examples (unchanged across `b07_benchmark_prompt_v1`
+ * and `b07_benchmark_prompt_v2` — the v2 revision only edits rule text, not
+ * exemplar selection).
  *
  * These MUST be `dev` cases (asserted at load time and in tests) and they are
  * excluded from every scored set by default — a candidate that was shown the

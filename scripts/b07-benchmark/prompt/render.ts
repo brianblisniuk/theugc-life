@@ -1,5 +1,5 @@
 /**
- * `b07_benchmark_prompt_v1` — the ONE canonical, provider-neutral semantic
+ * `b07_benchmark_prompt_v2` — the ONE canonical, provider-neutral semantic
  * prompt.
  *
  * Fairness rules enforced here, not by convention:
@@ -12,6 +12,19 @@
  *   `critical_invariants` are structurally unable to reach a provider.
  *
  * No chain-of-thought is requested. Only structured output is asked for.
+ *
+ * v2 CHANGE (this round, ONE deliberate revision — see
+ * `docs/evaluations/B07_INFERENCE_BENCHMARK_RUN_2026-09.md` §9): the v1
+ * Anthropic Stage-1 run exposed two systematic collapses that D072 §27
+ * already forbids in prose but v1's prompt text did not state as an explicit
+ * rule: (a) a dated "no availability now" reply that also invites a retry
+ * later was read as an outright `rejection`/permanent decline; (b) a
+ * one-sided target "yes" awaiting the creator's own confirmation was read as
+ * `agreement_observed`. Four explicit RULES below (A-D) restate D072 §27's
+ * own examples in generic, fictional wording — no scored case id, gold
+ * label, or gold rationale text is quoted, and no new few-shot exemplar was
+ * added. This is the round's ONE prompt revision; per the round's own
+ * discipline, no v3 follows in this session regardless of the v2 result.
  */
 import { getCase, FEW_SHOT_CASE_IDS } from "../corpus/load";
 import type { CorpusCase, CorpusMessage } from "../corpus/schema";
@@ -24,7 +37,7 @@ import {
 } from "../taxonomy";
 
 /** Bump on ANY change to the text below. Recorded in every result row. */
-export const PROMPT_VERSION = "b07_benchmark_prompt_v1";
+export const PROMPT_VERSION = "b07_benchmark_prompt_v2";
 
 /**
  * The only shape that may leave this process toward a provider.
@@ -68,6 +81,16 @@ Hard boundaries:
 - A creator-SENT message is context only. It never proves what the target agreed to.
 - Messages may be in any language. Your output values are always the English enum values below.
 - When the evidence does not support a confident answer, say so using the ambiguity and evidence-strength values. Abstaining is a correct answer, not a failure.
+
+Four conservative rules, because these are the exact places careless readings collapse:
+
+RULE A — a time-bounded "no" is not a closed rejection. A reply that declines RIGHT NOW but explicitly invites the creator to come back later (a specific month, quarter, or season named as the retry window) is a TIMING CONSTRAINT, not a closed door. Fictional examples: "We're full in November, but please contact us for January." / "Our budget is committed this year — try us again in Q2." Do not add a rejection signal, and do not classify it negative or declined_observed, merely because the reply contains a word like "no", "can't", "impossible", or "no availability", when that SAME reply also explicitly invites a future retry. Prefer timing_constraint plus any genuinely supported interest/terms_discussion; disposition is usually mixed (sometimes neutral), not negative, and thread state must not become declined_observed on this evidence alone.
+
+RULE B — a one-sided yes is not yet a two-sided agreement. A target can say yes to a specific proposed term — that is real agreement-shaped evidence for THAT message. But at the thread level, agreement_observed requires the chronology to show BOTH sides confirming the SAME arrangement. Fictional example: creator asks "Could you cover a $500 fee?"; target replies "Yes, $500 works on our end — say the word and we'll send paperwork." Without a later creator-side acceptance/confirmation in the thread, this is negotiating, not agreement_observed. The same logic runs the other way: a creator-SENT acceptance the target never confirmed is likewise not agreement_observed.
+
+RULE C — a reopening is never read back into the decline it reopens. When a later message reopens a previously declined thread, the thread's CURRENT summary must not stay declined_observed — the reopening supersedes it, though the earlier decline remains true at the message level where it was said. Then classify what the NEW, reopened conversation actually supports: renewed interest alone leads to engaged; the reopened conversation moving into concrete scheduling or term/offer discussion leads to negotiating; explicit two-sided confirmation leads to agreement_observed; genuinely insufficient or conflicting evidence leads to unresolved or ambiguous as appropriate. Do not force engaged onto a reopening that has already moved into real term negotiation, and do not force negotiating onto one that is still just renewed interest.
+
+RULE D — a scheduling question is not agreement. A question like "are your dates still free?" or "is that still available?" tests availability; it does not, by itself, establish a two-sided agreement. Depending on the rest of the thread it can support engaged or negotiating, but never agreement_observed on a scheduling question alone.
 
 Respond ONLY with the structured object. Do not explain your reasoning. Do not add prose, preamble, or commentary.`;
 
