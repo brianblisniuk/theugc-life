@@ -1,12 +1,19 @@
 # B07 inference benchmark — run summary, 2026-09-12
 
-**Status:** PROMPT-V2 / CORPUS-V2 ANTHROPIC STAGE 1 COMPLETE (real run, both
-candidates) — OpenAI and Google remain `not_run_missing_key`. See §10 for the
-current (v2) Anthropic evidence and §8–§9 for the corpus correction and
-prompt revision that produced it. §1–§7 below are PRIOR ROUNDS
-(baseline-only/no-key, then the real v1 Anthropic run) and are kept, byte-for-
-byte, as historical record — **no v1 result is reused as v2 evidence**; see
-§8.4 for the explicit v1→v2 identity-separation statement.
+**Status:** SCORING-V2 INTEGRITY CORRECTION COMPLETE. §11 (this round)
+corrects a candidate-dependent-gold-support defect in the scorer used to
+produce §10's macro-F1 hard-gate reading, implements a versioned
+`b07_benchmark_scoring_v2` policy, and — because raw §10 inference artifacts
+no longer exist (see §11.1) — performs an exact-same-configuration Stage-1
+**replication** run (`stage1-anthropic-v2-replication-20260912`) rather than
+reusing or fabricating §10's numbers. §10's own PROMPT-V2 / CORPUS-V2 Stage 1
+below is kept, byte-for-byte, as the historical scoring-v1 record; **no
+scoring-v1 report is reinterpreted as scoring-v2 evidence, and no replication
+run is presented as though it were the original §10 run** — see §11 for the
+full correction, the replication evidence, and the current Stage-1
+disposition for both Anthropic candidates. OpenAI and Google remain
+`not_run_missing_key`; no OpenAI/Google/holdout/Stage-2 call was made this
+round.
 **Corpus:** `b07_gold_corpus_v1` (§1–§7, historical) → `b07_gold_corpus_v2`
 (§8–§10, current) · **Prompt:** `b07_benchmark_prompt_v1` (§1–§7, historical) →
 `b07_benchmark_prompt_v2` (§8–§10, current) · **Schema:** `b07_benchmark_schema_v1`
@@ -1023,5 +1030,476 @@ benchmark's own decision engine (`scoring/targets.ts` `decide()`) reaches
    The real key was read only via shell substitution from its external
    scratchpad path directly into a child process's environment — never
    echoed, logged, or written to any file inside this repository.
+
+---
+
+## 11. SCORING-V2 INTEGRITY CORRECTION AND STAGE-1 v2 REPLICATION, 2026-09-12 (this round)
+
+External audit of §10's macro-F1 hard-gate reading found a scoring defect,
+not a corpus or prompt defect. This section documents the defect, the
+scoring-v2 fix, why a fresh replication run (not a rescore) was required,
+that replication's evidence, and the corrected Stage-1 disposition for both
+Anthropic candidates. No corpus, prompt, inference-configuration or D072
+change was made this round. No holdout case was sent to any provider. No
+OpenAI/Google call was made.
+
+### 11.1 Why this is a replication, not a rescore
+
+Scoring is a downstream interpretation of raw inference evidence — the
+inference identity is corpus + prompt + schema + model + inference
+configuration + case evidence, and none of that changed this round. The
+round's preference order is: rescore existing raw evidence under the new
+scorer; only if that raw evidence no longer exists, replicate. Checked before
+writing any code: `artifacts/b07-benchmark/` does not exist in this fresh git
+worktree (`ls artifacts` → "No such file or directory"), and the working
+directory is a clean checkout of `feat/b07-inference-benchmark` at
+`origin`'s head — the prior round's `results.jsonl`/`scores.json` for
+`stage1-anthropic-v2-20260912` lived only in a since-deleted agent worktree
+(`.claude/worktrees/agent-ab36300b8a8711e2e/`) and were never committed, per
+the repository's own artifact policy (§10's own text: "Raw run artifacts live
+in the gitignored `artifacts/b07-benchmark/` directory and are never
+committed"). Only §10's committed, derived SUMMARY (aggregate metrics and a
+small number of individually-quoted per-case predictions, for the violation
+cases and two named non-violation cases) survives. This round therefore
+performed an **exact-same-configuration Stage-1 replication**
+(`stage1-anthropic-v2-replication-20260912`) rather than a rescore, and
+reports it as independent evidence alongside — never averaged into — §10's
+original run. See §11.5 for what could and could not be compared between the
+two.
+
+### 11.2 The scoring defect (external audit finding), reproduced
+
+`scoring/score.ts`'s `effectiveGold(goldPrimary, acceptable, predicted)`
+rewrites the gold value fed into the confusion matrix to the candidate's own
+prediction whenever that prediction is inside the case's declared acceptable
+set (the identical rewrite exists for signal sets, `effectiveGoldSignals`).
+That makes per-class gold SUPPORT a function of the candidate's own
+prediction. Minimal reproduction (now a permanent regression test,
+`tests/b07-benchmark/scoring-v2.test.ts`, describe block "PASS A"): one
+corpus case, primary gold `ambiguous`, declared acceptable
+`["ambiguous", "neutral"]`. Candidate A predicts `ambiguous`; candidate B
+predicts `neutral`. Both predictions are equally D072-acceptable. Scored
+under the PRESERVED, UNCHANGED v1 scorer:
+
+| | candidate A (`ambiguous`) | candidate B (`neutral`) |
+| --- | --- | --- |
+| `ambiguous` class support | 1 | 0 |
+| `neutral` class support | 0 | 1 |
+
+The identical corpus case contributes to a *different* gold class depending
+on which acceptable alternative the candidate happened to predict. Per-class
+support therefore differs by candidate, the confusion matrices are not drawn
+from one fixed target distribution, and a class can disappear from support
+purely because a candidate selected an acceptable alternative — exactly what
+happened to Sonnet 5's `ambiguous` disposition class in §10.4/§10.5, which
+"becomes effectively one scorable case" and collapses macro F1 to 0.7596
+despite 94.3% overall disposition accuracy. **The single miss itself
+(`m-en-dev-026`, gold `ambiguous`, Sonnet predicted `neutral` with no
+declared acceptable alternative for that case) is real and is NOT
+disturbed by this correction** — the tri-state sufficiency rule (§11.4) is
+about whether the *aggregate metric* is a valid PASS/FAIL basis, not about
+excusing an actual miss.
+
+### 11.3 Scoring-v2 design
+
+New files, `scoring/score.ts` (v1) left **completely unmodified**:
+
+- `scoring/scoring-version.ts` — `SCORING_VERSION_V1 =
+  "b07_benchmark_scoring_v1"`, `SCORING_VERSION_V2 =
+  "b07_benchmark_scoring_v2"`. `scoring/score.ts`'s `CandidateScore` now also
+  carries `scoring_version: SCORING_VERSION_V1` (additive; v1's actual
+  scoring behaviour is byte-for-byte unchanged) so a v1 artifact is
+  self-identifying, never merely identified by convention or filename.
+- `scoring/acceptable.ts` — the only functions allowed to reason about
+  acceptable alternatives. Corpus-only: they take a case's primary/acceptable
+  values and a prediction, and decide (a) is this ONE case's prediction
+  correct, and (b) is this case SINGLE-VALUED (strict) for this field. Never
+  decide which class a case's gold "is" from what was predicted.
+- `scoring/score-v2.ts` — `scoreCandidateV2()`, producing two metric families
+  per field, over the SAME `ScoreInput` v1 uses (same raw evidence, same
+  `normaliseResults`/reliability/critical-suite/economics builders — those
+  are unaffected by the defect and are reused, not forked, from
+  `scoring/score.ts`):
+  - **Family A, `acceptable_answer`** — correct iff prediction == primary
+    gold OR prediction ∈ the case's declared acceptable set. Uses ALL cases.
+    Support is simply `n` (case count) — never rewritten.
+  - **Family B, `strict`** — ordinary precision/recall/F1, computed ONLY over
+    cases whose gold is single-valued for that field (the acceptable-value
+    set collapses to exactly one distinct value — a redundant declaration of
+    the same value does not exclude a case), always against the untouched
+    PRIMARY gold. `excluded_multi_answer_cases` is reported alongside every
+    strict report.
+  - Signals: `acceptable_set` (Family A, exact-set correctness against the
+    acceptable set) and `strict` (Family B multilabel P/R/F1, restricted to
+    cases whose acceptable signal-SET collapses to one canonical set) —
+    same principle, generalised to sets via canonical signal-set keys
+    (`acceptableSignalSetKeys`/`isStrictSignalSet` in `acceptable.ts`).
+  - `*_full_support` fields (`disposition_full_support`,
+    `signals_full_support`, `thread_state_full_support`,
+    `compensation_structure_full_support`) — corpus-derived support over the
+    FULL case set (every case, strict or not), used only to decide which
+    classes are "expected to participate" in a hard gate.
+- `scoring/targets-v2.ts` — tri-state quality-target evaluation
+  (`evaluateCandidateV2`) and the Stage-2 holdout preflight
+  (`holdoutSupportPreflight`, `checkHoldoutCanResolve`).
+- `report/render-v2.ts` — a SEPARATE markdown renderer
+  (`report-v2.md`, never a section spliced into `report.md`), printing
+  exactly what the round asked for: strict n, per-class strict support,
+  excluded multi-answer case count, strict macro F1, acceptable-answer
+  accuracy over all cases, and the tri-state target verdicts.
+- `cli.ts` now computes BOTH `scoreCandidate` (v1) and `scoreCandidateV2`
+  (v2) from the identical per-candidate `ScoreInput` on every `screen`/
+  `final`/`baseline` run and `report` replay, and persists both: `scores.json`
+  (wrapped with `scoring_version: "b07_benchmark_scoring_v1"`) and
+  `report.md` unchanged; `scores-v2.json` (wrapped with
+  `scoring_version: "b07_benchmark_scoring_v2"`) and `report-v2.md` newly
+  added. Neither artifact can be mistaken for the other by filename or by its
+  own `scoring_version` field.
+
+### 11.4 Quality-target sufficiency model (tri-state)
+
+`0.90`/`0.90`/`0.90`/`0.95` are **UNCHANGED** — `QUALITY_TARGETS` in
+`scoring/targets.ts` is imported verbatim by `targets-v2.ts`, never
+redefined. What changed is (a) the metric fed into each comparison and (b)
+whether the comparison may be hard-evaluated at all:
+
+- **disposition macro F1** and **signal micro F1** are evaluated on the
+  STRICT subset. A target is HARD-EVALUABLE only when every taxonomy
+  class/label with nonzero FULL (corpus-wide) support also has
+  `>= MIN_RELIABLE_CLASS_SUPPORT` (3) STRICT support. Below that:
+  `insufficient_support` — never a fabricated PASS, never a punitive FAIL.
+  At or above it: `pass` if the strict metric clears the (unchanged)
+  threshold, `fail` otherwise.
+- **thread-state accuracy** and **compensation accuracy** are evaluated as
+  Family-A acceptable-answer accuracy over ALL cases — always hard-evaluable
+  (the denominator is case count, not per-class support), so no tri-state
+  question arises for them.
+- **critical invariant violations** and **schema validity** are unaffected by
+  this correction and keep their v1 boolean semantics.
+
+### 11.5 Replication evidence — `stage1-anthropic-v2-replication-20260912`
+
+**Live smoke** (before Stage 1, single dev case `m-en-dev-002`, separate run
+id, excluded from every Stage-1 metric below): both candidates 200/first-pass
+schema-valid; Sonnet 5 3,224 input / 31 output tokens, 1,759 ms; Haiku 4.5
+2,132 input / 18 output tokens, 1,414 ms — both within ~0 tokens of the
+§10.0 v2 smoke on the identical case, confirming the transport is unchanged.
+Cost ≈$0.0090. The stray `ANTHROPIC_BASE_URL=https://api.anthropic.com` (no
+`/v1` — the same environment quirk documented in §7.0) was present in this
+environment too; every live invocation this round set
+`ANTHROPIC_BASE_URL=""` (falls back to the adapter's own
+`https://api.anthropic.com/v1` default) before calling — confirmed via an
+independent `isModelAvailable` check against `GET /v1/models/{id}` for both
+`claude-sonnet-5` and `claude-haiku-4-5-20251001` (`available: true` for
+both) before any billed call.
+
+**Stage 1** — `screen` stage, `dev` split, `--candidate anthropic-sonnet-5
+--candidate anthropic-haiku-4-5`, default concurrency 4, default bounded
+retry budget 1 — **identical operational parameters and identical case-set
+digest** to §10.1 (`case_set_digest: 15d3f6da1370a29c`, `corpus_version:
+b07_gold_corpus_v2`, `prompt_version: b07_benchmark_prompt_v2`,
+`inference_policy_version:
+b07_bench_inference_policy_v2_anthropic_model_capability_aware`). Both
+candidates scored the identical 55-case set, 55/55 attempted, 0 identity
+conflicts, 0 provider errors, 0 timeouts, 100% first-pass / 100% final schema
+validity for both — no reliability regression from §10.1.
+
+#### Critical invariant hard gate
+
+| | critical cases | evaluated | violations | gate |
+| --- | --- | --- | --- | --- |
+| Haiku 4.5 | 38 | 38 | **1** | **FAIL** |
+| Sonnet 5 | 38 | 38 | **0** | **PASS** |
+
+Sonnet 5: zero violations, an EXACT match to §10.1's original v2 run — the
+decisive safety-gate outcome replicates exactly. Haiku 4.5: **1** violation
+this run vs **2** in §10.1's original run — see §11.6 for the exact per-case
+diff; the candidate still fails the hard gate in both runs, on the same
+invariant (`temporary_timing_not_permanent_decline`), so the elimination
+conclusion is unaffected by the count difference.
+
+#### Semantic metrics (scoring v1, for direct comparability with §10.1's table)
+
+**Task M (message, n=35)**
+
+| | Haiku orig. (§10.1) | Haiku repl. | Sonnet orig. (§10.1) | Sonnet repl. |
+| --- | --- | --- | --- | --- |
+| disposition accuracy | 91.4% | 91.4% | 94.3% | 94.3% |
+| disposition macro F1 | 0.9153 | **0.9153** | 0.7596 | **0.7596** |
+| signal exact-set accuracy | 80.0% (28/35) | 80.0% (28/35) | 91.4% (32/35) | 91.4% (32/35) |
+| signal micro F1 | 0.9109 | 0.9109 | 0.9462 | 0.9583 |
+| signal macro F1 | 0.8866 | 0.8921 | 0.9442 | 0.9554 |
+| evidence-strength accuracy | 71.4% | 65.7% | 71.4% | 65.7% |
+
+**Task T (thread, n=20)**
+
+| | Haiku orig. | Haiku repl. | Sonnet orig. | Sonnet repl. |
+| --- | --- | --- | --- | --- |
+| thread-state accuracy | 95.0% | 95.0% | 100.0% | 100.0% |
+| thread-state macro F1 | 0.8000 | 0.8000 | 1.0000 | 1.0000 |
+| compensation accuracy | 100.0% | 100.0% | 100.0% | 100.0% |
+| `unknown`→`unpaid` count | 0 | 0 | 0 | 0 |
+| evidence-strength accuracy | 80.0% | 80.0% | 95.0% | 100.0% |
+
+Sonnet 5's decisive number — the exact `disposition macro F1 = 0.7596` that
+drove §10.4's FAIL reading — reproduced **exactly**, to four decimal places,
+across two independent live runs. Every hard-gate-relevant figure for both
+candidates (critical PASS/FAIL direction, thread-state/compensation
+accuracy, schema validity) is identical or effectively identical between the
+two runs; the small drifts (signal macro F1, evidence-strength accuracy,
+Haiku's violation count) are genuine run-to-run model stochasticity — this
+benchmark does not pin a fixed sampling seed, and Sonnet 5 runs with adaptive
+thinking (non-deterministic token allocation; `reasoning_tokens` diagnostic:
+0 for Haiku both runs, 0→39 for Sonnet across the two runs) — not a
+benchmark defect.
+
+#### Performance and economics
+
+| | Haiku orig. | Haiku repl. | Sonnet orig. | Sonnet repl. |
+| --- | --- | --- | --- | --- |
+| input tokens (all attempts) | 117,404 | **117,404** | 175,900 | **175,900** |
+| output tokens (all attempts) | 1,261 | **1,261** | 2,277 | 2,155 |
+| estimated Stage-1 cost | $0.123709 | **$0.123709** | $0.374570 | $0.373350 |
+| median latency | 1,235 ms | 1,226 ms | 1,717 ms | 1,702 ms |
+
+Haiku's token/cost totals are an **exact** match across both live runs (zero
+attempts, zero retries, identical billed tokens on every one of 55 cases).
+Sonnet's input-token total is an exact match; its output/cost differ by
+~5% — attributable to adaptive-thinking token variance (see above), not a
+transport or accounting defect. Total measured spend this round (Stage 1 +
+smoke, both candidates): ≈$0.506 — within the ≈$0.50 projection given to the
+product owner before running, and combined with the ≈$0.88 cumulative spend
+already recorded on this PR, cumulative live spend is now ≈$1.39.
+
+### 11.6 Stability diagnostic (descriptive only — no threshold invented)
+
+**What this diagnostic can and cannot cover.** §10 committed only aggregate
+metrics and a small number of individually-quoted per-case predictions
+(every critical-violation case, plus `m-en-dev-011` and `m-en-dev-026`) —
+never the full 55-case raw prediction set, per the repository's own artifact
+policy (§11.1). A full per-case exact-agreement-rate table across all 55
+cases against the ORIGINAL §10.1 run is therefore **not reconstructible** —
+that data no longer exists anywhere. What follows is (a) the aggregate-level
+comparison in §11.5, and (b) an exact per-case comparison for every one of
+the ~10 cases §10 individually quoted. This is a real, if partial, same-
+input/model stability signal — not a substitute for having kept the raw
+evidence, which is itself a process finding worth recording: **future
+rounds should commit a minimal redacted per-case prediction digest (case_id
++ predicted fields, no case content) specifically to make stability
+diagnostics reconstructible without holding raw provider payloads.**
+
+| case | candidate | §10.1 original v2 prediction | this round's replication prediction | changed? |
+| --- | --- | --- | --- | --- |
+| `m-en-dev-007` | Haiku | `mixed` / `[rejection, timing_constraint, interest]` (violating) | `mixed` / `[timing_constraint, interest]` (matches gold, NOT violating) | **YES** — `rejection` signal dropped |
+| `m-es-dev-007` | Haiku | `mixed` / `[rejection, timing_constraint, interest]` (violating) | `mixed` / `[rejection, timing_constraint, interest]` (violating) | no |
+| `t-en-dev-006` | Haiku | `negotiating` / `paid` / `strong` (matches gold) | `negotiating` / `paid` / `strong` (matches gold) | no |
+| `m-en-dev-012` | Sonnet | `mixed` / `[interest, timing_constraint]` (matches gold) | `mixed` / `[interest, timing_constraint]` (matches gold) | no |
+| `m-es-dev-008` | Sonnet | matches gold (`mixed` / `[interest, terms_discussion, timing_constraint]`) | `mixed` / `[timing_constraint]` (disposition still correct; `interest`/`terms_discussion` signals dropped) | **YES** — signal set narrower |
+| `t-en-dev-006` | Sonnet | `negotiating` / `paid` / `moderate` (matches gold) | `negotiating` / `paid` / `moderate` (matches gold) | no |
+| `t-en-dev-008` | Sonnet | `unresolved` (matches gold) | `unresolved` (matches gold) | no |
+| `t-en-dev-009` | Sonnet | `engaged` (matches gold) | `engaged` (matches gold) | no |
+| `m-en-dev-011` | Sonnet | `neutral` (acceptable-set match) | `neutral` (acceptable-set match) | no |
+| `m-en-dev-026` | Sonnet | `neutral` / `insufficient_evidence` (the real semantic miss vs gold `ambiguous`) | `neutral` / `insufficient_evidence` (identical miss, reproduced exactly) | no |
+
+- **Exact agreement on these 10 named cases: 8/10 (80%).** Both changes are
+  Haiku/Sonnet dropping a signal that was present in the original run
+  (`rejection` on `m-en-dev-007`; `interest`+`terms_discussion` on
+  `m-es-dev-008`) — no case flipped from correct to incorrect on disposition
+  or thread-state, and no NEW critical-invariant violation appeared anywhere
+  that wasn't already a violation in the original run.
+- **Critical-violation agreement:** Sonnet 5 — exact agreement, 0 violations
+  both runs. Haiku 4.5 — the SET of violating cases changed
+  (`{m-en-dev-007, m-es-dev-007}` → `{m-es-dev-007}`), but the outcome
+  (FAILS the hard gate) and the invariant tripped
+  (`temporary_timing_not_permanent_decline`) are identical both times.
+- **Disposition/thread-state exact agreement (named cases only):** 10/10 —
+  every named case's disposition or thread-state classification is identical
+  across both runs; only signal-set membership drifted, and only on 2 of the
+  10 named cases.
+- This is DESCRIPTIVE ONLY, per the round's explicit instruction — no
+  stability threshold is proposed or invented from these two data points.
+
+### 11.7 Quality-target evaluation (scoring v2, this round's replication)
+
+| target | threshold | Haiku 4.5 | Sonnet 5 |
+| --- | --- | --- | --- |
+| first-pass structured output | ≥ 99.0% | — (not evaluated: eliminated on safety before target evaluation) | 100.0% — **PASS** |
+| final structured output | = 100.0% | — | 100.0% — **PASS** |
+| disposition macro F1 (strict) | ≥ 0.90 | — | 0.7778 (strict n=23, excluded 12 multi-answer) — **INSUFFICIENT_SUPPORT** (`mixed` strict support 2, `ambiguous` strict support 1 — both < 3) |
+| signal micro F1 (strict) | ≥ 0.90 | — | 0.9867 (strict n=27, excluded 8 multi-answer) — **INSUFFICIENT_SUPPORT** (`agreement`, `timing_constraint`, `other_commercial` strict support < 3) |
+| thread-state accuracy (acceptable-answer) | ≥ 0.90 | — | 100.0% (n=20, all cases) — **PASS** |
+| compensation accuracy (acceptable-answer) | ≥ 0.95 | — | 100.0% (n=20, all cases) — **PASS** |
+| critical invariant violations | = 0 | 1 — **FAIL** | 0 — **PASS** |
+
+**Haiku 4.5 quality targets are not evaluated beyond the safety gate** — per
+`evaluateCandidateV2`'s design (§11.3/§11.4), a candidate that fails the
+critical-safety hard gate is eliminated immediately; computing quality
+targets for an already-eliminated candidate would invite exactly the
+"quality can override safety" misreading the round forbids.
+
+Note the reversal from §10.4's v1 reading: under v1, Sonnet 5's disposition
+macro F1 (0.7596) was reported as a hard **FAIL** against the 0.90 target.
+Under v2, the SAME underlying evidence (same raw predictions, same run) is
+correctly read as **INSUFFICIENT_SUPPORT** — the strict `ambiguous` class has
+exactly 1 gold case in this 55-case dev selection (below
+`MIN_RELIABLE_CLASS_SUPPORT = 3`) and the strict `mixed` class has 2 (also
+below 3), so this dev-split evidence genuinely cannot resolve whether Sonnet
+5's disposition performance clears 0.90 — it is not the same claim as "it
+does not clear 0.90". The `m-en-dev-026` miss itself is unchanged and fully
+real (§11.2) — it is simply insufficient, on its own, to fail a macro-F1
+target whose class support this dev split cannot supply. The signal
+micro-F1 target is likewise INSUFFICIENT_SUPPORT (three signal labels below
+support-3 in the strict subset), a v2 finding not previously surfaced under
+v1 at all (v1 read the same evidence as PASS, 0.9462 ≥ 0.90 — also not a
+statistically sound PASS under the corrected methodology, though it happens
+to be numerically above threshold either way).
+
+### 11.8 Stage-1 disposition (scoring v2)
+
+- **`anthropic-haiku-4-5`: ELIMINATED (critical safety).** 1 critical
+  invariant violation (`temporary_timing_not_permanent_decline`,
+  `m-es-dev-007`) — a real, reproduced-across-both-runs model weakness
+  (§11.6), not a benchmark defect (checked against D072 §27 exactly as
+  §10.3 did; the gold/tag/predicate for this case are unchanged from §10.3's
+  independent audit). Haiku cannot become a Stage-1 finalist through this or
+  any scoring correction — the safety gate is not scoring-methodology-
+  dependent.
+- **`anthropic-sonnet-5`: STAGE1_FINALIST_WITH_UNRESOLVED_QUALITY_TARGET.**
+  Zero critical invariant violations (exact match across both runs). Every
+  statistically evaluable quality target passes (schema validity,
+  thread-state accuracy, compensation accuracy). Two targets — disposition
+  macro F1 and signal micro F1 — are `insufficient_support` on this dev
+  split, not `fail`. Per the round's explicit rule (§ "STAGE-1 DECISION
+  SEMANTICS"), this makes Sonnet 5 a Stage-1 finalist **only** in this
+  explicit provisional sense: **it is NOT a production/vendor winner**, and
+  the two unresolved targets MUST be resolved against the frozen holdout
+  corpus in Stage 2 before any final implementation/provider recommendation.
+- This scoring policy was applied identically to both candidates — no
+  candidate-id branch exists anywhere in `scoring/score-v2.ts` or
+  `scoring/targets-v2.ts` (confirmed by a hostile-review test asserting two
+  different `candidate_id`s scored against identical evidence produce
+  identical output apart from the id field itself, §11.9) — and will apply
+  identically to a future OpenAI, Google, or local-baseline candidate.
+
+### 11.9 Hostile-review findings and fixes (this round)
+
+1. **No candidate-specific code** — checked by construction (neither
+   `score-v2.ts` nor `targets-v2.ts` branches on `candidate_id` or
+   `provider_id` anywhere in the metric/target logic) and by test
+   (`tests/b07-benchmark/scoring-v2.test.ts`, "no candidate-specific code"):
+   two candidate ids scored against byte-identical evidence produce
+   byte-identical output apart from the id itself.
+2. **No threshold changed** — `QUALITY_TARGETS` (`scoring/targets.ts`) is
+   imported verbatim by `targets-v2.ts`; a test asserts
+   `QUALITY_TARGETS.dispositionMacroF1 === 0.9` and that every v2 target
+   result's `threshold` field equals the corresponding v1 constant.
+3. **Haiku still fails safety** — confirmed both in this round's live
+   replication (§11.5, §11.8) and by a generic test asserting that ANY
+   candidate with critical violations is eliminated regardless of how
+   excellent its quality-target fixture is (`buildScoreV2Fixture` with
+   `criticalViolations: 2` and otherwise-perfect metrics still resolves to
+   `eliminated_critical_safety`).
+4. **Valid acceptable alternatives remain accepted** — Family A
+   (`acceptable_answer`) scores both the primary and every declared
+   acceptable prediction as correct (test: "1. an acceptable-alternative
+   prediction counts as correct, exactly like the primary").
+5. **Invalid answers remain wrong** — a prediction outside the acceptable set
+   scores 0 under both families (test: "real failure: a NON-acceptable
+   prediction is still wrong"); a below-threshold strict macro F1 with
+   SUFFICIENT support still resolves to an actual `fail`, never laundered
+   into `insufficient_support` (test: "sufficient support + F1 below 0.90 =
+   an actual FAIL").
+6. **Support cannot vary by candidate** — the multi-answer-case exclusion is
+   decided from the case's OWN `acceptable` declaration only, never from a
+   prediction; tests assert two candidates predicting different acceptable
+   alternatives (both single-label and signal-set) produce byte-identical
+   `strict.per_class`/`strict.per_label` objects, and that
+   `*_full_support` is corpus-derived and identical across candidates.
+7. **Statistical insufficiency cannot become a fake PASS** — a class with
+   strict support 1 (or any value below `MIN_RELIABLE_CLASS_SUPPORT`) never
+   produces `pass` or `fail`; it produces `insufficient_support`, tested
+   directly and confirmed against the real replication evidence in §11.7.
+8. **An unresolved target never launders a real fail** — tested explicitly:
+   a fixture with one `insufficient_support` target AND one genuinely
+   failing target resolves to `eliminated_quality_target_fail`, never
+   `stage1_finalist_with_unresolved_quality_target` — an unresolved target
+   provides no cover for an actual failure elsewhere.
+9. **Holdout-support preflight performs zero provider calls, by
+   construction** — `holdoutSupportPreflight(cases: CorpusCase[])` has
+   exactly one parameter and it is the corpus; there is no
+   candidate/provider/API-key parameter for a call to travel through, and it
+   is synchronous. Wired into `cli.ts`'s `final` stage (gated on at least one
+   selected candidate actually having a usable API key — a key-less `final`
+   invocation makes no provider call regardless, exactly like every other
+   stage, so the preflight has nothing to protect there) to run BEFORE the
+   provider loop and throw `HOLDOUT_INSUFFICIENT_TO_RESOLVE_TARGET` when the
+   frozen holdout cannot resolve a required target — reads only
+   `--from-run`'s prior `scores-v2.json` (metadata) to find which targets
+   Stage 1 left unresolved, defaulting conservatively to checking both
+   support-sensitive targets when no prior run is named. NOT exercised this
+   round (no `final` invocation was made).
+10. **v1/v2 report identity is structural, not conventional** — separate
+    files (`report.md` vs `report-v2.md`, `scores.json` vs `scores-v2.json`),
+    separate `scoring_version` stamps in both file contents, and a dedicated
+    test asserting `scoreCandidate(...).scoring_version !==
+    scoreCandidateV2(...).scoring_version` for the same input.
+
+No defect required a second fix — everything above was verified passing on
+first implementation, then hardened with a permanent test.
+
+### 11.10 Holdout-support preflight — metadata only, computed against the real frozen holdout (NO provider call)
+
+Run against the actual 120-case `holdout` split (`resolveSelection({split:
+"holdout"})`), reading only `expected`/`acceptable` fields — no model output
+exists or was inspected:
+
+| field | full support (by class) | strict support (by class) | classes below `MIN_RELIABLE_CLASS_SUPPORT=3` |
+| --- | --- | --- | --- |
+| disposition | positive 24, negative 9, neutral 26, mixed 7, ambiguous 6 | positive 15, negative 8, neutral 8, mixed 3 | **ambiguous** (0 strict — every `ambiguous`-gold holdout case declares a genuine acceptable alternative) |
+| signals | interest 17, request_information 10, rejection 11, redirect 8, terms_discussion 20, offer 5, timing_constraint 12, agreement 5 | interest 6, request_information 8, rejection 7, redirect 4, terms_discussion 9, offer 4 | **agreement** (0 strict), **timing_constraint** (0 strict) |
+
+`resolvable: { disposition_macro_f1: false, signal_micro_f1: false }`.
+
+**The frozen 120-case holdout, as currently authored, CANNOT resolve either
+of Sonnet 5's two unresolved Stage-1 quality targets on its own** — the
+`ambiguous` disposition class and the `agreement`/`timing_constraint` signal
+labels have ZERO strict (single-answer) gold cases in the holdout, because
+every holdout case touching those classes currently declares a genuine
+acceptable alternative. This is the same structural pattern as the dev
+split (§11.7), not a coincidence of one split — `ambiguous` disposition and
+`timing_constraint` signal cases in this corpus are disproportionately
+authored as genuinely ambiguous, multi-answer-acceptable cases, which is
+correct D072 modelling but means they contribute zero strict evidence by
+construction. **Per the locked Stage-2 rule (§ "STAGE-2 RULE — LOCK NOW, DO
+NOT RUN IT" in this round's task), if Stage 2 were run today with Sonnet 5 as
+the sole finalist, the preflight would report
+`HOLDOUT_INSUFFICIENT_TO_RESOLVE_TARGET` for both `disposition_macro_f1` and
+`signal_micro_f1` and refuse before any provider call.** Resolving this would
+require either additional strict (single-answer) `ambiguous`/`agreement`/
+`timing_constraint` gold cases added to a frozen evaluation set — which is a
+corpus-authoring decision this round explicitly forbids inventing
+(`docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md` governs what counts as a
+genuine single-answer case) — or accepting that these two targets remain
+permanently statistically unresolvable under the current corpus design and
+must be evaluated some other way (e.g., a larger supplemental set, or
+retiring the macro-F1 hard-gate framing for these specific classes in favor
+of the acceptable-answer accuracy already computed). **This is a blocker for
+the product/architecture owner to resolve before Stage 2 is ever run — not
+something this round decides.**
+
+### 11.11 Validation
+
+- `npx vitest run tests/b07-benchmark` — 158/158 passing (137 pre-existing +
+  21 new in `tests/b07-benchmark/scoring-v2.test.ts`), including the
+  PASS-A defect reproduction and all 18 of the round's numbered acceptance
+  tests.
+- `npm run typecheck` — clean.
+- `npm run format:check` — clean (see §12 head/SHA below for the exact
+  commit this was run against).
+- `npm run build` — clean.
+- `grep -rn "sk-ant-"` sweep of the full working tree before push: only the
+  pre-existing fake test literal in `tests/b07-benchmark/provider-
+  transport.test.ts` matches; the real key never appears in any tracked
+  file, any artifact, or this document.
 
 ---
