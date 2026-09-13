@@ -3,6 +3,7 @@
  * B07 inference benchmark CLI.
  *
  *   tsx scripts/b07-benchmark/cli.ts status
+ *   tsx scripts/b07-benchmark/cli.ts preflight [--split holdout|dev|all]
  *   tsx scripts/b07-benchmark/cli.ts baseline
  *   tsx scripts/b07-benchmark/cli.ts screen  [--candidate id]... [--dry-run]
  *   tsx scripts/b07-benchmark/cli.ts final   [--candidate id]... [--dry-run]
@@ -244,6 +245,16 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
   // to checking every support-sensitive target (disposition macro F1, signal
   // micro F1). Any target the holdout cannot resolve stops the run before any
   // provider is contacted — never a silent proceed.
+  //
+  // PREFLIGHT V2 (Stage-2 statistical closure round): `holdoutSupportPreflight`
+  // now inspects the frozen 120-case main holdout PLUS the frozen
+  // `b07_disposition_ambiguity_support_v1` supplemental pack (loaded by its
+  // own default parameter below — no argument needed here, and no provider
+  // call happens either way: this function's only parameters are corpus/pack
+  // metadata). Disposition macro F1 is evaluated against the SUPPORT-
+  // COMPLETED strict set (main holdout + the 6 supplemental cases); signal
+  // micro F1 continues to use the main holdout alone, under the corrected
+  // "non-empty strict evaluable set" sufficiency rule (see `targets-v2.ts`).
   if (
     stage === "final" &&
     candidates.some((c) => c.providerId !== "local" && hasApiKey(c.providerId))
@@ -266,9 +277,12 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
       }
     }
     const check = checkHoldoutCanResolve(preflight, unresolvedKeys);
+    log(
+      `preflight v2 (metadata only, zero provider calls): pack=${preflight.supplemental_pack.pack_version} digest=${preflight.supplemental_pack.digest} disposition_support_completed=${JSON.stringify(preflight.disposition_support_completed)} signals_strict_n=${preflight.signals_strict_n} signals_strict_label_decisions=${preflight.signals_strict_label_decisions} resolvable=${JSON.stringify(preflight.resolvable)}`,
+    );
     if (!check.canResolve) {
       throw new Error(
-        `HOLDOUT_INSUFFICIENT_TO_RESOLVE_TARGET: the frozen holdout corpus lacks sufficient strict gold support to resolve: ${check.blockingTargets.join(", ")} (disposition insufficient classes: ${preflight.disposition_insufficient_classes.join(", ") || "none"}; signal insufficient labels: ${preflight.signals_insufficient_labels.join(", ") || "none"}). STOP BEFORE ANY PROVIDER CALL — no candidate was contacted. A separately-frozen supplemental evaluation set would be required to resolve this; do not invent one without explicit product sign-off.`,
+        `HOLDOUT_INSUFFICIENT_TO_RESOLVE_TARGET: the frozen holdout corpus (combined with the frozen supplemental_ambiguity_support pack ${preflight.supplemental_pack.pack_version}) lacks sufficient strict gold support to resolve: ${check.blockingTargets.join(", ")} (disposition insufficient classes, support-completed: ${preflight.disposition_insufficient_classes.join(", ") || "none"}; signal strict n=${preflight.signals_strict_n}, strict label decisions=${preflight.signals_strict_label_decisions}; low/zero-strict-support signal labels reported as taxonomy-coverage limitations, not a block: low=${preflight.signals_low_support_labels.join(", ") || "none"}, zero=${preflight.signals_zero_strict_support_labels.join(", ") || "none"}). STOP BEFORE ANY PROVIDER CALL — no candidate was contacted. A NEW, separately-frozen and separately-versioned supplemental pack would be required to resolve this further; do not invent one without explicit product sign-off.`,
       );
     }
   }
@@ -495,11 +509,71 @@ export function commandReport(args: Args): void {
   );
 }
 
+/**
+ * `preflight` — standalone Stage-2 preflight v2 inspection, zero provider
+ * calls (this command takes no `--candidate`, calls no provider transport,
+ * and `holdoutSupportPreflight` itself has no parameter through which a
+ * provider/model could be invoked). Prints the combined main-holdout +
+ * frozen-supplemental-pack support arithmetic so it can be verified by a
+ * human, or by CI, without ever running Stage 1 or Stage 2.
+ */
+function commandPreflight(args: Args): void {
+  const split: CorpusSplit | "all" = args.split ?? "holdout";
+  const selection = resolveSelection({ split, criticalOnly: args.criticalOnly });
+  const preflight = holdoutSupportPreflight(selection.cases);
+
+  log("B07 Stage-2 preflight v2 (metadata only — ZERO provider calls)");
+  log("");
+  log(`corpus version : ${CORPUS_VERSION}`);
+  log(`main holdout   : n_message=${preflight.n_message} n_thread=${preflight.n_thread}`);
+  log("");
+  log("supplemental_ambiguity_support pack:");
+  log(`  pack_version : ${preflight.supplemental_pack.pack_version}`);
+  log(`  digest       : ${preflight.supplemental_pack.digest}`);
+  log(`  created_at   : ${preflight.supplemental_pack.created_at}`);
+  log(`  declaration  : ${preflight.supplemental_pack.declaration}`);
+  log(`  case_ids     : ${preflight.supplemental_pack.case_ids.join(", ")}`);
+  log(`  languages    : ${JSON.stringify(preflight.supplemental_pack.language_distribution)}`);
+  log(`  strict_support (own): ${JSON.stringify(preflight.supplemental_pack.strict_support)}`);
+  log("");
+  log("disposition — main_holdout strict support:");
+  log(`  ${JSON.stringify(preflight.disposition_strict_support)}`);
+  log(
+    "disposition — SUPPORT-COMPLETED strict support (main_holdout + supplemental_ambiguity_support):",
+  );
+  log(`  ${JSON.stringify(preflight.disposition_support_completed)}`);
+  log(`  insufficient classes: ${preflight.disposition_insufficient_classes.join(", ") || "none"}`);
+  log("");
+  log("signals — main_holdout ONLY (never touched by the supplemental pack):");
+  log(
+    `  strict n=${preflight.signals_strict_n} strict label decisions=${preflight.signals_strict_label_decisions}`,
+  );
+  log(`  strict per-label support: ${JSON.stringify(preflight.signals_strict_support)}`);
+  log(
+    `  low-support labels (< MIN_RELIABLE_CLASS_SUPPORT, descriptive only): ${preflight.signals_low_support_labels.join(", ") || "none"}`,
+  );
+  log(
+    `  zero-strict-support labels (descriptive only): ${preflight.signals_zero_strict_support_labels.join(", ") || "none"}`,
+  );
+  log("");
+  log(`resolvable: ${JSON.stringify(preflight.resolvable)}`);
+  log("");
+  const allResolvable = Object.values(preflight.resolvable).every(Boolean);
+  log(
+    allResolvable
+      ? "RESULT: a future Stage-1 finalist CAN enter Stage 2 without an unresolved statistical-support blocker on disposition macro F1 or signal micro F1."
+      : "RESULT: BLOCKED — at least one quality target still lacks sufficient strict evidence. Zero provider calls were made.",
+  );
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   switch (args.command) {
     case "status":
       commandStatus();
+      break;
+    case "preflight":
+      commandPreflight(args);
       break;
     case "baseline":
       await runStage("baseline", args);

@@ -756,7 +756,7 @@ describe("Stage-2 holdout-support preflight (15, 16)", () => {
     expect(report.resolvable.disposition_macro_f1).toBe(true);
   });
 
-  it("16. blocks Stage 2 when a required target's holdout support cannot resolve it, and does not block when it can", () => {
+  it("16. blocks Stage 2 when a required target's holdout support cannot resolve it, and does not block when it can (main holdout in isolation — explicit empty supplemental pack)", () => {
     const insufficientHoldout = syntheticHoldoutCases({
       positive: 10,
       negative: 10,
@@ -764,7 +764,11 @@ describe("Stage-2 holdout-support preflight (15, 16)", () => {
       mixed: 10,
       ambiguous: 1, // below MIN_RELIABLE_CLASS_SUPPORT
     });
-    const report = holdoutSupportPreflight(insufficientHoldout);
+    // Explicit `[]` isolates this test from the real frozen supplemental
+    // pack's own content (a separate concern, covered below and in
+    // stage2-statistical-closure.test.ts) — this test is purely about the
+    // per-class sufficiency arithmetic itself.
+    const report = holdoutSupportPreflight(insufficientHoldout, []);
     expect(report.resolvable.disposition_macro_f1).toBe(false);
     expect(report.disposition_insufficient_classes).toEqual(["ambiguous"]);
 
@@ -779,10 +783,28 @@ describe("Stage-2 holdout-support preflight (15, 16)", () => {
       mixed: 10,
       ambiguous: MIN_RELIABLE_CLASS_SUPPORT,
     });
-    const okReport = holdoutSupportPreflight(sufficientHoldout);
+    const okReport = holdoutSupportPreflight(sufficientHoldout, []);
     const notBlocked = checkHoldoutCanResolve(okReport, ["disposition_macro_f1"]);
     expect(notBlocked.canResolve).toBe(true);
     expect(notBlocked.blockingTargets).toEqual([]);
+  });
+
+  it("the REAL frozen supplemental pack alone completes an otherwise-insufficient ambiguous class (default parameter, no explicit pack needed)", () => {
+    const insufficientHoldout = syntheticHoldoutCases({
+      positive: 10,
+      negative: 10,
+      neutral: 10,
+      mixed: 10,
+      ambiguous: 0,
+    });
+    // No second argument: `holdoutSupportPreflight` defaults to loading the
+    // real, frozen `b07_disposition_ambiguity_support_v1` pack from disk.
+    const report = holdoutSupportPreflight(insufficientHoldout);
+    expect(report.supplemental_pack.pack_version).toBe("b07_disposition_ambiguity_support_v1");
+    expect(report.supplemental_pack.strict_support.ambiguous).toBe(6);
+    expect(report.disposition_support_completed.ambiguous).toBe(6);
+    expect(report.resolvable.disposition_macro_f1).toBe(true);
+    expect(report.disposition_insufficient_classes).not.toContain("ambiguous");
   });
 
   it("a class the holdout never contains at all does not force insufficient_support (nothing to resolve)", () => {

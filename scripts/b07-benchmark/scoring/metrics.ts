@@ -97,6 +97,23 @@ export function scoreSingleLabel(
     row.set(column, (row.get(column) ?? 0) + 1);
   }
 
+  return metricsFromConfusionCounts(classes, columns, counts);
+}
+
+/**
+ * Shared tail end of `scoreSingleLabel`: turns a raw gold->predicted count
+ * matrix into the full report (per-class P/R/F1, macro F1, accuracy).
+ * Factored out so `combineConfusionRecords` (Stage-2 disposition-macro-F1
+ * support-pack merge) can produce an IDENTICAL report shape from a matrix
+ * built by SUMMING two independently-scored confusion matrices, rather than
+ * re-deriving one from raw pairs — the merge never needs, and never sees, any
+ * raw prediction, only each source's own already-computed confusion counts.
+ */
+function metricsFromConfusionCounts(
+  classes: readonly string[],
+  columns: readonly string[],
+  counts: ReadonlyMap<string, ReadonlyMap<string, number>>,
+): SingleLabelReport {
   const at = (gold: string, predicted: string): number => counts.get(gold)?.get(predicted) ?? 0;
 
   const perClass: Record<string, ClassMetrics> = {};
@@ -125,19 +142,69 @@ export function scoreSingleLabel(
     confusion[gold] = Object.fromEntries(columns.map((c) => [c, row.get(c) ?? 0]));
   }
 
-  const correct = pairs.filter((p) => p.predicted === p.gold).length;
+  let n = 0;
+  let correct = 0;
+  for (const gold of counts.keys()) {
+    for (const column of columns) {
+      const count = at(gold, column);
+      n += count;
+      if (column === gold) correct += count;
+    }
+  }
   const f1Of = (cls: string): number => perClass[cls]?.f1 ?? 0;
   const supportOf = (cls: string): number => perClass[cls]?.support ?? 0;
 
   return {
-    n: pairs.length,
+    n,
     correct,
-    accuracy: round(safeDiv(correct, pairs.length)),
+    accuracy: round(safeDiv(correct, n)),
     macro_f1: round(mean(classes.map(f1Of))),
     macro_f1_supported_classes: round(mean(classes.filter((c) => supportOf(c) > 0).map(f1Of))),
     per_class: perClass,
     confusion,
   };
+}
+
+/**
+ * Merges two or more already-computed `confusion` matrices (each
+ * `gold -> predicted-or-"(invalid)" -> count`) into ONE combined
+ * `SingleLabelReport`, by simple cell-wise addition, then recomputes every
+ * per-class metric and macro F1 from the combined totals.
+ *
+ * This is the Stage-2 "support-completed" disposition-macro-F1 primitive
+ * (round: `b07_disposition_ambiguity_support_v1`): the main frozen holdout's
+ * own strict disposition confusion contributes classes with pre-existing
+ * sufficient support, and a SEPARATELY scored supplemental pack's strict
+ * disposition confusion (built the ordinary way, via `scoreSingleLabel`, over
+ * ONLY that pack's own cases/predictions) contributes the missing class's
+ * support — without ever touching, and without needing to see, a single raw
+ * prediction from either source. Nothing here can leak a supplemental case
+ * into any OTHER metric: this function's return value is used for exactly
+ * one target (disposition macro F1) and nothing else reads it.
+ */
+export function combineConfusionRecords(
+  classes: readonly string[],
+  confusions: readonly Readonly<Record<string, Readonly<Record<string, number>>>>[],
+): SingleLabelReport {
+  const columns = [...classes, INVALID_PREDICTION_COLUMN];
+  const counts = new Map<string, Map<string, number>>();
+  const blankRow = (): Map<string, number> => new Map(columns.map((c) => [c, 0]));
+  for (const cls of classes) counts.set(cls, blankRow());
+
+  for (const confusion of confusions) {
+    for (const [gold, row] of Object.entries(confusion)) {
+      let target = counts.get(gold);
+      if (!target) {
+        target = blankRow();
+        counts.set(gold, target);
+      }
+      for (const [column, count] of Object.entries(row)) {
+        target.set(column, (target.get(column) ?? 0) + count);
+      }
+    }
+  }
+
+  return metricsFromConfusionCounts(classes, columns, counts);
 }
 
 export interface MultiLabelReport {

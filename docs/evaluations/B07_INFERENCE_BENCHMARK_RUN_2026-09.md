@@ -1502,4 +1502,207 @@ something this round decides.**
   transport.test.ts` matches; the real key never appears in any tracked
   file, any artifact, or this document.
 
+## 12. STAGE-2 STATISTICAL CLOSURE — CORRECTED SIGNAL MICRO-F1 SUFFICIENCY AND FROZEN BLIND AMBIGUITY SUPPORT PACK, 2026-09-13 (this round)
+
+§11.10 left Stage 2 blocked: the frozen 120-case holdout alone cannot resolve
+either of Sonnet 5's two unresolved quality targets. This round is the
+product/architecture owner's response to that blocker. It makes **zero
+provider API calls**, runs no Stage 2, and does not touch `b07_gold_corpus_v2`,
+`b07_benchmark_prompt_v2`, D072, or any inference config. Two things changed:
+(1) the signal micro-F1 sufficiency rule was corrected (a genuine
+over-constraint the external audit identified), and (2) a new, separately
+versioned, frozen 6-case blind support pack was authored to complete
+disposition strict `ambiguous` support.
+
+### 12.1 PASS A — re-verifying §11.10's numbers before touching anything
+
+Recomputed directly from the frozen holdout (`holdoutSupportPreflight`,
+main-holdout-only, i.e. called with an explicit empty supplemental array):
+
+- Strict disposition support: `positive 15, negative 8, neutral 8, mixed 3,
+  ambiguous 0` — confirms §11.10 exactly; `ambiguous` is the only class below
+  `MIN_RELIABLE_CLASS_SUPPORT = 3`.
+- Strict signal support: `interest 6, request_information 8, rejection 7,
+  redirect 4, terms_discussion 9, offer 4`, with `agreement` and
+  `timing_constraint` at strict support 0 despite nonzero full-corpus support
+  (5 and 12 respectively) — also confirms §11.10.
+
+### 12.2 The micro-F1 sufficiency defect (external audit finding), reproduced
+
+`scoring/targets-v2.ts`'s old `evaluateStrictSignalMicroF1Target` reused
+`classSupportSufficiency` — the SAME per-class-floor rule `disposition_macro_f1`
+correctly needs — for `signal_micro_f1` too: it required **every** signal
+label with nonzero full-corpus support to independently clear
+`MIN_RELIABLE_CLASS_SUPPORT` strict support before the whole metric could be
+hard-evaluated. Applied to the real holdout, `agreement` and
+`timing_constraint` at strict support 0 permanently forced
+`signal_micro_f1` to `insufficient_support`, regardless of how strong the
+metric's own value was.
+
+This conflates two different kinds of average. Macro-F1 computes one F1 per
+class and takes their unweighted mean — a class with support 1 gets the exact
+same vote as a class with support 50, so a single thin class can dominate the
+aggregate's *interpretation*, and the per-class floor is the right gate.
+Micro-F1 aggregates true/false positives/negatives **globally** across every
+strict label decision — a rare label contributes only its own small share of
+that global count; it never gets outsized weight the way a macro average
+would give it, and its thin support does not, on its own, make the *global*
+statistic unreliable. Requiring per-label sufficiency for a micro average was
+therefore over-constrained, not merely strict.
+
+### 12.3 The corrected rule
+
+`signal_micro_f1` is now `insufficient_support` if, and only if, the strict
+signal-evaluation set cannot produce any evaluable label decision at all:
+either zero cases are strict for signals (`strict n == 0`), or the strict set
+is non-empty but every strict case's gold signal set is empty (`tp + fn ==
+0`, i.e. there is no gold-positive label instance anywhere to score against).
+Otherwise the **unchanged** `>= 0.90` threshold applies directly to the
+**unchanged** global strict micro F1 computation — no per-label minimum blocks
+it. `disposition_macro_f1` keeps the original per-class-floor rule verbatim
+(`MIN_RELIABLE_CLASS_SUPPORT = 3` per participating class, threshold `>=
+0.90`, unchanged). Individual low/zero-strict-support signal labels are still
+computed and printed on every report as descriptive **taxonomy-coverage**
+rows — never hidden, never individually used as a provider-selection gate —
+distinct from the tri-state target verdict itself.
+
+Applying the corrected rule to the real holdout: `signals_strict_n = 33`,
+`signals_strict_label_decisions = 38` (both > 0) → `signal_micro_f1` is now
+resolvable on the main holdout alone, with `agreement`/`timing_constraint`
+reported as zero-strict-support taxonomy-coverage labels rather than an
+automatic block.
+
+### 12.4 `b07_disposition_ambiguity_support_v1` — the frozen blind supplemental pack
+
+New fixture `scripts/b07-benchmark/fixtures/b07_disposition_ambiguity_support_v1.jsonl`
+(6 lines) plus its own schema/loader/manifest module,
+`scripts/b07-benchmark/corpus/supplemental-ambiguity-pack.ts` — structurally
+separate from `corpus/load.ts`'s `loadCorpus()`/`selectCases()`, never added to
+`FIXTURE_FILES`, and never able to enter thread-state, compensation,
+message acceptable-answer accuracy, reliability, latency or economics for the
+main holdout (its own schema only allows `task: "message"`; its case ids never
+appear in `selectCases()`'s output). Its purpose is singular: complete strict
+`ambiguous` disposition support for the Stage-2 disposition-macro-F1 gate.
+Signal micro-F1 is corrected by §12.3 alone and never reads this pack.
+
+Six cases, authored with **zero model output inspected** and **zero provider
+calls made** (declaration `CREATED BEFORE ANY STAGE-2 PROVIDER CALL`, stamped
+`created_at: "2026-09-13"`), each genuinely satisfying D072's `ambiguous`
+definition — a real evidentiary gap where a concrete disposition would
+fabricate meaning not present in observable evidence, not ordinary neutral
+logistics, not a mixed message with both positive and negative content
+actually present:
+
+| case_id | language | mechanism |
+| --- | --- | --- |
+| `m-en-sup-001` | en | decisive content exists only in an unavailable email attachment |
+| `m-en-sup-002` | en | decisive content exists only in an unobservable phone call |
+| `m-en-sup-003` | en | an unresolved pronoun points to two materially different, live antecedents (a paid offer vs. an unrelated data request) with no textual disambiguation |
+| `m-es-sup-004` | es | a dangling back-reference to unlogged prior history ("como ya comenté... seguimos igual") this thread never captured |
+| `m-es-sup-005` | es | a "final decision" explicitly stated to exist, relayed from the target's team, recorded in unavailable external material shared through an unnamed separate channel |
+| `m-pt-sup-006` | pt | decisive content exists only in an unobservable video call |
+
+Language distribution: 3 EN / 2 ES / 1 PT, exactly per the locked pack-size
+decision. Every case's `expected.disposition` is the zod literal `"ambiguous"`
+and the pack's `acceptable` schema has **no `disposition` key at all** — it is
+schema-structurally impossible for any case in this file to ever declare an
+acceptable disposition alternative, not merely an editorial promise. Each case
+was independently hostile-reviewed against "could `neutral` honestly be
+correct?" and "is this merely `mixed`?" — in every case a concrete answer
+(neutral, positive, negative, or mixed) would require assuming information the
+authored text does not contain (which attachment/call content, which
+antecedent, what the missing prior statement said, what the external document
+says), so `ambiguous` is the only non-fabricating read; none needed
+replacement. Pack version (`b07_disposition_ambiguity_support_v1`), a
+deterministic content digest, the 6 case ids, and the freeze declaration are
+all part of `supplementalPackManifest()` and are threaded into
+`holdoutSupportPreflight`'s report (`supplemental_pack.pack_version`/`.digest`)
+so a future Stage-2 report binds to them, not just to a name.
+
+### 12.5 Preflight v2 — support-completed disposition, main-holdout-only signals (NO provider call)
+
+`holdoutSupportPreflight` now also accepts the frozen supplemental pack
+(defaulted from disk) and combines it with the main holdout **for disposition
+only**:
+
+| class | main holdout strict | + supplemental strict | support-completed |
+| --- | --- | --- | --- |
+| positive | 15 | 0 | 15 |
+| negative | 8 | 0 | 8 |
+| neutral | 8 | 0 | 8 |
+| mixed | 3 | 0 | 3 |
+| ambiguous | 0 | 6 | **6** |
+
+Every class now clears `MIN_RELIABLE_CLASS_SUPPORT = 3` →
+`resolvable.disposition_macro_f1 = true`. Signals are untouched by the pack
+(`resolvable.signal_micro_f1 = true` from §12.3's corrected rule alone, over
+the main holdout's own `signals_strict_n = 33` / `signals_strict_label_decisions
+= 38`). A new `tsx scripts/b07-benchmark/cli.ts preflight` command prints this
+exact breakdown on demand, and `cli.ts`'s `final`-stage preflight gate now
+uses the same corrected, pack-aware computation before any provider is ever
+contacted. **Both quality targets are now statistically resolvable without a
+single provider call having been made.**
+
+### 12.6 Locked, not exercised: the Stage-2 disposition-macro-F1 merge
+
+`scoring/targets-v2.ts` adds `evaluateStage2DispositionMacroF1Target`, which
+merges two ALREADY-SCORED strict confusion matrices — the main holdout's own
+(from a real Stage-2 run against the 120-case holdout) and the supplemental
+pack's own (from a SEPARATE Stage-2 run against only the 6 pack cases) — via
+`scoring/metrics.ts`'s new `combineConfusionRecords` primitive, then
+recomputes macro F1 over the combined per-class support. It takes no
+candidate/provider parameter, so it cannot itself make a provider call and
+cannot be candidate-specific: the identical function merges every future
+finalist's two reports the same way. This round does not call it against any
+real prediction — it exists so a future Stage-2 round has the correct,
+already-reviewed arithmetic ready rather than inventing it under time
+pressure. Per this round's contract, the pack participates in disposition
+macro F1 and nothing else: it must never be added to thread-state,
+compensation, message acceptable-answer accuracy, reliability, or economics
+for the main holdout, and a future report must report `main_holdout` and
+`supplemental_ambiguity_support` contributions separately.
+
+### 12.7 Immutability proof
+
+`b07_gold_corpus_v2_message.jsonl` and `b07_gold_corpus_v2_thread.jsonl` are
+byte-identical to the pre-round content — verified by SHA-256 (also pinned as
+a permanent regression test in
+`tests/b07-benchmark/stage2-statistical-closure.test.ts`, §11):
+
+| file | sha256 |
+| --- | --- |
+| `b07_gold_corpus_v2_message.jsonl` | `c7149ce55a24e40ce51367196135bccf44dbb5ac3a876aae3fd5f4bd235f42b0` |
+| `b07_gold_corpus_v2_thread.jsonl` | `97c731f35a329ddeab2bc7a553962ffd15266b6fb08437d746a027e799721800` |
+
+`git diff --stat` against this round's own base confirms zero changes to
+`b07_gold_corpus_v1_*`/`b07_gold_corpus_v2_*`, `prompt/render.ts`, or
+`config/inference-config.ts`/`config/candidates.ts`/`config/pricing.ts`.
+
+### 12.8 Candidate statuses (unchanged by this round; derived, not hardcoded)
+
+`evaluateCandidateV2` applies the identical rule to every `candidate_id` —
+nothing here branches on which provider is being evaluated. Under currently
+valid evidence: Haiku 4.5 remains `eliminated_critical_safety` (genuine
+critical-safety violation, never reopened by a scoring-methodology change).
+Sonnet 5 remains a Stage-1 finalist whose quality-target resolution now
+depends on running Stage 2 against the frozen holdout + supplemental pack —
+this round does not promote or eliminate it; **there is still no production
+winner**.
+
+### 12.9 Validation
+
+- `npx vitest run tests/b07-benchmark` — 189/189 passing (159 pre-existing +
+  30 new in `tests/b07-benchmark/stage2-statistical-closure.test.ts`, plus 2
+  edits/additions in `scoring-v2.test.ts` to isolate the pre-existing
+  preflight tests from the pack's new default parameter).
+- `npm run typecheck` — clean.
+- `npm run format:check` — clean.
+- `npm run build` — clean (`next build` compiles and generates all pages;
+  the sandbox's own nested-worktree nested-lockfile ESLint config resolution
+  issue, unrelated to this round's code, is called out separately in the PR).
+- `npm test` (full repo) — 1054/1054 passing, 0 regressions.
+- `git diff --stat` proof (§12.7) that corpus v2, prompt v2, the original
+  120-case holdout, and every inference/model config are byte-for-byte
+  unchanged.
+
 ---
