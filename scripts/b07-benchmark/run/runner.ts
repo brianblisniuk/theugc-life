@@ -24,7 +24,7 @@ import {
 import type { CorpusCase } from "../corpus/schema";
 import { baselineClassify } from "../baseline/rules-baseline";
 import { adapterFor } from "../providers/registry";
-import { ProviderCallError, type ProviderResponse } from "../providers/types";
+import { ProviderCallError, type ProviderAdapter, type ProviderResponse } from "../providers/types";
 import { collectSecretValues, redactSecrets } from "../../provider-evaluation/redact";
 import {
   MESSAGE_JSON_SCHEMA,
@@ -51,8 +51,14 @@ import {
   type CaseResult,
 } from "./types";
 
-const MAX_OUTPUT_TOKENS = 512;
-const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * Exported (not module-private) so the Stage-2 supplemental-pack runner
+ * (`run/supplemental-runner.ts`) uses the IDENTICAL values rather than a
+ * second hardcoded copy that could silently drift — round requirement: "SAME
+ * inference configuration" for both evidence sources.
+ */
+export const MAX_OUTPUT_TOKENS = 512;
+export const DEFAULT_TIMEOUT_MS = 60_000;
 
 export interface RunnerOptions {
   runId: string;
@@ -133,6 +139,115 @@ export function validatePrediction(
 
 const RETRY_NUDGE =
   "\n\nYour previous response did not match the required structure. Return ONLY the structured object with exactly the required fields and allowed values. No prose.";
+
+export interface AttemptExecutionOptions {
+  adapter: ProviderAdapter;
+  model: string;
+  task: "message" | "thread";
+  systemPrompt: string;
+  userPrompt: string;
+  maxSchemaRetries: number;
+  timeoutMs: number;
+  inferenceConfig: EffectiveInferenceConfig;
+}
+
+export interface AttemptExecutionResult {
+  attempts: CaseAttempt[];
+  prediction: MessageOutput | ThreadOutput | null;
+  lastError: ProviderCallError | null;
+}
+
+/**
+ * The bounded-retry provider-call loop, shared verbatim by the main-holdout
+ * runner and the Stage-2 supplemental-pack runner — the ONE place a request
+ * is actually sent and a schema-valid parse is distinguished from a provider
+ * error or an invalid body. Extracted (not duplicated) so the supplemental
+ * pack's execution can never silently diverge from the main holdout's own
+ * retry/timeout/error-classification behaviour (round requirement: "SAME
+ * provider adapter; SAME inference configuration; SAME bounded retry
+ * policy").
+ */
+export async function executeCaseAttempts(
+  options: AttemptExecutionOptions,
+): Promise<AttemptExecutionResult> {
+  const jsonSchema = options.task === "message" ? MESSAGE_JSON_SCHEMA : THREAD_JSON_SCHEMA;
+  const schemaName = SCHEMA_NAMES[options.task];
+
+  const attempts: CaseAttempt[] = [];
+  let prediction: MessageOutput | ThreadOutput | null = null;
+  let lastError: ProviderCallError | null = null;
+
+  const totalAttempts = 1 + Math.max(0, options.maxSchemaRetries);
+  for (let i = 0; i < totalAttempts; i += 1) {
+    const isRetry = i > 0;
+    const started = Date.now();
+    let response: ProviderResponse | null = null;
+    let error: ProviderCallError | null = null;
+    try {
+      response = await options.adapter.invoke(options.model, {
+        systemPrompt: options.systemPrompt,
+        userPrompt: isRetry ? `${options.userPrompt}${RETRY_NUDGE}` : options.userPrompt,
+        jsonSchema,
+        schemaName,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        timeoutMs: options.timeoutMs,
+        inferenceConfig: options.inferenceConfig,
+      });
+    } catch (caught) {
+      error =
+        caught instanceof ProviderCallError
+          ? caught
+          : new ProviderCallError(
+              "network_error",
+              caught instanceof Error ? caught.message : "unknown failure",
+            );
+      lastError = error;
+    }
+    const latency = Date.now() - started;
+
+    if (error) {
+      attempts.push({
+        index: i + 1,
+        kind: isRetry ? "schema_retry" : "initial",
+        outcome: error.kind === "timeout" ? "timeout" : "provider_error",
+        http_status: error.httpStatus,
+        error_summary: safeErrorSummary(`${error.kind}: ${error.message}`),
+        latency_ms: latency,
+        usage: emptyUsage(),
+        returned_model: null,
+      });
+      // A provider error is not a schema failure; a format retry would not
+      // help and would distort the retry statistic. Stop here.
+      break;
+    }
+
+    const candidatePrediction = validatePrediction(options.task, response?.text ?? null);
+    attempts.push({
+      index: i + 1,
+      kind: isRetry ? "schema_retry" : "initial",
+      outcome: candidatePrediction ? "schema_valid" : "schema_invalid",
+      http_status: response?.http_status ?? null,
+      error_summary: candidatePrediction ? null : "response did not validate against the schema",
+      latency_ms: latency,
+      usage: response
+        ? {
+            input_tokens: response.usage.input_tokens,
+            output_tokens: response.usage.output_tokens,
+            reasoning_tokens: response.usage.reasoning_tokens,
+            cached_input_tokens: response.usage.cached_input_tokens,
+          }
+        : emptyUsage(),
+      returned_model: response?.returned_model ?? null,
+    });
+
+    if (candidatePrediction) {
+      prediction = candidatePrediction;
+      break;
+    }
+  }
+
+  return { attempts, prediction, lastError };
+}
 
 async function runOneCase(
   options: RunnerOptions,
@@ -234,81 +349,17 @@ async function runOneCase(
   const visible = toCandidateVisibleCase(corpusCase);
   const systemPrompt = buildSystemPrompt(corpusCase.task);
   const userPrompt = buildUserPrompt(visible);
-  const jsonSchema = corpusCase.task === "message" ? MESSAGE_JSON_SCHEMA : THREAD_JSON_SCHEMA;
-  const schemaName = SCHEMA_NAMES[corpusCase.task];
 
-  const attempts: CaseAttempt[] = [];
-  let prediction: MessageOutput | ThreadOutput | null = null;
-  let lastError: ProviderCallError | null = null;
-
-  const totalAttempts = 1 + Math.max(0, options.maxSchemaRetries);
-  for (let i = 0; i < totalAttempts; i += 1) {
-    const isRetry = i > 0;
-    const started = Date.now();
-    let response: ProviderResponse | null = null;
-    let error: ProviderCallError | null = null;
-    try {
-      response = await adapter.invoke(model, {
-        systemPrompt,
-        userPrompt: isRetry ? `${userPrompt}${RETRY_NUDGE}` : userPrompt,
-        jsonSchema,
-        schemaName,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        inferenceConfig,
-      });
-    } catch (caught) {
-      error =
-        caught instanceof ProviderCallError
-          ? caught
-          : new ProviderCallError(
-              "network_error",
-              caught instanceof Error ? caught.message : "unknown failure",
-            );
-      lastError = error;
-    }
-    const latency = Date.now() - started;
-
-    if (error) {
-      attempts.push({
-        index: i + 1,
-        kind: isRetry ? "schema_retry" : "initial",
-        outcome: error.kind === "timeout" ? "timeout" : "provider_error",
-        http_status: error.httpStatus,
-        error_summary: safeErrorSummary(`${error.kind}: ${error.message}`),
-        latency_ms: latency,
-        usage: emptyUsage(),
-        returned_model: null,
-      });
-      // A provider error is not a schema failure; a format retry would not
-      // help and would distort the retry statistic. Stop here.
-      break;
-    }
-
-    const candidatePrediction = validatePrediction(corpusCase.task, response?.text ?? null);
-    attempts.push({
-      index: i + 1,
-      kind: isRetry ? "schema_retry" : "initial",
-      outcome: candidatePrediction ? "schema_valid" : "schema_invalid",
-      http_status: response?.http_status ?? null,
-      error_summary: candidatePrediction ? null : "response did not validate against the schema",
-      latency_ms: latency,
-      usage: response
-        ? {
-            input_tokens: response.usage.input_tokens,
-            output_tokens: response.usage.output_tokens,
-            reasoning_tokens: response.usage.reasoning_tokens,
-            cached_input_tokens: response.usage.cached_input_tokens,
-          }
-        : emptyUsage(),
-      returned_model: response?.returned_model ?? null,
-    });
-
-    if (candidatePrediction) {
-      prediction = candidatePrediction;
-      break;
-    }
-  }
+  const { attempts, prediction, lastError } = await executeCaseAttempts({
+    adapter,
+    model,
+    task: corpusCase.task,
+    systemPrompt,
+    userPrompt,
+    maxSchemaRetries: options.maxSchemaRetries,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    inferenceConfig,
+  });
 
   const firstAttempt = attempts[0];
   const status: CaseResult["status"] = prediction
@@ -333,8 +384,12 @@ async function runOneCase(
   };
 }
 
-/** Bounded-concurrency map that preserves input order in the output. */
-async function mapWithConcurrency<T, R>(
+/**
+ * Bounded-concurrency map that preserves input order in the output. Exported
+ * so `run/supplemental-runner.ts` (Stage-2 SOURCE B) reuses the identical
+ * concurrency primitive rather than a second copy.
+ */
+export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,
   worker: (item: T, index: number) => Promise<R>,

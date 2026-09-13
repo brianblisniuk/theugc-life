@@ -167,3 +167,80 @@ export function resultCompatibilityKey(
 export function isTerminalForResume(status: CaseStatus): boolean {
   return status === "ok" || status === "schema_failed";
 }
+
+// ---------------------------------------------------------------------------
+// Stage-2 SUPPLEMENTAL evidence stream — SOURCE B
+// (`b07_disposition_ambiguity_support_v1`).
+//
+// Deliberately a STRUCTURALLY DISTINCT type from `CaseResult`, not a
+// `CorpusSplit`-tagged variant of it: it has no `corpus_version` and no
+// `split` at all (there is no schema-legal value to put there — this stream
+// never belongs to the main holdout selection), and it carries `pack_version`
+// / `pack_digest` instead. This makes it structurally impossible for a
+// supplemental row to be silently accepted anywhere that expects a
+// `CaseResult` (`normaliseResults`, `scoreCandidateV2`, `buildReliability`,
+// `buildEconomics`, …) — the round's "separate raw result streams" /
+// "denominator contamination" requirement enforced by the type system, not
+// merely by file-naming convention.
+// ---------------------------------------------------------------------------
+
+export interface SupplementalCaseResult {
+  run_id: string;
+  candidate_id: string;
+  provider_id: string;
+  requested_model: string;
+  inference_config: EffectiveInferenceConfig;
+  inference_config_digest: string;
+  endpoint: string | null;
+  case_id: string;
+  task: "message";
+  /** `SUPPLEMENTAL_PACK_VERSION` — distinct from, and never confused with, `corpus_version`. */
+  pack_version: string;
+  /** `supplementalPackManifest().digest` AT THE TIME OF THIS ATTEMPT. Participates in resume/report identity — a later silent pack edit is detectable and refused. */
+  pack_digest: string;
+  prompt_version: string;
+  schema_version: string;
+  status: CaseStatus;
+  attempts: CaseAttempt[];
+  first_pass_schema_valid: boolean;
+  retry_used: boolean;
+  final_schema_valid: boolean;
+  prediction: MessageOutput | null;
+  total_latency_ms: number;
+  usage_totals: TokenUsage;
+  evaluated_at: string;
+}
+
+/**
+ * Compatibility key for supplemental resume — mirrors
+ * `resultCompatibilityKey`, but additionally binds `pack_digest` (never just
+ * `pack_version`): a stale row computed against a pack that later drifted
+ * under the SAME version string must never be silently reused (round attack
+ * case: "pack drift — same version string but different pack digest").
+ */
+export function supplementalResultCompatibilityKey(
+  r: Pick<
+    SupplementalCaseResult,
+    | "candidate_id"
+    | "provider_id"
+    | "requested_model"
+    | "inference_config_digest"
+    | "case_id"
+    | "pack_version"
+    | "pack_digest"
+    | "prompt_version"
+    | "schema_version"
+  >,
+): string {
+  return [
+    r.candidate_id,
+    r.provider_id,
+    r.requested_model,
+    r.inference_config_digest,
+    r.case_id,
+    r.pack_version,
+    r.pack_digest,
+    r.prompt_version,
+    r.schema_version,
+  ].join("::");
+}

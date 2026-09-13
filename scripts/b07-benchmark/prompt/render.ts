@@ -27,7 +27,7 @@
  * discipline, no v3 follows in this session regardless of the v2 result.
  */
 import { getCase, FEW_SHOT_CASE_IDS } from "../corpus/load";
-import type { CorpusCase, CorpusMessage } from "../corpus/schema";
+import type { CorpusMessage } from "../corpus/schema";
 import {
   COMPENSATION_STRUCTURES,
   DISPOSITIONS,
@@ -54,14 +54,36 @@ export interface CandidateVisibleCase {
   focus_position?: number;
 }
 
-export function toCandidateVisibleCase(corpusCase: CorpusCase): CandidateVisibleCase {
+/**
+ * Structural (not semantic) shape `toCandidateVisibleCase` needs. `CorpusCase`
+ * (the main gold corpus) satisfies this directly, and so does
+ * `SupplementalCase` (`corpus/supplemental-ambiguity-pack.ts`) — both already
+ * carry `case_id`/`task`/`subject`/`messages`/`focus_index` with identical
+ * field shapes. This is the NARROW TECHNICAL ADAPTER point the Stage-2
+ * supplemental-pack wiring uses to feed a frozen supplemental case through
+ * the existing, unmodified prompt machinery: there is exactly one
+ * `toCandidateVisibleCase` implementation and it is reused verbatim for both
+ * sources, so no semantic prompt logic is ever duplicated.
+ */
+export interface VisibleCaseSource {
+  case_id: string;
+  task: "message" | "thread";
+  subject: string;
+  messages: readonly { from: "creator" | "target"; text: string }[];
+  /** Present (required) for message-task cases; absent for thread-task cases. */
+  focus_index?: number;
+}
+
+export function toCandidateVisibleCase(source: VisibleCaseSource): CandidateVisibleCase {
   const visible: CandidateVisibleCase = {
-    case_id: corpusCase.case_id,
-    task: corpusCase.task,
-    subject: corpusCase.subject,
-    messages: corpusCase.messages.map((m: CorpusMessage) => ({ from: m.from, text: m.text })),
+    case_id: source.case_id,
+    task: source.task,
+    subject: source.subject,
+    messages: source.messages.map((m: CorpusMessage) => ({ from: m.from, text: m.text })),
   };
-  if (corpusCase.task === "message") visible.focus_position = corpusCase.focus_index + 1;
+  if (source.task === "message" && source.focus_index !== undefined) {
+    visible.focus_position = source.focus_index + 1;
+  }
   return visible;
 }
 

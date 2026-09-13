@@ -33,6 +33,7 @@ import { priceBookFor } from "./config/pricing";
 import { INFERENCE_POLICY_VERSION } from "./config/inference-config";
 import { CORPUS_VERSION, corpusStats, taxonomyCoverage } from "./corpus/load";
 import type { CorpusCase } from "./corpus/schema";
+import { supplementalPackManifest } from "./corpus/supplemental-ambiguity-pack";
 import { PROMPT_VERSION } from "./prompt/render";
 import { VENDOR_SCREEN, VENDOR_SCREEN_STANDING_CONCLUSION } from "./privacy/vendor-screen";
 import { renderReport } from "./report/render";
@@ -40,6 +41,12 @@ import { renderReportV2 } from "./report/render-v2";
 import { B07_BENCHMARK_SCHEMA_VERSION } from "./schema";
 import { scoreCandidate, type CandidateScore } from "./scoring/score";
 import { scoreCandidateV2, type CandidateScoreV2 } from "./scoring/score-v2";
+import { scoreSupplementalPack, type SupplementalScore } from "./scoring/score-supplemental";
+import {
+  evaluateStage2Final,
+  renderStage2Status,
+  type Stage2Evaluation,
+} from "./scoring/stage2-final";
 import { decide } from "./scoring/targets";
 import {
   checkHoldoutCanResolve,
@@ -47,10 +54,23 @@ import {
   holdoutSupportPreflight,
 } from "./scoring/targets-v2";
 import { SCORING_VERSION_V1, SCORING_VERSION_V2 } from "./scoring/scoring-version";
-import { readJsonArtifact, readManifest, readResults, writeJson, writeText } from "./run/artifacts";
+import {
+  readJsonArtifact,
+  readManifest,
+  readResults,
+  readSupplementalResults,
+  writeJson,
+  writeText,
+} from "./run/artifacts";
 import { resolveSelection, reconstructSelection } from "./run/selection";
 import { newRunId, runCandidate } from "./run/runner";
-import type { CaseResult, FinalistProvenance, RunManifest } from "./run/types";
+import { runSupplementalPack, SupplementalPackDriftError } from "./run/supplemental-runner";
+import type {
+  CaseResult,
+  FinalistProvenance,
+  RunManifest,
+  SupplementalCaseResult,
+} from "./run/types";
 import type { CorpusSplit } from "./taxonomy";
 
 loadLocalEnv();
@@ -354,6 +374,7 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
   log("");
 
   const allResults: CaseResult[] = [];
+  const allSupplementalResults: SupplementalCaseResult[] = [];
   for (const candidate of candidates) {
     const outcome = await runCandidate({
       runId,
@@ -369,12 +390,62 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
     log(
       `  ${candidate.id.padEnd(28)} availability=${outcome.availability} results=${outcome.results.length} reused=${outcome.reusedFromResume}`,
     );
+
+    // STAGE-2 SOURCE B — the fix for the round's blocker: `final` now ALSO
+    // sends the SAME finalist/model against the frozen 6-case supplemental
+    // ambiguity pack, using the SAME prompt v2 / schema / provider adapter /
+    // bounded retry policy as the main holdout above. This is a SEPARATE
+    // execution and a SEPARATE artifact stream
+    // (`supplemental-results.jsonl`, never `results.jsonl`) — it never adds
+    // to `cases.length`, never becomes part of the 120-case main-holdout
+    // selection, and runs for EVERY stage (not only "final") only when
+    // `stage === "final"`, since baseline/screen never need Stage-2 support
+    // closure.
+    if (stage === "final") {
+      const supplementalOutcome = await runSupplementalPack({
+        runId,
+        candidate,
+        concurrency: args.concurrency,
+        maxSchemaRetries: args.maxSchemaRetries,
+        dryRun: args.dryRun,
+        resume: args.resume,
+        log,
+      });
+      allSupplementalResults.push(...supplementalOutcome.results);
+      log(
+        `  ${candidate.id.padEnd(28)} [supplemental pack ${supplementalOutcome.packVersion}] availability=${supplementalOutcome.availability} results=${supplementalOutcome.results.length}/6 reused=${supplementalOutcome.reusedFromResume}`,
+      );
+    }
+  }
+
+  if (stage === "final") {
+    writeJson(runId, "supplemental-manifest.json", supplementalPackManifest());
   }
 
   manifest.finished_at = new Date().toISOString();
   writeJson(runId, "manifest.json", manifest);
 
-  emitReport(runId, stage, cases, allResults, finalistProvenance);
+  // The full frozen main holdout's OWN size, independent of what selection
+  // this particular invocation actually ran (e.g. `--critical-only` or a
+  // narrower `--split` override) — Stage-2 completeness must be judged
+  // against the whole 120-case holdout, never against whatever subset a
+  // `final` invocation happened to select, or a narrowed selection could be
+  // reported as a "complete" main holdout by construction.
+  const mainHoldoutFullSize =
+    stage === "final"
+      ? resolveSelection({ split: "holdout", criticalOnly: false }).cases.length
+      : null;
+
+  emitReport(
+    runId,
+    stage,
+    cases,
+    allResults,
+    finalistProvenance,
+    stage === "final" ? allSupplementalResults : [],
+    mainHoldoutFullSize,
+    { split: manifest.selection.split, case_set_digest: manifest.case_set_digest },
+  );
 }
 
 function emitReport(
@@ -383,6 +454,9 @@ function emitReport(
   cases: readonly CorpusCase[],
   results: readonly CaseResult[],
   finalistProvenance: FinalistProvenance | null = null,
+  supplementalResults: readonly SupplementalCaseResult[] = [],
+  mainHoldoutFullSize: number | null = null,
+  mainSelectionMeta: { split: CorpusSplit | "all"; case_set_digest: string } | null = null,
 ): void {
   const byCandidate = new Map<string, CaseResult[]>();
   for (const result of results) {
@@ -390,14 +464,23 @@ function emitReport(
     bucket.push(result);
     byCandidate.set(result.candidate_id, bucket);
   }
+  const supplementalByCandidate = new Map<string, SupplementalCaseResult[]>();
+  for (const result of supplementalResults) {
+    const bucket = supplementalByCandidate.get(result.candidate_id) ?? [];
+    bucket.push(result);
+    supplementalByCandidate.set(result.candidate_id, bucket);
+  }
 
   const scores: CandidateScore[] = [];
   const scoresV2: CandidateScoreV2[] = [];
+  const supplementalScores: SupplementalScore[] = [];
+  const stage2Evaluations: Stage2Evaluation[] = [];
   const absences: { candidate_id: string; model: string; reason: string }[] = [];
 
   for (const [candidateId, candidateResults] of byCandidate) {
     const candidate = candidateById(candidateId);
     const model = candidateResults[0]?.requested_model ?? candidate?.model ?? "unknown";
+    const providerId = candidateResults[0]?.provider_id ?? candidate?.providerId ?? "local";
     const attempted = candidateResults.filter(
       (r) =>
         r.status !== "not_run_missing_key" && r.status !== "unavailable" && r.status !== "dry_run",
@@ -413,7 +496,7 @@ function emitReport(
     }
     const scoreInput = {
       candidateId,
-      providerId: candidateResults[0]?.provider_id ?? candidate?.providerId ?? "local",
+      providerId,
       requestedModel: model,
       corpusVersion: CORPUS_VERSION,
       promptVersion: PROMPT_VERSION,
@@ -426,11 +509,45 @@ function emitReport(
     // (preserved, unchanged) and v2 (the correction) are both computed from
     // one identical `scoreInput`, never two different result sets.
     scores.push(scoreCandidate(scoreInput));
-    scoresV2.push(scoreCandidateV2(scoreInput));
+    const mainScoreV2 = scoreCandidateV2(scoreInput);
+    scoresV2.push(mainScoreV2);
+
+    // STAGE-2 SOURCE B scoring + FINAL DECISION — only for `final`, and only
+    // when this candidate actually has supplemental evidence at all (a
+    // `final` run of a candidate with no supplemental rows at all is still
+    // scored below via `scoreSupplementalPack`'s own empty-report path, so
+    // "supplemental never ran" is a computed `incomplete` verdict, never a
+    // silently absent one).
+    if (stage === "final" && mainHoldoutFullSize !== null) {
+      const supplementalScore = scoreSupplementalPack({
+        candidateId,
+        providerId,
+        requestedModel: model,
+        results: supplementalByCandidate.get(candidateId) ?? [],
+        priceBook: priceBookFor(candidateId),
+      });
+      supplementalScores.push(supplementalScore);
+
+      const stage2Eval = evaluateStage2Final({
+        candidateId,
+        mainManifest: {
+          split: mainSelectionMeta?.split ?? "holdout",
+          case_set_digest: mainSelectionMeta?.case_set_digest ?? "",
+          selected_case_count: cases.length,
+          expected_full_holdout_count: mainHoldoutFullSize,
+        },
+        mainScore: mainScoreV2,
+        supplementalScore,
+        finalistProvenance,
+      });
+      stage2Evaluations.push(stage2Eval);
+    }
   }
 
   scores.sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
   scoresV2.sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
+  supplementalScores.sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
+  stage2Evaluations.sort((a, b) => a.candidate_id.localeCompare(b.candidate_id));
 
   const decision = decide(scores, BASELINE_CANDIDATE.id);
   const markdown = renderReport({
@@ -477,6 +594,25 @@ function emitReport(
   log("");
   log(`DECISION: ${decision.outcome}`);
   for (const reason of decision.reasons) log(`  - ${reason}`);
+
+  if (stage === "final" && mainHoldoutFullSize !== null) {
+    const supplementalScoresPath = writeJson(runId, "supplemental-scores.json", {
+      supplemental_pack: supplementalPackManifest(),
+      scores: supplementalScores,
+    });
+    const stage2Path = writeJson(runId, "stage2-evaluations.json", stage2Evaluations);
+    log("");
+    log(`supplemental scores : ${supplementalScoresPath}`);
+    log(`stage-2 evaluations : ${stage2Path}`);
+    log("");
+    log(
+      "STAGE-2 STATUS (never a production-vendor winner — see docs/B07_INFERENCE_BENCHMARK_SPEC.md):",
+    );
+    for (const evaluation of stage2Evaluations) {
+      log(`  ${evaluation.candidate_id.padEnd(28)} ${renderStage2Status(evaluation)}`);
+      for (const reason of evaluation.reasons) log(`      - ${reason}`);
+    }
+  }
 }
 
 export function commandReport(args: Args): void {
@@ -500,12 +636,36 @@ export function commandReport(args: Args): void {
   // substituting a different case set when the recorded ids and digest
   // disagree, or when the corpus can no longer produce a recorded id.
   const cases = reconstructSelection(manifest);
+
+  let supplementalResults: SupplementalCaseResult[] = [];
+  let mainHoldoutFullSize: number | null = null;
+  if (manifest.stage === "final") {
+    supplementalResults = readSupplementalResults(args.runId);
+    // PACK DRIFT REFUSAL (round attack case): a stored supplemental row
+    // computed against the SAME `pack_version` but a DIFFERENT digest than
+    // the pack currently on disk must refuse the report, not silently
+    // render a mixed-provenance Stage-2 verdict.
+    const currentPack = supplementalPackManifest();
+    const drifted = supplementalResults.filter(
+      (r) => r.pack_version === currentPack.pack_version && r.pack_digest !== currentPack.digest,
+    );
+    if (drifted.length > 0) {
+      throw new SupplementalPackDriftError(
+        `SUPPLEMENTAL_PACK_DRIFT_DETECTED: run ${args.runId} stored ${drifted.length} supplemental result(s) computed against pack "${currentPack.pack_version}" with a digest that does not match the pack currently on disk (${currentPack.digest}). Refusing to report a Stage-2 verdict from this evidence.`,
+      );
+    }
+    mainHoldoutFullSize = resolveSelection({ split: "holdout", criticalOnly: false }).cases.length;
+  }
+
   emitReport(
     args.runId,
     manifest.stage,
     cases,
     readResults(args.runId),
     manifest.finalist_provenance,
+    supplementalResults,
+    mainHoldoutFullSize,
+    { split: manifest.selection.split, case_set_digest: manifest.case_set_digest },
   );
 }
 

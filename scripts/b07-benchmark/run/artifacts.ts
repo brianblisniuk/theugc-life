@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } fr
 import { dirname, resolve } from "node:path";
 
 import { redactSecrets, collectSecretValues } from "../../provider-evaluation/redact";
-import type { CaseResult, RunManifest } from "./types";
+import type { CaseResult, RunManifest, SupplementalCaseResult } from "./types";
 
 export const ARTIFACT_ROOT = resolve(process.cwd(), "artifacts", "b07-benchmark");
 
@@ -80,6 +80,36 @@ export function readResults(runId: string): CaseResult[] {
     const trimmed = line.trim();
     if (trimmed === "") continue;
     out.push(JSON.parse(trimmed) as CaseResult);
+  }
+  return out;
+}
+
+/**
+ * Stage-2 SUPPLEMENTAL evidence stream (SOURCE B) — a STRUCTURALLY SEPARATE
+ * file from `results.jsonl`, never appended to it and never read by
+ * `readResults`. This is the round's "separate raw result streams"
+ * requirement: nothing downstream can accidentally treat main-holdout and
+ * supplemental rows as one 126-row corpus selection, because they are not
+ * even in the same file.
+ */
+export function supplementalResultsPath(runId: string): string {
+  return resolve(runDir(runId), "supplemental-results.jsonl");
+}
+
+export function appendSupplementalResult(runId: string, result: SupplementalCaseResult): void {
+  const path = supplementalResultsPath(runId);
+  ensureDir(path);
+  appendFileSync(path, `${safeSerialize(result)}\n`, "utf8");
+}
+
+export function readSupplementalResults(runId: string): SupplementalCaseResult[] {
+  const path = supplementalResultsPath(runId);
+  if (!existsSync(path)) return [];
+  const out: SupplementalCaseResult[] = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    out.push(JSON.parse(trimmed) as SupplementalCaseResult);
   }
   return out;
 }
