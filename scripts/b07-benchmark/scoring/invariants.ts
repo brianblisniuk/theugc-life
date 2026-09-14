@@ -10,11 +10,23 @@
  * Each predicate answers one question: "given this prediction, did the
  * candidate commit the forbidden collapse this case was built to detect?"
  */
-import type { CorpusCase } from "../corpus/schema";
 import { canonicalizeSignals } from "../taxonomy";
 import type { MessageOutput, ThreadOutput } from "../schema";
 
 export type Prediction = MessageOutput | ThreadOutput;
+
+/**
+ * The minimal structural shape `evaluateInvariants` needs from "a case" — NOT
+ * the full `CorpusCase` union. `CorpusCase` satisfies this directly, and so
+ * does `corpus/prompt-v3-generalization-challenge.ts`'s `GeneralizationCase`
+ * (PR #40's new 36-case blind fixture) — this is what lets the SAME
+ * invariant suite score cases from either fixture without a structural cast.
+ * No predicate below reads anything beyond what this interface promises.
+ */
+export interface InvariantEvaluableCase {
+  case_id: string;
+  critical_invariants: readonly string[];
+}
 
 function asMessage(prediction: Prediction): MessageOutput | null {
   return "disposition" in prediction ? prediction : null;
@@ -30,7 +42,7 @@ export interface InvariantDefinition {
   contractRef: string;
   description: string;
   /** True when the prediction VIOLATES the invariant. */
-  isViolated: (prediction: Prediction, corpusCase: CorpusCase) => boolean;
+  isViolated: (prediction: Prediction, corpusCase: InvariantEvaluableCase) => boolean;
 }
 
 function predictsAgreement(prediction: Prediction): boolean {
@@ -162,6 +174,94 @@ export const CRITICAL_INVARIANTS: readonly InvariantDefinition[] = [
       return thread ? thread.compensation_structure !== "unknown" : false;
     },
   },
+  // ---------------------------------------------------------------------
+  // PROMPT V3 rules E-J — new critical invariants (PR #40 prompt-v3
+  // instruction-quality experiment). These formalise the specific commercial-
+  // meaning collapses that `b07_benchmark_prompt_v3`'s new RULES E-J teach
+  // against (see `../prompt/render-v3.ts`); they are D072-consistent
+  // generalisations of the SAME conservative discipline §3/§5/§15/§26 already
+  // require, not verbatim D072 clauses. Purely ADDITIVE: no existing case in
+  // the frozen `b07_gold_corpus_v2` holdout or the frozen
+  // `b07_disposition_ambiguity_support_v1` supplemental pack references any
+  // of these ids (`critical_invariants` is per-case data, untouched by this
+  // file), so nothing about the historical v2 evidence changes. Only the new
+  // `b07_prompt_v3_generalization_challenge_v1` fixture tags these.
+  {
+    id: "forecast_not_decision",
+    contractRef: "D072 §3, §5 (via b07_benchmark_prompt_v3 RULE F)",
+    description:
+      "A pessimistic OR optimistic forecast about what another, currently-unreached decision authority tends to do must not be read as that authority's actual decision on THIS opportunity.",
+    isViolated: (p) => {
+      const thread = asThread(p);
+      if (thread)
+        return (
+          thread.thread_state === "declined_observed" ||
+          thread.thread_state === "agreement_observed"
+        );
+      const message = asMessage(p);
+      if (!message) return false;
+      const signals = canonicalizeSignals(message.signals);
+      return (
+        message.disposition === "negative" ||
+        signals.includes("rejection") ||
+        signals.includes("agreement")
+      );
+    },
+  },
+  {
+    id: "explicit_uncertainty_not_rejection",
+    contractRef: "D072 §3, §15 (via b07_benchmark_prompt_v3 RULE G)",
+    description:
+      "A sender's explicit statement that an outcome is not yet known (pending, undecided, mid-reorganisation) must not be read as a closed rejection.",
+    isViolated: (p) => {
+      const thread = asThread(p);
+      if (thread) return thread.thread_state === "declined_observed";
+      const message = asMessage(p);
+      if (!message) return false;
+      return (
+        message.disposition === "negative" ||
+        canonicalizeSignals(message.signals).includes("rejection")
+      );
+    },
+  },
+  {
+    id: "unresolved_referent_not_guessed",
+    contractRef: "D072 §15, §26 (via b07_benchmark_prompt_v3 RULE H)",
+    description:
+      "A pronoun/reference with two or more plausible antecedents that would change the commercial meaning must not be silently resolved into a decisive reading.",
+    isViolated: (p) => {
+      const message = asMessage(p);
+      if (message) {
+        if (message.disposition === "positive" || message.disposition === "negative") return true;
+        const signals = canonicalizeSignals(message.signals);
+        return signals.includes("agreement") || signals.includes("rejection");
+      }
+      const thread = asThread(p);
+      if (!thread) return false;
+      return (
+        thread.thread_state === "agreement_observed" || thread.thread_state === "declined_observed"
+      );
+    },
+  },
+  {
+    id: "unobservable_evidence_not_directional",
+    contractRef: "D072 §15, §16 (via b07_benchmark_prompt_v3 RULE I)",
+    description:
+      "When the substantive decision was allegedly made somewhere the observed text cannot show (a call, an attachment, an earlier unlogged exchange), the direction of that decision must not be guessed.",
+    isViolated: (p) => {
+      const message = asMessage(p);
+      if (message) {
+        if (message.disposition === "positive" || message.disposition === "negative") return true;
+        const signals = canonicalizeSignals(message.signals);
+        return signals.includes("agreement") || signals.includes("rejection");
+      }
+      const thread = asThread(p);
+      if (!thread) return false;
+      return (
+        thread.thread_state === "agreement_observed" || thread.thread_state === "declined_observed"
+      );
+    },
+  },
   {
     id: "no_machine_human_outcome",
     contractRef: "D072 §6",
@@ -202,7 +302,7 @@ export interface InvariantViolation {
  * and can never contribute a violation, however wrong its prediction is.
  */
 export function evaluateInvariants(
-  corpusCase: CorpusCase,
+  corpusCase: InvariantEvaluableCase,
   prediction: Prediction,
 ): InvariantViolation[] {
   const violations: InvariantViolation[] = [];
