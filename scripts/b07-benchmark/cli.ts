@@ -9,6 +9,20 @@
  *   tsx scripts/b07-benchmark/cli.ts final   --candidate id --from-run <stage1-run-id> --finalist-reason "<reason>" [--dry-run]
  *   tsx scripts/b07-benchmark/cli.ts report  --run <run-id>
  *
+ *   tsx scripts/b07-benchmark/cli.ts promptv3-diagnostic --candidate <id> --against holdout        --run <id> [--dry-run]
+ *   tsx scripts/b07-benchmark/cli.ts promptv3-diagnostic --candidate <id> --against generalization --run <id> [--dry-run]
+ *
+ * `promptv3-diagnostic` (PR #40 prompt-v3 instruction-quality experiment) is
+ * NOT a Stage-1/Stage-2 qualification path — it never touches
+ * `evaluateStage2Final`/Stage-1 provenance machinery, writes to its OWN
+ * run-id-scoped artifact files (`promptv3-diagnostic-*.jsonl`/`.json`, never
+ * `results.jsonl`/`supplemental-results.jsonl`/`scores*.json`), and is
+ * clearly labelled `POSTHOC_PROMPT_DIAGNOSTIC` (against holdout) or a genuine
+ * blind test (against generalization) in every log line and manifest field.
+ * See `run/promptv3-diagnostic-runner.ts`, `scoring/promptv3-comparator.ts`,
+ * `scoring/promptv3-generalization-score.ts` and
+ * `scoring/promptv3-interpretation.ts` for the tooling this drives.
+ *
  * This harness is an EVALUATION tool. It reads a synthetic fixture corpus. It
  * performs no Gmail API call, opens no database connection and imports nothing
  * from `src/`.
@@ -39,6 +53,14 @@ import { CORPUS_VERSION, corpusStats, taxonomyCoverage } from "./corpus/load";
 import type { CorpusCase } from "./corpus/schema";
 import { supplementalPackManifest } from "./corpus/supplemental-ambiguity-pack";
 import { PROMPT_VERSION } from "./prompt/render";
+import { PROMPT_VERSION_V3 } from "./prompt/render-v3";
+import {
+  PROMPT_V3_DIAGNOSTIC_LABEL,
+  runGeneralizationUnderPromptV3,
+  runHoldoutUnderPromptV3,
+  runSupplementalUnderPromptV3,
+} from "./run/promptv3-diagnostic-runner";
+import { generalizationPackManifest } from "./corpus/prompt-v3-generalization-challenge";
 import { VENDOR_SCREEN, VENDOR_SCREEN_STANDING_CONCLUSION } from "./privacy/vendor-screen";
 import { renderReport } from "./report/render";
 import { renderReportV2 } from "./report/render-v2";
@@ -96,6 +118,8 @@ export interface Args {
   fromRun: string | null;
   /** Stage-2 auditability: REQUIRED when any selected candidate has role "ceiling". */
   finalistReason: string | null;
+  /** `promptv3-diagnostic` only: which frozen evidence source to run prompt v3 against. */
+  against: "holdout" | "generalization" | null;
 }
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -111,6 +135,7 @@ export function parseArgs(argv: readonly string[]): Args {
     criticalOnly: false,
     fromRun: null,
     finalistReason: null,
+    against: null,
   };
   for (let i = 1; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -151,6 +176,14 @@ export function parseArgs(argv: readonly string[]): Args {
       case "--finalist-reason":
         args.finalistReason = next();
         break;
+      case "--against": {
+        const value = next();
+        if (value !== "holdout" && value !== "generalization") {
+          throw new Error(`--against must be "holdout" or "generalization", got "${value}"`);
+        }
+        args.against = value;
+        break;
+      }
       default:
         throw new Error(`unknown flag: ${arg}`);
     }
@@ -819,6 +852,104 @@ function commandPreflight(args: Args): void {
   );
 }
 
+/**
+ * `promptv3-diagnostic` — PR #40 prompt-v3 instruction-quality experiment
+ * runner. NEVER a Stage-1/Stage-2 qualification path: it never calls
+ * `runStage`, `evaluateStage2Final`, or any `run/stage1-provenance.ts`
+ * function, and it writes exclusively to its own `promptv3-diagnostic-*`
+ * artifact files (see `run/promptv3-diagnostic-runner.ts`). Phase 1 (this
+ * round) never invokes this against a live provider; it exists so Phase 2
+ * (a live Anthropic key) can run Experiment 1 (`--against holdout`) and
+ * Experiment 2 (`--against generalization`) with a single command each.
+ */
+async function commandPromptV3Diagnostic(args: Args): Promise<void> {
+  if (args.candidates.length !== 1) {
+    throw new Error(
+      "promptv3-diagnostic requires exactly one --candidate <id> (e.g. --candidate anthropic-sonnet-5). Run it once per candidate rather than combining candidates in one invocation.",
+    );
+  }
+  if (!args.against) {
+    throw new Error("promptv3-diagnostic requires --against holdout|generalization");
+  }
+  const candidate = candidateById(args.candidates[0] ?? "");
+  if (!candidate) throw new Error(`unknown candidate: ${args.candidates[0]}`);
+
+  const runId = args.runId ?? newRunId(`promptv3-diagnostic-${args.against}`);
+  log(`${PROMPT_V3_DIAGNOSTIC_LABEL} — promptv3-diagnostic`);
+  log(`run id      : ${runId}`);
+  log(
+    `against     : ${args.against}${args.against === "holdout" ? " (POSTHOC — evidence already opened under prompt v2; this is an A/B comparison, NOT a new blind test)" : " (NEW blind evidence — never seen under prompt v2)"}`,
+  );
+  log(`candidate   : ${candidate.id}`);
+  log(
+    `prompt      : ${PROMPT_VERSION_V3} (v2 ${PROMPT_VERSION} is UNCHANGED and remains the historical Stage-2 record)`,
+  );
+  log(`dry run     : ${args.dryRun}`);
+  log("");
+
+  const runnerOptions = {
+    runId,
+    candidate,
+    concurrency: args.concurrency,
+    maxSchemaRetries: args.maxSchemaRetries,
+    dryRun: args.dryRun,
+    resume: args.resume,
+    log,
+  };
+
+  if (args.against === "holdout") {
+    const holdoutOutcome = await runHoldoutUnderPromptV3(runnerOptions);
+    log(
+      `  main holdout (120)     availability=${holdoutOutcome.availability} results=${holdoutOutcome.results.length}/${holdoutOutcome.caseCount} reused=${holdoutOutcome.reusedFromResume}`,
+    );
+    const supplementalOutcome = await runSupplementalUnderPromptV3(runnerOptions);
+    log(
+      `  supplemental pack (6)  availability=${supplementalOutcome.availability} results=${supplementalOutcome.results.length}/6 reused=${supplementalOutcome.reusedFromResume}`,
+    );
+    writeJson(runId, "promptv3-diagnostic-manifest.json", {
+      label: PROMPT_V3_DIAGNOSTIC_LABEL,
+      against: "holdout",
+      run_id: runId,
+      candidate_id: candidate.id,
+      prompt_version: PROMPT_VERSION_V3,
+      corpus_version: CORPUS_VERSION,
+      schema_version: B07_BENCHMARK_SCHEMA_VERSION,
+      main_holdout_case_count: holdoutOutcome.caseCount,
+      main_holdout_availability: holdoutOutcome.availability,
+      supplemental_pack_manifest: supplementalPackManifest(),
+      supplemental_availability: supplementalOutcome.availability,
+      generated_at: new Date().toISOString(),
+    });
+    log("");
+    log(
+      `Next: run scoring/promptv3-comparator.ts's comparePromptV2AndV3OnHoldout() with this run's ` +
+        `promptv3-diagnostic-results.jsonl / promptv3-diagnostic-supplemental-results.jsonl as the v3 ` +
+        `evidence, and the frozen v2 stage2-sonnet5-blind-20260914 results as the v2 evidence.`,
+    );
+  } else {
+    const generalizationOutcome = await runGeneralizationUnderPromptV3(runnerOptions);
+    log(
+      `  generalization challenge (36) availability=${generalizationOutcome.availability} results=${generalizationOutcome.results.length}/36 reused=${generalizationOutcome.reusedFromResume}`,
+    );
+    writeJson(runId, "promptv3-diagnostic-manifest.json", {
+      label: "BLIND_GENERALIZATION_CHALLENGE_NOT_POSTHOC",
+      against: "generalization",
+      run_id: runId,
+      candidate_id: candidate.id,
+      prompt_version: PROMPT_VERSION_V3,
+      schema_version: B07_BENCHMARK_SCHEMA_VERSION,
+      generalization_pack_manifest: generalizationPackManifest(),
+      generalization_availability: generalizationOutcome.availability,
+      generated_at: new Date().toISOString(),
+    });
+    log("");
+    log(
+      "Next: run scoring/promptv3-generalization-score.ts's scorePromptV3Generalization() with this run's " +
+        "promptv3-diagnostic-generalization-results.jsonl.",
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   switch (args.command) {
@@ -839,6 +970,9 @@ async function main(): Promise<void> {
       break;
     case "report":
       commandReport(args);
+      break;
+    case "promptv3-diagnostic":
+      await commandPromptV3Diagnostic(args);
       break;
     default:
       throw new Error(`unknown command: ${args.command}`);

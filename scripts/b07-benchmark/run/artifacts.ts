@@ -114,6 +114,90 @@ export function readSupplementalResults(runId: string): SupplementalCaseResult[]
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// PROMPT-V3 POSTHOC DIAGNOSTIC streams (PR #40) — STRUCTURALLY SEPARATE files
+// from `results.jsonl`/`supplemental-results.jsonl`, never read by
+// `readResults`/`readSupplementalResults` and never written by
+// `appendResult`/`appendSupplementalResult`. A prompt-v3 diagnostic run must
+// never be confusable with, or silently mixed into, a v2 `screen`/`final`
+// run's own evidence — separate files are the structural enforcement of that,
+// on top of the `prompt_version` field difference every row already carries.
+// ---------------------------------------------------------------------------
+
+export function promptV3DiagnosticResultsPath(runId: string): string {
+  return resolve(runDir(runId), "promptv3-diagnostic-results.jsonl");
+}
+
+export function appendPromptV3DiagnosticResult(runId: string, result: CaseResult): void {
+  const path = promptV3DiagnosticResultsPath(runId);
+  ensureDir(path);
+  appendFileSync(path, `${safeSerialize(result)}\n`, "utf8");
+}
+
+export function readPromptV3DiagnosticResults(runId: string): CaseResult[] {
+  const path = promptV3DiagnosticResultsPath(runId);
+  if (!existsSync(path)) return [];
+  const out: CaseResult[] = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    out.push(JSON.parse(trimmed) as CaseResult);
+  }
+  return out;
+}
+
+export function promptV3DiagnosticSupplementalResultsPath(runId: string): string {
+  return resolve(runDir(runId), "promptv3-diagnostic-supplemental-results.jsonl");
+}
+
+export function appendPromptV3DiagnosticSupplementalResult(
+  runId: string,
+  result: SupplementalCaseResult,
+): void {
+  const path = promptV3DiagnosticSupplementalResultsPath(runId);
+  ensureDir(path);
+  appendFileSync(path, `${safeSerialize(result)}\n`, "utf8");
+}
+
+export function readPromptV3DiagnosticSupplementalResults(runId: string): SupplementalCaseResult[] {
+  const path = promptV3DiagnosticSupplementalResultsPath(runId);
+  if (!existsSync(path)) return [];
+  const out: SupplementalCaseResult[] = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    out.push(JSON.parse(trimmed) as SupplementalCaseResult);
+  }
+  return out;
+}
+
+export function promptV3DiagnosticGeneralizationResultsPath(runId: string): string {
+  return resolve(runDir(runId), "promptv3-diagnostic-generalization-results.jsonl");
+}
+
+export function appendPromptV3DiagnosticGeneralizationResult(
+  runId: string,
+  result: SupplementalCaseResult,
+): void {
+  const path = promptV3DiagnosticGeneralizationResultsPath(runId);
+  ensureDir(path);
+  appendFileSync(path, `${safeSerialize(result)}\n`, "utf8");
+}
+
+export function readPromptV3DiagnosticGeneralizationResults(
+  runId: string,
+): SupplementalCaseResult[] {
+  const path = promptV3DiagnosticGeneralizationResultsPath(runId);
+  if (!existsSync(path)) return [];
+  const out: SupplementalCaseResult[] = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    out.push(JSON.parse(trimmed) as SupplementalCaseResult);
+  }
+  return out;
+}
+
 export function writeText(runId: string, filename: string, contents: string): string {
   const path = resolve(runDir(runId), filename);
   ensureDir(path);
