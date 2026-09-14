@@ -290,12 +290,29 @@ actually supports it.
   ceiling where that materially informs the decision. `final` REQUIRES an
   explicit `--candidate <id>` per finalist and fails before any provider call,
   corpus load or case selection if none is given — it never auto-runs every
-  configured model, and a ceiling-role candidate additionally requires
-  `--finalist-reason "<why>"` stating why the ceiling is materially useful
-  here. The run manifest records this provenance (`finalist_provenance`:
-  originating Stage-1 run via `--from-run`, the stated reason, and each
-  finalist's role) so a later reader can see why each finalist was there
-  rather than a winner being hand-selected after seeing holdout results.
+  configured model. For EVERY non-local finalist (not only a ceiling-role
+  one), `final` additionally REQUIRES `--from-run <stage1-run-id>` and
+  `--finalist-reason "<why>"`, and validates the named Stage-1 run against
+  locally persisted artifacts BEFORE any provider call: the manifest exists
+  and is stage `screen`; corpus/prompt/scoring versions match the accepted
+  ones; the candidate's own Stage-1 evidence exists and evaluates to a
+  genuine Stage-1 finalist (never eliminated/invalidated/no-evidence); and
+  its exact requested model and effective inference-config digest match what
+  Stage 2 is about to run (`run/stage1-provenance.ts`). A real `final` run is
+  also locked to EXACTLY the full frozen holdout selection
+  (split=holdout, critical-only=false) — `--split dev`, `--split all` or
+  `--critical-only` are refused before any candidate is resolved, before any
+  provider availability check, and before any provider inference. The run
+  manifest records the validated provenance (`finalist_provenance`:
+  originating Stage-1 run via `--from-run`, the stated reason, each
+  finalist's role, and — for every non-local finalist — the validated
+  Stage-1 facts under `validated_stage1`) so a later reader can see why each
+  finalist was there rather than a winner being hand-selected after seeing
+  holdout results. `report --run` re-validates this provenance against
+  whatever Stage-1 artifacts currently exist on disk every time it renders a
+  Stage-2 verdict, and refuses to render a qualification if the persisted
+  provenance is missing or the originating Stage-1 evidence no longer
+  resolves to an eligible finalist.
 
 ## 11a. Effective inference configuration (versioned, part of result identity)
 
