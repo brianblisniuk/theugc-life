@@ -33,6 +33,10 @@ import {
   MODEL_CANDIDATES,
   modelOverrideEnvVar,
 } from "../../scripts/b07-benchmark/config/candidates";
+import {
+  effectiveInferenceConfig,
+  inferenceConfigDigest,
+} from "../../scripts/b07-benchmark/config/inference-config";
 import { selectCases } from "../../scripts/b07-benchmark/corpus/load";
 import {
   loadSupplementalAmbiguityPack,
@@ -40,15 +44,19 @@ import {
 } from "../../scripts/b07-benchmark/corpus/supplemental-ambiguity-pack";
 import {
   readJsonArtifact,
+  readManifest,
   readResults,
   readSupplementalResults,
   resultsPath,
   runDir,
   supplementalResultsPath,
+  writeJson,
 } from "../../scripts/b07-benchmark/run/artifacts";
+import { MAX_OUTPUT_TOKENS } from "../../scripts/b07-benchmark/run/runner";
 import type { CandidateScoreV2 } from "../../scripts/b07-benchmark/scoring/score-v2";
 import type { SupplementalScore } from "../../scripts/b07-benchmark/scoring/score-supplemental";
 import type { Stage2Evaluation } from "../../scripts/b07-benchmark/scoring/stage2-final";
+import { writeStage1FinalistFixture } from "./helpers/stage1-fixture";
 
 const openaiCandidate = MODEL_CANDIDATES.find((c) => c.id === "openai-gpt-5-6-luna");
 if (!openaiCandidate)
@@ -157,9 +165,36 @@ function invokeCallCount(fetchMock: ReturnType<typeof vi.fn>): number {
   }).length;
 }
 
+/**
+ * This round's hardening (BLOCKER 1) makes `--from-run`/`--finalist-reason`
+ * mandatory for every non-local Stage-2 finalist, and validates the named
+ * Stage-1 run against locally persisted artifacts BEFORE any provider call.
+ * Every `final` invocation in this file now sets up a genuine Stage-1
+ * finalist fixture for `openai-gpt-5-6-luna` first (via
+ * `writeStage1FinalistFixture`, itself zero-network) and points `--from-run`
+ * at it — proving the orchestration tests below exercise the REAL post-
+ * hardening path, not a bypass.
+ */
+function setUpValidStage1Run(cleanup: string[]): string {
+  const inferenceConfig = effectiveInferenceConfig(
+    { providerId: "openai", model: "gpt-5.6-luna" },
+    MAX_OUTPUT_TOKENS,
+  );
+  const { runId } = writeStage1FinalistFixture({
+    candidateId: "openai-gpt-5-6-luna",
+    providerId: "openai",
+    model: "gpt-5.6-luna",
+    inferenceConfig,
+    inferenceConfigDigest: inferenceConfigDigest(inferenceConfig),
+  });
+  cleanup.push(runDir(runId));
+  return runId;
+}
+
 describe("Stage-2 mocked end-to-end: main holdout + supplemental pack, fully mocked, ZERO real network calls", () => {
   it("final schedules exactly the 120 main-holdout cases AND exactly the 6 frozen supplemental cases, in two structurally separate artifact streams, and a perfect finalist reaches STAGE2_QUALIFIED_CANDIDATE", async () => {
     const runId = freshRunId("full-e2e");
+    const stage1RunId = setUpValidStage1Run(cleanupDirs);
     const { bodies, requestSink } = buildPerfectAnswers();
     expect(bodies.length).toBe(126); // 120 main + 6 supplemental — never conflated into one 126-case main selection.
 
@@ -171,6 +206,10 @@ describe("Stage-2 mocked end-to-end: main holdout + supplemental pack, fully moc
       "final",
       "--candidate",
       "openai-gpt-5-6-luna",
+      "--from-run",
+      stage1RunId,
+      "--finalist-reason",
+      "Stage-1 finalist advancing to blind Stage-2 holdout",
       "--run",
       runId,
       "--concurrency",
@@ -248,7 +287,10 @@ describe("Stage-2 mocked end-to-end: main holdout + supplemental pack, fully moc
     );
     expect(supplementalScore?.disposition_strict.n).toBe(6);
     expect(supplementalScore?.reliability.cases_selected).toBe(6);
-    expect(supplementalScore?.reliability.all_six_completed).toBe(true);
+    expect(supplementalScore?.reliability.all_six_attempted).toBe(true);
+    expect(supplementalScore?.reliability.all_six_valid_predictions).toBe(true);
+    expect(supplementalScore?.reliability.cases_ok).toBe(6);
+    expect(supplementalScore?.reliability.cases_final_schema_valid).toBe(6);
 
     // -- 15/16/17: support-completed disposition macro F1 is actually invoked, threshold unchanged. --
     const stage2Evaluations = readJsonArtifact<Stage2Evaluation[]>(
@@ -288,8 +330,13 @@ describe("Stage-2 mocked end-to-end: main holdout + supplemental pack, fully moc
     expect(mainScore?.economics.cases_priced).toBe(120);
     expect(supplementalScore?.economics.cases_priced).toBe(6);
 
-    // -- 31: finalist provenance persisted. ------------------------------
+    // -- 31: finalist provenance persisted, INCLUDING validated Stage-1 facts. --
     expect(evaluation?.finalist_provenance).not.toBeNull();
+    expect(evaluation?.finalist_provenance?.screen_run_id).toBe(stage1RunId);
+    const validated = evaluation?.finalist_provenance?.validated_stage1?.["openai-gpt-5-6-luna"];
+    expect(validated?.stage1_run_id).toBe(stage1RunId);
+    expect(validated?.stage1_status).toMatch(/^stage1_finalist/);
+    expect(validated?.requested_model).toBe("gpt-5.6-luna");
 
     // -- 32: mocked end-to-end makes zero real provider/network calls. --
     // (implicit: `fetch` was stubbed for the whole test; nothing here ever
@@ -312,6 +359,7 @@ describe("Stage-2 mocked end-to-end: main holdout + supplemental pack, fully moc
 describe("PASS C attack: missing supplemental execution must NEVER qualify", () => {
   it("main holdout completes perfectly and all 126 calls succeed, but a re-score against only 5 of the 6 supplemental predictions (an interrupted supplemental phase) must report `incomplete`, never a qualified status", async () => {
     const runId = freshRunId("missing-supplemental");
+    const stage1RunId = setUpValidStage1Run(cleanupDirs);
     const { bodies, requestSink } = buildPerfectAnswers();
 
     process.env.OPENAI_API_KEY = "sk-test-main-only-0123456789";
@@ -321,6 +369,10 @@ describe("PASS C attack: missing supplemental execution must NEVER qualify", () 
       "final",
       "--candidate",
       "openai-gpt-5-6-luna",
+      "--from-run",
+      stage1RunId,
+      "--finalist-reason",
+      "Stage-1 finalist advancing to blind Stage-2 holdout",
       "--run",
       runId,
       "--concurrency",
@@ -362,7 +414,8 @@ describe("PASS C attack: missing supplemental execution must NEVER qualify", () 
       results: truncatedSupplemental,
       priceBook: priceBookFor("openai-gpt-5-6-luna"),
     });
-    expect(supplementalScore.reliability.all_six_completed).toBe(false);
+    expect(supplementalScore.reliability.all_six_attempted).toBe(false);
+    expect(supplementalScore.reliability.all_six_valid_predictions).toBe(false);
 
     const evaluation = evaluateStage2Final({
       candidateId: "openai-gpt-5-6-luna",
@@ -386,6 +439,7 @@ describe("PASS C attack: missing supplemental execution must NEVER qualify", () 
 describe("PASS C attack: pack drift (same pack_version, different digest) refuses report --run, not silently rendering a verdict", () => {
   it("hand-tampering a stored supplemental row's pack_digest under the SAME pack_version makes `report --run` throw SupplementalPackDriftError instead of rendering a Stage-2 status", async () => {
     const runId = freshRunId("pack-drift");
+    const stage1RunId = setUpValidStage1Run(cleanupDirs);
     const { bodies, requestSink } = buildPerfectAnswers();
     process.env.OPENAI_API_KEY = "sk-test-drift-0123456789";
     vi.stubGlobal("fetch", makePerfectFetchMock(bodies, requestSink));
@@ -394,6 +448,10 @@ describe("PASS C attack: pack drift (same pack_version, different digest) refuse
       "final",
       "--candidate",
       "openai-gpt-5-6-luna",
+      "--from-run",
+      stage1RunId,
+      "--finalist-reason",
+      "Stage-1 finalist advancing to blind Stage-2 holdout",
       "--run",
       runId,
       "--concurrency",
@@ -447,4 +505,122 @@ describe("provider parity: no candidate/provider-specific semantic branch in the
       expect(stage2FinalSource).not.toContain(forbidden);
     }
   });
+});
+
+describe("FINALIST PROVENANCE IDENTITY: `report --run` re-validates persisted Stage-1 provenance every time, never trusting a cached snapshot alone", () => {
+  it("23: report cannot qualify without persisted Stage-1 provenance — hand-clearing the manifest's own screen_run_id makes report --run render blocked_identity_invalid instead of a qualification", async () => {
+    const runId = freshRunId("provenance-missing-on-report");
+    const stage1RunId = setUpValidStage1Run(cleanupDirs);
+    const { bodies, requestSink } = buildPerfectAnswers();
+    process.env.OPENAI_API_KEY = "sk-test-provenance-missing-0123456789";
+    vi.stubGlobal("fetch", makePerfectFetchMock(bodies, requestSink));
+
+    const args = parseArgs([
+      "final",
+      "--candidate",
+      "openai-gpt-5-6-luna",
+      "--from-run",
+      stage1RunId,
+      "--finalist-reason",
+      "Stage-1 finalist advancing to blind Stage-2 holdout",
+      "--run",
+      runId,
+      "--concurrency",
+      "1",
+    ]);
+    await runStage("final", args);
+
+    const firstPass = readJsonArtifact<Stage2Evaluation[]>(runId, "stage2-evaluations.json");
+    expect(firstPass?.find((e) => e.candidate_id === "openai-gpt-5-6-luna")?.status).toBe(
+      "stage2_qualified_candidate",
+    );
+
+    // Simulate a manifest whose persisted provenance no longer names an
+    // originating Stage-1 run at all (e.g. hand-edited, or written by an
+    // older pre-hardening artifact) — `report --run` must never treat this as
+    // "provenance not required".
+    const manifest = readManifest(runId);
+    expect(manifest).not.toBeNull();
+    if (!manifest) return;
+    writeJson(runId, "manifest.json", {
+      ...manifest,
+      finalist_provenance: manifest.finalist_provenance
+        ? { ...manifest.finalist_provenance, screen_run_id: null, validated_stage1: null }
+        : null,
+    });
+
+    commandReport(parseArgs(["report", "--run", runId]));
+    const reReadEvaluations = readJsonArtifact<Stage2Evaluation[]>(
+      runId,
+      "stage2-evaluations.json",
+    );
+    const reEvaluation = reReadEvaluations?.find((e) => e.candidate_id === "openai-gpt-5-6-luna");
+    expect(reEvaluation?.status).toBe("blocked_identity_invalid");
+    expect(reEvaluation?.isQualified).toBe(false);
+    expect(reEvaluation?.reasons.join(" ")).toContain("STAGE2_PROVENANCE_NO_LONGER_VALID");
+  }, 30_000);
+
+  it("24: report cannot qualify if the originating Stage-1 evidence no longer resolves to an eligible finalist — mutating the persisted Stage-1 run's own scoring evidence to ELIMINATED after the fact blocks a later report --run", async () => {
+    const runId = freshRunId("provenance-stale-on-report");
+    const stage1RunId = setUpValidStage1Run(cleanupDirs);
+    const { bodies, requestSink } = buildPerfectAnswers();
+    process.env.OPENAI_API_KEY = "sk-test-provenance-stale-0123456789";
+    vi.stubGlobal("fetch", makePerfectFetchMock(bodies, requestSink));
+
+    const args = parseArgs([
+      "final",
+      "--candidate",
+      "openai-gpt-5-6-luna",
+      "--from-run",
+      stage1RunId,
+      "--finalist-reason",
+      "Stage-1 finalist advancing to blind Stage-2 holdout",
+      "--run",
+      runId,
+      "--concurrency",
+      "1",
+    ]);
+    await runStage("final", args);
+    const firstPass = readJsonArtifact<Stage2Evaluation[]>(runId, "stage2-evaluations.json");
+    expect(firstPass?.find((e) => e.candidate_id === "openai-gpt-5-6-luna")?.status).toBe(
+      "stage2_qualified_candidate",
+    );
+
+    // Mutate the ORIGINATING Stage-1 run's own persisted scores-v2.json so the
+    // candidate is now eliminated there (simulating a later correction/
+    // discovery against that Stage-1 evidence) — never re-run Stage 1, just
+    // edit what is already on disk.
+    const stage1Scores = readJsonArtifact<{ scoring_version: string; scores: unknown[] }>(
+      stage1RunId,
+      "scores-v2.json",
+    );
+    expect(stage1Scores).not.toBeNull();
+    if (!stage1Scores) return;
+    const mutatedScores = {
+      ...stage1Scores,
+      scores: stage1Scores.scores.map((s) => ({
+        ...(s as Record<string, unknown>),
+        critical_suite: {
+          cases: 1,
+          cases_evaluated: 1,
+          cases_not_evaluated: 0,
+          violations: 3,
+          violations_by_invariant: { politeness_not_positive: 3 },
+          violation_details: [],
+          passes_hard_gate: false,
+        },
+      })),
+    };
+    writeJson(stage1RunId, "scores-v2.json", mutatedScores);
+
+    commandReport(parseArgs(["report", "--run", runId]));
+    const reReadEvaluations = readJsonArtifact<Stage2Evaluation[]>(
+      runId,
+      "stage2-evaluations.json",
+    );
+    const reEvaluation = reReadEvaluations?.find((e) => e.candidate_id === "openai-gpt-5-6-luna");
+    expect(reEvaluation?.status).toBe("blocked_identity_invalid");
+    expect(reEvaluation?.isQualified).toBe(false);
+    expect(reEvaluation?.reasons.join(" ")).toContain("not a Stage-1 finalist");
+  }, 30_000);
 });

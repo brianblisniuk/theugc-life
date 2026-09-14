@@ -68,8 +68,33 @@ export interface SupplementalReliabilityReport {
   timeouts: number;
   timeout_rate: number;
   returned_models: string[];
-  /** True only when every one of the 6 frozen cases produced a terminal (ok/schema_failed) attempt — never fewer, never a subset. */
-  all_six_completed: boolean;
+  /**
+   * `status === "ok"` count, over the 6 frozen cases. A schema failure,
+   * provider error or timeout NEVER counts here even though it is a
+   * "terminal" (non-retryable) outcome — round: BLOCKER 3, "six attempts !=
+   * six valid predictions".
+   */
+  cases_ok: number;
+  /** `final_schema_valid === true` count, over the 6 frozen cases. */
+  cases_final_schema_valid: number;
+  /**
+   * True only when every one of the 6 frozen case ids produced a terminal
+   * (ok/schema_failed/provider_error/timeout) attempt — i.e. nothing is still
+   * an absence of evidence (`not_run_missing_key`/`unavailable`/`dry_run`).
+   * Deliberately WEAKER than `all_six_valid_predictions`: a schema failure
+   * satisfies this field but never that one. Reported for reliability
+   * transparency only — NEVER used to decide Stage-2 atomicity.
+   */
+  all_six_attempted: boolean;
+  /**
+   * The ONLY field Stage-2 atomicity may treat as "supplemental evidence
+   * complete" (round: BLOCKER 3). True if, and only if, ALL SIX exact frozen
+   * case ids have `status === "ok"` AND `final_schema_valid === true` AND a
+   * non-null `prediction`. A schema failure is not an ambiguous prediction; a
+   * timeout is not evidence; a provider error is not evidence — none of them
+   * ever satisfy this field, regardless of how well the other 5 cases scored.
+   */
+  all_six_valid_predictions: boolean;
 }
 
 export interface SupplementalEconomicsReport {
@@ -192,9 +217,32 @@ function buildReliability(
   const finalValid = attempted.filter((r) => r.final_schema_valid).length;
   const providerErrors = attempted.filter((r) => r.status === "provider_error").length;
   const timeouts = attempted.filter((r) => r.status === "timeout").length;
+  const casesOk = attempted.filter((r) => r.status === "ok").length;
   const returned = new Set<string>();
   for (const r of attempted)
     for (const a of r.attempts) if (a.returned_model) returned.add(a.returned_model);
+
+  // BLOCKER 3 fix — evaluated over the EXACT 6 frozen case ids (via
+  // `byCaseId`, never the already-filtered `attempted`/`results` arrays), so
+  // a missing row for one frozen case id can never be silently treated as
+  // satisfied by an unrelated row.
+  const allSixAttempted =
+    cases.length === SUPPLEMENTAL_PACK_SIZE &&
+    cases.every((c) => {
+      const r = byCaseId.get(c.case_id);
+      return (
+        !!r &&
+        r.status !== "not_run_missing_key" &&
+        r.status !== "unavailable" &&
+        r.status !== "dry_run"
+      );
+    });
+  const allSixValidPredictions =
+    cases.length === SUPPLEMENTAL_PACK_SIZE &&
+    cases.every((c) => {
+      const r = byCaseId.get(c.case_id);
+      return !!r && r.status === "ok" && r.final_schema_valid && r.prediction !== null;
+    });
 
   return {
     cases_selected: cases.length,
@@ -212,8 +260,10 @@ function buildReliability(
     timeouts,
     timeout_rate: rate(timeouts, attempted.length),
     returned_models: [...returned].sort(),
-    all_six_completed:
-      attempted.length === SUPPLEMENTAL_PACK_SIZE && cases.length === SUPPLEMENTAL_PACK_SIZE,
+    cases_ok: casesOk,
+    cases_final_schema_valid: finalValid,
+    all_six_attempted: allSixAttempted,
+    all_six_valid_predictions: allSixValidPredictions,
   };
 }
 
@@ -323,12 +373,22 @@ export function scoreSupplementalPack(input: SupplementalScoreInput): Supplement
 
   const succeeded = results.filter((r) => r.status === "ok" && r.final_schema_valid);
   const latency = summariseLatency(succeeded.map((r) => r.total_latency_ms));
+  const reliability = buildReliability(cases, byCaseId);
+
+  // BLOCKER 4 fix — a supplemental pack that returns more than one distinct
+  // provider-reported model/version across its 6 frozen cases is refused,
+  // identically to the main holdout's own model-drift refusal in
+  // `scoring/score-v2.ts` (never treated as "close enough" evidence, and
+  // never silently unioned into Stage-2 identity by `stage2-final.ts`).
+  const modelDrift = input.providerId !== "local" && reliability.returned_models.length > 1;
 
   let invalidatedReason: string | null = null;
   if (identityConflicts.length > 0) {
     invalidatedReason = `refusing to score ${identityConflicts.length} supplemental case(s) with incompatible result rows under one run id: ${identityConflicts.join(", ")}. Rerun the supplemental pack under a fresh run id.`;
   } else if (driftDetected) {
     invalidatedReason = `SUPPLEMENTAL_PACK_DRIFT_DETECTED: at least one stored supplemental result was computed against pack "${pack.pack_version}" with a digest that does not match the pack currently on disk (${pack.digest}). Refusing to present a Stage-2 verdict from this evidence.`;
+  } else if (modelDrift) {
+    invalidatedReason = `refusing to combine into one supplemental score: the provider returned ${reliability.returned_models.length} distinct model versions across the ${SUPPLEMENTAL_PACK_SIZE} frozen supplemental cases for candidate "${input.candidateId}" (${reliability.returned_models.join(", ")}). A resume that mixed two provider-returned versions must never be treated as one clean supplemental run — rerun the supplemental pack under a fresh run id.`;
   }
 
   return {
@@ -343,7 +403,7 @@ export function scoreSupplementalPack(input: SupplementalScoreInput): Supplement
     inference_config: results[0]?.inference_config ?? null,
     disposition_strict: dispositionStrict,
     descriptive,
-    reliability: buildReliability(cases, byCaseId),
+    reliability,
     latency,
     economics: buildEconomics(results, input.priceBook),
   };

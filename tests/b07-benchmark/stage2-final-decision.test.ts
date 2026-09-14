@@ -20,7 +20,10 @@ import {
 import type { EffectiveInferenceConfig } from "../../scripts/b07-benchmark/config/inference-config";
 import type { CaseResult, SupplementalCaseResult } from "../../scripts/b07-benchmark/run/types";
 import { scoreCandidateV2 } from "../../scripts/b07-benchmark/scoring/score-v2";
-import { scoreSupplementalPack } from "../../scripts/b07-benchmark/scoring/score-supplemental";
+import {
+  scoreSupplementalPack,
+  type SupplementalScore,
+} from "../../scripts/b07-benchmark/scoring/score-supplemental";
 import {
   evaluateStage2Final,
   renderStage2Status,
@@ -637,5 +640,271 @@ describe("28/29/30. denominators and cost/tokens stay separate", () => {
     expect(mainScore.economics.total_input_tokens).not.toBe(
       mainScore.economics.total_input_tokens + supplementalScore.economics.total_input_tokens,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BLOCKER 3 — "six attempts != six valid supplemental predictions". A schema
+// failure, timeout, or provider error on even ONE of the 6 frozen
+// supplemental cases must produce `incomplete`, never a qualified verdict —
+// regardless of how well the other 5 predictions (or the main holdout) did.
+// ---------------------------------------------------------------------------
+
+/** A supplemental row whose status is NOT `ok` — no valid semantic prediction. */
+function brokenSupplementalResultFor(
+  c: ReturnType<typeof loadSupplementalAmbiguityPack>[number],
+  status: "schema_failed" | "timeout" | "provider_error",
+  packVersion: string,
+  packDigest: string,
+): SupplementalCaseResult {
+  return {
+    run_id: "r",
+    candidate_id: "x",
+    provider_id: "openai",
+    requested_model: "m",
+    inference_config: TEST_INFERENCE_CONFIG,
+    inference_config_digest: "test-config-digest",
+    endpoint: "https://example.invalid",
+    case_id: c.case_id,
+    task: "message",
+    pack_version: packVersion,
+    pack_digest: packDigest,
+    prompt_version: "p",
+    schema_version: "s",
+    status,
+    attempts: [
+      {
+        index: 1,
+        kind: "initial",
+        outcome:
+          status === "schema_failed"
+            ? "schema_invalid"
+            : status === "timeout"
+              ? "timeout"
+              : "provider_error",
+        http_status: status === "provider_error" ? 500 : null,
+        error_summary: `${status} on this attempt`,
+        latency_ms: 10,
+        usage: { input_tokens: 50, output_tokens: 10, reasoning_tokens: 0, cached_input_tokens: 0 },
+        returned_model: status === "schema_failed" ? "m-2026" : null,
+      },
+    ],
+    first_pass_schema_valid: false,
+    retry_used: false,
+    final_schema_valid: false,
+    prediction: null,
+    total_latency_ms: 10,
+    usage_totals: {
+      input_tokens: 50,
+      output_tokens: 10,
+      reasoning_tokens: 0,
+      cached_input_tokens: 0,
+    },
+    evaluated_at: "2026-09-13T00:00:00.000Z",
+  };
+}
+
+function buildFiveValidOneBrokenSupplementalScore(
+  brokenStatus: "schema_failed" | "timeout" | "provider_error",
+) {
+  const pack = loadSupplementalAmbiguityPack();
+  const manifest = supplementalPackManifest();
+  const results = pack.map((c, i) =>
+    i === 0
+      ? brokenSupplementalResultFor(c, brokenStatus, manifest.pack_version, manifest.digest)
+      : supplementalResultFor(c, c.expected.disposition, manifest.pack_version, manifest.digest),
+  );
+  return scoreSupplementalPack({
+    candidateId: "x",
+    providerId: "openai",
+    requestedModel: "m",
+    results,
+    priceBook: null,
+  });
+}
+
+describe("PASS C attack: BLOCKER 3 — 5 valid + 1 broken supplemental case is ALWAYS incomplete, never qualified, regardless of how well the other 5 would score", () => {
+  it.each([
+    ["schema_failed", "15"],
+    ["timeout", "16"],
+    ["provider_error", "17"],
+  ] as const)(
+    "%s (acceptance %s): 5 valid `ambiguous` predictions + 1 %s -> incomplete, even though the 5 correct predictions would otherwise leave combined macro-F1 >= 0.90",
+    (brokenStatus: "schema_failed" | "timeout" | "provider_error", _acceptance: string) => {
+      const mainScore = buildPerfectMainScore();
+      const supplementalScore = buildFiveValidOneBrokenSupplementalScore(brokenStatus);
+
+      // Sanity: the 5 valid predictions are genuinely all correct, and the
+      // scorer does NOT drop the broken row from `disposition_strict` — it is
+      // scored as an explicit miss (never silently excluded) — so this test
+      // is not accidentally passing because macro-F1 already failed on its
+      // own arithmetic; the completeness gate is a SEPARATE, independent
+      // check from the metric.
+      expect(supplementalScore.disposition_strict.n).toBe(6);
+      expect(supplementalScore.reliability.cases_ok).toBe(5);
+      expect(supplementalScore.reliability.all_six_attempted).toBe(true);
+      expect(supplementalScore.reliability.all_six_valid_predictions).toBe(false);
+
+      const evaluation = evaluateStage2Final({
+        candidateId: "x",
+        mainManifest: baseMainManifest(),
+        mainScore,
+        supplementalScore,
+        finalistProvenance: null,
+      });
+      expect(evaluation.status).toBe("incomplete");
+      expect(evaluation.isQualified).toBe(false);
+      expect(evaluation.reasons.join(" ")).toContain("supplemental pack incomplete");
+    },
+  );
+
+  it("18: only 6/6 schema-valid, status=ok, non-null predictions count as complete supplemental evidence", () => {
+    const supplementalScore = buildPerfectSupplementalScore();
+    expect(supplementalScore.reliability.cases_ok).toBe(6);
+    expect(supplementalScore.reliability.cases_final_schema_valid).toBe(6);
+    expect(supplementalScore.reliability.all_six_attempted).toBe(true);
+    expect(supplementalScore.reliability.all_six_valid_predictions).toBe(true);
+
+    const evaluation = evaluateStage2Final({
+      candidateId: "x",
+      mainManifest: baseMainManifest(),
+      mainScore: buildPerfectMainScore(),
+      supplementalScore,
+      finalistProvenance: null,
+    });
+    expect(evaluation.status).toBe("stage2_qualified_candidate");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BLOCKER 4 — returned-model identity, WITHIN the supplemental pack and
+// CROSS-SOURCE between main and supplemental.
+// ---------------------------------------------------------------------------
+
+describe("PASS C attack: BLOCKER 4 — returned-model drift", () => {
+  it("19: supplemental returned-model drift (A/A/A/B/A/A across the 6 frozen cases) invalidates the supplemental source", () => {
+    const pack = loadSupplementalAmbiguityPack();
+    const manifest = supplementalPackManifest();
+    const results = pack.map((c, i) =>
+      supplementalResultFor(
+        c,
+        c.expected.disposition,
+        manifest.pack_version,
+        manifest.digest,
+        TEST_INFERENCE_CONFIG,
+        "m",
+      ),
+    );
+    // Case index 3 (the 4th of 6) reports a DIFFERENT returned_model.
+    const driftedResults = results.map((r, i) =>
+      i === 3 ? { ...r, attempts: [{ ...r.attempts[0]!, returned_model: "m-2027-DIFFERENT" }] } : r,
+    );
+    const supplementalScore = scoreSupplementalPack({
+      candidateId: "x",
+      providerId: "openai",
+      requestedModel: "m",
+      results: driftedResults,
+      priceBook: null,
+    });
+    expect(supplementalScore.reliability.returned_models.length).toBe(2);
+    expect(supplementalScore.invalidated_reason).toMatch(/distinct model versions/);
+
+    const evaluation = evaluateStage2Final({
+      candidateId: "x",
+      mainManifest: baseMainManifest(),
+      mainScore: buildPerfectMainScore(),
+      supplementalScore,
+      finalistProvenance: null,
+    });
+    expect(evaluation.status).toBe("blocked_identity_invalid");
+    expect(evaluation.reasons.join(" ")).toContain("supplemental evidence invalidated");
+  });
+
+  it("20: main returned model A, supplemental returned model B (both internally clean) -> blocked_identity_invalid, even though requested_model is identical", () => {
+    const mainScore = buildPerfectMainScore(); // every main attempt reports returned_model "m-2026"
+    const pack = loadSupplementalAmbiguityPack();
+    const manifest = supplementalPackManifest();
+    const supplementalScore = scoreSupplementalPack({
+      candidateId: "x",
+      providerId: "openai",
+      requestedModel: "m",
+      results: pack.map((c) =>
+        supplementalResultFor(c, c.expected.disposition, manifest.pack_version, manifest.digest),
+      ),
+      priceBook: null,
+    });
+    // Force the supplemental source to a single, DIFFERENT returned model
+    // than main's own "m-2026" (each remains internally clean: length 1).
+    const crossDriftedResult: SupplementalScore = {
+      ...supplementalScore,
+      reliability: { ...supplementalScore.reliability, returned_models: ["m-2026-CROSS-SOURCE-B"] },
+    };
+    expect(mainScore.reliability.returned_models).toEqual(["m-2026"]);
+
+    const evaluation = evaluateStage2Final({
+      candidateId: "x",
+      mainManifest: baseMainManifest(),
+      mainScore,
+      supplementalScore: crossDriftedResult,
+      finalistProvenance: null,
+    });
+    expect(evaluation.status).toBe("blocked_identity_invalid");
+    expect(evaluation.reasons.join(" ")).toContain("returned_model");
+    expect(evaluation.reasons.join(" ")).not.toContain("supplemental evidence invalidated");
+  });
+
+  it("21: main and supplemental resolve to the SAME single returned model -> identity check passes (never blocks on this ground)", () => {
+    const mainScore = buildPerfectMainScore(); // "m-2026" on every attempt
+    const supplementalScore = buildPerfectSupplementalScore(); // also "m-2026" on every attempt
+    expect(mainScore.reliability.returned_models).toEqual(["m-2026"]);
+    expect(supplementalScore.reliability.returned_models).toEqual(["m-2026"]);
+
+    const evaluation = evaluateStage2Final({
+      candidateId: "x",
+      mainManifest: baseMainManifest(),
+      mainScore,
+      supplementalScore,
+      finalistProvenance: null,
+    });
+    // A perfect fixture with matching returned models qualifies outright —
+    // proving the identity check never fires a false positive here.
+    expect(evaluation.status).toBe("stage2_qualified_candidate");
+  });
+
+  it("22: resume cannot combine different returned models — a supplemental score built from mixed-version rows (simulating a resume that returned a new provider version partway through) is invalidated, never silently unioned into a qualification", () => {
+    const pack = loadSupplementalAmbiguityPack();
+    const manifest = supplementalPackManifest();
+    // Simulates: the first 3 cases were run (and stored) under returned
+    // version A, then a LATER `--resume` invocation ran the remaining 3 under
+    // a provider-side version bump to B — exactly the resume/drift attack.
+    const results = pack.map((c, i) => {
+      const row = supplementalResultFor(
+        c,
+        c.expected.disposition,
+        manifest.pack_version,
+        manifest.digest,
+      );
+      const returnedModel = i < 3 ? "m-2026-A" : "m-2026-B";
+      return { ...row, attempts: [{ ...row.attempts[0]!, returned_model: returnedModel }] };
+    });
+    const supplementalScore = scoreSupplementalPack({
+      candidateId: "x",
+      providerId: "openai",
+      requestedModel: "m",
+      results,
+      priceBook: null,
+    });
+    expect(supplementalScore.reliability.returned_models.sort()).toEqual(["m-2026-A", "m-2026-B"]);
+    expect(supplementalScore.invalidated_reason).toMatch(/distinct model versions/);
+
+    const evaluation = evaluateStage2Final({
+      candidateId: "x",
+      mainManifest: baseMainManifest(),
+      mainScore: buildPerfectMainScore(),
+      supplementalScore,
+      finalistProvenance: null,
+    });
+    expect(evaluation.status).not.toBe("stage2_qualified_candidate");
+    expect(evaluation.status).toBe("blocked_identity_invalid");
   });
 });

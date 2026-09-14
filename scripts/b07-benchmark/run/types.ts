@@ -91,14 +91,55 @@ export interface RunSelectionMeta {
   include_few_shot: boolean;
 }
 
+/**
+ * Validated Stage-1 -> Stage-2 provenance facts for ONE finalist candidate
+ * (round: BLOCKER 1 / FINALIST PROVENANCE IDENTITY).
+ *
+ * Populated ONLY after every pre-call check in `run/stage1-provenance.ts`
+ * passed against locally persisted Stage-1 artifacts — never from a bare
+ * string the operator typed. This is what makes a real Stage-2 run
+ * permanently attributable to the exact Stage-1 evidence that allowed the
+ * candidate to advance, and what a later `report --run` re-checks against
+ * currently-persisted artifacts before it will render a qualification.
+ */
+export interface Stage1ProvenanceFacts {
+  /** Exact Stage-1 ("screen") run id this finalist was drawn from. */
+  stage1_run_id: string;
+  /** Candidate id as it appeared in that Stage-1 run's own scoring-v2 evidence. */
+  stage1_candidate_id: string;
+  /** Stage-1 `scoring_version` this provenance was validated against. */
+  stage1_scoring_version: string;
+  /** Stage-1 status: `stage1_finalist` or `stage1_finalist_with_unresolved_quality_target` — never anything else. */
+  stage1_status: string;
+  /** Exact, human-readable reasons the candidate was eligible to advance. */
+  stage1_advancement_reasons: string[];
+  /** Stage-1 candidate's exact requested model — bound identical to the Stage-2 requested model. */
+  requested_model: string;
+  /** Stage-1 candidate's inference-config digest — bound identical to the Stage-2 effective inference config. */
+  inference_config_digest: string | null;
+  /** Stage-1 run's corpus_version — must equal the expected frozen version. */
+  corpus_version: string;
+  /** Stage-1 run's prompt_version — must equal prompt v2. */
+  prompt_version: string;
+}
+
 /** Auditable Stage-2 finalist provenance. Never populated for baseline/screen runs. */
 export interface FinalistProvenance {
   /** Stage-1 screening run this finalist selection was drawn from, if any. */
   screen_run_id: string | null;
-  /** Human-authored rationale, REQUIRED when any selected candidate has role "ceiling". */
+  /** Human-authored rationale, REQUIRED for EVERY non-local Stage-2 finalist, not only ceiling candidates. */
   finalist_reason: string | null;
   /** candidate_id -> role, so the report can show which finalists were ceiling opt-ins. */
   candidate_roles: Record<string, string>;
+  /**
+   * Per-candidate VALIDATED Stage-1 provenance (round: BLOCKER 1). Populated
+   * ONLY for non-local finalists, ONLY once every check in
+   * `run/stage1-provenance.ts` passed BEFORE any provider call. `null`/absent
+   * for a final run whose only candidates are local (no provenance required).
+   * Optional so pre-existing fixtures/artifacts without this field remain
+   * structurally valid — never treated as equivalent to a validated pass.
+   */
+  validated_stage1?: Record<string, Stage1ProvenanceFacts> | null;
 }
 
 export interface RunManifest {

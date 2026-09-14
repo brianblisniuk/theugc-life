@@ -6,7 +6,7 @@
  *   tsx scripts/b07-benchmark/cli.ts preflight [--split holdout|dev|all]
  *   tsx scripts/b07-benchmark/cli.ts baseline
  *   tsx scripts/b07-benchmark/cli.ts screen  [--candidate id]... [--dry-run]
- *   tsx scripts/b07-benchmark/cli.ts final   [--candidate id]... [--dry-run]
+ *   tsx scripts/b07-benchmark/cli.ts final   --candidate id --from-run <stage1-run-id> --finalist-reason "<reason>" [--dry-run]
  *   tsx scripts/b07-benchmark/cli.ts report  --run <run-id>
  *
  * This harness is an EVALUATION tool. It reads a synthetic fixture corpus. It
@@ -30,7 +30,11 @@ import {
   type Candidate,
 } from "./config/candidates";
 import { priceBookFor } from "./config/pricing";
-import { INFERENCE_POLICY_VERSION } from "./config/inference-config";
+import {
+  INFERENCE_POLICY_VERSION,
+  effectiveInferenceConfig,
+  inferenceConfigDigest,
+} from "./config/inference-config";
 import { CORPUS_VERSION, corpusStats, taxonomyCoverage } from "./corpus/load";
 import type { CorpusCase } from "./corpus/schema";
 import { supplementalPackManifest } from "./corpus/supplemental-ambiguity-pack";
@@ -63,12 +67,14 @@ import {
   writeText,
 } from "./run/artifacts";
 import { resolveSelection, reconstructSelection } from "./run/selection";
-import { newRunId, runCandidate } from "./run/runner";
+import { MAX_OUTPUT_TOKENS, newRunId, runCandidate } from "./run/runner";
 import { runSupplementalPack, SupplementalPackDriftError } from "./run/supplemental-runner";
+import { assertStage1Provenance, checkStage1Provenance } from "./run/stage1-provenance";
 import type {
   CaseResult,
   FinalistProvenance,
   RunManifest,
+  Stage1ProvenanceFacts,
   SupplementalCaseResult,
 } from "./run/types";
 import type { CorpusSplit } from "./taxonomy";
@@ -224,6 +230,35 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
   const cases = selection.cases;
   if (cases.length === 0) throw new Error("selection produced zero cases");
 
+  // FIXED (this round, BLOCKER 2 — "final can spend against the wrong
+  // selection"): a REAL Stage-2 `final` run must use EXACTLY the full frozen
+  // 120-case holdout. `--split dev`, `--split all`, `--critical-only`, or any
+  // other operator override of the semantic selection is refused HERE, before
+  // candidates are even resolved, before the preflight support-arithmetic
+  // check, before any provider availability call, and before any main or
+  // supplemental provider inference. The full-holdout digest is recomputed
+  // fresh from the corpus every time (`resolveSelection`) rather than trusted
+  // from a constant, so a corpus edit can never silently widen or narrow what
+  // "the full holdout" means without also changing this digest.
+  const fullHoldoutSelection =
+    stage === "final" ? resolveSelection({ split: "holdout", criticalOnly: false }) : null;
+  if (fullHoldoutSelection) {
+    const wrongSplit = selection.meta.split !== "holdout";
+    const wrongCriticalOnly = selection.meta.critical_only !== false;
+    const wrongDigest = selection.digest !== fullHoldoutSelection.digest;
+    if (wrongSplit || wrongCriticalOnly || wrongDigest) {
+      throw new Error(
+        `STAGE2_WRONG_SELECTION: a real Stage-2 "final" run must select EXACTLY the full frozen ` +
+          `${fullHoldoutSelection.cases.length}-case holdout (split=holdout, critical-only=false, ` +
+          `case-set digest ${fullHoldoutSelection.digest}) — got split="${selection.meta.split}", ` +
+          `critical-only=${selection.meta.critical_only}, case-set digest ${selection.digest} ` +
+          `(${selection.caseIds.length} case(s)). Stage 2 never permits an operator override of which ` +
+          `cases are in scope. FAIL BEFORE ANY PROVIDER CALL — no availability check, no main-holdout ` +
+          `inference, and no supplemental-pack inference happened.`,
+      );
+    }
+  }
+
   let candidates: Candidate[];
   if (args.candidates.length > 0) {
     candidates = args.candidates.map((id) => {
@@ -239,14 +274,36 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
     candidates = [BASELINE_CANDIDATE, ...MODEL_CANDIDATES.filter((c) => c.role === "screening")];
   }
 
-  // FIXED (external audit finding 4/14): a ceiling candidate is NEVER
-  // implicit, and every finalist selection must be auditable — a ceiling
-  // inclusion must state why.
-  const ceilingSelected = candidates.filter((c) => c.role === "ceiling");
-  if (ceilingSelected.length > 0 && !args.finalistReason) {
-    throw new Error(
-      `ceiling candidate(s) ${ceilingSelected.map((c) => c.id).join(", ")} require --finalist-reason "<why this ceiling is materially useful here>" — a quality ceiling is opt-in only and must be explained, never silently included.`,
-    );
+  // FIXED (this round, BLOCKER 1 — "Stage-2 finalist provenance is
+  // optional"): for EVERY non-local `final` candidate, `--from-run
+  // <stage1-run-id>` and `--finalist-reason "<reason>"` are now REQUIRED
+  // (never only for a ceiling-role candidate — no candidate is special-cased),
+  // and the named Stage-1 run is fully validated — manifest exists, stage is
+  // `screen`, corpus/prompt/scoring versions match the current accepted
+  // ones, the candidate's own Stage-1 evidence exists and is a genuine
+  // Stage-1 finalist (never eliminated/invalidated/no-evidence), and its
+  // exact requested model + effective inference-config digest match what
+  // Stage 2 is about to run — ALL BEFORE any provider is contacted. A local
+  // candidate (the deterministic baseline) never requires provenance: it
+  // makes no provider call and was never a Stage-1 screening participant.
+  const validatedStage1: Record<string, Stage1ProvenanceFacts> = {};
+  if (stage === "final") {
+    for (const candidate of candidates) {
+      if (candidate.providerId === "local") continue;
+      const resolvedModel = resolveModel(candidate);
+      const candidateInferenceConfig = effectiveInferenceConfig(
+        { providerId: candidate.providerId, model: resolvedModel },
+        MAX_OUTPUT_TOKENS,
+      );
+      const facts = assertStage1Provenance({
+        fromRunId: args.fromRun,
+        finalistReason: args.finalistReason,
+        candidateId: candidate.id,
+        requestedModel: resolvedModel,
+        inferenceConfigDigest: inferenceConfigDigest(candidateInferenceConfig),
+      });
+      validatedStage1[candidate.id] = facts;
+    }
   }
 
   // STAGE-2 HOLDOUT-SUPPORT PREFLIGHT (locked contract, this correction
@@ -313,6 +370,7 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
           screen_run_id: args.fromRun,
           finalist_reason: args.finalistReason,
           candidate_roles: Object.fromEntries(candidates.map((c) => [c.id, c.role])),
+          validated_stage1: Object.keys(validatedStage1).length > 0 ? validatedStage1 : null,
         }
       : null;
 
@@ -426,15 +484,14 @@ export async function runStage(stage: "baseline" | "screen" | "final", args: Arg
   writeJson(runId, "manifest.json", manifest);
 
   // The full frozen main holdout's OWN size, independent of what selection
-  // this particular invocation actually ran (e.g. `--critical-only` or a
-  // narrower `--split` override) — Stage-2 completeness must be judged
-  // against the whole 120-case holdout, never against whatever subset a
-  // `final` invocation happened to select, or a narrowed selection could be
-  // reported as a "complete" main holdout by construction.
-  const mainHoldoutFullSize =
-    stage === "final"
-      ? resolveSelection({ split: "holdout", criticalOnly: false }).cases.length
-      : null;
+  // this particular invocation actually ran — Stage-2 completeness must be
+  // judged against the whole 120-case holdout, never against whatever subset
+  // a `final` invocation happened to select. (Reuses `fullHoldoutSelection`,
+  // already computed above by the BLOCKER 2 selection-lock check, which by
+  // construction is now always exactly what `selection` itself is for a
+  // `final` run — recomputing it again here would be redundant, not a
+  // different check.)
+  const mainHoldoutFullSize = fullHoldoutSelection ? fullHoldoutSelection.cases.length : null;
 
   emitReport(
     runId,
@@ -528,7 +585,7 @@ function emitReport(
       });
       supplementalScores.push(supplementalScore);
 
-      const stage2Eval = evaluateStage2Final({
+      let stage2Eval = evaluateStage2Final({
         candidateId,
         mainManifest: {
           split: mainSelectionMeta?.split ?? "holdout",
@@ -540,6 +597,42 @@ function emitReport(
         supplementalScore,
         finalistProvenance,
       });
+
+      // FINALIST PROVENANCE IDENTITY (this round) — re-validated EVERY time a
+      // Stage-2 verdict is rendered (a fresh `final` run's own report, AND a
+      // later standalone `report --run`), against WHATEVER Stage-1 artifacts
+      // are currently persisted on disk — never trusted from the cached
+      // `finalist_provenance.validated_stage1` snapshot alone. This is what
+      // makes `report --run` refuse to render a qualification when the
+      // persisted Stage-1 run id is missing, when the originating Stage-1
+      // artifact can no longer be found, or when its candidate/model/config
+      // identity no longer matches this Stage-2 manifest (e.g. the Stage-1
+      // run was deleted, or its scores-v2.json was hand-edited after this
+      // Stage-2 run first executed). Reads locally persisted artifacts only —
+      // zero provider calls. A local candidate never required provenance and
+      // is never re-checked here either.
+      if (providerId !== "local") {
+        const revalidated = checkStage1Provenance({
+          fromRunId: finalistProvenance?.screen_run_id ?? null,
+          finalistReason: finalistProvenance?.finalist_reason ?? null,
+          candidateId,
+          requestedModel: model,
+          inferenceConfigDigest: mainScoreV2.inference_config
+            ? inferenceConfigDigest(mainScoreV2.inference_config)
+            : "",
+        });
+        if (!revalidated.ok) {
+          stage2Eval = {
+            ...stage2Eval,
+            status: "blocked_identity_invalid",
+            isQualified: false,
+            reasons: [
+              `STAGE2_PROVENANCE_NO_LONGER_VALID (re-checked against currently persisted Stage-1 artifacts): ${revalidated.reason}`,
+              ...stage2Eval.reasons,
+            ],
+          };
+        }
+      }
       stage2Evaluations.push(stage2Eval);
     }
   }

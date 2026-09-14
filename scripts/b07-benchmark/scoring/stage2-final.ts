@@ -232,6 +232,34 @@ export function evaluateStage2Final(input: Stage2EvaluationInput): Stage2Evaluat
     );
   }
 
+  // ---------------------------------------------------------------------
+  // CROSS-SOURCE RETURNED-MODEL IDENTITY (round: BLOCKER 4). Within-source
+  // drift (more than one distinct returned model inside ONE source) is
+  // already caught above via each source's own `invalidated_reason`
+  // (`scoring/score-v2.ts` for main, `scoring/score-supplemental.ts` for
+  // supplemental) — this check is the ADDITIONAL, cross-source guarantee:
+  // when both sources cleanly resolve to exactly one returned model each,
+  // those two exact strings must MATCH. Requested-model equality (checked
+  // above) is deliberately NOT sufficient on its own — a provider can accept
+  // an identical request and still serve two materially different deployed
+  // versions across two separate execution windows.
+  // ---------------------------------------------------------------------
+  if (mainScore.provider_id !== "local") {
+    const mainReturned = mainScore.reliability.returned_models;
+    const supplementalReturned = supplementalScore.reliability.returned_models;
+    if (mainReturned.length > 0 && supplementalReturned.length > 0) {
+      if (mainReturned.length !== 1 || supplementalReturned.length !== 1) {
+        identityProblems.push(
+          `cross-source returned-model identity cannot be established: main resolves to ${mainReturned.length} distinct returned model(s) (${mainReturned.join(", ") || "none"}), supplemental resolves to ${supplementalReturned.length} (${supplementalReturned.join(", ") || "none"}) — Stage 2 requires exactly one returned model on each side before they can be compared.`,
+        );
+      } else if (mainReturned[0] !== supplementalReturned[0]) {
+        identityProblems.push(
+          `main returned_model ("${mainReturned[0]}") differs from supplemental returned_model ("${supplementalReturned[0]}") for candidate "${input.candidateId}" — Stage 2 requires the SAME provider-returned model/version identity across both evidence sources, even when requested_model is identical (status: blocked_identity_invalid, never a silent union).`,
+        );
+      }
+    }
+  }
+
   if (identityProblems.length > 0) {
     return fail(base, "blocked_identity_invalid", identityProblems);
   }
@@ -244,7 +272,17 @@ export function evaluateStage2Final(input: Stage2EvaluationInput): Stage2Evaluat
   const mainComplete =
     mainManifest.selected_case_count === mainManifest.expected_full_holdout_count &&
     mainScore.reliability.cases_attempted === mainManifest.expected_full_holdout_count;
-  const supplementalComplete = supplementalScore.reliability.all_six_completed;
+  // BLOCKER 3 fix: "6 attempted" is NOT "6 valid predictions". A schema
+  // failure, provider error, or timeout on even one of the 6 frozen
+  // supplemental cases is an ABSENCE of semantic evidence for that case, not
+  // an ambiguous prediction — so atomicity gates on
+  // `all_six_valid_predictions` (status=ok, final_schema_valid=true,
+  // prediction!=null for EVERY exact frozen case id), never on
+  // `all_six_attempted`. This is an evidence-completeness invariant,
+  // independent of what macro-F1 the other 5 valid predictions would compute
+  // to — 5 valid + 1 schema_failed/timeout/provider_error is ALWAYS
+  // `incomplete`, never a qualified verdict.
+  const supplementalComplete = supplementalScore.reliability.all_six_valid_predictions;
 
   if (!mainComplete || !supplementalComplete) {
     const reasons: string[] = [];
@@ -255,7 +293,7 @@ export function evaluateStage2Final(input: Stage2EvaluationInput): Stage2Evaluat
     }
     if (!supplementalComplete) {
       reasons.push(
-        `supplemental pack incomplete: attempted ${supplementalScore.reliability.cases_attempted}/${SUPPLEMENTAL_PACK_SIZE} — all ${SUPPLEMENTAL_PACK_SIZE} frozen supplemental cases are required; a partial or absent supplemental run can never produce a Stage-2 qualified status regardless of how well the main holdout did`,
+        `supplemental pack incomplete: ${supplementalScore.reliability.cases_ok}/${SUPPLEMENTAL_PACK_SIZE} frozen supplemental cases produced a valid, final-schema-valid semantic prediction (attempted ${supplementalScore.reliability.cases_attempted}/${SUPPLEMENTAL_PACK_SIZE}) — ALL ${SUPPLEMENTAL_PACK_SIZE} frozen supplemental cases must produce a valid semantic prediction (never merely "attempted"; a schema failure, timeout, or provider error on even one case is an absence of evidence, not an ambiguous prediction); a partial or absent supplemental run can never produce a Stage-2 qualified status regardless of how well the main holdout, or the other supplemental cases, did`,
       );
     }
     return fail(base, "incomplete", reasons);
