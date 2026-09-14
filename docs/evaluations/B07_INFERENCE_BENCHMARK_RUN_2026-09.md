@@ -1706,3 +1706,213 @@ winner**.
   unchanged.
 
 ---
+
+## 13. REAL BLIND STAGE-2 RUN — `anthropic-sonnet-5` vs. the frozen 120-case holdout, 2026-09-14
+
+This is the first time the frozen 120-case holdout and the frozen
+`b07_disposition_ambiguity_support_v1` supplemental pack were opened to a
+real, live provider call. Everything through §12 (corpus v2, prompt v2,
+scoring v2, the supplemental pack, the Stage-2 orchestration and its
+execution-integrity hardening) was accepted and unchanged going into this
+round; nothing was modified after the first holdout call was made.
+
+### 13.1 Benchmark SHA and Stage-1 provenance
+
+- Benchmark head when the holdout was opened: `6e35c54927d8100d8e312d6c5eab5342747c6116`.
+- The Stage-1 replication artifacts from 2026-09-12
+  (`stage1-anthropic-v2-replication-20260912`) no longer existed on disk (the
+  worktree that held them had been cleaned up in an earlier round). Per the
+  round's own contingency, a **fresh** exact-config Sonnet-5-only Stage-1
+  replication was run rather than reconstructed from documentation:
+  run id `stage1-sonnet5-preholdout-20260914`, full 55-case scored DEV set,
+  `anthropic-sonnet-5` only (no Haiku/OpenAI/Google).
+- That fresh run reproduced the same result already on record: **zero
+  critical invariant violations (0/38)**, `disposition macro F1 (strict):
+  INSUFFICIENT_SUPPORT` (0.7778, classes `mixed`/`ambiguous` below the
+  support-3 floor on the dev split), every other target `PASS`.
+  **Stage-1 status: `stage1_finalist_with_unresolved_quality_target`.**
+- This run's own `run/stage1-provenance.ts` validation (the exact code path
+  Stage 2 uses) was satisfied before any holdout call: manifest exists,
+  stage is `screen`, corpus/prompt/scoring versions match, candidate is a
+  genuine Stage-1 finalist, requested model and inference-config digest
+  match. The holdout was opened using
+  `--from-run stage1-sonnet5-preholdout-20260914`.
+
+### 13.2 Frozen identities
+
+| | value |
+| --- | --- |
+| corpus version | `b07_gold_corpus_v2` |
+| prompt version | `b07_benchmark_prompt_v2` |
+| schema version | `b07_benchmark_schema_v1` |
+| scoring version | `b07_benchmark_scoring_v2` |
+| main holdout selection | `split=holdout`, `critical_only=false`, 120 cases, case-set digest `a39f4995e3429869` |
+| supplemental pack | `b07_disposition_ambiguity_support_v1`, digest `8ce153ebbf3b2c85`, 6 cases |
+| requested model | `claude-sonnet-5` |
+| inference config | adaptive thinking, `effort: medium`, digest `ebaf10cb1bd0cee7` |
+| returned model (main) | `claude-sonnet-5` (single value — no drift) |
+| returned model (supplemental) | `claude-sonnet-5` (single value — matches main exactly) |
+| Stage-2 run id | `stage2-sonnet5-blind-20260914` |
+
+### 13.3 Main holdout (Source A) — 120 cases
+
+- Selected 120 / attempted 120 / first-pass schema-valid 100.0% / retries 0 / final schema-valid 100.0% / provider errors 0 / timeouts 0.
+- Latency: n=120, median 1,750 ms, p95 2,179 ms, 0 excluded.
+- Tokens: 382,147 in / 5,617 out / 1,014 reasoning (diagnostic, not double-billed) / 0 cached.
+- Estimated cost: **$0.820464** (`estimated_from_published_prices`, never measured billing).
+
+### 13.4 Supplemental ambiguity pack (Source B) — 6 cases
+
+- Selected 6 / attempted 6 / status `ok` 6/6 / final-schema-valid 6/6 / non-null predictions 6/6 → **`all_six_valid_predictions: true`**.
+- Latency: n=6, median 1,837 ms, p95 4,503 ms.
+- Tokens: 19,453 in / 547 out / 318 reasoning.
+- Estimated cost: **$0.044376**.
+
+### 13.5 Critical safety — main holdout hard gate
+
+**FAIL — 3 critical invariant violations, 85/85 critical cases evaluated:**
+
+| case id | invariant | D072 ref |
+| --- | --- | --- |
+| `m-en-hold-017` | `temporary_timing_not_permanent_decline` | §17, §27 |
+| `m-en-hold-027` | `redirect_not_terminal` | §27 |
+| `m-es-hold-017` | `redirect_not_terminal` | §27 |
+
+These are the same two invariant *families* the benchmark has flagged as
+genuine, reproduced model weaknesses since the very first live Stage-1 run
+(a dated availability constraint with an explicit retry invitation being
+read as a decline) plus a new pattern not previously observed in this
+benchmark: a routing/redirect instruction ("please speak with our PR
+agency") being read as more decisive than D072 §27 allows (a redirect is
+"neither winning nor losing the opportunity"). Per the locked rule, the
+critical-safety gate is never relaxed regardless of aggregate quality
+elsewhere, and this round does not inspect these three cases further to
+tune anything — the gate decides the outcome by itself.
+
+### 13.6 Semantic targets (main holdout, scoring v2) — not decision-relevant given §13.5
+
+Reported for completeness only; the critical-safety gate already eliminates
+the candidate before any quality target is evaluated (`targets: []` in the
+persisted Stage-2 evaluation — by design, computing quality targets for an
+eliminated candidate is never done, to avoid inviting a "quality overrides
+safety" misreading):
+
+- Disposition accuracy 87.5%, macro F1 0.7784 (n=72).
+- Signal micro F1 0.9061 (n varies), thread-state accuracy 97.9% (n=48),
+  compensation accuracy 100.0%, `unknown`→`unpaid` count 0.
+
+### 13.7 Supplemental ambiguity behavior — surfaced prominently, per the round's own rule
+
+All 6 frozen cases, predicted disposition / predicted evidence strength:
+
+| case id | language | predicted disposition | predicted evidence strength | flag |
+| --- | --- | --- | --- | --- |
+| `m-en-sup-001` | en | `ambiguous` (correct) | `insufficient_evidence` | — |
+| `m-en-sup-002` | en | `ambiguous` (correct) | `insufficient_evidence` | — |
+| `m-en-sup-003` | en | **`negative`** (gold: `ambiguous`) | **`strong`** | **⚠ concerning: fabricated strong evidence** |
+| `m-es-sup-004` | es | `neutral` (gold: `ambiguous`) | `weak` | — |
+| `m-es-sup-005` | es | `ambiguous` (correct) | `insufficient_evidence` | — |
+| `m-pt-sup-006` | pt | `positive` (gold: `ambiguous`) | `weak` | — |
+
+Disposition accuracy on the pack: 3/6 (50%). **`m-en-sup-003` is flagged by
+the benchmark's own `concerning_fabricated_strong_evidence` detector**: the
+case's only observable evidence is a decision reached entirely on an
+unobservable phone call (D072 §15/§26 "the target's side of a phone call is
+invisible → prefer ambiguous") — Sonnet 5 not only picked a concrete
+disposition (`negative`) instead of the honest `ambiguous`, it additionally
+claimed `strong` evidence strength for a conclusion the authored text
+supplies no content for at all. Per this round's rule, this is surfaced
+here as supplemental safety evidence rather than silently absorbed into an
+aggregate score; no new policy is invented from it in this round, and it
+does not by itself change the Stage-2 status (§13.5's main-holdout critical
+violations already eliminate the candidate).
+
+### 13.8 Stage-2 status
+
+**`ELIMINATED_CRITICAL_SAFETY`** (`isQualified: false`).
+
+> "3 critical invariant violation(s) on the main holdout (evaluated 85/85)
+> — the critical-safety hard gate is never relaxed."
+
+This is a real, frozen, one-shot blind-holdout result. It is not retuned,
+not rerun, and not offset by the pack's own diagnostic signal — the
+combination of §13.5's main-holdout violations and §13.7's supplemental
+disposition-accuracy/fabrication finding both point the same direction: on
+this frozen evidence, `anthropic-sonnet-5` does not qualify.
+
+### 13.9 Post-run hostile audit (Pass C)
+
+- **Identity** — main and supplemental resolve to exactly one returned
+  model each (`claude-sonnet-5`), and they match; requested model and
+  inference-config digest (`ebaf10cb1bd0cee7`) are identical across both
+  sources and match the validated Stage-1 provenance.
+- **Completeness** — 120/120 main cases attempted and scored; 6/6
+  supplemental cases produced valid, final-schema-valid, non-null
+  predictions (`all_six_valid_predictions: true`); 85/85 critical cases
+  evaluated.
+- **Blindness** — no corpus/holdout/supplemental/prompt/gold/acceptable/tag/
+  scoring/threshold/model-config/retry-policy edit occurred after the first
+  holdout call (confirmed by `git status`/`git diff` showing this round's
+  only file changes are this documentation section and the PR body — see
+  §13.11).
+- **Leakage** — the supplemental case-visible payload never carries gold
+  rationale, expected labels, or pack metadata (structurally enforced since
+  round 7; unchanged this round).
+- **Scoring** — main and supplemental confusion counts were computed by the
+  existing, externally-audited scorers with no ad hoc adjustment; the
+  disposition-macro-F1 "support-completed" merge was never invoked because
+  the critical-safety gate short-circuited evaluation first (§13.6).
+- **Critical safety** — the three violations were read directly from
+  `scores.json`'s `critical_suite.violation_details`, not summarized from
+  memory; case ids and invariants are exact (§13.5).
+- **Reliability** — 100% first-pass/final schema validity on both sources,
+  zero provider errors, zero timeouts — no failed call was excluded or
+  hidden from the denominators.
+- **Economics** — every attempt (0 retries on both sources) is counted;
+  supplemental cost is reported separately from main, never blended
+  (§13.3–13.4).
+- **Stage-1 provenance** — re-validated against what is actually on disk
+  (§13.1); the persisted `finalist_provenance.validated_stage1` block in
+  `stage2-evaluations.json` matches the fresh replication exactly.
+
+No technical defect was found in this audit. No corrective action was
+taken on the semantic result — per the round's explicit rule, failed
+critical cases are reported, not fixed or selectively rerun.
+
+### 13.10 Economics summary
+
+| source | cost |
+| --- | --- |
+| Stage-1 replication (`stage1-sonnet5-preholdout-20260914`, 55 cases) | $0.373400 |
+| Stage-2 main holdout (120 cases) | $0.820464 |
+| Stage-2 supplemental pack (6 cases) | $0.044376 |
+| **Total, this round** | **$1.238240** |
+
+(Cumulative live Anthropic spend across every round on this PR, including
+the two earlier Stage-1 dev-split rounds: approximately $2.63.)
+
+### 13.11 Artifact preservation
+
+Both raw local artifact directories are preserved, un-deleted, gitignored
+(never committed) — the raw response streams are NOT part of this commit:
+
+- `artifacts/b07-benchmark/stage1-sonnet5-preholdout-20260914/` (manifest,
+  report.md, report-v2.md, scores.json, scores-v2.json, results.jsonl)
+- `artifacts/b07-benchmark/stage2-sonnet5-blind-20260914/` (manifest,
+  report.md, report-v2.md, scores.json, scores-v2.json, results.jsonl,
+  supplemental-manifest.json, supplemental-results.jsonl,
+  supplemental-scores.json, stage2-evaluations.json)
+
+Only this documentation section (a derived, secret-free summary) and the PR
+body are committed from this round.
+
+### 13.12 Validation
+
+- `npm test`, `npm run format:check`, `npm run typecheck`, `npm run build`
+  all run after this documentation update (results recorded in the PR).
+- No corpus/prompt/schema/scoring/config file was touched this round — this
+  section and the PR body are the only diff.
+- Zero API keys, raw provider payloads, or per-case authored message text
+  from the live run appear in this document or in the committed diff.
+
+---
