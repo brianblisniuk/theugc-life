@@ -24,6 +24,7 @@ import {
   saveHotelToPipeline,
   transitionPipelineItem,
 } from "./queries";
+import { updatePipelinePrivateNotes } from "./notes";
 import {
   isCollaborationSuccessful,
   isDealSuccessful,
@@ -42,9 +43,6 @@ function readField(formData: FormData, name: string): string | null {
 }
 
 export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
-  // Identity comes ONLY from the session cookie: either a resolved identity or
-  // a sanitized error. A failed session resolution is reported as
-  // `error`, never as "not signed in" and never under a guessed role.
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const session = resolution.session;
@@ -55,7 +53,6 @@ export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
   const result = await saveHotelToPipeline(session.userId, hotelId);
 
   if (isSaveSuccessful(result)) {
-    // Reflect the new Saved state immediately on both surfaces.
     revalidatePath(`/app/hotels/${hotelId}`);
     revalidatePath("/app/pipeline");
   }
@@ -63,16 +60,7 @@ export async function saveHotelAction(formData: FormData): Promise<SaveResult> {
   return result;
 }
 
-/**
- * Workflow transition server action (PRD §7.4, EVENTS.md §3/§4).
- *
- * The browser posts only what the creator actually filled in. Identity comes
- * from the session cookie and the Free engaged allowance from typed server
- * config — neither is read from the form, so neither can be forged.
- */
 export async function transitionPipelineItemAction(formData: FormData): Promise<TransitionResult> {
-  // Identity, or a sanitized error. A failed session resolution is reported as
-  // `error`, never as "not signed in" and never under a guessed role.
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const session = resolution.session;
@@ -92,15 +80,10 @@ export async function transitionPipelineItemAction(formData: FormData): Promise<
   const result = await transitionPipelineItem(session.userId, parsed.value);
 
   if (isTransitionSuccessful(result)) {
-    // Both surfaces must reflect the new status and the new activity order.
     if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
     revalidatePath("/app/pipeline");
   }
 
-  // Derived intelligence is refreshed AFTER the workflow committed, from the
-  // item id (never the browser's hotel id), and its outcome is ignored: the
-  // creator's event is already recorded, so a stale aggregate must not turn a
-  // successful action into an error.
   if (shouldRefreshIntelligence(result)) {
     await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
   }
@@ -108,17 +91,7 @@ export async function transitionPipelineItemAction(formData: FormData): Promise<
   return result;
 }
 
-/**
- * Deal-progress server action (PRD §7.4, EVENTS.md §3).
- *
- * Same boundary as the workflow action: the browser names an item and an
- * action and supplies the fields the creator filled in. Identity comes from
- * the session; the collaboration is created by the database alongside its
- * `deal_won` event, never by this layer.
- */
 export async function progressPipelineDealAction(formData: FormData): Promise<DealResult> {
-  // Identity, or a sanitized error. A failed session resolution is reported as
-  // `error`, never as "not signed in" and never under a guessed role.
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const session = resolution.session;
@@ -139,8 +112,6 @@ export async function progressPipelineDealAction(formData: FormData): Promise<De
     revalidatePath("/app/pipeline");
   }
 
-  // Same best-effort contract as the workflow action: the deal is recorded
-  // whatever the aggregate does.
   if (shouldRefreshIntelligence(result)) {
     await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
   }
@@ -148,18 +119,9 @@ export async function progressPipelineDealAction(formData: FormData): Promise<De
   return result;
 }
 
-/**
- * Collaboration lifecycle server action (PRD §7.4, D045).
- *
- * The browser names a pipeline item, an action, and the fields the creator
- * filled in. Identity comes from the session; the collaboration and the hotel
- * are resolved inside the database.
- */
 export async function progressCollaborationAction(
   formData: FormData,
 ): Promise<CollaborationResult> {
-  // Identity, or a sanitized error. A failed session resolution is reported as
-  // `error`, never as "not signed in" and never under a guessed role.
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const session = resolution.session;
@@ -184,13 +146,27 @@ export async function progressCollaborationAction(
     revalidatePath("/app/pipeline");
   }
 
-  // `collaboration_started` and `collaboration_completed` are qualifying
-  // activity events for 0022, so a successful lifecycle move refreshes the
-  // derived intelligence — after the fact, from the item id, and with its
-  // outcome ignored. `schedule` emits no event and needs no refresh.
   if (isCollaborationSuccessful(result) && parsed.value.action !== "schedule") {
     await refreshIntelligenceForPipelineItem(parsed.value.pipelineItemId);
   }
 
+  return result;
+}
+
+export async function updatePipelineNotesAction(
+  formData: FormData,
+): Promise<{ result: "updated" | "error" | "not_found_or_forbidden" | "invalid_input" }> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const session = resolution.session;
+
+  const pipelineItemId = readField(formData, "pipelineItemId");
+  const notes = readField(formData, "notes") ?? "";
+  if (!pipelineItemId) return { result: "invalid_input" };
+
+  const result = await updatePipelinePrivateNotes(session.userId, pipelineItemId, notes);
+  if (result.result === "updated") {
+    revalidatePath("/app/pipeline");
+  }
   return result;
 }

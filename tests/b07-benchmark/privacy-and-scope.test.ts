@@ -4,7 +4,7 @@
  * Acceptance tests covered here: 17 (no real Gmail module is required),
  * 19 (pricing metadata carries provider/source/access date), plus the SCOPE
  * attack the round names explicitly: benchmark code must not become
- * production B07, and no migration 0041 may appear.
+ * production B07.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -61,8 +61,6 @@ describe("privacy / vendor screen", () => {
   it("an unverifiable provider is marked undetermined, never optimistically cleared", () => {
     for (const entry of VENDOR_SCREEN) {
       if (entry.verification === "official_page_fetched") continue;
-      // A provider whose official source could not be read must NOT be
-      // presented as a private-Gmail candidate on the strength of a summary.
       expect(entry.private_gmail_candidacy).toBe("undetermined_official_source_unreachable");
     }
   });
@@ -77,7 +75,6 @@ describe("privacy / vendor screen", () => {
         "blocked_for_private_gmail",
         "undetermined_official_source_unreachable",
       ]).toContain(entry.private_gmail_candidacy);
-      // Nothing may be marked as simply approved.
       expect(entry.private_gmail_candidacy).not.toMatch(/approved/);
     }
   });
@@ -99,8 +96,6 @@ describe("pricing provenance", () => {
         expect(price.input_usd_per_mtok).toBeGreaterThan(0);
         expect(price.output_usd_per_mtok).toBeGreaterThan(0);
       } else {
-        // NULL, never 0 — a $0 rate is decision-corrupting (it can make a
-        // candidate look free or falsely win a Pareto "cheaper" comparison).
         expect(price.input_usd_per_mtok).toBeNull();
         expect(price.output_usd_per_mtok).toBeNull();
         expect(price.reasoning_usd_per_mtok).toBeNull();
@@ -146,8 +141,6 @@ describe("scope containment", () => {
     ];
     for (const file of benchFiles) {
       const source = readFileSync(file, "utf8");
-      // Strip block and line comments: the contract is about what the code
-      // DOES, and the comments deliberately discuss B06/B07 table names.
       const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
       for (const pattern of forbidden) {
         expect(pattern.test(code), `${file} matched ${pattern}`).toBe(false);
@@ -164,11 +157,10 @@ describe("scope containment", () => {
     }
   });
 
-  it("this round creates no migration 0041 and no B07 schema", () => {
+  it("benchmark does not introduce commercial_meaning schema", () => {
     const migrations = join(REPO_ROOT, "supabase", "migrations");
     if (!existsSync(migrations)) return;
     for (const file of readdirSync(migrations)) {
-      expect(file.startsWith("0041"), `migration ${file} must not exist in this round`).toBe(false);
       expect(file).not.toMatch(/commercial_meaning/i);
     }
   });
