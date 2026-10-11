@@ -22,12 +22,11 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
   beforeAll(async () => {
     await setupDatabase();
 
-    await adminQuery(`insert into auth.users (id) values ($1), ($2)`, [USER_A, USER_B]);
-
-    await adminQuery(
-      `insert into public.creator_profiles (id, user_id) values (gen_random_uuid(), $1), (gen_random_uuid(), $2)`,
-      [USER_A, USER_B],
-    );
+    // Trigger on_auth_user_created provisions creator_profiles automatically.
+    await adminQuery(`insert into auth.users (id, email) values ($1, 'a@example.com'), ($2, 'b@example.com')`, [
+      USER_A,
+      USER_B,
+    ]);
 
     await adminQuery(
       `insert into public.destinations (id, name, slug, type) values ($1, 'Test Dest', 'test-dest', 'city')`,
