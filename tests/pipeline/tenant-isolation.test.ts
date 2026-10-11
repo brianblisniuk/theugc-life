@@ -22,18 +22,21 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
   beforeAll(async () => {
     await setupDatabase();
 
+    await adminQuery(`insert into auth.users (id) values ($1), ($2)`, [USER_A, USER_B]);
+
     await adminQuery(
-      `
-      insert into auth.users (id) values ($1), ($2);
-      insert into public.creator_profiles (id, user_id) values
-        (gen_random_uuid(), $1),
-        (gen_random_uuid(), $2);
-      insert into public.destinations (id, name, slug, type)
-        values ($3, 'Test Dest', 'test-dest', 'city');
-      insert into public.hotels (id, name, slug, destination_id, country_code)
-        values ($4, 'Test Hotel', 'test-hotel', $3, 'US');
-    `,
-      [USER_A, USER_B, DEST, HOTEL],
+      `insert into public.creator_profiles (id, user_id) values (gen_random_uuid(), $1), (gen_random_uuid(), $2)`,
+      [USER_A, USER_B],
+    );
+
+    await adminQuery(
+      `insert into public.destinations (id, name, slug, type) values ($1, 'Test Dest', 'test-dest', 'city')`,
+      [DEST],
+    );
+
+    await adminQuery(
+      `insert into public.hotels (id, name, slug, destination_id, country_code) values ($1, 'Test Hotel', 'test-hotel', $2, 'US')`,
+      [HOTEL, DEST],
     );
 
     const rows = await adminQuery<{ id: string }>(
