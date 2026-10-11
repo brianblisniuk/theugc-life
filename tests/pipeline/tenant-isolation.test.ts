@@ -14,6 +14,7 @@ import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from 
 const USER_A = "11111111-1111-1111-1111-111111111111";
 const USER_B = "22222222-2222-2222-2222-222222222222";
 const HOTEL = "33333333-3333-3333-3333-333333333333";
+const DEST = "44444444-4444-4444-4444-444444444444";
 
 describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
   let itemB: string;
@@ -26,9 +27,11 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
       insert into public.creator_profiles (id, user_id) values
         (gen_random_uuid(), $1),
         (gen_random_uuid(), $2);
-      insert into public.hotels (id, name, destination_id, country_code)
-        values ($3, 'Test Hotel', null, 'US');
-    `, [USER_A, USER_B, HOTEL]);
+      insert into public.destinations (id, name, slug, type)
+        values ($3, 'Test Dest', 'test-dest', 'city');
+      insert into public.hotels (id, name, slug, destination_id, country_code)
+        values ($4, 'Test Hotel', 'test-hotel', $3, 'US');
+    `, [USER_A, USER_B, DEST, HOTEL]);
 
     const [row] = await adminQuery<{ id: string }>(`
       insert into public.pipeline_items (creator_id, hotel_id, status, private_notes)
