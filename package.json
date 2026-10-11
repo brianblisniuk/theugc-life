@@ -59,7 +59,12 @@
     "gmail:outreach:run": "tsx scripts/gmail-outreach/cli.ts run",
     "gmail:outreach:status": "tsx scripts/gmail-outreach/cli.ts status",
     "gmail:reply:run": "tsx scripts/gmail-reply/cli.ts run",
-    "gmail:reply:status": "tsx scripts/gmail-reply/cli.ts status"
+    "gmail:reply:status": "tsx scripts/gmail-reply/cli.ts status",
+    "eval:b07:status": "tsx scripts/b07-benchmark/cli.ts status",
+    "eval:b07:baseline": "tsx scripts/b07-benchmark/cli.ts baseline",
+    "eval:b07:screen": "tsx scripts/b07-benchmark/cli.ts screen",
+    "eval:b07:final": "tsx scripts/b07-benchmark/cli.ts final",
+    "eval:b07:report": "tsx scripts/b07-benchmark/cli.ts report"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

@@ -51,3 +51,7 @@ yarn-error.log*
 
 # provider evaluation artifacts (raw provider responses + derived extracts)
 /.data/
+
+# B07 inference benchmark run artifacts (raw provider responses, scores, reports)
+/artifacts/b07-benchmark/
+/artifacts/
