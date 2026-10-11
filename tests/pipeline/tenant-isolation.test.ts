@@ -22,7 +22,8 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
   beforeAll(async () => {
     await setupDatabase();
 
-    await adminQuery(`
+    await adminQuery(
+      `
       insert into auth.users (id) values ($1), ($2);
       insert into public.creator_profiles (id, user_id) values
         (gen_random_uuid(), $1),
@@ -31,15 +32,22 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
         values ($3, 'Test Dest', 'test-dest', 'city');
       insert into public.hotels (id, name, slug, destination_id, country_code)
         values ($4, 'Test Hotel', 'test-hotel', $3, 'US');
-    `, [USER_A, USER_B, DEST, HOTEL]);
+    `,
+      [USER_A, USER_B, DEST, HOTEL],
+    );
 
-    const [row] = await adminQuery<{ id: string }>(`
+    const rows = await adminQuery<{ id: string }>(
+      `
       insert into public.pipeline_items (creator_id, hotel_id, status, private_notes)
       select cp.id, $2, 'saved', 'secret notes of B'
         from public.creator_profiles cp
        where cp.user_id = $1
       returning id
-    `, [USER_B, HOTEL]);
+    `,
+      [USER_B, HOTEL],
+    );
+    const row = rows[0];
+    if (!row) throw new Error("failed to seed pipeline item");
     itemB = row.id;
   });
 
@@ -63,7 +71,7 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
       `select id from public.pipeline_items`,
     );
     expect(res.error).toBeNull();
-    expect(res.rows.every((r: { id: string }) => r.id !== itemB)).toBe(true);
+    expect(res.rows.every((r) => (r as { id: string }).id !== itemB)).toBe(true);
   });
 
   it("User A cannot update User B private_notes", async () => {
@@ -75,11 +83,12 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
     expect(res.error).toBeNull();
     expect(res.rows).toHaveLength(0);
 
-    const [still] = await adminQuery<{ private_notes: string }>(
+    const stillRows = await adminQuery<{ private_notes: string }>(
       `select private_notes from public.pipeline_items where id = $1`,
       [itemB],
     );
-    expect(still.private_notes).toBe("secret notes of B");
+    const still = stillRows[0];
+    expect(still?.private_notes).toBe("secret notes of B");
   });
 
   it("RPC update_pipeline_private_notes rejects User A on User B item", async () => {
@@ -89,7 +98,9 @@ describe.skipIf(!hasTestDb)("Pipeline tenant isolation", () => {
       [USER_A, itemB],
     );
     expect(res.error).toBeNull();
-    const payload = res.rows[0] as { update_pipeline_private_notes: { result: string } };
-    expect(payload.update_pipeline_private_notes.result).toBe("not_found_or_forbidden");
+    const payload = res.rows[0] as
+      | { update_pipeline_private_notes: { result: string } }
+      | undefined;
+    expect(payload?.update_pipeline_private_notes.result).toBe("not_found_or_forbidden");
   });
 });
