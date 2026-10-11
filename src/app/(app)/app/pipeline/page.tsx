@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import { EmptyState } from "@/components/empty-state";
 import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
 import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filter";
+import { PrivateNotesEditor } from "@/components/pipeline/private-notes-editor";
 import {
   listPipelineItems,
   normalizePageParam,
@@ -49,6 +50,7 @@ function Row({ item }: { item: PipelineListItem }) {
           {saved ? <span>Saved {saved}</span> : null}
           {followUp ? <span>Follow-up due {followUp}</span> : null}
         </div>
+        <PrivateNotesEditor pipelineItemId={item.id} />
       </div>
 
       {item.hotel ? (
