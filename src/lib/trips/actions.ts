@@ -99,6 +99,8 @@ export async function addTripHotelAction(formData: FormData): Promise<ShortlistR
   const result = await addTripHotel(resolution.session.userId, tripId, hotelId);
   if (result.result === "added" || result.result === "already_shortlisted") {
     revalidatePath(`/app/trips/${tripId}`);
+    revalidatePath(`/app/hotels/${hotelId}`);
+    revalidatePath("/app/discover");
   }
   return result;
 }

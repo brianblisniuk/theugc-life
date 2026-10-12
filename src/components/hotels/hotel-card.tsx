@@ -1,64 +1,86 @@
 /**
- * Discover result card (PRD §7.2).
+ * Discover result row (PRD §7.2, D058).
  *
- * Shows identity + location + editorial verification only. Premium contact data
- * must never appear on a card, and — because creator intelligence is currently
- * empty — no activity label is rendered at all rather than implying a zero
- * (PRD §12.7: absence of data is not negative data).
+ * Public identity, disclosed public intelligence, and the viewer's own
+ * pipeline/trip badges. Premium contacts and premium metrics are not props.
+ * A null badge load is unknown and renders no "not saved" / "not on a trip".
  */
 import Link from "next/link";
 
+import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
-import { VerificationBadge } from "@/components/hotels/verification-badge";
+import {
+  hasPublicCardSignal,
+  shouldShowPipelineBadge,
+  shouldShowTripBadge,
+  type CreatorBadge,
+  type PublicCardSignal,
+} from "@/lib/hotels/card-signal";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import type { HotelSummary } from "@/lib/hotels/queries";
 
-/** Only non-operating states are surfaced; "active"/"unknown" need no chip. */
 const CLOSED_LABEL: Record<string, string> = {
   temporarily_closed: "Temporarily closed",
-  closed: "Closed",
 };
 
-export function HotelCard({ hotel }: { hotel: HotelSummary }) {
+export function HotelCard({
+  hotel,
+  signal,
+  badge,
+}: {
+  hotel: HotelSummary;
+  signal: PublicCardSignal | null;
+  /** Null when the viewer's own state could not be read. */
+  badge: CreatorBadge | null;
+}) {
   const href = `/app/hotels/${hotel.id}`;
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
+  const showSignal = hasPublicCardSignal(signal);
+  const pipeline =
+    badge && shouldShowPipelineBadge(badge) && badge.pipeline.kind === "status"
+      ? badge.pipeline.label
+      : null;
+  const onTrip = shouldShowTripBadge(badge);
 
   return (
-    <article className="flex h-full flex-col justify-between gap-3 rounded-[var(--radius-app)] border border-border bg-surface p-4">
-      <div className="space-y-2">
+    <article className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3 py-3">
+      <NoPhoto name={hotel.name} />
+      <div className="min-w-0 space-y-1">
         <h3 className="text-base font-semibold text-text">
           <Link href={href} className="hover:underline">
             {hotel.name}
           </Link>
         </h3>
-
         {location ? <p className="text-sm text-muted">{location}</p> : null}
-
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {type ? <span className="text-xs text-muted">{type}</span> : null}
           <StarRating rating={hotel.starRating} />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <VerificationBadge status={hotel.verificationStatus} />
           {CLOSED_LABEL[hotel.activeStatus] ? (
-            <span className="rounded-[var(--radius-app)] border border-warning/50 px-2 py-0.5 text-xs font-medium text-text">
-              {CLOSED_LABEL[hotel.activeStatus]}
-            </span>
+            <span className="text-xs text-text">{CLOSED_LABEL[hotel.activeStatus]}</span>
           ) : null}
-          {hotel.websiteUrl ? <span className="text-xs text-muted">Website on file</span> : null}
         </div>
-      </div>
-
-      <div>
-        <Link
-          href={href}
-          aria-label={`View hotel ${hotel.name}`}
-          className="inline-flex rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-background"
-        >
-          View hotel
-        </Link>
+        {showSignal && signal ? (
+          <p className="text-sm text-text">
+            {[
+              signal.activity,
+              signal.recency,
+              signal.collaborationObserved ? "Creator collaboration observed" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        ) : null}
+        {pipeline || onTrip ? (
+          <p className="text-xs text-muted">
+            {[pipeline, onTrip ? "On a trip" : null].filter(Boolean).join(" · ")}
+          </p>
+        ) : null}
+        <p>
+          <Link href={href} className="text-sm font-medium text-text underline hover:no-underline">
+            View hotel
+          </Link>
+        </p>
       </div>
     </article>
   );
