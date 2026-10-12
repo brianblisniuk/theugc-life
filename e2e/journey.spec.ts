@@ -25,28 +25,61 @@ function username(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}`.slice(0, 30);
 }
 
+async function waitForSignup(page: Page): Promise<string> {
+  const timeoutMs = 20_000;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve("timeout"), timeoutMs);
+    let settled = false;
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    // The route announcer is also role=alert and empty. Only the form error counts.
+    page
+      .waitForURL(/\/onboarding$/, { timeout: timeoutMs })
+      .then(() => finish("ok"))
+      .catch(() => undefined);
+    page
+      .locator("form")
+      .getByRole("alert")
+      .waitFor({ state: "visible", timeout: timeoutMs })
+      .then(async () => {
+        const text = (await page.locator("form").getByRole("alert").innerText()).trim();
+        finish(`alert:${text}`);
+      })
+      .catch(() => undefined);
+    page
+      .getByRole("heading", { name: "Something went wrong" })
+      .waitFor({ state: "visible", timeout: timeoutMs })
+      .then(() => finish("crash:Something went wrong"))
+      .catch(() => undefined);
+    page
+      .getByText("Check your email to confirm your account.")
+      .waitFor({ state: "visible", timeout: timeoutMs })
+      .then(() => finish("confirm:Check your email to confirm your account."))
+      .catch(() => undefined);
+    page
+      .waitForURL(/\/login/, { timeout: timeoutMs })
+      .then(() => finish("login:sent to login"))
+      .catch(() => undefined);
+  });
+}
+
 async function signUp(page: Page, input: { email: string; name: string; username: string }) {
   await page.goto("/signup");
   await page.getByLabel("Email").fill(input.email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  const onboarding = page.waitForURL(/\/onboarding$/, { timeout: 20_000 }).then(() => "ok" as const);
-  const alerted = page
-    .getByRole("alert")
-    .waitFor({ state: "visible", timeout: 20_000 })
-    .then(() => "alert" as const);
-  const confirm = page
-    .getByText("Check your email to confirm your account.")
-    .waitFor({ state: "visible", timeout: 20_000 })
-    .then(() => "confirm" as const);
-  for (const pending of [onboarding, alerted, confirm]) pending.catch(() => undefined);
-  const result = await Promise.race([onboarding, alerted, confirm]);
-  if (result !== "ok") {
-    const text =
-      result === "alert"
-        ? (await page.getByRole("alert").innerText()).trim()
-        : "Check your email to confirm your account.";
-    expect(text, "signup error").toBe("onboarding");
+  const outcome = await waitForSignup(page);
+  expect(outcome, `signup error: ${outcome}`).toBe("ok");
+  const welcome = page.getByRole("heading", { name: "Welcome" });
+  try {
+    await welcome.waitFor({ state: "visible", timeout: 10_000 });
+  } catch (error) {
+    const text = (await page.locator("body").innerText()).replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(`signup error: ${text}`, { cause: error });
   }
   await page.getByLabel("Display name").fill(input.name);
   await page.getByLabel("Username").fill(input.username);

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect } from "react";
 
 import {
   completeOnboarding,
@@ -21,6 +22,13 @@ const buttonClass =
   "w-full rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60";
 const errorClass = "text-sm text-danger";
 const messageClass = "text-sm text-success";
+
+function useAuthRedirect(target: string | undefined) {
+  const router = useRouter();
+  useEffect(() => {
+    if (target) router.push(target);
+  }, [router, target]);
+}
 
 function FormError({ state }: { state: AuthActionState }) {
   if (state.error) {
@@ -82,6 +90,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
 
 export function SignupForm({ redirectTo }: { redirectTo?: string }) {
   const [state, action, pending] = useActionState(signUp, initial);
+  useAuthRedirect(state.redirectTo);
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="redirect" value={redirectTo ?? "/onboarding"} />
@@ -174,6 +183,7 @@ export function ResetPasswordForm() {
 
 export function OnboardingForm() {
   const [state, action, pending] = useActionState(completeOnboarding, initial);
+  useAuthRedirect(state.redirectTo);
   return (
     <form action={action} className="space-y-4">
       <div className="space-y-1">

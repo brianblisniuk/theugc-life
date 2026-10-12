@@ -47,7 +47,6 @@ export async function createTripAction(formData: FormData): Promise<TripWriteRes
   const result = await createTrip(resolution.session.userId, parsed.value);
   if (result.result === "created") {
     revalidatePath("/app/trips");
-    redirect(`/app/trips/${result.tripId}`);
   }
   return result;
 }
