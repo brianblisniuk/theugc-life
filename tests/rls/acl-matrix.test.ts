@@ -385,10 +385,11 @@ d("explicit ACL contract (0024)", () => {
         'save_hotel_to_pipeline','transition_pipeline_item','progress_pipeline_deal',
         'progress_collaboration','recompute_hotel_intelligence',
         'recompute_hotel_intelligence_for_pipeline_item','recompute_all_hotel_intelligence',
-        'hotel_intelligence_lock_key')
+        'hotel_intelligence_lock_key',
+        'update_pipeline_private_notes','grant_access_entitlement')
       order by p.proname
     `);
-    expect(rows.length).toBe(8);
+    expect(rows.length).toBe(10);
     for (const row of rows) {
       expect(row.anon, row.proname).toBe(false);
       expect(row.auth, row.proname).toBe(false);
