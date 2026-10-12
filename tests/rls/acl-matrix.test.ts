@@ -46,6 +46,10 @@ const CONTRACT: Record<string, Expected> = {
 
   // Creator identity and portfolio. Public rows are anonymously readable.
   creator_profiles: { anon: "S", authenticated: "SIU", serviceRole: "all" },
+  // D08 (0052, D086 Proposed). Per-field opt-in for a later hotel share link.
+  // Private by default. Anon has no privilege. The owner may write their own
+  // rows; this PR's UI does not. There is no share token on this table.
+  creator_profile_field_opt_ins: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   portfolio_assets: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
 
   // Public catalogue. Writes exist as a capability; RLS restricts them to staff.
@@ -941,6 +945,43 @@ d("explicit ACL contract (0024)", () => {
     expect(reader!.auth).toBe(true);
     expect(reader!.svc).toBe(true);
     expect(reader!.public_exec).toBe(false);
+  });
+
+  it("pins D08 profile reads to the caller and keeps anon off them", async () => {
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname in ('creator_personal_counts', 'creator_past_collaborations')
+       order by p.proname
+    `);
+    expect(rows.map((row) => row.proname)).toEqual([
+      "creator_past_collaborations",
+      "creator_personal_counts",
+    ]);
+    for (const row of rows) {
+      expect(row.definer, row.proname).toBe(false);
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(true);
+      expect(row.svc, row.proname).toBe(true);
+      expect(row.public_exec, row.proname).toBe(false);
+    }
   });
 });
 

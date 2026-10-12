@@ -75,6 +75,22 @@ Create user row/profile through a controlled signup trigger or server action. Ne
 - `public_profile_enabled boolean DEFAULT false`
 - timestamps
 
+`public_profile_enabled` and `portfolio_visibility` are the coarse flags from
+`0002`. They are not the hotel share link (D086, Proposed).
+
+### creator_profile_field_opt_ins
+Creator-owned per-field opt-in for a later hotel share link (0052, D086
+Proposed). No token and no hotel read in this migration.
+
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `field_key text` — not an allow-list; the follow-up closes the keys
+- `opted_in boolean NOT NULL DEFAULT false`
+- `revoked_at timestamptz NULL` — set only when `opted_in` is false
+- primary key `(creator_id, field_key)`
+- timestamps
+
+No row means the field is not shared. RLS is enabled. Anon has no privilege.
+
 ### portfolio_assets
 - `id uuid PK`
 - `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
@@ -2865,5 +2881,12 @@ At minimum:
     Refresh does not write `pipeline_items`, `outreach_events`, or
     `collaborations`. A redirect is not a decline suggestion. `0050` is not
     edited.
+29. Creator profile counts and past collaborations (0052, D086–D088 Proposed) —
+    two security-invoker reads for the caller only:
+    `creator_personal_counts` and `creator_past_collaborations`. Counts are
+    creator-recorded outcomes, not rates, and a missing profile is JSON null.
+    `creator_profile_field_opt_ins` stores a private per-field opt-in for a
+    later revocable hotel share link. No token, no hotel read, and no change
+    to `public_profile_enabled`. `0051` is not used.
 
 Every migration must be reproducible from an empty database.

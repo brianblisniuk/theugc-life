@@ -233,3 +233,11 @@ Maintain an analytics dictionary with:
 
 Honor consent requirements for analytics by jurisdiction.
 Do not use analytics as a covert copy of creator-private CRM data.
+
+## 13. Private personal counts (D08, D087 Proposed)
+
+The Profile page shows counts computed in Postgres from the creator’s own
+rows: outreach, replies, agreements, completed collaborations, and approved
+deliverables. They are not PostHog events. They are not rates. A missing
+read is not zero. Unknown compensation is not included, so it is not shown
+as unpaid or as zero.

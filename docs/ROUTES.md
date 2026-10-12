@@ -100,10 +100,12 @@ Trip list.
 Trip workspace. Ownership required.
 
 ### `/app/profile`
-Creator profile editor.
+The signed-in creator’s private profile, personal counts, and past
+collaborations (D086–D088, Proposed). Not a public URL and not a hotel
+share link. The later link is not this route.
 
 ### `/app/profile/portfolio`
-Portfolio asset management.
+Placeholder. Public portfolio management is not built.
 
 ### `/app/account`
 Account/security/preferences.
