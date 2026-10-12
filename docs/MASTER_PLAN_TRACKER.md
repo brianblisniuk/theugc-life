@@ -406,7 +406,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E02 | **DONE** — PR #59, merge `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted (Brian, 12 Oct 2026). Primary navigation stays the PRD §6 five items. Inbox and Collaborations are pipeline surfaces. | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | **DONE** — PR #60, merge `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | **DONE** — PR #62, merge `dc5979eed799d1724eb36482eb0067d3e9f0fe55`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
-| E05 | **IN PR** — branch `cursor/e05-e2e-observability-launch-f88c`. No migration. D092–D094 Proposed. Playwright against local Supabase, redacted logs, `/api/health`, RLS and security-definer checks, launch checklist. PR number is in `.grok/autopilot-state.json`. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
+| E05 | **IN PR** — PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. No migration. D092–D094 Proposed. Playwright against local Supabase, redacted logs, `/api/health`, RLS and security-definer checks, launch checklist. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -700,7 +700,7 @@ A creator creates, views, rotates, and revokes one link. The public page
 and the public read stay UNDECIDED in the E04 inventory. `0051` and `0052`
 are not edited.
 
-**E05 is in this pull request.** Branch
+**E05 is PR #64.** Branch
 `cursor/e05-e2e-observability-launch-f88c`. No migration. D092–D094 are
 Proposed. The launch checklist names the owner steps that are not done.
 `0053` is not edited.

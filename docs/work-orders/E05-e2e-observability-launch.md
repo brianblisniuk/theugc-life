@@ -3,7 +3,7 @@
 **Status:** Binding work order. D092–D094 are Proposed. Do not merge.  
 **Base:** `main` `1fc15658fc69acaa799860f8340736e15e1f5728` (merge of PR #63, D09).  
 **Branch:** `cursor/e05-e2e-observability-launch-f88c`  
-**PR:** recorded in `.grok/autopilot-state.json` after the pull request exists.  
+**PR:** #64  
 **Decisions:** D092, D093, D094 — Proposed. D089–D091 stay Accepted. D082 stays Proposed.  
 **Migration:** none. `0054` is not used.
 
