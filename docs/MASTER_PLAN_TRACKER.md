@@ -313,6 +313,11 @@ We can connect a small professional-creator cohort and measure:
 
 If qualified data is too sparse/ambiguous, pause before building a large intelligence product.
 
+Which of those measures are the B08 pilot KPIs, and what result would pause or
+justify a larger intelligence product, is an open owner question in the C01
+proposal (D077). This list is a planning hypothesis. It is not an accepted KPI
+contract, and D076 (open PR #53) does not define it either.
+
 ---
 
 ## PHASE C — Intelligence V1
@@ -321,7 +326,7 @@ If qualified data is too sparse/ambiguous, pause before building a large intelli
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | GATED | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C01 | **CONTRACT PROPOSED** — PR #54, D077, branch `docs/c01-intelligence-fact-contract`. Requires owner acceptance. Not accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
 | C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
 | C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
 | C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
@@ -355,7 +360,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| D01 | **MERGED** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046`. | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
+| D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
@@ -640,19 +645,23 @@ caller flag, and a creator read marks the machine interpretation stale when
 the bound B06 classification or chronology fingerprint has changed in place.
 Model-backed inference remains gated, so this is not B07 done.
 
-The open implementation block is:
+**D01 (PR #52) is merged**, as merge commit
+`4062170212beb8b978a248ef219eb91ddbfb080b` into `main`. Migration
+`0046_trips_context.sql`.
 
 > **B08 — continuous Gmail sync (D076). Migration
 > `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
 > and on creator login, same D068 inclusion rule, no Pub/Sub and no new
-> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. Audit of
-> `e3514a6` failed: the bounded re-scan now stores the profile `historyId`
-> captured before the scan, and the pipeline step is leased. Awaiting
+> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. Awaiting
 > re-audit. `0046` is D01 on `main` (PR #52, `4062170`). This PR keeps
 > `0047` and adds `0048` so the commercial classifier decodes `&nbsp;`,
 > `&amp;`, `&lt;`, and `&gt;` without regard to case. `0045` is not edited.
-> Pilot KPIs are not in D076 and are not in this PR. Do not merge
-> from automation.**
+> `0048` is not D078. D078 is used by D07 PR #56. Pilot KPIs are not in
+> D076 and are not in this PR. Do not merge from automation.**
+
+C01 (D077) is on main as a Proposed docs contract (PR #54,
+`989e7f020f07362113b3e9b00fd9950293808f10`). It is not accepted and is not
+this block. Pilot KPIs remain an owner question (D077).
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:
