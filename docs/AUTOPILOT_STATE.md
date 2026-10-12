@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `eb136190f676e9201b6b39de4b570d51e52da73d` (merge of PR #53, B08, 2026-10-12)  
-**State:** AWAITING_CI. D06 inbox ↔ pipeline unity, branch `cursor/d06-inbox-pipeline-774f`, migration `0049`, D079 Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. D06 inbox ↔ pipeline unity, PR #58, branch `cursor/d06-inbox-pipeline-774f`, migration `0049`, D079 Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** D06. Creator-named link between one pipeline cycle and one stored Gmail thread. Machine readings are suggestions. A redirect is not a rejection. B08 is merged at `eb13619`. D077 stays Proposed. D078 is Accepted on main via PR #56. `0050` is not edited.
 
 ## Main history note (not rewritten)
@@ -35,7 +35,7 @@
 - PR #53 — B08 incremental Gmail sync, D076, migrations `0047` and `0048` — `eb136190f676e9201b6b39de4b570d51e52da73d`
 
 ## Next action
-- D06 inbox ↔ pipeline unity is this PR (`cursor/d06-inbox-pipeline-774f`, D079 Proposed, migration `0049`). State is AWAITING_CI. Do not merge from automation.
+- D06 inbox ↔ pipeline unity is PR #58 (`cursor/d06-inbox-pipeline-774f`, D079 Proposed, migration `0049`). State is AWAITING_CI. Do not merge from automation.
 - B08 is merged (PR #53, `eb13619`). The forward sync still uses D068 inclusion and does not add a scope.
 - D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). This PR does not edit `0050`.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.

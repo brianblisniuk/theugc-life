@@ -1,6 +1,6 @@
 # D06 — Inbox and pipeline stay one record
 
-**Status:** Binding work order for this PR. D079 is Proposed. Do not merge.  
+**Status:** Binding work order for PR #58. D079 is Proposed. Do not merge.  
 **Base:** `main` `eb136190f676e9201b6b39de4b570d51e52da73d` (merge of PR #53, B08).  
 **Branch:** `cursor/d06-inbox-pipeline-774f`  
 **Decision:** D079, Proposed — safest minimal reading.  
