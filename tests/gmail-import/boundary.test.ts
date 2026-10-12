@@ -48,14 +48,18 @@ d("B03 private boundary (0037)", () => {
   it("1-4. no client role — service_role included — reaches the B03 tables", async () => {
     const roles = ["anon", "authenticated", "service_role"];
 
-    // The schema itself is the boundary. service_role is BYPASSRLS, so RLS
-    // could never have protected message content from it; withholding USAGE is
-    // what does, and 0036 established that for credentials.
+    // service_role is BYPASSRLS, so RLS could never have protected message
+    // content from it; withholding USAGE is what does. authenticated has USAGE
+    // so B07 RLS select can resolve (0044). B03 tables themselves stay closed
+    // to every client role, which is the check below.
     const usage = await client.query(
       `select r.rolname, has_schema_privilege(r.rolname, 'private', 'USAGE') as usage
          from (values ('anon'),('authenticated'),('service_role')) as r(rolname)`,
     );
-    for (const row of usage.rows) expect([row.rolname, row.usage]).toEqual([row.rolname, false]);
+    const usageByRole = Object.fromEntries(usage.rows.map((row) => [row.rolname, row.usage]));
+    expect(usageByRole.anon).toBe(false);
+    expect(usageByRole.service_role).toBe(false);
+    expect(usageByRole.authenticated).toBe(true);
 
     const privileges = await client.query(
       `select c.relname, r.rolname,

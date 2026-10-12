@@ -27,17 +27,21 @@ afterAll(async () => {
 
 d("B02 credential boundary (0036)", () => {
   describe("no client role can reach the private schema", () => {
-    it("anon, authenticated and service_role hold no USAGE on it", async () => {
+    it("anon and service_role hold no USAGE; authenticated USAGE is only the B07 select path", async () => {
       const res = await client.query(`
         select r.rolname,
                has_schema_privilege(r.rolname, 'private', 'USAGE') as usage
           from (values ('anon'),('authenticated'),('service_role')) as r(rolname)
       `);
       // service_role is BYPASSRLS, so RLS could never have protected this from
-      // the trusted role. Withholding schema usage is what does.
-      for (const row of res.rows) {
-        expect(row.usage, row.rolname).toBe(false);
-      }
+      // the trusted role. Withholding schema usage is what does. authenticated
+      // received USAGE in 0044 so it can SELECT its own B07 rows under RLS.
+      // That grant does not extend to credential tables; the next test holds
+      // that line.
+      const usage = Object.fromEntries(res.rows.map((row) => [row.rolname, row.usage]));
+      expect(usage.anon).toBe(false);
+      expect(usage.service_role).toBe(false);
+      expect(usage.authenticated).toBe(true);
     });
 
     it("no client role holds any privilege on the credential or transaction tables", async () => {
@@ -51,6 +55,7 @@ d("B02 credential boundary (0036)", () => {
           join pg_namespace n on n.oid = c.relnamespace
           cross join (values ('anon'),('authenticated'),('service_role')) as r(rolname)
          where n.nspname = 'private' and c.relkind = 'r'
+           and c.relname in ('gmail_oauth_credentials', 'gmail_oauth_transactions')
       `);
       expect(res.rows.length).toBeGreaterThan(0);
       for (const row of res.rows) {
@@ -130,6 +135,7 @@ d("B02 credential boundary (0036)", () => {
            and p.proname not like 'gmail\\_normalize\\_%'
            and p.proname not like 'gmail\\_outreach\\_%'
            and p.proname not like 'gmail\\_reply\\_%'
+           and p.proname not like 'gmail\\_commercial\\_%'
       `);
       // B02's own surface. B03 adds definer functions of its own in 0037,
       // B04 in 0038, B05 in 0039, and B06 in 0040 — each asserts the same

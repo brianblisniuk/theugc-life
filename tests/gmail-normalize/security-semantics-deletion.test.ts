@@ -84,9 +84,12 @@ d("B04 semantic boundary", () => {
       select r.rolname, has_schema_privilege(r.rolname, 'private', 'USAGE') as usage
         from (values ('anon'), ('authenticated'), ('service_role')) as r(rolname)
     `);
-    for (const row of schemaUsage.rows) {
-      expect(row.usage, row.rolname).toBe(false);
-    }
+    const usageByRole = Object.fromEntries(schemaUsage.rows.map((row) => [row.rolname, row.usage]));
+    expect(usageByRole.anon, "anon").toBe(false);
+    expect(usageByRole.service_role, "service_role").toBe(false);
+    // 0044 grants authenticated USAGE so B07 RLS select can resolve. B04
+    // relations stay unprivileged; that is the loop below.
+    expect(usageByRole.authenticated, "authenticated").toBe(true);
 
     for (const table of tables) {
       const res = await client.query(

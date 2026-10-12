@@ -686,13 +686,37 @@ d("B05: RLS/access — no client role reaches B05 data", () => {
     expect(await decisionEventsOf(client, normalizedThreadId)).toHaveLength(0);
   });
 
-  it("no client role holds USAGE on the private schema (unchanged from B01-B04)", async () => {
+  it("anon has no private USAGE; authenticated USAGE does not open B05 tables", async () => {
     const res = await client.query(
       `select has_schema_privilege('anon', 'private', 'USAGE') as anon_usage,
-              has_schema_privilege('authenticated', 'private', 'USAGE') as authenticated_usage`,
+              has_schema_privilege('authenticated', 'private', 'USAGE') as authenticated_usage,
+              has_schema_privilege('service_role', 'private', 'USAGE') as service_usage`,
     );
     expect(res.rows[0].anon_usage).toBe(false);
-    expect(res.rows[0].authenticated_usage).toBe(false);
+    expect(res.rows[0].service_usage).toBe(false);
+    // 0044 grants authenticated USAGE for B07 RLS select only.
+    expect(res.rows[0].authenticated_usage).toBe(true);
+
+    const privileges = await client.query(
+      `select c.relname,
+              has_table_privilege('authenticated', c.oid, 'SELECT') as sel,
+              has_table_privilege('authenticated', c.oid, 'INSERT') as ins,
+              has_table_privilege('authenticated', c.oid, 'UPDATE') as upd,
+              has_table_privilege('authenticated', c.oid, 'DELETE') as del
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'private' and c.relname like 'gmail_outreach_%'`,
+    );
+    expect(privileges.rows.length).toBeGreaterThan(0);
+    for (const row of privileges.rows) {
+      expect([row.relname, row.sel, row.ins, row.upd, row.del]).toEqual([
+        row.relname,
+        false,
+        false,
+        false,
+        false,
+      ]);
+    }
   });
 
   it("every gmail_outreach_* definer-rights function pins its search_path (B02-B04's own pattern)", async () => {
