@@ -17,6 +17,17 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        try {
+          const { syncOnCreatorLoginServer } = await import("@/lib/gmail/sync/on-login.server");
+          await syncOnCreatorLoginServer(user.id);
+        } catch {
+          // A mailbox sync must not block session establishment.
+        }
+      }
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

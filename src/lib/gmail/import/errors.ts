@@ -14,7 +14,7 @@ import {
  * status, an allow-listed reason, and a boolean.
  */
 
-export type GmailReadOperation = "messages_list" | "threads_get";
+export type GmailReadOperation = "messages_list" | "threads_get" | "history_list" | "profile_get";
 
 /** The only reason codes B03 will ever persist or log. */
 const ALLOWED_REASONS = new Set([
@@ -25,6 +25,7 @@ const ALLOWED_REASONS = new Set([
   "gateway_timeout",
   "internal_error",
   "thread_not_found",
+  "history_id_expired",
   "forbidden",
   "bad_request",
   "malformed_response",
@@ -94,6 +95,18 @@ export function classifyGmailReadFailure(
             ? "gateway_timeout"
             : "internal_error";
     return new GmailReadError({ operation, status, reason: byStatus, retryable: true });
+  }
+
+  // history.list returns 404 when startHistoryId is no longer retained.
+  // That is a cursor expiry, not a missing thread. threads.get 404 stays
+  // thread_not_found below.
+  if (operation === "history_list" && status === 404) {
+    return new GmailReadError({
+      operation,
+      status,
+      reason: "history_id_expired",
+      retryable: false,
+    });
   }
 
   // A THREAD THAT IS NO LONGER THERE. Terminal for one work item, and not a

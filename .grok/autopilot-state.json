@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate. Audit of f34f1d8 failed. This correction commit cannot name itself, so expected_head stays null until a later commit. Do not merge f34f1d8.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. B08 (D076) is awaiting audit. The schema has no AWAITING_AUDIT value, so state is AUDITING. This commit cannot name itself, so expected_head stays null. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
-  "state": "AWAITING_CI",
-  "last_recorded_main": "0d176e42a7487c24c42f7d448f1fb3b3912535e3",
-  "active_block": "B07 slice 1 rules engine (migration 0044, PR #50 audit correction)",
-  "branch": "feat/b07-slice1-rules-engine",
-  "pr": 50,
+  "state": "AUDITING",
+  "last_recorded_main": "161e4c0d7694b3e12b3b496c1393037b2d0e57a5",
+  "active_block": "B08 incremental Gmail sync (D076, migration 0047)",
+  "branch": "feat/b08-gmail-incremental-sync",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "0d176e42a7487c24c42f7d448f1fb3b3912535e3",
+    "ref": "161e4c0d7694b3e12b3b496c1393037b2d0e57a5",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "B07 slice 1 human merge, then model-backed inference remains gated; B08 stays gated"
+  "next_dependency": "B08 audit, then human merge decision. Pilot KPIs and model-backed B07 inference stay gated."
 }

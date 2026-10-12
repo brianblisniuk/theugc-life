@@ -2959,3 +2959,76 @@ authorization and the migration number actually used on main
 (0041–0043 were already taken; D074). No taxonomy, axis, privacy rule, or
 human-correction rule in D072 changes. Model-backed inference stays gated.
 Slice 1 does not mark the whole of B07 done.
+
+## D076 — Continuous Gmail sync polls history forward from the import (B08)
+
+Status: Accepted — Brian, 12 October 2026
+
+Depends on D068. Implemented by migration `0047_gmail_incremental_sync.sql`.
+D072 is unchanged.
+
+Option A. After a historical import, new mail is acquired by polling Gmail
+`history.list` about every 15 minutes and when the creator signs in. The
+forward window starts at the end of the last completed historical import for
+that mailbox and moves forward only. The inclusion rule is D068: a thread is
+acquired only when the creator wrote into it, and then the replies on that
+thread are acquired too. This decision does not add Pub/Sub, a new Google
+Cloud project, `gmail.send`, or any OAuth scope beyond the set the import
+already uses.
+
+The 15-minute cadence is a database due time (`interval '15 minutes'`). This
+repository has no cron daemon (D068 / B03). The operator command
+`npm run gmail:sync:work` discharges mailboxes that are due, which is the same
+job mechanism the other Gmail workers already use. Password sign-in and the
+auth callback that establishes a session mark that creator's mailboxes due and
+run the same worker. A sync failure does not fail the login. Ordinary
+navigation inside the app does not start a sync. This decision does not deploy
+a production scheduler.
+
+No completed historical import means there is no forward start, and sync does
+not invent one. A historical import that is still runnable or paused refuses
+sync until it finishes. Each mailbox keeps one `historyId`. The first sync,
+and any sync whose `historyId` Gmail rejects with HTTP 404, uses a bounded
+re-scan: `messages.list` on `SENT` inside the forward window, plus
+`threads.get` of threads this mailbox has already stored as non-draft `SENT`.
+`users.getProfile` then records a fresh `historyId`. A 404 from `threads.get`
+is still a missing thread. It does not expire the cursor.
+
+`history.list` is requested with `historyTypes=messageAdded` only. A missing
+`labelIds` array is a malformed provider body and does not complete as an
+empty mailbox. Gmail-side deletions and label-only changes are not a new
+deletion product. Stored snapshots stay until the creator's own disconnect or
+deletion purge, which is the same snapshot identity D068 already uses.
+
+Message identity stays the historical-import primary key, so a repeated or
+overlapping run updates one row instead of inserting a second copy. One
+mailbox has one active sync run, held by a lease. A concurrent worker does
+not start a second run.
+
+Disconnect, deletion pending, and deleted cancel runnable and paused sync runs
+and clear the login-due flag. Sync does not run after that. Reconnect does not
+resume a cancelled run. The next sync is a new run. The `historyId` survives
+disconnect, so reconnect does not throw away a usable cursor. Deleting the
+account purges the cursor, the runs, the per-run thread rows, and the
+per-thread coverage. A mailbox in `deleted` cannot still hold those rows.
+
+`reauth_required` and `consent_required` pause a runnable run. When the
+mailbox is `connected` again, a run paused for reauth or consent becomes
+runnable. That is continuous sync while the mailbox is connected. It does not
+resurrect a run that disconnect cancelled.
+
+New messages go through the pipeline that already exists, in its existing
+order: normalization, then the outreach interpretation reply chronology
+already requires, then reply chronology, then commercial meaning. This
+decision does not change those rules. Reply chronology's per-thread horizon
+moves forward only for a thread a completed sync actually fetched. A thread
+that was not fetched stays at its historical-import horizon.
+
+Pilot quality and data-density KPIs are named on the B08 tracker row and are
+not defined here. They are not part of this migration. B08 is not done until
+that instrumentation has its own decision.
+
+`0045` and `0046` are in use on the parallel B07.1 and D01 branches. This
+block takes `0047`, the next free number after that reservation. D074 still
+applies: a reserved number is advisory until the migration is written against
+live `main`.
