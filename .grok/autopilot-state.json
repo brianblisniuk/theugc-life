@@ -6,7 +6,7 @@
   "last_recorded_main": "161e4c0d7694b3e12b3b496c1393037b2d0e57a5",
   "active_block": "B08 incremental Gmail sync (D076, migration 0047)",
   "branch": "feat/b08-gmail-incremental-sync",
-  "pr": null,
+  "pr": 53,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [

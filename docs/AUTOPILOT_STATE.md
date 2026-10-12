@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `161e4c0d7694b3e12b3b496c1393037b2d0e57a5` (merge of PR #50, 2026-10-12)  
-**State:** AUDITING. Branch `feat/b08-gmail-incremental-sync`. Awaiting audit of B08 (D076). The machine state is `AUDITING` because `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AUDITING. PR #53, branch `feat/b08-gmail-incremental-sync`. Awaiting audit of B08 (D076). The machine state is `AUDITING` because `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** B08 incremental Gmail sync. D076 accepts history polling and a login trigger. Pilot KPIs remain gated. Model-backed B07 inference remains gated.
 
 ## Main history note (not rewritten)
@@ -29,7 +29,7 @@
 - PR #50 — B07 slice 1 rules engine — `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`
 
 ## Next action
-- B08 incremental sync is on `feat/b08-gmail-incremental-sync` (D076, migration `0047`). State is AUDITING (awaiting audit). Do not merge from automation.
+- B08 incremental sync is PR #53 (`feat/b08-gmail-incremental-sync`, D076, migration `0047`). State is AUDITING (awaiting audit). Do not merge from automation.
 - Pilot KPIs and model-backed B07 inference stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
