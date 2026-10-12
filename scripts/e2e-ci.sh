@@ -89,8 +89,16 @@ export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
 unset NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || true
 npm run build
 
-if grep -R -q "example.supabase.co" .next/server; then
-  echo "e2e build still contains the dummy Supabase host"
+# Compiled server JS must carry the local API URL. Source maps and the
+# storage-js docs also contain example.supabase.co, so those do not count.
+# The quote after the host is the inlined env string, not the docs URL.
+api_url="${API_URL%/}"
+if ! grep -R --include='*.js' -F -q "$api_url" .next/server; then
+  echo "e2e build did not inline the local Supabase URL"
+  exit 1
+fi
+if grep -R --include='*.js' -F -q 'https://example.supabase.co"' .next/server; then
+  echo "e2e build still inlined the dummy Supabase host"
   exit 1
 fi
 
