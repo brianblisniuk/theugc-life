@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `ab0507461b4b47b21112dd07589b4b8a88d3efb3` (merge of PR #55, E01, 2026-10-12)  
-**State:** AUDITING. PR #53, branch `feat/b08-gmail-incremental-sync`. The history snapshot and `window_end_at` are the same cut. Awaiting re-audit. The machine state is `AUDITING` because `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** B08 incremental Gmail sync. D076 accepts history polling and a login trigger. E01 (PR #55) is merged: Discover and Hotel Detail over published canonical hotels, map deferred, no migration. D077 (C01, PR #54) is Proposed and is not accepted. D078 is used by D07 PR #56. B07.1 (PR #51, migration `0045`) is merged. D01 (PR #52, migration `0046`) is merged. Pilot KPIs remain gated. Model-backed B07 inference remains gated.
+**Last verified main:** `61d0e385894670bc55a78675e64526c353c288d5` (merge of PR #56, D07, 2026-10-12)  
+**State:** AUDITING. PR #53, branch `feat/b08-gmail-incremental-sync`. The snapshot-anchored `messages.list` omits `before:`. A history message dated before the forward window is excluded and does not withhold the cursor. Awaiting re-audit. The machine state is `AUDITING` because `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** B08 incremental Gmail sync. D076 accepts history polling and a login trigger. E01 (PR #55) is merged at `ab05074`: Discover and Hotel Detail over published canonical hotels, map deferred, no migration. D07 (PR #56) is merged at `61d0e38`: D078 Accepted, migration `0050`, records only. D077 (C01, PR #54) is Proposed and is not accepted. B07.1 (PR #51, migration `0045`) is merged. D01 (PR #52, migration `0046`) is merged. `0049` is unused. Pilot KPIs remain gated. Model-backed B07 inference remains gated.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -31,12 +31,13 @@
 - PR #52 — D01 trips — `4062170212beb8b978a248ef219eb91ddbfb080b`
 - PR #54 — C01 intelligence fact contract, docs only (D077 remains Proposed) — `989e7f020f07362113b3e9b00fd9950293808f10`
 - PR #55 — E01 Discover + Hotel Detail, map deferred, no migration — `ab0507461b4b47b21112dd07589b4b8a88d3efb3`
+- PR #56 — D07 deliverables and agreed compensation, migration `0050`, D078 Accepted — `61d0e385894670bc55a78675e64526c353c288d5`
 
 ## Next action
-- B08 incremental sync is PR #53 (`feat/b08-gmail-incremental-sync`, D076, migration `0047`). State is AUDITING (awaiting re-audit). Do not merge from automation.
-- E01 is merged (PR #55). Discover and Hotel Detail use published canonical hotels. No map provider is decided, so the surface keeps an empty map slot and does not call a tile service. E01 adds no migration.
-- D077 stays Proposed. D078 is used by D07 PR #56 (draft, migration `0050`). `0048` on this branch is the classifier entity decode, not D078.
-- Pilot KPIs and model-backed B07 inference stay gated.
+- B08 incremental sync is PR #53 (`feat/b08-gmail-incremental-sync`, D076, migrations `0047` and `0048`). State is AUDITING (awaiting re-audit). Do not merge from automation.
+- E01 is merged (PR #55, `ab05074`). Discover and Hotel Detail use published canonical hotels. No map provider is decided, so the surface keeps an empty map slot and does not call a tile service. E01 adds no migration.
+- D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). Compensation values each deliverable and is not a charge. This PR does not edit `0050`. `0049` is still unused. `0048` on this branch is the classifier entity decode, not D078.
+- D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
 - Owner interaction happens only via human-frontier labels.

@@ -2615,6 +2615,24 @@ Types: stay, product, paid, stay_plus_paid, other.
 Statuses: agreed, scheduled, active, completed, cancelled.
 Private financial values MUST NOT feed public aggregates in V1.
 
+D078 (migration `0050`) stores the creator's agreed compensation and
+deliverables beside the collaboration. It does not write
+`private_value_amount` or `private_value_currency`.
+
+- `collaboration_agreed_compensations` — one row per collaboration.
+  Structure uses the D072 vocabulary. Cash is integer minor units plus an
+  uppercase ISO currency. In-kind is a description plus an optional
+  creator estimate. Payment status is a record, not a charge.
+- `collaboration_compensation_suggestions` — one B07 compensation
+  structure copied for that collaboration. A suggestion, not human truth,
+  and not an amount.
+- `collaboration_deliverables` — checklist rows. Status does not change
+  the derived value.
+
+`collaboration_deliverable_values` runs as the caller. It allocates a known
+total across quantity by largest remainder and labels the share derived.
+Unknown stays JSON null.
+
 ## 9. Intelligence
 
 ### hotel_intelligence
@@ -2822,5 +2840,13 @@ At minimum:
     and unmodified rather than reimplemented. Performs zero Gmail network
     activity and writes nothing to the live CRM ledger or any canonical row.
     See §5m
+27. Collaboration deliverables and agreed compensation (0050, D078) —
+    creator-private compensation and a deliverable checklist on one
+    collaboration, plus a security-invoker read that derives each piece's
+    value. Records only: no charge and no payment provider. A B07 structure
+    may be copied into a suggestion and cannot overwrite the creator row.
+    Does not write `collaborations.private_value_*`, outreach events, or
+    public intelligence. `0047` and `0048` stay on open PR #53 (B08).
+    E01 (PR #55) added no migration. `0049` is still unused.
 
 Every migration must be reproducible from an empty database.

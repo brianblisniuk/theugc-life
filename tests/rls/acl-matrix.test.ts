@@ -66,6 +66,11 @@ const CONTRACT: Record<string, Expected> = {
   pipeline_items: { anon: "", authenticated: "S", serviceRole: "all" },
   outreach_events: { anon: "", authenticated: "S", serviceRole: "all" },
   collaborations: { anon: "", authenticated: "S", serviceRole: "all" },
+  // D07 (0050, D078). Compensation and deliverables are creator records. The browser
+  // can read its own rows; writes go through service-role RPCs.
+  collaboration_agreed_compensations: { anon: "", authenticated: "S", serviceRole: "all" },
+  collaboration_compensation_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
+  collaboration_deliverables: { anon: "", authenticated: "S", serviceRole: "all" },
 
   // Intelligence. Base aggregates are unreachable by any client role.
   hotel_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
@@ -727,6 +732,106 @@ d("explicit ACL contract (0024)", () => {
     expect(summary!.auth).toBe(true);
     expect(summary!.svc).toBe(true);
     expect(summary!.public_exec).toBe(false);
+  });
+
+  it("pins D07 compensation RPCs and keeps client roles off the writers", async () => {
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname in (
+           'upsert_collaboration_compensation',
+           'upsert_collaboration_deliverable',
+           'delete_collaboration_deliverable',
+           'prefill_collaboration_compensation_suggestion',
+           'enforce_collaboration_record_same_creator',
+           'enforce_collaboration_children_same_owner'
+         )
+       order by p.proname
+    `);
+    expect(rows.map((row) => row.proname)).toEqual([
+      "delete_collaboration_deliverable",
+      "enforce_collaboration_children_same_owner",
+      "enforce_collaboration_record_same_creator",
+      "prefill_collaboration_compensation_suggestion",
+      "upsert_collaboration_compensation",
+      "upsert_collaboration_deliverable",
+    ]);
+    for (const row of rows) {
+      expect(row.definer, row.proname).toBe(true);
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(false);
+      expect(row.svc, row.proname).toBe(true);
+      expect(row.public_exec, row.proname).toBe(false);
+    }
+
+    const [reader] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'collaboration_deliverable_values'
+    `);
+    expect(reader).toBeDefined();
+    expect(reader!.definer).toBe(false);
+    expect(reader!.pinned).toBe(true);
+    expect(reader!.anon).toBe(false);
+    expect(reader!.auth).toBe(true);
+    expect(reader!.svc).toBe(true);
+    expect(reader!.public_exec).toBe(false);
+
+    const [currency] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'is_iso_currency'
+    `);
+    expect(currency).toBeDefined();
+    expect(currency!.definer).toBe(false);
+    expect(currency!.pinned).toBe(true);
+    expect(currency!.anon).toBe(false);
+    expect(currency!.auth).toBe(true);
+    expect(currency!.svc).toBe(true);
+    expect(currency!.public_exec).toBe(false);
   });
 });
 
