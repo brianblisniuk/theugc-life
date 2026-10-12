@@ -33,6 +33,7 @@ function builder(outcome: Outcome, executed: string[], table: string) {
     eq: () => chain,
     gte: () => chain,
     order: () => chain,
+    in: () => chain,
     limit: () => run(),
     range: () => run(),
     maybeSingle: () => run(),
@@ -124,6 +125,46 @@ describe("F3 — destination lookup errors propagate", () => {
     expect(calls).toContain("hotels");
     expect(result.hotels).toEqual([]);
     expect(result.total).toBe(0);
+  });
+
+  it("an unknown destination slug matches nothing and does not query hotels", async () => {
+    const calls: string[] = [];
+    const client = fakeClient(
+      {
+        destinations: {
+          data: [{ id: "d1", slug: "bali", parent_destination_id: null }],
+          error: null,
+        },
+        hotels: OK_HOTELS,
+      },
+      calls,
+    );
+    const result = await searchHotels(parseDiscoverQuery({ destination: "missing-place" }), client);
+    expect(result.hotels).toEqual([]);
+    expect(result.total).toBe(0);
+    expect(calls).toContain("destinations");
+    expect(calls).not.toContain("hotels");
+  });
+
+  it("a known destination slug reaches the hotel query", async () => {
+    const calls: string[] = [];
+    const client = fakeClient(
+      {
+        destinations: {
+          data: [
+            { id: "island", slug: "bali", parent_destination_id: null },
+            { id: "area", slug: "seminyak", parent_destination_id: "island" },
+          ],
+          error: null,
+        },
+        hotels: OK_HOTELS,
+      },
+      calls,
+    );
+    const result = await searchHotels(parseDiscoverQuery({ destination: "bali" }), client);
+    expect(result.total).toBe(0);
+    expect(calls).toContain("destinations");
+    expect(calls).toContain("hotels");
   });
 
   it("a search with no term skips the destination lookup entirely", async () => {

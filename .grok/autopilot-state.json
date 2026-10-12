@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. B07.1 is PR #51 on fix/b07-1-followups, awaiting independent audit. expected_head stays null because this file cannot name its own commit. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate. D01 audit of c7ccd52 failed; the correction is on PR #52 and awaits re-audit (schema state AUDITING). Do not merge. expected_head stays null because this commit cannot name itself. B07.1 (PR #51) is merged.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",
-  "last_recorded_main": "161e4c0d7694b3e12b3b496c1393037b2d0e57a5",
-  "active_block": "B07.1 commercial-meaning follow-ups (migration 0045, PR #51)",
-  "branch": "fix/b07-1-followups",
-  "pr": 51,
+  "last_recorded_main": "187af6a3d4b4b5f6db1ec6d1f77ca975e791f852",
+  "active_block": "D01 Trips (migration 0046, PR #52)",
+  "branch": "feat/d01-trips",
+  "pr": 52,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "161e4c0d7694b3e12b3b496c1393037b2d0e57a5",
+    "ref": "187af6a3d4b4b5f6db1ec6d1f77ca975e791f852",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "Independent audit of PR #51, then a human merge decision. Model-backed B07 inference and B08 stay gated."
+  "next_dependency": "Re-audit of D01 PR #52 on feat/d01-trips after the c7ccd52 FAIL (destination-move allowance, rebase onto 187af6a, creator_id fence, pipeline paging). Do not merge. After that merge, the next planned block is D02 Contact Hub. B07.1 is merged (PR #51). Model-backed B07 inference and B08 stay gated."
 }
