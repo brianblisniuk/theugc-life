@@ -292,7 +292,7 @@ is B02.
 | B04 | **DONE** — PR #36, merge `773556f38bfa17ac4b078efae51953024babab52` | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | **DONE** — PR #38, merge `c6cd180ea27a3901a365526a29371121f8cedc5c` | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
-| B07 | **SLICE 1 MERGED** — PR #50, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`, migration `0044` (D072/D075). **B07.1 follow-ups IN AUDIT** — PR #51, branch `fix/b07-1-followups`, migration `0045`: one-sided `agreement_observed` rejected from stored text; creator reads mark a drifted B06 fingerprint stale. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
+| B07 | **SLICE 1 MERGED** — PR #50, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`, migration `0044` (D072/D075). **B07.1 MERGED** — PR #51, merge `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`, migration `0045`: one-sided `agreement_observed` rejected from stored text; creator reads mark a drifted B06 fingerprint stale. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
 | B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
 **Base rounds:** 8  
@@ -355,7 +355,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| D01 | PLANNED | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
+| D01 | **AWAITING AUDIT** — PR #52, branch `feat/d01-trips`, migration `0046`. Not merged. | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
@@ -628,20 +628,23 @@ timing flake) and explicit human acceptance.
 **B06 (PR #38) is merged**, as merge commit
 `c6cd180ea27a3901a365526a29371121f8cedc5c` into `main`.
 
+**B07 slice 1 is merged**, as merge commit
+`161e4c0d7694b3e12b3b496c1393037b2d0e57a5` (PR #50). Rules engine only.
+Model-backed inference remains gated, so this is not the whole of B07.
+
+**B07.1 is merged**, as merge commit
+`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852` (PR #51). Migration
+`0045_gmail_commercial_meaning_followups.sql` does not edit `0044`. A
+one-sided accept cannot be stored as `agreement_observed` by setting a
+caller flag, and a creator read marks the machine interpretation stale when
+the bound B06 classification or chronology fingerprint has changed in place.
+
 The open implementation block is:
 
-> **B07 slice 1 is merged** as PR #50, merge commit
-> `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`. Migration
-> `0044_gmail_commercial_meaning.sql`. No external model and no provider
-> receives Gmail data. Model-backed inference remains gated, so this is
-> not B07 done.
->
-> **B07.1 follow-ups are open as PR #51** on `fix/b07-1-followups`, state
-> AUDITING. Migration `0045_gmail_commercial_meaning_followups.sql` does
-> not edit `0044`. A one-sided accept cannot be stored as
-> `agreement_observed` by setting a caller flag, and a creator read marks
-> the machine interpretation stale when the bound B06 classification or
-> chronology fingerprint has changed in place. Do not merge from automation.
+> **D01 — Trips: destination, dates, shortlist, and a summary derived from
+> pipeline items and collaborations linked by `trip_id`. Migration
+> `0046_trips_context.sql` (0045 is merged on main with B07.1). Open as
+> PR #52 on `feat/d01-trips`. Awaiting independent audit. Not merged.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

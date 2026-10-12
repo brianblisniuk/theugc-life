@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `161e4c0d7694b3e12b3b496c1393037b2d0e57a5` (merge of PR #50, 2026-10-12)
-**State:** AUDITING. PR #51, branch `fix/b07-1-followups`. This is the B07.1 follow-up to the non-blocking residuals on the PR #50 re-audit. The work order's awaiting-audit gate is the schema state `AUDITING`. `.grok/autopilot-state.json` does not name this commit as `expected_head`. Live GitHub is the head to verify. Do not merge.
-**Current frontier:** B07.1. Slice 1 (rules engine, migration `0044`) is merged. This PR adds migration `0045`: `agreement_observed` requires stored booking text, and creator reads mark a drifted B06 classification/chronology fingerprint stale. No external model runs, and no provider receives Gmail data. Model-backed inference remains gated. This is not the whole of B07.
+**Last verified main:** `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852` (merge of PR #51, 2026-10-12)  
+**State:** AUDITING. PR #52, branch `feat/d01-trips`. D01 Trips awaits an independent audit. This file uses `AUDITING` because that is the schema state; the block is not a merge candidate. `.grok/autopilot-state.json` does not name this commit as `expected_head`. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** D01 — trip destination/date/context, shortlist, and a summary derived from pipeline and collaborations linked by `trip_id`. Migration `0046_trips_context.sql`. B07.1 (PR #51, migration `0045`) is merged. No model calls. No new prices.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -27,11 +27,12 @@
 - PR #48 — Baseline reconciliation — `d71e92a189e566af09d2d53a592f19e1384bbc50`
 - PR #49 — Autonomous engineering system v1 — `0d176e42a7487c24c42f7d448f1fb3b3912535e3`
 - PR #50 — B07 slice 1 rules engine — `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`
+- PR #51 — B07.1 commercial-meaning follow-ups — `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`
 
 ## Next action
-- B07.1 is PR #51 (`fix/b07-1-followups`). State is AUDITING. Do not merge from automation.
-- Model-backed B07 inference and B08 stay gated.
-- BASE-N5 and BASE-N9 remain non-blocking and are outside this PR.
+- D01 is PR #52 (`feat/d01-trips`). State is AUDITING. Do not merge from automation.
+- B07.1 is merged (PR #51). Model-backed B07 inference and B08 stay gated.
+- Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
 - Owner interaction happens only via human-frontier labels.
 
