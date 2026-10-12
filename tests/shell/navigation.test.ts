@@ -188,6 +188,35 @@ describe("pipeline surfaces", () => {
     for (const link of [...saved, ...won, ...inbox, ...collaborations]) assertAppPath(link.href);
   });
 
+  it("gives a closed cycle no inbox link on the inbox or collaborations surface", () => {
+    for (const surface of ["all", "inbox", "collaborations"] as const) {
+      const links = pipelineRowLinks(
+        { status: "closed", hotelId: HOTEL, hotelName: "Casa" },
+        surface,
+      );
+      expect(links.some((link) => link.href.includes("#inbox") || link.label === "Inbox")).toBe(
+        false,
+      );
+    }
+
+    const onInbox = pipelineRowLinks({ status: "closed", hotelId: HOTEL }, "inbox");
+    expect(onInbox.map((link) => link.label)).toEqual(["Open"]);
+    expect(onInbox[0]?.href).toBe(`/app/hotels/${HOTEL}?from=inbox`);
+
+    const onCollaborations = pipelineRowLinks(
+      { status: "closed", hotelId: HOTEL },
+      "collaborations",
+    );
+    expect(onCollaborations.map((link) => link.href)).toEqual([
+      `/app/hotels/${HOTEL}?from=collaboration#collaboration`,
+    ]);
+
+    const openInbox = pipelineRowLinks({ status: "pitched", hotelId: HOTEL }, "inbox");
+    expect(openInbox[0]?.href).toBe(`/app/hotels/${HOTEL}?from=inbox#inbox`);
+    const wonCollaborations = pipelineRowLinks({ status: "won", hotelId: HOTEL }, "collaborations");
+    expect(wonCollaborations.some((link) => link.href.includes("#inbox"))).toBe(true);
+  });
+
   it("returns to the surface the creator came from", () => {
     expect(pipelineReturnHref({ kind: "discover" })).toBe("/app/pipeline");
     expect(pipelineReturnHref({ kind: "inbox" })).toBe("/app/pipeline?surface=inbox");

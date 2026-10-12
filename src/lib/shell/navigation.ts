@@ -261,15 +261,22 @@ export function pipelineRowLinks(
       : surface === "collaborations"
         ? { kind: "collaboration" }
         : { kind: "pipeline" };
+  // D081: a closed cycle has no inbox link on any surface, including when the
+  // row is already listed under ?surface=inbox.
+  const inboxLink = item.status !== "closed";
   const section: HotelSectionId | undefined =
-    surface === "inbox" ? "inbox" : surface === "collaborations" ? "collaboration" : undefined;
+    surface === "inbox" && inboxLink
+      ? "inbox"
+      : surface === "collaborations"
+        ? "collaboration"
+        : undefined;
   const primary = hotelHref(item.hotelId, origin, section);
   if (!primary) return [];
   const primaryLabel = surface === "all" ? "Manage" : "Open";
   const links: ShellLink[] = [
     { href: primary, label: primaryLabel, ariaLabel: `${primaryLabel} ${name}` },
   ];
-  if (surface !== "inbox" && item.status !== "closed") {
+  if (surface !== "inbox" && inboxLink) {
     const href = hotelHref(item.hotelId, { kind: "inbox" }, "inbox");
     if (href) links.push({ href, label: "Inbox", ariaLabel: `Inbox for ${name}` });
   }
