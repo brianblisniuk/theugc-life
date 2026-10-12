@@ -1,10 +1,10 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is eb136190f676e9201b6b39de4b570d51e52da73d (PR #53, B08). D06 is PR #58: migration 0049, D079 Accepted (Brian, 13 Oct 2026). 0050 is D07 and is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 023a354c8592411e1ac85c818324589993f358a6 (PR #57, MAP, D079). D06 is PR #58: migration 0049, D080 Accepted (Brian, 13 Oct 2026). 0050 is D07 and is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_CI",
-  "last_recorded_main": "eb136190f676e9201b6b39de4b570d51e52da73d",
-  "active_block": "D06 inbox pipeline unity (D079 Accepted, migration 0049)",
+  "last_recorded_main": "023a354c8592411e1ac85c818324589993f358a6",
+  "active_block": "D06 inbox pipeline unity (D080 Accepted, migration 0049)",
   "branch": "cursor/d06-inbox-pipeline-774f",
   "pr": 58,
   "expected_head": null,
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "eb136190f676e9201b6b39de4b570d51e52da73d",
+    "ref": "023a354c8592411e1ac85c818324589993f358a6",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "D079 is Accepted (Brian, 13 Oct 2026). Verify must be green on this PR head before a merge decision. D02 is the next planned product block. Pilot KPIs and model-backed B07 inference stay gated."
+  "next_dependency": "D080 is Accepted (Brian, 13 Oct 2026). D079 is Google Maps, merged as PR #57. Verify must be green on this PR head before a merge decision. D02 is the next planned product block. Pilot KPIs and model-backed B07 inference stay gated."
 }

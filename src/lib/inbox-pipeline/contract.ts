@@ -1,5 +1,5 @@
 /**
- * D06 / D079 — inbox and pipeline share one creator-owned status.
+ * D06 / D080 — inbox and pipeline share one creator-owned status.
  *
  * pipeline_status is the record. A Gmail commercial_state is a reading.
  * The two are never the same field.

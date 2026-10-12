@@ -293,7 +293,7 @@ is B02.
 | B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | **DONE** — PR #38, merge `c6cd180ea27a3901a365526a29371121f8cedc5c` | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
 | B07 | **SLICE 1 MERGED** — PR #50, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`, migration `0044` (D072/D075). **B07.1 MERGED** — PR #51, merge `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`, migration `0045`: one-sided `agreement_observed` rejected from stored text; creator reads mark a drifted B06 fingerprint stale. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
-| B08 | **INCREMENTAL SYNC IN REVIEW** — PR #53, D076, migration `0047`, branch `feat/b08-gmail-incremental-sync`. History polling and login trigger only. Pilot quality/data-density KPIs are still gated: D076 does not define them. | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
+| B08 | **DONE** — PR #53, merge `eb136190f676e9201b6b39de4b570d51e52da73d`, D076, migrations `0047` and `0048`. History polling and login trigger only. Pilot quality/data-density KPIs are still gated: D076 does not define them. | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
 **Base rounds:** 8  
 **Cumulative future rounds:** 12
@@ -365,7 +365,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
-| D06 | **IN PR #58** — migration `0049`, D079 Accepted (Brian, 13 Oct 2026). Not merged. Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
+| D06 | **IN PR #58** — migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Not merged. Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
@@ -400,7 +400,8 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| E01 | **DONE** — PR #55, merge `ab0507461b4b47b21112dd07589b4b8a88d3efb3`. Discover + Hotel Detail over published canonical hotels. Map provider is not decided; the surface keeps an empty slot and does not call a tile service. No migration. | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
+| E01 | **DONE** — PR #55, merge `ab0507461b4b47b21112dd07589b4b8a88d3efb3`. Discover + Hotel Detail over published canonical hotels. E01 left an empty map slot and did not call a tile service. No migration. The slot is filled by MAP (PR #57). | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
+| MAP | **DONE** — PR #57, merge `023a354c8592411e1ac85c818324589993f358a6`. Google Maps JavaScript API (D079) on Discover (the current filtered page) and Hotel Detail (one pin). Key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. A missing key renders no map and no error. No migration. | Fill the E01 map slot | Published hotels only; no private creator data is sent to Google |
 | E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | PLANNED | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
@@ -656,34 +657,31 @@ Accepted, and this block does not implement it.
 
 **E01 (PR #55) is merged**, as merge commit
 `ab0507461b4b47b21112dd07589b4b8a88d3efb3` into `main`. Discover and Hotel
-Detail over published canonical hotels. Map provider is not decided, so the
-surface keeps an empty slot and does not call a tile service. No migration.
+Detail over published canonical hotels. E01 left an empty map slot and did not
+call a tile service. No migration. MAP (PR #57, D079) fills that slot.
 
 **D07 (PR #56) is merged**, as merge commit
 `61d0e385894670bc55a78675e64526c353c288d5` into `main`. Migration
 `0050_collaboration_deliverables_compensation.sql`. D078 is Accepted.
 Compensation is strategic data used to value each piece of content. Records
-only: it is not a charge. E01 did not take `0049`. D06 (PR #58, not merged) uses `0049`. D079 is Accepted (Brian, 13 Oct 2026).
+only: it is not a charge. E01 did not take `0049`. D06 (PR #58, not merged) uses `0049`. D080 is Accepted (Brian, 13 Oct 2026). D079 is Google Maps (PR #57).
 
-> **B08 is merged** as PR #53, merge `eb136190f676e9201b6b39de4b570d51e52da73d`.
-> The paragraph below is the pre-merge record. Do not treat B08 as an open PR.
->
-> **B08 — continuous Gmail sync (D076). Migration
+> **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
+> `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
 > `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
 > and on creator login, same D068 inclusion rule, no Pub/Sub and no new
-> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. The snapshot
-> commit and `window_end_at` are the same clock. The bounded re-scan's
-> `messages.list` omits `before:`, and the message ids it returns are the
-> snapshot sent ids, so a sent message inside the snapshot is stored even
-> when it has no numeric `historyId` and its date is after `window_end_at`.
-> `history_id` does not advance past a non-draft sent snapshot message this
-> run did not store, except a message dated before the forward window: that
-> exclusion is intentional and the cursor still advances. Awaiting re-audit.
-> `0046` is D01 on `main`. This PR keeps `0047` and adds `0048` so the
-> commercial classifier decodes `&nbsp;`, `&amp;`, `&lt;`, and `&gt;` without
-> regard to case. `0045` is not edited. `0048` is not D078. D07 (D078,
-> migration `0050`) is merged as PR #56. This PR does not edit `0050`. Pilot
-> KPIs are not in D076 and are not in this PR. Do not merge from automation.**
+> scope. The snapshot commit and `window_end_at` are the same clock. The
+> bounded re-scan's `messages.list` omits `before:`, and the message ids it
+> returns are the snapshot sent ids, so a sent message inside the snapshot is
+> stored even when it has no numeric `historyId` and its date is after
+> `window_end_at`. `history_id` does not advance past a non-draft sent
+> snapshot message this run did not store, except a message dated before the
+> forward window: that exclusion is intentional and the cursor still advances.
+> `0046` is D01 on `main`. B08 keeps `0047` and adds `0048` so the commercial
+> classifier decodes `&nbsp;`, `&amp;`, `&lt;`, and `&gt;` without regard to
+> case. `0045` is not edited. `0048` is not D078. D07 (D078, migration `0050`)
+> is merged as PR #56. B08 does not edit `0050`. Pilot KPIs are not in D076.
+> B08 does not take `0049`. D06 (PR #58) uses it.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

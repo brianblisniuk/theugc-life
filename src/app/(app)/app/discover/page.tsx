@@ -6,8 +6,8 @@
  * intelligence is rendered only when the public projection disclosed it.
  * The viewer's pipeline and trip badges come from their own rows.
  *
- * The map slot is empty: no map provider is decided, and coordinates are not
- * sent to one.
+ * The map shows the hotels on this filtered page (D079). A missing Maps key
+ * leaves the slot empty, with no error. Pins are public locations only.
  */
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -16,7 +16,7 @@ import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { EmptyState } from "@/components/empty-state";
 import { DiscoverFilters } from "@/components/hotels/discover-filters";
 import { HotelCard } from "@/components/hotels/hotel-card";
-import { MapSlot } from "@/components/hotels/map-slot";
+import { HotelMap } from "@/components/hotels/hotel-map";
 import { resolveSession } from "@/lib/auth/guards";
 import {
   buildDiscoverHref,
@@ -76,7 +76,7 @@ export default async function DiscoverPage({
       : { status: "unknown" as const };
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
       <div className="space-y-6">
         <AnalyticsPageView event="discover_viewed" />
 
@@ -183,7 +183,7 @@ export default async function DiscoverPage({
           />
         )}
       </div>
-      <MapSlot />
+      {result && result.pins.length > 0 ? <HotelMap pins={result.pins} /> : null}
     </div>
   );
 }

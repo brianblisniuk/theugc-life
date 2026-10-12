@@ -71,7 +71,7 @@ const CONTRACT: Record<string, Expected> = {
   collaboration_agreed_compensations: { anon: "", authenticated: "S", serviceRole: "all" },
   collaboration_compensation_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
   collaboration_deliverables: { anon: "", authenticated: "S", serviceRole: "all" },
-  // D06 (0049, D079). The creator link and its Gmail suggestions are private.
+  // D06 (0049, D080). The creator link and its Gmail suggestions are private.
   // The browser can read its own rows; writes go through service-role RPCs.
   pipeline_inbox_bindings: { anon: "", authenticated: "S", serviceRole: "all" },
   pipeline_inbox_readings: { anon: "", authenticated: "S", serviceRole: "all" },

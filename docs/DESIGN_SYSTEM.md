@@ -129,9 +129,9 @@ Implement semantic design tokens so visual branding can change centrally:
 ### 9.1 Accent — Sun `#FFE01B` (D048)
 
 `--accent` is **Sun `#FFE01B`**, set in `src/app/globals.css` with ink as the
-contrast color. E01 applies it on Discover and Hotel Detail. The map provider
-is still undecided: those surfaces leave a placeholder slot and do not call a
-tile service.
+contrast color. E01 applies it on Discover and Hotel Detail. The map uses the
+Google Maps JavaScript API (D079). A missing public key leaves no map and no
+error, and does not call a tile service.
 
 **The accent is a brand / selection / action color and must never carry semantic
 status meaning.** `--success`, `--warning` and `--danger` remain an independent

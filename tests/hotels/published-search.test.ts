@@ -108,6 +108,14 @@ describe("searchHotels publication filter", () => {
     expect(result.hotels.map((hotel) => hotel.name)).toEqual(["Kept Hotel"]);
     expect(result.hotels[0]).not.toHaveProperty("latitude");
     expect(result.hotels[0]).not.toHaveProperty("longitude");
+    expect(result.pins).toEqual([
+      {
+        id: published.id,
+        name: "Kept Hotel",
+        latitude: 25.2,
+        longitude: 55.2,
+      },
+    ]);
     expect(JSON.stringify(result.hotels)).not.toContain("Closed Hotel");
     expect(JSON.stringify(result.hotels)).not.toContain("Unlocated Hotel");
   });

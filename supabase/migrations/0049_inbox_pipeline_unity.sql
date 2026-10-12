@@ -1,4 +1,4 @@
--- 0049 — D06 inbox and pipeline stay one creator-owned record (D079, Accepted, Brian, 13 Oct 2026).
+-- 0049 — D06 inbox and pipeline stay one creator-owned record (D080, Accepted, Brian, 13 Oct 2026).
 --
 -- Migration number: 0049. 0050 is D07 on main and is not edited.
 -- 0047 and 0048 are B08, merged. This file is additive.
@@ -30,7 +30,7 @@ create table public.pipeline_inbox_bindings (
 );
 
 comment on table public.pipeline_inbox_bindings is
-  'D079 creator link between one pipeline cycle and one stored Gmail thread. Not inferred from a hotel name or a recipient. Deleting the link does not change pipeline status.';
+  'D080 creator link between one pipeline cycle and one stored Gmail thread. Not inferred from a hotel name or a recipient. Deleting the link does not change pipeline status.';
 
 create index pipeline_inbox_bindings_creator_idx
   on public.pipeline_inbox_bindings (creator_id);
@@ -75,7 +75,7 @@ create table public.pipeline_inbox_readings (
 );
 
 comment on table public.pipeline_inbox_readings is
-  'D079 copy of the current B07 advisory label for a linked thread. A suggestion source, not CRM state. No message body is stored here.';
+  'D080 copy of the current B07 advisory label for a linked thread. A suggestion source, not CRM state. No message body is stored here.';
 
 comment on column public.pipeline_inbox_readings.has_human_reply is
   'True when a current non-stale message is an effective human reply under B07 section 15. A creator reply-nature of automated, delivery, or not_reply suppresses it.';
@@ -135,7 +135,7 @@ create table public.pipeline_inbox_suggestions (
 );
 
 comment on table public.pipeline_inbox_suggestions is
-  'D079 machine proposals for one linked thread. Pending is visible. Accepted mark_replied or open_negotiation is the creator choosing an existing CRM transition. Review acceptance records that the creator saw the reading and writes no CRM row.';
+  'D080 machine proposals for one linked thread. Pending is visible. Accepted mark_replied or open_negotiation is the creator choosing an existing CRM transition. Review acceptance records that the creator saw the reading and writes no CRM row.';
 
 create index pipeline_inbox_suggestions_creator_idx
   on public.pipeline_inbox_suggestions (creator_id, status);
@@ -1411,7 +1411,7 @@ end;
 $$;
 
 comment on function public.read_pipeline_inbox_unity(uuid) is
-  'D079 read model. pipeline_status is the creator record. unity is unlinked, suggestion_pending, or creator_authoritative. The machine commercial_state is never returned as the pipeline status. Runs as the caller so RLS applies. search_path is pinned empty.';
+  'D080 read model. pipeline_status is the creator record. unity is unlinked, suggestion_pending, or creator_authoritative. The machine commercial_state is never returned as the pipeline status. Runs as the caller so RLS applies. search_path is pinned empty.';
 
 revoke all on function public.read_pipeline_inbox_unity(uuid) from public, anon;
 grant execute on function public.read_pipeline_inbox_unity(uuid)
