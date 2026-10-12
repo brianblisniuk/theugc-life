@@ -115,7 +115,7 @@ browser may write them. The CRM tables are **read-only to the browser**:
 
 | Table | Browser (`authenticated`) | How mutations happen |
 |---|---|---|
-| `trips`, `trip_hotels` | select, insert, update, delete (own rows) | direct, under RLS |
+| `trips`, `trip_hotels` | **select only** | trusted RPC (`create_trip`, `update_trip`, `delete_trip`, `add_trip_hotel`, `remove_trip_hotel`) |
 | `portfolio_assets` | select, insert, update, delete (own rows) | direct, under RLS |
 | `creator_profiles` | select, insert, update (own row) | direct, under RLS |
 | `pipeline_items` | **select only** | trusted RPC |
@@ -131,6 +131,12 @@ change on those three tables goes through a service-role-only RPC
 re-derives ownership from the session user, validates the transition, enforces
 the Free limits and appends the event ledger entry. A direct client write would
 bypass all of it, which is why the privilege does not exist.
+
+Client writes on `trips` and `trip_hotels` were revoked in migration 0046 for
+the same reason: the Free active-trip allowance and the canonical-hotel
+shortlist check live in the RPCs. `link_pipeline_item_to_trip` is the only
+writer of `pipeline_items.trip_id`. A trigger rejects a trip owned by a
+different creator even if that RPC is bypassed. RLS remains the read boundary.
 
 The RLS policies on those tables are retained as defence in depth, not as the
 mechanism: both layers must hold independently (D046).

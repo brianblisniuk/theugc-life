@@ -10,8 +10,10 @@ import {
   DISCOVER_MAX_PAGE_SIZE,
   DISCOVER_PAGE_SIZE,
   buildDiscoverHref,
+  destinationSelfAndDescendants,
   hasActiveFilters,
   hotelTypeLabel,
+  parseDestinationSlug,
   parseDiscoverQuery,
   sanitizeSearchTerm,
   verificationLabel,
@@ -25,6 +27,7 @@ describe("parseDiscoverQuery", () => {
       type: null,
       minStars: null,
       verification: null,
+      destination: null,
       page: 1,
       pageSize: DISCOVER_PAGE_SIZE,
     });
@@ -93,6 +96,29 @@ describe("sanitizeSearchTerm", () => {
     expect(sanitizeSearchTerm(null)).toBeNull();
     expect(sanitizeSearchTerm(undefined)).toBeNull();
     expect(sanitizeSearchTerm(",,,")).toBeNull();
+  });
+});
+
+describe("destination filter", () => {
+  it("keeps a canonical slug and drops anything else", () => {
+    expect(parseDestinationSlug("bali")).toBe("bali");
+    expect(parseDestinationSlug("Seminyak-Beach")).toBe("seminyak-beach");
+    expect(parseDiscoverQuery({ destination: "bali" }).destination).toBe("bali");
+    expect(parseDestinationSlug("bali/../x")).toBeNull();
+    expect(parseDestinationSlug("a b")).toBeNull();
+    expect(parseDestinationSlug("%")).toBeNull();
+    expect(parseDiscoverQuery({ destination: "not a slug" }).destination).toBeNull();
+  });
+
+  it("includes the destination and its descendants, not its parent or siblings", () => {
+    const nodes = [
+      { id: "island", slug: "bali", parentId: null },
+      { id: "area", slug: "seminyak", parentId: "island" },
+      { id: "other", slug: "dubai", parentId: null },
+    ];
+    expect(destinationSelfAndDescendants(nodes, "island").sort()).toEqual(["area", "island"]);
+    expect(hasActiveFilters(parseDiscoverQuery({ destination: "bali" }))).toBe(true);
+    expect(buildDiscoverHref({ destination: "bali" })).toBe("/app/discover?destination=bali");
   });
 });
 

@@ -125,7 +125,9 @@ d("creator ownership isolation (PERMISSIONS.md §5, §13.7–§13.9)", () => {
       "update public.trips set name = 'hacked' where id = $1 returning id",
       [TRIP.pro],
     );
-    // RLS filters the row out: zero rows updated, no error.
+    // 0046 revoked client writes. The row is unchanged either way.
+    expect(res.error).not.toBeNull();
+    expect(res.error!.message).toMatch(/permission denied/i);
     expect(res.rows).toHaveLength(0);
     // Confirm the row is unchanged.
     const check = await adminQuery<{ name: string | null }>(
