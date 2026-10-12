@@ -1,0 +1,27 @@
+# Grok Build / agent configuration for TheUGC.life
+# Permissions are intentionally restrictive for main and destructive actions.
+
+[permissions]
+# Automatic
+allow_git_fetch = true
+allow_git_checkout = true
+allow_git_worktree = true
+allow_npm = true
+allow_tests = true
+allow_docker = true
+allow_commit = true
+allow_push_feature_branch = true
+allow_pr_create_update = true
+
+# Require approval (hooks or orchestrator must block)
+deny_push_main = true
+deny_force_push = true
+deny_pr_merge = true
+deny_destructive_commands = true
+deny_production_db = true
+deny_external_send = true
+deny_billing_charge_refund = true
+deny_secret_deletion = true
+
+[memory]
+experimental = true
