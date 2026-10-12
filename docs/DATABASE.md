@@ -2633,7 +2633,7 @@ deliverables beside the collaboration. It does not write
 total across quantity by largest remainder and labels the share derived.
 Unknown stays JSON null.
 
-D079 (migration `0049`, Proposed) links one pipeline cycle to one stored
+D079 (migration `0049`, Accepted — Brian, 13 Oct 2026) links one pipeline cycle to one stored
 Gmail thread the creator names.
 
 - `pipeline_inbox_bindings` — the current link. One item, one thread.
@@ -2860,7 +2860,7 @@ At minimum:
     Does not write `collaborations.private_value_*`, outreach events, or
     public intelligence. B08 (PR #53, migrations `0047` and `0048`) is merged
     at `eb136190f676e9201b6b39de4b570d51e52da73d`.
-28. Inbox and pipeline unity (0049, D079 Proposed) — a creator-named link
+28. Inbox and pipeline unity (0049, D079 Accepted — Brian, 13 Oct 2026) — a creator-named link
     from one pipeline cycle to one stored Gmail thread, plus suggestion rows.
     Refresh does not write `pipeline_items`, `outreach_events`, or
     `collaborations`. A redirect is not a decline suggestion. `0050` is not

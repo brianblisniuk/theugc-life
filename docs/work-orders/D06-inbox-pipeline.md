@@ -1,9 +1,9 @@
 # D06 — Inbox and pipeline stay one record
 
-**Status:** Binding work order for PR #58. D079 is Proposed. Do not merge.  
+**Status:** Binding work order for PR #58. D079 is Accepted (Brian, 13 Oct 2026). Do not merge.  
 **Base:** `main` `eb136190f676e9201b6b39de4b570d51e52da73d` (merge of PR #53, B08).  
 **Branch:** `cursor/d06-inbox-pipeline-774f`  
-**Decision:** D079, Proposed — safest minimal reading.  
+**Decision:** D079, Accepted (Brian, 13 Oct 2026). The reading is unchanged from the proposal.  
 **Migration:** `0049_inbox_pipeline_unity.sql`
 
 `0050` is D07 and is not edited. `0047` and `0048` are B08 and are not edited.
@@ -16,7 +16,7 @@ How does a stored Gmail thread and a pipeline cycle stay one relationship, so a 
 
 ## Sources
 
-D068 inclusion, D072 (machine interpretation is not human truth; a redirect is not a rejection; B07 writes no CRM row), D076 (B08 runs the existing local pipeline after new mail), D043 and D045 (close and won stay creator transitions). D078 does not invent an automatic thread-to-pipeline link. This work order does not add a product semantic beyond the proposed reading in D079.
+D068 inclusion, D072 (machine interpretation is not human truth; a redirect is not a rejection; B07 writes no CRM row), D076 (B08 runs the existing local pipeline after new mail), D043 and D045 (close and won stay creator transitions). D078 does not invent an automatic thread-to-pipeline link. This work order does not add a product semantic beyond the accepted reading in D079.
 
 ## Locked reading used by this implementation
 

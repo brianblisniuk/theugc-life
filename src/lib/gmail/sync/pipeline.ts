@@ -61,19 +61,39 @@ export async function runStoredGmailPipeline(
       break;
     }
     for (const thread of fresh) {
-      seen.add(thread.normalized_thread_id!);
-      await interpretCommercialThread(deps, {
-        userId: input.userId,
-        mailAccountId: input.mailAccountId,
-        normalizedThreadId: thread.normalized_thread_id!,
-      });
-      const refreshed = await db.rpc("refresh_pipeline_inbox_suggestions", {
-        p_user_id: input.userId,
-        p_mail_account_id: input.mailAccountId,
-        p_normalized_thread_id: thread.normalized_thread_id!,
-      });
-      if (refreshed.error) {
-        throw new Error(`refresh_pipeline_inbox_suggestions failed: ${refreshed.error.message}`);
+      const normalizedThreadId = thread.normalized_thread_id!;
+      seen.add(normalizedThreadId);
+      // One thread's failure must not stop the rest of this mailbox.
+      try {
+        await interpretCommercialThread(deps, {
+          userId: input.userId,
+          mailAccountId: input.mailAccountId,
+          normalizedThreadId,
+        });
+      } catch {
+        console.error("[gmail] stored commercial interpretation failed for one thread", {
+          mailAccountId: input.mailAccountId,
+          normalizedThreadId,
+        });
+        continue;
+      }
+      try {
+        const refreshed = await db.rpc("refresh_pipeline_inbox_suggestions", {
+          p_user_id: input.userId,
+          p_mail_account_id: input.mailAccountId,
+          p_normalized_thread_id: normalizedThreadId,
+        });
+        if (refreshed.error) {
+          console.error("[gmail] inbox suggestion refresh failed for one thread", {
+            mailAccountId: input.mailAccountId,
+            normalizedThreadId,
+          });
+        }
+      } catch {
+        console.error("[gmail] inbox suggestion refresh failed for one thread", {
+          mailAccountId: input.mailAccountId,
+          normalizedThreadId,
+        });
       }
     }
     commercialOpen = fresh.length >= 25;

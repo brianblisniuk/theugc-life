@@ -1,4 +1,4 @@
--- 0049 — D06 inbox and pipeline stay one creator-owned record (D079, Proposed).
+-- 0049 — D06 inbox and pipeline stay one creator-owned record (D079, Accepted, Brian, 13 Oct 2026).
 --
 -- Migration number: 0049. 0050 is D07 on main and is not edited.
 -- 0047 and 0048 are B08, merged. This file is additive.
@@ -344,12 +344,17 @@ begin
     end if;
   end if;
 
-  if new.kind = 'review_decline' and not exists (
-    select 1
-      from public.pipeline_inbox_readings r
-     where r.binding_id = new.binding_id
-       and r.decline_supported
-  ) then
+  -- A superseded decline is a retirement, not a live suggestion. Refresh
+  -- clears decline_supported before it marks the old pending row superseded.
+  -- Any other status still requires a rejection that is not a redirect.
+  if new.kind = 'review_decline'
+     and new.status is distinct from 'superseded'
+     and not exists (
+       select 1
+         from public.pipeline_inbox_readings r
+        where r.binding_id = new.binding_id
+          and r.decline_supported
+     ) then
     raise exception 'a decline suggestion requires a rejection that is not a redirect'
       using errcode = '23514';
   end if;

@@ -3249,12 +3249,11 @@ returned for a missing id and for someone else's id.
 
 ## D079 — A linked Gmail thread and a pipeline cycle share one creator-owned status (D06)
 
-Status: **Proposed** — safest minimal reading, implemented so the block can
-proceed. This is not owner acceptance. D072, D076, and D078 are unchanged.
+Status: **Accepted** — Brian, 13 Oct 2026. The reading below is unchanged
+from the proposal. D072, D076, and D078 are unchanged.
 
-Numbering: D078 is the last accepted decision. D079 is the next free number.
-Migration `0049_inbox_pipeline_unity.sql`. `0050` is D07 on main and is not
-edited.
+Numbering: D079 follows D078. Migration `0049_inbox_pipeline_unity.sql`.
+`0050` is D07 on main and is not edited.
 
 Depends on D043, D045, D068, D072, and D076. B06 chronology, B07 commercial
 meaning, and B08 incremental sync stay the producers of inbox state. This

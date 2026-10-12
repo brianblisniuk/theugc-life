@@ -365,7 +365,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
-| D06 | **DONE** — PR #58, migration `0049`, D079 Proposed. Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
+| D06 | **IN PR #58** — migration `0049`, D079 Accepted (Brian, 13 Oct 2026). Not merged. Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
@@ -663,7 +663,7 @@ surface keeps an empty slot and does not call a tile service. No migration.
 `61d0e385894670bc55a78675e64526c353c288d5` into `main`. Migration
 `0050_collaboration_deliverables_compensation.sql`. D078 is Accepted.
 Compensation is strategic data used to value each piece of content. Records
-only: it is not a charge. E01 did not take `0049`; that number is still unused.
+only: it is not a charge. E01 did not take `0049`. D06 (PR #58, not merged) uses `0049`. D079 is Accepted (Brian, 13 Oct 2026).
 
 > **B08 is merged** as PR #53, merge `eb136190f676e9201b6b39de4b570d51e52da73d`.
 > The paragraph below is the pre-merge record. Do not treat B08 as an open PR.

@@ -4,11 +4,15 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { interpretOneThread } from "@/lib/gmail/commercial/service";
+import { interpretOneThread as interpretReplyChronology } from "@/lib/gmail/reply/service";
 import { runStoredGmailPipeline } from "@/lib/gmail/sync/pipeline";
 import { adminQuery, hasTestDb, queryAs, setupDatabase } from "../db/harness";
 import { commercialDeps, interpretedThread } from "../gmail-commercial/harness";
 import { createTestUser } from "../gmail/rpc-harness";
 import { rpc } from "../gmail-import/harness";
+import { insertMessage, randomProviderId, replyDeps } from "../gmail-reply/harness";
+
+const HOUR = 3_600_000;
 
 const d = describe.skipIf(!hasTestDb);
 
@@ -96,6 +100,62 @@ async function prepare(label: string, body: string) {
   expect(interpreted.result).toBe("ok");
   const itemId = await pitchedItem(fixture.userId, new Date(fixture.t0));
   return { ...fixture, itemId };
+}
+
+async function readingOf(itemId: string) {
+  const res = await client.query<{
+    commercial_state: string | null;
+    has_redirect: boolean;
+    decline_supported: boolean;
+    stale: boolean;
+  }>(
+    `select commercial_state, has_redirect, decline_supported, stale
+       from public.pipeline_inbox_readings
+      where pipeline_item_id = $1`,
+    [itemId],
+  );
+  return res.rows[0]!;
+}
+
+async function laterReading(
+  fixture: {
+    userId: string;
+    mailAccountId: string;
+    providerThreadId: string;
+    normalizedThreadId: string;
+    t0: number;
+  },
+  body: string,
+  hoursAfterPitch: number,
+) {
+  await insertMessage(client, {
+    userId: fixture.userId,
+    mailAccountId: fixture.mailAccountId,
+    providerMessageId: randomProviderId("later"),
+    providerThreadId: fixture.providerThreadId,
+    internalDateMs: fixture.t0 + hoursAfterPitch * HOUR,
+    sent: false,
+    from: "manager@hotel.example",
+    subject: "Re: Collaboration idea",
+    bodyText: body,
+  });
+  const reply = await interpretReplyChronology(replyDeps(client), {
+    userId: fixture.userId,
+    mailAccountId: fixture.mailAccountId,
+    normalizedThreadId: fixture.normalizedThreadId,
+  });
+  expect(reply.result).toBe("ok");
+  const interpreted = await interpretOneThread(commercialDeps(client), {
+    userId: fixture.userId,
+    mailAccountId: fixture.mailAccountId,
+    normalizedThreadId: fixture.normalizedThreadId,
+  });
+  expect(interpreted.result).toBe("ok");
+  const refreshed = await client.query(
+    `select public.refresh_pipeline_inbox_suggestions($1, $2, $3) as res`,
+    [fixture.userId, fixture.mailAccountId, fixture.normalizedThreadId],
+  );
+  return refreshed.rows[0]!.res as { result: string };
 }
 
 async function bind(userId: string, itemId: string, mailAccountId: string, threadId: string) {
@@ -291,6 +351,112 @@ d("D06 inbox and pipeline stay one record", () => {
     expect(refreshed.rows[0]!.res.result).toBe("refreshed");
     expect((await kinds(fixture.itemId)).map((row) => row.kind)).not.toContain("review_decline");
     expect((await counts(fixture.itemId)).status).toBe("pitched");
+  });
+
+  it("retires a pending decline when a later message is a redirect, and a third rejection does not restore it", async () => {
+    const fixture = await prepare("d06-retire-decline", "Unfortunately we must decline");
+    const before = await counts(fixture.itemId);
+    await bind(fixture.userId, fixture.itemId, fixture.mailAccountId, fixture.providerThreadId);
+    expect((await kinds(fixture.itemId)).find((row) => row.kind === "review_decline")?.status).toBe(
+      "pending",
+    );
+
+    const redirected = await laterReading(fixture, "Please contact our PR agency instead", 8);
+    expect(redirected.result).toBe("refreshed");
+    const afterRedirect = await kinds(fixture.itemId);
+    expect(afterRedirect.find((row) => row.kind === "review_decline")?.status).toBe("superseded");
+    expect(afterRedirect.filter((row) => row.status === "pending").map((row) => row.kind)).not.toContain(
+      "review_decline",
+    );
+    const redirectReading = await readingOf(fixture.itemId);
+    expect(redirectReading.has_redirect).toBe(true);
+    expect(redirectReading.decline_supported).toBe(false);
+    expect(await counts(fixture.itemId)).toEqual(before);
+
+    const rejectedAgain = await laterReading(fixture, "Unfortunately we must decline", 12);
+    expect(rejectedAgain.result).toBe("refreshed");
+    const afterThird = await kinds(fixture.itemId);
+    expect(afterThird.filter((row) => row.kind === "review_decline").every((row) => row.status === "superseded")).toBe(
+      true,
+    );
+    expect(afterThird.filter((row) => row.status === "pending").map((row) => row.kind)).not.toContain(
+      "review_decline",
+    );
+    expect((await readingOf(fixture.itemId)).decline_supported).toBe(false);
+    expect(await counts(fixture.itemId)).toEqual(before);
+
+    await client.query("begin");
+    try {
+      await client.query("select set_config('inbox_pipeline.writer', 'refresh', true)");
+      await expect(
+        client.query(
+          `update public.pipeline_inbox_suggestions
+              set status = 'pending'
+            where pipeline_item_id = $1 and kind = 'review_decline'`,
+          [fixture.itemId],
+        ),
+      ).rejects.toMatchObject({ code: "23514" });
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("retires an agreement suggestion when a later rejection makes the reading ambiguous", async () => {
+    const fixture = await prepare("d06-agree-then-reject", "Your stay is confirmed for October.");
+    const before = await counts(fixture.itemId);
+    await bind(fixture.userId, fixture.itemId, fixture.mailAccountId, fixture.providerThreadId);
+    expect((await kinds(fixture.itemId)).find((row) => row.kind === "review_agreement")?.status).toBe(
+      "pending",
+    );
+
+    const rejected = await laterReading(fixture, "Unfortunately we must decline", 8);
+    expect(rejected.result).toBe("refreshed");
+    const afterRejection = await kinds(fixture.itemId);
+    expect(afterRejection.find((row) => row.kind === "review_agreement")?.status).toBe("superseded");
+    expect(afterRejection.map((row) => row.kind)).not.toContain("review_decline");
+    expect((await readingOf(fixture.itemId)).commercial_state).toBe("ambiguous");
+    expect(await counts(fixture.itemId)).toEqual(before);
+
+    const redirected = await laterReading(fixture, "Please contact our PR agency instead", 12);
+    expect(redirected.result).toBe("refreshed");
+    const afterRedirect = await kinds(fixture.itemId);
+    expect(afterRedirect.find((row) => row.kind === "review_agreement")?.status).toBe("superseded");
+    expect(afterRedirect.filter((row) => row.status === "pending").map((row) => row.kind)).not.toContain(
+      "review_decline",
+    );
+    expect((await readingOf(fixture.itemId)).decline_supported).toBe(false);
+    expect(await counts(fixture.itemId)).toEqual(before);
+  });
+
+  it("retires a pending decline when a later booking confirmation replaces it", async () => {
+    const fixture = await prepare("d06-decline-then-agree", "Unfortunately we must decline");
+    const before = await counts(fixture.itemId);
+    await bind(fixture.userId, fixture.itemId, fixture.mailAccountId, fixture.providerThreadId);
+    expect((await kinds(fixture.itemId)).find((row) => row.kind === "review_decline")?.status).toBe(
+      "pending",
+    );
+
+    const agreed = await laterReading(fixture, "Your stay is confirmed for October.", 8);
+    expect(agreed.result).toBe("refreshed");
+    const afterAgreement = await kinds(fixture.itemId);
+    expect(afterAgreement.find((row) => row.kind === "review_decline")?.status).toBe("superseded");
+    expect(afterAgreement.find((row) => row.kind === "review_agreement")?.status).toBe("pending");
+    expect((await readingOf(fixture.itemId)).decline_supported).toBe(false);
+    expect(await counts(fixture.itemId)).toEqual(before);
+
+    const cancelled = await laterReading(fixture, "Unfortunately we must decline", 12);
+    expect(cancelled.result).toBe("refreshed");
+    const afterCancel = await kinds(fixture.itemId);
+    const pendingKinds = afterCancel.filter((row) => row.status === "pending").map((row) => row.kind);
+    expect(afterCancel.find((row) => row.kind === "review_decline")?.status).toBe("superseded");
+    expect(afterCancel.some((row) => row.kind === "review_agreement" && row.status === "superseded")).toBe(
+      true,
+    );
+    expect(pendingKinds).not.toContain("review_decline");
+    expect(pendingKinds).not.toContain("review_agreement");
+    expect((await readingOf(fixture.itemId)).commercial_state).toBe("ambiguous");
+    expect((await readingOf(fixture.itemId)).decline_supported).toBe(false);
+    expect(await counts(fixture.itemId)).toEqual(before);
   });
 
   it("keeps creator status when it already covers the suggestion", async () => {
