@@ -3,6 +3,7 @@
 **Status:** Binding work order. One PR. Do not merge.  
 **Base:** `main` `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60).  
 **Branch:** `cursor/e04-entitlement-inventory-3a73`  
+**PR:** #62  
 **Migration:** none. `0051` is not taken.  
 **Decisions:** D083–D085 are not used. No written tier was missing in a way this block had to close. Undecided features are questions, not proposed tiers.
 

@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60, E03, D082 Proposed, 2026-10-12)  
-**State:** AWAITING_AUDIT. E04 Pass/Pro entitlement inventory, branch `cursor/e04-entitlement-inventory-3a73`. No migration. `0051` is not taken. D083–D085 are not used. Undecided features are questions for Brian. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_AUDIT. E04 Pass/Pro entitlement inventory, PR #62, branch `cursor/e04-entitlement-inventory-3a73`. No migration. `0051` is not taken. D083–D085 are not used. Undecided features are questions for Brian. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** E04. One canonical inventory maps existing modules, routes, and server actions to written Free / Pass / Pro rules. No contradictory gate was found. D082 stays Proposed. D077 stays Proposed.
 
 ## Main history note (not rewritten)
@@ -39,7 +39,7 @@
 - PR #60 — E03 onboarding and empty/error states, D082 Proposed, no migration — `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`
 
 ## Next action
-- E04 entitlement inventory is branch `cursor/e04-entitlement-inventory-3a73`. No migration. State is AWAITING_AUDIT. Do not merge from automation.
+- E04 entitlement inventory is PR #62 (`cursor/e04-entitlement-inventory-3a73`, no migration). State is AWAITING_AUDIT. Do not merge from automation.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that checklist.
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). This PR does not change that shell.
 - MAP is merged (PR #57, `023a354`, D079). Discover and Hotel Detail keep the Google map. This PR does not remove it.

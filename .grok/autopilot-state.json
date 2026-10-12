@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). E04 is the entitlement inventory on cursor/e04-entitlement-inventory-3a73. No migration. 0051 is not taken. D083-D085 are not used. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). E04 is PR #62 on cursor/e04-entitlement-inventory-3a73. No migration. 0051 is not taken. D083-D085 are not used. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "fc2dfbd32bf1063dec17d4db16ad84b6311f400c",
   "active_block": "E04 Pass/Pro entitlement inventory (no migration)",
   "branch": "cursor/e04-entitlement-inventory-3a73",
-  "pr": null,
+  "pr": 62,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
