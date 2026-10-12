@@ -1,36 +1,32 @@
 # AGENTS.md
 
-This repository uses a binding working method.
+This repository is operated by the **THEUGC autonomous engineering system**.
 
-**Before any implementation, audit, refactor, migration, or product-logic change, read:**
+**Before any work, read in order:**
 
-1. [`docs/WORKING_METHOD.md`](docs/WORKING_METHOD.md)
-2. [`docs/DECISIONS.md`](docs/DECISIONS.md)
-3. the relevant domain contract/spec
-4. [`docs/PRD.md`](docs/PRD.md)
-5. [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) and tracker when sequencing matters
+1. [`docs/AUTONOMOUS_ENGINEERING_SYSTEM.md`](docs/AUTONOMOUS_ENGINEERING_SYSTEM.md) — persistent bots, PLAY contract, human frontiers, autopilot loop.
+2. [`docs/WORKING_METHOD.md`](docs/WORKING_METHOD.md) — binding process (contract → implement → hostile audit → same-PR correction → exact-head CI → human merge).
+3. [`docs/DECISIONS.md`](docs/DECISIONS.md) — closed product and architecture decisions.
+4. The current block contract / spec.
+5. [`docs/PRD.md`](docs/PRD.md), [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md), [`docs/MASTER_PLAN_TRACKER.md`](docs/MASTER_PLAN_TRACKER.md).
+6. [`docs/AUTOPILOT_STATE.md`](docs/AUTOPILOT_STATE.md) — current frontier and last verified main.
 
-Core protocol:
+**PLAY contract (owner sends exactly `PLAY`):**
+THEUGC ORCHESTRATOR invokes AUTOPILOT. Do not ask what to do. Derive the next dependency-valid block from live GitHub + decisions + tracker. Execute until a genuine human frontier.
 
-```text
-explicit contract
-→ scoped implementation
-→ tests / replay / security gates
-→ independent audit of the REAL GitHub head
-→ corrections in the SAME PR
-→ re-audit
-→ human merge gate
-```
+**Human frontiers only (notify owner with these labels):**
+- PRODUCT DECISION REQUIRED
+- CREDENTIAL REQUIRED
+- EXTERNAL ACTION APPROVAL REQUIRED
+- MERGE DECISION REQUIRED
+- TECHNICALLY BLOCKED
+- AUTOPILOT FRONTIER COMPLETE
 
-Non-negotiable operating rules:
+**Permanent invariant:** authentication ≠ authorization. Every private multi-user resource must prove User A cannot read, enumerate, modify, delete or infer User B’s resources by ID, API, Server Action, RPC or relation. Prefer PostgreSQL RLS/ACL as the authoritative boundary.
 
-- Do not invent product behavior when a required decision is missing; stop and surface the decision.
-- Do not treat the implementer's own report as final proof that a PR is correct.
-- Do not merge merely because local tests pass; the exact PR head must pass the required GitHub CI gates.
-- Preserve provenance, current-vs-historical semantics, unknown-vs-zero distinctions, idempotency, RLS/ACL boundaries and canonical safety.
-- Prefer one dependency-chain implementation block per PR.
-- Corrections stay on the same branch/PR unless the contract explicitly says otherwise.
-- Do not silently rewrite closed decisions or authoritative docs to justify new behavior.
-- When a future orchestration system (including Codex) replaces today's tooling, preserve the separation between contract/architecture, implementation, independent audit and merge authorization unless the owner explicitly changes the method.
+**Merge:** never silent. After PASS + exact-head CI green, notify:
+`MERGE DECISION REQUIRED — PR #X — HEAD <exact-sha>`
+Wait for explicit approval of that PR + SHA. Re-fetch before merge; if head moved, re-audit.
 
-`docs/WORKING_METHOD.md` is the canonical explanation of the process; this file is only the repository entrypoint.
+Canonical workspace for agents: `/workspace/theugc-life` (rebuild from GitHub if missing).  
+GitHub is the source of truth. Conversation memory never overrides the repository.
