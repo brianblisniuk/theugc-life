@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 1fc15658fc69acaa799860f8340736e15e1f5728 (PR #63, D09). E05 is PR #64. No migration. D092–D094 are Proposed. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 1fc15658fc69acaa799860f8340736e15e1f5728 (PR #63, D09). E05 is PR #64. Migration 0054 grants the signup trigger to supabase_auth_admin. D092–D094 are Proposed. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_AUDIT",
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "E05 is PR #64. It awaits audit and exact-head verify. D09 is merged (PR #63, 1fc1565). No migration. D092–D094 are Proposed. Do not merge."
+  "next_dependency": "E05 is PR #64. It awaits audit and exact-head verify. D09 is merged (PR #63, 1fc1565). Migration 0054 grants the signup trigger to supabase_auth_admin. D092–D094 are Proposed. Do not merge."
 }

@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `1fc15658fc69acaa799860f8340736e15e1f5728` (merge of PR #63, D09, 2026-10-12)  
-**State:** AWAITING_AUDIT. E05 E2E, observability, security/privacy QA, and launch checklist. PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. No migration. D092–D094 are Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_AUDIT. E05 E2E, observability, security/privacy QA, and launch checklist. PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. Migration `0054` grants the signup trigger to `supabase_auth_admin`. D092–D094 are Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** E05. Failure, retry, and admin paths are tested. The launch-candidate gate names the owner steps that are not done. D09 is merged. D086–D088 stay Proposed. D077 stays Proposed.
 
 ## Main history note (not rewritten)

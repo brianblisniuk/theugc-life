@@ -93,6 +93,9 @@ await client.end();
 EOF
 
 echo "Rebuilding Next against local Supabase. The Maps key stays unset."
+# The verify job already built with the dummy Supabase URL. Drop that output
+# so NEXT_PUBLIC_* is inlined from this environment.
+rm -rf .next
 export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
 export NEXT_PUBLIC_SITE_URL="http://127.0.0.1:3000"

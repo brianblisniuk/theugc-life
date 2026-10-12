@@ -30,7 +30,12 @@ async function signUp(page: Page, input: { email: string; name: string; username
   await page.getByLabel("Email").fill(input.email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.waitForURL((url) => url.pathname === "/onboarding");
+  try {
+    await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
+  } catch (error) {
+    const text = await page.locator("body").innerText();
+    throw new Error(`signup stayed on ${page.url()}: ${text}`, { cause: error });
+  }
   await page.getByLabel("Display name").fill(input.name);
   await page.getByLabel("Username").fill(input.username);
   await page.getByRole("button", { name: "Continue" }).click();
