@@ -1,32 +1,90 @@
+import Link from "next/link";
+
 import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth/guards";
-import { createClient } from "@/lib/supabase/server";
+import {
+  ACTIVATION_COPY,
+  ACTIVATION_HREFS,
+  currentStepBody,
+  homeView,
+} from "@/lib/onboarding/activation";
+import { loadHomeProgress } from "@/lib/onboarding/queries";
 
-/** Dashboard/home. Sprint 0 renders a greeting shell; content lands in later sprints. */
+const ctaClass =
+  "inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast";
+
+/** Home. The first useful flow is derived from rows the creator already owns (D082). */
 export default async function AppHomePage() {
   const session = await requireUser("/app");
-  const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("creator_profiles")
-    .select("display_name")
-    .eq("user_id", session.userId)
-    .maybeSingle();
-
-  const name = profile?.display_name ?? session.email ?? "creator";
+  const progress = await loadHomeProgress(session.userId);
+  const name = progress.displayName ?? session.email ?? "creator";
+  const view = homeView(progress.facts);
 
   return (
     <div className="space-y-6">
-      <div>
+      <header className="space-y-1">
         <h1 className="text-2xl font-semibold text-text">Welcome, {name}</h1>
-        <p className="mt-1 text-sm text-muted">
-          Your operating homepage. Trips, follow-ups, and intelligence appear here as those features
-          ship.
+        <p className="max-w-prose text-sm text-muted">
+          Connect Gmail, plan a trip, save a hotel, then continue in your pipeline.
         </p>
-      </div>
-      <EmptyState
-        title="Nothing due yet"
-        description="Save hotels and start a pipeline to see follow-ups and recommendations here."
-      />
+      </header>
+
+      {view.kind === "blocked" ? (
+        <EmptyState title={view.title} description={view.body}>
+          <Link href="/app" className={ctaClass}>
+            Try again
+          </Link>
+        </EmptyState>
+      ) : (
+        <>
+          <ol aria-label="First steps" className="space-y-2">
+            {view.steps.map((step) => (
+              <li key={step.id} className="flex items-baseline gap-3 text-sm">
+                <span className="w-16 shrink-0 text-xs font-medium text-muted">{step.marker}</span>
+                <span className={step.done ? "text-muted" : "font-medium text-text"}>
+                  {step.title}
+                </span>
+              </li>
+            ))}
+          </ol>
+
+          {view.kind === "next" ? (
+            <EmptyState title={view.current.title} description={currentStepBody(view.current.id)}>
+              <Link href={view.current.href} className={ctaClass}>
+                {view.current.cta}
+              </Link>
+            </EmptyState>
+          ) : (
+            <EmptyState title={view.title} description={view.body}>
+              <Link href={view.href} className={ctaClass}>
+                {view.cta}
+              </Link>
+            </EmptyState>
+          )}
+
+          {view.kind === "next" && view.followUp === "due" ? (
+            <EmptyState
+              title={ACTIVATION_COPY.noticeDueTitle}
+              description={ACTIVATION_COPY.noticeDueBody}
+            >
+              <Link href={ACTIVATION_HREFS.pipeline} className={ctaClass}>
+                {ACTIVATION_COPY.pipelineCta}
+              </Link>
+            </EmptyState>
+          ) : null}
+
+          {view.kind === "next" && view.followUp === "error" ? (
+            <EmptyState
+              title={ACTIVATION_COPY.noticeErrorTitle}
+              description={ACTIVATION_COPY.noticeErrorBody}
+            >
+              <Link href="/app" className={ctaClass}>
+                Try again
+              </Link>
+            </EmptyState>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

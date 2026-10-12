@@ -3364,3 +3364,61 @@ and another creator's id return the same `not_found`.
 - No change to D072 machine meanings.
 - No automatic thread-to-hotel match.
 - No promotion of these rows into a C01 fact. D077 remains Proposed.
+
+## D082 — The first useful flow is derived from rows the creator already owns (E03)
+
+Status: **Proposed (requires owner acceptance)** — not Accepted. D081 is not
+used here. It is reserved for the parallel E02 navigation block. This entry
+is the reading E03 implements. It does not add a table.
+
+Depends on D018, D023, D045, D059, D067, and D080. It does not change Gmail
+scopes, consent, or CRM status.
+
+### What “started” means
+
+A new creator’s first useful path is four steps, in this order:
+
+1. Connect Gmail, on the existing account page, with the existing consent.
+2. Create a trip.
+3. Save a published hotel from Discover.
+4. Open that hotel in the pipeline.
+
+Steps 3 and 4 are the same stored fact. Saving a hotel writes the pipeline
+row, so both become done together. There is no “opened the pipeline” flag.
+
+A step is done only when a row the creator owns says so:
+
+- Gmail is done when at least one of their mailboxes is `connected`.
+  `pending_authorization`, `consent_required`, `reauth_required`, and
+  `disconnected` are not done.
+- A trip is done when they have a trip row.
+- Save and pipeline are done when they have a pipeline item.
+
+The checklist does not block the rest of the app. The highlighted step is the
+first one that is not done.
+
+### What a failed read means
+
+A failed read is not “not connected”, not “no trip”, and not “nothing is
+due”. If the profile id cannot be resolved, trip and pipeline progress is a
+failed read: a missing profile is not an empty trip list. If Gmail is not
+configured on the deployment, the Gmail step is omitted. That is not a failed
+connection and not a completed one.
+
+A follow-up is a pipeline item with a next step. Unknown is not “nothing is
+due”.
+
+### Inbox and collaborations
+
+`/app/inbox` lists pipeline inbox links the creator already attached. It does
+not browse a mailbox, does not read a message body, and does not send mail.
+`/app/collaborations` lists the creator’s collaborations and does not show
+agreed compensation. Neither route is added to the primary navigation. E02
+owns that shell.
+
+### What this decision does not do
+
+- No migration. `0051` is not taken.
+- No `gmail.send`, no new provider, no new scope, no secret.
+- No stored onboarding-progress row.
+- No change to primary navigation.

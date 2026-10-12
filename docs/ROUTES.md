@@ -54,11 +54,12 @@ Public share-card/recap landing. Token must be non-guessable.
 ### `/forgot-password`
 ### `/onboarding`
 
-Onboarding is lightweight:
-1. next destination
-2. creator type
+Onboarding is lightweight. The profile step asks for a display name and a username.
+After completion the creator lands on `/app`.
 
-After completion redirect to relevant destination/discovery context.
+The first useful flow is derived there (D082, Proposed): connect Gmail on the
+existing account page, create a trip, save a hotel from Discover, then open
+the pipeline. Those steps are not extra profile fields.
 
 ## 4. Authenticated app routes
 
@@ -74,6 +75,15 @@ Includes entitlement-aware contact section and private creator relationship.
 
 ### `/app/pipeline`
 List/Kanban CRM.
+
+### `/app/inbox`
+The creator's pipeline inbox links. Read-only. No message body and no send.
+Not in the primary navigation until E02 places it there.
+
+### `/app/collaborations`
+The creator's collaborations. Read-only. Agreed compensation stays on the hotel
+workspace and is not listed here. Not in the primary navigation until E02
+places it there.
 
 Recommended query params:
 - `view=list|board`
