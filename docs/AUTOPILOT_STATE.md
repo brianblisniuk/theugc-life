@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `4062170212beb8b978a248ef219eb91ddbfb080b` (merge of PR #52, 2026-10-12)  
-**State:** AUDITING. PR #54, branch `docs/c01-intelligence-fact-contract`. The work order asked for AWAITING_AUDIT. `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value, so the machine state is `AUDITING`. `expected_head` stays null because this commit cannot name itself. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** C01 — proposed intelligence event/fact contract (D077). Docs only. No migration and no runtime. D077 is Proposed and requires owner acceptance. It is not Accepted. D01 (PR #52, migration `0046`) is merged. B08 is a separate open PR (#53, D076) and is not this block.
+**Last verified main:** `989e7f020f07362113b3e9b00fd9950293808f10` (merge of PR #54, 2026-10-12)  
+**State:** AUDITING. Branch `feat/d07-deliverables-compensation`. The work order asked for AWAITING_AUDIT. `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value, so the machine state is `AUDITING`. `expected_head` stays null because this commit cannot name itself. `pr` stays null until GitHub assigns a number; the follow-up commit on this branch records it. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** D07 — collaboration deliverables and agreed compensation (D078, Accepted). Migration `0050`. Records only. C01 (PR #54, D077) is merged and remains Proposed. D01 (PR #52, migration `0046`) is merged. B08 is a separate open PR (#53, D076, migrations `0047` and `0048`). E01 is a separate open PR (#55); `0049` is left free.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -29,10 +29,11 @@
 - PR #50 — B07 slice 1 rules engine — `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`
 - PR #51 — B07.1 commercial-meaning follow-ups — `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`
 - PR #52 — D01 trips — `4062170212beb8b978a248ef219eb91ddbfb080b`
+- PR #54 — C01 intelligence fact contract, Proposed, docs only — `989e7f020f07362113b3e9b00fd9950293808f10`
 
 ## Next action
-- C01 is PR #54 (`docs/c01-intelligence-fact-contract`, D077, Proposed, docs only). State is AUDITING (awaiting audit). Do not merge from automation. D077 is not accepted.
-- D01 is merged (PR #52). B08 incremental sync is open as PR #53 (D076) and is not this block. Pilot KPIs remain an open owner question. Model-backed B07 inference stays gated.
+- D07 is branch `feat/d07-deliverables-compensation` (D078, Accepted, migration `0050`). State is AUDITING (awaiting audit). Do not merge from automation. The pull request number is recorded once GitHub assigns it.
+- C01 is merged (PR #54) and D077 is still Proposed. B08 incremental sync is open as PR #53 (D076, migrations `0047` and `0048`) and is not this block. E01 is open as PR #55 and is not this block. Pilot KPIs remain an open owner question. Model-backed B07 inference stays gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
 - Owner interaction happens only via human-frontier labels.

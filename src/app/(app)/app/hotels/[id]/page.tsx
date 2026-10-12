@@ -28,6 +28,7 @@ import {
 import { LockedContactSection } from "@/components/hotels/locked-contact";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
+import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
@@ -102,6 +103,12 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
     relationship.status === "open" && relationship.relationship.status === "won"
       ? await getCycleCollaboration(relationship.relationship.pipelineItemId)
       : ({ status: "none" } as const);
+  const workspace =
+    relationship.status === "open" &&
+    relationship.relationship.status === "won" &&
+    collaboration.status === "found"
+      ? await getCollaborationWorkspace(relationship.relationship.pipelineItemId)
+      : ({ status: "not_found" } as const);
 
   return (
     <div className="space-y-8">
@@ -214,6 +221,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
           hotelId={hotel.id}
           relationship={relationship}
           collaboration={collaboration}
+          workspace={workspace}
         />
       </Section>
     </div>

@@ -326,7 +326,7 @@ contract, and D076 (open PR #53) does not define it either.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | **CONTRACT PROPOSED** — PR #54, D077, branch `docs/c01-intelligence-fact-contract`. Requires owner acceptance. Not accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C01 | **MERGED, STILL PROPOSED** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. D077 is Proposed and is not Accepted. No runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
 | C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
 | C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
 | C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
@@ -366,7 +366,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
-| D07 | PLANNED | collaboration workspace + deliverables over existing lifecycle core | won deal flows through execution/completion without external spreadsheet |
+| D07 | **AWAITING AUDIT** — branch `feat/d07-deliverables-compensation`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). PR number is recorded once GitHub assigns it. Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
@@ -648,16 +648,23 @@ the bound B06 classification or chronology fingerprint has changed in place.
 `4062170212beb8b978a248ef219eb91ddbfb080b` into `main`. Migration
 `0046_trips_context.sql`.
 
-The open contract block on this branch is:
+**C01 (PR #54) is merged**, as merge commit
+`989e7f020f07362113b3e9b00fd9950293808f10` into `main`. D077 remains
+Proposed. It is not Accepted, and this block does not implement it.
 
-> **C01 — normalized intelligence event/fact contract (D077, Proposed).
-> Open as PR #54 on `docs/c01-intelligence-fact-contract`. Docs only:
-> `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. No migration and no runtime.
-> Requires owner acceptance. Not accepted. Do not merge from automation.**
+The open implementation block on this branch is:
 
-B08 incremental sync is a separate open pull request (#53, D076) and is not
-this block. Pilot KPIs remain an owner question (D077). This PR does not
-change the B08 tracker row.
+> **D07 — collaboration deliverables and agreed compensation (D078, Accepted).
+> Branch `feat/d07-deliverables-compensation`. Migration
+> `0050_collaboration_deliverables_compensation.sql`. Compensation is
+> strategic data used to value each piece of content. Records only. Do not
+> merge from automation.**
+
+B08 incremental sync is a separate open pull request (#53, D076, migrations
+`0047` and `0048`) and is not this block. E01 is a separate open pull
+request (#55) and is not this block; `0049` is left free because that PR
+may take a migration. Pilot KPIs remain an owner question (D077). This PR
+does not change the B08 or E01 tracker rows.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:
