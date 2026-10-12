@@ -1,9 +1,9 @@
 # E01 — Discover + Hotel Detail (map deferred)
 
-**Status:** Binding work order for this PR. Awaiting independent audit. Do not merge.  
-**Base:** `main` `4062170212beb8b978a248ef219eb91ddbfb080b` (merge of PR #52)  
+**Status:** Binding work order for PR #55. Awaiting independent audit. Do not merge.  
+**Base:** `main` `989e7f020f07362113b3e9b00fd9950293808f10` (merge of PR #54, C01 docs only)  
 **Branch:** `feat/e01-discover-hotel-detail`  
-**Migration:** none. 0047 is reserved by B08 PR #53. 0048 was not required.
+**Migration:** none. B08 PR #53 holds 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049, and this block does not use it.
 
 One PR for the whole block. Do not merge.
 
