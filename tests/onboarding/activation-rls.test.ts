@@ -38,16 +38,60 @@ beforeAll(async () => {
     [COLL_A, creators.destBali, HOTEL.bali, COLL_B, creators.pro, HOTEL.ibiza],
   );
 
+  // `connected` is one fact with its credential and its private-processing
+  // consent. Those checks are deferred to commit, so they have to land in
+  // the same statement. Placeholder ciphertext is not a secret and is never
+  // decrypted. The scope is the existing read-only grant, not gmail.send.
+  const readonlyScope = "https://www.googleapis.com/auth/gmail.readonly";
   await adminQuery(
-    `insert into public.mail_accounts (
-       id, user_id, provider, provider_account_subject, email_address,
-       connection_state, granted_scopes, connected_at
+    `with accounts as (
+       insert into public.mail_accounts (
+         id, user_id, provider, provider_account_subject, email_address,
+         connection_state, granted_scopes, connected_at
+       ) values
+         ($1, $2, 'gmail', 'sub-a', 'ada@example.com', 'connected',
+          array[$5]::text[], now()),
+         ($3, $4, 'gmail', 'sub-b', 'bee-secret@example.com', 'connected',
+          array[$5]::text[], now())
+       returning id, user_id
+     ),
+     creds as (
+       insert into private.gmail_oauth_credentials (
+         mail_account_id, user_id, refresh_token_ciphertext, refresh_token_iv,
+         refresh_token_auth_tag, encryption_key_version
+       )
+       select id, user_id, 'fixture-ciphertext', 'fixture-iv', 'fixture-tag', 'v1'
+         from accounts
+       returning mail_account_id
+     ),
+     receipts as (
+       insert into public.mail_account_consent_receipts (
+         mail_account_id, user_id, consent_kind, decision, policy_version,
+         consent_text_digest, granted_scopes_at_decision, decided_by_user_id,
+         decided_at, receipt_digest
+       )
+       select id, user_id, 'private_gmail_processing', 'granted', 'gmail-consent/1',
+              repeat('a', 64), array[$5]::text[], user_id, now(),
+              md5(id::text) || md5(user_id::text)
+         from accounts
+       returning id, mail_account_id, user_id, event_seq
+     )
+     insert into public.mail_account_consents (
+       mail_account_id, user_id, consent_kind, state, current_receipt_id, current_event_seq
+     )
+     select mail_account_id, user_id, 'private_gmail_processing', 'granted', id, event_seq
+       from receipts
+      where (select count(*) from creds) = 2`,
+    [MAIL_A, USERS.destBali, MAIL_B, USERS.pro, readonlyScope],
+  );
+
+  await adminQuery(
+    `insert into private.gmail_normalized_threads (
+       user_id, mail_account_id, provider_thread_id
      ) values
-       ($1, $2, 'gmail', 'sub-a', 'ada@example.com', 'connected',
-        array['https://www.googleapis.com/auth/gmail.readonly']::text[], now()),
-       ($3, $4, 'gmail', 'sub-b', 'bee-secret@example.com', 'connected',
-        array['https://www.googleapis.com/auth/gmail.readonly']::text[], now())`,
-    [MAIL_A, USERS.destBali, MAIL_B, USERS.pro],
+       ($1, $2, 'thread-a'),
+       ($3, $4, 'thread-b')`,
+    [USERS.destBali, MAIL_A, USERS.pro, MAIL_B],
   );
 
   await adminQuery(
