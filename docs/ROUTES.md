@@ -101,7 +101,8 @@ Trip workspace. Ownership required.
 
 ### `/app/profile`
 The signed-in creator’s private profile, personal counts, and past
-collaborations (D086–D088, Proposed). Not a public URL.
+collaborations (D086–D088, Proposed). Not a public URL and not a hotel
+share link. The later link is not this route.
 
 ### `/app/profile/portfolio`
 Placeholder. Public portfolio management is not built.

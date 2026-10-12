@@ -1,9 +1,16 @@
 -- 0052 — D08 private creator profile counts and past collaborations.
 --
 -- Migration number: 0052. 0051 is reserved by E04 and is not used here.
--- 0050 is D07 and is not edited. No new table. The repo does not FORCE row
--- level security; these reads run as the caller so the existing owner
--- policies stay the row boundary.
+-- 0050 is D07 and is not edited. The repo does not FORCE row level security.
+-- The count reads run as the caller so the existing owner policies stay the
+-- row boundary.
+--
+-- Hotel sharing is in the MVP (D086, Proposed) and is not built here. The
+-- new table is the creator's per-field opt-in only. It has no token, no
+-- public policy, and no hotel read. A missing row is private. opted_in
+-- defaults false. Setting revoked_at requires opted_in false, so a revoked
+-- field is not shared. A later block adds the revocable share link and the
+-- field allow-list. public_profile_enabled is not that link.
 --
 -- Counts are creator-recorded outcomes. A machine reading on a linked thread
 -- is not a reply, an agreement, a decline, or a ghost. Unknown compensation
@@ -153,3 +160,65 @@ comment on function public.creator_past_collaborations(uuid) is
 
 revoke all on function public.creator_past_collaborations(uuid) from public, anon;
 grant execute on function public.creator_past_collaborations(uuid) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- Per-field opt-in for a later creator-controlled hotel share link.
+-- This table is not the link. There is no token column and no policy that
+-- lets anon, another creator, or a hotel read a row.
+--
+-- Private by default:
+--   * no row means the field is not shared;
+--   * opted_in defaults false, so naming a field does not share it;
+--   * revoked_at may be set only when opted_in is false. Clearing revoked_at
+--     does not opt the field back in; opted_in must be set true again.
+-- The allowed field_key values are not closed. The follow-up that issues a
+-- link has to reject keys it has not decided before any hotel can read one.
+-- ---------------------------------------------------------------------------
+create table public.creator_profile_field_opt_ins (
+  creator_id uuid not null references public.creator_profiles(id) on delete cascade,
+  field_key text not null,
+  opted_in boolean not null default false,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (creator_id, field_key),
+  constraint creator_profile_field_opt_ins_key_shape
+    check (field_key ~ '^[a-z][a-z0-9_]{0,63}$'),
+  constraint creator_profile_field_opt_ins_revoked_stays_private
+    check (revoked_at is null or opted_in = false)
+);
+
+comment on table public.creator_profile_field_opt_ins is
+  'D086 Proposed. Creator-owned per-field opt-in for a later hotel share link. No token. Private by default: no row, opted_in false, or revoked_at set means the field is not shared. Not readable because public_profile_enabled is true.';
+
+comment on column public.creator_profile_field_opt_ins.field_key is
+  'A profile field name. This migration does not decide which keys a hotel may see.';
+
+comment on column public.creator_profile_field_opt_ins.opted_in is
+  'Explicit opt-in. Default false. True is the only value that can later be shared, and only while revoked_at is null.';
+
+comment on column public.creator_profile_field_opt_ins.revoked_at is
+  'When set, the field is not shared. Must be paired with opted_in false.';
+
+comment on column public.creator_profiles.public_profile_enabled is
+  'Coarse flag from 0002. Not the hotel share link and not a per-field opt-in. D08 does not set it.';
+
+comment on column public.creator_profiles.portfolio_visibility is
+  'Coarse private/public flag from 0002. Not the hotel share link. D08 does not set it.';
+
+create trigger creator_profile_field_opt_ins_set_updated_at
+  before update on public.creator_profile_field_opt_ins
+  for each row execute function public.set_updated_at();
+
+alter table public.creator_profile_field_opt_ins enable row level security;
+
+create policy creator_profile_field_opt_ins_all
+  on public.creator_profile_field_opt_ins
+  for all
+  using (creator_id = public.current_creator_id())
+  with check (creator_id = public.current_creator_id());
+
+revoke all on table public.creator_profile_field_opt_ins from public, anon, authenticated;
+
+grant select, insert, update, delete on table public.creator_profile_field_opt_ins to authenticated;
+grant select, insert, update, delete on table public.creator_profile_field_opt_ins to service_role;

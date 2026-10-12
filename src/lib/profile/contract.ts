@@ -2,8 +2,8 @@
  * D08 private profile fields and personal counts (D086–D088, Proposed).
  *
  * The editor writes columns that already exist on creator_profiles. It does
- * not write public_profile_enabled or portfolio_visibility, and it does not
- * build a public URL.
+ * not write public_profile_enabled, portfolio_visibility, or field opt-ins,
+ * and it does not issue a hotel share link.
  *
  * Counts are integers the creator recorded. A missing read is not zero.
  * Nothing here is a rate.

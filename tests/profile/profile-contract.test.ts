@@ -47,6 +47,8 @@ describe("profile form", () => {
     const keys = Object.keys(parsed.value) as (keyof ProfileWrite)[];
     expect(keys).not.toContain("public_profile_enabled" as keyof ProfileWrite);
     expect(keys).not.toContain("portfolio_visibility" as keyof ProfileWrite);
+    expect(keys).not.toContain("opted_in" as keyof ProfileWrite);
+    expect(keys.join(" ")).not.toMatch(/token|share/i);
     expect(parsed.value.languages).toEqual([]);
     expect(parsed.value.bio).toBeNull();
   });

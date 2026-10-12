@@ -46,6 +46,10 @@ const CONTRACT: Record<string, Expected> = {
 
   // Creator identity and portfolio. Public rows are anonymously readable.
   creator_profiles: { anon: "S", authenticated: "SIU", serviceRole: "all" },
+  // D08 (0052, D086 Proposed). Per-field opt-in for a later hotel share link.
+  // Private by default. Anon has no privilege. The owner may write their own
+  // rows; this PR's UI does not. There is no share token on this table.
+  creator_profile_field_opt_ins: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   portfolio_assets: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
 
   // Public catalogue. Writes exist as a capability; RLS restricts them to staff.

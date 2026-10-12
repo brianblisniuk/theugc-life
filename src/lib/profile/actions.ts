@@ -4,8 +4,8 @@
  * Save the caller's private profile fields.
  *
  * The form does not post a user id. The session is resolved here, and the
- * update names that user. public_profile_enabled and portfolio_visibility
- * are not in the write.
+ * update names that user. public_profile_enabled, portfolio_visibility,
+ * and creator_profile_field_opt_ins are not in the write.
  */
 import { revalidatePath } from "next/cache";
 

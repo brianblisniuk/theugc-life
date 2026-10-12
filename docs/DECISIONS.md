@@ -3481,8 +3481,36 @@ reserved by parallel blocks. This block uses D086–D088 and migration `0052`.
 `0051` stays free for E04.
 
 Depends on the columns already on `creator_profiles` (PRD §7.6, PRD §9.2) and
-on the onboarding rules for display name and username. It does not add a
-column and it does not depend on D077.
+on the onboarding rules for display name and username. It adds no column to
+`creator_profiles`. It does not depend on D077.
+
+### Hotel sharing is in the MVP, and this PR does not build it
+
+Brian decided on 12 Oct 2026 that the creator profile and portfolio must be
+shareable with hotels in the MVP. The exact fields a hotel may see are not
+decided. This PR does not issue a link, does not add a token, and does not
+give a hotel a read path.
+
+The data model for that later link is `creator_profile_field_opt_ins`:
+
+- One row is one field for one creator. `field_key` is not an allow-list.
+  The follow-up that issues a link closes the keys before any hotel read.
+- Private by default. No row means the field is not shared. `opted_in`
+  defaults to false, so naming a field does not share it.
+- Explicit opt-in. `opted_in = true` with `revoked_at` null is the only
+  state a later link may treat as shared.
+- Revocable. `revoked_at` may be set only when `opted_in` is false. Clearing
+  `revoked_at` does not opt the field back in.
+- Owner-only. RLS is enabled. Anon has no privilege. Another creator cannot
+  read, insert, update, or delete the row. `public_profile_enabled` does not
+  open it. This PR’s Profile page does not write the table.
+
+The later link is a separate table this migration does not create. It is
+creator-controlled, stores a hash rather than a raw token, and has its own
+`revoked_at`. A revoked link reveals nothing, including fields that stay
+opted in. `public_profile_enabled` and `portfolio_visibility` are not that
+link, and this block still does not set them. `/creators/[username]` is
+still not built. Whether that public route is the hotel link is open.
 
 ### What the creator can edit
 
@@ -3564,6 +3592,7 @@ and private notes are not in the payload.
 ### What this decision does not do
 
 - No verified-proof badge and no portfolio media.
-- No shareable profile URL.
+- No share link and no token. The later hotel link is D086, and it is not
+  this list.
 - No write to a new pipeline item from this list.
 

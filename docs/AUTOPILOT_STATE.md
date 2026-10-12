@@ -2,7 +2,7 @@
 
 **Last verified main:** `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60, E03, 2026-10-12)  
 **State:** AWAITING_AUDIT. D08 creator profile and private personal analytics, PR #61, branch `cursor/d08-creator-profile-analytics-ba2d`, migration `0052`. D086–D088 are Proposed. Public portfolio is not in this block. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** D08. The Profile page edits the creator’s own fields, shows creator-recorded counts, and lists past collaborations as links into the next hotel cycle. D081 is Accepted. D082 stays Proposed. D077 stays Proposed. D080 is Accepted and merged. `0050` is not edited. `0051` is not taken.
+**Current frontier:** D08. The Profile page edits the creator’s own fields, shows creator-recorded counts, and lists past collaborations as links into the next hotel cycle. D086 records that a hotel share link is in the MVP and is not built here; the private per-field opt-in table is the later link’s gate. D081 is Accepted. D082 stays Proposed. D077 stays Proposed. D080 is Accepted and merged. `0050` is not edited. `0051` is not taken.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by

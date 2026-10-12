@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Profile" };
 
 /**
  * The creator's private profile (D081 Profile, D086–D088 Proposed).
- * Public portfolio and a shareable profile URL are not on this page.
+ * A hotel share link is not on this page. Opt-in rows are not edited here.
  */
 export default async function ProfilePage() {
   const session = await requireUser("/app/profile");
@@ -27,7 +27,7 @@ export default async function ProfilePage() {
       <PageHeader
         title="Profile"
         crumbs={listCrumbs("Profile")}
-        description="Only you can see this. It is not a public page."
+        description="Only you can see this. Nothing on this page is shared with a hotel."
       />
 
       {profile.status === "ok" ? (

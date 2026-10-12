@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). D08 is PR #61: migration 0052, D086–D088 Proposed. 0051 is reserved by E04 and is not used. 0050 is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). D08 is PR #61: migration 0052, D086–D088 Proposed. Hotel share link is MVP and is not built in this PR; creator_profile_field_opt_ins is the private per-field gate. 0051 is reserved by E04 and is not used. 0050 is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_AUDIT",

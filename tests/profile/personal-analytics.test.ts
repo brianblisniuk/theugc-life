@@ -179,6 +179,11 @@ beforeEach(async () => {
   if (!hasTestDb) return;
   const users = [USER_A, USER_B];
   await adminQuery(
+    `delete from public.creator_profile_field_opt_ins
+      where creator_id in (select id from public.creator_profiles where user_id = any($1::uuid[]))`,
+    [users],
+  );
+  await adminQuery(
     `delete from public.collaboration_deliverables
       where creator_id in (select id from public.creator_profiles where user_id = any($1::uuid[]))`,
     [users],
@@ -474,6 +479,158 @@ d("D08 profile and count isolation", () => {
       "select public.creator_past_collaborations(null)",
     );
     expect(anonPast.error).not.toBeNull();
+  });
+
+  it("keeps field opt-ins private, revocable, and off until the creator opts in", async () => {
+    const creatorA = await creatorId(USER_A);
+    const creatorB = await creatorId(USER_B);
+    const absent = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.creator_profile_field_opt_ins where creator_id = $1",
+      [creatorA],
+    );
+    expect(absent[0]!.n).toBe("0");
+
+    const ownInsert = await queryAs<{ field_key: string; opted_in: boolean }>(
+      { role: "authenticated", sub: USER_A },
+      `insert into public.creator_profile_field_opt_ins (creator_id, field_key)
+       values ($1, 'display_name')
+       returning field_key, opted_in`,
+      [creatorA],
+    );
+    expect(ownInsert.error).toBeNull();
+    expect(ownInsert.rows).toEqual([{ field_key: "display_name", opted_in: false }]);
+
+    await adminQuery(
+      `insert into public.creator_profile_field_opt_ins (creator_id, field_key)
+       values ($1, 'bio')`,
+      [creatorA],
+    );
+    const named = await adminQuery<{ opted_in: boolean; revoked_at: string | null }>(
+      `select opted_in, revoked_at from public.creator_profile_field_opt_ins
+        where creator_id = $1 and field_key = 'bio'`,
+      [creatorA],
+    );
+    expect(named[0]).toEqual({ opted_in: false, revoked_at: null });
+
+    await adminQuery(
+      `update public.creator_profile_field_opt_ins
+          set opted_in = true
+        where creator_id = $1 and field_key = 'bio'`,
+      [creatorA],
+    );
+    const stillPrivate = await adminQuery<{ public_profile_enabled: boolean }>(
+      "select public_profile_enabled from public.creator_profiles where id = $1",
+      [creatorA],
+    );
+    expect(stillPrivate[0]!.public_profile_enabled).toBe(false);
+
+    const cannotShareWhileRevoked = await queryAs(
+      { role: "authenticated", sub: USER_A },
+      `update public.creator_profile_field_opt_ins
+          set opted_in = true, revoked_at = now()
+        where creator_id = $1 and field_key = 'bio'`,
+      [creatorA],
+    );
+    expect(cannotShareWhileRevoked.error).not.toBeNull();
+
+    await adminQuery(
+      `update public.creator_profile_field_opt_ins
+          set opted_in = false, revoked_at = now()
+        where creator_id = $1 and field_key = 'bio'`,
+      [creatorA],
+    );
+    const revoked = await adminQuery<{ opted_in: boolean; revoked_at: string | null }>(
+      `select opted_in, revoked_at from public.creator_profile_field_opt_ins
+        where creator_id = $1 and field_key = 'bio'`,
+      [creatorA],
+    );
+    expect(revoked[0]!.opted_in).toBe(false);
+    expect(revoked[0]!.revoked_at).not.toBeNull();
+
+    const staysRevoked = await queryAs(
+      { role: "authenticated", sub: USER_A },
+      `update public.creator_profile_field_opt_ins
+          set opted_in = true
+        where creator_id = $1 and field_key = 'bio'
+        returning opted_in`,
+      [creatorA],
+    );
+    expect(staysRevoked.error).not.toBeNull();
+
+    await adminQuery(
+      "update public.creator_profiles set public_profile_enabled = true where id = $1",
+      [creatorB],
+    );
+    await adminQuery(
+      `insert into public.creator_profile_field_opt_ins (creator_id, field_key, opted_in)
+       values ($1, 'bio', true)`,
+      [creatorB],
+    );
+
+    const seenByA = await queryAs(
+      { role: "authenticated", sub: USER_A },
+      "select field_key, opted_in from public.creator_profile_field_opt_ins where creator_id = $1",
+      [creatorB],
+    );
+    expect(seenByA.error).toBeNull();
+    expect(seenByA.rows).toEqual([]);
+
+    const anon = await queryAs(
+      { role: "anon" },
+      "select field_key from public.creator_profile_field_opt_ins where creator_id = $1",
+      [creatorB],
+    );
+    expect(anon.error).not.toBeNull();
+    expect(anon.rows).toEqual([]);
+
+    const inserted = await queryAs(
+      { role: "authenticated", sub: USER_A },
+      `insert into public.creator_profile_field_opt_ins (creator_id, field_key, opted_in)
+       values ($1, 'website_url', true)`,
+      [creatorB],
+    );
+    expect(inserted.error).not.toBeNull();
+
+    const updated = await queryAs(
+      { role: "authenticated", sub: USER_A },
+      `update public.creator_profile_field_opt_ins
+          set opted_in = false
+        where creator_id = $1
+        returning field_key`,
+      [creatorB],
+    );
+    expect(updated.rows).toEqual([]);
+
+    const deleted = await queryAs(
+      { role: "authenticated", sub: USER_A },
+      "delete from public.creator_profile_field_opt_ins where creator_id = $1 returning field_key",
+      [creatorB],
+    );
+    expect(deleted.rows).toEqual([]);
+
+    const stillB = await adminQuery<{ opted_in: boolean }>(
+      `select opted_in from public.creator_profile_field_opt_ins
+        where creator_id = $1 and field_key = 'bio'`,
+      [creatorB],
+    );
+    expect(stillB[0]!.opted_in).toBe(true);
+
+    const columns = await adminQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'creator_profile_field_opt_ins'`,
+    );
+    expect(columns.map((column) => column.column_name).join(" ")).not.toMatch(/token|url/i);
+
+    const rls = await adminQuery<{ relrowsecurity: boolean }>(
+      `select c.relrowsecurity
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relname = 'creator_profile_field_opt_ins'`,
+    );
+    expect(rls[0]!.relrowsecurity).toBe(true);
+
+    const countsForA = await counts(USER_A);
+    expect(JSON.stringify(countsForA.rows[0]!.r)).not.toMatch(/opted_in|field_key|token/);
   });
 
   it("does not let a trip or another creator's rows change A's zeros", async () => {

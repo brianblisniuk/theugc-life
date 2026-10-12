@@ -83,6 +83,7 @@ Anonymous read forbidden:
 - contact_signals
 - verification internal notes
 - admin flags
+- creator_profile_field_opt_ins (no anon privilege; a public profile does not open it)
 
 **As implemented (V1).** `anon` holds `SELECT` on exactly four relations:
 `hotels`, `destinations`, `brands` and `hotel_public_intelligence`, plus
@@ -98,6 +99,7 @@ For `creator_profiles`, creator may select/update own row where `user_id = auth.
 
 For creator-owned child tables, resolve ownership through creator profile:
 - portfolio_assets
+- creator_profile_field_opt_ins
 - trips
 - trip_hotels
 - pipeline_items
@@ -118,6 +120,7 @@ browser may write them. The CRM tables are **read-only to the browser**:
 | `trips`, `trip_hotels` | **select only** | trusted RPC (`create_trip`, `update_trip`, `delete_trip`, `add_trip_hotel`, `remove_trip_hotel`) |
 | `portfolio_assets` | select, insert, update, delete (own rows) | direct, under RLS |
 | `creator_profiles` | select, insert, update (own row) | direct, under RLS |
+| `creator_profile_field_opt_ins` | select, insert, update, delete (own rows) | direct, under RLS. D08’s Profile page does not write it. No share token. |
 | `pipeline_items` | **select only** | trusted RPC |
 | `outreach_events` | **select only** | trusted RPC |
 | `collaborations` | **select only** | trusted RPC |
