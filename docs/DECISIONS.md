@@ -3290,7 +3290,7 @@ is passed to the loader or the marker.
 A marker click navigates inside this app to `/app/hotels/{uuid}`. It is not
 a Google request.
 
-No migration. `0049` stays unused. No Cloud Map ID, so the map uses the
+No migration. Addendum (13 Oct 2026): `0049` was later used by D06 (D080). No Cloud Map ID, so the map uses the
 classic `Marker` rather than Advanced Markers. POI clicks are off
 (`clickableIcons: false`) so the map does not open Google's place cards.
 

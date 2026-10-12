@@ -6,7 +6,7 @@
 **Decision:** D078, Accepted — Brian, 12 October 2026, option B.  
 **Migration:** `0050_collaboration_deliverables_compensation.sql`
 
-`main` ends at `0046`. E01 (PR #55) merged with no migration. Open PR #53 (B08) reserves `0047` and `0048`, and D076. D077 is C01 on `main` and is still Proposed. `0049` is still unused. This block keeps `0050` and D078.
+`main` ends at `0046`. E01 (PR #55) merged with no migration. Open PR #53 (B08) reserves `0047` and `0048`, and D076. D077 is C01 on `main` and is still Proposed. Addendum (13 Oct 2026): `0049` was later used by D06 (D080). This block keeps `0050` and D078.
 
 One PR for the whole block. Do not merge.
 
