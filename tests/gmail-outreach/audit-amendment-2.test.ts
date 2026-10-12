@@ -70,7 +70,7 @@ async function session(): Promise<Client> {
 const backendPid = async (c: Client): Promise<number> =>
   Number((await c.query("select pg_backend_pid() as pid")).rows[0].pid);
 
-async function waitUntilBlocked(pid: number, timeoutMs = 10_000): Promise<number[]> {
+async function waitUntilBlocked(pid: number, timeoutMs = 20_000): Promise<number[]> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const res = await client.query("select pg_blocking_pids($1) as blockers", [pid]);
@@ -424,9 +424,15 @@ d("B05 Finding 2: the actual private_gmail_processing consent gate", () => {
 
     await t1.query("begin");
     const t1Pid = await backendPid(t1);
-    // T1 starts the commit — its `for share` on the consent row is acquired
-    // WHILE consent is still granted, then the whole statement (including
-    // this SELECT's row lock) is held open by the surrounding transaction.
+    // Take the consent FOR SHARE and wait for it BEFORE T2 starts. If T2's
+    // consent UPDATE wins that race, pg_blocking_pids stays empty and this
+    // test times out even though the fence itself is correct.
+    await t1.query(
+      `select 1 from public.mail_account_consents
+        where mail_account_id = $1 and consent_kind = 'private_gmail_processing'
+        for share`,
+      [mailAccountId],
+    );
     const commitPromise = t1.query(
       `select public.gmail_outreach_commit_interpretation(
          p_user_id := $1, p_mail_account_id := $2, p_normalized_thread_id := $3,

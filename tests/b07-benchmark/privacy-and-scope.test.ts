@@ -157,11 +157,12 @@ describe("scope containment", () => {
     }
   });
 
-  it("benchmark does not introduce commercial_meaning schema", () => {
-    const migrations = join(REPO_ROOT, "supabase", "migrations");
-    if (!existsSync(migrations)) return;
-    for (const file of readdirSync(migrations)) {
-      expect(file).not.toMatch(/commercial_meaning/i);
+  it("the benchmark tree does not define the commercial-meaning schema", () => {
+    // Production B07 now lives in supabase/migrations/0044. The benchmark
+    // must still not carry that DDL.
+    for (const file of walk(BENCH_ROOT)) {
+      const text = readFileSync(file, "utf8");
+      expect(text, file).not.toMatch(/create table private\.gmail_commercial/i);
     }
   });
 

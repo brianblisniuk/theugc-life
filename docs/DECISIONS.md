@@ -2945,3 +2945,17 @@ this substitution. Nothing else in D072 changes.
 Going forward a migration-number "reservation" in a decision is advisory; the
 actual number is assigned when the migration is written, after checking
 `supabase/migrations/` on live `main`.
+
+## D075 — B07 slice 1 uses the rules engine D072 already allows (reconciliation)
+
+Status: Reconciliation only — **not a new product semantic**; D072 is unchanged
+
+On 2026-10-12 the product owner authorized building B07 slice 1 now, with a
+deterministic rules engine and with no external model call and no provider
+receiving Gmail data. D072 already permits that engine kind and separately
+gates any later model on vendor and privacy approval. This note records the
+authorization and the migration number actually used on main
+`0d176e42a7487c24c42f7d448f1fb3b3912535e3`: `0044_gmail_commercial_meaning.sql`
+(0041–0043 were already taken; D074). No taxonomy, axis, privacy rule, or
+human-correction rule in D072 changes. Model-backed inference stays gated.
+Slice 1 does not mark the whole of B07 done.

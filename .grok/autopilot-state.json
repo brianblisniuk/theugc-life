@@ -1,14 +1,14 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate. State AWAITING_MERGE_DECISION is the schema name for waiting on a human merge. expected_head is filled once the PR exists; a later state commit can move HEAD past this value, and live GitHub is the authority.",
   "schema_version": 1,
   "as_of": "2026-10-12",
-  "state": "HUMAN_FRONTIER",
-  "last_recorded_main": "f48a11364b10fd75972318f7e742a0d334d785f5",
-  "active_block": "SYS-1 autonomous engineering system v1 (PR #49)",
-  "branch": "chore/autonomous-system-v1",
-  "pr": 49,
+  "state": "BUILDING",
+  "last_recorded_main": "0d176e42a7487c24c42f7d448f1fb3b3912535e3",
+  "active_block": "B07 slice 1 rules engine (migration 0044)",
+  "branch": "feat/b07-slice1-rules-engine",
+  "pr": null,
   "expected_head": null,
-  "pending_jobs": ["PR #48 docs/baseline-reconciliation — awaiting owner merge decision"],
+  "pending_jobs": [],
   "unresolved_findings": [
     {
       "id": "BASE-N5",
@@ -23,16 +23,16 @@
       "ref": "supabase/migrations/0043_grant_access_entitlement_hardening.sql"
     },
     {
-      "id": "BASE-N10",
+      "id": "B07-S1-N1",
       "severity": "NON-BLOCKING",
-      "summary": "MASTER_PLAN_TRACKER §9 'Immediate next move' prose is stale (still describes B06 as open)",
-      "ref": "docs/MASTER_PLAN_TRACKER.md"
+      "summary": "The database agreement_observed check requires an agreement signal plus an earlier creator-sent message. It does not distinguish a booking confirmation from a one-sided 'we accept', which the rules engine keeps as negotiating.",
+      "ref": "supabase/migrations/0044_gmail_commercial_meaning.sql"
     }
   ],
   "ci_status": {
-    "ref": "f48a11364b10fd75972318f7e742a0d334d785f5",
+    "ref": "0d176e42a7487c24c42f7d448f1fb3b3912535e3",
     "verify": "success"
   },
-  "required_human_action": "PRODUCT DECISION REQUIRED — B07 inference engine for the first implementation slice (no model qualified in PR #40; D072 gates model/vendor selection)",
-  "next_dependency": "B07 (D072) — implementation slice 1: schema + RLS + creator correction loop with deterministic-rules engine provenance; model-backed inference gated on vendor/privacy approval"
+  "required_human_action": null,
+  "next_dependency": "B07 slice 1 human merge, then model-backed inference remains gated; B08 stays gated"
 }

@@ -430,6 +430,58 @@ d("explicit ACL contract (0024)", () => {
       expect(acl.startsWith("authenticated="), acl).toBe(false);
     }
   });
+
+  it("pins search_path and splits B07 execute between machine and creator roles", async () => {
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, private, pg_temp%'
+               as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname like 'gmail_commercial\\_%'
+       order by p.proname
+    `);
+    const byName = new Map(rows.map((row) => [row.proname, row]));
+    const machine = [
+      "gmail_commercial_get_thread_evidence",
+      "gmail_commercial_commit_interpretation",
+      "gmail_commercial_purge_for_deletion",
+    ];
+    const creator = [
+      "gmail_commercial_record_creator_decision",
+      "gmail_commercial_read_thread",
+      "gmail_commercial_status",
+      "gmail_commercial_list_threads",
+    ];
+    expect([...byName.keys()].sort()).toEqual([...machine, ...creator].sort());
+    for (const name of machine) {
+      const row = byName.get(name)!;
+      expect(row.definer, name).toBe(true);
+      expect(row.pinned, name).toBe(true);
+      expect(row.anon, name).toBe(false);
+      expect(row.auth, name).toBe(false);
+      expect(row.svc, name).toBe(true);
+    }
+    for (const name of creator) {
+      const row = byName.get(name)!;
+      expect(row.definer, name).toBe(true);
+      expect(row.pinned, name).toBe(true);
+      expect(row.anon, name).toBe(false);
+      expect(row.auth, name).toBe(true);
+      expect(row.svc, name).toBe(true);
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ */
