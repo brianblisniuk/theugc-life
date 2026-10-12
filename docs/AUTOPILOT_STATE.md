@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `0d176e42a7487c24c42f7d448f1fb3b3912535e3` (merge of PR #49, 2026-10-12)  
-**State:** BUILDING until the PR number is recorded in `.grok/autopilot-state.json`, then AWAITING_MERGE_DECISION (the schema name for waiting on a human merge). B07 slice 1 (rules engine, migration `0044`) is on `feat/b07-slice1-rules-engine`. Live GitHub outranks this file.  
+**State:** AWAITING_MERGE_DECISION (the schema name for waiting on a human merge). PR #50, branch `feat/b07-slice1-rules-engine`. Implementation head recorded in `.grok/autopilot-state.json` is `d574157eba0e484aa4c37cdd3aacb368e842b2db`. Live GitHub outranks this file, including if a later commit on this PR moves the head.  
 **Current frontier:** B07 slice 1. The owner authorized a deterministic rules engine (D075, reconciliation only). No external model runs, and no provider receives Gmail data. Model-backed inference remains gated. This slice is not the whole of B07.
 
 ## Main history note (not rewritten)
@@ -28,7 +28,7 @@
 - PR #49 — Autonomous engineering system v1 — `0d176e42a7487c24c42f7d448f1fb3b3912535e3`
 
 ## Next action
-- B07 slice 1 is implemented on `feat/b07-slice1-rules-engine`. After this PR is open, the state moves to AWAITING_MERGE_DECISION. Do not merge it from automation.
+- B07 slice 1 is PR #50 (`feat/b07-slice1-rules-engine`). State is AWAITING_MERGE_DECISION. Do not merge it from automation.
 - Model-backed B07 inference and B08 stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N10 (stale tracker §9) is corrected in this PR.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
