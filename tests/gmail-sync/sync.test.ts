@@ -249,6 +249,7 @@ d("B08 incremental sync", () => {
     const outcome = await runAccountSync(mail, depsFor(client, gmail));
     expect(outcome.result).toBe("not_due");
     expect(gmail.calls.historyStarts).toEqual(["100"]);
+    expect(gmail.calls.order).toEqual(["history", "profile", "sent", "thread"]);
     expect(gmail.calls.sentCalls).toBe(1);
     expect(gmail.calls.profileCalls).toBe(1);
     const cursor = await cursorOf(client, mail.mailAccountId);
@@ -260,6 +261,101 @@ d("B08 incremental sync", () => {
       [mail.mailAccountId],
     );
     expect(mode.rows[0]!.mode).toBe("bounded_rescan");
+  });
+
+  async function mailArrivingDuringRescan(
+    label: string,
+    prepare: () => Promise<{ userId: string; mailAccountId: string }>,
+    historyErrors: GmailReadError[] | undefined,
+    firstOrder: string[],
+  ) {
+    const mail = await prepare();
+    const threads: Record<string, ReturnType<typeof thread>> = {};
+    let gapMs = 0;
+    const gmail = createFakeIncremental({
+      historyErrors,
+      sentThreadIds: ["t-during"],
+      profileHistoryId: "100",
+      profileHistoryIdAfterScan: "900",
+      threads,
+      historyByStart: {
+        "100": {
+          historyId: "150",
+          nextPageToken: null,
+          threads: [{ providerThreadId: "t-during", labelIds: ["SENT"] }],
+        },
+      },
+      beforeGetThread: async (threadId) => {
+        if (gapMs === 0) {
+          const run = await client.query<{ window_end_at: Date }>(
+            `select window_end_at from private.gmail_sync_runs
+              where mail_account_id = $1 and status = 'runnable'`,
+            [mail.mailAccountId],
+          );
+          gapMs = run.rows[0]!.window_end_at.getTime() + 1;
+        }
+        threads[threadId] = thread(threadId, [
+          textMessage({
+            id: "m-during",
+            threadId,
+            internalDateMs: gapMs,
+            labelIds: ["SENT"],
+          }),
+        ]);
+      },
+    });
+
+    const first = await runAccountSync(mail, depsFor(client, gmail));
+    expect(first.result).toBe("not_due");
+    expect(gmail.calls.order).toEqual(firstOrder);
+    expect(gmail.calls.profileCalls).toBe(1);
+    expect((await cursorOf(client, mail.mailAccountId)).history_id).toBe("100");
+    expect(await rawCount(client, mail.mailAccountId)).toBe(0);
+
+    await client.query("select pg_sleep(0.05)");
+    await client.query(
+      "update private.gmail_sync_cursors set next_sync_at = now() where mail_account_id = $1",
+      [mail.mailAccountId],
+    );
+    const second = await runAccountSync(mail, depsFor(client, gmail));
+    expect(second.result).toBe("not_due");
+    expect(gmail.calls.profileCalls).toBe(1);
+    expect(gmail.calls.historyStarts.at(-1)).toBe("100");
+    const ids = await client.query<{ provider_message_id: string }>(
+      `select provider_message_id from private.gmail_raw_messages
+        where mail_account_id = $1 order by provider_message_id`,
+      [mail.mailAccountId],
+    );
+    expect(ids.rows.map((row) => row.provider_message_id)).toEqual(["m-during"]);
+  }
+
+  it("picks up mail that arrives during the first bounded re-scan on the next poll", async () => {
+    await mailArrivingDuringRescan(
+      "b08-gap-first",
+      async () => {
+        const mail = await mailbox(client, "b08-gap-first");
+        await completedImport(client, mail);
+        return mail;
+      },
+      undefined,
+      ["profile", "sent", "thread"],
+    );
+  });
+
+  it("picks up mail that arrives during a historyId 404 re-scan on the next poll", async () => {
+    await mailArrivingDuringRescan(
+      "b08-gap-404",
+      async () => (await ready("b08-gap-404", "55")).mail,
+      [
+        new GmailReadError({
+          operation: "history_list",
+          status: 404,
+          reason: "history_id_expired",
+          retryable: false,
+        }),
+      ],
+      ["history", "profile", "sent", "thread"],
+    );
   });
 
   it("re-fetches an already stored sent thread during a bounded re-scan", async () => {
@@ -593,6 +689,81 @@ d("B08 incremental sync", () => {
     );
     expect(marked.gmailCalls).toBe(0);
     expect((await cursorOf(client, mail.mailAccountId)).pipeline_pending).toBe(false);
+  });
+
+  it("leases the pipeline so login and the worker cannot both insert a commercial attempt", async () => {
+    const { mail } = await ready("b08-pipeline-lease", "100");
+    const sent = textMessage({ id: "m-lease", threadId: "t-lease", internalDateMs: recent() });
+    const gmail = createFakeIncremental({
+      historyPages: [
+        {
+          historyId: "230",
+          nextPageToken: null,
+          threads: [{ providerThreadId: "t-lease", labelIds: ["SENT"] }],
+        },
+      ],
+      threads: { "t-lease": thread("t-lease", [sent]) },
+    });
+    const db = rpc(client);
+    let entries = 0;
+    let nestedResult = "";
+    // One row per pipeline entry. Two workers that both pass the commercial
+    // "already current" check each insert, because attempts are not unique.
+    const insertAttempt = async (digest: string) => {
+      await client.query("begin");
+      try {
+        await client.query("select set_config('b07.machine_writer', 'on', true)");
+        await client.query(
+          `insert into private.gmail_commercial_thread_attempts
+             (user_id, mail_account_id, provider_thread_id, input_digest, schema_version,
+              transform_version, engine_kind, rule_version, compensation_structure, evidence_strength)
+           values ($1, $2, 't-lease', $3, 'v1', 'v1', 'rules', 'rules_v1', 'unknown',
+                   'insufficient_evidence')`,
+          [mail.userId, mail.mailAccountId, digest],
+        );
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      }
+    };
+    const outcome = await runAccountSync(
+      mail,
+      syncDeps({
+        db,
+        gmail,
+        accessToken: async () => ({ result: "ok", accessToken: "fake-token" }),
+        runPipeline: async () => {
+          const nested = await runAccountSync(
+            mail,
+            syncDeps({
+              db,
+              gmail: createFakeIncremental(),
+              accessToken: async () => ({ result: "ok", accessToken: "fake-token" }),
+              runPipeline: async () => {
+                entries += 1;
+                await insertAttempt("a".repeat(64));
+                return { completed: true };
+              },
+            }),
+          );
+          nestedResult = nested.result;
+          entries += 1;
+          await insertAttempt("b".repeat(64));
+          return { completed: true };
+        },
+      }),
+    );
+
+    expect(nestedResult).toBe("leased");
+    expect(entries).toBe(1);
+    expect(outcome.result).toBe("not_due");
+    const attempts = await client.query<{ n: number }>(
+      `select count(*)::int as n from private.gmail_commercial_thread_attempts
+        where mail_account_id = $1`,
+      [mail.mailAccountId],
+    );
+    expect(attempts.rows[0]!.n).toBe(1);
   });
 
   it("resumes a reauth pause when the mailbox is connected again", async () => {

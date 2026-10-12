@@ -576,6 +576,7 @@ d("explicit ACL contract (0024)", () => {
       "gmail_incremental_sync_pause",
       "gmail_incremental_sync_cancel_connection_stopped",
       "gmail_incremental_sync_mark_pipeline_done",
+      "gmail_incremental_sync_release_pipeline",
       "gmail_incremental_sync_list_pipeline_threads",
       "gmail_incremental_sync_purge_for_deletion",
       "gmail_incremental_sync_status",

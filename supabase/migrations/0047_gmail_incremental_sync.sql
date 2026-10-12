@@ -3,12 +3,16 @@
 -- ===========================================================================
 -- Polls Gmail history.list forward from the last completed historical-import
 -- window end. Same sent-rooted inclusion rule as D068. No Pub/Sub, no
--- gmail.send, no new scope. 0045 is B07.1 on main. 0046 stays reserved for
--- D01. This file is the next free number after that reservation.
+-- gmail.send, no new scope. 0045 is B07.1 on main. 0046 is D01 on main
+-- (PR #52). This file stays 0047.
 --
 -- The 15-minute cadence is a database due-time, discharged by the same
 -- operator-worker entrypoint the repo already uses for Gmail jobs. There is
 -- no cron daemon in this repository (B03). Creator login sets the due flag.
+--
+-- A bounded re-scan captures users.getProfile before messages.list and
+-- threads.get, and completion stores that earlier historyId. The pipeline
+-- step holds a cursor lease so two workers cannot both insert attempts.
 
 -- ---------------------------------------------------------------------------
 -- Tables
@@ -28,6 +32,16 @@ create table private.gmail_sync_cursors (
   next_sync_at timestamptz not null,
   login_sync_requested boolean not null default false,
   pipeline_pending boolean not null default false,
+  -- Held while a worker runs the local pipeline. A concurrent login and
+  -- gmail:sync:work both see this lease and only one of them inserts
+  -- commercial attempts. Cleared by mark_pipeline_done when the token matches,
+  -- or by release_pipeline when the pipeline is not finished. An expired
+  -- lease can be taken by the next claim.
+  pipeline_lease_token uuid,
+  pipeline_lease_expires_at timestamptz,
+  constraint gmail_sync_cursors_pipeline_lease_pair check (
+    (pipeline_lease_token is null) = (pipeline_lease_expires_at is null)
+  ),
   updated_at timestamptz not null default pg_catalog.now(),
 
   constraint gmail_sync_cursors_account_fk
@@ -678,9 +692,23 @@ begin
        select 1 from private.gmail_sync_runs r
         where r.mail_account_id = v_account.id and r.status = 'runnable'
      ) then
+    if v_cursor.pipeline_lease_token is not null
+       and v_cursor.pipeline_lease_expires_at > pg_catalog.clock_timestamp() then
+      return jsonb_build_object('result', 'leased');
+    end if;
+
+    v_token := pg_catalog.gen_random_uuid();
+    update private.gmail_sync_cursors
+       set pipeline_lease_token = v_token,
+           pipeline_lease_expires_at =
+             pg_catalog.clock_timestamp() + make_interval(secs => p_lease_seconds),
+           updated_at = pg_catalog.now()
+     where mail_account_id = v_account.id;
+
     return jsonb_build_object(
       'result', 'ok',
       'step', 'run_pipeline',
+      'lease_token', v_token,
       'mail_account_id', v_account.id,
       'user_id', v_account.user_id
     );
@@ -754,6 +782,19 @@ begin
   if v_run.mode = 'history_list' and not v_run.enumeration_complete then
     v_step := 'enumerate_history';
     v_thread := null;
+  elsif v_run.mode = 'bounded_rescan'
+        and v_run.history_id_latest is null
+        and not v_run.enumeration_complete
+        and not v_run.known_threads_enqueued
+        and not exists (
+          select 1 from private.gmail_sync_threads t where t.run_id = v_run.id
+        ) then
+    -- Profile historyId is taken before messages.list / threads.get.
+    -- Completion stores this earlier id. A profile read after those fetches
+    -- would skip mail that arrived during the scan: that mail is outside
+    -- this run's window, and the next history.list would start too late.
+    v_step := 'capture_history';
+    v_thread := null;
   elsif v_run.mode = 'bounded_rescan' and not v_run.enumeration_complete then
     v_step := 'enumerate_sent';
     v_thread := null;
@@ -770,9 +811,6 @@ begin
      order by t.provider_thread_id
      limit 1;
     v_step := 'fetch_thread';
-  elsif v_run.history_id_latest is null then
-    v_step := 'capture_history';
-    v_thread := null;
   else
     v_step := 'complete_run';
     v_thread := null;
@@ -1518,6 +1556,16 @@ begin
     return v_began;
   end if;
 
+  -- The pre-scan id is the one completion stores. A later profile response
+  -- must not replace it.
+  if exists (
+    select 1 from private.gmail_sync_runs r
+     where r.id = p_run_id and r.history_id_latest is not null
+  ) then
+    perform private.gmail_sync_release_lease(p_run_id);
+    return jsonb_build_object('result', 'ok', 'replaced', false);
+  end if;
+
   update private.gmail_sync_runs
      set history_id_latest = p_history_id,
          estimated_gmail_quota_units =
@@ -1699,7 +1747,8 @@ $$;
 
 create or replace function public.gmail_incremental_sync_mark_pipeline_done(
   p_user_id uuid,
-  p_mail_account_id uuid
+  p_mail_account_id uuid,
+  p_lease_token uuid
 )
 returns jsonb
 language plpgsql
@@ -1709,6 +1758,7 @@ as $$
 declare
   v_auth text;
   v_account public.mail_accounts%rowtype;
+  v_cursor private.gmail_sync_cursors%rowtype;
 begin
   select m.* into v_account
     from public.mail_accounts m
@@ -1723,8 +1773,62 @@ begin
     return jsonb_build_object('result', v_auth, 'connection_state', v_account.connection_state);
   end if;
 
+  select c.* into v_cursor
+    from private.gmail_sync_cursors c
+   where c.mail_account_id = p_mail_account_id and c.user_id = p_user_id
+   for update;
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+  if v_cursor.pipeline_lease_token is distinct from p_lease_token then
+    return jsonb_build_object('result', 'stale_lease');
+  end if;
+
   update private.gmail_sync_cursors
      set pipeline_pending = false,
+         pipeline_lease_token = null,
+         pipeline_lease_expires_at = null,
+         updated_at = pg_catalog.now()
+   where mail_account_id = p_mail_account_id and user_id = p_user_id;
+
+  return jsonb_build_object('result', 'ok');
+end;
+$$;
+
+create or replace function public.gmail_incremental_sync_release_pipeline(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_lease_token uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_cursor private.gmail_sync_cursors%rowtype;
+begin
+  if not exists (
+    select 1 from public.mail_accounts m
+     where m.id = p_mail_account_id and m.user_id = p_user_id
+  ) then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  select c.* into v_cursor
+    from private.gmail_sync_cursors c
+   where c.mail_account_id = p_mail_account_id and c.user_id = p_user_id
+   for update;
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+  if v_cursor.pipeline_lease_token is distinct from p_lease_token then
+    return jsonb_build_object('result', 'stale_lease');
+  end if;
+
+  update private.gmail_sync_cursors
+     set pipeline_lease_token = null,
+         pipeline_lease_expires_at = null,
          updated_at = pg_catalog.now()
    where mail_account_id = p_mail_account_id and user_id = p_user_id;
 
@@ -1946,7 +2050,8 @@ begin
     'public.gmail_incremental_sync_release_claim(uuid,uuid,uuid)',
     'public.gmail_incremental_sync_pause(uuid,uuid,text)',
     'public.gmail_incremental_sync_cancel_connection_stopped(uuid,uuid)',
-    'public.gmail_incremental_sync_mark_pipeline_done(uuid,uuid)',
+    'public.gmail_incremental_sync_mark_pipeline_done(uuid,uuid,uuid)',
+    'public.gmail_incremental_sync_release_pipeline(uuid,uuid,uuid)',
     'public.gmail_incremental_sync_list_pipeline_threads(uuid,uuid,integer)',
     'public.gmail_incremental_sync_purge_for_deletion(uuid,uuid,uuid)',
     'public.gmail_incremental_sync_status(uuid,uuid)'

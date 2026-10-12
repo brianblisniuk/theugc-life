@@ -21,6 +21,8 @@ export interface FakeIncrementalCalls {
   sentCalls: number;
   threadIds: string[];
   profileCalls: number;
+  /** Provider calls in the order they actually happened. */
+  order: string[];
 }
 
 export interface FakeIncremental extends GmailIncrementalReadAdapter {
@@ -35,6 +37,14 @@ export function createFakeIncremental(
     threads?: Record<string, RawThread>;
     missingThreads?: string[];
     profileHistoryId?: string;
+    /**
+     * Returned only when getProfile runs after a SENT search or threads.get.
+     * A pre-scan profile call still returns profileHistoryId. Tests use this
+     * to tell a post-fetch historyId from the one captured before the re-scan.
+     */
+    profileHistoryIdAfterScan?: string;
+    historyByStart?: Record<string, FakeHistoryPage>;
+    beforeGetThread?: (threadId: string) => Promise<void>;
     profileError?: GmailReadError | null;
   } = {},
 ): FakeIncremental {
@@ -50,19 +60,27 @@ export function createFakeIncremental(
     sentCalls: 0,
     threadIds: [],
     profileCalls: 0,
+    order: [],
   };
 
   return {
     calls,
 
     async listHistory({ startHistoryId, pageToken }) {
+      calls.order.push("history");
       calls.historyStarts.push(startHistoryId);
       calls.historyPageTokens.push(pageToken);
       const failure = historyErrors.shift();
       if (failure) throw failure;
       const index = calls.historyPageTokens.length - 1;
-      const page =
-        pageToken === null
+      const mapped = options.historyByStart?.[startHistoryId];
+      const page = options.historyByStart
+        ? (mapped ?? {
+            historyId: startHistoryId,
+            nextPageToken: null,
+            threads: [],
+          })
+        : pageToken === null
           ? historyPages[0]
           : (historyPages.find((_, i) => historyPages[i - 1]?.nextPageToken === pageToken) ??
             historyPages[index]);
@@ -78,6 +96,7 @@ export function createFakeIncremental(
     },
 
     async listSentMessages() {
+      calls.order.push("sent");
       calls.sentCalls += 1;
       return {
         candidates: (options.sentThreadIds ?? []).map((threadId, index) => ({
@@ -90,6 +109,8 @@ export function createFakeIncremental(
     },
 
     async getThread({ threadId }) {
+      calls.order.push("thread");
+      if (options.beforeGetThread) await options.beforeGetThread(threadId);
       calls.threadIds.push(threadId);
       if (missing.has(threadId)) {
         throw new GmailReadError({
@@ -112,10 +133,15 @@ export function createFakeIncremental(
     },
 
     async getProfileHistoryId() {
+      calls.order.push("profile");
       calls.profileCalls += 1;
       if (options.profileError) throw options.profileError;
+      const scanStarted = calls.sentCalls > 0 || calls.threadIds.length > 0;
       return {
-        historyId: options.profileHistoryId ?? "900",
+        historyId:
+          scanStarted && options.profileHistoryIdAfterScan
+            ? options.profileHistoryIdAfterScan
+            : (options.profileHistoryId ?? "900"),
         quotaUnits: PROFILE_GET_QUOTA_UNITS,
       };
     },

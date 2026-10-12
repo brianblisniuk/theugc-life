@@ -2989,9 +2989,15 @@ No completed historical import means there is no forward start, and sync does
 not invent one. A historical import that is still runnable or paused refuses
 sync until it finishes. Each mailbox keeps one `historyId`. The first sync,
 and any sync whose `historyId` Gmail rejects with HTTP 404, uses a bounded
-re-scan: `messages.list` on `SENT` inside the forward window, plus
-`threads.get` of threads this mailbox has already stored as non-draft `SENT`.
-`users.getProfile` then records a fresh `historyId`. A 404 from `threads.get`
+re-scan. `users.getProfile` records a `historyId` before that re-scan, and
+completion stores that earlier id. A profile id taken after `messages.list`
+or `threads.get` is not stored. The re-scan itself is `messages.list` on
+`SENT` inside the forward window, plus `threads.get` of threads this mailbox
+has already stored as non-draft `SENT`. Mail that arrives during the scan is
+outside this run's window. The next `history.list` starts at the pre-scan id,
+so that mail is returned inside the next forward window. A `history.list` run
+takes its `historyId` from the list response before thread fetches, not from
+a later profile call. A 404 from `threads.get`
 is still a missing thread. It does not expire the cursor.
 
 `history.list` is requested with `historyTypes=messageAdded` only. A missing
@@ -3003,7 +3009,9 @@ deletion purge, which is the same snapshot identity D068 already uses.
 Message identity stays the historical-import primary key, so a repeated or
 overlapping run updates one row instead of inserting a second copy. One
 mailbox has one active sync run, held by a lease. A concurrent worker does
-not start a second run.
+not start a second run. The local pipeline after a completed run takes the
+same kind of lease. Login and `gmail:sync:work` cannot both run it while that
+lease is held, so commercial attempts are not inserted twice.
 
 Disconnect, deletion pending, and deleted cancel runnable and paused sync runs
 and clear the login-due flag. Sync does not run after that. Reconnect does not
@@ -3029,7 +3037,7 @@ not defined here. They are not part of this migration. B08 is not done until
 that instrumentation has its own decision.
 
 `0045_gmail_commercial_meaning_followups.sql` is B07.1, merged to `main` as
-PR #51 (`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`). `0046` stays reserved for
-D01 (PR #52). This block keeps `0047`, the next free number after that
-reservation. D074 still applies: a reserved number is advisory until the
-migration is written against live `main`.
+PR #51 (`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`). `0046_trips_context.sql`
+is D01, merged to `main` as PR #52 (`4062170212beb8b978a248ef219eb91ddbfb080b`).
+This block keeps `0047`. D074 still applies: a reserved number is advisory
+until the migration is written against live `main`.

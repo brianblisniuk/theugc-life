@@ -355,7 +355,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| D01 | PLANNED | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
+| D01 | **MERGED** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046`. | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
@@ -645,9 +645,12 @@ The open implementation block is:
 > **B08 — continuous Gmail sync (D076). Migration
 > `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
 > and on creator login, same D068 inclusion rule, no Pub/Sub and no new
-> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. `0046` stays
-> reserved for D01. Pilot KPIs are not in D076 and are not in this PR. Do
-> not merge from automation.**
+> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. Audit of
+> `e3514a6` failed: the bounded re-scan now stores the profile `historyId`
+> captured before the scan, and the pipeline step is leased. Awaiting
+> re-audit. `0046` is D01 on `main` (PR #52, `4062170`). This PR keeps
+> `0047`. Pilot KPIs are not in D076 and are not in this PR. Do not merge
+> from automation.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

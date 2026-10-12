@@ -12,9 +12,11 @@ One mailbox, one forward window fixed when the run starts: `[horizon_end_at, clo
 
 When `historyId` is null, or Gmail returns HTTP 404 for `history.list`, the run switches to a bounded re-scan:
 
-1. `messages.list` on `SENT` inside the forward window.
-2. `threads.get` for already-stored non-draft `SENT` threads, in provider-thread-id order, 100 at a time.
-3. `users.getProfile` to store a new `historyId`.
+1. `users.getProfile`, before any re-scan read. Completion stores that `historyId`. A profile id taken after the fetches below is not stored.
+2. `messages.list` on `SENT` inside the forward window.
+3. `threads.get` for already-stored non-draft `SENT` threads, in provider-thread-id order, 100 at a time.
+
+Mail that arrives during that re-scan has a later history id. The next `history.list` starts at the pre-scan id and returns it. A `history.list` run does not call `users.getProfile`; its `historyId` is the one from the list response, captured before thread fetches.
 
 Messages are stored only when `internalDate` is inside the run window. Drafts are dropped before storage. The primary key remains `(mail_account_id, provider_message_id)`.
 
@@ -24,7 +26,7 @@ No Pub/Sub watch. No `gmail.send`. No new OAuth scope. No production cron. No pi
 
 ## Scheduling
 
-`private.gmail_sync_cursors.next_sync_at` is set 15 minutes after a successful run. `login_sync_requested` makes the mailbox due sooner. `pipeline_pending` replays normalization and the later local stages without another Gmail read. `npm run gmail:sync:work` lists due mailboxes and discharges them. Creator login calls the same worker for that user only.
+`private.gmail_sync_cursors.next_sync_at` is set 15 minutes after a successful run. `login_sync_requested` makes the mailbox due sooner. `pipeline_pending` replays normalization and the later local stages without another Gmail read. That replay holds a cursor lease. A second worker, including login racing `gmail:sync:work`, gets `leased` and does not run the pipeline again. `npm run gmail:sync:work` lists due mailboxes and discharges them. Creator login calls the same worker for that user only.
 
 ## Failure
 

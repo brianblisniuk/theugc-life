@@ -67,6 +67,7 @@ const STOP = new Set([
   "not_configured",
   "configuration_error",
   "failed",
+  "not_complete",
   "step_budget_exhausted",
 ]);
 
@@ -97,18 +98,36 @@ export async function runAccountSync(
     });
 
     if (claim.result === "ok" && claim.step === "run_pipeline") {
-      const piped = await deps.runPipeline({
-        userId: input.userId,
-        mailAccountId: input.mailAccountId,
-      });
-      if (piped && piped.completed === false) {
-        return { result: "pipeline_pending", gmailCalls };
+      const pipelineLease = claim.lease_token;
+      if (!pipelineLease) return { result: "failed", gmailCalls, step: "run_pipeline" };
+      try {
+        const piped = await deps.runPipeline({
+          userId: input.userId,
+          mailAccountId: input.mailAccountId,
+        });
+        if (piped && piped.completed === false) {
+          const released = await rpc(deps, "gmail_incremental_sync_release_pipeline", {
+            p_user_id: input.userId,
+            p_mail_account_id: input.mailAccountId,
+            p_lease_token: pipelineLease,
+          });
+          if (released.result !== "ok") return { result: released.result, gmailCalls };
+          return { result: "pipeline_pending", gmailCalls };
+        }
+        const marked = await rpc(deps, "gmail_incremental_sync_mark_pipeline_done", {
+          p_user_id: input.userId,
+          p_mail_account_id: input.mailAccountId,
+          p_lease_token: pipelineLease,
+        });
+        if (marked.result !== "ok") return { result: marked.result, gmailCalls };
+      } catch (error) {
+        await rpc(deps, "gmail_incremental_sync_release_pipeline", {
+          p_user_id: input.userId,
+          p_mail_account_id: input.mailAccountId,
+          p_lease_token: pipelineLease,
+        });
+        throw error;
       }
-      const marked = await rpc(deps, "gmail_incremental_sync_mark_pipeline_done", {
-        p_user_id: input.userId,
-        p_mail_account_id: input.mailAccountId,
-      });
-      if (marked.result !== "ok") return { result: marked.result, gmailCalls };
       continue;
     }
 

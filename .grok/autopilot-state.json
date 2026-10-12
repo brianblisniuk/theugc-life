@@ -1,9 +1,9 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. B07.1 (PR #51) is merged at 187af6a. B08 (D076) is PR #53, awaiting audit. The schema has no AWAITING_AUDIT value, so state is AUDITING. This commit cannot name itself, so expected_head stays null. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. B07.1 (PR #51) is merged at 187af6a. D01 (PR #52) is merged at 4062170 with migration 0046. B08 (D076) is PR #53 and keeps migration 0047. Audit of e3514a6 failed; the re-scan historyId and pipeline lease are corrected in this PR and awaiting re-audit. The schema has no AWAITING_AUDIT value, so state is AUDITING. This commit cannot name itself, so expected_head stays null. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",
-  "last_recorded_main": "187af6a3d4b4b5f6db1ec6d1f77ca975e791f852",
+  "last_recorded_main": "4062170212beb8b978a248ef219eb91ddbfb080b",
   "active_block": "B08 incremental Gmail sync (D076, migration 0047, PR #53)",
   "branch": "feat/b08-gmail-incremental-sync",
   "pr": 53,
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "187af6a3d4b4b5f6db1ec6d1f77ca975e791f852",
+    "ref": "4062170212beb8b978a248ef219eb91ddbfb080b",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "B08 audit of PR #53, then a human merge decision. Pilot KPIs and model-backed B07 inference stay gated."
+  "next_dependency": "Re-audit of PR #53 after the bounded re-scan historyId and pipeline lease corrections, then a human merge decision. D01 (PR #52, migration 0046) is merged. Pilot KPIs and model-backed B07 inference stay gated."
 }
