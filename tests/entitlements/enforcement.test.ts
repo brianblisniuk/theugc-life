@@ -264,6 +264,12 @@ d("E04 entitlement inventory enforcement", () => {
       [creators.other, otherPipeline, otherMail],
     );
     otherBinding = binding[0]!.id;
+
+    await adminQuery(
+      `insert into public.creator_profile_field_opt_ins (creator_id, field_key, opted_in)
+       values ($1, 'e04_secret', false)`,
+      [creators.other],
+    );
   });
 
   afterAll(async () => {
@@ -522,6 +528,11 @@ d("E04 entitlement inventory enforcement", () => {
           params: [otherMail],
           marker: "other-secret@e04.test",
         },
+        creator_profile_field_opt_ins: {
+          sql: "select field_key from public.creator_profile_field_opt_ins where creator_id = $1",
+          params: [creators.other],
+          marker: "e04_secret",
+        },
       };
 
       for (const table of enforcement.tables) {
@@ -621,6 +632,54 @@ d("E04 entitlement inventory enforcement", () => {
         [U.other],
       );
       expect(stillThere.map((row) => row.status)).toContain("active");
+      return;
+    }
+
+    if (enforcement.kind === "caller_scoped_rpc") {
+      const call =
+        enforcement.rpc === "creator_personal_counts"
+          ? "select public.creator_personal_counts() as r"
+          : "select public.creator_past_collaborations(null) as r";
+      const anonCall = await queryAs({ role: "anon", sub: null }, call);
+      expect(anonCall.error, id).not.toBeNull();
+      expect(anonCall.error!.message, id).toMatch(/permission denied/i);
+
+      if (enforcement.rpc === "creator_personal_counts") {
+        const owner = await queryAs<{ r: { result: string; agreements: number } }>(
+          { role: "authenticated", sub: U.other },
+          call,
+        );
+        expect(owner.error, id).toBeNull();
+        expect(owner.rows[0]!.r.result, id).toBe("ok");
+        expect(owner.rows[0]!.r.agreements, id).toBeGreaterThan(0);
+        const attacker = await queryAs<{ r: { result: string; agreements: number } }>(
+          { role: "authenticated", sub: U.pro },
+          call,
+        );
+        expect(attacker.error, id).toBeNull();
+        expect(attacker.rows[0]!.r.result, id).toBe("ok");
+        expect(attacker.rows[0]!.r.agreements, id).toBe(0);
+        return;
+      }
+
+      const inserted = await adminQuery<{ id: string }>(
+        `insert into public.collaborations (creator_id, hotel_id, status, collaboration_type)
+         values ($1, $2, 'completed', 'stay') returning id`,
+        [creators.other, baliHotels[0]],
+      );
+      const pastId = inserted[0]!.id;
+      const owner = await queryAs<{ r: { result: string; collaborations: { id: string }[] } }>(
+        { role: "authenticated", sub: U.other },
+        call,
+      );
+      expect(owner.error, id).toBeNull();
+      expect(JSON.stringify(owner.rows), id).toContain(pastId);
+      const attacker = await queryAs(
+        { role: "authenticated", sub: U.pro },
+        call,
+      );
+      expect(attacker.error, id).toBeNull();
+      expect(JSON.stringify(attacker), id).not.toContain(pastId);
       return;
     }
 

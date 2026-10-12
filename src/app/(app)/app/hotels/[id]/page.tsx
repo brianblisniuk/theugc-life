@@ -30,6 +30,7 @@ import { LockedContactSection } from "@/components/hotels/locked-contact";
 import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
+import { PastCollaborations } from "@/components/profile/past-collaborations";
 import { HotelSectionNav } from "@/components/shell/hotel-section-nav";
 import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
@@ -45,6 +46,7 @@ import {
   getHotelPremiumIntelligence,
   loadSessionCreatorBadges,
 } from "@/lib/hotels/queries";
+import { getPastCollaborations } from "@/lib/profile/queries";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
 import {
   backLink,
@@ -145,7 +147,11 @@ export default async function HotelDetailPage({
       : undefined;
   const mailboxes = relationship.status === "open" ? await listConnectedMailboxes() : undefined;
 
-  const [session, trips] = await Promise.all([resolveSession(), listTrips()]);
+  const [session, trips, pastCollaborations] = await Promise.all([
+    resolveSession(),
+    listTrips(),
+    getPastCollaborations(hotel.id),
+  ]);
   const badges =
     session.status === "authenticated"
       ? await loadSessionCreatorBadges([hotel.id], session.session.userId)
@@ -272,6 +278,12 @@ export default async function HotelDetailPage({
 
       {/* 4. The creator's private relationship */}
       <Section id="activity" title="Your activity">
+        <PastCollaborations
+          load={pastCollaborations}
+          heading="Past collaborations with this hotel"
+          linkToHotel={false}
+          hideWhenEmpty
+        />
         <ActivityPanel
           hotelId={hotel.id}
           relationship={relationship}

@@ -367,7 +367,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
-| D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
+| D08 | **DONE** — PR #61, merge `d030cd0329c8b1e30afcdd14a72485174edcd9f5`, migration `0052`. D086–D088 stay Proposed. Private profile editor, creator-recorded counts, a past-collaboration list, and a private per-field opt-in table. The hotel share link, the public portfolio, and verified proof are not built. | creator context + personal analytics. Verified proof and the hotel share link stay out of this block. | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
 **Cumulative future rounds:** 25
@@ -403,8 +403,8 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E01 | **DONE** — PR #55, merge `ab0507461b4b47b21112dd07589b4b8a88d3efb3`. Discover + Hotel Detail over published canonical hotels. E01 left an empty map slot and did not call a tile service. No migration. The slot is filled by MAP (PR #57). | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
 | MAP | **DONE** — PR #57, merge `023a354c8592411e1ac85c818324589993f358a6`. Google Maps JavaScript API (D079) on Discover (the current filtered page) and Hotel Detail (one pin). Key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. A missing key renders no map and no error. No migration. | Fill the E01 map slot | Published hotels only; no private creator data is sent to Google |
 | E02 | **DONE** — PR #59, merge `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted (Brian, 12 Oct 2026). Primary navigation stays the PRD §6 five items. Inbox and Collaborations are pipeline surfaces. | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
-| E03 | **DONE — PR #60**. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. The merge SHA is recorded by the next block. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
-| E04 | **IN PR #62** — branch `cursor/e04-entitlement-inventory-3a73`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D083–D085 are not used. One inventory maps existing modules to written Free / Pass / Pro rules. Features with no written tier stay UNDECIDED. Awaiting re-audit. Do not merge. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
+| E03 | **DONE** — PR #60, merge `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
+| E04 | **IN PR #62** — branch `cursor/e04-entitlement-inventory-3a73`. Base is D08 merge `d030cd0`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. Awaiting re-audit. Do not merge. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
 | E05 | PLANNED | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 
 **Base rounds:** 5  
@@ -672,15 +672,25 @@ only: it is not a charge. E01 did not take `0049`. D06 (PR #58) is merged at
 `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted
 (Brian, 12 Oct 2026). The shell is unchanged by E03.
 
-**PR #60 merges E03** as `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No
-migration. D082 is Proposed and is not Accepted. Home derives the first useful
-flow from a connected Gmail mailbox, a trip, and a saved hotel, inside that
-shell. `0051` was not taken by E03.
+**E03 (PR #60) is merged**, as merge commit
+`fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No migration. D082 is Proposed
+and is not Accepted. Home derives the first useful flow from a connected
+Gmail mailbox, a trip, and a saved hotel, inside the E02 shell. `0051` was
+not taken by E03.
 
-**E04** is PR #62, branch `cursor/e04-entitlement-inventory-3a73`. Migration
-`0051_outside_free_allowance.sql` makes the outside Free counters count only
-outside-coverage rows (D056). Access stays on entitlement rows. Undecided
-features are questions, not new tiers. Awaiting re-audit. Do not merge.
+**D08 (PR #61) is merged**, as merge commit
+`d030cd0329c8b1e30afcdd14a72485174edcd9f5`. Migration
+`0052_creator_profile_personal_analytics.sql`. D086–D088 stay Proposed. The
+Profile page edits private fields, shows creator-recorded counts, and lists
+past collaborations as links. `creator_profile_field_opt_ins` is the private
+per-field opt-in a later revocable hotel share link will read. That link is
+not built. `0050` and `0049` are not edited.
+
+**E04** is PR #62, branch `cursor/e04-entitlement-inventory-3a73`, based on
+that D08 merge. Migration `0051_outside_free_allowance.sql` makes the outside
+Free counters count only outside-coverage rows (D056). D08's new surfaces are
+in the inventory. Personal counts, past collaborations, and field opt-ins stay
+UNDECIDED. Access stays on entitlement rows. Awaiting re-audit. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

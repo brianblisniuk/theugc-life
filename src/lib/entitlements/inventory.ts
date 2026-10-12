@@ -63,6 +63,7 @@ export type Enforcement =
   | { kind: "owner_rows"; tables: readonly string[] }
   | { kind: "staff_write" }
   | { kind: "purchase_is_not_access" }
+  | { kind: "caller_scoped_rpc"; rpc: "creator_personal_counts" | "creator_past_collaborations" }
   | { kind: "kept_current" };
 
 export interface InventoryEntry {
@@ -477,8 +478,9 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/app/(app)/app/profile/page.tsx",
       "src/app/(app)/app/profile/portfolio/page.tsx",
       "src/lib/auth/actions.ts",
+      "src/lib/profile/actions.ts",
     ],
-    serverActions: ["completeOnboarding"],
+    serverActions: ["completeOnboarding", "updateCreatorProfile"],
     rpcs: [],
     rule: { kind: "owner_private" },
     anon: "deny",
@@ -503,6 +505,61 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["PRD §5.3.1", "PRD §10.2", "PRD §7.6"],
     question:
       "What does Basic withhold on Free that a Destination Pass or Pro profile includes? PRD §10.2 says a Free creator can manage their own profile, and §5.3.1 does not name the locked fields. Current behavior is unchanged.",
+  },
+  {
+    id: "profile.personal_analytics",
+    module: "Profile",
+    summary:
+      "Personal counts are the caller's recorded outcomes. No accepted decision assigns Free, Pass, or Pro. The read stays creator_personal_counts for the signed-in creator.",
+    routes: ["/app/profile"],
+    sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/queries.ts"],
+    serverActions: [],
+    rpcs: ["creator_personal_counts"],
+    rule: { kind: "undecided" },
+    anon: "deny",
+    enforcement: { kind: "caller_scoped_rpc", rpc: "creator_personal_counts" },
+    sources: ["D087"],
+    question:
+      "Are creator-recorded personal counts a Free capability, or does a Destination Pass or Pro gate them? D087 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own counts.",
+  },
+  {
+    id: "profile.past_collaborations",
+    module: "Profile",
+    summary:
+      "Past collaborations are the caller's completed and cancelled rows. No accepted decision assigns Free, Pass, or Pro. The read stays creator_past_collaborations for the signed-in creator.",
+    routes: ["/app/profile", "/app/hotels/[id]"],
+    sourceFiles: [
+      "src/app/(app)/app/profile/page.tsx",
+      "src/app/(app)/app/hotels/[id]/page.tsx",
+      "src/lib/profile/queries.ts",
+    ],
+    serverActions: [],
+    rpcs: ["creator_past_collaborations"],
+    rule: { kind: "undecided" },
+    anon: "deny",
+    enforcement: { kind: "caller_scoped_rpc", rpc: "creator_past_collaborations" },
+    sources: ["D088"],
+    question:
+      "Are past collaborations a Free capability, or does a Destination Pass or Pro gate the private list? D088 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own completed and cancelled collaborations.",
+  },
+  {
+    id: "profile.field_opt_ins",
+    module: "Profile",
+    summary:
+      "A per-field opt-in is owner-only and private by default. No accepted decision assigns Free, Pass, or Pro. There is no hotel read and no share link.",
+    routes: ["/app/profile"],
+    sourceFiles: [
+      "src/app/(app)/app/profile/page.tsx",
+      "supabase/migrations/0052_creator_profile_personal_analytics.sql",
+    ],
+    serverActions: [],
+    rpcs: [],
+    rule: { kind: "undecided" },
+    anon: "deny",
+    enforcement: { kind: "owner_rows", tables: ["creator_profile_field_opt_ins"] },
+    sources: ["D086"],
+    question:
+      "Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, no row means not shared, and this block does not add a hotel read.",
   },
   {
     id: "billing.own",

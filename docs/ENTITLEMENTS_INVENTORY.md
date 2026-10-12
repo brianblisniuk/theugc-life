@@ -48,8 +48,11 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `home.dashboard` | Home | UNDECIDED |
 | `account.settings` | Account | UNDECIDED |
 | `auth.session` | Auth | UNDECIDED |
-| `profile.own` | Profile | owner. Free can manage their own profile |
+| `profile.own` | Profile | owner. Free can manage their own profile, including `updateCreatorProfile` |
 | `profile.basic_vs_full` | Profile | UNDECIDED |
+| `profile.personal_analytics` | Profile | UNDECIDED |
+| `profile.past_collaborations` | Profile | UNDECIDED |
+| `profile.field_opt_ins` | Profile | UNDECIDED |
 | `billing.own` | Billing | owner reads entitlement rows only |
 | `commerce.grant` | Billing | system grant. A purchase is not access |
 | `marketing.public` | Marketing | public page |
@@ -78,3 +81,6 @@ These features have no written tier. Current behavior is unchanged.
 - `account.settings` — Is the account page available on Free? No accepted decision assigns it a tier. Current behavior is unchanged: any signed-in creator can open their own account page.
 - `auth.session` — Confirm sign-in, sign-up, and password reset stay outside Pass and Pro. No accepted decision assigns them a tier. Current behavior is unchanged.
 - `profile.basic_vs_full` — What does Basic withhold on Free that a Destination Pass or Pro profile includes? PRD §10.2 says a Free creator can manage their own profile, and §5.3.1 does not name the locked fields. Current behavior is unchanged.
+- `profile.personal_analytics` — Are creator-recorded personal counts a Free capability, or does a Destination Pass or Pro gate them? D087 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own counts.
+- `profile.past_collaborations` — Are past collaborations a Free capability, or does a Destination Pass or Pro gate the private list? D088 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own completed and cancelled collaborations.
+- `profile.field_opt_ins` — Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, no row means not shared, and this block does not add a hotel read.

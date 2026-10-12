@@ -13,6 +13,7 @@ import * as collaborationActions from "@/lib/collaboration/actions";
 import * as gmailActions from "@/lib/gmail/actions";
 import * as inboxActions from "@/lib/inbox-pipeline/actions";
 import * as pipelineActions from "@/lib/pipeline/actions";
+import * as profileActions from "@/lib/profile/actions";
 import * as tripActions from "@/lib/trips/actions";
 import { FREE_LIMITS } from "@/lib/config";
 import {
@@ -91,6 +92,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(gmailActions),
       ...exportedFunctions(inboxActions),
       ...exportedFunctions(pipelineActions),
+      ...exportedFunctions(profileActions),
       ...exportedFunctions(tripActions),
     ].sort();
     const listed = [...serverActionIndex().keys()].sort();
@@ -237,6 +239,9 @@ describe("entitlement inventory", () => {
       "home.dashboard",
       "onboarding.activation",
       "profile.basic_vs_full",
+      "profile.field_opt_ins",
+      "profile.past_collaborations",
+      "profile.personal_analytics",
     ]);
     for (const entry of undecided) {
       expect(decideAccess(entry, ctx({ pro: true }))).toBe("undecided");

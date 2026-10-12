@@ -1,10 +1,10 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). E04 is PR #62 on cursor/e04-entitlement-inventory-3a73. Migration 0051_outside_free_allowance.sql fixes the contradictory outside Free counters (D056). D083-D085 are not used. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is d030cd0329c8b1e30afcdd14a72485174edcd9f5 (PR #61, D08, D086-D088 Proposed, migration 0052). E04 is PR #62 on cursor/e04-entitlement-inventory-3a73. Migration 0051_outside_free_allowance.sql fixes the contradictory outside Free counters (D056). D08 profile surfaces with no written tier stay UNDECIDED. D083-D085 are not used. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "fc2dfbd32bf1063dec17d4db16ad84b6311f400c",
-  "active_block": "E04 Pass/Pro entitlement inventory (migration 0051 outside Free counters)",
+  "last_recorded_main": "d030cd0329c8b1e30afcdd14a72485174edcd9f5",
+  "active_block": "E04 Pass/Pro entitlement inventory (migration 0051 outside Free counters; D08 surfaces included)",
   "branch": "cursor/e04-entitlement-inventory-3a73",
   "pr": 62,
   "expected_head": null,
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "fc2dfbd32bf1063dec17d4db16ad84b6311f400c",
+    "ref": "d030cd0329c8b1e30afcdd14a72485174edcd9f5",
     "verify": "unknown"
   },
   "required_human_action": null,
-  "next_dependency": "E04 awaits re-audit after the D056 outside-counter correction. D082 stays Proposed. D077 stays Proposed. Verify must be green on this PR head before a merge decision. Do not merge."
+  "next_dependency": "E04 awaits re-audit after merging D08 (PR #61, d030cd0). D086-D088 stay Proposed. D082 stays Proposed. D077 stays Proposed. Verify must be green on this PR head before a merge decision. Do not merge."
 }

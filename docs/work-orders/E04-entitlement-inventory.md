@@ -1,7 +1,7 @@
 # E04 — Pass/Pro entitlement and access audit
 
 **Status:** Binding work order. One PR. Do not merge.  
-**Base:** `main` `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60).  
+**Base:** `main` `d030cd0329c8b1e30afcdd14a72485174edcd9f5` (merge of PR #61, D08).  
 **Branch:** `cursor/e04-entitlement-inventory-3a73`  
 **PR:** #62  
 **Migration:** `0051_outside_free_allowance.sql`. Merged migrations are not edited.  
@@ -16,6 +16,7 @@ Is there one canonical inventory that maps every existing module, route, and ser
 - Adds `src/lib/entitlements/inventory.ts` and `docs/ENTITLEMENTS_INVENTORY.md`.
 - Routes the premium hotel helper and the Free workspace limits through that inventory.
 - Proves each entry against real Postgres: tier, missing/expired falls back to Free, a Pro row does not open another creator's rows, anon gets nothing, a purchase is not access.
+- Names D08's `updateCreatorProfile` on the existing owner profile write. Personal counts, past collaborations, and field opt-ins stay UNDECIDED. Current behavior is unchanged.
 
 ## What it does not do
 
