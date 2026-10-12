@@ -15,7 +15,10 @@ import { NextResponse } from "next/server";
 
 import { grantDestinationPass, grantPro, type GrantResult } from "@/lib/billing/grant";
 import { isAllowedEvent, secretMatches } from "@/lib/billing/webhook-auth";
+import { bindServerActions } from "@/lib/entitlements/inventory";
 import { serverEnv } from "@/lib/env.server";
+
+bindServerActions(["commerce.grant"]);
 
 export const runtime = "nodejs";
 

@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
+
+export const GMAIL_ENTITLEMENTS = bindServerActions(["gmail.connect"]);
 import {
   disconnectGmailAccount,
   grantPrivateProcessingConsent,

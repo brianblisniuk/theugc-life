@@ -4,9 +4,12 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { getClientEnv } from "@/env";
+import { bindServerActions } from "@/lib/entitlements/inventory";
+import { logger } from "@/lib/logger";
 import { POST_ONBOARDING_PATH } from "@/lib/onboarding/activation";
 import { createClient } from "@/lib/supabase/server";
-import { logger } from "@/lib/logger";
+
+export const AUTH_ENTITLEMENTS = bindServerActions(["auth.session", "profile.own"]);
 
 export interface AuthActionState {
   error?: string;
