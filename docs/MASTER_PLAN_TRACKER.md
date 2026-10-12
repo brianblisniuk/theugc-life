@@ -649,7 +649,9 @@ The open implementation block is:
 > `e3514a6` failed: the bounded re-scan now stores the profile `historyId`
 > captured before the scan, and the pipeline step is leased. Awaiting
 > re-audit. `0046` is D01 on `main` (PR #52, `4062170`). This PR keeps
-> `0047`. Pilot KPIs are not in D076 and are not in this PR. Do not merge
+> `0047` and adds `0048` so the commercial classifier decodes `&nbsp;`,
+> `&amp;`, `&lt;`, and `&gt;` without regard to case. `0045` is not edited.
+> Pilot KPIs are not in D076 and are not in this PR. Do not merge
 > from automation.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking

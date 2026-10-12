@@ -31,7 +31,7 @@
 - PR #52 — D01 trips — `4062170212beb8b978a248ef219eb91ddbfb080b`
 
 ## Next action
-- B08 incremental sync is PR #53 (`feat/b08-gmail-incremental-sync`, D076, migration `0047`). The audit of `e3514a6` failed on the re-scan historyId gap and the unleased pipeline. Those corrections are in this PR. State is AUDITING (awaiting re-audit). Do not merge from automation.
+- B08 incremental sync is PR #53 (`feat/b08-gmail-incremental-sync`, D076, migration `0047`). The audit of `e3514a6` failed on the re-scan historyId gap and the unleased pipeline. Those corrections are in this PR. `0048` makes the B07.1 classifier entity decode case-insensitive and does not edit `0045`. State is AUDITING (awaiting re-audit). Do not merge from automation.
 - Pilot KPIs and model-backed B07 inference stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
