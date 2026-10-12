@@ -338,12 +338,16 @@ d("A. preflight linearization against a concurrent lifecycle change", () => {
 // ===========================================================================
 
 describe("B. a safety decision may not be made on the first header alone", () => {
+  // Pinned ONCE for the suite: B4 compares two sanitized messages byte for byte,
+  // and a per-call Date.now() made them differ whenever the clock ticked a
+  // millisecond between the two calls (flaky CI on PR #46).
+  const INTERNAL_DATE = String(Date.now() - DAY);
   const part = (headers: { name: string; value: string }[]) =>
     sanitizeMessage({
       id: "m",
       threadId: "t",
       labelIds: ["SENT"],
-      internalDate: String(Date.now() - DAY),
+      internalDate: INTERNAL_DATE,
       payload: {
         mimeType: "multipart/mixed",
         headers: [{ name: "Subject", value: "s" }],

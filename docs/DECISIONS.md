@@ -2926,3 +2926,22 @@ details remain to be implemented; the PR #43 shared-secret webhook stub is not
 the final Rebill integration.
 
 Authoritative text: `docs/PAYMENT_PROVIDER.md`.
+
+## D074 — B07 migration number reconciliation (D072)
+
+Status: Reconciliation only — **not a new decision**; D072 is unchanged
+
+D072 reserved migration number `0041_gmail_commercial_meaning.sql` for B07.
+Before B07 implementation started, `0041` was used by
+`0041_pipeline_private_notes_rpc.sql` (PR #41), `0042` by
+`0042_grant_access_entitlement.sql` (PR #42), and `0043` is proposed by the
+baseline security corrections (`0043_grant_access_entitlement_hardening.sql`).
+The `0041` reservation in D072 is therefore void. B07's commercial-meaning
+migration takes the **next free migration number at implementation time**
+(expected `0044_gmail_commercial_meaning.sql` if 0043 merges first). The
+B07 contract (`docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`) is read with
+this substitution. Nothing else in D072 changes.
+
+Going forward a migration-number "reservation" in a decision is advisory; the
+actual number is assigned when the migration is written, after checking
+`supabase/migrations/` on live `main`.
