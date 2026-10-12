@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
+import { listCrumbs } from "@/lib/shell/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Profile" };
@@ -21,12 +23,15 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-text">Profile</h1>
-        <Link href="/app/profile/portfolio" className="text-sm text-accent hover:underline">
-          Portfolio
-        </Link>
-      </div>
+      <PageHeader
+        title="Profile"
+        crumbs={listCrumbs("Profile")}
+        actions={
+          <Link href="/app/profile/portfolio" className="text-sm text-accent hover:underline">
+            Portfolio
+          </Link>
+        }
+      />
       <dl className="grid gap-4 rounded-[var(--radius-app)] border border-border bg-surface p-5 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-muted">Display name</dt>

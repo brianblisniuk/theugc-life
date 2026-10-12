@@ -177,10 +177,21 @@ export type PipelineListState =
   | { kind: "empty_filtered"; title: string }
   | { kind: "empty"; title: string; body: string };
 
-/** Canonical pipeline URL. Page 1 is the bare URL, so it has one spelling. */
-export function pipelinePageHref(status: string | null, page: number): string {
+export type PipelineSurface = "all" | "inbox" | "collaborations";
+
+/**
+ * Canonical pipeline URL. Page 1 of the full list is the bare URL, so it has
+ * one spelling. The collaborations surface is won cycles and does not also
+ * write `status`, so that list has one spelling too.
+ */
+export function pipelinePageHref(
+  status: string | null,
+  page: number,
+  surface: PipelineSurface = "all",
+): string {
   const params = new URLSearchParams();
-  if (status) params.set("status", status);
+  if (surface === "inbox" || surface === "collaborations") params.set("surface", surface);
+  if (surface !== "collaborations" && status) params.set("status", status);
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/app/pipeline?${query}` : "/app/pipeline";
@@ -199,6 +210,7 @@ export function pipelineListState(input: {
   failed: boolean;
   page: PipelinePageInput | null;
   status: string | null;
+  surface?: PipelineSurface;
 }): PipelineListState {
   if (input.failed || input.page === null) {
     return { kind: "error", title: PIPELINE_COPY.errorTitle };
@@ -206,6 +218,7 @@ export function pipelineListState(input: {
 
   const { items, total, page, pageSize, totalPages, hasPrevious, hasNext } = input.page;
   const visible = items.length;
+  const surface = input.surface ?? "all";
 
   if (total > 0) {
     const suffix = input.status ? ` with status ${pipelineStatusLabel(input.status)}` : "";
@@ -225,8 +238,8 @@ export function pipelineListState(input: {
             totalPages,
             hasPrevious,
             hasNext,
-            previousHref: hasPrevious ? pipelinePageHref(input.status, page - 1) : null,
-            nextHref: hasNext ? pipelinePageHref(input.status, page + 1) : null,
+            previousHref: hasPrevious ? pipelinePageHref(input.status, page - 1, surface) : null,
+            nextHref: hasNext ? pipelinePageHref(input.status, page + 1, surface) : null,
             label: `Page ${page} of ${totalPages}`,
           }
         : null,

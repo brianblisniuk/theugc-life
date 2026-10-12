@@ -14,7 +14,6 @@
  * Internal import/provenance fields are never surfaced here.
  */
 import { cache } from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
@@ -31,6 +30,8 @@ import { LockedContactSection } from "@/components/hotels/locked-contact";
 import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
+import { HotelSectionNav } from "@/components/shell/hotel-section-nav";
+import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
 import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/queries";
@@ -45,6 +46,12 @@ import {
   loadSessionCreatorBadges,
 } from "@/lib/hotels/queries";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
+import {
+  backLink,
+  hotelCrumbs,
+  parseHotelOrigin,
+  pipelineReturnHref,
+} from "@/lib/shell/navigation";
 import { listTrips } from "@/lib/trips/queries";
 
 /** Deduped per request so metadata and the page share one fetch. */
@@ -64,9 +71,17 @@ export async function generateMetadata({
   }
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="space-y-3">
+    <section id={id} className="scroll-mt-24 space-y-3">
       <h2 className="text-lg font-semibold text-text">{title}</h2>
       {children}
     </section>
@@ -78,8 +93,15 @@ const ACTIVE_STATUS_LABEL: Record<string, string> = {
   closed: "Closed",
 };
 
-export default async function HotelDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function HotelDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  const origin = parseHotelOrigin(await searchParams);
 
   const loaded = await loadHotel(id);
   if (!loaded) notFound();
@@ -138,22 +160,20 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
         }))
       : [];
 
+  const trail = hotelCrumbs(origin, hotel.name);
+
   return (
     <div className="space-y-8">
       <AnalyticsPageView event="hotel_viewed" />
 
-      <p className="text-sm">
-        <Link href="/app/discover" className="text-muted underline hover:text-text">
-          ← Back to Discover
-        </Link>
-      </p>
+      <PageHeader title={hotel.name} crumbs={trail} back={backLink(trail)} />
+      <HotelSectionNav />
 
       {/* 1. Identity / location. No photograph is invented (D064). */}
-      <header className="grid gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
+      <header id="identity" className="grid scroll-mt-24 gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
         <NoPhoto name={hotel.name} />
         <div className="space-y-3">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-text">{hotel.name}</h1>
             {location ? <p className="text-sm text-muted">{location}</p> : null}
             {hotel.address ? <p className="text-sm text-muted">{hotel.address}</p> : null}
           </div>
@@ -196,10 +216,12 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
         </div>
       </header>
 
-      <HotelMap pins={[loaded.mapPin]} variant="section" />
+      <div id="map" className="scroll-mt-24">
+        <HotelMap pins={[loaded.mapPin]} variant="section" />
+      </div>
 
       {/* 2. Creator intelligence — public layer, then the premium layer */}
-      <Section title="Creator intelligence">
+      <Section id="intelligence" title="Creator intelligence">
         <div className="space-y-4">
           <IntelligencePanel result={intelligence} />
           <PremiumIntelligencePanel state={premiumState} result={premium} />
@@ -207,7 +229,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
       </Section>
 
       {/* 3. Premium contact */}
-      <Section title="Hotel contact">
+      <Section id="contact" title="Hotel contact">
         {contactState === "contacts" ? (
           <div className="grid gap-4 md:grid-cols-2">
             {contacts.map((contact) => (
@@ -249,7 +271,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
       </Section>
 
       {/* 4. The creator's private relationship */}
-      <Section title="Your activity">
+      <Section id="activity" title="Your activity">
         <ActivityPanel
           hotelId={hotel.id}
           relationship={relationship}
@@ -257,13 +279,16 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
           workspace={workspace}
           inbox={inbox}
           mailboxes={mailboxes}
+          pipelineHref={pipelineReturnHref(origin)}
         />
-        <AddToTrip
-          hotelId={hotel.id}
-          trips={tripChoices}
-          tripsLoad={trips.status === "ok" ? "ok" : "error"}
-          alreadyOn={alreadyOn}
-        />
+        <div id="trip" className="scroll-mt-24">
+          <AddToTrip
+            hotelId={hotel.id}
+            trips={tripChoices}
+            tripsLoad={trips.status === "ok" ? "ok" : "error"}
+            alreadyOn={alreadyOn}
+          />
+        </div>
       </Section>
     </div>
   );

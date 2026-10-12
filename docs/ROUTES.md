@@ -71,6 +71,8 @@ Authenticated map/search/filter experience.
 ### `/app/hotels/[id]`
 Authenticated hotel workspace using UUID.
 Includes entitlement-aware contact section and private creator relationship.
+`from` and `trip` choose the breadcrumb only (D081, proposed). They do not
+authorize the read. The map marker and Discover cards omit them.
 
 ### `/app/pipeline`
 List/Kanban CRM.
@@ -78,6 +80,8 @@ List/Kanban CRM.
 Recommended query params:
 - `view=list|board`
 - filters may use URL search params.
+- `surface=inbox` frames the same list as the inbox (D081, proposed). It is not a new route.
+- `surface=collaborations` lists won cycles. It is not a new route.
 
 ### `/app/trips`
 Trip list.
