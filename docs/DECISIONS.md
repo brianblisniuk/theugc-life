@@ -3416,6 +3416,10 @@ not browse a mailbox, does not read a message body, and does not send mail.
 agreed compensation. Neither route is added to the primary navigation. E02
 owns that shell.
 
+A list whose count is greater than zero, and whose returned rows all belong
+to someone else, is a failed load. It is not an empty list. A mixed page
+shows only the caller’s rows and does not use that count.
+
 ### What this decision does not do
 
 - No migration. `0051` is not taken.

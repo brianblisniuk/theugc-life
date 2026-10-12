@@ -78,7 +78,7 @@ describe("collaboration loader", () => {
     expect(JSON.stringify(state)).not.toContain("Secret Villa");
   });
 
-  it("selects the collaboration columns and drops a foreign hotel", async () => {
+  it("selects the collaboration columns and fails a page that is only a foreign hotel", async () => {
     const { supabase, calls } = client((call) => {
       if (call.table === "creator_profiles") {
         return { data: { id: PROFILE_A, user_id: AUTH_A, display_name: "Ada" }, error: null };
@@ -99,7 +99,7 @@ describe("collaboration loader", () => {
       };
     });
     const state = await loadCollaborationList(AUTH_A, supabase);
-    expect(state.kind).toBe("empty");
+    expect(state.kind).toBe("error");
     expect(calls.some((call) => call.columns === COLLABORATION_LIST_COLUMNS)).toBe(true);
     expect(JSON.stringify(state)).not.toContain("Secret Villa");
     expect(JSON.stringify(state)).not.toContain("42");
@@ -107,7 +107,7 @@ describe("collaboration loader", () => {
 });
 
 describe("inbox loader", () => {
-  it("selects inbox link columns and does not surface User B's hotel", async () => {
+  it("selects inbox link columns and fails a page that is only User B's hotel", async () => {
     const { supabase, calls } = client((call) => {
       if (call.table === "creator_profiles") {
         return { data: { id: PROFILE_A, user_id: AUTH_A, display_name: "Ada" }, error: null };
@@ -138,7 +138,7 @@ describe("inbox loader", () => {
     });
 
     const state = await loadInboxList(AUTH_A, { client: supabase, gmailConfigured: true });
-    expect(state.kind).toBe("empty");
+    expect(state.kind).toBe("error");
     expect(calls.some((call) => call.columns === INBOX_LIST_COLUMNS)).toBe(true);
     const packed = JSON.stringify(state);
     expect(packed).not.toContain("Secret Villa");

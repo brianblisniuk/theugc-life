@@ -73,7 +73,7 @@ describe("collaboration list", () => {
     expect(packed).not.toContain("private_value");
   });
 
-  it("an only-foreign payload is an empty list for A, not B's hotel", () => {
+  it("a positive count whose rows are all foreign is a failed load, not an empty list", () => {
     const state = collaborationListState({
       failed: false,
       identityFailed: false,
@@ -81,7 +81,9 @@ describe("collaboration list", () => {
       rawRows: [foreign],
       viewerId: PROFILE_A,
     });
-    expect(state.kind).toBe("empty");
+    expect(state.kind).toBe("error");
+    if (state.kind !== "error") return;
+    expect(state.body).toContain("not an empty list");
     expect(JSON.stringify(state)).not.toContain("Secret Villa");
   });
 

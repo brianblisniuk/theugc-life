@@ -192,8 +192,14 @@ function settle<T>(input: {
   const dropped = classified.filter((row) => row.kind === "foreign").length;
   const items = classified.flatMap((row) => (row.kind === "own" ? [row.item] : []));
 
+  // A positive count whose page is entirely someone else's rows is not an
+  // empty list. The count says rows exist; none of them belong to this viewer.
+  if (dropped > 0 && items.length === 0) {
+    if (input.total > 0) return { kind: "error", ...input.error };
+    return { kind: "empty", ...input.empty };
+  }
+
   if (dropped > 0) {
-    if (items.length === 0) return { kind: "empty", ...input.empty };
     return {
       kind: "items",
       items,
