@@ -1,5 +1,5 @@
 {
-  "$comment": "E01 Discover + Hotel Detail (no map) awaits audit as PR #55 on feat/e01-discover-hotel-detail. Rebased onto main 989e7f020f07362113b3e9b00fd9950293808f10 (C01 docs, PR #54). D077 stays Proposed. D01 merged as PR #52 at 4062170212beb8b978a248ef219eb91ddbfb080b. B07.1 merged as PR #51 at 187af6a3d4b4b5f6db1ec6d1f77ca975e791f852. expected_head stays null because this commit cannot name itself. Do not merge. The machine state is AUDITING; the work order calls that AWAITING_AUDIT. E01 adds no migration. B08 PR #53 holds 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049.",
+  "$comment": "E01 Discover + Hotel Detail (no map) awaits re-audit as PR #55 on feat/e01-discover-hotel-detail. Rebased onto main 989e7f020f07362113b3e9b00fd9950293808f10 (C01 docs, PR #54). D077 stays Proposed. D01 merged as PR #52 at 4062170212beb8b978a248ef219eb91ddbfb080b. B07.1 merged as PR #51 at 187af6a3d4b4b5f6db1ec6d1f77ca975e791f852. expected_head stays null because this commit cannot name itself. Do not merge. The machine state is AUDITING; the work order calls that AWAITING_AUDIT. E01 adds no migration. B08 PR #53 holds 0047 and 0048. D07 is draft PR #56 and holds migration 0050.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "Independent audit of E01. Map provider is not decided. E01 adds no migration. B08 PR #53 holds 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049. D077 stays Proposed."
+  "next_dependency": "Re-audit of E01 after the creator-profile badge correction. Map provider is not decided. E01 adds no migration. B08 PR #53 holds 0047 and 0048. D07 is draft PR #56 and holds migration 0050. D077 stays Proposed."
 }

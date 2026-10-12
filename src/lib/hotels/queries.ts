@@ -654,12 +654,41 @@ function oneCreatorId(raw: unknown): string | null {
 }
 
 /**
+ * `creator_profiles.id` for the signed-in user.
+ *
+ * Pipeline and trip rows store that id (`current_creator_id()`), not
+ * `auth.uid()`. A failed lookup, a missing row, or a non-uuid id is `null`.
+ * Callers must treat `null` as unknown, not as an empty shortlist.
+ */
+export async function resolveOwnCreatorProfileId(
+  authUserId: string,
+  injectedClient?: HotelQueryClient,
+): Promise<string | null> {
+  if (!isUuid(authUserId)) return null;
+  try {
+    const supabase = injectedClient ?? (await createClient());
+    const { data, error } = await supabase
+      .from("creator_profiles")
+      .select("id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const id = (data as { id?: unknown }).id;
+    if (typeof id !== "string" || !isUuid(id)) return null;
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The viewer's own pipeline and trip badges for these hotels.
  *
- * Both reads use the cookie-bound client. If either fails, the whole load is
- * `unknown` — a missing badge must not be described as "not saved" or
- * "not on a trip". Foreign creator ids are dropped by `assembleCreatorBadges`
- * even if a row arrives.
+ * `viewerId` must be `creator_profiles.id`, not `auth.uid()`. Both reads use
+ * the cookie-bound client. If either fails, the whole load is `unknown` — a
+ * missing badge must not be described as "not saved" or "not on a trip".
+ * Foreign creator ids are dropped by `assembleCreatorBadges` even if a row
+ * arrives.
  */
 export async function loadCreatorBadges(
   hotelIds: readonly string[],
@@ -719,4 +748,23 @@ export async function loadCreatorBadges(
   } catch {
     return { status: "unknown" };
   }
+}
+
+/**
+ * Resolve the session user's creator profile, then load that profile's badges.
+ *
+ * Discover and Hotel Detail pass `session.userId` (`auth.uid()`). Comparing
+ * that value to `pipeline_items.creator_id` drops the viewer's own rows,
+ * because those rows store `creator_profiles.id`. A failed profile lookup is
+ * `unknown`, not an empty shortlist.
+ */
+export async function loadSessionCreatorBadges(
+  hotelIds: readonly string[],
+  authUserId: string,
+  injectedClient?: HotelQueryClient,
+): Promise<{ status: "known"; byHotel: Map<string, CreatorBadge> } | { status: "unknown" }> {
+  const supabase = injectedClient ?? (await createClient());
+  const creatorProfileId = await resolveOwnCreatorProfileId(authUserId, supabase);
+  if (!creatorProfileId) return { status: "unknown" };
+  return loadCreatorBadges(hotelIds, creatorProfileId, supabase);
 }

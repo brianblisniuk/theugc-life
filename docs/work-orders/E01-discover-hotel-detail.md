@@ -3,7 +3,7 @@
 **Status:** Binding work order for PR #55. Awaiting independent audit. Do not merge.  
 **Base:** `main` `989e7f020f07362113b3e9b00fd9950293808f10` (merge of PR #54, C01 docs only)  
 **Branch:** `feat/e01-discover-hotel-detail`  
-**Migration:** none. B08 PR #53 holds 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049, and this block does not use it.
+**Migration:** none. B08 PR #53 holds 0047 and 0048. D07 is draft PR #56 and holds 0050. This block does not add a migration.
 
 One PR for the whole block. Do not merge.
 
@@ -19,7 +19,7 @@ How does a creator browse and open only published canonical hotels, with public 
 - Public card signals come only from `hotel_public_intelligence`. Null is withheld. A false collaboration flag is not shown as "no collaboration". Premium columns are not selected for a card.
 - Premium intelligence and contacts still use `has_premium_hotel_access` and the existing panel states. No new price or limit.
 - "Add to trip" posts to the existing D01 `addTripHotelAction`. The Free trip allowance stays inside that RPC.
-- Pipeline and trip badges are read with the cookie-bound client. A failed read renders no badge, not "not saved" and not "not on a trip". The assembler drops any row whose creator id is not the viewer.
+- Pipeline and trip badges are read with the cookie-bound client. The viewer id passed to the assembler is `creator_profiles.id`, resolved from the session user (`auth.uid()`). A failed profile lookup or a failed row read renders no badge, not "not saved" and not "not on a trip". The assembler drops any row whose creator id is not that profile.
 - The map slot is empty. No tile URL, no embed, no coordinate is sent to a provider. Coordinates are used only to apply the publication predicate and are not copied onto the card payload.
 - No photograph is invented. The no-photo state is a designed empty mark (D064).
 - Destination filters include the selected destination and its descendants (D013). Country matches `hotels.country_code`. Creator-activity and observed-collaboration filters match only disclosed public values. Collaboration types are not a Discover filter.

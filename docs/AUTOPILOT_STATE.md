@@ -2,7 +2,7 @@
 
 **Last verified main:** `989e7f020f07362113b3e9b00fd9950293808f10` (merge of PR #54, C01 docs only, 2026-10-12)  
 **State:** AUDITING (awaiting audit). PR #55 on `feat/e01-discover-hotel-detail`. E01 Discover + Hotel Detail, map deferred. `.grok/autopilot-state.json` does not name this commit as `expected_head`. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** E01. Published canonical hotels on Discover and Hotel Detail. No map provider is decided, so the surface has an empty map slot and does not call a tile service. No migration. B08 PR #53 holds migrations 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049. D077 stays Proposed.
+**Current frontier:** E01. Published canonical hotels on Discover and Hotel Detail. No map provider is decided, so the surface has an empty map slot and does not call a tile service. No migration. B08 PR #53 holds migrations 0047 and 0048. D07 is draft PR #56 and holds migration 0050. D077 stays Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -33,7 +33,7 @@
 
 ## Next action
 - E01 is the open block as PR #55 on `feat/e01-discover-hotel-detail`. State is AUDITING. Do not merge from automation.
-- Model-backed B07 inference stays gated. B08 is PR #53 (0047 and 0048) and is not this block. D07 has no open PR. D077 stays Proposed. Pilot KPIs remain an open owner question.
+- Model-backed B07 inference stays gated. B08 is PR #53 (0047 and 0048) and is not this block. D07 is draft PR #56 (migration 0050) and is not this block. D077 stays Proposed. Pilot KPIs remain an open owner question.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
 - Owner interaction happens only via human-frontier labels.

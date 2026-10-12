@@ -7,9 +7,11 @@
  * by having an entitled viewer.
  *
  * Per-creator badges are assembled from rows the caller claims to have read.
- * A row whose creator id is not the viewer is dropped. That is defense in
- * depth: RLS is the boundary, and this function refuses to display a foreign
- * pipeline status or trip even if a row is handed to it.
+ * `viewerId` is `creator_profiles.id` (`current_creator_id()`), the value
+ * stored on `pipeline_items.creator_id` and `trips.creator_id`. It is not
+ * `auth.uid()`. A row whose creator id is not that profile is dropped. That
+ * is defense in depth: RLS is the boundary, and this function refuses to
+ * display a foreign pipeline status or trip even if a row is handed to it.
  */
 import { activityLabel, recencyLabel } from "./intelligence";
 import { pipelineStatusLabel } from "@/lib/pipeline/types";

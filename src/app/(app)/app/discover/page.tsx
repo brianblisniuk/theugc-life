@@ -27,7 +27,7 @@ import {
 import {
   getPublicCardSignals,
   listDiscoverCatalog,
-  loadCreatorBadges,
+  loadSessionCreatorBadges,
   searchHotels,
   type HotelSearchResult,
 } from "@/lib/hotels/queries";
@@ -72,7 +72,7 @@ export default async function DiscoverPage({
   const session = hotelIds.length > 0 ? await resolveSession() : null;
   const badges =
     session?.status === "authenticated"
-      ? await loadCreatorBadges(hotelIds, session.session.userId)
+      ? await loadSessionCreatorBadges(hotelIds, session.session.userId)
       : { status: "unknown" as const };
 
   return (

@@ -366,7 +366,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
-| D07 | PLANNED | collaboration workspace + deliverables over existing lifecycle core | won deal flows through execution/completion without external spreadsheet |
+| D07 | **DRAFT** — PR #56, migration `0050`. Not this block and not merged. | collaboration workspace + deliverables over existing lifecycle core | won deal flows through execution/completion without external spreadsheet |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
@@ -400,7 +400,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| E01 | **AWAITING AUDIT** — PR #55, branch `feat/e01-discover-hotel-detail`. Discover + Hotel Detail over published canonical hotels. Map provider is not decided; the surface keeps an empty slot and does not call a tile service. No migration. B08 PR #53 holds 0047 and 0048. D07 has no open PR. Next free number is 0049. | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
+| E01 | **AWAITING AUDIT** — PR #55, branch `feat/e01-discover-hotel-detail`. Discover + Hotel Detail over published canonical hotels. Map provider is not decided; the surface keeps an empty slot and does not call a tile service. No migration. B08 PR #53 holds 0047 and 0048. D07 is draft PR #56 and holds 0050. | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
 | E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | PLANNED | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
@@ -659,9 +659,9 @@ The open implementation block is:
 > `feat/e01-discover-hotel-detail`. No migration. Awaiting audit. Do not merge.
 
 B08 incremental sync is a separate open pull request (#53, D076) and holds
-migrations 0047 and 0048. D07 has no open pull request and no migration. The
-next free migration number is 0049. Pilot KPIs remain an owner question
-(D077). This PR does not change the B08 tracker row.
+migrations 0047 and 0048. D07 is draft PR #56 and holds migration 0050. This
+block adds no migration. Pilot KPIs remain an owner question (D077). This PR
+does not change the B08 tracker row.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

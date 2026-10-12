@@ -40,7 +40,7 @@ import {
   getHotelContactsIfAuthorized,
   getHotelIntelligence,
   getHotelPremiumIntelligence,
-  loadCreatorBadges,
+  loadSessionCreatorBadges,
 } from "@/lib/hotels/queries";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
 import { listTrips } from "@/lib/trips/queries";
@@ -112,7 +112,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
   const [session, trips] = await Promise.all([resolveSession(), listTrips()]);
   const badges =
     session.status === "authenticated"
-      ? await loadCreatorBadges([hotel.id], session.session.userId)
+      ? await loadSessionCreatorBadges([hotel.id], session.session.userId)
       : { status: "unknown" as const };
   const alreadyOn =
     badges.status === "known" ? (badges.byHotel.get(hotel.id)?.tripIds ?? []) : null;
