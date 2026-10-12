@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 023a354c8592411e1ac85c818324589993f358a6 (PR #57, MAP, D079). D06 is PR #58: migration 0049, D080 Accepted (Brian, 13 Oct 2026). 0050 is D07 and is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 6b59318bbe33897a5204f42fa2292eccaf6d13a7 (PR #58, D06, D080, migration 0049). E03 is PR #60: no migration, D082 Proposed. D081 is reserved for parallel E02 and is not used. 0050 is D07 and is not edited. 0051 is not taken. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_CI",
-  "last_recorded_main": "023a354c8592411e1ac85c818324589993f358a6",
-  "active_block": "D06 inbox pipeline unity (D080 Accepted, migration 0049)",
-  "branch": "cursor/d06-inbox-pipeline-774f",
-  "pr": 58,
+  "last_recorded_main": "6b59318bbe33897a5204f42fa2292eccaf6d13a7",
+  "active_block": "E03 onboarding and empty/error states (D082 Proposed, no migration)",
+  "branch": "cursor/e03-onboarding-empty-states-c2d6",
+  "pr": 60,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "023a354c8592411e1ac85c818324589993f358a6",
+    "ref": "6b59318bbe33897a5204f42fa2292eccaf6d13a7",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "D080 is Accepted (Brian, 13 Oct 2026). D079 is Google Maps, merged as PR #57. Verify must be green on this PR head before a merge decision. D02 is the next planned product block. Pilot KPIs and model-backed B07 inference stay gated."
+  "next_dependency": "PR #60 merges E03. E02 navigation remains planned and is not this PR. D081 is reserved for E02. D082 stays Proposed until the owner accepts it. D077 stays Proposed. Verify must be green on this PR head before a merge decision."
 }

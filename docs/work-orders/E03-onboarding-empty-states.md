@@ -1,6 +1,6 @@
 # E03 — Onboarding and empty/error states
 
-**Status:** Binding work order for this PR. Awaiting independent audit. Do not merge.  
+**Status:** Binding work order for PR #60. Awaiting independent audit. Do not merge.  
 **Base:** `main` `6b59318bbe33897a5204f42fa2292eccaf6d13a7` (merge of PR #58, D06)  
 **Branch:** `cursor/e03-onboarding-empty-states-c2d6`  
 **Migration:** none. Progress is derived. `0051` is not used. D081 is reserved for parallel E02.

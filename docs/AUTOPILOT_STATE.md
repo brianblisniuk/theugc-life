@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `023a354c8592411e1ac85c818324589993f358a6` (merge of PR #57, MAP, D079, 2026-10-12)  
-**State:** AWAITING_CI. D06 inbox ↔ pipeline unity, PR #58, branch `cursor/d06-inbox-pipeline-774f`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** D06. Creator-named link between one pipeline cycle and one stored Gmail thread. Machine readings are suggestions. A redirect is not a rejection. B08 is merged at `eb13619`. MAP (D079) is merged at `023a354`. D077 stays Proposed. D078 is Accepted on main via PR #56. D080 is Accepted and is not merged. `0050` is not edited.
+**Last verified main:** `6b59318bbe33897a5204f42fa2292eccaf6d13a7` (merge of PR #58, D06, D080, migration `0049`, 2026-10-12)  
+**State:** AWAITING_CI. E03 onboarding and empty/error states, PR #60, branch `cursor/e03-onboarding-empty-states-c2d6`. No migration. D082 is Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** E03. The first useful flow is derived from a connected mailbox, a trip, and a pipeline item. Empty and error stay distinct. Primary navigation is unchanged. E02 remains planned and is not this PR. D081 is reserved for E02. D077 stays Proposed. D080 is Accepted and merged. `0050` is not edited. `0051` is not taken.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -34,9 +34,11 @@
 - PR #56 — D07 deliverables and agreed compensation, migration `0050`, D078 Accepted — `61d0e385894670bc55a78675e64526c353c288d5`
 - PR #53 — B08 incremental Gmail sync, D076, migrations `0047` and `0048` — `eb136190f676e9201b6b39de4b570d51e52da73d`
 - PR #57 — MAP, Google Maps on Discover and Hotel Detail, D079, no migration — `023a354c8592411e1ac85c818324589993f358a6`
+- PR #58 — D06 inbox ↔ pipeline unity, D080, migration `0049` — `6b59318bbe33897a5204f42fa2292eccaf6d13a7`
 
 ## Next action
-- D06 inbox ↔ pipeline unity is PR #58 (`cursor/d06-inbox-pipeline-774f`, D080 Accepted by Brian on 13 Oct 2026, migration `0049`). State is AWAITING_CI. Do not merge from automation.
+- E03 onboarding and empty/error states is PR #60 (`cursor/e03-onboarding-empty-states-c2d6`, D082 Proposed, no migration). State is AWAITING_CI. Do not merge from automation.
+- D06 is merged (PR #58, `6b59318`, D080, migration `0049`). This PR does not edit `0049`.
 - MAP is merged (PR #57, `023a354`, D079). Discover and Hotel Detail keep the Google map. This PR does not remove it.
 - B08 is merged (PR #53, `eb13619`). The forward sync still uses D068 inclusion and does not add a scope.
 - D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). This PR does not edit `0050`.
