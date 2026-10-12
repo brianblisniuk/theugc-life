@@ -9,8 +9,11 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
 import { isUuid } from "@/lib/hotels/ids";
 import { createClient } from "@/lib/supabase/server";
+
+bindServerActions(["profile.share_link"]);
 
 import {
   parseEngagement,

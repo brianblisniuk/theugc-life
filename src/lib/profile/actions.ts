@@ -10,9 +10,17 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
 import { createClient } from "@/lib/supabase/server";
 
 import { parseProfileForm } from "./contract";
+
+export const PROFILE_ENTITLEMENTS = bindServerActions([
+  "profile.own",
+  "profile.personal_analytics",
+  "profile.past_collaborations",
+  "profile.field_opt_ins",
+]);
 
 export type ProfileSaveResult =
   | { result: "saved" }

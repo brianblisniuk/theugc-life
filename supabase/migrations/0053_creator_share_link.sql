@@ -1,7 +1,7 @@
 -- 0053 — D09 creator profile share link for hotels (D089–D091, Accepted).
 --
--- Migration number: 0053. 0051 is reserved by open PR #62 (E04) and is not
--- used. 0052 is D08 and is not edited. This migration does not send mail,
+-- Migration number: 0053. 0051 is E04 on main (PR #62) and is not edited.
+-- 0052 is D08 and is not edited. This migration does not send mail,
 -- create a hotel account, record a view, or set public_profile_enabled.
 --
 -- The hotel read is one creator-controlled link. The raw token is returned

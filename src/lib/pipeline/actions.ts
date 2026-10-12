@@ -13,6 +13,14 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
+
+export const PIPELINE_ENTITLEMENTS = bindServerActions([
+  "pipeline.save",
+  "pipeline.engage",
+  "pipeline.own",
+  "collaborations.lifecycle",
+]);
 
 import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
 

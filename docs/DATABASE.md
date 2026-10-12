@@ -2932,6 +2932,6 @@ At minimum:
 30. Creator hotel share link (0053, D089–D091 Accepted — Brian, 13 Oct 2026) —
     one revocable link per creator, SHA-256 digest only, and a security-definer
     public read of opted-in fields. Anon has no new table privilege. `0051`
-    stays with E04. `0052` is not edited.
+    is on main from E04 (PR #62) and is not edited. `0052` is not edited.
 
 Every migration must be reproducible from an empty database.

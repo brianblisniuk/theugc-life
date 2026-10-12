@@ -3,6 +3,9 @@ import Link from "next/link";
 import { Brand } from "@/components/brand";
 import { SignOutButton } from "@/components/sign-out-button";
 import { requireRole } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
+
+bindServerActions(["admin.staff"]);
 
 /**
  * Admin shell. Authorization is enforced SERVER-SIDE here (PRD §25.4,

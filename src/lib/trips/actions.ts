@@ -11,6 +11,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { resolveSession } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
+
+export const TRIP_ENTITLEMENTS = bindServerActions(["trips.active", "trips.own"]);
 
 import { parseTripForm, parseTripId } from "./input";
 import {

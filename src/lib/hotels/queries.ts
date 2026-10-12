@@ -17,10 +17,11 @@
  */
 import "server-only";
 
+import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
 import { publicMapPin, type PublicMapPin } from "@/lib/maps/pins";
 import { createClient } from "@/lib/supabase/server";
 
-import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./access";
+import { mayQueryContacts, type ContactAccessResult } from "./access";
 import {
   assembleCreatorBadges,
   PUBLIC_CARD_INTELLIGENCE_COLUMNS,
@@ -431,11 +432,8 @@ export async function getHotelById(
  * a transient outage cannot tell a paying creator they lack access (F1).
  */
 export async function getHotelContactAccess(hotelId: string): Promise<ContactAccessResult> {
-  // A malformed id is a genuine denial, not an infrastructure failure.
-  if (!isUuid(hotelId)) return { status: "denied" };
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("has_premium_hotel_access", { hotel_id: hotelId });
-  return mapContactAccess({ data, error });
+  // The inventory names the helper. The database still answers for auth.uid().
+  return enforcePremiumHotelAccess(hotelId);
 }
 
 /**

@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { PublicShareView } from "@/components/profile/public-share-view";
+import { bindServerActions } from "@/lib/entitlements/inventory";
 import { readPublicCreatorShare } from "@/lib/profile/public-share";
+
+bindServerActions(["profile.share_public"]);
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

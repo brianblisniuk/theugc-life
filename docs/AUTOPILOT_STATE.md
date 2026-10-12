@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `d030cd0329c8b1e30afcdd14a72485174edcd9f5` (merge of PR #61, D08, 2026-10-12)  
-**State:** AWAITING_CI. D09 creator profile share link, PR #63, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** D09. A creator shares a profile with a hotel through one revocable link. The public page shows only opted-in fields. D086–D088 stay Proposed. D077 stays Proposed. `0051` is reserved by open PR #62 (E04) and is not used. `0052` is not edited.
+**Last verified main:** `dc5979eed799d1724eb36482eb0067d3e9f0fe55` (merge of PR #62, E04, 2026-10-12)  
+**State:** AWAITING_CI. D09 creator profile share link, PR #63, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). The share page, owner actions, and public read are UNDECIDED in the E04 inventory. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** D09. A creator shares a profile with a hotel through one revocable link. The public page shows only opted-in fields. E04 is merged. D086–D088 stay Proposed. D077 stays Proposed. `0051` and `0052` are not edited.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -38,11 +38,12 @@
 - PR #59 — E02 product coherence, D081 Accepted, no migration — `edc326dc5a0f22956a0b6572a9486d56df15572f`
 - PR #60 — E03 onboarding and empty/error states, D082 Proposed, no migration — `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`
 - PR #61 — D08 private profile and personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
+- PR #62 — E04 Pass/Pro entitlement inventory, migration `0051` — `dc5979eed799d1724eb36482eb0067d3e9f0fe55`
 
 ## Next action
 - D09 creator profile share link is PR #63, branch `cursor/d09-creator-share-link-6270` (D089–D091 Accepted, migration `0053`). State is AWAITING_CI. Do not merge from automation.
+- E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.
 - D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
-- E04 is open as PR #62 and reserves migration `0051`. This PR does not use `0051`.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that flow.
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.

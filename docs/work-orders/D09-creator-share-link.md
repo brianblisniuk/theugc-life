@@ -5,7 +5,7 @@
 **Branch:** `cursor/d09-creator-share-link-6270`  
 **PR:** #63  
 **Decisions:** D089, D090, D091 — Accepted. D086–D088 stay Proposed. D083–D085 are not used.  
-**Migration:** `0053_creator_share_link.sql`. `0051` is reserved by open PR #62 (E04) and is not used. `0052` is not edited.
+**Migration:** `0053_creator_share_link.sql`. `0051` is on main from E04 (PR #62, `dc5979e`) and is not edited. `0052` is not edited.
 
 One PR for the whole block, including this work order and the state files. Do not merge.
 
