@@ -109,7 +109,7 @@ RLS is enabled on every B07 table. `authenticated` receives `SELECT` only, polic
 - New writes call `private.gmail_outreach_assert_may_process_locked` (consent `for share`, then mail account `for share`, same order as B01/B05/B06).
 - Machine commit then takes `for update` on the mail account so two commits serialize. A `40P01` deadlock is a retry, not a second current row.
 - Human projection upsert updates only when `excluded.current_event_seq` is greater. A trigger rejects a backwards `current_event_seq`.
-- Machine commit recomputes the input digest under those locks. A mismatch returns `stale_source` and writes nothing.
+- Machine commit recomputes the input digest under those locks. A mismatch returns `stale_source`, writes no new attempt, and marks the existing message and thread current rows stale.
 
 ## Replay / idempotency
 
@@ -121,13 +121,13 @@ Equal digest and an already-current projection: `already_current`, zero new atte
 
 Refusals are structured results, not thrown product errors: `unauthenticated`, `not_found`, `account_deleted`, `deletion_pending`, `consent_missing`, `thread_not_found`, `not_eligible`, `anchor_not_found`, `stale_source`, `already_current`.
 
-Shape violations (`redirect` with `rejection`, `declined_observed` without a latest-message `rejection`, `declined_observed` while the latest eligible message has `timing_constraint` or `redirect`, `agreement_observed` without an `agreement` signal, unknown vocabulary) raise `check_violation` and write nothing.
+Shape violations (`redirect` with `rejection`, `declined_observed` without a latest-message `rejection`, `declined_observed` while the latest eligible message has `timing_constraint` or `redirect`, `agreement_observed` without an explicit booking confirmation plus an `agreement` signal, an earlier creator-sent message, and no later rejection, unknown vocabulary) raise `check_violation` and write nothing.
 
 ## Deletion
 
 `gmail_commercial_purge_for_deletion` deletes human projections, human events, current pointers, and attempts for the account, only when B01's deletion request is the current one and its scope includes Gmail-derived data. A deferred constraint trigger makes `connection_state = deleted` unrepresentable while any B07 row remains.
 
-A B04 rebuild that deletes a normalized message sets the attempt's normalized-message pointer to null (`on delete set null`). The attempt and the human event stay, anchored to the provider id. Effective reads do not present a null-pointer attempt as current.
+A B04 rebuild that deletes a normalized message sets the attempt's normalized-message pointer to null (`on delete set null`) and, in that same transaction, marks the message current row stale and suppressed and the thread current row stale. The attempt and the human event stay, anchored to the provider id. `gmail_commercial_read_thread` and `gmail_commercial_list_threads` do not present a stale or null-pointer attempt's disposition or commercial state as current. A creator decision stores `observed_machine_value` from the axis being corrected (B06 class, disposition, signal set, commercial state, or compensation) and the current attempt id.
 
 ## Provenance
 

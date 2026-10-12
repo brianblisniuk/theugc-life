@@ -109,6 +109,7 @@ export async function commitInterpretation(
       disposition: message.disposition,
       signals: message.signals,
       evidence_strength: message.evidenceStrength,
+      explicit_booking_confirmation: message.explicitBookingConfirmation,
     })),
     p_thread: {
       commercial_state: input.meaning.commercialState,

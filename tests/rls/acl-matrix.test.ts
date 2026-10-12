@@ -481,6 +481,34 @@ d("explicit ACL contract (0024)", () => {
       expect(row.auth, name).toBe(true);
       expect(row.svc, name).toBe(true);
     }
+
+    const [absent] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, private, pg_temp%'
+               as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname = 'assert_gmail_commercial_data_absent_when_deleted'
+    `);
+    expect(absent).toBeDefined();
+    expect(absent!.definer).toBe(true);
+    expect(absent!.pinned).toBe(true);
+    expect(absent!.anon).toBe(false);
+    expect(absent!.auth).toBe(false);
+    expect(absent!.svc).toBe(false);
+    expect(absent!.public_exec).toBe(false);
   });
 });
 

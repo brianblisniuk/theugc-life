@@ -332,6 +332,9 @@ create table private.gmail_commercial_creator_decision_events (
   lost_reason text,
   compensation_structure text,
   observed_machine_value text,
+  -- The machine attempt that was current for this axis when the creator decided.
+  -- Message axes point at a message attempt; thread axes point at a thread attempt.
+  observed_machine_attempt_id uuid,
   decided_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
 
@@ -686,6 +689,61 @@ begin
 end;
 $$;
 
+-- A B04 rebuild clears current_normalized_message_id inside the delete that
+-- removed the old normalized row. That same transaction must stop presenting
+-- the old attempt as current. The GUC is restored so the rest of the B04
+-- transaction does not become a machine writer.
+create or replace function private.gmail_commercial_mark_source_rebuilt()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_prev text;
+begin
+  if tg_op <> 'UPDATE' then
+    return null;
+  end if;
+
+  if tg_table_name = 'gmail_commercial_message_attempts' then
+    if old.current_normalized_message_id is not null
+       and new.current_normalized_message_id is null then
+      v_prev := current_setting('b07.machine_writer', true);
+      perform set_config('b07.machine_writer', 'on', true);
+      update private.gmail_commercial_message_current
+         set stale = true,
+             suppressed = true,
+             stale_reason = 'source_rebuilt',
+             updated_at = now()
+       where mail_account_id = new.mail_account_id
+         and provider_message_id = new.provider_message_id;
+      update private.gmail_commercial_thread_current
+         set stale = true,
+             stale_reason = 'source_rebuilt',
+             updated_at = now()
+       where mail_account_id = new.mail_account_id
+         and provider_thread_id = new.provider_thread_id;
+      perform set_config('b07.machine_writer', coalesce(v_prev, ''), true);
+    end if;
+    return null;
+  end if;
+
+  if old.normalized_thread_id is not null and new.normalized_thread_id is null then
+    v_prev := current_setting('b07.machine_writer', true);
+    perform set_config('b07.machine_writer', 'on', true);
+    update private.gmail_commercial_thread_current
+       set stale = true,
+           stale_reason = 'source_rebuilt',
+           updated_at = now()
+     where mail_account_id = new.mail_account_id
+       and provider_thread_id = new.provider_thread_id;
+    perform set_config('b07.machine_writer', coalesce(v_prev, ''), true);
+  end if;
+  return null;
+end;
+$$;
+
 create or replace function private.gmail_commercial_guard_human_event()
 returns trigger
 language plpgsql
@@ -736,6 +794,7 @@ revoke all on function private.gmail_commercial_guard_attempt() from public;
 revoke all on function private.gmail_commercial_guard_machine_current() from public;
 revoke all on function private.gmail_commercial_guard_human_event() from public;
 revoke all on function private.gmail_commercial_guard_human_projection() from public;
+revoke all on function private.gmail_commercial_mark_source_rebuilt() from public;
 
 create trigger gmail_commercial_message_attempts_guard
   before insert or update or delete on private.gmail_commercial_message_attempts
@@ -744,6 +803,14 @@ create trigger gmail_commercial_message_attempts_guard
 create trigger gmail_commercial_thread_attempts_guard
   before insert or update or delete on private.gmail_commercial_thread_attempts
   for each row execute function private.gmail_commercial_guard_attempt();
+
+create trigger gmail_commercial_message_attempts_source_rebuilt
+  after update on private.gmail_commercial_message_attempts
+  for each row execute function private.gmail_commercial_mark_source_rebuilt();
+
+create trigger gmail_commercial_thread_attempts_source_rebuilt
+  after update on private.gmail_commercial_thread_attempts
+  for each row execute function private.gmail_commercial_mark_source_rebuilt();
 
 create trigger gmail_commercial_message_current_guard
   before insert or update or delete on private.gmail_commercial_message_current
@@ -1163,6 +1230,25 @@ begin
     p_schema_version, p_transform_version, p_rule_version
   );
   if v_digest is distinct from p_expected_input_digest then
+    -- No new attempt. The previous current row must stop being presented as current.
+    perform set_config('b07.machine_writer', 'on', true);
+    update private.gmail_commercial_message_current c
+       set stale = true,
+           suppressed = c.suppressed or exists (
+             select 1
+               from private.gmail_commercial_message_attempts a
+              where a.id = c.current_attempt_id
+                and a.current_normalized_message_id is null
+           ),
+           stale_reason = 'stale_source',
+           updated_at = now()
+     where c.mail_account_id = p_mail_account_id
+       and c.provider_thread_id = v_thread.provider_thread_id;
+    update private.gmail_commercial_thread_current
+       set stale = true, stale_reason = 'stale_source', updated_at = now()
+     where mail_account_id = p_mail_account_id
+       and provider_thread_id = v_thread.provider_thread_id;
+    perform set_config('b07.machine_writer', '', true);
     return jsonb_build_object('result', 'stale_source', 'current_input_digest', v_digest);
   end if;
 
@@ -1246,6 +1332,9 @@ begin
     end if;
   end if;
 
+  -- Same bar as the rules engine: an explicit booking confirmation, an earlier
+  -- creator-sent message, and no later eligible rejection. A one-sided
+  -- "we accept" is an agreement signal and stays negotiating.
   if v_state = 'agreement_observed' then
     if not exists (
       select 1
@@ -1253,14 +1342,25 @@ begin
         join jsonb_array_elements(coalesce(p_messages, '[]'::jsonb)) elem
           on elem->>'provider_message_id' = r.provider_message_id
        where r.eligible
+         and elem->>'explicit_booking_confirmation' = 'true'
          and (elem->'signals') @> '["agreement"]'::jsonb
          and exists (
            select 1
              from private.gmail_commercial_message_rows(p_mail_account_id, p_normalized_thread_id) sent
             where sent.provider_sent and sent.internal_date < r.internal_date
          )
+         and not exists (
+           select 1
+             from private.gmail_commercial_message_rows(p_mail_account_id, p_normalized_thread_id) later
+             join jsonb_array_elements(coalesce(p_messages, '[]'::jsonb)) later_elem
+               on later_elem->>'provider_message_id' = later.provider_message_id
+            where later.eligible
+              and (later.internal_date, later.provider_message_id)
+                  > (r.internal_date, r.provider_message_id)
+              and (later_elem->'signals') @> '["rejection"]'::jsonb
+         )
     ) then
-      raise exception 'agreement_observed requires an agreement signal and an earlier creator-sent message'
+      raise exception 'agreement_observed requires an explicit booking confirmation, an agreement signal, an earlier creator-sent message, and no later rejection'
         using errcode = 'check_violation';
     end if;
   end if;
@@ -1421,6 +1521,7 @@ declare
   v_advanced integer;
   v_signals text[];
   v_observed text;
+  v_observed_attempt uuid;
   v_sent boolean;
   v_class text;
   v_b06_current boolean;
@@ -1468,7 +1569,14 @@ begin
     if v_thread_id is null then
       return jsonb_build_object('result', 'anchor_not_found');
     end if;
-    select a.disposition into v_observed
+    -- Snapshot the machine value of THIS axis, not the disposition of every message axis.
+    select c.current_attempt_id,
+           case p_axis
+             when 'reply_nature' then a.b06_response_class
+             when 'disposition' then a.disposition
+             when 'signals' then array_to_string(a.signals, ',')
+           end
+      into v_observed_attempt, v_observed
       from private.gmail_commercial_message_current c
       join private.gmail_commercial_message_attempts a on a.id = c.current_attempt_id
      where c.mail_account_id = p_mail_account_id and c.provider_message_id = p_provider_message_id;
@@ -1485,7 +1593,12 @@ begin
     ) then
       return jsonb_build_object('result', 'anchor_not_found');
     end if;
-    select a.commercial_state into v_observed
+    select c.current_attempt_id,
+           case p_axis
+             when 'business_outcome' then a.commercial_state
+             when 'compensation' then a.compensation_structure
+           end
+      into v_observed_attempt, v_observed
       from private.gmail_commercial_thread_current c
       join private.gmail_commercial_thread_attempts a on a.id = c.current_attempt_id
      where c.mail_account_id = p_mail_account_id and c.provider_thread_id = p_provider_thread_id;
@@ -1544,7 +1657,7 @@ begin
     user_id, mail_account_id, decided_by_user_id, axis,
     provider_message_id, provider_thread_id, action,
     reply_nature, disposition, signals, business_outcome, lost_reason, compensation_structure,
-    observed_machine_value
+    observed_machine_value, observed_machine_attempt_id
   ) values (
     v_user, p_mail_account_id, v_user, p_axis,
     p_provider_message_id, p_provider_thread_id, p_action,
@@ -1554,7 +1667,7 @@ begin
     case when p_action = 'set' and p_axis = 'business_outcome' then p_business_outcome end,
     case when p_action = 'set' and p_axis = 'business_outcome' then p_lost_reason end,
     case when p_action = 'set' and p_axis = 'compensation' then p_compensation_structure end,
-    v_observed
+    v_observed, v_observed_attempt
   )
   returning id, event_seq into v_event_id, v_event_seq;
 
@@ -1672,10 +1785,47 @@ begin
     'result', 'ok',
     'machine', (
       select jsonb_build_object(
-        'commercial_state', a.commercial_state,
-        'compensation_structure', a.compensation_structure,
-        'evidence_strength', a.evidence_strength,
-        'stale', c.stale,
+        'commercial_state', case
+          when c.stale or a.normalized_thread_id is null or exists (
+            select 1
+              from private.gmail_commercial_message_current mc
+              join private.gmail_commercial_message_attempts ma on ma.id = mc.current_attempt_id
+             where mc.mail_account_id = c.mail_account_id
+               and mc.provider_thread_id = c.provider_thread_id
+               and ma.current_normalized_message_id is null
+          ) then null
+          else a.commercial_state
+        end,
+        'compensation_structure', case
+          when c.stale or a.normalized_thread_id is null or exists (
+            select 1
+              from private.gmail_commercial_message_current mc
+              join private.gmail_commercial_message_attempts ma on ma.id = mc.current_attempt_id
+             where mc.mail_account_id = c.mail_account_id
+               and mc.provider_thread_id = c.provider_thread_id
+               and ma.current_normalized_message_id is null
+          ) then null
+          else a.compensation_structure
+        end,
+        'evidence_strength', case
+          when c.stale or a.normalized_thread_id is null or exists (
+            select 1
+              from private.gmail_commercial_message_current mc
+              join private.gmail_commercial_message_attempts ma on ma.id = mc.current_attempt_id
+             where mc.mail_account_id = c.mail_account_id
+               and mc.provider_thread_id = c.provider_thread_id
+               and ma.current_normalized_message_id is null
+          ) then null
+          else a.evidence_strength
+        end,
+        'stale', c.stale or a.normalized_thread_id is null or exists (
+          select 1
+            from private.gmail_commercial_message_current mc
+            join private.gmail_commercial_message_attempts ma on ma.id = mc.current_attempt_id
+           where mc.mail_account_id = c.mail_account_id
+             and mc.provider_thread_id = c.provider_thread_id
+             and ma.current_normalized_message_id is null
+        ),
         'input_digest', c.input_digest,
         'engine_kind', a.engine_kind,
         'rule_version', a.rule_version,
@@ -1692,11 +1842,20 @@ begin
     'messages', coalesce((
       select jsonb_agg(jsonb_build_object(
         'provider_message_id', c.provider_message_id,
-        'disposition', a.disposition,
-        'signals', a.signals,
-        'evidence_strength', a.evidence_strength,
-        'stale', c.stale,
-        'suppressed', c.suppressed,
+        'disposition', case
+          when c.stale or c.suppressed or a.current_normalized_message_id is null then null
+          else a.disposition
+        end,
+        'signals', case
+          when c.stale or c.suppressed or a.current_normalized_message_id is null then null
+          else to_jsonb(a.signals)
+        end,
+        'evidence_strength', case
+          when c.stale or c.suppressed or a.current_normalized_message_id is null then null
+          else a.evidence_strength
+        end,
+        'stale', c.stale or a.current_normalized_message_id is null,
+        'suppressed', c.suppressed or a.current_normalized_message_id is null,
         'engine_kind', a.engine_kind,
         'rule_version', a.rule_version
       ) order by c.provider_message_id)
@@ -1811,8 +1970,25 @@ begin
     'threads', coalesce((
       select jsonb_agg(jsonb_build_object(
         'provider_thread_id', c.provider_thread_id,
-        'commercial_state', a.commercial_state,
-        'stale', c.stale
+        'commercial_state', case
+          when c.stale or a.normalized_thread_id is null or exists (
+            select 1
+              from private.gmail_commercial_message_current mc
+              join private.gmail_commercial_message_attempts ma on ma.id = mc.current_attempt_id
+             where mc.mail_account_id = c.mail_account_id
+               and mc.provider_thread_id = c.provider_thread_id
+               and ma.current_normalized_message_id is null
+          ) then null
+          else a.commercial_state
+        end,
+        'stale', c.stale or a.normalized_thread_id is null or exists (
+          select 1
+            from private.gmail_commercial_message_current mc
+            join private.gmail_commercial_message_attempts ma on ma.id = mc.current_attempt_id
+           where mc.mail_account_id = c.mail_account_id
+             and mc.provider_thread_id = c.provider_thread_id
+             and ma.current_normalized_message_id is null
+        )
       ) order by c.provider_thread_id)
       from private.gmail_commercial_thread_current c
       join private.gmail_commercial_thread_attempts a on a.id = c.current_attempt_id

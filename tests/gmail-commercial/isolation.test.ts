@@ -33,43 +33,106 @@ async function ready(label: string) {
   return fixture;
 }
 
+const B07_TABLES = [
+  "gmail_commercial_message_attempts",
+  "gmail_commercial_message_current",
+  "gmail_commercial_thread_attempts",
+  "gmail_commercial_thread_current",
+  "gmail_commercial_creator_decision_events",
+  "gmail_commercial_message_decisions",
+  "gmail_commercial_thread_decisions",
+] as const;
+
 d("B07 tenant isolation, both directions", () => {
   it("User A and User B cannot read, count, update, delete, or correct each other", async () => {
     const a = await ready("b07-iso-a");
     const b = await ready("b07-iso-b");
+    for (const owner of [a, b]) {
+      const disposition = await asCreator(client, owner.userId, () =>
+        commercialDeps(client).db.rpc("gmail_commercial_record_creator_decision", {
+          p_mail_account_id: owner.mailAccountId,
+          p_axis: "disposition",
+          p_action: "set",
+          p_provider_message_id: owner.replyId,
+          p_provider_thread_id: null,
+          p_reply_nature: null,
+          p_disposition: "mixed",
+          p_signals: null,
+          p_business_outcome: null,
+          p_lost_reason: null,
+          p_compensation_structure: null,
+        }),
+      );
+      expect((disposition.data as { result: string }).result).toBe("ok");
+      const compensation = await asCreator(client, owner.userId, () =>
+        commercialDeps(client).db.rpc("gmail_commercial_record_creator_decision", {
+          p_mail_account_id: owner.mailAccountId,
+          p_axis: "compensation",
+          p_action: "set",
+          p_provider_message_id: null,
+          p_provider_thread_id: owner.providerThreadId,
+          p_reply_nature: null,
+          p_disposition: null,
+          p_signals: null,
+          p_business_outcome: null,
+          p_lost_reason: null,
+          p_compensation_structure: "paid",
+        }),
+      );
+      expect((compensation.data as { result: string }).result).toBe("ok");
+    }
 
     for (const [actor, other] of [
       [b, a],
       [a, b],
     ] as const) {
-      const select = await queryAs(
-        { role: "authenticated", sub: actor.userId },
-        "select id from private.gmail_commercial_message_attempts where user_id = $1",
-        [other.userId],
-      );
-      expect(select.error, "select").toBeNull();
-      expect(select.rows).toHaveLength(0);
+      for (const table of B07_TABLES) {
+        const select = await queryAs(
+          { role: "authenticated", sub: actor.userId },
+          `select 1 from private.${table} where user_id = $1`,
+          [other.userId],
+        );
+        expect(select.error, `${table} select`).toBeNull();
+        expect(select.rows, table).toHaveLength(0);
 
-      const counted = await queryAs<{ n: number }>(
-        { role: "authenticated", sub: actor.userId },
-        "select count(*)::int as n from private.gmail_commercial_message_attempts where user_id = $1",
-        [other.userId],
-      );
-      expect(counted.rows[0]!.n).toBe(0);
+        const counted = await queryAs<{ n: number }>(
+          { role: "authenticated", sub: actor.userId },
+          `select count(*)::int as n from private.${table} where user_id = $1`,
+          [other.userId],
+        );
+        expect(counted.error, `${table} count`).toBeNull();
+        expect(counted.rows[0]!.n, table).toBe(0);
 
-      const updated = await queryAs(
-        { role: "authenticated", sub: actor.userId },
-        "update private.gmail_commercial_message_attempts set disposition = 'negative' where user_id = $1",
-        [other.userId],
-      );
-      expect(updated.error?.code).toBe("42501");
+        const visible = await queryAs<{ n: number }>(
+          { role: "authenticated", sub: actor.userId },
+          `select count(*)::int as n from private.${table}`,
+        );
+        const owned = await client.query<{ n: number }>(
+          `select count(*)::int as n from private.${table} where user_id = $1`,
+          [actor.userId],
+        );
+        expect(visible.rows[0]!.n, `${table} unfiltered`).toBe(owned.rows[0]!.n);
 
-      const deleted = await queryAs(
-        { role: "authenticated", sub: actor.userId },
-        "delete from private.gmail_commercial_thread_attempts where user_id = $1",
-        [other.userId],
-      );
-      expect(deleted.error?.code).toBe("42501");
+        const updated = await queryAs(
+          { role: "authenticated", sub: actor.userId },
+          `update private.${table} set user_id = user_id where user_id = $1`,
+          [other.userId],
+        );
+        expect(updated.error?.code, `${table} update`).toBe("42501");
+
+        const deleted = await queryAs(
+          { role: "authenticated", sub: actor.userId },
+          `delete from private.${table} where user_id = $1`,
+          [other.userId],
+        );
+        expect(deleted.error?.code, `${table} delete`).toBe("42501");
+
+        const inserted = await queryAs(
+          { role: "authenticated", sub: actor.userId },
+          `insert into private.${table} default values`,
+        );
+        expect(inserted.error?.code, `${table} insert`).toBe("42501");
+      }
 
       const read = await queryAs<{ value: { result: string } }>(
         { role: "authenticated", sub: actor.userId },
@@ -103,11 +166,13 @@ d("B07 tenant isolation, both directions", () => {
       expect(correct.rows[0]!.value.result).toBe("not_found");
     }
 
-    const own = await queryAs(
-      { role: "authenticated", sub: a.userId },
-      "select id from private.gmail_commercial_message_attempts",
-    );
-    expect(own.rows.length).toBeGreaterThan(0);
+    for (const table of B07_TABLES) {
+      const own = await queryAs<{ n: number }>(
+        { role: "authenticated", sub: a.userId },
+        `select count(*)::int as n from private.${table}`,
+      );
+      expect(own.rows[0]!.n, table).toBeGreaterThan(0);
+    }
 
     const ownRead = await queryAs<{
       value: { result: string; machine: { commercial_state: string } };
