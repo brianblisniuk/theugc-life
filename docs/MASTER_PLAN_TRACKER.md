@@ -326,7 +326,7 @@ contract, and D076 (open PR #53) does not define it either.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | **CONTRACT PROPOSED** — PR #54, D077, branch `docs/c01-intelligence-fact-contract`. Requires owner acceptance. Not accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C01 | **MERGED (docs only)** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. D077 stays Proposed and is not accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
 | C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
 | C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
 | C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
@@ -400,7 +400,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| E01 | PLANNED | Sunlit Creator OS Discover + Map + Hotel Detail production experience | A2 visual direction, real canonical data, no demo leakage |
+| E01 | **AWAITING AUDIT** — PR #55, branch `feat/e01-discover-hotel-detail`. Discover + Hotel Detail over published canonical hotels. Map provider is not decided; the surface keeps an empty slot and does not call a tile service. No migration. B08 PR #53 holds 0047 and 0048. D07 has no open PR. Next free number is 0049. | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
 | E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | PLANNED | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
@@ -648,16 +648,20 @@ the bound B06 classification or chronology fingerprint has changed in place.
 `4062170212beb8b978a248ef219eb91ddbfb080b` into `main`. Migration
 `0046_trips_context.sql`.
 
-The open contract block on this branch is:
+**C01 (PR #54) is merged**, as merge commit
+`989e7f020f07362113b3e9b00fd9950293808f10` into `main`. Docs only:
+`docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. D077 stays Proposed and is not
+accepted. No migration and no runtime.
 
-> **C01 — normalized intelligence event/fact contract (D077, Proposed).
-> Open as PR #54 on `docs/c01-intelligence-fact-contract`. Docs only:
-> `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. No migration and no runtime.
-> Requires owner acceptance. Not accepted. Do not merge from automation.**
+The open implementation block is:
 
-B08 incremental sync is a separate open pull request (#53, D076) and is not
-this block. Pilot KPIs remain an owner question (D077). This PR does not
-change the B08 tracker row.
+> **E01 — Discover + Hotel Detail, map deferred.** PR #55, branch
+> `feat/e01-discover-hotel-detail`. No migration. Awaiting audit. Do not merge.
+
+B08 incremental sync is a separate open pull request (#53, D076) and holds
+migrations 0047 and 0048. D07 has no open pull request and no migration. The
+next free migration number is 0049. Pilot KPIs remain an owner question
+(D077). This PR does not change the B08 tracker row.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

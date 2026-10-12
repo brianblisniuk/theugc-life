@@ -20,6 +20,13 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 
 import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./access";
+import {
+  assembleCreatorBadges,
+  PUBLIC_CARD_INTELLIGENCE_COLUMNS,
+  publicCardSignal,
+  type CreatorBadge,
+  type PublicCardSignal,
+} from "./card-signal";
 import { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS } from "./columns";
 import {
   destinationSelfAndDescendants,
@@ -33,12 +40,22 @@ import type {
   PremiumIntelligenceResult,
   PremiumIntelligenceSignal,
 } from "./intelligence";
+import {
+  isPublishedCanonicalHotel,
+  PUBLISHED_ACTIVE_STATUSES,
+  PUBLISHED_STAR_RATINGS,
+} from "./publication";
 
 export { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS, PREMIUM_CONTACT_FIELDS } from "./columns";
 export { isUuid } from "./ids";
 export type { ContactAccessResult } from "./access";
 
-const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, destination:destinations(id, name, slug, country_code)`;
+/**
+ * Latitude and longitude are selected so the read path can apply D062/D054.
+ * They are not copied onto `HotelSummary`: this surface does not render a map,
+ * and coordinates are not handed to a tile provider.
+ */
+const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, latitude, longitude, destination:destinations(id, name, slug, country_code)`;
 
 /**
  * The Supabase client surface these queries use. Aliasing it lets tests inject
@@ -159,7 +176,18 @@ function mapDestination(raw: RawHotel["destination"]): HotelDestination | null {
   return { id: d.id, name: d.name, slug: d.slug, countryCode: d.country_code ?? null };
 }
 
-function mapHotel(row: RawHotel): HotelSummary {
+function publicationFacts(row: RawHotel) {
+  return {
+    destinationId: typeof row.destination_id === "string" ? row.destination_id : null,
+    starRating: toNumber(row.star_rating),
+    latitude: toNumber(row.latitude),
+    longitude: toNumber(row.longitude),
+    activeStatus: typeof row.active_status === "string" ? row.active_status : null,
+  };
+}
+
+function mapHotel(row: RawHotel): HotelSummary | null {
+  if (!isPublishedCanonicalHotel(publicationFacts(row))) return null;
   return {
     id: String(row.id),
     name: String(row.name),
@@ -175,6 +203,62 @@ function mapHotel(row: RawHotel): HotelSummary {
     verifiedAt: (row.editorial_verified_at as string | null) ?? null,
     destination: mapDestination(row.destination),
   };
+}
+
+/**
+ * Narrow builder used only so the publication filters can be shared.
+ * The Supabase client's own generic instantiates without bound if a helper
+ * tries to return it, so call sites cast into this shape.
+ */
+interface HotelReadBuilder {
+  in(column: string, values: readonly (string | number)[]): HotelReadBuilder;
+  gte(column: string, value: number): HotelReadBuilder;
+  lte(column: string, value: number): HotelReadBuilder;
+  eq(column: string, value: string): HotelReadBuilder;
+  or(filters: string): HotelReadBuilder;
+  order(column: string, options: { ascending: boolean }): HotelReadBuilder;
+  range(
+    from: number,
+    to: number,
+  ): Promise<{ data: unknown[] | null; error: { code?: string } | null; count: number | null }>;
+  maybeSingle(): Promise<{ data: unknown; error: { code?: string } | null }>;
+}
+
+/** D062 column predicate. Applied to every creator-facing hotel read. */
+function applyPublishedFilters(builder: HotelReadBuilder): HotelReadBuilder {
+  return builder
+    .in("star_rating", PUBLISHED_STAR_RATINGS)
+    .gte("latitude", -90)
+    .lte("latitude", 90)
+    .gte("longitude", -180)
+    .lte("longitude", 180)
+    .in("active_status", PUBLISHED_ACTIVE_STATUSES);
+}
+
+const INTELLIGENCE_FILTER_LIMIT = 5000;
+
+/**
+ * Hotel ids whose PUBLIC projection discloses the requested signal.
+ * Null means the caller did not ask for an intelligence filter.
+ * An empty array means nothing disclosed matches — the search must not fall open.
+ */
+async function disclosedIntelligenceIds(
+  supabase: HotelQueryClient,
+  query: DiscoverQuery,
+): Promise<string[] | null> {
+  if (!query.activity && !query.collaboration) return null;
+  let request = supabase.from("hotel_public_intelligence").select("hotel_id");
+  if (query.activity) request = request.eq("activity_level", query.activity);
+  if (query.collaboration) request = request.eq("has_observed_collaboration", true);
+  const { data, error } = await request
+    .order("hotel_id", { ascending: true })
+    .limit(INTELLIGENCE_FILTER_LIMIT + 1);
+  if (error) throw new Error("hotel_search_failed:intelligence_scope");
+  const rows = data ?? [];
+  if (rows.length > INTELLIGENCE_FILTER_LIMIT) {
+    throw new Error("hotel_search_failed:intelligence_scope");
+  }
+  return rows.map((row) => String((row as { hotel_id: string }).hotel_id));
 }
 
 /**
@@ -230,7 +314,12 @@ export async function searchHotels(
     destinationIds = destinationSelfAndDescendants(nodes, rootId);
   }
 
-  let builder = supabase.from("hotels").select(HOTEL_SELECT, { count: "exact" });
+  const intelligenceIds = await disclosedIntelligenceIds(supabase, query);
+  if (intelligenceIds && intelligenceIds.length === 0) return emptySearch(page, pageSize);
+
+  let builder = applyPublishedFilters(
+    supabase.from("hotels").select(HOTEL_SELECT, { count: "exact" }) as unknown as HotelReadBuilder,
+  );
 
   if (query.q) {
     // Resolve destinations matching the term first, so a search for "Dubai"
@@ -256,6 +345,8 @@ export async function searchHotels(
   }
 
   if (destinationIds) builder = builder.in("destination_id", destinationIds);
+  if (intelligenceIds) builder = builder.in("id", intelligenceIds);
+  if (query.country) builder = builder.eq("country_code", query.country);
   if (query.type) builder = builder.eq("hotel_type", query.type);
   if (query.minStars !== null) builder = builder.gte("star_rating", query.minStars);
   if (query.verification) builder = builder.eq("editorial_verification_status", query.verification);
@@ -269,7 +360,9 @@ export async function searchHotels(
 
   if (error) throw new Error(`hotel_search_failed:${error.code ?? "unknown"}`);
 
-  const hotels = (data ?? []).map((row) => mapHotel(row as unknown as RawHotel));
+  const hotels = (data ?? [])
+    .map((row) => mapHotel(row as unknown as RawHotel))
+    .filter((hotel): hotel is HotelSummary => hotel !== null);
   const total = typeof count === "number" ? count : null;
   return {
     hotels,
@@ -291,11 +384,9 @@ export async function searchHotels(
 export async function getHotelById(id: string): Promise<HotelSummary | null> {
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("hotels")
-    .select(HOTEL_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await applyPublishedFilters(
+    supabase.from("hotels").select(HOTEL_SELECT).eq("id", id) as unknown as HotelReadBuilder,
+  ).maybeSingle();
   if (error) throw new Error(`hotel_fetch_failed:${error.code ?? "unknown"}`);
   if (!data) return null;
   return mapHotel(data as unknown as RawHotel);
@@ -445,4 +536,187 @@ export async function getHotelPremiumIntelligence(
     contributorCount: toNumber(row.contributor_count),
   };
   return { status: "ok", signal };
+}
+
+export interface DiscoverDestinationOption {
+  slug: string;
+  name: string;
+  type: string;
+}
+
+export interface DiscoverCountryOption {
+  code: string;
+  name: string;
+}
+
+export type DiscoverCatalog =
+  | {
+      status: "ok";
+      destinations: DiscoverDestinationOption[];
+      countries: DiscoverCountryOption[];
+    }
+  | { status: "error" };
+
+/**
+ * Destination and country choices for the Discover filters. A failed read is
+ * an error, not an empty catalog — an empty list would tell the creator no
+ * destinations exist.
+ */
+export async function listDiscoverCatalog(
+  injectedClient?: HotelQueryClient,
+): Promise<DiscoverCatalog> {
+  try {
+    const supabase = injectedClient ?? (await createClient());
+    const { data, error } = await supabase
+      .from("destinations")
+      .select("name, slug, type, country_code, country_name")
+      .order("name", { ascending: true })
+      .limit(5000);
+    if (error) return { status: "error" };
+    const rows = data ?? [];
+    if (rows.length >= 5000) return { status: "error" };
+    const destinations: DiscoverDestinationOption[] = [];
+    const countries = new Map<string, string>();
+    for (const raw of rows) {
+      const row = raw as {
+        name?: unknown;
+        slug?: unknown;
+        type?: unknown;
+        country_code?: unknown;
+        country_name?: unknown;
+      };
+      if (typeof row.slug !== "string" || typeof row.name !== "string") continue;
+      destinations.push({
+        slug: row.slug,
+        name: row.name,
+        type: typeof row.type === "string" ? row.type : "destination",
+      });
+      if (typeof row.country_code === "string" && /^[A-Za-z]{2}$/.test(row.country_code)) {
+        const code = row.country_code.toUpperCase();
+        const name =
+          typeof row.country_name === "string" && row.country_name.trim().length > 0
+            ? row.country_name.trim()
+            : code;
+        if (!countries.has(code)) countries.set(code, name);
+      }
+    }
+    destinations.sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
+    const countryOptions = [...countries.entries()]
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code));
+    return { status: "ok", destinations, countries: countryOptions };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+/**
+ * Public signals for the hotels on this page. A failed read returns null.
+ * Callers must not render that as "no creator activity".
+ */
+export async function getPublicCardSignals(
+  hotelIds: readonly string[],
+  injectedClient?: HotelQueryClient,
+): Promise<Map<string, PublicCardSignal> | null> {
+  const ids = hotelIds.filter((id) => isUuid(id));
+  if (ids.length === 0) return new Map();
+  try {
+    const supabase = injectedClient ?? (await createClient());
+    const { data, error } = await supabase
+      .from("hotel_public_intelligence")
+      .select(PUBLIC_CARD_INTELLIGENCE_COLUMNS.join(", "))
+      .in("hotel_id", ids);
+    if (error) return null;
+    const signals = new Map<string, PublicCardSignal>();
+    for (const raw of data ?? []) {
+      const row = raw as unknown as Record<string, unknown>;
+      if (typeof row.hotel_id !== "string") continue;
+      signals.set(
+        row.hotel_id,
+        publicCardSignal({
+          activityLevel: (row.activity_level as string | null) ?? null,
+          recencyBand: (row.recency_band as string | null) ?? null,
+          hasObservedCollaboration: (row.has_observed_collaboration as boolean | null) ?? null,
+        }),
+      );
+    }
+    return signals;
+  } catch {
+    return null;
+  }
+}
+
+function oneCreatorId(raw: unknown): string | null {
+  const row = Array.isArray(raw) ? raw[0] : raw;
+  if (!row || typeof row !== "object") return null;
+  const id = (row as { creator_id?: unknown }).creator_id;
+  return typeof id === "string" ? id : null;
+}
+
+/**
+ * The viewer's own pipeline and trip badges for these hotels.
+ *
+ * Both reads use the cookie-bound client. If either fails, the whole load is
+ * `unknown` — a missing badge must not be described as "not saved" or
+ * "not on a trip". Foreign creator ids are dropped by `assembleCreatorBadges`
+ * even if a row arrives.
+ */
+export async function loadCreatorBadges(
+  hotelIds: readonly string[],
+  viewerId: string,
+  injectedClient?: HotelQueryClient,
+): Promise<{ status: "known"; byHotel: Map<string, CreatorBadge> } | { status: "unknown" }> {
+  if (!isUuid(viewerId)) return { status: "unknown" };
+  const ids = hotelIds.filter((id) => isUuid(id));
+  if (ids.length === 0) {
+    return {
+      status: "known",
+      byHotel: assembleCreatorBadges({
+        hotelIds,
+        viewerId,
+        pipelineRows: [],
+        tripRows: [],
+      }),
+    };
+  }
+  try {
+    const supabase = injectedClient ?? (await createClient());
+    const [pipeline, trips] = await Promise.all([
+      supabase
+        .from("pipeline_items")
+        .select("hotel_id, creator_id, status")
+        .in("hotel_id", ids)
+        .neq("status", "closed"),
+      supabase
+        .from("trip_hotels")
+        .select("hotel_id, trip_id, trip:trips!inner(creator_id)")
+        .in("hotel_id", ids),
+    ]);
+    if (pipeline.error || trips.error) return { status: "unknown" };
+    const pipelineRows = (pipeline.data ?? []).flatMap((raw) => {
+      const row = raw as { hotel_id?: unknown; creator_id?: unknown; status?: unknown };
+      if (
+        typeof row.hotel_id !== "string" ||
+        typeof row.creator_id !== "string" ||
+        typeof row.status !== "string"
+      ) {
+        return [];
+      }
+      return [{ hotelId: row.hotel_id, creatorId: row.creator_id, status: row.status }];
+    });
+    const tripRows = (trips.data ?? []).flatMap((raw) => {
+      const row = raw as { hotel_id?: unknown; trip_id?: unknown; trip?: unknown };
+      const creatorId = oneCreatorId(row.trip);
+      if (typeof row.hotel_id !== "string" || typeof row.trip_id !== "string" || !creatorId) {
+        return [];
+      }
+      return [{ hotelId: row.hotel_id, creatorId, tripId: row.trip_id }];
+    });
+    return {
+      status: "known",
+      byHotel: assembleCreatorBadges({ hotelIds: ids, viewerId, pipelineRows, tripRows }),
+    };
+  } catch {
+    return { status: "unknown" };
+  }
 }

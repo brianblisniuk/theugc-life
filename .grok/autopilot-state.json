@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. C01 (D077) is PR #54, a proposed docs-only contract, awaiting audit. The schema has no AWAITING_AUDIT value, so state is AUDITING. expected_head stays null because this commit cannot name itself. Do not merge. D076 is open PR #53 (B08), not this block. PR #52 (D01) is merged at 4062170.",
+  "$comment": "E01 Discover + Hotel Detail (no map) awaits audit as PR #55 on feat/e01-discover-hotel-detail. Rebased onto main 989e7f020f07362113b3e9b00fd9950293808f10 (C01 docs, PR #54). D077 stays Proposed. D01 merged as PR #52 at 4062170212beb8b978a248ef219eb91ddbfb080b. B07.1 merged as PR #51 at 187af6a3d4b4b5f6db1ec6d1f77ca975e791f852. expected_head stays null because this commit cannot name itself. Do not merge. The machine state is AUDITING; the work order calls that AWAITING_AUDIT. E01 adds no migration. B08 PR #53 holds 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",
-  "last_recorded_main": "4062170212beb8b978a248ef219eb91ddbfb080b",
-  "active_block": "C01 intelligence fact contract (D077 Proposed, docs only)",
-  "branch": "docs/c01-intelligence-fact-contract",
-  "pr": 54,
+  "last_recorded_main": "989e7f020f07362113b3e9b00fd9950293808f10",
+  "active_block": "E01 Discover + Hotel Detail (no map)",
+  "branch": "feat/e01-discover-hotel-detail",
+  "pr": 55,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "4062170212beb8b978a248ef219eb91ddbfb080b",
+    "ref": "989e7f020f07362113b3e9b00fd9950293808f10",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "Independent audit of the C01 proposal on docs/c01-intelligence-fact-contract. D077 is Proposed and is not accepted. No implementation until the owner accepts it. Do not merge. B08 remains open PR #53 (D076) and is not this block. Pilot KPIs are an open owner question."
+  "next_dependency": "Independent audit of E01. Map provider is not decided. E01 adds no migration. B08 PR #53 holds 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049. D077 stays Proposed."
 }

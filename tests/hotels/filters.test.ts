@@ -27,7 +27,10 @@ describe("parseDiscoverQuery", () => {
       type: null,
       minStars: null,
       verification: null,
+      country: null,
       destination: null,
+      activity: null,
+      collaboration: null,
       page: 1,
       pageSize: DISCOVER_PAGE_SIZE,
     });
@@ -48,8 +51,13 @@ describe("parseDiscoverQuery", () => {
 
   it("drops out-of-vocabulary star and verification values", () => {
     expect(parseDiscoverQuery({ stars: "7" }).minStars).toBeNull();
+    expect(parseDiscoverQuery({ stars: "3" }).minStars).toBeNull();
     expect(parseDiscoverQuery({ stars: "abc" }).minStars).toBeNull();
     expect(parseDiscoverQuery({ verified: "sort-of" }).verification).toBeNull();
+    expect(parseDiscoverQuery({ activity: "none" }).activity).toBeNull();
+    expect(parseDiscoverQuery({ collaboration: "false" }).collaboration).toBeNull();
+    expect(parseDiscoverQuery({ country: "UAE" }).country).toBeNull();
+    expect(parseDiscoverQuery({ country: "ae" }).country).toBe("AE");
   });
 
   it("caps page size at the hard ceiling and rejects junk paging", () => {

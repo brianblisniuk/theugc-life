@@ -16,8 +16,26 @@ export const HOTEL_TYPE_FILTERS = HOTEL_TYPES;
 export const VERIFICATION_FILTERS = ["verified", "needs_review", "stale", "unverified"] as const;
 export type VerificationFilter = (typeof VERIFICATION_FILTERS)[number];
 
-/** Star filter is a MINIMUM rating ("4" means 4 stars and above). */
-export const STAR_FILTERS = ["3", "4", "5"] as const;
+/**
+ * Minimum hospitality classification. V1 published inventory is 4 or 5 (D060),
+ * so "3" is not a filter a published result can satisfy.
+ */
+export const STAR_FILTERS = ["4", "5"] as const;
+
+/**
+ * Public activity levels the projection may disclose (D058). A filter matches
+ * only a disclosed level. It cannot select the withheld/NULL state.
+ */
+export const ACTIVITY_FILTERS = ["high", "medium", "low", "emerging"] as const;
+export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number];
+
+/**
+ * Public collaboration presence only. Collaboration *types* are premium and
+ * never a Discover filter (D058: list cards are public-only). There is no
+ * "none" value: absence is not a disclosed negative.
+ */
+export const COLLABORATION_FILTERS = ["observed"] as const;
+export type CollaborationFilter = (typeof COLLABORATION_FILTERS)[number];
 
 /** Default page size, and the hard ceiling a caller can request. */
 export const DISCOVER_PAGE_SIZE = 24;
@@ -31,16 +49,23 @@ export interface DiscoverQuery {
   q: string | null;
   /** Canonical hotel_type, or null. */
   type: string | null;
-  /** Minimum star rating (3, 4, or 5), or null. */
+  /** Minimum hospitality classification (4 or 5), or null. */
   minStars: number | null;
   /** editorial_verification_status, or null. */
   verification: VerificationFilter | null;
+  /** ISO country code, matched against hotels.country_code. */
+  country: string | null;
   /**
    * Canonical destination slug (ROUTES.md §10). Null when absent or malformed.
    * A well-formed slug that matches no destination is still a filter: Discover
-   * must not fall open to the whole catalog.
+   * must not fall open to the whole catalog. The search includes descendants
+   * (D013).
    */
   destination: string | null;
+  /** Disclosed public activity level, or null. */
+  activity: ActivityFilter | null;
+  /** Public observed-collaboration presence, or null. */
+  collaboration: CollaborationFilter | null;
   /** 1-based page number. */
   page: number;
   /** Bounded page size. */
@@ -49,6 +74,14 @@ export interface DiscoverQuery {
 
 /** Destination slugs are lowercase words separated by single hyphens. */
 const DESTINATION_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const COUNTRY_CODE = /^[A-Za-z]{2}$/;
+
+export function parseCountryCode(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const code = raw.trim();
+  if (!COUNTRY_CODE.test(code)) return null;
+  return code.toUpperCase();
+}
 
 export function parseDestinationSlug(raw: string | null | undefined): string | null {
   if (typeof raw !== "string") return null;
@@ -139,6 +172,19 @@ export function parseDiscoverQuery(params: RawSearchParams = {}): DiscoverQuery 
       : null;
 
   const destination = parseDestinationSlug(first(params.destination));
+  const country = parseCountryCode(first(params.country));
+
+  const rawActivity = first(params.activity);
+  const activity =
+    rawActivity && (ACTIVITY_FILTERS as readonly string[]).includes(rawActivity)
+      ? (rawActivity as ActivityFilter)
+      : null;
+
+  const rawCollaboration = first(params.collaboration);
+  const collaboration =
+    rawCollaboration && (COLLABORATION_FILTERS as readonly string[]).includes(rawCollaboration)
+      ? (rawCollaboration as CollaborationFilter)
+      : null;
 
   const rawPage = Number(first(params.page));
   const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
@@ -149,13 +195,31 @@ export function parseDiscoverQuery(params: RawSearchParams = {}): DiscoverQuery 
       ? Math.min(rawSize, DISCOVER_MAX_PAGE_SIZE)
       : DISCOVER_PAGE_SIZE;
 
-  return { q, type, minStars, verification, destination, page, pageSize };
+  return {
+    q,
+    type,
+    minStars,
+    verification,
+    country,
+    destination,
+    activity,
+    collaboration,
+    page,
+    pageSize,
+  };
 }
 
 /** True when any user-controlled narrowing is active (drives the reset CTA). */
 export function hasActiveFilters(query: DiscoverQuery): boolean {
   return Boolean(
-    query.q || query.type || query.minStars || query.verification || query.destination,
+    query.q ||
+    query.type ||
+    query.minStars ||
+    query.verification ||
+    query.country ||
+    query.destination ||
+    query.activity ||
+    query.collaboration,
   );
 }
 
@@ -166,7 +230,10 @@ export function buildDiscoverHref(query: Partial<DiscoverQuery>): string {
   if (query.type) sp.set("type", query.type);
   if (query.minStars) sp.set("stars", String(query.minStars));
   if (query.verification) sp.set("verified", query.verification);
+  if (query.country) sp.set("country", query.country);
   if (query.destination) sp.set("destination", query.destination);
+  if (query.activity) sp.set("activity", query.activity);
+  if (query.collaboration) sp.set("collaboration", query.collaboration);
   if (query.page && query.page > 1) sp.set("page", String(query.page));
   // Preserve a non-default page size, otherwise paging would silently change
   // the window and skip or repeat rows.

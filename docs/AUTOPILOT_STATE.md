@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `4062170212beb8b978a248ef219eb91ddbfb080b` (merge of PR #52, 2026-10-12)  
-**State:** AUDITING. PR #54, branch `docs/c01-intelligence-fact-contract`. The work order asked for AWAITING_AUDIT. `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value, so the machine state is `AUDITING`. `expected_head` stays null because this commit cannot name itself. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** C01 — proposed intelligence event/fact contract (D077). Docs only. No migration and no runtime. D077 is Proposed and requires owner acceptance. It is not Accepted. D01 (PR #52, migration `0046`) is merged. B08 is a separate open PR (#53, D076) and is not this block.
+**Last verified main:** `989e7f020f07362113b3e9b00fd9950293808f10` (merge of PR #54, C01 docs only, 2026-10-12)  
+**State:** AUDITING (awaiting audit). PR #55 on `feat/e01-discover-hotel-detail`. E01 Discover + Hotel Detail, map deferred. `.grok/autopilot-state.json` does not name this commit as `expected_head`. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** E01. Published canonical hotels on Discover and Hotel Detail. No map provider is decided, so the surface has an empty map slot and does not call a tile service. No migration. B08 PR #53 holds migrations 0047 and 0048. D07 has no open PR and no migration. The next free number is 0049. D077 stays Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -29,10 +29,11 @@
 - PR #50 — B07 slice 1 rules engine — `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`
 - PR #51 — B07.1 commercial-meaning follow-ups — `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`
 - PR #52 — D01 trips — `4062170212beb8b978a248ef219eb91ddbfb080b`
+- PR #54 — C01 intelligence fact contract, docs only (D077 remains Proposed) — `989e7f020f07362113b3e9b00fd9950293808f10`
 
 ## Next action
-- C01 is PR #54 (`docs/c01-intelligence-fact-contract`, D077, Proposed, docs only). State is AUDITING (awaiting audit). Do not merge from automation. D077 is not accepted.
-- D01 is merged (PR #52). B08 incremental sync is open as PR #53 (D076) and is not this block. Pilot KPIs remain an open owner question. Model-backed B07 inference stays gated.
+- E01 is the open block as PR #55 on `feat/e01-discover-hotel-detail`. State is AUDITING. Do not merge from automation.
+- Model-backed B07 inference stays gated. B08 is PR #53 (0047 and 0048) and is not this block. D07 has no open PR. D077 stays Proposed. Pilot KPIs remain an open owner question.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
 - Owner interaction happens only via human-frontier labels.
