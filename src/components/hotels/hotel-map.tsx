@@ -4,8 +4,10 @@
  * Published-hotel map (D079).
  *
  * Renders nothing when the public key is missing, when there is no pin, or
- * when the script fails. There is no error state: the list remains the way
- * to browse the same hotels.
+ * when the script fails. A failed script is remembered for this document, so
+ * a later mount settles to hidden instead of waiting on an error that already
+ * fired. There is no error state: the list remains the way to browse the same
+ * hotels.
  */
 import { useEffect, useState } from "react";
 

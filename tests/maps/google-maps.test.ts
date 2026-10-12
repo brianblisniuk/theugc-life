@@ -272,6 +272,170 @@ describe("mountHotelMap", () => {
   });
 });
 
+/**
+ * Real `insertGoogleMapsScript` against a fake document. The injected `load`
+ * argument is not used. A hung promise fails the test instead of waiting
+ * for the file timeout.
+ */
+function settle<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("map load hung")), 100);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function installScriptDom(behavior: "error" | "success" | "idle", api: GoogleMapsNamespace) {
+  const scripts: FakeScript[] = [];
+  let appends = 0;
+  const win = {} as Window & {
+    ugcMapsInit?: () => void;
+    google?: { maps?: GoogleMapsNamespace };
+  };
+
+  class FakeScript {
+    async = false;
+    dataset: Record<string, string> = {};
+    referrerPolicy = "";
+    src = "";
+    onerror: (() => void) | null = null;
+    listenerCount = 0;
+    addEventListener(event: string, handler: () => void) {
+      this.listenerCount += 1;
+      if (event !== "error") handler();
+    }
+    remove() {
+      const index = scripts.indexOf(this);
+      if (index >= 0) scripts.splice(index, 1);
+    }
+  }
+
+  const documentFake = {
+    createElement(tag: string) {
+      if (tag !== "script") throw new Error(tag);
+      return new FakeScript();
+    },
+    head: {
+      appendChild(script: FakeScript) {
+        appends += 1;
+        scripts.push(script);
+        if (behavior === "error") script.onerror?.();
+        if (behavior === "success") {
+          win.google = { maps: api };
+          win.ugcMapsInit?.();
+        }
+      },
+    },
+    querySelector(selector: string) {
+      if (selector !== "script[data-ugc-maps='1']") return null;
+      return scripts.find((script) => script.dataset.ugcMaps === "1") ?? null;
+    },
+  };
+
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    writable: true,
+    value: documentFake,
+  });
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    writable: true,
+    value: win,
+  });
+
+  return {
+    get appends() {
+      return appends;
+    },
+    get scripts() {
+      return scripts;
+    },
+    plant(dataset: Record<string, string>) {
+      const script = new FakeScript();
+      Object.assign(script.dataset, dataset);
+      scripts.push(script);
+      return script;
+    },
+    restore() {
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        writable: true,
+        value: previousDocument,
+      });
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        writable: true,
+        value: previousWindow,
+      });
+    },
+  };
+}
+
+describe("insertGoogleMapsScript remounts", () => {
+  const container = {} as HTMLElement;
+
+  beforeEach(() => {
+    resetGoogleMapsLoadForTests();
+  });
+
+  it("settles a later mount to hidden after the script has already failed", async () => {
+    const dom = installScriptDom("error", fakeMaps().api);
+    try {
+      const first = await settle(mountHotelMap({ apiKey: "public-key", pins: [PIN], container }));
+      expect(first.status).toBe("hidden");
+      expect(dom.scripts).toHaveLength(0);
+      const second = await settle(mountHotelMap({ apiKey: "public-key", pins: [PIN], container }));
+      expect(second.status).toBe("hidden");
+      expect(dom.appends).toBe(1);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  it("rejects a leftover failed script tag instead of waiting for its error", async () => {
+    const dom = installScriptDom("idle", fakeMaps().api);
+    try {
+      const planted = dom.plant({ ugcMaps: "1" });
+      const result = await settle(mountHotelMap({ apiKey: "public-key", pins: [PIN], container }));
+      expect(result.status).toBe("hidden");
+      expect(planted.listenerCount).toBe(0);
+      expect(dom.appends).toBe(0);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  it("remounts a successful script without inserting another one", async () => {
+    const dom = installScriptDom("success", fakeMaps().api);
+    try {
+      const first = await settle(mountHotelMap({ apiKey: "public-key", pins: [PIN], container }));
+      expect(first.status).toBe("shown");
+      const second = await settle(mountHotelMap({ apiKey: "public-key", pins: [PIN], container }));
+      expect(second.status).toBe("shown");
+      expect(dom.appends).toBe(1);
+      expect(dom.scripts).toHaveLength(1);
+      expect(dom.scripts[0]?.dataset.ugcMapsState).toBe("ready");
+
+      resetGoogleMapsLoadForTests();
+      const third = await settle(mountHotelMap({ apiKey: "public-key", pins: [PIN], container }));
+      expect(third.status).toBe("shown");
+      expect(dom.appends).toBe(1);
+    } finally {
+      dom.restore();
+    }
+  });
+});
+
 describe("published map pins", () => {
   const published = {
     id: PIN.id,
