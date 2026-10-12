@@ -2865,5 +2865,10 @@ At minimum:
     Refresh does not write `pipeline_items`, `outreach_events`, or
     `collaborations`. A redirect is not a decline suggestion. `0050` is not
     edited.
+29. Creator profile counts and past collaborations (0052, D086–D088 Proposed) —
+    no new table. Two security-invoker reads for the caller only:
+    `creator_personal_counts` and `creator_past_collaborations`. Counts are
+    creator-recorded outcomes, not rates, and a missing profile is JSON null.
+    `0051` is not used.
 
 Every migration must be reproducible from an empty database.

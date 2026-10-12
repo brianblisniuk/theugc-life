@@ -3473,3 +3473,97 @@ shows only the caller’s rows and does not use that count.
 - No stored onboarding-progress row.
 - No change to the D081 shell or to primary navigation.
 
+## D086 — The Profile page edits the creator’s private profile (D08)
+
+Status: **Proposed (requires owner acceptance)** — not Accepted. D081 is
+Accepted and keeps Profile as a primary item at `/app/profile`. D083–D085 are
+reserved by parallel blocks. This block uses D086–D088 and migration `0052`.
+`0051` stays free for E04.
+
+Depends on the columns already on `creator_profiles` (PRD §7.6, PRD §9.2) and
+on the onboarding rules for display name and username. It does not add a
+column and it does not depend on D077.
+
+### What the creator can edit
+
+Display name, username, bio, home city, home country, primary language,
+languages, niches, content formats, Instagram, TikTok, and YouTube links and
+handles, website, and an https profile-photo link. Niches, languages, and
+formats are the creator’s own words. This decision does not invent a taxonomy.
+An empty optional field is stored as null or an empty list. A photo is a
+link, not an upload.
+
+The write does not include `public_profile_enabled` or `portfolio_visibility`.
+
+### What this decision does not do
+
+- No public route such as `/creators/[username]`. PRD §7.6 still describes a
+  public portfolio. That route is not built here.
+- No portfolio asset manager. `/app/profile/portfolio` stays the existing
+  placeholder.
+- No new primary navigation item.
+- No change to the existing select policy: a row with
+  `public_profile_enabled` remains readable. This block does not set that
+  flag.
+
+## D087 — Personal analytics are counts of creator-recorded outcomes (D08)
+
+Status: **Proposed (requires owner acceptance)** — not Accepted. D072, D078,
+D080, and D081 are unchanged. D077 is not used.
+
+### What is counted
+
+`creator_personal_counts()` runs as the caller and takes no user id. Each
+figure is a count of rows that creator recorded. It is not a rate, including
+when the count is small.
+
+| Count | Means | Does not mean |
+|---|---|---|
+| Outreach | Pipeline cycles with a `manual_creator` `pitch_sent` or `followup_sent`. A second event on the same cycle does not raise the count. | A Gmail message, a `system` or `admin_correction` event, or a status with no such event. |
+| Replies | Cycles with a `manual_creator` `reply_received`. A sentiment event on that same reply is not a second reply. | A B07 human-reply flag, silence, or `follow_up`. |
+| Agreements | Collaboration rows, including a later `cancelled` row. The deal was agreed (D045). | `negotiation_started`, a one-sided yes, or `agreement_observed`. |
+| Completed collaborations | Collaborations whose status is `completed`. | `cancelled`, which is not completed and is not a lost deal. |
+| Deliverables approved | Checklist rows whose status is `approved`. | `pending`, `submitted`, or `rejected`. Quantity is not summed. |
+
+A missing profile returns JSON null for every count. That null is not zero.
+A zero is returned only after the caller’s own rows were read and the bucket
+was empty. Compensation amounts are not selected, so `unknown` cannot become
+`unpaid` or zero. The payload has no decline count and no ghosted count. A
+redirect is not a decline. Silence is not ghosting.
+
+Trips and linked threads are not extra counts. A trip does not increment
+outreach. A linked thread’s machine state does not increment replies or
+agreements.
+
+### What this decision does not do
+
+- No PostHog event and no copy of these counts into product analytics.
+- No network or aggregate statistic.
+- No price, payment, or Rebill change.
+
+## D088 — Past collaborations are a private list of links (D08)
+
+Status: **Proposed (requires owner acceptance)** — not Accepted.
+
+### What the list contains
+
+`creator_past_collaborations` returns the caller’s `completed` and
+`cancelled` collaborations, newest end date first. An `agreed`, `scheduled`,
+or `active` collaboration is not past. Each row links to that hotel in the
+pipeline (`/app/hotels/{id}?from=pipeline`), which is where a new cycle is
+opened. The link does not copy the collaboration onto the new cycle. There
+is no model call.
+
+The same rows for one hotel are shown on that hotel, beside the activity
+panel, when any exist. A failed read is not an empty list. A missing profile
+is JSON null, not `[]`. Another creator’s hotel returns `[]`, the same as a
+hotel with no terminal collaboration. `would_work_again` null is not “no”.
+`terms_matched` `unknown` is not shown as a recorded answer. Compensation
+and private notes are not in the payload.
+
+### What this decision does not do
+
+- No verified-proof badge and no portfolio media.
+- No shareable profile URL.
+- No write to a new pipeline item from this list.
+

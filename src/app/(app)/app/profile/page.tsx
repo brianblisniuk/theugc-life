@@ -1,51 +1,48 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
+import { PastCollaborations } from "@/components/profile/past-collaborations";
+import { PersonalCounts } from "@/components/profile/personal-counts";
+import { ProfileEditor } from "@/components/profile/profile-editor";
 import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
+import { getOwnProfile, getPastCollaborations, getPersonalCounts } from "@/lib/profile/queries";
 import { listCrumbs } from "@/lib/shell/navigation";
-import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Profile" };
 
 /**
- * Creator profile view. Reads the owner's own creator_profiles row under RLS
- * (a foundation read; the full editor is a later sprint).
+ * The creator's private profile (D081 Profile, D086–D088 Proposed).
+ * Public portfolio and a shareable profile URL are not on this page.
  */
 export default async function ProfilePage() {
   const session = await requireUser("/app/profile");
-  const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("creator_profiles")
-    .select("display_name, username, public_profile_enabled")
-    .eq("user_id", session.userId)
-    .maybeSingle();
+  const [profile, counts, past] = await Promise.all([
+    getOwnProfile(session.userId),
+    getPersonalCounts(),
+    getPastCollaborations(null),
+  ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="Profile"
         crumbs={listCrumbs("Profile")}
-        actions={
-          <Link href="/app/profile/portfolio" className="text-sm text-accent hover:underline">
-            Portfolio
-          </Link>
-        }
+        description="Only you can see this. It is not a public page."
       />
-      <dl className="grid gap-4 rounded-[var(--radius-app)] border border-border bg-surface p-5 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-muted">Display name</dt>
-          <dd className="text-text">{profile?.display_name ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted">Username</dt>
-          <dd className="text-text">{profile?.username ? `@${profile.username}` : "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted">Public profile</dt>
-          <dd className="text-text">{profile?.public_profile_enabled ? "Enabled" : "Private"}</dd>
-        </div>
-      </dl>
+
+      {profile.status === "ok" ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-text">Your details</h2>
+          <ProfileEditor profile={profile.profile} />
+        </section>
+      ) : (
+        <p className="max-w-prose text-sm text-muted">
+          We couldn’t load your profile. This is not an empty profile.
+        </p>
+      )}
+
+      <PersonalCounts load={counts} />
+      <PastCollaborations load={past} heading="Past collaborations" linkToHotel />
     </div>
   );
 }
