@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `d030cd0329c8b1e30afcdd14a72485174edcd9f5` (merge of PR #61, D08, 2026-10-12)  
-**State:** AWAITING_CI. D09 creator profile share link, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). The PR number is recorded when the PR is opened. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. D09 creator profile share link, PR #63, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** D09. A creator shares a profile with a hotel through one revocable link. The public page shows only opted-in fields. D086–D088 stay Proposed. D077 stays Proposed. `0051` is reserved by open PR #62 (E04) and is not used. `0052` is not edited.
 
 ## Main history note (not rewritten)
@@ -40,7 +40,7 @@
 - PR #61 — D08 private profile and personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
 
 ## Next action
-- D09 creator profile share link is branch `cursor/d09-creator-share-link-6270` (D089–D091 Accepted, migration `0053`). State is AWAITING_CI. Do not merge from automation.
+- D09 creator profile share link is PR #63, branch `cursor/d09-creator-share-link-6270` (D089–D091 Accepted, migration `0053`). State is AWAITING_CI. Do not merge from automation.
 - D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
 - E04 is open as PR #62 and reserves migration `0051`. This PR does not use `0051`.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that flow.

@@ -3,6 +3,7 @@
 **Status:** Binding work order. D089–D091 are Accepted (Brian, 13 Oct 2026). Do not merge.  
 **Base:** `main` `d030cd0329c8b1e30afcdd14a72485174edcd9f5` (merge of PR #61, D08).  
 **Branch:** `cursor/d09-creator-share-link-6270`  
+**PR:** #63  
 **Decisions:** D089, D090, D091 — Accepted. D086–D088 stay Proposed. D083–D085 are not used.  
 **Migration:** `0053_creator_share_link.sql`. `0051` is reserved by open PR #62 (E04) and is not used. `0052` is not edited.
 

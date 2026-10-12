@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is d030cd0329c8b1e30afcdd14a72485174edcd9f5 (PR #61, D08). D09 is the hotel share link: migration 0053, D089–D091 Accepted. 0051 is reserved by open PR #62 (E04) and is not used. 0052 is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. The PR number is recorded when the PR is opened. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is d030cd0329c8b1e30afcdd14a72485174edcd9f5 (PR #61, D08). D09 is PR #63: migration 0053, D089–D091 Accepted. 0051 is reserved by open PR #62 (E04) and is not used. 0052 is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_CI",
   "last_recorded_main": "d030cd0329c8b1e30afcdd14a72485174edcd9f5",
   "active_block": "D09 creator profile share link (D089–D091 Accepted, migration 0053)",
   "branch": "cursor/d09-creator-share-link-6270",
-  "pr": null,
+  "pr": 63,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "D09 opens on main d030cd0. D089–D091 are Accepted. D086–D088 stay Proposed. D077 stays Proposed. 0051 stays with E04. Verify must be green on this PR head before a merge decision."
+  "next_dependency": "PR #63 is D09. D089–D091 are Accepted. D086–D088 stay Proposed. D077 stays Proposed. 0051 stays with E04. Verify must be green on this PR head before a merge decision."
 }

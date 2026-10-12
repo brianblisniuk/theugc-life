@@ -368,7 +368,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | **DONE** — PR #61, merge `d030cd0329c8b1e30afcdd14a72485174edcd9f5`, migration `0052`. D086–D088 Proposed. Private profile, recorded counts, past collaborations, and `creator_profile_field_opt_ins`. The hotel link is D09. | creator context + personal analytics. Verified proof stays out. | history is reused to improve next opportunity, not just archived |
-| D09 | **IN PR** — migration `0053`. D089–D091 Accepted (Brian, 13 Oct 2026). Creator-controlled revocable hotel link at `/p/[token]`. Per-field opt-in. The PR number is recorded when the PR is opened. | creator profile shareable with hotels | a hotel sees only what that creator opted in, and a revoked link shows nothing |
+| D09 | **IN PR** — PR #63, migration `0053`. D089–D091 Accepted (Brian, 13 Oct 2026). Creator-controlled revocable hotel link at `/p/[token]`. Per-field opt-in. | creator profile shareable with hotels | a hotel sees only what that creator opted in, and a revoked link shows nothing |
 
 **Base rounds:** 9  
 **Cumulative future rounds:** 26
@@ -686,11 +686,10 @@ The Profile page edits private fields, shows creator-recorded counts, and
 lists past collaborations. `creator_profile_field_opt_ins` is the per-field
 opt-in. `0050` and `0049` are not edited.
 
-**D09 is the hotel share link.** Migration
-`0053_creator_share_link.sql`. D089–D091 are Accepted (Brian, 13 Oct 2026).
-A creator creates, views, rotates, and revokes one link. The public page
-`/p/[token]` shows only opted-in fields. `0051` remains with open PR #62
-(E04). `0052` is not edited. The PR number is recorded when the PR is opened.
+**D09 is PR #63.** Migration `0053_creator_share_link.sql`. D089–D091 are
+Accepted (Brian, 13 Oct 2026). A creator creates, views, rotates, and
+revokes one link. The public page `/p/[token]` shows only opted-in fields.
+`0051` remains with open PR #62 (E04). `0052` is not edited.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
