@@ -4,9 +4,9 @@
   "as_of": "2026-10-12",
   "state": "HUMAN_FRONTIER",
   "last_recorded_main": "f48a11364b10fd75972318f7e742a0d334d785f5",
-  "active_block": "SYS-1 autonomous engineering system v1 (this PR)",
+  "active_block": "SYS-1 autonomous engineering system v1 (PR #49)",
   "branch": "chore/autonomous-system-v1",
-  "pr": null,
+  "pr": 49,
   "expected_head": null,
   "pending_jobs": ["PR #48 docs/baseline-reconciliation — awaiting owner merge decision"],
   "unresolved_findings": [
