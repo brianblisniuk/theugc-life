@@ -1,12 +1,12 @@
 # D07 — Collaboration deliverables and agreed compensation
 
 **Status:** Binding work order for PR #56. Awaiting independent audit. Do not merge.  
-**Base:** `main` `989e7f020f07362113b3e9b00fd9950293808f10`  
+**Base:** `main` `ab0507461b4b47b21112dd07589b4b8a88d3efb3` (includes merged E01, PR #55). Prior audit head `984171a`.  
 **Branch:** `feat/d07-deliverables-compensation`  
 **Decision:** D078, Accepted — Brian, 12 October 2026, option B.  
 **Migration:** `0050_collaboration_deliverables_compensation.sql`
 
-`main` ends at `0046`. Open PR #53 (B08) reserves `0047` and `0048`, and D076. D077 is C01 on `main` and is still Proposed. `0049` is left free because open PR #55 (E01) may take it. This block keeps `0050` and D078.
+`main` ends at `0046`. E01 (PR #55) merged with no migration. Open PR #53 (B08) reserves `0047` and `0048`, and D076. D077 is C01 on `main` and is still Proposed. `0049` is still unused. This block keeps `0050` and D078.
 
 One PR for the whole block. Do not merge.
 

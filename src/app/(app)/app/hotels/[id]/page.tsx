@@ -20,14 +20,18 @@ import type { Metadata } from "next";
 
 import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
+import { AddToTrip } from "@/components/hotels/add-to-trip";
 import { ContactCard } from "@/components/hotels/contact-card";
 import {
   IntelligencePanel,
   PremiumIntelligencePanel,
 } from "@/components/hotels/intelligence-panel";
 import { LockedContactSection } from "@/components/hotels/locked-contact";
+import { MapSlot } from "@/components/hotels/map-slot";
+import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
+import { resolveSession } from "@/lib/auth/guards";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
@@ -37,8 +41,10 @@ import {
   getHotelContactsIfAuthorized,
   getHotelIntelligence,
   getHotelPremiumIntelligence,
+  loadSessionCreatorBadges,
 } from "@/lib/hotels/queries";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
+import { listTrips } from "@/lib/trips/queries";
 
 /** Deduped per request so metadata and the page share one fetch. */
 const loadHotel = cache(getHotelById);
@@ -110,6 +116,21 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
       ? await getCollaborationWorkspace(relationship.relationship.pipelineItemId)
       : ({ status: "not_found" } as const);
 
+  const [session, trips] = await Promise.all([resolveSession(), listTrips()]);
+  const badges =
+    session.status === "authenticated"
+      ? await loadSessionCreatorBadges([hotel.id], session.session.userId)
+      : { status: "unknown" as const };
+  const alreadyOn =
+    badges.status === "known" ? (badges.byHotel.get(hotel.id)?.tripIds ?? []) : null;
+  const tripChoices =
+    trips.status === "ok"
+      ? trips.trips.map((trip) => ({
+          id: trip.id,
+          label: `${trip.name?.trim() || trip.destinationName} · ${trip.startDate} – ${trip.endDate}`,
+        }))
+      : [];
+
   return (
     <div className="space-y-8">
       <AnalyticsPageView event="hotel_viewed" />
@@ -120,50 +141,55 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
         </Link>
       </p>
 
-      {/* 1. Identity / location */}
-      <header className="space-y-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold text-text">{hotel.name}</h1>
-          {location ? <p className="text-sm text-muted">{location}</p> : null}
-          {hotel.address ? <p className="text-sm text-muted">{hotel.address}</p> : null}
-        </div>
+      {/* 1. Identity / location. No photograph is invented (D064). */}
+      <header className="grid gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
+        <NoPhoto name={hotel.name} />
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-text">{hotel.name}</h1>
+            {location ? <p className="text-sm text-muted">{location}</p> : null}
+            {hotel.address ? <p className="text-sm text-muted">{hotel.address}</p> : null}
+          </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <VerificationBadge status={hotel.verificationStatus} />
-          {type ? <span className="text-sm text-muted">{type}</span> : null}
-          <StarRating rating={hotel.starRating} />
-          {statusNote ? (
-            <span className="rounded-[var(--radius-app)] border border-warning/40 px-2 py-0.5 text-xs font-medium text-warning">
-              {statusNote}
-            </span>
-          ) : null}
-        </div>
-
-        {(hotel.websiteUrl || hotel.instagramUrl) && (
-          <div className="flex flex-wrap gap-3 text-sm">
-            {hotel.websiteUrl ? (
-              <a
-                href={hotel.websiteUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="underline hover:no-underline"
-              >
-                {`Official website for ${hotel.name}`}
-              </a>
-            ) : null}
-            {hotel.instagramUrl ? (
-              <a
-                href={hotel.instagramUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="underline hover:no-underline"
-              >
-                {`Instagram profile for ${hotel.name}`}
-              </a>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <VerificationBadge status={hotel.verificationStatus} />
+            {type ? <span className="text-sm text-muted">{type}</span> : null}
+            <StarRating rating={hotel.starRating} />
+            {statusNote ? (
+              <span className="rounded-[var(--radius-app)] border border-warning/40 px-2 py-0.5 text-xs font-medium text-warning">
+                {statusNote}
+              </span>
             ) : null}
           </div>
-        )}
+
+          {(hotel.websiteUrl || hotel.instagramUrl) && (
+            <div className="flex flex-wrap gap-3 text-sm">
+              {hotel.websiteUrl ? (
+                <a
+                  href={hotel.websiteUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="underline hover:no-underline"
+                >
+                  {`Official website for ${hotel.name}`}
+                </a>
+              ) : null}
+              {hotel.instagramUrl ? (
+                <a
+                  href={hotel.instagramUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="underline hover:no-underline"
+                >
+                  {`Instagram profile for ${hotel.name}`}
+                </a>
+              ) : null}
+            </div>
+          )}
+        </div>
       </header>
+
+      <MapSlot />
 
       {/* 2. Creator intelligence — public layer, then the premium layer */}
       <Section title="Creator intelligence">
@@ -222,6 +248,12 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
           relationship={relationship}
           collaboration={collaboration}
           workspace={workspace}
+        />
+        <AddToTrip
+          hotelId={hotel.id}
+          trips={tripChoices}
+          tripsLoad={trips.status === "ok" ? "ok" : "error"}
+          alreadyOn={alreadyOn}
         />
       </Section>
     </div>

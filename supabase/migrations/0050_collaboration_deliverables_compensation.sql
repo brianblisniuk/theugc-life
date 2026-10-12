@@ -1,10 +1,10 @@
 -- 0050 — D07 collaboration deliverables and agreed compensation (D078).
 --
--- Migration number: 0050. Checked against main
--- 989e7f020f07362113b3e9b00fd9950293808f10, which ends at 0046.
+-- Migration number: 0050. main ab0507461b4b47b21112dd07589b4b8a88d3efb3
+-- (E01, PR #55) adds no migration and still ends at 0046.
 -- Open PR #53 (B08) reserves 0047_gmail_incremental_sync.sql and
 -- 0048_gmail_commercial_clean_text_entities.sql, and D076.
--- 0049 is left free because open PR #55 (E01) may take it.
+-- 0049 was left free for E01 and is still unused.
 -- D077 is C01 on main. This block is D078.
 --
 -- Agreed compensation is the creator's record of what a won collaboration is
@@ -906,6 +906,10 @@ begin
     return jsonb_build_object('result', 'integrity_error');
   end if;
 
+  -- Same order as gmail_commercial_read_thread: a drifted B06 fingerprint
+  -- is marked stale before this read, so it is not copied as a suggestion.
+  perform private.gmail_commercial_mark_b06_fingerprint_stale(p_mail_account_id, v_thread);
+
   select a.compensation_structure, a.id, a.rule_version
     into v_structure, v_attempt, v_rule
     from private.gmail_commercial_thread_current c
@@ -991,8 +995,8 @@ declare
   v_reason text;
   v_currency text;
   v_total bigint;
-  v_pieces bigint;
   v_alloc jsonb := '{}'::jsonb;
+  v_alloc_matches boolean := true;
   v_compensation jsonb;
   v_suggestion jsonb;
   v_deliverables jsonb;
@@ -1083,48 +1087,50 @@ begin
   end if;
 
   if v_kind = 'derived' and v_reason = 'allocated' then
-    select coalesce(sum(d.quantity), 0)::bigint into v_pieces
-      from public.collaboration_deliverables d
-     where d.collaboration_id = v_collab_id;
+    -- One statement and one snapshot. The piece count and the Hamilton
+    -- shares are taken from the same materialized deliverable rows.
+    with rows as materialized (
+      select d.id, d.created_at, d.quantity
+        from public.collaboration_deliverables d
+       where d.collaboration_id = v_collab_id
+    ),
+    totals as (
+      select coalesce(sum(quantity), 0)::bigint as pieces
+        from rows
+    ),
+    lines as (
+      select r.id,
+             r.created_at,
+             floor((v_total::numeric * r.quantity) / t.pieces)::bigint as base,
+             ((v_total::numeric * r.quantity) / t.pieces)
+               - floor((v_total::numeric * r.quantity) / t.pieces) as frac
+        from rows r
+        cross join totals t
+       where t.pieces > 0
+    ),
+    sums as (
+      select coalesce(sum(base), 0)::bigint as base_sum
+        from lines
+    ),
+    ranked as (
+      select lines.id,
+             lines.base + case
+               when row_number() over (
+                 order by lines.frac desc, lines.created_at, lines.id
+               ) <= (v_total - sums.base_sum)
+               then 1
+               else 0
+             end as amount_minor
+        from lines
+        cross join sums
+    )
+    select coalesce(jsonb_object_agg(ranked.id::text, to_jsonb(ranked.amount_minor)), '{}'::jsonb),
+           (select count(*) from rows) = (select count(*) from ranked)
+      into v_alloc, v_alloc_matches
+      from ranked;
 
-    if v_pieces > 0 then
-      select coalesce(jsonb_object_agg(ranked.id::text, to_jsonb(ranked.amount_minor)), '{}'::jsonb)
-        into v_alloc
-        from (
-          select lines.id,
-                 lines.base + case
-                   when row_number() over (
-                     order by lines.frac desc, lines.created_at, lines.id
-                   ) <= (v_total - sums.base_sum)
-                   then 1
-                   else 0
-                 end as amount_minor
-            from (
-              select d.id,
-                     d.created_at,
-                     floor((v_total::numeric * d.quantity) / v_pieces)::bigint as base,
-                     ((v_total::numeric * d.quantity) / v_pieces)
-                       - floor((v_total::numeric * d.quantity) / v_pieces) as frac
-                from public.collaboration_deliverables d
-               where d.collaboration_id = v_collab_id
-            ) lines
-            cross join (
-              select coalesce(sum(
-                       floor((v_total::numeric * d.quantity) / v_pieces)::bigint
-                     ), 0)::bigint as base_sum
-                from public.collaboration_deliverables d
-               where d.collaboration_id = v_collab_id
-            ) sums
-        ) ranked;
-
-      if exists (
-        select 1
-          from public.collaboration_deliverables d
-         where d.collaboration_id = v_collab_id
-           and not (v_alloc ? (d.id::text))
-      ) then
-        return jsonb_build_object('result', 'integrity_error');
-      end if;
+    if not v_alloc_matches then
+      return jsonb_build_object('result', 'integrity_error');
     end if;
   end if;
 

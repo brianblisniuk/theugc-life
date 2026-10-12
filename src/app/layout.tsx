@@ -1,8 +1,16 @@
 import type { Metadata } from "next";
+import { Archivo } from "next/font/google";
 
 import { AnalyticsProvider } from "@/components/analytics-provider";
 
 import "./globals.css";
+
+/** Archivo is the V1 product face (D053). next/font self-hosts it at build time. */
+const archivo = Archivo({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-archivo",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -15,7 +23,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="min-h-dvh bg-background text-text antialiased">
+      <body
+        className={`${archivo.className} ${archivo.variable} min-h-dvh bg-background text-text antialiased`}
+      >
         <AnalyticsProvider />
         {children}
       </body>
