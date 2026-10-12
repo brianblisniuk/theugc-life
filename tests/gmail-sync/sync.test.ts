@@ -347,6 +347,9 @@ d("B08 incremental sync", () => {
     historyId: string | null;
     snapshotHistoryId: string;
     place: "profile" | "history";
+    offsetMs?: number;
+    /** Place the message on the exclusive `before:` second of the search window. */
+    atExclusiveBeforeSecond?: boolean;
   }) {
     const { mail, imported } = await ready(input.label, input.historyId);
     const threads: Record<string, ReturnType<typeof thread>> = {};
@@ -361,7 +364,7 @@ d("B08 incremental sync", () => {
       // Later than the claim window by enough that the snapshot commit's own
       // clock cannot catch it. The message already exists when the snapshot
       // is taken.
-      placed.internalDateMs = run.rows[0]!.window_end_at.getTime() + 5_000;
+      placed.internalDateMs = run.rows[0]!.window_end_at.getTime() + (input.offsetMs ?? 5_000);
       threads["t-snap"] = thread("t-snap", [
         textMessage({
           id: "m-snap",
@@ -393,12 +396,32 @@ d("B08 incremental sync", () => {
               },
             ]
           : undefined,
-      beforeGetProfile: input.place === "profile" ? placeMessage : undefined,
+      beforeGetProfile:
+        input.place === "profile" && !input.atExclusiveBeforeSecond ? placeMessage : undefined,
       beforeListHistory: input.place === "history" ? placeMessage : undefined,
+      beforeListSent: input.atExclusiveBeforeSecond
+        ? async ({ windowEndMs }) => {
+            const exclusiveSecond = Math.ceil(windowEndMs / 1000);
+            placed.internalDateMs = Math.max(windowEndMs + 1, exclusiveSecond * 1000);
+            if (Math.floor(placed.internalDateMs / 1000) !== exclusiveSecond) {
+              throw new Error("fixture missed the exclusive before second");
+            }
+            threads["t-snap"] = thread("t-snap", [
+              textMessage({
+                id: "m-snap",
+                threadId: "t-snap",
+                internalDateMs: placed.internalDateMs,
+                historyId: input.snapshotHistoryId,
+                labelIds: ["SENT"],
+              }),
+            ]);
+          }
+        : undefined,
     });
 
     const first = await runAccountSync(mail, depsFor(client, gmail));
     expect(first.result).toBe("not_due");
+    expect(gmail.calls.threadIds).toContain("t-snap");
     expect(await rawCount(client, mail.mailAccountId)).toBe(1);
     const ids = await client.query<{ provider_message_id: string }>(
       `select provider_message_id from private.gmail_raw_messages
@@ -435,6 +458,17 @@ d("B08 incremental sync", () => {
       historyId: null,
       snapshotHistoryId: "500",
       place: "profile",
+      offsetMs: 5_000,
+    });
+  });
+
+  it("stores sent mail inside the profile snapshot when its second equals the exclusive before bound", async () => {
+    await messageInsideSnapshotAfterClaimWindow({
+      label: "b08-snap-profile-bound",
+      historyId: null,
+      snapshotHistoryId: "500",
+      place: "profile",
+      atExclusiveBeforeSecond: true,
     });
   });
 
@@ -445,6 +479,60 @@ d("B08 incremental sync", () => {
       snapshotHistoryId: "700",
       place: "history",
     });
+  });
+
+  it("advances the cursor when a history.list sent message is dated before the window", async () => {
+    const { mail, imported } = await ready("b08-early-history", "100");
+    const gmail = createFakeIncremental({
+      historyPages: [
+        {
+          historyId: "180",
+          nextPageToken: null,
+          threads: [
+            { providerThreadId: "t-early", labelIds: ["SENT"], messageIds: ["m-early"] },
+          ],
+        },
+      ],
+      threads: {
+        "t-early": thread("t-early", [
+          textMessage({
+            id: "m-early",
+            threadId: "t-early",
+            internalDateMs: imported.horizon.getTime() - 1000,
+            historyId: "180",
+            labelIds: ["SENT"],
+          }),
+        ]),
+      },
+    });
+    const first = await runAccountSync(mail, depsFor(client, gmail));
+    expect(first.result).toBe("not_due");
+    expect(gmail.calls.threadIds).toEqual(["t-early"]);
+    expect(await rawCount(client, mail.mailAccountId)).toBe(0);
+    const cursor = await cursorOf(client, mail.mailAccountId);
+    expect(cursor.history_id).toBe("180");
+    expect(cursor.horizon_end_at.getTime()).toBeGreaterThan(imported.horizon.getTime());
+
+    await client.query(
+      `update private.gmail_sync_cursors
+          set next_sync_at = now(), pipeline_pending = false
+        where mail_account_id = $1`,
+      [mail.mailAccountId],
+    );
+    const again = await runAccountSync(
+      mail,
+      depsFor(
+        client,
+        createFakeIncremental({
+          historyByStart: {
+            "180": { historyId: "180", nextPageToken: null, threads: [] },
+          },
+        }),
+      ),
+    );
+    expect(again.result).toBe("not_due");
+    expect((await cursorOf(client, mail.mailAccountId)).history_id).toBe("180");
+    expect(await rawCount(client, mail.mailAccountId)).toBe(0);
   });
 
   it("does not advance history_id past a snapshot sent message this run did not store", async () => {

@@ -16,7 +16,7 @@ When `historyId` is null, or Gmail returns HTTP 404 for `history.list`, the run 
 2. `messages.list` on `SENT` inside the forward window.
 3. `threads.get` for already-stored non-draft `SENT` threads, in provider-thread-id order, 100 at a time.
 
-Mail that arrives during that re-scan has a later history id. The next `history.list` starts at the pre-scan id and returns it. A message already inside the snapshot is stored even when its `internalDate` is slightly later than the snapshot clock. A `history.list` run does not call `users.getProfile`; its `historyId` is the one from the list response, captured before thread fetches, and that commit moves `window_end_at` to the same clock.
+Mail that arrives during that re-scan has a later history id. The next `history.list` starts at the pre-scan id and returns it. A message already inside the snapshot is stored even when its `internalDate` is slightly later than the snapshot clock. The bounded re-scan's `messages.list` therefore has no `before:` bound: `before:ceil(window_end)` would omit that message, and the cursor would move past it. A `history.list` message dated before `window_start_at` is outside the inclusion window and is not stored. That exclusion does not withhold the cursor. A `history.list` run does not call `users.getProfile`; its `historyId` is the one from the list response, captured before thread fetches, and that commit moves `window_end_at` to the same clock.
 
 Messages are stored only when `internalDate` is inside the run window. Drafts are dropped before storage. The primary key remains `(mail_account_id, provider_message_id)`.
 

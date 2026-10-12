@@ -243,6 +243,10 @@ async function dischargeStep(
         windowStartMs: Date.parse(claim.window_start_at!),
         windowEndMs: Date.parse(claim.window_end_at!),
         pageToken: claim.page_token ?? null,
+        // The profile snapshot is already taken. A before: bound at
+        // window_end_at drops sent mail that exists inside that snapshot
+        // when Gmail's second is slightly later.
+        omitUpperBound: true,
       });
       const committed = await rpc(deps, "gmail_incremental_sync_commit_sent_page", {
         p_user_id: input.userId,
@@ -263,11 +267,12 @@ async function dischargeStep(
         accessToken,
         threadId: threadId!,
       });
-      // The database applies the snapshot cut. Messages past window_end_at still
-      // have to arrive here: a non-draft sent message inside the snapshot is
-      // stored, and one this run saw but did not store must not advance history_id.
+      // SQL applies the inclusion window. Bodies still have to arrive here:
+      // a snapshot message dated slightly after window_end_at is stored, and
+      // a history.list id dated before window_start_at is an exclusion, not
+      // a withheld cursor.
       const sanitized = sanitizeThread(fetched.thread, {
-        startMs: Date.parse(claim.window_start_at!),
+        startMs: 0,
         endMs: Number.MAX_SAFE_INTEGER,
       });
       const committed = await rpc(deps, "gmail_incremental_sync_commit_thread", {

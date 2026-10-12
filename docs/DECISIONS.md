@@ -2992,19 +2992,25 @@ and any sync whose `historyId` Gmail rejects with HTTP 404, uses a bounded
 re-scan. `users.getProfile` records a `historyId` before that re-scan, and
 completion stores that earlier id. A profile id taken after `messages.list`
 or `threads.get` is not stored. The re-scan itself is `messages.list` on
-`SENT` inside the forward window, plus `threads.get` of threads this mailbox
-has already stored as non-draft `SENT`. Mail that arrives during the scan is
-outside this run's window. The next `history.list` starts at the pre-scan id,
-so that mail is returned inside the next forward window. A `history.list` run
-takes its `historyId` from the list response before thread fetches, not from
-a later profile call. The historyId committed with that snapshot and the run's
+`SENT` plus `threads.get` of threads this mailbox has already stored as
+non-draft `SENT`. That `messages.list` keeps `after:` and omits `before:`.
+The profile historyId is already the mailbox bound, and `before:ceil(window_end)`
+drops a sent message that exists inside the snapshot when its unix second is
+the exclusive bound or later. Mail that arrives during the scan is outside
+this run's window. The next `history.list` starts at the pre-scan id, so that
+mail is returned inside the next forward window. A `history.list` run takes
+its `historyId` from the list response before thread fetches, not from a
+later profile call. The historyId committed with that snapshot and the run's
 `window_end_at` are one cut. Committing the profile snapshot, or a history.list
 page, sets `window_end_at` to the database clock at that commit, before
 `messages.list` or `threads.get` filter on it. Completion stores that snapshot
 historyId and moves the horizon to that window end. A non-draft sent-rooted
 message inside the snapshot is stored even when `internalDate` is slightly
-later than that clock. Completion does not advance `history_id` past a
-non-draft sent-rooted message this run saw and did not store. A 404 from `threads.get`
+later than that clock. A message dated before `window_start_at` is outside
+the inclusion window: it is not stored, and that exclusion does not withhold
+the cursor. Completion does not advance `history_id` past a non-draft
+sent-rooted snapshot message this run saw and did not store for any other
+reason. A 404 from `threads.get`
 is still a missing thread. It does not expire the cursor.
 
 `history.list` is requested with `historyTypes=messageAdded` only. A missing

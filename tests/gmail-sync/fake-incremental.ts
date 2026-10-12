@@ -1,5 +1,6 @@
 import { MESSAGES_LIST_QUOTA_UNITS, THREADS_GET_QUOTA_UNITS } from "@/lib/gmail/import/contract";
 import { GmailReadError } from "@/lib/gmail/import/errors";
+import { buildSentWindowQuery } from "@/lib/gmail/import/read-adapter.server";
 import type { RawThread } from "@/lib/gmail/import/sanitizer";
 import { HISTORY_LIST_QUOTA_UNITS, PROFILE_GET_QUOTA_UNITS } from "@/lib/gmail/sync/contract";
 import type { GmailIncrementalReadAdapter } from "@/lib/gmail/sync/read-adapter";
@@ -47,6 +48,7 @@ export function createFakeIncremental(
     beforeGetThread?: (threadId: string) => Promise<void>;
     beforeListHistory?: () => Promise<void>;
     beforeGetProfile?: () => Promise<void>;
+    beforeListSent?: (window: { windowStartMs: number; windowEndMs: number }) => Promise<void>;
     profileError?: GmailReadError | null;
   } = {},
 ): FakeIncremental {
@@ -104,14 +106,33 @@ export function createFakeIncremental(
       };
     },
 
-    async listSentMessages() {
+    async listSentMessages({ windowStartMs, windowEndMs, omitUpperBound }) {
       calls.order.push("sent");
       calls.sentCalls += 1;
+      if (options.beforeListSent) await options.beforeListSent({ windowStartMs, windowEndMs });
+      const query = buildSentWindowQuery(windowStartMs, windowEndMs, { omitUpperBound });
+      const after = Number(/after:(\d+)/.exec(query)?.[1]);
+      const beforeMatch = /before:(\d+)/.exec(query);
+      const before = beforeMatch ? Number(beforeMatch[1]) : null;
+      const candidates = (options.sentThreadIds ?? []).flatMap((threadId, index) => {
+        const messages = threads[threadId]?.messages ?? [];
+        if (messages.length === 0) {
+          return [{ messageId: `sent-${index}`, threadId }];
+        }
+        const matches = messages.some((message) => {
+          const labels = message.labelIds ?? [];
+          if (!labels.includes("SENT") || labels.includes("DRAFT")) return false;
+          const ms = Number(message.internalDate);
+          if (!Number.isFinite(ms)) return false;
+          const second = Math.floor(ms / 1000);
+          if (!(second > after)) return false;
+          if (before !== null && !(second < before)) return false;
+          return true;
+        });
+        return matches ? [{ messageId: `sent-${index}`, threadId }] : [];
+      });
       return {
-        candidates: (options.sentThreadIds ?? []).map((threadId, index) => ({
-          messageId: `sent-${index}`,
-          threadId,
-        })),
+        candidates,
         nextPageToken: null,
         quotaUnits: MESSAGES_LIST_QUOTA_UNITS,
       };

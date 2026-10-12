@@ -11,12 +11,16 @@
 -- no cron daemon in this repository (B03). Creator login sets the due flag.
 --
 -- A bounded re-scan captures users.getProfile before messages.list and
--- threads.get, and completion stores that earlier historyId. Committing the
--- profile snapshot, or a history.list page, moves window_end_at to that same
--- clock before those later reads filter on it. A non-draft sent message that
--- was inside the snapshot is stored even when its internalDate is slightly
--- later than that clock. Completion does not advance history_id past a
--- non-draft sent snapshot message this run did not store. The pipeline step
+-- threads.get, and completion stores that earlier historyId. That
+-- messages.list omits before:, because before:ceil(window_end) drops a sent
+-- message already inside the snapshot. Committing the profile snapshot, or a
+-- history.list page, moves window_end_at to that same clock before those
+-- later reads filter on it. A non-draft sent message that was inside the
+-- snapshot is stored even when its internalDate is slightly later than that
+-- clock. A snapshot sent message dated before window_start_at is an
+-- intentional exclusion and does not freeze the cursor. Completion does not
+-- advance history_id past a non-draft sent snapshot message this run did not
+-- store for any other reason. The pipeline step
 -- holds a cursor lease, renewed while the pipeline is still running, so two
 -- workers cannot both insert attempts.
 
@@ -135,6 +139,9 @@ create table private.gmail_sync_threads (
   -- Ids history.list included in this snapshot. Empty on a bounded re-scan.
   snapshot_message_ids text[] not null default '{}',
   snapshot_sent_message_ids text[] not null default '{}',
+  -- Snapshot sent ids whose internalDate is before the forward window.
+  -- Those are excluded on purpose and do not freeze the cursor.
+  snapshot_sent_excluded_ids text[] not null default '{}',
   status text not null default 'pending'
     check (status in ('pending', 'complete', 'filtered_out', 'gone', 'failed')),
   completed_at timestamptz,
@@ -1255,6 +1262,7 @@ declare
   v_id_match boolean;
   v_history_match boolean;
   v_withheld boolean := false;
+  v_excluded text[] := '{}'::text[];
 begin
   v_began := private.gmail_sync_begin_commit(
     p_user_id, p_run_id, p_lease_token, 'fetch_thread',
@@ -1312,7 +1320,10 @@ begin
        where (m -> 'label_ids') ? 'SENT'
          and not ((m -> 'label_ids') ? 'DRAFT')
          and (
-           (m ->> 'provider_message_id') = any (v_thread.snapshot_message_ids)
+           (
+             (m ->> 'provider_message_id') = any (v_thread.snapshot_message_ids)
+             and (m ->> 'internal_date')::timestamptz >= v_run.window_start_at
+           )
            or (
              (m ->> 'internal_date')::timestamptz >= v_run.window_start_at
              and coalesce(m ->> 'provider_history_id', '') ~ '^[0-9]+$'
@@ -1331,19 +1342,31 @@ begin
     )
   into v_has_sent;
 
+  select coalesce(array_agg(distinct btrim(m ->> 'provider_message_id')), '{}'::text[])
+    into v_excluded
+    from jsonb_array_elements(p_messages) as m
+   where btrim(coalesce(m ->> 'provider_message_id', '')) <> ''
+     and (m ->> 'provider_message_id') = any (v_thread.snapshot_sent_message_ids)
+     and (m -> 'label_ids') ? 'SENT'
+     and not ((m -> 'label_ids') ? 'DRAFT')
+     and (m ->> 'internal_date')::timestamptz < v_run.window_start_at;
+
   if not v_has_sent then
     update private.gmail_sync_threads
-       set status = 'filtered_out', completed_at = pg_catalog.now()
+       set status = 'filtered_out',
+           completed_at = pg_catalog.now(),
+           snapshot_sent_excluded_ids = v_excluded
      where id = v_thread.id;
     update private.gmail_sync_runs
        set snapshot_sent_withheld = snapshot_sent_withheld or exists (
              select 1
                from unnest(v_thread.snapshot_sent_message_ids) as mid(provider_message_id)
-              where not exists (
-                select 1 from private.gmail_raw_messages raw
-                 where raw.mail_account_id = v_run.mail_account_id
-                   and raw.provider_message_id = mid.provider_message_id
-              )
+              where not (mid.provider_message_id = any (v_excluded))
+                and not exists (
+                  select 1 from private.gmail_raw_messages raw
+                   where raw.mail_account_id = v_run.mail_account_id
+                     and raw.provider_message_id = mid.provider_message_id
+                )
            ),
            threads_filtered_out = (
              select count(*)::int from private.gmail_sync_threads t
@@ -1373,14 +1396,8 @@ begin
       and coalesce(v_msg ->> 'provider_history_id', '') ~ '^[0-9]+$'
       and coalesce(v_run.history_id_latest, '') ~ '^[0-9]+$'
       and (v_msg ->> 'provider_history_id')::numeric <= (v_run.history_id_latest)::numeric;
-    if not v_id_match
-       and (
-         v_internal < v_run.window_start_at
-         or (v_internal >= v_run.window_end_at and not v_history_match)
-       ) then
-      if (v_msg -> 'label_ids') ? 'SENT' and (v_id_match or v_history_match) then
-        v_withheld := true;
-      end if;
+    if v_internal < v_run.window_start_at
+       or (v_internal >= v_run.window_end_at and not v_id_match and not v_history_match) then
       continue;
     end if;
 
@@ -1437,18 +1454,22 @@ begin
     set observed_through_at = excluded.observed_through_at;
 
   update private.gmail_sync_threads
-     set status = 'complete', completed_at = pg_catalog.now(), last_error_code = null
+     set status = 'complete',
+         completed_at = pg_catalog.now(),
+         last_error_code = null,
+         snapshot_sent_excluded_ids = v_excluded
    where id = v_thread.id;
 
   if v_withheld
      or exists (
        select 1
          from unnest(v_thread.snapshot_sent_message_ids) as mid(provider_message_id)
-        where not exists (
-          select 1 from private.gmail_raw_messages raw
-           where raw.mail_account_id = v_run.mail_account_id
-             and raw.provider_message_id = mid.provider_message_id
-        )
+        where not (mid.provider_message_id = any (v_excluded))
+          and not exists (
+            select 1 from private.gmail_raw_messages raw
+             where raw.mail_account_id = v_run.mail_account_id
+               and raw.provider_message_id = mid.provider_message_id
+          )
      ) then
     v_withheld := true;
   end if;
@@ -1736,6 +1757,7 @@ begin
           cross join lateral unnest(t.snapshot_sent_message_ids) as mid(provider_message_id)
          where t.run_id = p_run_id
            and t.status is distinct from 'gone'
+           and not (mid.provider_message_id = any (t.snapshot_sent_excluded_ids))
            and not exists (
              select 1 from private.gmail_raw_messages raw
               where raw.mail_account_id = v_run.mail_account_id
