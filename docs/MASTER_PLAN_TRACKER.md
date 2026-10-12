@@ -313,6 +313,11 @@ We can connect a small professional-creator cohort and measure:
 
 If qualified data is too sparse/ambiguous, pause before building a large intelligence product.
 
+Which of those measures are the B08 pilot KPIs, and what result would pause or
+justify a larger intelligence product, is an open owner question in the C01
+proposal (D077). This list is a planning hypothesis. It is not an accepted KPI
+contract, and D076 (open PR #53) does not define it either.
+
 ---
 
 ## PHASE C — Intelligence V1
@@ -321,7 +326,7 @@ If qualified data is too sparse/ambiguous, pause before building a large intelli
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | GATED | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C01 | **CONTRACT PROPOSED** — D077, branch `docs/c01-intelligence-fact-contract`. Requires owner acceptance. Not accepted. No migration, no runtime. PR number is recorded in the follow-up commit on this branch. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
 | C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
 | C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
 | C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
@@ -355,7 +360,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| D01 | **AWAITING RE-AUDIT** — PR #52, branch `feat/d01-trips`, migration `0046`. Audit of `c7ccd52` failed; correction is on the same PR. Not merged. | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
+| D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
@@ -639,13 +644,20 @@ one-sided accept cannot be stored as `agreement_observed` by setting a
 caller flag, and a creator read marks the machine interpretation stale when
 the bound B06 classification or chronology fingerprint has changed in place.
 
-The open implementation block is:
+**D01 (PR #52) is merged**, as merge commit
+`4062170212beb8b978a248ef219eb91ddbfb080b` into `main`. Migration
+`0046_trips_context.sql`.
 
-> **D01 — Trips: destination, dates, shortlist, and a summary derived from
-> pipeline items and collaborations linked by `trip_id`. Migration
-> `0046_trips_context.sql` (0045 is merged on main with B07.1). Open as
-> PR #52 on `feat/d01-trips`. Audit of `c7ccd52` failed; the correction is
-> on the same PR and awaits re-audit. Not merged.**
+The open contract block on this branch is:
+
+> **C01 — normalized intelligence event/fact contract (D077, Proposed).
+> Docs only: `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. No migration and no
+> runtime. Requires owner acceptance. Not accepted. Do not merge from
+> automation.**
+
+B08 incremental sync is a separate open pull request (#53, D076) and is not
+this block. Pilot KPIs remain an owner question (D077). This PR does not
+change the B08 tracker row.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:
