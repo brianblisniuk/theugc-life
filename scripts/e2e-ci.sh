@@ -6,9 +6,27 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Starting local Supabase."
+# The local image installs pgcrypto in `extensions`. Existing functions call
+# digest() with search_path public, so the CLI migration runner stops at 0044.
+# Start the services with no app migrations, move pgcrypto into public, then
+# apply the same files the unit tests apply. Do not use --bootstrap: this
+# database already has auth roles.
+migration_backup="$(mktemp -d)"
+mv supabase/migrations "$migration_backup/migrations"
+mkdir -p supabase/migrations
+restore_migrations() {
+  if [[ -d "$migration_backup/migrations" ]]; then
+    rm -rf supabase/migrations
+    mv "$migration_backup/migrations" supabase/migrations
+  fi
+}
+trap restore_migrations EXIT
+
 npx supabase start \
   --exclude studio,imgproxy,edge-runtime,logflare,vector,mailpit,storage-api,postgres-meta,supavisor \
   --yes
+restore_migrations
+trap - EXIT
 
 status_file="$(mktemp)"
 npx supabase status -o env >"$status_file"
@@ -22,6 +40,47 @@ rm -f "$status_file"
 : "${ANON_KEY:?ANON_KEY missing from supabase status}"
 : "${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY missing from supabase status}"
 : "${DB_URL:?DB_URL missing from supabase status}"
+
+echo "Applying app migrations."
+DB_URL="$DB_URL" node --input-type=module <<'EOF'
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import pg from "pg";
+
+const client = new pg.Client({ connectionString: process.env.DB_URL });
+await client.connect();
+const placed = await client.query(
+  `select n.nspname
+     from pg_extension e
+     join pg_namespace n on n.oid = e.extnamespace
+    where e.extname = 'pgcrypto'`,
+);
+if (placed.rows[0]?.nspname === "extensions") {
+  await client.query("alter extension pgcrypto set schema public");
+}
+const dir = "supabase/migrations";
+const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort();
+for (const file of files) {
+  await client.query("begin");
+  try {
+    await client.query(readFileSync(path.join(dir, file), "utf8"));
+    await client.query("commit");
+    console.info(`[e2e] applied ${file}`);
+  } catch (error) {
+    await client.query("rollback");
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Migration failed: ${file}\n${message}`);
+  }
+}
+await client.query("notify pgrst, 'reload schema'");
+await client.end();
+console.info(`[e2e] applied ${files.length} migrations`);
+EOF
+
+rest_container="$(docker ps --format '{{.Names}}' | grep -E '^supabase_rest_' || true)"
+if [[ -n "$rest_container" ]]; then
+  docker restart "$rest_container" >/dev/null
+fi
 
 echo "Seeding the published catalog."
 DB_URL="$DB_URL" node --input-type=module <<'EOF'
