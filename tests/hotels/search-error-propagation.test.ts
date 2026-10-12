@@ -32,6 +32,8 @@ function builder(outcome: Outcome, executed: string[], table: string) {
     or: () => chain,
     eq: () => chain,
     gte: () => chain,
+    lte: () => chain,
+    neq: () => chain,
     order: () => chain,
     in: () => chain,
     limit: () => run(),

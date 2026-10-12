@@ -4,7 +4,8 @@
  * Semantic design tokens (DESIGN_SYSTEM.md §9). Branding can change centrally by
  * editing these variables. Colors are defined on :root and overridden for dark
  * mode; @theme maps them to Tailwind utilities (bg-background, text-muted, etc.).
- * These are placeholder values, not a final brand palette (DESIGN_SYSTEM.md §9).
+ * Accent is Sun #FFE01B (D048). It is a brand / action color, never a status color.
+ * Warning stays a separate darker orange so it cannot be read as the accent.
  */
 :root {
   --background: #ffffff;
@@ -12,8 +13,8 @@
   --text: #14161a;
   --muted: #5b6270;
   --border: #e5e7eb;
-  --accent: #2f6df6;
-  --accent-contrast: #ffffff;
+  --accent: #ffe01b;
+  --accent-contrast: #14161a;
   --success: #16a34a;
   --warning: #b45309;
   --danger: #dc2626;
@@ -27,10 +28,10 @@
     --text: #f2f4f7;
     --muted: #9aa2b1;
     --border: #262b33;
-    --accent: #5b8bff;
-    --accent-contrast: #0d0f12;
+    --accent: #ffe01b;
+    --accent-contrast: #14161a;
     --success: #22c55e;
-    --warning: #d97706;
+    --warning: #c2410c;
     --danger: #ef4444;
   }
 }
@@ -52,11 +53,15 @@
 body {
   background: var(--background);
   color: var(--text);
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Visible focus for keyboard users (DESIGN_SYSTEM.md §7). */
+/*
+ * Focus uses ink. Sun on paper does not meet a visible-focus contrast bar
+ * (DESIGN_SYSTEM.md §7). The accent remains the action fill.
+ */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }

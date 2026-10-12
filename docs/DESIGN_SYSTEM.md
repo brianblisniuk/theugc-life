@@ -128,9 +128,10 @@ Implement semantic design tokens so visual branding can change centrally:
 
 ### 9.1 Accent — Sun `#FFE01B` (D048)
 
-`--accent` is **Sun `#FFE01B`**. The current `#2f6df6` blue in
-`src/app/globals.css` is the remaining placeholder and is replaced in Sprint 3A,
-not before.
+`--accent` is **Sun `#FFE01B`**, set in `src/app/globals.css` with ink as the
+contrast color. E01 applies it on Discover and Hotel Detail. The map provider
+is still undecided: those surfaces leave a placeholder slot and do not call a
+tile service.
 
 **The accent is a brand / selection / action color and must never carry semantic
 status meaning.** `--success`, `--warning` and `--danger` remain an independent
@@ -143,9 +144,9 @@ ochre, beige, terracotta, rustic or bohemian.
 
 ### 9.2 Typography — Archivo (D053)
 
-**Archivo** is the approved primary product typeface for V1. The app currently
-loads no custom font at all; adding it is implementation work for the next PR,
-not a change made in the contract PR.
+**Archivo** is the approved primary product typeface for V1. The root layout
+loads it through `next/font` (self-hosted at build time). Prototype sizes are
+still not tokens.
 
 Approving the typeface does **not** promote any A2 prototype size, weight, width
 or line-height to a token. The type scale is derived from a real surface with

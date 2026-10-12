@@ -1,10 +1,10 @@
 import Link from "next/link";
 
-/** Minimal wordmark. Branding is a placeholder pending brand direction. */
+/** Wordmark. Sun is a highlight behind the suffix so it stays readable on paper (D048). */
 export function Brand({ href = "/" }: { href?: string }) {
   return (
     <Link href={href} className="text-lg font-semibold tracking-tight text-text">
-      theugc<span className="text-accent">.life</span>
+      theugc<span className="bg-accent px-0.5 text-accent-contrast">.life</span>
     </Link>
   );
 }
