@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. C01 (D077) is a proposed docs-only contract. The schema has no AWAITING_AUDIT value, so state is AUDITING. expected_head stays null because this commit cannot name itself. Do not merge. D076 is open PR #53 (B08), not this block. PR #52 (D01) is merged at 4062170.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. C01 (D077) is PR #54, a proposed docs-only contract, awaiting audit. The schema has no AWAITING_AUDIT value, so state is AUDITING. expected_head stays null because this commit cannot name itself. Do not merge. D076 is open PR #53 (B08), not this block. PR #52 (D01) is merged at 4062170.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",
   "last_recorded_main": "4062170212beb8b978a248ef219eb91ddbfb080b",
   "active_block": "C01 intelligence fact contract (D077 Proposed, docs only)",
   "branch": "docs/c01-intelligence-fact-contract",
-  "pr": null,
+  "pr": 54,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [

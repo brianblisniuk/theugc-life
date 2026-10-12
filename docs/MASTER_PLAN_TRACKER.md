@@ -326,7 +326,7 @@ contract, and D076 (open PR #53) does not define it either.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | **CONTRACT PROPOSED** — D077, branch `docs/c01-intelligence-fact-contract`. Requires owner acceptance. Not accepted. No migration, no runtime. PR number is recorded in the follow-up commit on this branch. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C01 | **CONTRACT PROPOSED** — PR #54, D077, branch `docs/c01-intelligence-fact-contract`. Requires owner acceptance. Not accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
 | C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
 | C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
 | C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
@@ -651,9 +651,9 @@ the bound B06 classification or chronology fingerprint has changed in place.
 The open contract block on this branch is:
 
 > **C01 — normalized intelligence event/fact contract (D077, Proposed).
-> Docs only: `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. No migration and no
-> runtime. Requires owner acceptance. Not accepted. Do not merge from
-> automation.**
+> Open as PR #54 on `docs/c01-intelligence-fact-contract`. Docs only:
+> `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. No migration and no runtime.
+> Requires owner acceptance. Not accepted. Do not merge from automation.**
 
 B08 incremental sync is a separate open pull request (#53, D076) and is not
 this block. Pilot KPIs remain an owner question (D077). This PR does not

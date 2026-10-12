@@ -3,6 +3,7 @@
 **Status:** Binding work order for this PR. Awaiting audit. Do not merge.
 **Base:** `main` `4062170212beb8b978a248ef219eb91ddbfb080b` (merge of PR #52).
 **Branch:** `docs/c01-intelligence-fact-contract`.
+**PR:** #54. Do not merge.
 **Migration:** none. No runtime code. 0047 is claimed by open PR #53 (B08). This block reserves no number.
 
 One PR for the whole block. Do not merge.
