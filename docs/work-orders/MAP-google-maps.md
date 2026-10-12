@@ -1,6 +1,6 @@
 # MAP — Google Maps on Discover and Hotel Detail
 
-**Status:** Binding work order. Do not merge from automation.
+**Status:** Binding work order for PR #57. Do not merge from automation.
 **Base:** `main` `eb136190f676e9201b6b39de4b570d51e52da73d` (merge of PR #53, B08)
 **Branch:** `cursor/map-google-js-7ba9`
 **Decision:** D079

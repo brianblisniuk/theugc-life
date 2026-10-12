@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 61d0e38 (PR #56, D07 deliverables and compensation, migration 0050, D078 Accepted). E01 (PR #55) is merged at ab05074 and adds no migration. B08 (D076) is PR #53 and keeps migrations 0047 and 0048. 0048 is the classifier entity decode and is not D078. 0049 is unused. 0050 is on main and is not edited. The snapshot-anchored messages.list omits before:. A history.list message dated before window_start is excluded and does not withhold the cursor. D077 stays Proposed. The schema has no AWAITING_AUDIT value, so state is AUDITING. This commit cannot name itself, so expected_head stays null. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is eb13619 (PR #53, B08 incremental Gmail sync, D076, migrations 0047 and 0048). MAP (D079) is PR #57 and adds no migration. 0049 is unused. 0050 is on main and is not edited. This commit cannot name itself, so expected_head stays null. State is AWAITING_CI because the schema has no value for a head this commit cannot name. Do not merge from automation.",
   "schema_version": 1,
   "as_of": "2026-10-12",
-  "state": "AUDITING",
-  "last_recorded_main": "61d0e385894670bc55a78675e64526c353c288d5",
-  "active_block": "B08 incremental Gmail sync (D076, migration 0047, PR #53)",
-  "branch": "feat/b08-gmail-incremental-sync",
-  "pr": 53,
+  "state": "AWAITING_CI",
+  "last_recorded_main": "eb136190f676e9201b6b39de4b570d51e52da73d",
+  "active_block": "MAP Google Maps on Discover and Hotel Detail (D079, PR #57)",
+  "branch": "cursor/map-google-js-7ba9",
+  "pr": 57,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "61d0e385894670bc55a78675e64526c353c288d5",
+    "ref": "eb136190f676e9201b6b39de4b570d51e52da73d",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "Re-audit of PR #53. E01 (PR #55) is merged at ab05074 and adds no migration. D07 (PR #56, D078, migration 0050) is merged at 61d0e38. D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated."
+  "next_dependency": "Exact-head verify on PR #57, then a merge decision. 0049 stays unused. D02 through D06 remain planned. D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated."
 }
