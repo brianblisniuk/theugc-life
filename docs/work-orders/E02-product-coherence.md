@@ -1,6 +1,6 @@
 # E02 — Product coherence
 
-**Status:** Binding work order. Do not merge.  
+**Status:** Binding work order for PR #59. Do not merge.  
 **Base:** `main` `6b59318bbe33897a5204f42fa2292eccaf6d13a7` (merge of PR #58, D06)  
 **Branch:** `cursor/e02-product-coherence-7b10`  
 **Migration:** none.
