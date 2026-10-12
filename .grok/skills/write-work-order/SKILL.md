@@ -3,6 +3,7 @@
 Given the current frontier, produce a binding work order / contract.
 
 Must include:
+
 - Question the block answers.
 - What it explicitly does not do.
 - Source of truth.

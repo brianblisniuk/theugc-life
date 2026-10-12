@@ -1,0 +1,38 @@
+{
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate",
+  "schema_version": 1,
+  "as_of": "2026-10-12",
+  "state": "HUMAN_FRONTIER",
+  "last_recorded_main": "f48a11364b10fd75972318f7e742a0d334d785f5",
+  "active_block": "SYS-1 autonomous engineering system v1 (this PR)",
+  "branch": "chore/autonomous-system-v1",
+  "pr": null,
+  "expected_head": null,
+  "pending_jobs": ["PR #48 docs/baseline-reconciliation — awaiting owner merge decision"],
+  "unresolved_findings": [
+    {
+      "id": "BASE-N5",
+      "severity": "NON-BLOCKING",
+      "summary": "Billing webhook stub trusts body user_id; safe only while BILLING_WEBHOOK_SECRET is unset in production (doc-only guard)",
+      "ref": "src/app/api/billing/webhook/route.ts"
+    },
+    {
+      "id": "BASE-N9",
+      "severity": "NON-BLOCKING",
+      "summary": "grant_access_entitlement: null p_source_reference is not idempotent; p_expires_at not validated",
+      "ref": "supabase/migrations/0043_grant_access_entitlement_hardening.sql"
+    },
+    {
+      "id": "BASE-N10",
+      "severity": "NON-BLOCKING",
+      "summary": "MASTER_PLAN_TRACKER §9 'Immediate next move' prose is stale (still describes B06 as open)",
+      "ref": "docs/MASTER_PLAN_TRACKER.md"
+    }
+  ],
+  "ci_status": {
+    "ref": "f48a11364b10fd75972318f7e742a0d334d785f5",
+    "verify": "success"
+  },
+  "required_human_action": "PRODUCT DECISION REQUIRED — B07 inference engine for the first implementation slice (no model qualified in PR #40; D072 gates model/vendor selection)",
+  "next_dependency": "B07 (D072) — implementation slice 1: schema + RLS + creator correction loop with deterministic-rules engine provenance; model-backed inference gated on vendor/privacy approval"
+}

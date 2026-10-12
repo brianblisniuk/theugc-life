@@ -46,6 +46,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Validate autopilot state
+        run: npm run autopilot:validate
+
       - name: Build
         run: npm run build
 

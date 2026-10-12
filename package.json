@@ -64,7 +64,8 @@
     "eval:b07:baseline": "tsx scripts/b07-benchmark/cli.ts baseline",
     "eval:b07:screen": "tsx scripts/b07-benchmark/cli.ts screen",
     "eval:b07:final": "tsx scripts/b07-benchmark/cli.ts final",
-    "eval:b07:report": "tsx scripts/b07-benchmark/cli.ts report"
+    "eval:b07:report": "tsx scripts/b07-benchmark/cli.ts report",
+    "autopilot:validate": "tsx scripts/validate-autopilot-state.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
