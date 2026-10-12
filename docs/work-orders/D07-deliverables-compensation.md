@@ -1,6 +1,6 @@
 # D07 — Collaboration deliverables and agreed compensation
 
-**Status:** Binding work order for this PR. Awaiting independent audit. Do not merge.  
+**Status:** Binding work order for PR #56. Awaiting independent audit. Do not merge.  
 **Base:** `main` `989e7f020f07362113b3e9b00fd9950293808f10`  
 **Branch:** `feat/d07-deliverables-compensation`  
 **Decision:** D078, Accepted — Brian, 12 October 2026, option B.  

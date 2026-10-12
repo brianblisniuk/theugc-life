@@ -366,7 +366,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
-| D07 | **AWAITING AUDIT** — branch `feat/d07-deliverables-compensation`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). PR number is recorded once GitHub assigns it. Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
+| D07 | **AWAITING AUDIT** — PR #56, branch `feat/d07-deliverables-compensation`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
@@ -655,7 +655,7 @@ Proposed. It is not Accepted, and this block does not implement it.
 The open implementation block on this branch is:
 
 > **D07 — collaboration deliverables and agreed compensation (D078, Accepted).
-> Branch `feat/d07-deliverables-compensation`. Migration
+> Open as PR #56 on `feat/d07-deliverables-compensation`. Migration
 > `0050_collaboration_deliverables_compensation.sql`. Compensation is
 > strategic data used to value each piece of content. Records only. Do not
 > merge from automation.**
