@@ -1916,3 +1916,33 @@ body are committed from this round.
   from the live run appear in this document or in the committed diff.
 
 ---
+
+## 14. POST-HOC PROMPT-V3 TOOLING — clarification of §9.4 (added 2026-10-12, baseline trust audit)
+
+This section is **added after the fact** for traceability. It does not alter
+any result above. §10–§13, including the frozen §13.8 Stage-2 status
+`ELIMINATED_CRITICAL_SAFETY` for `anthropic-sonnet-5` (main-holdout critical
+violations `m-en-hold-017`, `m-en-hold-027`, `m-es-hold-017`), stand exactly
+as recorded.
+
+- **§9.4 is literally true for its round.** No prompt v3 existed when the
+  §10–§13 runs were made, and none of those results was produced with it.
+- **A prompt v3 was added LATER in PR #40** (commit `1a4ad66`,
+  `scripts/b07-benchmark/prompt/render-v3.ts`, `PROMPT_VERSION_V3 =
+  "b07_benchmark_prompt_v3"`). It is explicitly **post-hoc**: it was written
+  after, and because of, the §13 Stage-2 elimination. Its purpose is to
+  probe whether those three violations reflect a model limit or a prompt
+  limit. v3 is v2 plus an appended suffix (RULES E–J). v2's text, the frozen
+  120-case holdout and the 6-case supplemental pack are unmodified.
+- **Status: tooling only.** As committed, no prompt-v3 provider call has been
+  made (`scripts/b07-benchmark/scoring/promptv3-interpretation.ts`).
+  There are therefore no prompt-v3 results.
+- **Binding constraints on any future v3 run.** A v3 result is diagnostic
+  evidence only. It can never retroactively qualify `anthropic-sonnet-5`
+  under v2, overwrite the §13 status, or be pooled with v2 rows (the
+  `prompt_version` identity keys forbid it). Because v3 was authored with
+  knowledge of the failing holdout cases, success on those three cases is
+  not, by itself, evidence of generalization. That is what the separate
+  generalization-challenge fixture is for.
+- Nothing here is production B07 (D072). B07 production implementation is
+  separately gated.
