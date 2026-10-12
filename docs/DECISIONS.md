@@ -3367,9 +3367,10 @@ and another creator's id return the same `not_found`.
 
 ## D081 — One shell for the existing creator workspaces (E02)
 
-Status: **Proposed** — not accepted. Simplest reading used by the E02
-implementation. PRD §6 is unchanged: primary navigation stays Home, Discover,
-Pipeline, Trips, and Profile. No new primary item is added.
+Status: **Accepted** (Brian, 12 Oct 2026). Merged in PR #59
+(`edc326dc5a0f22956a0b6572a9486d56df15572f`). PRD §6 is unchanged: primary
+navigation stays Home, Discover, Pipeline, Trips, and Profile. No new primary
+item is added.
 
 Inbox and Collaborations are not new routes and not new records. They are
 surfaces of the existing pipeline list:
@@ -3409,3 +3410,66 @@ alone.
 - No new primary navigation item. Promoting Inbox or Collaborations into the
   primary bar needs an accepted decision.
 - No sync trigger from navigation (D076).
+
+## D082 — The first useful flow is derived from rows the creator already owns (E03)
+
+Status: **Proposed (requires owner acceptance)** — not Accepted. D081 is
+Accepted and owns the shell. This entry does not change that shell and does
+not add a table.
+
+Depends on D018, D023, D045, D059, D067, D080, and D081. It does not change
+Gmail scopes, consent, or CRM status.
+
+### What “started” means
+
+A new creator’s first useful path is four steps, in this order:
+
+1. Connect Gmail, on the existing account page, with the existing consent.
+2. Create a trip.
+3. Save a published hotel from Discover.
+4. Open that hotel in the pipeline.
+
+Steps 3 and 4 are the same stored fact. Saving a hotel writes the pipeline
+row, so both become done together. There is no “opened the pipeline” flag.
+
+A step is done only when a row the creator owns says so:
+
+- Gmail is done when at least one of their mailboxes is `connected`.
+  `pending_authorization`, `consent_required`, `reauth_required`, and
+  `disconnected` are not done.
+- A trip is done when they have a trip row.
+- Save and pipeline are done when they have a pipeline item.
+
+The checklist does not block the rest of the app. The highlighted step is the
+first one that is not done.
+
+### What a failed read means
+
+A failed read is not “not connected”, not “no trip”, and not “nothing is
+due”. If the profile id cannot be resolved, trip and pipeline progress is a
+failed read: a missing profile is not an empty trip list. If Gmail is not
+configured on the deployment, the Gmail step is omitted. That is not a failed
+connection and not a completed one.
+
+A follow-up is a pipeline item with a next step. Unknown is not “nothing is
+due”.
+
+### Inbox and collaborations
+
+`/app/inbox` lists pipeline inbox links the creator already attached. It does
+not browse a mailbox, does not read a message body, and does not send mail.
+`/app/collaborations` lists the creator’s collaborations and does not show
+agreed compensation. Neither route is a primary navigation item. D081’s
+shell keeps Inbox and Collaborations on the pipeline list.
+
+A list whose count is greater than zero, and whose returned rows all belong
+to someone else, is a failed load. It is not an empty list. A mixed page
+shows only the caller’s rows and does not use that count.
+
+### What this decision does not do
+
+- No migration. `0051` is not taken.
+- No `gmail.send`, no new provider, no new scope, no secret.
+- No stored onboarding-progress row.
+- No change to the D081 shell or to primary navigation.
+

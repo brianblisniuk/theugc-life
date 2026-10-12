@@ -1,5 +1,5 @@
 /**
- * Product-coherence navigation (D081, proposed).
+ * Product-coherence navigation (D081, Accepted).
  *
  * Primary items stay the five in PRD §6. Inbox and Collaborations are pipeline
  * surfaces. Hotel return links carry only an allowlisted origin. A bad `from`

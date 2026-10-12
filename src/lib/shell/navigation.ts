@@ -1,5 +1,5 @@
 /**
- * Authenticated shell routes (PRD §6, D081 Proposed).
+ * Authenticated shell routes (PRD §6, D081 Accepted).
  *
  * Primary navigation stays Home, Discover, Pipeline, Trips, and Profile.
  * Inbox and Collaborations are pipeline surfaces, not new primary items and

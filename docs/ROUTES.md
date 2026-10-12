@@ -54,11 +54,12 @@ Public share-card/recap landing. Token must be non-guessable.
 ### `/forgot-password`
 ### `/onboarding`
 
-Onboarding is lightweight:
-1. next destination
-2. creator type
+Onboarding is lightweight. The profile step asks for a display name and a username.
+After completion the creator lands on `/app`.
 
-After completion redirect to relevant destination/discovery context.
+The first useful flow is derived there (D082, Proposed): connect Gmail on the
+existing account page, create a trip, save a hotel from Discover, then open
+the pipeline. Those steps are not extra profile fields.
 
 ## 4. Authenticated app routes
 
@@ -71,16 +72,25 @@ Authenticated map/search/filter experience.
 ### `/app/hotels/[id]`
 Authenticated hotel workspace using UUID.
 Includes entitlement-aware contact section and private creator relationship.
-`from` and `trip` choose the breadcrumb only (D081, proposed). They do not
+`from` and `trip` choose the breadcrumb only (D081, Accepted). They do not
 authorize the read. The map marker and Discover cards omit them.
 
 ### `/app/pipeline`
 List/Kanban CRM.
 
+### `/app/inbox`
+The creator's pipeline inbox links. Read-only. No message body and no send.
+Not a primary navigation item. D081's inbox is `/app/pipeline?surface=inbox`.
+
+### `/app/collaborations`
+The creator's collaborations. Read-only. Agreed compensation stays on the hotel
+workspace and is not listed here. Not a primary navigation item. D081's
+collaborations are `/app/pipeline?surface=collaborations`.
+
 Recommended query params:
 - `view=list|board`
 - filters may use URL search params.
-- `surface=inbox` frames the same list as the inbox (D081, proposed). It is not a new route.
+- `surface=inbox` frames the same list as the inbox (D081, Accepted). It is not a new route.
 - `surface=collaborations` lists won cycles. It is not a new route.
 
 ### `/app/trips`

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { getClientEnv } from "@/env";
+import { POST_ONBOARDING_PATH } from "@/lib/onboarding/activation";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 
@@ -182,5 +183,5 @@ export async function completeOnboarding(
     }
     return { error: "Could not save your profile. Try again." };
   }
-  redirect("/app/discover");
+  redirect(POST_ONBOARDING_PATH);
 }

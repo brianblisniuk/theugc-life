@@ -16,7 +16,10 @@ export default async function OnboardingPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-lg font-semibold text-text">Welcome</h1>
-        <p className="mt-1 text-sm text-muted">Set up your creator profile to get started.</p>
+        <p className="mt-1 text-sm text-muted">
+          Add the name you will use in the product. Next you can connect Gmail, create a trip, and
+          save a hotel.
+        </p>
       </div>
       <OnboardingForm />
     </div>
