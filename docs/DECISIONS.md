@@ -3246,3 +3246,58 @@ returned for a missing id and for someone else's id.
 - No usage-rights field, no file upload, and no freeze of these records
   when the collaboration lifecycle status changes.
 - No promotion of these rows into a C01 fact. D077 remains Proposed.
+
+## D079 — Discover and Hotel Detail use the Google Maps JavaScript API
+
+Status: **Accepted** — Brian, 12 October 2026. The provider is Google Maps.
+The PRD's Mapbox suggestion is not the implementation.
+
+The empty E01 slot is filled with the Maps JavaScript API. The browser key is
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. It is a public key. It is not a server
+secret, and it is never hardcoded. `.env.example` holds an empty placeholder.
+
+A missing or blank key renders **no map and no error**. Tests run without a
+key. The loader is mockable, and a failed script load is the same outcome as
+a missing key.
+
+### What the map shows
+
+Discover pins are the published hotels on the **current filtered page**. The
+page is already bounded (`DISCOVER_PAGE_SIZE` / `DISCOVER_MAX_PAGE_SIZE`).
+The map does not issue a second query and does not load the rest of the
+catalog into the browser (PRD §22). Filters are the Discover filters. The
+list and the map are the same set. Pagination changes both.
+
+Hotel Detail shows one pin, for that published hotel.
+
+Every pin is a hotel that already passed the publication predicate (D054,
+D062): 4 or 5 star, coordinates in range, not permanently closed. A closed
+or unlocated row is not a pin. Coordinates stay off the card payload.
+
+Free, Destination Pass, and Pro see the same inventory (D049). The map does
+not read premium intelligence, contacts, pipeline, or trips. Plan gating of
+those sections is unchanged.
+
+### What is sent to Google
+
+The script request is `https://maps.googleapis.com/maps/api/js` with `key`,
+`v`, and `callback` only. The script's referrer policy is
+`strict-origin-when-cross-origin`, so the request does not include the page
+path or query. Marker options are position only (`lat` / `lng`). No creator
+id, mailbox, pipeline, trip, contact, premium field, hotel name, or address
+is passed to the loader or the marker.
+
+A marker click navigates inside this app to `/app/hotels/{uuid}`. It is not
+a Google request.
+
+No migration. `0049` stays unused. No Cloud Map ID, so the map uses the
+classic `Marker` rather than Advanced Markers. POI clicks are off
+(`clickableIcons: false`) so the map does not open Google's place cards.
+
+### What this decision does not do
+
+- No geocoding. Coordinates are the canonical values already on `hotels`.
+- No Places library, no Directions, no static-map image proxy.
+- No production key and no Netlify change in the implementation PR.
+- No marker clustering. The mounted set is one page, at most 50 pins.
+- No selected-marker sync beyond opening the hotel the marker locates.

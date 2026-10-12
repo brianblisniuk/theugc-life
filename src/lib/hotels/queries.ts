@@ -17,6 +17,7 @@
  */
 import "server-only";
 
+import { publicMapPin, type PublicMapPin } from "@/lib/maps/pins";
 import { createClient } from "@/lib/supabase/server";
 
 import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./access";
@@ -51,9 +52,10 @@ export { isUuid } from "./ids";
 export type { ContactAccessResult } from "./access";
 
 /**
- * Latitude and longitude are selected so the read path can apply D062/D054.
- * They are not copied onto `HotelSummary`: this surface does not render a map,
- * and coordinates are not handed to a tile provider.
+ * Latitude and longitude are selected so the read path can apply D062/D054
+ * and so a published row can become a map pin (D079). They are not copied
+ * onto `HotelSummary`. The pin is a separate object with only public location
+ * fields, and it is sent to Google only as a marker position.
  */
 const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, latitude, longitude, destination:destinations(id, name, slug, country_code)`;
 
@@ -73,7 +75,7 @@ const DESTINATION_MATCH_LIMIT = 200;
 const DESTINATION_CATALOG_LIMIT = 5000;
 
 function emptySearch(page: number, pageSize: number): HotelSearchResult {
-  return { hotels: [], total: 0, page, pageSize, hasMore: false };
+  return { hotels: [], pins: [], total: 0, page, pageSize, hasMore: false };
 }
 
 /**
@@ -114,8 +116,19 @@ export interface HotelSummary {
   destination: HotelDestination | null;
 }
 
+export interface PublishedHotelView {
+  hotel: HotelSummary;
+  /** Public location for the map. Not a field of the card. */
+  mapPin: PublicMapPin;
+}
+
 export interface HotelSearchResult {
   hotels: HotelSummary[];
+  /**
+   * One pin per hotel, same order. The current filtered page only: Discover
+   * does not load the rest of the catalog into the browser (PRD §22).
+   */
+  pins: PublicMapPin[];
   /** Total matching rows (for pagination), or null when unavailable. */
   total: number | null;
   page: number;
@@ -186,9 +199,12 @@ function publicationFacts(row: RawHotel) {
   };
 }
 
-function mapHotel(row: RawHotel): HotelSummary | null {
-  if (!isPublishedCanonicalHotel(publicationFacts(row))) return null;
-  return {
+function mapPublished(row: RawHotel): PublishedHotelView | null {
+  const facts = publicationFacts(row);
+  const latitude = facts.latitude;
+  const longitude = facts.longitude;
+  if (!isPublishedCanonicalHotel(facts) || latitude === null || longitude === null) return null;
+  const hotel: HotelSummary = {
     id: String(row.id),
     name: String(row.name),
     slug: String(row.slug),
@@ -202,6 +218,15 @@ function mapHotel(row: RawHotel): HotelSummary | null {
     verificationStatus: (row.editorial_verification_status as string | null) ?? "unverified",
     verifiedAt: (row.editorial_verified_at as string | null) ?? null,
     destination: mapDestination(row.destination),
+  };
+  return {
+    hotel,
+    mapPin: publicMapPin({
+      id: hotel.id,
+      name: hotel.name,
+      latitude,
+      longitude,
+    }),
   };
 }
 
@@ -360,12 +385,14 @@ export async function searchHotels(
 
   if (error) throw new Error(`hotel_search_failed:${error.code ?? "unknown"}`);
 
-  const hotels = (data ?? [])
-    .map((row) => mapHotel(row as unknown as RawHotel))
-    .filter((hotel): hotel is HotelSummary => hotel !== null);
+  const published = (data ?? [])
+    .map((row) => mapPublished(row as unknown as RawHotel))
+    .filter((row): row is PublishedHotelView => row !== null);
+  const hotels = published.map((row) => row.hotel);
   const total = typeof count === "number" ? count : null;
   return {
     hotels,
+    pins: published.map((row) => row.mapPin),
     total,
     page,
     pageSize,
@@ -381,15 +408,19 @@ export async function searchHotels(
  * transient outage surfaces as an error boundary rather than telling the user
  * the hotel does not exist.
  */
-export async function getHotelById(id: string): Promise<HotelSummary | null> {
+export async function getHotelById(
+  id: string,
+  /** Injectable for tests; production always uses the cookie-bound client. */
+  injectedClient?: HotelQueryClient,
+): Promise<PublishedHotelView | null> {
   if (!isUuid(id)) return null;
-  const supabase = await createClient();
+  const supabase = injectedClient ?? (await createClient());
   const { data, error } = await applyPublishedFilters(
     supabase.from("hotels").select(HOTEL_SELECT).eq("id", id) as unknown as HotelReadBuilder,
   ).maybeSingle();
   if (error) throw new Error(`hotel_fetch_failed:${error.code ?? "unknown"}`);
   if (!data) return null;
-  return mapHotel(data as unknown as RawHotel);
+  return mapPublished(data as unknown as RawHotel);
 }
 
 /**

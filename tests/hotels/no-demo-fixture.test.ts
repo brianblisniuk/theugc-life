@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-const SCAN_ROOTS = ["src/app", "src/components", "src/lib/hotels"];
+const SCAN_ROOTS = ["src/app", "src/components", "src/lib/hotels", "src/lib/maps"];
 
 const FORBIDDEN = [
   /demoHotels/i,
@@ -18,7 +18,8 @@ const FORBIDDEN = [
   /SAMPLE_HOTELS/,
   /FIXTURE_HOTELS/,
   /from ["'][^"']*\/tests\//,
-  /maps\.googleapis\.com/,
+  /maps\/api\/staticmap/,
+  /maps\/api\/place/,
   /api\.mapbox\.com/,
   /tiles\.mapbox\.com/,
   /tile\.openstreetmap\.org/,
@@ -54,11 +55,18 @@ describe("no demo fixture in the production discover surface", () => {
     expect(hits).toEqual([]);
   });
 
-  it("the map slot is a placeholder and names no provider URL", async () => {
-    const text = await readFile(path.join(ROOT, "src/components/hotels/map-slot.tsx"), "utf8");
-    expect(text).toMatch(/No map is shown/);
-    expect(text).not.toMatch(/https?:\/\//);
-    expect(text).not.toMatch(/<img|<iframe|leaflet|mapbox/i);
+  it("the map module names only the Maps JavaScript API and no hardcoded key", async () => {
+    const text = await readFile(path.join(ROOT, "src/lib/maps/google.ts"), "utf8");
+    expect(text).toContain("https://maps.googleapis.com");
+    expect(text).toContain("/maps/api/js");
+    expect(text).not.toMatch(/AIza[0-9A-Za-z_-]{20,}/);
+    expect(text).not.toMatch(/staticmap|maps\/api\/place|api\.mapbox|<iframe/i);
+    const component = await readFile(
+      path.join(ROOT, "src/components/hotels/hotel-map.tsx"),
+      "utf8",
+    );
+    expect(component).not.toMatch(/https?:\/\//);
+    expect(component).not.toMatch(/<iframe/i);
   });
 
   it("the compiled discover and hotel routes do not embed a demo fixture or tile host", async () => {

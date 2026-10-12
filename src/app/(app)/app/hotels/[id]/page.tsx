@@ -22,12 +22,12 @@ import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
 import { AddToTrip } from "@/components/hotels/add-to-trip";
 import { ContactCard } from "@/components/hotels/contact-card";
+import { HotelMap } from "@/components/hotels/hotel-map";
 import {
   IntelligencePanel,
   PremiumIntelligencePanel,
 } from "@/components/hotels/intelligence-panel";
 import { LockedContactSection } from "@/components/hotels/locked-contact";
-import { MapSlot } from "@/components/hotels/map-slot";
 import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
@@ -56,8 +56,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   try {
-    const hotel = await loadHotel(id);
-    return { title: hotel?.name ?? "Hotel not found" };
+    const loaded = await loadHotel(id);
+    return { title: loaded?.hotel.name ?? "Hotel not found" };
   } catch {
     return { title: "Hotel" };
   }
@@ -80,8 +80,9 @@ const ACTIVE_STATUS_LABEL: Record<string, string> = {
 export default async function HotelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const hotel = await loadHotel(id);
-  if (!hotel) notFound();
+  const loaded = await loadHotel(id);
+  if (!loaded) notFound();
+  const hotel = loaded.hotel;
 
   // Access is resolved first; contacts are only fetched when authorized.
   const [{ access, contacts, failed: contactsFailed }, intelligence, relationship] =
@@ -189,7 +190,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
         </div>
       </header>
 
-      <MapSlot />
+      <HotelMap pins={[loaded.mapPin]} variant="section" />
 
       {/* 2. Creator intelligence — public layer, then the premium layer */}
       <Section title="Creator intelligence">

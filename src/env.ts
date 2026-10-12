@@ -20,6 +20,13 @@ const clientSchema = z.object({
   // Analytics is optional: absent key => analytics no-ops (see lib/analytics).
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
+  // Maps JavaScript API (D079). Absent or blank => Discover and Hotel Detail
+  // render no map and no error. Never a server secret.
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }, z.string().min(1).optional()),
 });
 
 export type ClientEnv = z.infer<typeof clientSchema>;
@@ -39,6 +46,7 @@ export function getClientEnv(): ClientEnv {
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
   });
   if (!parsed.success) {
     throw new Error(`Invalid client environment variables:\n${formatIssues(parsed.error)}`);
