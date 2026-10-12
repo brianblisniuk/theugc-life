@@ -2959,3 +2959,87 @@ authorization and the migration number actually used on main
 (0041–0043 were already taken; D074). No taxonomy, axis, privacy rule, or
 human-correction rule in D072 changes. Model-backed inference stays gated.
 Slice 1 does not mark the whole of B07 done.
+
+## D077 — Normalized intelligence facts trace to a canonical target and private evidence (C01)
+
+Status: **Proposed (requires owner acceptance)** — not Accepted. This entry
+does not authorize schema, migration, application code, aggregates, ranking,
+or UI.
+
+Numbering: D076 is not used here. On 2026-10-12, `main`
+`4062170212beb8b978a248ef219eb91ddbfb080b` ends at D075. Open PR #53
+(`feat/b08-gmail-incremental-sync`) already claims D076 for B08 incremental
+sync. D077 is the next free number. This entry does not depend on D076 being
+accepted.
+
+Depends on, and does not amend, D009, D010, D012, D014, D043, D045, D050,
+D057, D058, D067, D070, D071, and D072. No migration number is reserved.
+
+### The gate
+
+A claim already produced by the creator workflow ledger, a collaboration, the
+private Gmail layers B05–B07, or a trip is an intelligence fact only when it
+traces to exactly one canonical target and exactly one private evidence or
+event id. A claim that cannot fill both stays in its source layer. It is not
+promoted, and it is not given a zero.
+
+The canonical target is the canonical hotel already on a workflow,
+collaboration, or shortlist row, or, for a B05-origin fact only, the single
+canonical hotel or canonical organization named by a B05 canonical link. A
+contact, a recipient address, a destination, and a trip are not targets.
+Zero links or many links emit no fact.
+
+### Machine and creator-confirmed stay separate
+
+`provenance_class` is exactly `machine` or `creator_confirmed`. A machine fact
+cites a machine attempt, observation, link, or summary. A creator-confirmed
+fact cites the immutable human decision event or the `manual_creator` workflow
+event. Neither cites the other's row. A rerun does not rewrite a human
+decision. A withdraw is a new decision event, not a deletion of history.
+
+D072 is unchanged: a machine interpretation is never human truth; `redirect`
+is not `rejection`; a one-sided "yes" is negotiation, not agreement; `unknown`
+is not `unpaid` and is not zero. Window-censored Gmail absence is not
+`ghosted` and is not a reply count of zero (D071).
+
+`outreach_events.source` values other than `manual_creator` are not given a
+provenance class. That refusal does not change the current V1 recompute.
+
+### Network-level use
+
+Anything another creator could read, or any aggregate that mixes creators,
+requires `creator_confirmed`. Machine facts are not network-eligible. A trip
+shortlist membership is a private planning fact, not a network fact (D015,
+D057). Creator-confirmed Gmail-derived facts are not declared network-eligible
+and are not declared permanently ineligible. That is an open owner question.
+Until it is answered, no Gmail-derived fact is a network input. Personal use
+by the owning creator is not network use.
+
+### Purge follows the evidence
+
+A fact does not outlive its evidence. Purging the evidence purges the citing
+facts in the same operation. Disconnect, churn, and subscription expiry are
+not deletion (D014, D067). Withdrawing network contribution does not delete
+private facts; a future contribution must stay removable and recomputable
+(D067). No retention period in days is set here.
+
+### What C02 and C03 may read
+
+C02 may read admitted facts, their provenance class, their times and horizons,
+and the explicit unknown or censored markers. It must not coerce those markers
+to zero. C03 may read admitted facts for a personal aggregate of the owner's
+own rows, and may read creator-confirmed facts for a network aggregate only
+where network eligibility is already decided. Thresholds for any new aggregate
+are not decided. D012 and D058 continue to govern only the current projections.
+
+### Open owner questions (unanswered)
+
+1. Aggregation thresholds for any new aggregate over these facts.
+2. Network eligibility of creator-confirmed Gmail-derived facts, including
+   whether a canonical organization can be a network-level target.
+3. B08 pilot KPIs. Which quality and data-density measures the pilot must
+   observe, and what result would pause or justify a larger intelligence
+   product, are not decided. D076 does not define them. The Milestone B list
+   in the tracker is a planning hypothesis, not an accepted KPI contract.
+
+Full proposal: `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`.
