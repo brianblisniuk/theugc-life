@@ -67,6 +67,14 @@ export async function runStoredGmailPipeline(
         mailAccountId: input.mailAccountId,
         normalizedThreadId: thread.normalized_thread_id!,
       });
+      const refreshed = await db.rpc("refresh_pipeline_inbox_suggestions", {
+        p_user_id: input.userId,
+        p_mail_account_id: input.mailAccountId,
+        p_normalized_thread_id: thread.normalized_thread_id!,
+      });
+      if (refreshed.error) {
+        throw new Error(`refresh_pipeline_inbox_suggestions failed: ${refreshed.error.message}`);
+      }
     }
     commercialOpen = fresh.length >= 25;
   }

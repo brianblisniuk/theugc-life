@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `61d0e385894670bc55a78675e64526c353c288d5` (merge of PR #56, D07, 2026-10-12)  
-**State:** AUDITING. PR #53, branch `feat/b08-gmail-incremental-sync`. The snapshot-anchored `messages.list` omits `before:`. A history message dated before the forward window is excluded and does not withhold the cursor. Awaiting re-audit. The machine state is `AUDITING` because `.grok/autopilot-state.json` has no `AWAITING_AUDIT` value. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** B08 incremental Gmail sync. D076 accepts history polling and a login trigger. E01 (PR #55) is merged at `ab05074`: Discover and Hotel Detail over published canonical hotels, map deferred, no migration. D07 (PR #56) is merged at `61d0e38`: D078 Accepted, migration `0050`, records only. D077 (C01, PR #54) is Proposed and is not accepted. B07.1 (PR #51, migration `0045`) is merged. D01 (PR #52, migration `0046`) is merged. `0049` is unused. Pilot KPIs remain gated. Model-backed B07 inference remains gated.
+**Last verified main:** `eb136190f676e9201b6b39de4b570d51e52da73d` (merge of PR #53, B08, 2026-10-12)  
+**State:** AWAITING_CI. D06 inbox ↔ pipeline unity, branch `cursor/d06-inbox-pipeline-774f`, migration `0049`, D079 Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** D06. Creator-named link between one pipeline cycle and one stored Gmail thread. Machine readings are suggestions. A redirect is not a rejection. B08 is merged at `eb13619`. D077 stays Proposed. D078 is Accepted on main via PR #56. `0050` is not edited.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -32,14 +32,15 @@
 - PR #54 — C01 intelligence fact contract, docs only (D077 remains Proposed) — `989e7f020f07362113b3e9b00fd9950293808f10`
 - PR #55 — E01 Discover + Hotel Detail, map deferred, no migration — `ab0507461b4b47b21112dd07589b4b8a88d3efb3`
 - PR #56 — D07 deliverables and agreed compensation, migration `0050`, D078 Accepted — `61d0e385894670bc55a78675e64526c353c288d5`
+- PR #53 — B08 incremental Gmail sync, D076, migrations `0047` and `0048` — `eb136190f676e9201b6b39de4b570d51e52da73d`
 
 ## Next action
-- B08 incremental sync is PR #53 (`feat/b08-gmail-incremental-sync`, D076, migrations `0047` and `0048`). State is AUDITING (awaiting re-audit). Do not merge from automation.
-- E01 is merged (PR #55, `ab05074`). Discover and Hotel Detail use published canonical hotels. No map provider is decided, so the surface keeps an empty map slot and does not call a tile service. E01 adds no migration.
-- D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). Compensation values each deliverable and is not a charge. This PR does not edit `0050`. `0049` is still unused. `0048` on this branch is the classifier entity decode, not D078.
+- D06 inbox ↔ pipeline unity is this PR (`cursor/d06-inbox-pipeline-774f`, D079 Proposed, migration `0049`). State is AWAITING_CI. Do not merge from automation.
+- B08 is merged (PR #53, `eb13619`). The forward sync still uses D068 inclusion and does not add a scope.
+- D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). This PR does not edit `0050`.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
-- **State updates ride in each block's closing PR** (no standalone state PRs).
+- **State updates ride in each block's closing PR** (no standalone state-only PRs).
 - Owner interaction happens only via human-frontier labels.
 
 ## PLAY
