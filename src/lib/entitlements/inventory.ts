@@ -546,7 +546,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "profile.field_opt_ins",
     module: "Profile",
     summary:
-      "A per-field opt-in is owner-only and private by default. No accepted decision assigns Free, Pass, or Pro. There is no hotel read and no share link.",
+      "A per-field opt-in is owner-only and private by default. No accepted decision assigns Free, Pass, or Pro. The hotel read is profile.share_public.",
     routes: ["/app/profile"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
@@ -559,7 +559,59 @@ export const INVENTORY: readonly InventoryEntry[] = [
     enforcement: { kind: "owner_rows", tables: ["creator_profile_field_opt_ins"] },
     sources: ["D086"],
     question:
-      "Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, no row means not shared, and this block does not add a hotel read.",
+      "Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, and no row means not shared.",
+  },
+  {
+    id: "profile.share_link",
+    module: "Profile",
+    summary:
+      "The signed-in creator creates, rotates, and revokes their own hotel share link, and sets audience figures, field opt-ins, and share marks. No accepted decision assigns Free, Pass, or Pro.",
+    routes: ["/app/profile"],
+    sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/share-actions.ts"],
+    serverActions: [
+      "saveSelfReportedAudience",
+      "saveShareOptIns",
+      "createShareLink",
+      "rotateShareLink",
+      "revokeShareLink",
+      "setCollaborationShareable",
+      "setDeliverableShareable",
+    ],
+    rpcs: [
+      "create_creator_share_link",
+      "rotate_creator_share_link",
+      "revoke_creator_share_link",
+      "read_own_creator_share_link",
+      "set_creator_self_reported_audience",
+      "set_creator_profile_field_opt_ins",
+      "set_collaboration_share_mark",
+      "set_deliverable_share_mark",
+    ],
+    rule: { kind: "undecided" },
+    anon: "deny",
+    enforcement: { kind: "kept_current" },
+    sources: ["D089", "D090"],
+    question:
+      "Does creating, rotating, or revoking a hotel share link, or setting its opt-ins and share marks, require a Destination Pass or Pro, or is it available on Free? D089 and D090 do not assign a tier. Current behavior is unchanged: the signed-in creator manages only their own link.",
+  },
+  {
+    id: "profile.share_public",
+    module: "Profile",
+    summary:
+      "A valid share token reads one creator's opted-in fields at /p/[token]. There is no session. No accepted decision assigns Free, Pass, or Pro. The read is read_creator_share_profile.",
+    routes: ["/p/[token]"],
+    sourceFiles: [
+      "src/app/(public)/p/[token]/page.tsx",
+      "supabase/migrations/0053_creator_share_link.sql",
+    ],
+    serverActions: [],
+    rpcs: ["read_creator_share_profile"],
+    rule: { kind: "undecided" },
+    anon: "allow",
+    enforcement: { kind: "kept_current" },
+    sources: ["D089", "D090", "D091"],
+    question:
+      "Does opening a hotel share link require a Destination Pass or Pro, or does a valid token stay readable with no plan? D089 does not assign a tier. Current behavior is unchanged: /p/[token] does not check an entitlement row.",
   },
   {
     id: "billing.own",

@@ -79,17 +79,57 @@ Create user row/profile through a controlled signup trigger or server action. Ne
 `0002`. They are not the hotel share link (D086, Proposed).
 
 ### creator_profile_field_opt_ins
-Creator-owned per-field opt-in for a later hotel share link (0052, D086
-Proposed). No token and no hotel read in this migration.
+Creator-owned per-field opt-in for the hotel share link (0052, closed by
+0053, D090 Accepted). No token on this table.
 
 - `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
-- `field_key text` — not an allow-list; the follow-up closes the keys
+- `field_key text` — D090 allow-list: `bio`, `niche`, `social_links`,
+  `audience`, `past_collaborations`, `content_examples`, `compensation`
 - `opted_in boolean NOT NULL DEFAULT false`
 - `revoked_at timestamptz NULL` — set only when `opted_in` is false
 - primary key `(creator_id, field_key)`
 - timestamps
 
 No row means the field is not shared. RLS is enabled. Anon has no privilege.
+
+### creator_self_reported_audience
+Followers and engagement the creator entered (0053, D090 Accepted). Null is
+unknown, not zero. Not verified. Anon has no privilege. `public_profile_enabled`
+does not expose this table.
+
+- `creator_id uuid PK FK creator_profiles(id) ON DELETE CASCADE`
+- `follower_count bigint NULL`
+- `engagement text NULL`
+- timestamps
+
+### creator_share_links
+One creator-controlled hotel link (0053, D089 Accepted). Stores a SHA-256
+digest, never the raw token. At most one row per creator has `revoked_at`
+null.
+
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `token_hash bytea` — 32 bytes, unique
+- `expires_at timestamptz NULL`
+- `revoked_at timestamptz NULL`
+- `created_at timestamptz`
+
+Anon has no privilege. Authenticated may select only its own row. Writes go
+through security-definer functions.
+
+### creator_collaboration_share_marks
+A completed or cancelled collaboration the creator marked shareable (0053,
+D090). No row means it is not on the link.
+
+- primary key `(creator_id, collaboration_id)`
+- composite FK to `collaborations (id, creator_id) ON DELETE CASCADE`
+
+### creator_deliverable_share_marks
+A deliverable the creator marked shareable (0053, D090). The public read
+still requires an https `proof_url`.
+
+- primary key `(creator_id, deliverable_id)`
+- composite FK to `collaboration_deliverables (id, creator_id) ON DELETE CASCADE`
 
 ### portfolio_assets
 - `id uuid PK`
@@ -2887,6 +2927,11 @@ At minimum:
     creator-recorded outcomes, not rates, and a missing profile is JSON null.
     `creator_profile_field_opt_ins` stores a private per-field opt-in for a
     later revocable hotel share link. No token, no hotel read, and no change
-    to `public_profile_enabled`. `0051` is not used.
+    to `public_profile_enabled`. `0051` is not used. D08 is merged as PR #61,
+    `d030cd0329c8b1e30afcdd14a72485174edcd9f5`.
+30. Creator hotel share link (0053, D089–D091 Accepted — Brian, 13 Oct 2026) —
+    one revocable link per creator, SHA-256 digest only, and a security-definer
+    public read of opted-in fields. Anon has no new table privilege. `0051`
+    is on main from E04 (PR #62) and is not edited. `0052` is not edited.
 
 Every migration must be reproducible from an empty database.

@@ -53,6 +53,8 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `profile.personal_analytics` | Profile | UNDECIDED |
 | `profile.past_collaborations` | Profile | UNDECIDED |
 | `profile.field_opt_ins` | Profile | UNDECIDED |
+| `profile.share_link` | Profile | UNDECIDED |
+| `profile.share_public` | Profile | UNDECIDED |
 | `billing.own` | Billing | owner reads entitlement rows only |
 | `commerce.grant` | Billing | system grant. A purchase is not access |
 | `marketing.public` | Marketing | public page |
@@ -83,4 +85,6 @@ These features have no written tier. Current behavior is unchanged.
 - `profile.basic_vs_full` — What does Basic withhold on Free that a Destination Pass or Pro profile includes? PRD §10.2 says a Free creator can manage their own profile, and §5.3.1 does not name the locked fields. Current behavior is unchanged.
 - `profile.personal_analytics` — Are creator-recorded personal counts a Free capability, or does a Destination Pass or Pro gate them? D087 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own counts.
 - `profile.past_collaborations` — Are past collaborations a Free capability, or does a Destination Pass or Pro gate the private list? D088 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own completed and cancelled collaborations.
-- `profile.field_opt_ins` — Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, no row means not shared, and this block does not add a hotel read.
+- `profile.field_opt_ins` — Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, and no row means not shared.
+- `profile.share_link` — Does creating, rotating, or revoking a hotel share link, or setting its opt-ins and share marks, require a Destination Pass or Pro, or is it available on Free? D089 and D090 do not assign a tier. Current behavior is unchanged: the signed-in creator manages only their own link.
+- `profile.share_public` — Does opening a hotel share link require a Destination Pass or Pro, or does a valid token stay readable with no plan? D089 does not assign a tier. Current behavior is unchanged: /p/[token] does not check an entitlement row. The public read is `read_creator_share_profile`.

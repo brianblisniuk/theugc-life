@@ -84,6 +84,7 @@ Anonymous read forbidden:
 - verification internal notes
 - admin flags
 - creator_profile_field_opt_ins (no anon privilege; a public profile does not open it)
+- creator_self_reported_audience, creator_share_links, and the share-mark tables (no anon privilege; the hotel read is `read_creator_share_profile`)
 
 **As implemented (V1).** `anon` holds `SELECT` on exactly four relations:
 `hotels`, `destinations`, `brands` and `hotel_public_intelligence`, plus
@@ -100,6 +101,10 @@ For `creator_profiles`, creator may select/update own row where `user_id = auth.
 For creator-owned child tables, resolve ownership through creator profile:
 - portfolio_assets
 - creator_profile_field_opt_ins
+- creator_self_reported_audience
+- creator_share_links
+- creator_collaboration_share_marks
+- creator_deliverable_share_marks
 - trips
 - trip_hotels
 - pipeline_items
@@ -120,7 +125,10 @@ browser may write them. The CRM tables are **read-only to the browser**:
 | `trips`, `trip_hotels` | **select only** | trusted RPC (`create_trip`, `update_trip`, `delete_trip`, `add_trip_hotel`, `remove_trip_hotel`) |
 | `portfolio_assets` | select, insert, update, delete (own rows) | direct, under RLS |
 | `creator_profiles` | select, insert, update (own row) | direct, under RLS |
-| `creator_profile_field_opt_ins` | select, insert, update, delete (own rows) | direct, under RLS. D08’s Profile page does not write it. No share token. |
+| `creator_profile_field_opt_ins` | select, insert, update, delete (own rows) | direct, under RLS, and `set_creator_profile_field_opt_ins` for the D090 allow-list. Anon has no privilege. |
+| `creator_self_reported_audience` | select, insert, update, delete (own row) | `set_creator_self_reported_audience`. Null is unknown, not zero. |
+| `creator_share_links` | **select only** | `create_creator_share_link`, `rotate_creator_share_link`, `revoke_creator_share_link`. The raw token is not stored. |
+| `creator_collaboration_share_marks`, `creator_deliverable_share_marks` | select, insert, update, delete (own rows) | `set_collaboration_share_mark`, `set_deliverable_share_mark`. |
 | `pipeline_items` | **select only** | trusted RPC |
 | `outreach_events` | **select only** | trusted RPC |
 | `collaborations` | **select only** | trusted RPC |

@@ -4,6 +4,7 @@
  */
 import Link from "next/link";
 
+import { ShareMarkButton } from "@/components/profile/share-mark-button";
 import type { PastCollaborationsLoad } from "@/lib/profile/contract";
 
 export function PastCollaborations({
@@ -11,11 +12,13 @@ export function PastCollaborations({
   heading,
   linkToHotel,
   hideWhenEmpty = false,
+  sharedIds,
 }: {
   load: PastCollaborationsLoad;
   heading: string;
   linkToHotel: boolean;
   hideWhenEmpty?: boolean;
+  sharedIds?: ReadonlySet<string>;
 }) {
   if (load.status === "error" || load.status === "not_found") {
     return (
@@ -69,14 +72,23 @@ export function PastCollaborations({
                 {item.termsLabel ? ` · ${item.termsLabel}` : ""}
               </p>
             </div>
-            {linkToHotel ? (
-              <Link
-                href={item.href}
-                className="inline-flex rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-background"
-              >
-                Open hotel
-              </Link>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {sharedIds ? (
+                <ShareMarkButton
+                  id={item.id}
+                  shared={sharedIds.has(item.id)}
+                  kind="collaboration"
+                />
+              ) : null}
+              {linkToHotel ? (
+                <Link
+                  href={item.href}
+                  className="inline-flex rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-background"
+                >
+                  Open hotel
+                </Link>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>

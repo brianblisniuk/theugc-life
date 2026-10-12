@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `d030cd0329c8b1e30afcdd14a72485174edcd9f5` (merge of PR #61, D08, D086–D088 Proposed, migration `0052`, 2026-10-12)  
-**State:** AWAITING_AUDIT. E04 Pass/Pro entitlement inventory, PR #62, branch `cursor/e04-entitlement-inventory-3a73`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 is merged. Personal counts, past collaborations, and profile field opt-ins stay UNDECIDED. D083–D085 are not used. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** E04. One canonical inventory maps existing modules, routes, and server actions to written Free / Pass / Pro rules. The outside Free counters count only outside-coverage rows. D086–D088 stay Proposed. D082 stays Proposed. D077 stays Proposed.
+**Last verified main:** `dc5979eed799d1724eb36482eb0067d3e9f0fe55` (merge of PR #62, E04, 2026-10-12)  
+**State:** AWAITING_CI. D09 creator profile share link, PR #63, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). The share page, owner actions, and public read are UNDECIDED in the E04 inventory. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** D09. A creator shares a profile with a hotel through one revocable link. The public page shows only opted-in fields. E04 is merged. D086–D088 stay Proposed. D077 stays Proposed. `0051` and `0052` are not edited.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -37,17 +37,15 @@
 - PR #58 — D06 inbox ↔ pipeline unity, D080 Accepted, migration `0049` — `6b59318bbe33897a5204f42fa2292eccaf6d13a7`
 - PR #59 — E02 product coherence, D081 Accepted, no migration — `edc326dc5a0f22956a0b6572a9486d56df15572f`
 - PR #60 — E03 onboarding and empty/error states, D082 Proposed, no migration — `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`
-- PR #61 — D08 creator profile and private personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
+- PR #61 — D08 private profile and personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
+- PR #62 — E04 Pass/Pro entitlement inventory, migration `0051` — `dc5979eed799d1724eb36482eb0067d3e9f0fe55`
 
 ## Next action
-- E04 entitlement inventory is PR #62 (`cursor/e04-entitlement-inventory-3a73`, migration `0051_outside_free_allowance.sql`). State is AWAITING_AUDIT after merging D08. Do not merge from automation.
-- D08 is merged (PR #61, `d030cd0`, D086–D088 Proposed, migration `0052`). The hotel share link is not built. This PR does not edit `0052`.
+- D09 creator profile share link is PR #63, branch `cursor/d09-creator-share-link-6270` (D089–D091 Accepted, migration `0053`). State is AWAITING_CI. Do not merge from automation.
+- E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.
+- D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that flow.
-- E02 is merged (PR #59, `edc326d`, D081 Accepted). This PR does not change that shell. Profile stays a primary item.
-- MAP is merged (PR #57, `023a354`, D079). Discover and Hotel Detail keep the Google map. This PR does not remove it.
-- B08 is merged (PR #53, `eb13619`). The forward sync still uses D068 inclusion and does not add a scope.
-- D06 is merged (PR #58, `6b59318`, D080 Accepted, migration `0049`). This PR does not edit `0049`.
-- D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). This PR does not edit `0050`.
+- E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state-only PRs).

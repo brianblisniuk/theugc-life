@@ -267,7 +267,7 @@ d("E04 entitlement inventory enforcement", () => {
 
     await adminQuery(
       `insert into public.creator_profile_field_opt_ins (creator_id, field_key, opted_in)
-       values ($1, 'e04_secret', false)`,
+       values ($1, 'content_examples', false)`,
       [creators.other],
     );
   });
@@ -531,7 +531,7 @@ d("E04 entitlement inventory enforcement", () => {
         creator_profile_field_opt_ins: {
           sql: "select field_key from public.creator_profile_field_opt_ins where creator_id = $1",
           params: [creators.other],
-          marker: "e04_secret",
+          marker: "content_examples",
         },
       };
 
@@ -674,10 +674,7 @@ d("E04 entitlement inventory enforcement", () => {
       );
       expect(owner.error, id).toBeNull();
       expect(JSON.stringify(owner.rows), id).toContain(pastId);
-      const attacker = await queryAs(
-        { role: "authenticated", sub: U.pro },
-        call,
-      );
+      const attacker = await queryAs({ role: "authenticated", sub: U.pro }, call);
       expect(attacker.error, id).toBeNull();
       expect(JSON.stringify(attacker), id).not.toContain(pastId);
       return;

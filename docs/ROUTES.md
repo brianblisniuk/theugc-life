@@ -45,7 +45,14 @@ Public portfolio.
 Architecture reserved for published proprietary reports. It may be absent/404 until report publishing exists.
 
 ### `/share/[token]`
-Public share-card/recap landing. Token must be non-guessable.
+Public share-card/recap landing. Token must be non-guessable. This is not the
+hotel profile link.
+
+### `/p/[token]`
+Public read-only creator profile for a hotel (D089–D091, Accepted). No auth.
+The token is 64 hex characters. Invalid, revoked, and expired tokens render
+the same not-found page. `noindex`. The response is not cached. Only fields
+the creator opted in are shown.
 
 ## 3. Auth routes
 
@@ -174,6 +181,7 @@ Hotel contact/intelligence sections become locked; private historical pipeline r
 - Closed hotels remain addressable with clear status where useful.
 - Admin/app pages are noindex.
 - Public creator profile is noindex if user disables public profile.
+- `/p/[token]` is always noindex. It is not indexed when the link is valid.
 
 ## 10. Map/search API behavior
 

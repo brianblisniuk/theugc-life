@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is d030cd0329c8b1e30afcdd14a72485174edcd9f5 (PR #61, D08, D086-D088 Proposed, migration 0052). E04 is PR #62 on cursor/e04-entitlement-inventory-3a73. Migration 0051_outside_free_allowance.sql fixes the contradictory outside Free counters (D056). D08 profile surfaces with no written tier stay UNDECIDED. D083-D085 are not used. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is dc5979eed799d1724eb36482eb0067d3e9f0fe55 (PR #62, E04). D09 is PR #63: migration 0053, D089–D091 Accepted. The share page, owner actions, and public read are in the E04 inventory as UNDECIDED. 0051 and 0052 are not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
-  "state": "AWAITING_AUDIT",
-  "last_recorded_main": "d030cd0329c8b1e30afcdd14a72485174edcd9f5",
-  "active_block": "E04 Pass/Pro entitlement inventory (migration 0051 outside Free counters; D08 surfaces included)",
-  "branch": "cursor/e04-entitlement-inventory-3a73",
-  "pr": 62,
+  "state": "AWAITING_CI",
+  "last_recorded_main": "dc5979eed799d1724eb36482eb0067d3e9f0fe55",
+  "active_block": "D09 creator profile share link (D089–D091 Accepted, migration 0053)",
+  "branch": "cursor/d09-creator-share-link-6270",
+  "pr": 63,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "d030cd0329c8b1e30afcdd14a72485174edcd9f5",
-    "verify": "unknown"
+    "ref": "dc5979eed799d1724eb36482eb0067d3e9f0fe55",
+    "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "E04 awaits re-audit after merging D08 (PR #61, d030cd0). D086-D088 stay Proposed. D082 stays Proposed. D077 stays Proposed. Verify must be green on this PR head before a merge decision. Do not merge."
+  "next_dependency": "PR #63 is D09. E04 is merged (PR #62, dc5979e). D089–D091 are Accepted. The share link has no written Free, Pass, or Pro tier and stays UNDECIDED. D086–D088 stay Proposed. D077 stays Proposed. Verify must be green on this PR head before a merge decision."
 }
