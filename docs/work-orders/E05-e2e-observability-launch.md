@@ -5,7 +5,7 @@
 **Branch:** `cursor/e05-e2e-observability-launch-f88c`  
 **PR:** #64  
 **Decisions:** D092, D093, D094 — Proposed. D089–D091 stay Accepted. D082 stays Proposed.  
-**Migration:** `0054_grant_handle_new_user_to_auth_admin.sql`. When `supabase_auth_admin` exists, it grants that role `USAGE` on `public` and `EXECUTE` on `handle_new_user()`. No new table and no new security-definer function.
+**Migration:** `0054_grant_handle_new_user_to_auth_admin.sql`. When `supabase_auth_admin` exists, it grants that role `USAGE` on `public` and `EXECUTE` on `handle_new_user()`. `0039` also gains a public `digest` wrapper, installed only when pgcrypto is not already in `public`. No new table and no new security-definer function. `0053` is not edited.
 
 One PR for the whole block, including this work order and the state files. Do not merge.
 
@@ -29,7 +29,7 @@ Tracker E05 row. PRD. D079–D091. `docs/PERMISSIONS.md`, `docs/ENTITLEMENTS_INV
 
 ## In scope
 
-The journey, the two-creator and anonymous checks, the revoked-token retry, the log helper, health, headers, the ACL and RLS checks, the client-bundle scan, and the launch checklist. Migration `0054` only grants the existing signup trigger to `supabase_auth_admin`.
+The journey, the two-creator and anonymous checks, the revoked-token retry, the log helper, health, headers, the ACL and RLS checks, the client-bundle scan, and the launch checklist. Migration `0054` only grants the existing signup trigger to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`.
 
 ## Out of scope
 

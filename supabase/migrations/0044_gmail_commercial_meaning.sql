@@ -893,6 +893,9 @@ as $$
     and m.normalized_thread_id = p_normalized_thread_id;
 $$;
 
+-- Unqualified digest() resolves in public. 0039 installs public.digest when
+-- hosted Supabase keeps pgcrypto in extensions. The test harness already has
+-- the extension in public, so this search_path works on both layouts.
 create or replace function private.gmail_commercial_input_digest(
   p_mail_account_id uuid,
   p_normalized_thread_id uuid,

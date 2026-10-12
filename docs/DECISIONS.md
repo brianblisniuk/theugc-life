@@ -3740,6 +3740,29 @@ migrations, Google OAuth verification and domain, a Maps key restricted to
 that domain, and Rebill. Each requires Brian’s approval. This decision
 does not grant that approval.
 
+### Hosted migration files that were never applied
+
+The hosted Supabase project has not had this repository's migrations
+applied. That image keeps pgcrypto in `extensions`. The test harness
+creates it in `public`. `0044` defines
+`private.gmail_commercial_input_digest` as language sql with
+`search_path = public, private, pg_temp` and calls unqualified `digest()`.
+That create fails on the hosted layout. `0039` and `0040` call the same
+unqualified `digest()` from functions whose pinned path also omits
+`extensions`. `0053` already schema-qualifies `digest` and
+`gen_random_bytes` for whichever of those two schemas holds them, and is
+not edited.
+
+`0039` now installs `public.digest(text, text)` and
+`public.digest(bytea, text)` only when those functions are not already in
+`public`. The wrappers are security invoker, `search_path = ''`, and call
+`extensions.digest`. Execute is revoked from public, anon, and
+authenticated, and granted to `service_role`. Editing `0039`, and the
+comments in `0040` and `0044`, is safe because no hosted database has
+applied these files. This block does not run them against production. The
+end-to-end job applies the chain with the local Supabase image and leaves
+pgcrypto in `extensions`.
+
 ### What this decision does not do
 
 - No production deploy.

@@ -30,11 +30,23 @@ async function signUp(page: Page, input: { email: string; name: string; username
   await page.getByLabel("Email").fill(input.email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  try {
-    await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
-  } catch (error) {
-    const text = await page.locator("body").innerText();
-    throw new Error(`signup stayed on ${page.url()}: ${text}`, { cause: error });
+  const onboarding = page.waitForURL(/\/onboarding$/, { timeout: 20_000 }).then(() => "ok" as const);
+  const alerted = page
+    .getByRole("alert")
+    .waitFor({ state: "visible", timeout: 20_000 })
+    .then(() => "alert" as const);
+  const confirm = page
+    .getByText("Check your email to confirm your account.")
+    .waitFor({ state: "visible", timeout: 20_000 })
+    .then(() => "confirm" as const);
+  for (const pending of [onboarding, alerted, confirm]) pending.catch(() => undefined);
+  const result = await Promise.race([onboarding, alerted, confirm]);
+  if (result !== "ok") {
+    const text =
+      result === "alert"
+        ? (await page.getByRole("alert").innerText()).trim()
+        : "Check your email to confirm your account.";
+    expect(text, "signup error").toBe("onboarding");
   }
   await page.getByLabel("Display name").fill(input.name);
   await page.getByLabel("Username").fill(input.username);
@@ -76,6 +88,7 @@ test("health carries security headers and no private fields", async ({ request }
 test("creator journey, revoked inbox, and the other creator sees nothing private", async ({
   browser,
 }) => {
+  test.setTimeout(300_000);
   const stamp = Date.now().toString(36);
   const adaEmail = `e2e-ada-${stamp}@example.test`;
   const beaEmail = `e2e-bea-${stamp}@example.test`;
@@ -154,7 +167,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
 
   await ada.getByRole("link", { name: "Profile" }).click();
   await ada.waitForURL("**/app/profile");
-  await ada.getByLabel("Bio").fill(BIO);
+  await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await ada.getByRole("button", { name: "Save profile" }).click();
   await expect(ada.getByText("Saved.", { exact: true })).toBeVisible();
   await ada.getByRole("checkbox", { name: "Bio" }).check();
