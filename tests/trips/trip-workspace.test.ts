@@ -291,31 +291,35 @@ d("D01 — entitlement exemption and expiry retention", () => {
     }
   });
 
-  it("a destination pass is exempt inside the entitled hierarchy and not outside", async () => {
+  it("a destination pass is exempt inside the entitled hierarchy and keeps one Free trip outside", async () => {
     expect((await create(U.dest, DEST.parent)).result).toBe("created");
     expect((await create(U.dest, DEST.child, "upcoming")).result).toBe("created");
-    // The outside create counts every active trip, matching save_hotel_to_pipeline.
+    // Covered trips do not consume the outside Free allowance (D056).
     const outside = await create(U.dest, DEST.outside, "planning");
-    expect(outside.result).toBe("limit_reached");
+    expect(outside.result).toBe("created");
+    const secondOutside = await create(U.dest, DEST.outside, "active");
+    expect(secondOutside.result).toBe("limit_reached");
+    expect(secondOutside.limit).toBe(FREE_LIMITS.activeTrips);
+    expect(secondOutside.active_count).toBe(1);
   });
 
-  it("refuses to move an extra counting trip outside the destination pass", async () => {
+  it("moves one inside trip outside on the Free allowance and refuses a second", async () => {
     const first = await create(U.dest, DEST.parent, "planning");
     const second = await create(U.dest, DEST.child, "active");
     expect(first.result).toBe("created");
     expect(second.result).toBe("created");
 
     const moved = await update(U.dest, String(first.trip_id), DEST.outside, "planning");
-    expect(moved.result).toBe("limit_reached");
-    expect(moved.limit).toBe(FREE_LIMITS.activeTrips);
+    expect(moved.result).toBe("updated");
     const stayed = await adminQuery<{ destination_id: string; status: string }>(
       "select destination_id, status from public.trips where id = $1",
       [first.trip_id],
     );
-    expect(stayed[0]).toMatchObject({ destination_id: DEST.parent, status: "planning" });
+    expect(stayed[0]).toMatchObject({ destination_id: DEST.outside, status: "planning" });
 
     const alsoMoved = await update(U.dest, String(second.trip_id), DEST.outside, "upcoming");
     expect(alsoMoved.result).toBe("limit_reached");
+    expect(alsoMoved.limit).toBe(FREE_LIMITS.activeTrips);
     const secondRow = await adminQuery<{ destination_id: string }>(
       "select destination_id from public.trips where id = $1",
       [second.trip_id],
@@ -335,17 +339,22 @@ d("D01 — entitlement exemption and expiry retention", () => {
     expect(row[0]!.destination_id).toBe(DEST.outside);
   });
 
-  it("still re-checks when a completed trip is reactivated onto an outside destination", async () => {
+  it("re-checks reactivation onto an outside destination against outside trips only", async () => {
     const current = await create(U.dest, DEST.parent, "active");
     const history = await create(U.dest, DEST.child, "completed");
     expect(current.result).toBe("created");
     expect(history.result).toBe("created");
 
     const reactivated = await update(U.dest, String(history.trip_id), DEST.outside, "planning");
-    expect(reactivated.result).toBe("limit_reached");
+    expect(reactivated.result).toBe("updated");
+
+    const older = await create(U.dest, DEST.child, "completed");
+    expect(older.result).toBe("created");
+    const blocked = await update(U.dest, String(older.trip_id), DEST.outside, "planning");
+    expect(blocked.result).toBe("limit_reached");
     const row = await adminQuery<{ destination_id: string; status: string }>(
       "select destination_id, status from public.trips where id = $1",
-      [history.trip_id],
+      [older.trip_id],
     );
     expect(row[0]).toMatchObject({ destination_id: DEST.child, status: "completed" });
   });

@@ -4,7 +4,7 @@
 **Base:** `main` `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60).  
 **Branch:** `cursor/e04-entitlement-inventory-3a73`  
 **PR:** #62  
-**Migration:** none. `0051` is not taken.  
+**Migration:** `0051_outside_free_allowance.sql`. Merged migrations are not edited.  
 **Decisions:** D083–D085 are not used. No written tier was missing in a way this block had to close. Undecided features are questions, not proposed tiers.
 
 ## Question
@@ -21,7 +21,7 @@ Is there one canonical inventory that maps every existing module, route, and ser
 
 - No prices, no Rebill, no new limit, no new tier, no UI redesign.
 - No new scope, provider, or secret. No model call. No production deploy or production database write.
-- No change to D072. No migration.
+- No change to D072. No new tier. Merged migrations `0019`, `0021`, and `0046` are not edited.
 
 ## Invariants
 
@@ -29,7 +29,7 @@ Authentication is not authorization. Premium reads and workspace limits are enfo
 
 ## Contradictory gates fixed
 
-None.
+`0051_outside_free_allowance.sql`. Outside-coverage Free counters for save, engage, and active trips counted in-destination rows, so a Destination Pass removed the outside Free allowance (D056, PRD §5.2, PERMISSIONS.md §8). They now count only outside-coverage rows.
 
 ## Acceptance
 

@@ -66,6 +66,7 @@ let creators: Record<keyof typeof U, string>;
 let baliHotels: string[] = [];
 let ibizaHotel = "";
 let outsideHotel = "";
+let extraOutside: string[] = [];
 let otherPipeline = "";
 let otherTrip = "";
 let otherMail = "";
@@ -381,7 +382,25 @@ d("E04 entitlement inventory enforcement", () => {
       expect(await save(U.free, baliHotels[savedLimit]!)).toBe("limit_reached");
       expect(await save(U.expired, baliHotels[savedLimit]!)).toBe("limit_reached");
       expect(await save(U.pass, baliHotels[savedLimit]!)).toMatch(/^[0-9a-f-]{36}$/);
-      expect(await save(U.pass, outsideHotel)).toBe("limit_reached");
+      // In-destination open rows do not consume the outside Free allowance (D056).
+      expect(await save(U.pass, outsideHotel)).toMatch(/^[0-9a-f-]{36}$/);
+      extraOutside = Array.from(
+        { length: savedLimit - 2 },
+        (_, i) => `e4b00000-0000-4000-8000-${(i + 1).toString().padStart(12, "0")}`,
+      );
+      for (const [index, id] of extraOutside.entries()) {
+        await adminQuery(
+          `insert into public.hotels (id, name, slug, destination_id) values ($1, $2, $3, $4)`,
+          [id, `E04 outside ${index}`, `e04-outside-${index}`, DEST.ibiza],
+        );
+        expect(await save(U.pass, id), `outside ${index}`).toMatch(/^[0-9a-f-]{36}$/);
+      }
+      const overflowOutside = "e4b00000-0000-4000-8000-000000000099";
+      await adminQuery(
+        `insert into public.hotels (id, name, slug, destination_id) values ($1, $2, $3, $4)`,
+        [overflowOutside, "E04 outside overflow", "e04-outside-overflow", DEST.ibiza],
+      );
+      expect(await save(U.pass, overflowOutside)).toBe("limit_reached");
       expect(await save(U.pro, baliHotels[savedLimit]!)).toMatch(/^[0-9a-f-]{36}$/);
       expect(await save(U.pro, ibizaHotel)).toMatch(/^[0-9a-f-]{36}$/);
       return;
@@ -415,12 +434,25 @@ d("E04 entitlement inventory enforcement", () => {
         "engaged_limit_reached",
       );
 
-      const passItems = await idsFor(U.pass, [...baliHotels, ibizaHotel]);
+      const passItems = await idsFor(U.pass, [
+        ...baliHotels,
+        ibizaHotel,
+        outsideHotel,
+        ...extraOutside,
+      ]);
       for (let i = 0; i < engagedLimit; i++) {
         expect(await engage(U.pass, passItems.get(baliHotels[i]!)!)).toBe("applied");
       }
-      expect(await engage(U.pass, passItems.get(ibizaHotel)!)).toBe("engaged_limit_reached");
+      // In-destination engagements do not consume the outside Free allowance (D056).
+      expect(await engage(U.pass, passItems.get(ibizaHotel)!)).toBe("applied");
       expect(await engage(U.pass, passItems.get(baliHotels[engagedLimit]!)!)).toBe("applied");
+      const moreOutside = [outsideHotel, ...extraOutside];
+      for (let i = 0; i < engagedLimit - 1; i++) {
+        expect(await engage(U.pass, passItems.get(moreOutside[i]!)!)).toBe("applied");
+      }
+      expect(await engage(U.pass, passItems.get(moreOutside[engagedLimit - 1]!)!)).toBe(
+        "engaged_limit_reached",
+      );
 
       const proItems = await idsFor(U.pro, baliHotels);
       for (let i = 0; i <= engagedLimit; i++) {
@@ -434,8 +466,9 @@ d("E04 entitlement inventory enforcement", () => {
       expect(await createTrip(U.free, DEST.ibiza)).toBe("limit_reached");
       expect(await createTrip(U.expired, DEST.bali)).toBe("created");
       expect(await createTrip(U.expired, DEST.ibiza)).toBe("limit_reached");
-      expect(await createTrip(U.pass, DEST.ibiza)).toBe("created");
+      // A covered trip is created first, so it cannot be mistaken for the Free slot.
       expect(await createTrip(U.pass, DEST.bali)).toBe("created");
+      expect(await createTrip(U.pass, DEST.ibiza)).toBe("created");
       expect(await createTrip(U.pass, DEST.ibiza)).toBe("limit_reached");
       expect(await createTrip(U.pro, DEST.bali)).toBe("created");
       expect(await createTrip(U.pro, DEST.ibiza)).toBe("created");

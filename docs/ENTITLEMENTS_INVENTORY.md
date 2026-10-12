@@ -8,7 +8,7 @@ Access is an `access_entitlements` row (D007). A purchase, a subscription, or a 
 
 A failed entitlement read is an error, not Free and not a denial (D059).
 
-No migration. `0051` is not taken. D083–D085 are not used: assigning a tier that is not already written would invent one.
+Migration `0051_outside_free_allowance.sql` corrects the outside Free counters (D056). D083–D085 are not used: assigning a tier that is not already written would invent one.
 
 ## Rules already written
 
@@ -16,9 +16,9 @@ No migration. `0051` is not taken. D083–D085 are not used: assigning a tier th
 |---|---|---|---|
 | Worldwide discovery, hotel basics, map, public intelligence | Yes | Yes | Yes |
 | Premium intelligence and premium contacts | No | Entitled destination, including descendants | Worldwide |
-| Open relationships | 10 | Unlimited inside the destination; Free limit outside | Unlimited |
-| Engaged pipeline | 5 | Same exemption | Unlimited |
-| Active trips | 1 | Exempt when the trip destination is covered | Unlimited |
+| Open relationships | 10 | Unlimited inside the destination; outside, only outside-coverage rows count toward 10 | Unlimited |
+| Engaged pipeline | 5 | Same exemption; in-destination rows do not consume the outside allowance | Unlimited |
+| Active trips | 1 | Exempt when the trip destination is covered; covered trips do not consume the outside allowance | Unlimited |
 | Own pipeline, trips, inbox, collaborations, compensation, profile | Owner, including after expiry | Owner | Owner. Does not reach another creator |
 
 Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056, D058, D078, D079, D080, D081; PERMISSIONS.md §7, §8, §9, §11, §12.
@@ -34,10 +34,10 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `hotel.public_intelligence` | Intelligence | all tiers, including anonymous |
 | `hotel.premium_intelligence` | Intelligence | Pass inside destination, Pro worldwide |
 | `hotel.premium_contacts` | Hotel Detail | same helper as premium intelligence |
-| `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; Pro exempt |
-| `pipeline.engage` | Pipeline | Free limit 5; same exemption |
+| `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; outside counts only outside-coverage rows; Pro exempt |
+| `pipeline.engage` | Pipeline | Free limit 5; same outside-coverage count |
 | `pipeline.own` | Pipeline | owner, every tier |
-| `trips.active` | Trips | Free limit 1; Pass exempt when the destination is covered |
+| `trips.active` | Trips | Free limit 1; Pass exempt when covered; outside counts only outside-coverage trips |
 | `trips.own` | Trips | owner, including after expiry |
 | `inbox.own` | Inbox | owner. Not a separate plan |
 | `collaborations.lifecycle` | Collaborations | owner, on a relationship they already have |
@@ -65,7 +65,7 @@ Own-row surfaces stay on RLS. A Pro entitlement does not select another creator'
 
 ## Contradictory gates fixed
 
-None. No existing gate contradicted a written tier rule, so this block does not change who can read or write a row.
+Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a save, an engagement, or an active trip was outside coverage, `save_hotel_to_pipeline`, `transition_pipeline_item`, `create_trip`, and `update_trip` counted in-destination rows toward the Free allowance. A Destination Pass holder who used the in-destination exemption lost the outside Free allowance a Free account would keep. That contradicted D056, PRD §5.2, and PERMISSIONS.md §8. Those counters now count only outside-coverage rows. Pro stays exempt worldwide. Missing, expired, revoked, pending, and not-yet-started rows stay Free. UNDECIDED features are unchanged.
 
 ## Questions for Brian
 

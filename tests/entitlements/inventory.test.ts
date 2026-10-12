@@ -101,7 +101,8 @@ describe("entitlement inventory", () => {
     const doc = readFileSync(path.join(ROOT, "docs/ENTITLEMENTS_INVENTORY.md"), "utf8");
     expect(doc).toContain("UNDECIDED");
     expect(doc).toContain("Contradictory gates fixed");
-    expect(doc).toContain("None.");
+    expect(doc).toContain("0051_outside_free_allowance.sql");
+    expect(doc).toContain("outside-coverage rows");
     for (const entry of INVENTORY) expect(doc).toContain(entry.id);
     const questions = questionsForBrian();
     expect(questions.length).toBeGreaterThan(0);

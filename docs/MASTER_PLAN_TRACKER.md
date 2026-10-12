@@ -404,7 +404,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | MAP | **DONE** — PR #57, merge `023a354c8592411e1ac85c818324589993f358a6`. Google Maps JavaScript API (D079) on Discover (the current filtered page) and Hotel Detail (one pin). Key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. A missing key renders no map and no error. No migration. | Fill the E01 map slot | Published hotels only; no private creator data is sent to Google |
 | E02 | **DONE** — PR #59, merge `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted (Brian, 12 Oct 2026). Primary navigation stays the PRD §6 five items. Inbox and Collaborations are pipeline surfaces. | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | **DONE — PR #60**. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. The merge SHA is recorded by the next block. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
-| E04 | **IN PR #62** — branch `cursor/e04-entitlement-inventory-3a73`. No migration. `0051` is not taken. D083–D085 are not used. One inventory maps existing modules to written Free / Pass / Pro rules. Features with no written tier stay UNDECIDED. No contradictory gate was found. Do not merge. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
+| E04 | **IN PR #62** — branch `cursor/e04-entitlement-inventory-3a73`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D083–D085 are not used. One inventory maps existing modules to written Free / Pass / Pro rules. Features with no written tier stay UNDECIDED. Awaiting re-audit. Do not merge. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
 | E05 | PLANNED | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 
 **Base rounds:** 5  
@@ -677,9 +677,10 @@ migration. D082 is Proposed and is not Accepted. Home derives the first useful
 flow from a connected Gmail mailbox, a trip, and a saved hotel, inside that
 shell. `0051` was not taken by E03.
 
-**E04** is PR #62, branch `cursor/e04-entitlement-inventory-3a73`. No
-migration. Access stays on entitlement rows. Undecided features are questions,
-not new tiers. Do not merge.
+**E04** is PR #62, branch `cursor/e04-entitlement-inventory-3a73`. Migration
+`0051_outside_free_allowance.sql` makes the outside Free counters count only
+outside-coverage rows (D056). Access stays on entitlement rows. Undecided
+features are questions, not new tiers. Awaiting re-audit. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

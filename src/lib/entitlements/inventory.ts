@@ -202,7 +202,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "pipeline.save",
     module: "Pipeline",
     summary:
-      "Free may hold 10 open hotel relationships. A Pass is exempt inside the entitled destination. Pro is exempt worldwide. Closed cycles do not count.",
+      "Free may hold 10 open hotel relationships. A Pass is exempt inside the entitled destination, and those rows do not consume the outside Free allowance. Pro is exempt worldwide. Closed cycles do not count.",
     routes: ["/app/pipeline", "/app/hotels/[id]"],
     sourceFiles: ["src/lib/pipeline/actions.ts", "src/lib/pipeline/queries.ts"],
     serverActions: ["saveHotelAction"],
@@ -216,7 +216,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "pipeline.engage",
     module: "Pipeline",
     summary:
-      "Free may advance 5 relationships past saved. The same Pass and Pro exemption as save applies. Saved does not consume this allowance.",
+      "Free may advance 5 relationships past saved. In-destination Pass rows do not consume the outside Free allowance. Pro is exempt worldwide. Saved does not consume this allowance.",
     routes: ["/app/pipeline", "/app/hotels/[id]"],
     sourceFiles: ["src/lib/pipeline/actions.ts", "src/lib/pipeline/queries.ts"],
     serverActions: ["transitionPipelineItemAction", "progressPipelineDealAction"],
@@ -248,7 +248,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "trips.active",
     module: "Trips",
     summary:
-      "Free may keep 1 active trip. A Pass is exempt when the trip's destination is covered. Pro is exempt worldwide. Outside the Pass, the Free allowance applies.",
+      "Free may keep 1 active trip. A Pass is exempt when the trip's destination is covered, and covered trips do not consume the outside Free allowance. Pro is exempt worldwide.",
     routes: ["/app/trips", "/app/trips/[id]"],
     sourceFiles: ["src/lib/trips/actions.ts", "src/lib/trips/queries.ts"],
     serverActions: ["createTripAction", "updateTripAction"],
