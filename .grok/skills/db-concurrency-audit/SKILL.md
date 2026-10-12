@@ -1,6 +1,7 @@
 # Skill: db-concurrency-audit
 
 Review migrations and RPCs for:
+
 - Idempotency
 - Transaction boundaries
 - Stale writes / lost updates

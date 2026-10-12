@@ -70,7 +70,7 @@ LIVE STATE (GitHub main + open PRs + tracker)
 Do not notify for commits, intermediate CI, retries, subagent completion, or reversible technical choices.
 
 ## Automatic actions (no owner approval)
-git fetch/checkout/worktree, npm, tests, Docker/Postgres harness, lint, typecheck, build, commits, push to feature branches, PR create/update/comment, bug investigation, CI fixes, same-PR corrections, docs and tracker updates (on feature branches via PR only), skill/workflow/hook creation (via PR).
+git fetch/checkout/worktree, npm, tests, Docker/Postgres harness, lint, typecheck, build, commits, push to feature branches, PR create/update/comment, bug investigation, CI fixes, same-PR corrections, docs and tracker updates (on feature branches via PR only, riding in the block's closing PR), skill/workflow/hook creation (via PR).
 
 ## Actions requiring owner approval
 git push origin main, force push, PR merge, production DB mutation, real email send, charge/refund, pricing change, product semantic change, new provider that receives private data, reduction of a security/privacy invariant, secret rotation/destruction, production deploy.
@@ -96,8 +96,21 @@ If this conversation disappears, a new Orchestrator session must:
 3. Verify live GitHub main.
 4. Resume from the recorded frontier.
 
-## Enforcement reality (as of 2026-10-12)
-- **No direct commits to `main`.** All changes, including docs, tracker and `docs/AUTOPILOT_STATE.md` updates, go through a feature branch and PR.
-- `.grok/config.toml` permission flags are **advisory only**. No Grok Build CLI runs in the canonical workspace, and nothing enforces them.
-- `.grok/workflows/` and `.grok/hooks/` **do not exist yet**. Only `.grok/skills/` and `.grok/config.toml` exist.
-- Real enforcement requires a **GitHub ruleset/branch protection on `main`** (require PR + CI, block force push). This is pending owner approval. `main` is currently unprotected.
+## Enforcement and runtime reality (as of 2026-10-12)
+- **Enforcement is GitHub ruleset `main-protection` (id 24915605, active)** on the default branch:
+  - a PR is required (0 approvals);
+  - required status check `verify`;
+  - `non_fast_forward` (no force push);
+  - no deletion;
+  - no bypass actors.
+
+  This is the only hard guard.
+- **No direct commits to `main`.** Every change goes through a feature branch and PR, and the ruleset enforces it.
+- **Runtime:** agents are Grok Bot agents (the Orchestrator plus subagents) running on the shared Grok Bot box, in `/workspace/theugc-life`. They use `gh` authenticated as the owner (`brianblisniuk`). Because they act as the owner, owner approval for merges and other irreversible actions is obtained in chat, and also through Grok Bot's per-action approval cards. A blocked action is never routed around.
+- **`.grok/config.toml` flags are advisory only.** No Grok Build CLI runs here.
+- **`.grok/skills/`** (18 skills) and **`.grok/workflows/`** (`pr-cycle`, `security-review`, `large-pr-review`) are **markdown runbooks** that agents follow. They are not a native engine.
+- **`.grok/hooks/` does not exist.**
+- **Audits are recorded as PR comments**, using the `AUDIT VERDICT` format in `.grok/workflows/pr-cycle.md`. Each comment is tied to an exact head SHA and is void once the head moves.
+- **State:** `.grok/autopilot-state.json` (machine-readable, validated in CI by `npm run autopilot:validate`) and `docs/AUTOPILOT_STATE.md` (prose). **Live GitHub outranks both.**
+- **State-update policy:** state and tracker updates **ride in each block's closing PR**. There are no standalone state-only PRs, and no direct commits (`.grok/skills/docs-state-sync`).
+- **DB test harness:** local Postgres on the box (`TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres`); CI uses a postgres:16 service.

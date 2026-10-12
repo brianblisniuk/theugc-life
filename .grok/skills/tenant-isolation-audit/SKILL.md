@@ -3,6 +3,7 @@
 Verify authentication ≠ authorization for every private multi-user resource touched.
 
 Required attack matrix (User A vs User B):
+
 - Direct ID read
 - Enumeration / list
 - Update
