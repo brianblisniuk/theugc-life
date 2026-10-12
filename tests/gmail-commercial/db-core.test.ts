@@ -808,7 +808,237 @@ d("B07 rules commit on real Postgres", () => {
     expect(Number(left.rows[0].n)).toBe(0);
     await retire(client, fixture.mailAccountId, requestId);
   });
+
+  it("rejects agreement_observed when a one-sided accept only claims the booking flag", async () => {
+    const oneSided = await interpretedThread(
+      client,
+      "b07-onesided-flag",
+      "Yes, we accept your proposal.",
+    );
+    const forced = await commitClaimedAgreement(client, oneSided, true);
+    expect(forced.error?.code).toBe("23514");
+    expect(forced.error?.message).toMatch(/agreement_observed/);
+    expect(await attemptCount(client, oneSided.mailAccountId)).toBe(0);
+    const stored = await client.query(
+      `select count(*)::int as n from private.gmail_commercial_thread_attempts
+        where mail_account_id = $1`,
+      [oneSided.mailAccountId],
+    );
+    expect(stored.rows[0]!.n).toBe(0);
+  });
+
+  it("accepts agreement_observed from stored booking text, not the caller flag", async () => {
+    const booked = await interpretedThread(
+      client,
+      "b07-booked-text",
+      "Perfect, your stay is confirmed for November 10–12.",
+    );
+    const forced = await commitClaimedAgreement(client, booked, false);
+    expect(forced.error).toBeNull();
+    expect((forced.data as { result: string }).result).toBe("ok");
+    const state = await client.query<{ commercial_state: string }>(
+      `select a.commercial_state
+         from private.gmail_commercial_thread_current c
+         join private.gmail_commercial_thread_attempts a on a.id = c.current_attempt_id
+        where c.mail_account_id = $1`,
+      [booked.mailAccountId],
+    );
+    expect(state.rows[0]!.commercial_state).toBe("agreement_observed");
+  });
+
+  it("does not treat a quoted booking phrase as both-party confirmation", async () => {
+    const quoted = await interpretedThread(
+      client,
+      "b07-quoted-booking",
+      [
+        "Yes, we accept your proposal.",
+        "",
+        "On Monday, Alex wrote:",
+        "> your stay is confirmed for November 10-12.",
+      ].join("\n"),
+    );
+    const forced = await commitClaimedAgreement(client, quoted, true);
+    expect(forced.error?.code).toBe("23514");
+    expect(forced.error?.message).toMatch(/agreement_observed/);
+    expect(await attemptCount(client, quoted.mailAccountId)).toBe(0);
+  });
+
+  it("marks the creator read stale when B06 classification changes in place", async () => {
+    const fixture = await interpretedThread(client, "b07-b06-class", ENGAGED);
+    const deps = commercialDeps(client);
+    expect(
+      (
+        await interpretOneThread(deps, {
+          userId: fixture.userId,
+          mailAccountId: fixture.mailAccountId,
+          normalizedThreadId: fixture.normalizedThreadId,
+        })
+      ).result,
+    ).toBe("ok");
+    const decision = await asCreator(client, fixture.userId, () =>
+      deps.db.rpc("gmail_commercial_record_creator_decision", {
+        p_mail_account_id: fixture.mailAccountId,
+        p_axis: "business_outcome",
+        p_action: "set",
+        p_provider_message_id: null,
+        p_provider_thread_id: fixture.providerThreadId,
+        p_reply_nature: null,
+        p_disposition: null,
+        p_signals: null,
+        p_business_outcome: "won",
+        p_lost_reason: null,
+        p_compensation_structure: null,
+      }),
+    );
+    expect((decision.data as { result: string }).result).toBe("ok");
+    const before = await attemptCount(client, fixture.mailAccountId);
+
+    await client.query(
+      `update private.gmail_reply_message_observations
+          set response_class = 'automated_response'
+        where mail_account_id = $1 and provider_message_id = $2`,
+      [fixture.mailAccountId, fixture.replyId],
+    );
+
+    const listed = await asCreator(client, fixture.userId, () =>
+      deps.db.rpc("gmail_commercial_list_threads", {
+        p_mail_account_id: fixture.mailAccountId,
+      }),
+    );
+    const listBody = listed.data as {
+      result: string;
+      threads: Array<{ commercial_state: string | null; stale: boolean }>;
+    };
+    expect(listBody.result).toBe("ok");
+    expect(listBody.threads).toHaveLength(1);
+    expect(listBody.threads[0]!.stale).toBe(true);
+    expect(listBody.threads[0]!.commercial_state).toBeNull();
+
+    const read = await asCreator(client, fixture.userId, () =>
+      deps.db.rpc("gmail_commercial_read_thread", {
+        p_mail_account_id: fixture.mailAccountId,
+        p_provider_thread_id: fixture.providerThreadId,
+      }),
+    );
+    const body = read.data as {
+      result: string;
+      machine: { commercial_state: string | null; stale: boolean };
+      messages: Array<{ disposition: string | null; signals: string[] | null; stale: boolean }>;
+      human_thread: Array<{ business_outcome: string | null }>;
+    };
+    expect(body.result).toBe("ok");
+    expect(body.machine.stale).toBe(true);
+    expect(body.machine.commercial_state).toBeNull();
+    expect(body.messages.every((message) => message.disposition === null)).toBe(true);
+    expect(body.messages.every((message) => message.stale)).toBe(true);
+    expect(body.human_thread.some((row) => row.business_outcome === "won")).toBe(true);
+
+    const flags = await client.query<{ stale: boolean; stale_reason: string }>(
+      `select stale, stale_reason from private.gmail_commercial_thread_current
+        where mail_account_id = $1`,
+      [fixture.mailAccountId],
+    );
+    expect(flags.rows[0]).toEqual({ stale: true, stale_reason: "b06_fingerprint" });
+    const history = await client.query<{ disposition: string; b06_response_class: string }>(
+      `select disposition, b06_response_class
+         from private.gmail_commercial_message_attempts
+        where mail_account_id = $1 and provider_message_id = $2`,
+      [fixture.mailAccountId, fixture.replyId],
+    );
+    expect(history.rows[0]).toEqual({
+      disposition: "positive",
+      b06_response_class: "qualifying_human_reply",
+    });
+    expect(await attemptCount(client, fixture.mailAccountId)).toBe(before);
+    const humans = await client.query<{ n: number }>(
+      `select count(*)::int as n from private.gmail_commercial_creator_decision_events
+        where mail_account_id = $1`,
+      [fixture.mailAccountId],
+    );
+    expect(humans.rows[0]!.n).toBe(1);
+  });
+
+  it("marks the creator read stale when the B06 chronology version changes in place", async () => {
+    const fixture = await interpretedThread(client, "b07-b06-version", ENGAGED);
+    const deps = commercialDeps(client);
+    expect(
+      (
+        await interpretOneThread(deps, {
+          userId: fixture.userId,
+          mailAccountId: fixture.mailAccountId,
+          normalizedThreadId: fixture.normalizedThreadId,
+        })
+      ).result,
+    ).toBe("ok");
+
+    await client.query(
+      `update private.gmail_reply_message_observations
+          set relation_rule_version = 'gmail_reply_relation_drift'
+        where mail_account_id = $1 and provider_message_id = $2`,
+      [fixture.mailAccountId, fixture.replyId],
+    );
+
+    const read = await asCreator(client, fixture.userId, () =>
+      deps.db.rpc("gmail_commercial_read_thread", {
+        p_mail_account_id: fixture.mailAccountId,
+        p_provider_thread_id: fixture.providerThreadId,
+      }),
+    );
+    const body = read.data as {
+      machine: { commercial_state: string | null; stale: boolean };
+      messages: Array<{ disposition: string | null }>;
+    };
+    expect(body.machine.stale).toBe(true);
+    expect(body.machine.commercial_state).toBeNull();
+    expect(body.messages.every((message) => message.disposition === null)).toBe(true);
+    const messageFlag = await client.query<{ stale: boolean; stale_reason: string }>(
+      `select stale, stale_reason from private.gmail_commercial_message_current
+        where mail_account_id = $1 and provider_message_id = $2`,
+      [fixture.mailAccountId, fixture.replyId],
+    );
+    expect(messageFlag.rows[0]).toEqual({ stale: true, stale_reason: "b06_fingerprint" });
+  });
 });
+
+async function commitClaimedAgreement(
+  db: Client,
+  fixture: Awaited<ReturnType<typeof interpretedThread>>,
+  explicitBookingConfirmation: boolean,
+) {
+  const deps = commercialDeps(db);
+  const evidence = await deps.db.rpc("gmail_commercial_get_thread_evidence", {
+    p_user_id: fixture.userId,
+    p_mail_account_id: fixture.mailAccountId,
+    p_normalized_thread_id: fixture.normalizedThreadId,
+    p_schema_version: COMMERCIAL_SCHEMA_VERSION,
+    p_transform_version: COMMERCIAL_TRANSFORM_VERSION,
+    p_rule_version: COMMERCIAL_RULE_VERSION,
+  });
+  const digest = (evidence.data as { input_digest: string }).input_digest;
+  return deps.db.rpc("gmail_commercial_commit_interpretation", {
+    p_user_id: fixture.userId,
+    p_mail_account_id: fixture.mailAccountId,
+    p_normalized_thread_id: fixture.normalizedThreadId,
+    p_schema_version: COMMERCIAL_SCHEMA_VERSION,
+    p_transform_version: COMMERCIAL_TRANSFORM_VERSION,
+    p_rule_version: COMMERCIAL_RULE_VERSION,
+    p_expected_input_digest: digest,
+    p_messages: [
+      {
+        provider_message_id: fixture.replyId,
+        disposition: "positive",
+        signals: ["agreement"],
+        evidence_strength: "strong",
+        explicit_booking_confirmation: explicitBookingConfirmation,
+      },
+    ],
+    p_thread: {
+      commercial_state: "agreement_observed",
+      compensation_structure: "unknown",
+      evidence_strength: "strong",
+    },
+  });
+}
 
 async function retire(client: Client, mailAccountId: string, requestId: string): Promise<void> {
   await client.query("begin");
