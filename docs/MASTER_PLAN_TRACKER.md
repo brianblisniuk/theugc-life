@@ -326,7 +326,7 @@ contract, and D076 (open PR #53) does not define it either.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | **MERGED (docs only)** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. D077 stays Proposed and is not accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C01 | **MERGED, STILL PROPOSED** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. Docs only. D077 is Proposed and is not Accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
 | C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
 | C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
 | C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
@@ -366,7 +366,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
-| D07 | **DRAFT** — PR #56, migration `0050`. Not this block and not merged. | collaboration workspace + deliverables over existing lifecycle core | won deal flows through execution/completion without external spreadsheet |
+| D07 | **AWAITING AUDIT** — PR #56, branch `feat/d07-deliverables-compensation`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Rebased onto main `ab05074` (E01). Records only: no charge. Prior PASS was `984171a`. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
@@ -400,7 +400,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| E01 | **AWAITING AUDIT** — PR #55, branch `feat/e01-discover-hotel-detail`. Discover + Hotel Detail over published canonical hotels. Map provider is not decided; the surface keeps an empty slot and does not call a tile service. No migration. B08 PR #53 holds 0047 and 0048. D07 is draft PR #56 and holds 0050. | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
+| E01 | **DONE** — PR #55, merge `ab0507461b4b47b21112dd07589b4b8a88d3efb3`. Discover + Hotel Detail over published canonical hotels. Map provider is not decided; the surface keeps an empty slot and does not call a tile service. No migration. | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
 | E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | PLANNED | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
@@ -650,17 +650,26 @@ the bound B06 classification or chronology fingerprint has changed in place.
 
 **C01 (PR #54) is merged**, as merge commit
 `989e7f020f07362113b3e9b00fd9950293808f10` into `main`. Docs only:
-`docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. D077 stays Proposed and is not
-accepted. No migration and no runtime.
+`docs/C01_INTELLIGENCE_FACT_CONTRACT.md`. D077 remains Proposed. It is not
+Accepted, and this block does not implement it.
 
-The open implementation block is:
+**E01 (PR #55) is merged**, as merge commit
+`ab0507461b4b47b21112dd07589b4b8a88d3efb3` into `main`. Discover and Hotel
+Detail over published canonical hotels. Map provider is not decided; the
+surface keeps an empty slot and does not call a tile service. No migration.
 
-> **E01 — Discover + Hotel Detail, map deferred.** PR #55, branch
-> `feat/e01-discover-hotel-detail`. No migration. Awaiting audit. Do not merge.
+The open implementation block on this branch is:
 
-B08 incremental sync is a separate open pull request (#53, D076) and holds
-migrations 0047 and 0048. D07 is draft PR #56 and holds migration 0050. This
-block adds no migration. Pilot KPIs remain an owner question (D077). This PR
+> **D07 — collaboration deliverables and agreed compensation (D078, Accepted).
+> Open as PR #56 on `feat/d07-deliverables-compensation`, now containing
+> main `ab05074`. Migration `0050_collaboration_deliverables_compensation.sql`.
+> Compensation is strategic data used to value each piece of content.
+> Records only. A prior audit passed `984171a` and does not cover this head.
+> Do not merge from automation.**
+
+B08 incremental sync is a separate open pull request (#53, D076, migrations
+`0047` and `0048`) and is not this block. E01 did not take `0049`; that
+number is still unused. Pilot KPIs remain an owner question (D077). This PR
 does not change the B08 tracker row.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking

@@ -3043,3 +3043,108 @@ are not decided. D012 and D058 continue to govern only the current projections.
    in the tracker is a planning hypothesis, not an accepted KPI contract.
 
 Full proposal: `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`.
+
+## D078 — Agreed compensation values each deliverable on a collaboration (D07)
+
+Status: **Accepted** — Brian, 12 October 2026, option B.
+Compensation is strategic data intelligence used to value each piece of
+content. It is a creator record. It is not a charge.
+
+Numbering: D076 is reserved by open PR #53 (B08). D077 is C01, merged on
+`main` `989e7f020f07362113b3e9b00fd9950293808f10`, and is still Proposed.
+D078 is the next free number. Migration `0050_collaboration_deliverables_compensation.sql`.
+`main` ends at `0046`. Open PR #53 reserves `0047` and `0048`. `0049` is
+left free because open PR #55 (E01) may take it.
+
+Depends on D045 (a won deal is a collaboration), D072 (compensation
+vocabulary), and the existing collaboration lifecycle. This decision does
+not amend D072. D072's statement that amounts, currency, deliverables, and
+payment status belong to a later Deal/Collaboration/Deliverables contract
+is this contract. D077 is not accepted and this block does not promote
+these rows into C01 intelligence facts. They stay in the collaboration
+layer.
+
+### What the creator records
+
+One agreed-compensation row per collaboration. `structure` is the D072
+vocabulary:
+
+| structure | means | does not mean |
+|---|---|---|
+| `paid` | Cash only. Integer minor units plus an uppercase ISO 4217 currency. Payment status is `pending`, `partially_paid`, or `paid`. | Product, a stay, or a charge. |
+| `in_kind` | Product or stay only. A description is required. An estimated value and currency are optional and labeled `creator_estimate`. Payment status is `not_applicable`. | Cash, and not a fact that the estimate is a market price. |
+| `hybrid` | Product or stay plus cash. Both legs are stored. Payment status is a cash status. | A foreign-exchange conversion when the two currencies differ. |
+| `unpaid` | The creator recorded that this collaboration has no compensation. The value is an explicit zero, labeled so it cannot be read as unknown. | A missing amount. |
+| `other` | A structure outside the shapes above. No numeric valuation. | Zero. |
+| `unknown` | The creator has not recorded a value. Amounts stay null. | `unpaid`, and not zero. |
+
+Payment status is a record of what the creator says has happened
+(`pending` / `partially_paid` / `paid` / `not_applicable`). There is no
+partial-amount field. Nothing in this decision charges a card, calls a
+payment provider, or writes a Rebill row.
+
+Deliverables are a checklist on that same collaboration: type
+(`reel`, `story`, `post`, `tiktok`, `youtube`, `photo_set`, `ugc_video`,
+`other`), quantity (1–10000), platform, due date, status
+(`pending` / `submitted` / `approved` / `rejected`), an https proof URL,
+and notes. Status is execution. It does not change the piece's value.
+
+### How a piece gets a value
+
+The read model allocates the known total across every deliverable on the
+collaboration, including pending and rejected rows. One unit of quantity
+is one piece. The method is largest remainder (Hamilton): each piece gets
+the floor share, and leftover minor units go one at a time to the largest
+fractional remainders. Ties break by `created_at`, then `id`.
+
+- A known total is labeled `derived`. The shares are labeled `derived` and
+  `allocated`. They add up to that total.
+- `unpaid` is a known zero, labeled `unpaid_explicit`. That zero is the
+  agreed total, not a stand-in for missing data.
+- `unknown`, `other`, in-kind with no estimate, hybrid with a missing
+  estimate, and hybrid whose cash currency differs from the estimate
+  currency are unknown. The amount is JSON null. It is never stored or
+  shown as zero. No leg is dropped to make the other leg look complete,
+  and no exchange rate is applied.
+- A share may be 0 minor units when a known total does not reach that
+  piece. That 0 is labeled derived. It appears only when the total itself
+  is known.
+- Payment status does not change the allocation.
+- A machine suggestion is never allocated.
+
+Minor units are integers from 0 through 9007199254740991 so a JavaScript
+number can hold them exactly. A hybrid total of two same-currency legs
+that would pass that cap is rejected rather than rounded.
+
+### Human truth and machine suggestion
+
+Creator-entered compensation is human truth. B07 may supply a compensation
+structure (`paid`, `in_kind`, `hybrid`, `unpaid`, `other`, `unknown`) as a
+suggestion the creator can copy into the form. Prefill writes only the
+suggestion row. It does not write amounts, because B07 does not extract
+amounts. It does not update the agreed row, including when the creator has
+not saved one yet. A stale or unbound machine reading writes nothing and
+does not clear a suggestion already stored. The creator chooses the
+mailbox and the provider thread id. This decision does not invent an
+automatic link from a Gmail thread to a pipeline item.
+
+### Privacy
+
+These rows are private to the owning creator. Another creator cannot read,
+list, insert, update, delete, or attach them by id. The same refusal is
+returned for a missing id and for someone else's id.
+
+### What this decision does not do
+
+- No charging, no payment provider, no Rebill, no new price.
+- No change to D072 machine meanings: a machine interpretation is not
+  human truth; `redirect` is not `rejection`; a one-sided yes is
+  negotiation, not agreement; `unknown` is not `unpaid` and is not zero.
+- No write to `collaborations.private_value_amount`,
+  `collaborations.private_value_currency`, outreach events, or public
+  intelligence aggregates.
+- No change to `collaboration_type` (`stay`, `product`, `paid`,
+  `stay_plus_paid`, `other`), which is a different vocabulary.
+- No usage-rights field, no file upload, and no freeze of these records
+  when the collaboration lifecycle status changes.
+- No promotion of these rows into a C01 fact. D077 remains Proposed.

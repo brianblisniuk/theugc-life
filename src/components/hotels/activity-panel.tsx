@@ -14,8 +14,10 @@
 import Link from "next/link";
 
 import { CollaborationLifecycle } from "@/components/pipeline/collaboration-lifecycle";
+import { CollaborationWorkspace } from "@/components/pipeline/collaboration-workspace";
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
+import type { WorkspaceLoad } from "@/lib/collaboration/queries";
 import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
 import {
   activityPanelState,
@@ -42,11 +44,14 @@ export function ActivityPanel({
   hotelId,
   relationship,
   collaboration,
+  workspace,
 }: {
   hotelId: string;
   relationship: OpenRelationshipResult;
   /** Only read for a `won` cycle; `none` elsewhere. */
   collaboration: CollaborationLoad;
+  /** Deliverables and agreed compensation for that collaboration. */
+  workspace: WorkspaceLoad;
 }) {
   const state = activityPanelState(relationship);
 
@@ -113,6 +118,18 @@ export function ActivityPanel({
                 hotelId={hotelId}
                 actions={deal.actions}
               />
+            ) : null}
+            {relationship.status === "open" && workspace.status === "ok" ? (
+              <CollaborationWorkspace
+                pipelineItemId={relationship.relationship.pipelineItemId}
+                hotelId={hotelId}
+                initial={workspace.workspace}
+              />
+            ) : relationship.status === "open" && workspace.status === "error" ? (
+              <p className="text-sm text-muted">
+                Compensation and deliverables couldn&rsquo;t be loaded. Reload the page to try
+                again.
+              </p>
             ) : null}
           </div>
         ) : deal.kind === "load_error" || deal.kind === "integrity_problem" ? (
