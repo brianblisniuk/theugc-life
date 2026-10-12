@@ -563,9 +563,7 @@ d("B08 incremental sync", () => {
         {
           historyId: "180",
           nextPageToken: null,
-          threads: [
-            { providerThreadId: "t-early", labelIds: ["SENT"], messageIds: ["m-early"] },
-          ],
+          threads: [{ providerThreadId: "t-early", labelIds: ["SENT"], messageIds: ["m-early"] }],
         },
       ],
       threads: {
@@ -1197,5 +1195,32 @@ d("B08 incremental sync", () => {
       [mail.mailAccountId],
     );
     expect(resumed.rows[0]!.status).toBe("runnable");
+  });
+
+  it("pauses a revoked token and a retry does not open another run or store mail", async () => {
+    const { mail } = await ready("e05-revoked-retry", "100");
+    const deps = () =>
+      syncDeps({
+        db: rpc(client),
+        gmail: createFakeIncremental(),
+        accessToken: async () => ({ result: "reauth_required" }),
+        runPipeline: async () => ({ completed: true }),
+      });
+    const paused = await runAccountSync(mail, deps());
+    expect(paused.result).toBe("paused");
+    const runsOf = async () => {
+      const rows = await client.query<{ n: number }>(
+        "select count(*)::int as n from private.gmail_sync_runs where mail_account_id = $1",
+        [mail.mailAccountId],
+      );
+      return rows.rows[0]!.n;
+    };
+    const runs = await runsOf();
+    const stored = await rawCount(client, mail.mailAccountId);
+    expect(runs).toBeGreaterThan(0);
+    const again = await runAccountSync(mail, deps());
+    expect(again.result).toBe("paused");
+    expect(await runsOf()).toBe(runs);
+    expect(await rawCount(client, mail.mailAccountId)).toBe(stored);
   });
 });

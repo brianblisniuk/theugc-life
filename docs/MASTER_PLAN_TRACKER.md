@@ -368,7 +368,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | **DONE** — PR #61, merge `d030cd0329c8b1e30afcdd14a72485174edcd9f5`, migration `0052`. D086–D088 stay Proposed. Private profile editor, creator-recorded counts, a past-collaboration list, and a private per-field opt-in table. The hotel link is D09. | creator context + personal analytics. Verified proof stays out. | history is reused to improve next opportunity, not just archived |
-| D09 | **IN PR** — PR #63, migration `0053`. D089–D091 Accepted (Brian, 13 Oct 2026). Creator-controlled revocable hotel link at `/p/[token]`. Per-field opt-in. | creator profile shareable with hotels | a hotel sees only what that creator opted in, and a revoked link shows nothing |
+| D09 | **DONE** — PR #63, merge `1fc15658fc69acaa799860f8340736e15e1f5728`, migration `0053`. D089–D091 Accepted (Brian, 13 Oct 2026). Creator-controlled revocable hotel link at `/p/[token]`. Per-field opt-in. | creator profile shareable with hotels | a hotel sees only what that creator opted in, and a revoked link shows nothing |
 
 **Base rounds:** 9  
 **Cumulative future rounds:** 26
@@ -406,7 +406,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E02 | **DONE** — PR #59, merge `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted (Brian, 12 Oct 2026). Primary navigation stays the PRD §6 five items. Inbox and Collaborations are pipeline surfaces. | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | **DONE** — PR #60, merge `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | **DONE** — PR #62, merge `dc5979eed799d1724eb36482eb0067d3e9f0fe55`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
-| E05 | PLANNED | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
+| E05 | **IN PR** — branch `cursor/e05-e2e-observability-launch-f88c`. No migration. D092–D094 Proposed. Playwright against local Supabase, redacted logs, `/api/health`, RLS and security-definer checks, launch checklist. PR number is in `.grok/autopilot-state.json`. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -692,11 +692,18 @@ opt-in. `0050` and `0049` are not edited.
 outside-coverage rows (D056). Personal counts, past collaborations, and field
 opt-ins stay UNDECIDED. This PR does not edit `0051`.
 
-**D09 is PR #63.** Migration `0053_creator_share_link.sql`. D089–D091 are
-Accepted (Brian, 13 Oct 2026). A creator creates, views, rotates, and
-revokes one link. The public page `/p/[token]` shows only opted-in fields.
-The share page, the owner actions, and the public read are UNDECIDED in the
-E04 inventory. `0051` and `0052` are not edited.
+**D09 (PR #63) is merged**, as merge commit
+`1fc15658fc69acaa799860f8340736e15e1f5728`. Migration
+`0053_creator_share_link.sql`. D089–D091 are Accepted (Brian, 13 Oct 2026).
+A creator creates, views, rotates, and revokes one link. The public page
+`/p/[token]` shows only opted-in fields. The share page, the owner actions,
+and the public read stay UNDECIDED in the E04 inventory. `0051` and `0052`
+are not edited.
+
+**E05 is in this pull request.** Branch
+`cursor/e05-e2e-observability-launch-f88c`. No migration. D092–D094 are
+Proposed. The launch checklist names the owner steps that are not done.
+`0053` is not edited.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

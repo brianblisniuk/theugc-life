@@ -33,6 +33,7 @@ import {
   searchHotels,
   type HotelSearchResult,
 } from "@/lib/hotels/queries";
+import { DISCOVER_LIST_COPY, discoverListOutcome } from "@/lib/surfaces/list-outcome";
 
 export const metadata: Metadata = { title: "Discover" };
 
@@ -69,6 +70,13 @@ export default async function DiscoverPage({
     failed = true;
   }
 
+  const listOutcome = discoverListOutcome({
+    failed: failed || result === null,
+    count: result?.hotels.length ?? 0,
+    filtered: filtersActive,
+    page: query.page,
+  });
+
   const hotelIds = result?.hotels.map((hotel) => hotel.id) ?? [];
   const signals = hotelIds.length > 0 ? await getPublicCardSignals(hotelIds) : new Map();
   const session = hotelIds.length > 0 ? await resolveSession() : null;
@@ -96,10 +104,10 @@ export default async function DiscoverPage({
           catalogFailed={catalog.status === "error"}
         />
 
-        {failed ? (
+        {listOutcome === "error" ? (
           <EmptyState
-            title="We couldn’t load hotels just now"
-            description="Something went wrong fetching results. Try again, or adjust your filters."
+            title={DISCOVER_LIST_COPY.errorTitle}
+            description={DISCOVER_LIST_COPY.errorBody}
           >
             <Link
               href={buildDiscoverHref(query)}
@@ -108,7 +116,7 @@ export default async function DiscoverPage({
               Try again
             </Link>
           </EmptyState>
-        ) : result && result.hotels.length > 0 ? (
+        ) : listOutcome === "items" && result ? (
           <div className="space-y-3">
             <h2 className="sr-only">Hotel results</h2>
             <ResultsSummary result={result} />
@@ -152,7 +160,7 @@ export default async function DiscoverPage({
               </nav>
             )}
           </div>
-        ) : query.page > 1 ? (
+        ) : listOutcome === "past_end" ? (
           <EmptyState
             title="Nothing on this page"
             description="You may have gone past the last page of results."
@@ -164,7 +172,7 @@ export default async function DiscoverPage({
               Back to first page
             </Link>
           </EmptyState>
-        ) : filtersActive ? (
+        ) : listOutcome === "filtered_empty" ? (
           <EmptyState
             title="No hotels match these filters."
             description="Try a broader search or fewer filters."
@@ -178,8 +186,8 @@ export default async function DiscoverPage({
           </EmptyState>
         ) : (
           <EmptyState
-            title="No published hotels yet"
-            description="Hotels appear here once they are in the published catalog."
+            title={DISCOVER_LIST_COPY.emptyTitle}
+            description={DISCOVER_LIST_COPY.emptyBody}
           />
         )}
       </div>

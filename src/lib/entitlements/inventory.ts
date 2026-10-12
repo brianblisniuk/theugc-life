@@ -659,6 +659,20 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["docs/ROUTES.md §2", "PRD §4.1"],
   },
   {
+    id: "ops.health",
+    module: "Operations",
+    summary:
+      "Liveness. The body is status ok and nothing else. No session, no plan, and no private row.",
+    routes: ["/api/health"],
+    sourceFiles: ["src/app/api/health/route.ts"],
+    serverActions: [],
+    rpcs: [],
+    rule: { kind: "public_page" },
+    anon: "allow",
+    enforcement: { kind: "kept_current" },
+    sources: ["docs/ROUTES.md", "E05"],
+  },
+  {
     id: "admin.staff",
     module: "Admin",
     summary:

@@ -3682,3 +3682,67 @@ token reveals only that creator's opted-in fields.
 - No production database change from the migration's author outside the
   migration itself.
 
+## D092 — Observability stays inside the app (E05)
+
+Status: **Proposed.** Not accepted. E05 records the reading the block was
+built to. It does not close the product decision.
+
+Server logs are one JSON line. A request id is generated or taken from
+`x-request-id` when that header is a short token of letters, digits, `_`,
+and `-`. The logged path drops the query string and replaces `/p/<token>`
+with `/p/[redacted]`. Keys that name an email, a token, a message body, or
+a share token are replaced. String values are scanned for an email address,
+a bearer token, a share path, a 64-hex share token, and a `GOCSPX-` or
+`ya29.` prefix.
+
+`/api/health` returns `{ "status": "ok" }` and no other field. It does not
+read a session. No new vendor receives logs or private data.
+
+### What this decision does not do
+
+- No Sentry, analytics vendor, or log drain.
+- No production deploy.
+
+## D093 — Response headers and the client bundle (E05)
+
+Status: **Proposed.** Not accepted.
+
+Every matched response sets Content-Security-Policy, `Referrer-Policy:
+no-referrer`, `X-Content-Type-Options: nosniff`, and `X-Frame-Options:
+DENY`. The policy allows script, image, connect, and frame from
+`https://maps.googleapis.com` and `https://maps.gstatic.com`, and connect
+to the configured Supabase origin and its `ws` or `wss` counterpart.
+`frame-ancestors` is `'none'`.
+
+The client bundle may contain the name `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+It may not contain the names of server secrets. A scan fails closed when
+it finds one. The scan does not print a secret value.
+
+Public tables keep row level security enabled and not forced. That is the
+existing migration pattern. Every `SECURITY DEFINER` function in `public`
+and `private` is listed in the ACL matrix with its `search_path` and
+execute grants.
+
+### What this decision does not do
+
+- No new table and no new security-definer function.
+- No force of row level security.
+- No production database change.
+
+## D094 — The launch-candidate gate is explicit (E05)
+
+Status: **Proposed.** Not accepted.
+
+A launch candidate is not declared by a green `verify` alone.
+`docs/LAUNCH_CHECKLIST.md` lists the owner steps that are still undone:
+a production Netlify site and its environment, Supabase production
+migrations, Google OAuth verification and domain, a Maps key restricted to
+that domain, and Rebill. Each requires Brian’s approval. This decision
+does not grant that approval.
+
+### What this decision does not do
+
+- No production deploy.
+- No price change.
+- No Rebill integration.
+

@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
 import { TripCreateForm } from "@/components/trips/trip-forms";
 import { listCrumbs } from "@/lib/shell/navigation";
+import { TRIP_LIST_COPY, tripListOutcome } from "@/lib/surfaces/list-outcome";
 import { listDestinations, listTrips, type TripRecord } from "@/lib/trips/queries";
 import { tripStatusLabel } from "@/lib/trips/types";
 
@@ -46,6 +47,7 @@ export default async function TripsPage() {
   const [tripsResult, destinationsResult] = await Promise.all([listTrips(), listDestinations()]);
   const failed = tripsResult.status === "error";
   const trips = tripsResult.status === "ok" ? tripsResult.trips : [];
+  const listOutcome = tripListOutcome({ failed, count: trips.length });
   const destinations = destinationsResult.status === "ok" ? destinationsResult.destinations : [];
 
   return (
@@ -56,16 +58,10 @@ export default async function TripsPage() {
         crumbs={listCrumbs("Trips")}
       />
 
-      {failed ? (
-        <EmptyState
-          title="We couldn’t load your trips"
-          description="Something went wrong on our side. Reload the page to try again."
-        />
-      ) : trips.length === 0 ? (
-        <EmptyState
-          title="No trips yet"
-          description="Create a trip for the destination you’re pitching. The Free plan includes one active trip."
-        />
+      {listOutcome === "error" ? (
+        <EmptyState title={TRIP_LIST_COPY.errorTitle} description={TRIP_LIST_COPY.errorBody} />
+      ) : listOutcome === "empty" ? (
+        <EmptyState title={TRIP_LIST_COPY.emptyTitle} description={TRIP_LIST_COPY.emptyBody} />
       ) : (
         <ul className="space-y-3">
           {trips.map((trip) => (

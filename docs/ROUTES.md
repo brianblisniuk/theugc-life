@@ -17,6 +17,9 @@ Framework: Next.js App Router.
 Marketing landing page.
 Primary CTA: explore creator-friendly hotels / start free.
 
+### `/api/health`
+Liveness. The body is `{ "status": "ok" }`. No session and no private data.
+
 ### `/pricing`
 Free, Creator Destination Pass explanation, Creator Pro.
 Destination-specific checkout is initiated from destination context.

@@ -12,6 +12,7 @@ import { requireUser } from "@/lib/auth/guards";
 import { getOwnProfile, getPastCollaborations, getPersonalCounts } from "@/lib/profile/queries";
 import { getShareSettings } from "@/lib/profile/share-queries";
 import { listCrumbs } from "@/lib/shell/navigation";
+import { PROFILE_LIST_COPY } from "@/lib/surfaces/list-outcome";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -42,9 +43,7 @@ export default async function ProfilePage() {
           <ProfileEditor profile={profile.profile} />
         </section>
       ) : (
-        <p className="max-w-prose text-sm text-muted">
-          We couldn’t load your profile. This is not an empty profile.
-        </p>
+        <p className="max-w-prose text-sm text-muted">{PROFILE_LIST_COPY.error}</p>
       )}
 
       {share.status === "ok" ? (
@@ -54,9 +53,7 @@ export default async function ProfilePage() {
           <ShareLinkPanel link={share.link} />
         </>
       ) : (
-        <p className="max-w-prose text-sm text-muted">
-          Share settings couldn’t be loaded. This is not an empty share link.
-        </p>
+        <p className="max-w-prose text-sm text-muted">{PROFILE_LIST_COPY.shareError}</p>
       )}
 
       <PersonalCounts load={counts} />
