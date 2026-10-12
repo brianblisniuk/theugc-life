@@ -21,7 +21,12 @@ import { createClient } from "@/lib/supabase/server";
 
 import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./access";
 import { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS } from "./columns";
-import { DISCOVER_MAX_PAGE_SIZE, type DiscoverQuery } from "./filters";
+import {
+  destinationSelfAndDescendants,
+  DISCOVER_MAX_PAGE_SIZE,
+  type DestinationNode,
+  type DiscoverQuery,
+} from "./filters";
 import { isUuid } from "./ids";
 import type {
   IntelligenceResult,
@@ -43,6 +48,16 @@ export type HotelQueryClient = Awaited<ReturnType<typeof createClient>>;
 
 /** Upper bound on destinations resolved for a free-text search. */
 const DESTINATION_MATCH_LIMIT = 200;
+
+/**
+ * Cap on the destination catalog loaded to resolve a slug and its descendants.
+ * Hitting the cap fails the search instead of filtering with a truncated tree.
+ */
+const DESTINATION_CATALOG_LIMIT = 5000;
+
+function emptySearch(page: number, pageSize: number): HotelSearchResult {
+  return { hotels: [], total: 0, page, pageSize, hasMore: false };
+}
 
 /**
  * Contact lifecycle states that must not be shown as a current contact:
@@ -178,6 +193,43 @@ export async function searchHotels(
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  let destinationIds: string[] | null = null;
+  if (query.destination) {
+    const { data: catalog, error: catalogError } = await supabase
+      .from("destinations")
+      .select("id, slug, parent_destination_id")
+      .order("id", { ascending: true })
+      .limit(DESTINATION_CATALOG_LIMIT);
+
+    // A failed scope lookup must not fall open to every hotel.
+    if (catalogError) throw new Error("hotel_search_failed:destination_scope");
+    const rows = catalog ?? [];
+    if (rows.length >= DESTINATION_CATALOG_LIMIT) {
+      throw new Error("hotel_search_failed:destination_scope");
+    }
+
+    const nodes: DestinationNode[] = [];
+    let rootId: string | null = null;
+    for (const row of rows) {
+      const record = row as {
+        id?: unknown;
+        slug?: unknown;
+        parent_destination_id?: unknown;
+      };
+      if (typeof record.id !== "string" || typeof record.slug !== "string") continue;
+      nodes.push({
+        id: record.id,
+        slug: record.slug,
+        parentId:
+          typeof record.parent_destination_id === "string" ? record.parent_destination_id : null,
+      });
+      if (record.slug === query.destination) rootId = record.id;
+    }
+    // A well-formed slug that is not in the catalog matches nothing.
+    if (!rootId) return emptySearch(page, pageSize);
+    destinationIds = destinationSelfAndDescendants(nodes, rootId);
+  }
+
   let builder = supabase.from("hotels").select(HOTEL_SELECT, { count: "exact" });
 
   if (query.q) {
@@ -203,6 +255,7 @@ export async function searchHotels(
     builder = builder.or(orParts.join(","));
   }
 
+  if (destinationIds) builder = builder.in("destination_id", destinationIds);
   if (query.type) builder = builder.eq("hotel_type", query.type);
   if (query.minStars !== null) builder = builder.gte("star_rating", query.minStars);
   if (query.verification) builder = builder.eq("editorial_verification_status", query.verification);

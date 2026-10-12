@@ -35,10 +35,64 @@ export interface DiscoverQuery {
   minStars: number | null;
   /** editorial_verification_status, or null. */
   verification: VerificationFilter | null;
+  /**
+   * Canonical destination slug (ROUTES.md §10). Null when absent or malformed.
+   * A well-formed slug that matches no destination is still a filter: Discover
+   * must not fall open to the whole catalog.
+   */
+  destination: string | null;
   /** 1-based page number. */
   page: number;
   /** Bounded page size. */
   pageSize: number;
+}
+
+/** Destination slugs are lowercase words separated by single hyphens. */
+const DESTINATION_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function parseDestinationSlug(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const slug = raw.trim().toLowerCase();
+  if (slug.length < 1 || slug.length > 80) return null;
+  return DESTINATION_SLUG.test(slug) ? slug : null;
+}
+
+export interface DestinationNode {
+  id: string;
+  slug: string;
+  parentId: string | null;
+}
+
+/**
+ * The destination itself plus descendants, depth-capped at 20 — the same cap
+ * as `_destination_is_descendant` (D013: a destination is a hierarchy).
+ */
+export function destinationSelfAndDescendants(
+  nodes: readonly DestinationNode[],
+  rootId: string,
+): string[] {
+  const children = new Map<string, string[]>();
+  for (const node of nodes) {
+    if (!node.parentId) continue;
+    const list = children.get(node.parentId) ?? [];
+    list.push(node.id);
+    children.set(node.parentId, list);
+  }
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let frontier = [rootId];
+  for (let depth = 0; depth < 20 && frontier.length > 0; depth += 1) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+      for (const child of children.get(id) ?? []) next.push(child);
+    }
+    frontier = next;
+  }
+  return out;
 }
 
 export type RawSearchParams = Record<string, string | string[] | undefined>;
@@ -84,6 +138,8 @@ export function parseDiscoverQuery(params: RawSearchParams = {}): DiscoverQuery 
       ? (rawVerification as VerificationFilter)
       : null;
 
+  const destination = parseDestinationSlug(first(params.destination));
+
   const rawPage = Number(first(params.page));
   const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
 
@@ -93,12 +149,14 @@ export function parseDiscoverQuery(params: RawSearchParams = {}): DiscoverQuery 
       ? Math.min(rawSize, DISCOVER_MAX_PAGE_SIZE)
       : DISCOVER_PAGE_SIZE;
 
-  return { q, type, minStars, verification, page, pageSize };
+  return { q, type, minStars, verification, destination, page, pageSize };
 }
 
 /** True when any user-controlled narrowing is active (drives the reset CTA). */
 export function hasActiveFilters(query: DiscoverQuery): boolean {
-  return Boolean(query.q || query.type || query.minStars || query.verification);
+  return Boolean(
+    query.q || query.type || query.minStars || query.verification || query.destination,
+  );
 }
 
 /** Build a `/app/discover` href from a query, omitting defaults. */
@@ -108,6 +166,7 @@ export function buildDiscoverHref(query: Partial<DiscoverQuery>): string {
   if (query.type) sp.set("type", query.type);
   if (query.minStars) sp.set("stars", String(query.minStars));
   if (query.verification) sp.set("verified", query.verification);
+  if (query.destination) sp.set("destination", query.destination);
   if (query.page && query.page > 1) sp.set("page", String(query.page));
   // Preserve a non-default page size, otherwise paging would silently change
   // the window and skip or repeat rows.

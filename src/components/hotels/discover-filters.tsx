@@ -104,6 +104,13 @@ export function DiscoverFilters({
         </div>
       </div>
 
+      {query.destination ? (
+        <input type="hidden" name="destination" value={query.destination} />
+      ) : null}
+      {query.destination ? (
+        <p className="text-sm text-muted">Filtered to destination {query.destination}.</p>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"

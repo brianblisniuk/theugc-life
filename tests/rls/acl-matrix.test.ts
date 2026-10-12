@@ -59,9 +59,10 @@ const CONTRACT: Record<string, Expected> = {
   purchases: { anon: "", authenticated: "S", serviceRole: "all" },
   subscriptions: { anon: "", authenticated: "S", serviceRole: "all" },
 
-  // Creator workspace. Trips are directly owner-writable; the CRM is not.
-  trips: { anon: "", authenticated: "SIUD", serviceRole: "all" },
-  trip_hotels: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // Creator workspace. Trip writes are service-role RPCs (0046) so the Free
+  // active-trip allowance cannot be skipped. The CRM was already read-only.
+  trips: { anon: "", authenticated: "S", serviceRole: "all" },
+  trip_hotels: { anon: "", authenticated: "S", serviceRole: "all" },
   pipeline_items: { anon: "", authenticated: "S", serviceRole: "all" },
   outreach_events: { anon: "", authenticated: "S", serviceRole: "all" },
   collaborations: { anon: "", authenticated: "S", serviceRole: "all" },
@@ -651,6 +652,81 @@ d("explicit ACL contract (0024)", () => {
     expect(absent!.svc).toBe(false);
     expect(absent!.public_exec).toBe(false);
   });
+
+  it("pins D01 trip RPCs to service_role with an empty search_path", async () => {
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname in (
+           'create_trip', 'update_trip', 'delete_trip',
+           'add_trip_hotel', 'remove_trip_hotel',
+           'link_pipeline_item_to_trip',
+           'enforce_pipeline_item_trip_same_creator',
+           'enforce_trip_creator_matches_pipeline'
+         )
+       order by p.proname
+    `);
+    expect(rows.map((row) => row.proname)).toEqual([
+      "add_trip_hotel",
+      "create_trip",
+      "delete_trip",
+      "enforce_pipeline_item_trip_same_creator",
+      "enforce_trip_creator_matches_pipeline",
+      "link_pipeline_item_to_trip",
+      "remove_trip_hotel",
+      "update_trip",
+    ]);
+    for (const row of rows) {
+      expect(row.definer, row.proname).toBe(true);
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(false);
+      expect(row.svc, row.proname).toBe(true);
+      expect(row.public_exec, row.proname).toBe(false);
+    }
+
+    const [summary] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'trip_workspace_summary'
+    `);
+    expect(summary).toBeDefined();
+    expect(summary!.definer).toBe(false);
+    expect(summary!.pinned).toBe(true);
+    expect(summary!.anon).toBe(false);
+    expect(summary!.auth).toBe(true);
+    expect(summary!.svc).toBe(true);
+    expect(summary!.public_exec).toBe(false);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -709,6 +785,8 @@ d("the contract behaves as intended for real callers", () => {
     for (const table of [
       "users",
       "pipeline_items",
+      "trips",
+      "trip_hotels",
       "outreach_events",
       "collaborations",
       "hotel_contacts",
@@ -745,6 +823,11 @@ d("the contract behaves as intended for real callers", () => {
       "delete from public.pipeline_items",
       "insert into public.outreach_events (creator_id, hotel_id, event_type) values (null, null, 'pitch_sent')",
       "insert into public.collaborations (creator_id, hotel_id) values (null, null)",
+      "insert into public.trips (creator_id, destination_id, start_date, end_date) values (null, null, '2026-01-01', '2026-01-02')",
+      "update public.trips set name = 'nope'",
+      "delete from public.trips",
+      "insert into public.trip_hotels (trip_id, hotel_id) values (null, null)",
+      "delete from public.trip_hotels",
     ]) {
       const res = await queryAs({ role: "authenticated", sub: U.creator }, sql);
       expect(res.error, sql).not.toBeNull();
