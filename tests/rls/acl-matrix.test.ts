@@ -50,6 +50,12 @@ const CONTRACT: Record<string, Expected> = {
   // Private by default. Anon has no privilege. The owner may write their own
   // rows; this PR's UI does not. There is no share token on this table.
   creator_profile_field_opt_ins: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // D09 (0053, D089–D091 Accepted). The hotel link stores a digest. Anon has
+  // no table privilege. The public read is a function, not a policy.
+  creator_self_reported_audience: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  creator_share_links: { anon: "", authenticated: "S", serviceRole: "all" },
+  creator_collaboration_share_marks: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  creator_deliverable_share_marks: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   portfolio_assets: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
 
   // Public catalogue. Writes exist as a capability; RLS restricts them to staff.
@@ -983,6 +989,74 @@ d("explicit ACL contract (0024)", () => {
       expect(row.public_exec, row.proname).toBe(false);
     }
   });
+
+  it("lets anon execute only the public share read", async () => {
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname in (
+           'read_creator_share_profile',
+           'create_creator_share_link',
+           'rotate_creator_share_link',
+           'revoke_creator_share_link',
+           'read_own_creator_share_link',
+           'set_creator_profile_field_opt_ins',
+           'set_collaboration_share_mark',
+           'set_deliverable_share_mark',
+           'set_creator_self_reported_audience',
+           'creator_share_token_hash',
+           'creator_share_random_token'
+         )
+       order by p.proname
+    `);
+    expect(rows.map((row) => row.proname)).toEqual([
+      "create_creator_share_link",
+      "creator_share_random_token",
+      "creator_share_token_hash",
+      "read_creator_share_profile",
+      "read_own_creator_share_link",
+      "revoke_creator_share_link",
+      "rotate_creator_share_link",
+      "set_collaboration_share_mark",
+      "set_creator_profile_field_opt_ins",
+      "set_creator_self_reported_audience",
+      "set_deliverable_share_mark",
+    ]);
+    for (const row of rows) {
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.public_exec, row.proname).toBe(false);
+      if (
+        row.proname === "creator_share_token_hash" ||
+        row.proname === "creator_share_random_token"
+      ) {
+        expect(row.definer, row.proname).toBe(false);
+        expect(row.anon, row.proname).toBe(false);
+        expect(row.auth, row.proname).toBe(false);
+        expect(row.svc, row.proname).toBe(false);
+        continue;
+      }
+      expect(row.definer, row.proname).toBe(true);
+      expect(row.auth, row.proname).toBe(true);
+      expect(row.svc, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(row.proname === "read_creator_share_profile");
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -1045,6 +1119,11 @@ d("the contract behaves as intended for real callers", () => {
       "trip_hotels",
       "outreach_events",
       "collaborations",
+      "creator_profile_field_opt_ins",
+      "creator_self_reported_audience",
+      "creator_share_links",
+      "creator_collaboration_share_marks",
+      "creator_deliverable_share_marks",
       "hotel_contacts",
       "hotel_intelligence",
       "destination_intelligence",

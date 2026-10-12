@@ -3491,6 +3491,10 @@ shareable with hotels in the MVP. The exact fields a hotel may see are not
 decided. This PR does not issue a link, does not add a token, and does not
 give a hotel a read path.
 
+Addendum (13 Oct 2026): Brian accepted the field list and the link. D089 is
+the link. D090 closes `field_key`. D091 is the public read. This decision
+stays Proposed. It does not become that link.
+
 The data model for that later link is `creator_profile_field_opt_ins`:
 
 - One row is one field for one creator. `field_key` is not an allow-list.
@@ -3595,4 +3599,86 @@ and private notes are not in the payload.
 - No share link and no token. The later hotel link is D086, and it is not
   this list.
 - No write to a new pipeline item from this list.
+
+## D089 — A hotel sees a creator profile only through a revocable link (D09)
+
+Status: **Accepted (Brian, 13 Oct 2026).**
+
+The creator profile is shareable with hotels in the MVP by a link the creator
+creates, views, rotates, and revokes. There is no hotel account and no email
+send in this decision.
+
+### What the link is
+
+One active link per creator. The token is 32 random bytes, hex-encoded.
+The table stores the SHA-256 digest and not the token. Create and rotate
+return the token once. A later view shows whether the link is usable, when
+it was created, and when it expires. It does not show the token again.
+
+Rotate revokes the current digest and issues a new one in the same
+transaction. Revoke sets `revoked_at`. An optional `expires_at` in the past
+also stops the link. Invalid, revoked, rotated, and expired tokens return
+the same `not_found` object. The public page is `/p/[token]`. It is
+`noindex`. The response is `private, no-store`, and the referrer policy is
+`no-referrer`. A per-address limit runs before the lookup. The lookup
+compares a 32-byte digest.
+
+`public_profile_enabled`, `portfolio_visibility`, `/creators/[username]`, and
+`share_cards` are not this link.
+
+### What this decision does not do
+
+- No email of the link.
+- No hotel login.
+- No view counter and no write to `public_creator_profile_views`.
+- No verification badge.
+
+## D090 — The shared view is an explicit per-field opt-in (D09)
+
+Status: **Accepted (Brian, 13 Oct 2026).** D086 left `field_key` open. This
+decision closes it.
+
+### Fields a hotel may see
+
+Each key is private until `opted_in` is true and `revoked_at` is null. No
+row is private. Turning a field off sets `opted_in` false and `revoked_at`,
+and the next read omits it.
+
+| Key | Shows | Does not show |
+|---|---|---|
+| `bio` | The creator's bio. Null is unknown. | Display name, username, home, languages, photo. |
+| `niche` | `creator_niches`. An empty list is none listed. | A taxonomy this decision does not define. |
+| `social_links` | Instagram, TikTok, YouTube, and website links and handles. A missing link is unknown. | An email address. |
+| `audience` | Followers and engagement the creator entered, labeled self-reported. Null is unknown, never zero. A zero the creator entered stays zero. | A verified count, a computed rate, or a provider sync. |
+| `past_collaborations` | Completed and cancelled collaborations the creator marked. Hotel name, status, type, and dates. | An unmarked row, an open collaboration, contacts, notes, or another creator's row. |
+| `content_examples` | Deliverables the creator marked that have an https proof link. Type, platform, and that link. | Notes, quantity, and a deliverable with no proof link. |
+| `compensation` | On a shared past collaboration only: the recorded structure, and a cash amount or in-kind description when one is present. Unknown structure stays unknown. Unpaid stays unpaid. A null amount is omitted, never zero. | Payment status, machine suggestions, and compensation for a collaboration that is not shared. |
+
+### What this decision does not do
+
+- No email, Gmail body, thread, hotel contact, or pipeline note.
+- No other creator's rows.
+- No claim that audience metrics were verified.
+
+## D091 — The public read is one security-definer function (D09)
+
+Status: **Accepted (Brian, 13 Oct 2026).**
+
+`read_creator_share_profile(text)` runs as security definer with
+`search_path` empty. Execute is revoked from public and anon, then granted
+to anon, authenticated, and service_role. No other new function is granted
+to anon. The hash helpers are not granted to anon or authenticated.
+
+Anon receives no table privilege on the link, the opt-ins, the audience
+row, or the share marks. Table RLS on `creator_profiles`, collaborations,
+deliverables, compensation, and mail is not widened. Authentication is not
+authorization: a session does not reveal another creator's link, and a
+token reveals only that creator's opted-in fields.
+
+### What this decision does not do
+
+- No anon policy that selects private tables.
+- No service-role key in the browser.
+- No production database change from the migration's author outside the
+  migration itself.
 

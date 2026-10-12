@@ -1,25 +1,31 @@
 import type { Metadata } from "next";
 
+import { AudienceFields } from "@/components/profile/audience-fields";
+import { ContentExamples } from "@/components/profile/content-examples";
 import { PastCollaborations } from "@/components/profile/past-collaborations";
 import { PersonalCounts } from "@/components/profile/personal-counts";
 import { ProfileEditor } from "@/components/profile/profile-editor";
+import { ShareLinkPanel } from "@/components/profile/share-link-panel";
+import { ShareOptIns } from "@/components/profile/share-opt-ins";
 import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
 import { getOwnProfile, getPastCollaborations, getPersonalCounts } from "@/lib/profile/queries";
+import { getShareSettings } from "@/lib/profile/share-queries";
 import { listCrumbs } from "@/lib/shell/navigation";
 
 export const metadata: Metadata = { title: "Profile" };
 
 /**
- * The creator's private profile (D081 Profile, D086–D088 Proposed).
- * A hotel share link is not on this page. Opt-in rows are not edited here.
+ * The creator's profile (D081 Profile). Private fields stay private until the
+ * creator opts them into the hotel share link (D089–D091, Accepted).
  */
 export default async function ProfilePage() {
   const session = await requireUser("/app/profile");
-  const [profile, counts, past] = await Promise.all([
+  const [profile, counts, past, share] = await Promise.all([
     getOwnProfile(session.userId),
     getPersonalCounts(),
     getPastCollaborations(null),
+    getShareSettings(),
   ]);
 
   return (
@@ -27,7 +33,7 @@ export default async function ProfilePage() {
       <PageHeader
         title="Profile"
         crumbs={listCrumbs("Profile")}
-        description="Only you can see this. Nothing on this page is shared with a hotel."
+        description="Your details stay private until you turn a field on and share a link."
       />
 
       {profile.status === "ok" ? (
@@ -41,8 +47,28 @@ export default async function ProfilePage() {
         </p>
       )}
 
+      {share.status === "ok" ? (
+        <>
+          <AudienceFields followers={share.followers} engagement={share.engagement} />
+          <ShareOptIns optIns={share.optIns} />
+          <ShareLinkPanel link={share.link} />
+        </>
+      ) : (
+        <p className="max-w-prose text-sm text-muted">
+          Share settings couldn’t be loaded. This is not an empty share link.
+        </p>
+      )}
+
       <PersonalCounts load={counts} />
-      <PastCollaborations load={past} heading="Past collaborations" linkToHotel />
+      <PastCollaborations
+        load={past}
+        heading="Past collaborations"
+        linkToHotel
+        sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
+      />
+      {share.status === "ok" ? (
+        <ContentExamples deliverables={share.deliverables} sharedIds={share.sharedDeliverableIds} />
+      ) : null}
     </div>
   );
 }

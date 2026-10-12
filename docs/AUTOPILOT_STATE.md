@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60, E03, 2026-10-12)  
-**State:** AWAITING_AUDIT. D08 creator profile and private personal analytics, PR #61, branch `cursor/d08-creator-profile-analytics-ba2d`, migration `0052`. D086–D088 are Proposed. Public portfolio is not in this block. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** D08. The Profile page edits the creator’s own fields, shows creator-recorded counts, and lists past collaborations as links into the next hotel cycle. D086 records that a hotel share link is in the MVP and is not built here; the private per-field opt-in table is the later link’s gate. D081 is Accepted. D082 stays Proposed. D077 stays Proposed. D080 is Accepted and merged. `0050` is not edited. `0051` is not taken.
+**Last verified main:** `d030cd0329c8b1e30afcdd14a72485174edcd9f5` (merge of PR #61, D08, 2026-10-12)  
+**State:** AWAITING_CI. D09 creator profile share link, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). The PR number is recorded when the PR is opened. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** D09. A creator shares a profile with a hotel through one revocable link. The public page shows only opted-in fields. D086–D088 stay Proposed. D077 stays Proposed. `0051` is reserved by open PR #62 (E04) and is not used. `0052` is not edited.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -37,15 +37,14 @@
 - PR #58 — D06 inbox ↔ pipeline unity, D080 Accepted, migration `0049` — `6b59318bbe33897a5204f42fa2292eccaf6d13a7`
 - PR #59 — E02 product coherence, D081 Accepted, no migration — `edc326dc5a0f22956a0b6572a9486d56df15572f`
 - PR #60 — E03 onboarding and empty/error states, D082 Proposed, no migration — `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`
+- PR #61 — D08 private profile and personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
 
 ## Next action
-- D08 creator profile and private personal analytics is PR #61 (`cursor/d08-creator-profile-analytics-ba2d`, D086–D088 Proposed, migration `0052`). State is AWAITING_AUDIT. Do not merge from automation.
+- D09 creator profile share link is branch `cursor/d09-creator-share-link-6270` (D089–D091 Accepted, migration `0053`). State is AWAITING_CI. Do not merge from automation.
+- D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
+- E04 is open as PR #62 and reserves migration `0051`. This PR does not use `0051`.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that flow.
-- E02 is merged (PR #59, `edc326d`, D081 Accepted). This PR does not change that shell. Profile stays a primary item.
-- MAP is merged (PR #57, `023a354`, D079). Discover and Hotel Detail keep the Google map. This PR does not remove it.
-- B08 is merged (PR #53, `eb13619`). The forward sync still uses D068 inclusion and does not add a scope.
-- D06 is merged (PR #58, `6b59318`, D080 Accepted, migration `0049`). This PR does not edit `0049`.
-- D07 is merged (PR #56, `61d0e38`, D078 Accepted, migration `0050`). This PR does not edit `0050`.
+- E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state-only PRs).

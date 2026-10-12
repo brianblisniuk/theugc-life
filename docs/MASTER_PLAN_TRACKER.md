@@ -367,10 +367,11 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
-| D08 | **IN PR #61** — migration `0052`. D086–D088 Proposed. Private profile editor on Profile, creator-recorded counts, a past-collaboration list, and a private per-field opt-in table for a later hotel share link. The link, the public portfolio, and verified proof are not built here. Awaiting audit. The merge SHA is recorded by the next block. | creator context + personal analytics. Verified proof and the hotel share link stay out of this block. | history is reused to improve next opportunity, not just archived |
+| D08 | **DONE** — PR #61, merge `d030cd0329c8b1e30afcdd14a72485174edcd9f5`, migration `0052`. D086–D088 Proposed. Private profile, recorded counts, past collaborations, and `creator_profile_field_opt_ins`. The hotel link is D09. | creator context + personal analytics. Verified proof stays out. | history is reused to improve next opportunity, not just archived |
+| D09 | **IN PR** — migration `0053`. D089–D091 Accepted (Brian, 13 Oct 2026). Creator-controlled revocable hotel link at `/p/[token]`. Per-field opt-in. The PR number is recorded when the PR is opened. | creator profile shareable with hotels | a hotel sees only what that creator opted in, and a revoked link shows nothing |
 
-**Base rounds:** 8  
-**Cumulative future rounds:** 25
+**Base rounds:** 9  
+**Cumulative future rounds:** 26
 
 **Milestone D gate — Complete Travel OS loop:**
 
@@ -408,7 +409,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E05 | PLANNED | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 
 **Base rounds:** 5  
-**Cumulative future rounds:** 30
+**Cumulative future rounds:** 31
 
 **Milestone E gate — Commercial Travel Creator OS V1:** real users can pay, activate, manage real opportunity cycles and return for a later trip.
 
@@ -426,7 +427,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | F04 | PLANNED | agency analytics + billing/limits | value and usage support a distinct agency commercial plan |
 
 **Base rounds:** 4  
-**Cumulative future rounds:** 34
+**Cumulative future rounds:** 35
 
 **Milestone F gate:** one manager can run several creators through the OS without privacy ambiguity or spreadsheet-level operational gaps.
 
@@ -444,7 +445,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | G04 | GATED | destination closure + DataOps/freshness tooling | repeatable operating process for expanding destinations safely |
 
 **Base rounds:** 4  
-**Cumulative future rounds:** 38
+**Cumulative future rounds:** 39
 
 **Milestone G gate:** destination expansion is a repeatable operation rather than custom research work.
 
@@ -465,7 +466,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | H05 | GATED | second-vertical intelligence + cross-vertical creator dashboard | same creator gets meaningful value across two categories |
 
 **Base rounds:** 5  
-**Cumulative future rounds:** 43
+**Cumulative future rounds:** 44
 
 **Milestone H gate:** TheUGC.life is demonstrably a Creator OS with travel as its first vertical, not merely a hotel-collaboration app.
 
@@ -678,12 +679,18 @@ and is not Accepted. Home derives the first useful flow from a connected
 Gmail mailbox, a trip, and a saved hotel, inside the E02 shell. `0051` is
 not taken.
 
-**D08 is PR #61.** Migration `0052_creator_profile_personal_analytics.sql`.
-D086–D088 are Proposed. The Profile page edits private fields, shows
-creator-recorded counts, and lists past collaborations as links.
-`creator_profile_field_opt_ins` is the private per-field opt-in a later
-revocable hotel share link will read. That link is not built. `0050` and
-`0049` are not edited.
+**D08 (PR #61) is merged**, as merge commit
+`d030cd0329c8b1e30afcdd14a72485174edcd9f5`. Migration
+`0052_creator_profile_personal_analytics.sql`. D086–D088 stay Proposed.
+The Profile page edits private fields, shows creator-recorded counts, and
+lists past collaborations. `creator_profile_field_opt_ins` is the per-field
+opt-in. `0050` and `0049` are not edited.
+
+**D09 is the hotel share link.** Migration
+`0053_creator_share_link.sql`. D089–D091 are Accepted (Brian, 13 Oct 2026).
+A creator creates, views, rotates, and revokes one link. The public page
+`/p/[token]` shows only opted-in fields. `0051` remains with open PR #62
+(E04). `0052` is not edited. The PR number is recorded when the PR is opened.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

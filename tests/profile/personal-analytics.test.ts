@@ -493,12 +493,12 @@ d("D08 profile and count isolation", () => {
     const ownInsert = await queryAs<{ field_key: string; opted_in: boolean }>(
       { role: "authenticated", sub: USER_A },
       `insert into public.creator_profile_field_opt_ins (creator_id, field_key)
-       values ($1, 'display_name')
+       values ($1, 'niche')
        returning field_key, opted_in`,
       [creatorA],
     );
     expect(ownInsert.error).toBeNull();
-    expect(ownInsert.rows).toEqual([{ field_key: "display_name", opted_in: false }]);
+    expect(ownInsert.rows).toEqual([{ field_key: "niche", opted_in: false }]);
 
     await adminQuery(
       `insert into public.creator_profile_field_opt_ins (creator_id, field_key)
@@ -586,7 +586,7 @@ d("D08 profile and count isolation", () => {
     const inserted = await queryAs(
       { role: "authenticated", sub: USER_A },
       `insert into public.creator_profile_field_opt_ins (creator_id, field_key, opted_in)
-       values ($1, 'website_url', true)`,
+       values ($1, 'social_links', true)`,
       [creatorB],
     );
     expect(inserted.error).not.toBeNull();
