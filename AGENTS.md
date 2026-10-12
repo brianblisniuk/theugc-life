@@ -15,6 +15,7 @@ This repository is operated by the **THEUGC autonomous engineering system**.
 THEUGC ORCHESTRATOR invokes AUTOPILOT. Do not ask what to do. Derive the next dependency-valid block from live GitHub + decisions + tracker. Execute until a genuine human frontier.
 
 **Human frontiers only (notify owner with these labels):**
+
 - PRODUCT DECISION REQUIRED
 - CREDENTIAL REQUIRED
 - EXTERNAL ACTION APPROVAL REQUIRED
@@ -23,6 +24,8 @@ THEUGC ORCHESTRATOR invokes AUTOPILOT. Do not ask what to do. Derive the next de
 - AUTOPILOT FRONTIER COMPLETE
 
 **Permanent invariant:** authentication ≠ authorization. Every private multi-user resource must prove User A cannot read, enumerate, modify, delete or infer User B’s resources by ID, API, Server Action, RPC or relation. Prefer PostgreSQL RLS/ACL as the authoritative boundary.
+
+**No direct commits to `main`:** every change, including docs, tracker and `docs/AUTOPILOT_STATE.md`, goes through a feature branch + PR. `.grok/config.toml` flags are advisory only; real enforcement requires a GitHub ruleset on `main` (pending owner approval). `.grok/workflows/` and `.grok/hooks/` do not exist yet.
 
 **Merge:** never silent. After PASS + exact-head CI green, notify:
 `MERGE DECISION REQUIRED — PR #X — HEAD <exact-sha>`

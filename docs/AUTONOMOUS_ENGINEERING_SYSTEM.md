@@ -70,7 +70,7 @@ LIVE STATE (GitHub main + open PRs + tracker)
 Do not notify for commits, intermediate CI, retries, subagent completion, or reversible technical choices.
 
 ## Automatic actions (no owner approval)
-git fetch/checkout/worktree, npm, tests, Docker/Postgres harness, lint, typecheck, build, commits, push to feature branches, PR create/update/comment, bug investigation, CI fixes, same-PR corrections, docs and tracker updates, skill/workflow/hook creation.
+git fetch/checkout/worktree, npm, tests, Docker/Postgres harness, lint, typecheck, build, commits, push to feature branches, PR create/update/comment, bug investigation, CI fixes, same-PR corrections, docs and tracker updates (on feature branches via PR only), skill/workflow/hook creation (via PR).
 
 ## Actions requiring owner approval
 git push origin main, force push, PR merge, production DB mutation, real email send, charge/refund, pricing change, product semantic change, new provider that receives private data, reduction of a security/privacy invariant, secret rotation/destruction, production deploy.
@@ -95,3 +95,9 @@ If this conversation disappears, a new Orchestrator session must:
 2. Read this file, AGENTS.md, AUTOPILOT_STATE.md, DECISIONS, MASTER_PLAN_TRACKER.
 3. Verify live GitHub main.
 4. Resume from the recorded frontier.
+
+## Enforcement reality (as of 2026-10-12)
+- **No direct commits to `main`.** All changes, including docs, tracker and `docs/AUTOPILOT_STATE.md` updates, go through a feature branch and PR.
+- `.grok/config.toml` permission flags are **advisory only**. No Grok Build CLI runs in the canonical workspace, and nothing enforces them.
+- `.grok/workflows/` and `.grok/hooks/` **do not exist yet**. Only `.grok/skills/` and `.grok/config.toml` exist.
+- Real enforcement requires a **GitHub ruleset/branch protection on `main`** (require PR + CI, block force push). This is pending owner approval. `main` is currently unprotected.

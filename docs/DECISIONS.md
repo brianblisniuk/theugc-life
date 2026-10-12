@@ -2912,3 +2912,17 @@ merge SHA.
 Full contract, taxonomy, human correction model, provenance model, failure
 matrix and adversarial cases:
 `docs/B07_GMAIL_COMMERCIAL_MEANING_CONTRACT.md`.
+
+## D073 — Payment provider: Rebill (reconciliation cross-reference)
+
+Status: Reconciliation only — **not a new decision**
+
+The payment provider decision was already accepted in
+`docs/PAYMENT_PROVIDER.md` (Status: Accepted): theugc.life uses Rebill
+(`rebill.com`) as its payment provider. That decision was not indexed in this
+file, so this entry is added for traceability. It changes no prior entry, price,
+or scope. Payments remain separate from entitlements (D007). Integration
+details remain to be implemented; the PR #43 shared-secret webhook stub is not
+the final Rebill integration.
+
+Authoritative text: `docs/PAYMENT_PROVIDER.md`.
