@@ -1,9 +1,9 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `186f4cdb98b79278a52258abe23ec96afb88483a` (merge of PR #45, 2026-10-12)  
-**Open PRs:** this state-update PR only  
-**State:** BASELINE TRUST AUDIT NEXT — no product block in progress.  
-**Current frontier:** baseline trust audit of PR #40–#45 plus current main.
+**Last verified main:** `60b674d142daa0e0e46dee298c61f573ac6e8f06` (merge of PR #46, 2026-10-12)  
+**Open PRs:** baseline corrections in review (security: `fix/baseline-security-corrections`; docs: `docs/baseline-reconciliation`)  
+**State:** BASELINE CORRECTIONS IN REVIEW — baseline trust audit (PR #40–#46 + main `60b674d`) found blocking test/hardening gaps; no product block in progress.  
+**Current frontier:** merge decisions on the baseline correction PRs, then the next dependency-valid block (B07 per tracker).
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -22,6 +22,7 @@
 - PR #43 — Billing webhook stub (shared-secret, not final Rebill) — `0cc0f407a31a9bc62c97ad8be410abf4d0e2cebc`
 - PR #44 — Autonomous engineering system bootstrap — `119aa691d540a1a5a58cfe44e678562ddb4a3a37`
 - Direct push (no PR) — autopilot state update — `0844874c9304ce63e7393a22bf8951b5a5e93061`
+- PR #46 — Autopilot state after PR #45 + ruleset — `60b674d142daa0e0e46dee298c61f573ac6e8f06`
 - PR #45 — Governance reconciliation (0844874 note, D073 Rebill index, enforcement reality) — `186f4cdb98b79278a52258abe23ec96afb88483a`
 
 ## Next action
