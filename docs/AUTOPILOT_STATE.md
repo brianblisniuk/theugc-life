@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60, E03, 2026-10-12)  
-**State:** AWAITING_AUDIT. D08 creator profile and private personal analytics, branch `cursor/d08-creator-profile-analytics-ba2d`, migration `0052`. D086–D088 are Proposed. Public portfolio is not in this block. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_AUDIT. D08 creator profile and private personal analytics, PR #61, branch `cursor/d08-creator-profile-analytics-ba2d`, migration `0052`. D086–D088 are Proposed. Public portfolio is not in this block. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** D08. The Profile page edits the creator’s own fields, shows creator-recorded counts, and lists past collaborations as links into the next hotel cycle. D081 is Accepted. D082 stays Proposed. D077 stays Proposed. D080 is Accepted and merged. `0050` is not edited. `0051` is not taken.
 
 ## Main history note (not rewritten)
@@ -39,7 +39,7 @@
 - PR #60 — E03 onboarding and empty/error states, D082 Proposed, no migration — `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`
 
 ## Next action
-- D08 creator profile and private personal analytics is the open block (`cursor/d08-creator-profile-analytics-ba2d`, D086–D088 Proposed, migration `0052`). State is AWAITING_AUDIT. Do not merge from automation.
+- D08 creator profile and private personal analytics is PR #61 (`cursor/d08-creator-profile-analytics-ba2d`, D086–D088 Proposed, migration `0052`). State is AWAITING_AUDIT. Do not merge from automation.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that flow.
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). This PR does not change that shell. Profile stays a primary item.
 - MAP is merged (PR #57, `023a354`, D079). Discover and Hotel Detail keep the Google map. This PR does not remove it.

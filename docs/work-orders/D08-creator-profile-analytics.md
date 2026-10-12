@@ -1,6 +1,6 @@
 # D08 — Creator profile and private personal analytics
 
-**Status:** Binding work order for this PR. Awaiting independent audit. Do not merge.  
+**Status:** Binding work order for PR #61. Awaiting independent audit. Do not merge.  
 **Base:** `main` `fc2dfbd32bf1063dec17d4db16ad84b6311f400c` (merge of PR #60, E03).  
 **Branch:** `cursor/d08-creator-profile-analytics-ba2d`  
 **Decisions:** D086, D087, D088 — Proposed, not Accepted. D083–D085 are reserved by parallel blocks and are not used.  

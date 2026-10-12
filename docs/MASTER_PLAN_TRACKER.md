@@ -367,7 +367,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
-| D08 | **IN PR** — migration `0052`. D086–D088 Proposed. Private profile editor on Profile, creator-recorded counts, and a past-collaboration list. Public portfolio and verified proof stay deferred. Awaiting audit. The merge SHA is recorded by the next block. | creator context + personal analytics. Verified proof and the public portfolio stay out of this block. | history is reused to improve next opportunity, not just archived |
+| D08 | **IN PR #61** — migration `0052`. D086–D088 Proposed. Private profile editor on Profile, creator-recorded counts, and a past-collaboration list. Public portfolio and verified proof stay deferred. Awaiting audit. The merge SHA is recorded by the next block. | creator context + personal analytics. Verified proof and the public portfolio stay out of this block. | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
 **Cumulative future rounds:** 25
@@ -678,7 +678,7 @@ and is not Accepted. Home derives the first useful flow from a connected
 Gmail mailbox, a trip, and a saved hotel, inside the E02 shell. `0051` is
 not taken.
 
-**D08 is in review.** Migration `0052_creator_profile_personal_analytics.sql`.
+**D08 is PR #61.** Migration `0052_creator_profile_personal_analytics.sql`.
 D086–D088 are Proposed. The Profile page edits private fields, shows
 creator-recorded counts, and lists past collaborations as links. Public
 portfolio is not built. `0050` and `0049` are not edited.

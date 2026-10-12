@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). D08 is the open block: migration 0052, D086–D088 Proposed. 0051 is reserved by E04 and is not used. 0050 is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is fc2dfbd32bf1063dec17d4db16ad84b6311f400c (PR #60, E03). D08 is PR #61: migration 0052, D086–D088 Proposed. 0051 is reserved by E04 and is not used. 0050 is not edited. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "fc2dfbd32bf1063dec17d4db16ad84b6311f400c",
   "active_block": "D08 creator profile and private personal analytics (D086–D088 Proposed, migration 0052)",
   "branch": "cursor/d08-creator-profile-analytics-ba2d",
-  "pr": null,
+  "pr": 61,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "D08 awaits audit. D086–D088 stay Proposed. D077 stays Proposed. D082 stays Proposed. Verify must be green on this PR head before a merge decision."
+  "next_dependency": "PR #61 is D08. D086–D088 stay Proposed. D077 stays Proposed. D082 stays Proposed. Verify must be green on this PR head before a merge decision."
 }
