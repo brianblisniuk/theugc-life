@@ -3364,3 +3364,48 @@ and another creator's id return the same `not_found`.
 - No change to D072 machine meanings.
 - No automatic thread-to-hotel match.
 - No promotion of these rows into a C01 fact. D077 remains Proposed.
+
+## D081 — One shell for the existing creator workspaces (E02)
+
+Status: **Proposed** — not accepted. Simplest reading used by the E02
+implementation. PRD §6 is unchanged: primary navigation stays Home, Discover,
+Pipeline, Trips, and Profile. No new primary item is added.
+
+Inbox and Collaborations are not new routes and not new records. They are
+surfaces of the existing pipeline list:
+
+- `/app/pipeline` is every cycle the creator already has.
+- `/app/pipeline?surface=inbox` is that same list, framed as the inbox. A
+  status filter still applies. Each open cycle links to the hotel's inbox
+  section, where the D06 / B07 reading already lives. A closed cycle has no
+  inbox link. Opening the page does not start a B08 sync. Mailbox connection
+  stays on Account.
+- `/app/pipeline?surface=collaborations` is the won cycles (D045). A
+  conflicting `status` query does not widen the list. Deliverables and agreed
+  compensation stay on the hotel (D07 / D078).
+
+Hotel Detail stays `/app/hotels/{uuid}`. A `from` query chooses the breadcrumb
+and which primary item is active. The allowed values are `discover` (the
+default, including the map marker and Discover cards), `pipeline`, `inbox`,
+`collaboration`, and `trip`. `trip` also requires a UUID `trip` query. The
+label is "Trip". The trip's name is not copied into the breadcrumb. Any other
+`from` or `trip` value is the Discover origin. These parameters are not
+authorization.
+
+The hotel page has one section nav: Overview, Map, Intelligence, Contact,
+Activity, Inbox, Collaboration, Trip. The map is the existing Google map
+(D079). A missing key still renders no map and no error. Nothing new is sent
+to Google.
+
+Below the `md` breakpoint the same primary and utility links sit in a Menu
+disclosure. Desktop keeps one row. Active state is `aria-current`, not color
+alone.
+
+### What this decision does not do
+
+- No schema, migration, grant, RLS, or RPC change.
+- No change to who can read a pipeline row, a trip, a mailbox, or a hotel.
+- No new empty-state or error-state copy. E03 owns that.
+- No new primary navigation item. Promoting Inbox or Collaborations into the
+  primary bar needs an accepted decision.
+- No sync trigger from navigation (D076).

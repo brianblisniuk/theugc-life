@@ -11,6 +11,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/shell/page-header";
+import { listCrumbs, tripHotelHref } from "@/lib/shell/navigation";
 import {
   PipelineLinkButton,
   ShortlistAddButton,
@@ -121,17 +123,13 @@ export default async function TripWorkspacePage({
 
   return (
     <div className="space-y-8">
+      <PageHeader
+        title={title}
+        description={`${trip.destinationName} · ${trip.startDate} – ${trip.endDate} · ${tripStatusLabel(trip.status)} · ${trip.visibility === "private" ? "Private" : "Public"}`}
+        crumbs={listCrumbs(title, { href: "/app/trips", label: "Trips" })}
+        back={{ href: "/app/trips", label: "Trips" }}
+      />
       <header className="space-y-2">
-        <p className="text-sm text-muted">
-          <Link href="/app/trips" className="underline hover:text-text">
-            Trips
-          </Link>
-        </p>
-        <h1 className="text-2xl font-semibold text-text">{title}</h1>
-        <p className="text-sm text-muted">
-          {trip.destinationName} · {trip.startDate} – {trip.endDate} ·{" "}
-          {tripStatusLabel(trip.status)} · {trip.visibility === "private" ? "Private" : "Public"}
-        </p>
         <Link
           href={discoverHref}
           className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
@@ -173,17 +171,24 @@ export default async function TripWorkspacePage({
           <p className="text-sm text-muted">No hotels shortlisted yet.</p>
         ) : (
           <ul className="space-y-2">
-            {shortlist.hotels.map((hotel) => (
-              <li
-                key={hotel.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-app)] border border-border bg-surface px-4 py-3"
-              >
-                <Link href={`/app/hotels/${hotel.id}`} className="text-sm font-medium text-text">
-                  {hotel.name}
-                </Link>
-                <ShortlistRemoveButton tripId={trip.id} hotelId={hotel.id} />
-              </li>
-            ))}
+            {shortlist.hotels.map((hotel) => {
+              const href = tripHotelHref(trip.id, hotel.id);
+              return (
+                <li
+                  key={hotel.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-app)] border border-border bg-surface px-4 py-3"
+                >
+                  {href ? (
+                    <Link href={href} className="text-sm font-medium text-text">
+                      {hotel.name}
+                    </Link>
+                  ) : (
+                    <span className="text-sm font-medium text-text">{hotel.name}</span>
+                  )}
+                  <ShortlistRemoveButton tripId={trip.id} hotelId={hotel.id} />
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -238,7 +243,12 @@ export default async function TripWorkspacePage({
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-text">Pipeline on this trip</h2>
-        <form action={`/app/trips/${trip.id}`} method="get" className="flex flex-wrap gap-2" role="search">
+        <form
+          action={`/app/trips/${trip.id}`}
+          method="get"
+          className="flex flex-wrap gap-2"
+          role="search"
+        >
           {hotelQuery ? <input type="hidden" name="q" value={hotelQuery} /> : null}
           <label className="sr-only" htmlFor="pipeline-q">
             Find a pipeline hotel

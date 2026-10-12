@@ -6,15 +6,24 @@
  */
 import Link from "next/link";
 
+import { pipelinePageHref, type PipelineSurface } from "@/lib/pipeline/view";
 import { PIPELINE_STATUSES, pipelineStatusLabel } from "@/lib/pipeline/types";
 
-export function PipelineStatusFilter({ status }: { status: string | null }) {
+export function PipelineStatusFilter({
+  status,
+  surface = "all",
+}: {
+  status: string | null;
+  surface?: PipelineSurface;
+}) {
+  const clearHref = pipelinePageHref(null, 1, surface === "inbox" ? "inbox" : "all");
   return (
     <form
       action="/app/pipeline"
       method="get"
       className="flex flex-wrap items-end gap-3 rounded-[var(--radius-app)] border border-border bg-surface p-4"
     >
+      {surface === "inbox" ? <input type="hidden" name="surface" value="inbox" /> : null}
       <div className="space-y-1">
         <label className="block text-xs font-medium text-muted" htmlFor="pipeline-status">
           Status
@@ -42,7 +51,7 @@ export function PipelineStatusFilter({ status }: { status: string | null }) {
       </button>
 
       {status ? (
-        <Link href="/app/pipeline" className="text-sm text-muted underline hover:text-text">
+        <Link href={clearHref} className="text-sm text-muted underline hover:text-text">
           Clear filter
         </Link>
       ) : null}
