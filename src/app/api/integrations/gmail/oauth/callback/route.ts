@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { resolveSession } from "@/lib/auth/guards";
+import { bindServerActions } from "@/lib/entitlements/inventory";
 import { completeGmailAuthorization } from "@/lib/gmail/connection.server";
+
+bindServerActions(["gmail.connect"]);
 
 /**
  * The Gmail OAuth callback.

@@ -18,7 +18,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/hotels/ids";
-import { FREE_LIMITS } from "@/lib/config";
+import { workspaceLimit } from "@/lib/entitlements/inventory";
 
 import {
   DEAL_ACTIONS,
@@ -240,7 +240,7 @@ export async function saveHotelToPipeline(userId: string, hotelId: string): Prom
   const { data, error } = await admin.rpc("save_hotel_to_pipeline", {
     p_user_id: userId,
     p_hotel_id: hotelId,
-    p_free_saved_limit: FREE_LIMITS.savedHotels,
+    p_free_saved_limit: workspaceLimit("pipeline.save"),
   });
 
   // Never surface a raw Postgres/PostgREST error to the browser.
@@ -288,7 +288,7 @@ export async function transitionPipelineItem(
     p_sentiment: input.sentiment ?? null,
     p_offer_type: input.offerType ?? null,
     p_close_reason: input.closeReason ?? null,
-    p_free_engaged_limit: FREE_LIMITS.activePipelineItems,
+    p_free_engaged_limit: workspaceLimit("pipeline.engage"),
   });
 
   // Never surface a raw Postgres/PostgREST error to the browser.

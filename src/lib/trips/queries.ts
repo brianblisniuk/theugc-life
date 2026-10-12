@@ -3,11 +3,12 @@
  *
  * Reads use the cookie-bound client so RLS is the row boundary. Mutations call
  * service-role RPCs. The user id passed to those RPCs comes from the session,
- * never from the form. The Free active-trip allowance comes from FREE_LIMITS.
+ * never from the form. The Free active-trip allowance comes from the
+ * entitlement inventory, which reads FREE_LIMITS.
  */
 import "server-only";
 
-import { FREE_LIMITS } from "@/lib/config";
+import { workspaceLimit } from "@/lib/entitlements/inventory";
 import { sanitizeSearchTerm } from "@/lib/hotels/filters";
 import { isUuid } from "@/lib/hotels/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -328,7 +329,7 @@ export async function createTrip(
     p_start_date: input.startDate,
     p_end_date: input.endDate,
     p_status: input.status,
-    p_free_active_trip_limit: FREE_LIMITS.activeTrips,
+    p_free_active_trip_limit: workspaceLimit("trips.active"),
   });
   if (data === null) return { result: "error" };
   return mapTripWriteResult(data);
@@ -354,7 +355,7 @@ export async function updateTrip(
     p_start_date: input.startDate,
     p_end_date: input.endDate,
     p_status: input.status,
-    p_free_active_trip_limit: FREE_LIMITS.activeTrips,
+    p_free_active_trip_limit: workspaceLimit("trips.active"),
   });
   if (data === null) return { result: "error" };
   return mapTripWriteResult(data);
