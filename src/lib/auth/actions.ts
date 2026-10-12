@@ -39,6 +39,19 @@ export async function signIn(_prev: AuthActionState, formData: FormData): Promis
     // Generic message: do not reveal whether the email exists.
     return { error: "Invalid email or password." };
   }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    try {
+      const { syncOnCreatorLoginServer } = await import("@/lib/gmail/sync/on-login.server");
+      await syncOnCreatorLoginServer(user.id);
+    } catch (syncError) {
+      logger.warn("gmail incremental sync on login failed", {
+        code: syncError instanceof Error ? syncError.name : "sync_failed",
+      });
+    }
+  }
   redirect(safeRedirect(formData.get("redirect")));
 }
 

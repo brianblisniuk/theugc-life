@@ -562,6 +562,103 @@ d("explicit ACL contract (0024)", () => {
     }
   });
 
+  it("pins empty search_path and keeps B08 sync RPCs service_role-only", async () => {
+    const machine = [
+      "gmail_incremental_sync_request_login",
+      "gmail_incremental_sync_list_due",
+      "gmail_incremental_sync_claim_step",
+      "gmail_incremental_sync_validate_claim",
+      "gmail_incremental_sync_commit_history_page",
+      "gmail_incremental_sync_history_expired",
+      "gmail_incremental_sync_commit_sent_page",
+      "gmail_incremental_sync_commit_enqueue_known",
+      "gmail_incremental_sync_commit_thread",
+      "gmail_incremental_sync_record_thread_gone",
+      "gmail_incremental_sync_record_retry",
+      "gmail_incremental_sync_fail_run",
+      "gmail_incremental_sync_commit_profile_history",
+      "gmail_incremental_sync_commit_completion",
+      "gmail_incremental_sync_release_claim",
+      "gmail_incremental_sync_pause",
+      "gmail_incremental_sync_cancel_connection_stopped",
+      "gmail_incremental_sync_mark_pipeline_done",
+      "gmail_incremental_sync_release_pipeline",
+      "gmail_incremental_sync_renew_pipeline",
+      "gmail_incremental_sync_list_pipeline_threads",
+      "gmail_incremental_sync_purge_for_deletion",
+      "gmail_incremental_sync_status",
+    ];
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=""%' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname like 'gmail\\_incremental\\_sync\\_%'
+       order by p.proname
+    `);
+    expect(rows.map((row) => row.proname)).toEqual([...machine].sort());
+    for (const row of rows) {
+      expect(row.definer, row.proname).toBe(true);
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(false);
+      expect(row.svc, row.proname).toBe(true);
+    }
+
+    const helpers = await adminQuery<{ proname: string; anon: boolean; auth: boolean }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'private'
+         and (p.proname like 'gmail\\_sync\\_%' or p.proname = 'apply_gmail_lifecycle_to_sync_runs')
+    `);
+    expect(helpers.length).toBeGreaterThan(0);
+    for (const row of helpers) {
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(false);
+    }
+
+    const [absent] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=""%' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname = 'assert_gmail_sync_data_absent_when_deleted'
+    `);
+    expect(absent).toBeDefined();
+    expect(absent!.definer).toBe(true);
+    expect(absent!.pinned).toBe(true);
+    expect(absent!.anon).toBe(false);
+    expect(absent!.auth).toBe(false);
+    expect(absent!.svc).toBe(false);
+    expect(absent!.public_exec).toBe(false);
+  });
+
   it("pins D01 trip RPCs to service_role with an empty search_path", async () => {
     const rows = await adminQuery<{
       proname: string;

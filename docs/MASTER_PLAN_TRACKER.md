@@ -293,7 +293,7 @@ is B02.
 | B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | **DONE** — PR #38, merge `c6cd180ea27a3901a365526a29371121f8cedc5c` | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
 | B07 | **SLICE 1 MERGED** — PR #50, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`, migration `0044` (D072/D075). **B07.1 MERGED** — PR #51, merge `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`, migration `0045`: one-sided `agreement_observed` rejected from stored text; creator reads mark a drifted B06 fingerprint stale. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
-| B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
+| B08 | **INCREMENTAL SYNC IN REVIEW** — PR #53, D076, migration `0047`, branch `feat/b08-gmail-incremental-sync`. History polling and login trigger only. Pilot quality/data-density KPIs are still gated: D076 does not define them. | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
 **Base rounds:** 8  
 **Cumulative future rounds:** 12
@@ -366,7 +366,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
-| D07 | **AWAITING AUDIT** — PR #56, branch `feat/d07-deliverables-compensation`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Rebased onto main `ab05074` (E01). Records only: no charge. Prior PASS was `984171a`. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
+| D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
 **Base rounds:** 8  
@@ -633,16 +633,17 @@ timing flake) and explicit human acceptance.
 **B06 (PR #38) is merged**, as merge commit
 `c6cd180ea27a3901a365526a29371121f8cedc5c` into `main`.
 
-**B07 slice 1 is merged**, as merge commit
-`161e4c0d7694b3e12b3b496c1393037b2d0e57a5` (PR #50). Rules engine only.
-Model-backed inference remains gated, so this is not the whole of B07.
+**B07 slice 1 (PR #50) is merged**, as merge commit
+`161e4c0d7694b3e12b3b496c1393037b2d0e57a5` into `main`. Rules engine only
+(D072/D075). Model-backed inference remains gated, so this is not B07 done.
 
-**B07.1 is merged**, as merge commit
-`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852` (PR #51). Migration
+**B07.1 (PR #51) is merged**, as merge commit
+`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852` into `main`. Migration
 `0045_gmail_commercial_meaning_followups.sql` does not edit `0044`. A
 one-sided accept cannot be stored as `agreement_observed` by setting a
 caller flag, and a creator read marks the machine interpretation stale when
 the bound B06 classification or chronology fingerprint has changed in place.
+Model-backed inference remains gated, so this is not B07 done.
 
 **D01 (PR #52) is merged**, as merge commit
 `4062170212beb8b978a248ef219eb91ddbfb080b` into `main`. Migration
@@ -655,22 +656,31 @@ Accepted, and this block does not implement it.
 
 **E01 (PR #55) is merged**, as merge commit
 `ab0507461b4b47b21112dd07589b4b8a88d3efb3` into `main`. Discover and Hotel
-Detail over published canonical hotels. Map provider is not decided; the
+Detail over published canonical hotels. Map provider is not decided, so the
 surface keeps an empty slot and does not call a tile service. No migration.
 
-The open implementation block on this branch is:
+**D07 (PR #56) is merged**, as merge commit
+`61d0e385894670bc55a78675e64526c353c288d5` into `main`. Migration
+`0050_collaboration_deliverables_compensation.sql`. D078 is Accepted.
+Compensation is strategic data used to value each piece of content. Records
+only: it is not a charge. E01 did not take `0049`; that number is still unused.
 
-> **D07 — collaboration deliverables and agreed compensation (D078, Accepted).
-> Open as PR #56 on `feat/d07-deliverables-compensation`, now containing
-> main `ab05074`. Migration `0050_collaboration_deliverables_compensation.sql`.
-> Compensation is strategic data used to value each piece of content.
-> Records only. A prior audit passed `984171a` and does not cover this head.
-> Do not merge from automation.**
-
-B08 incremental sync is a separate open pull request (#53, D076, migrations
-`0047` and `0048`) and is not this block. E01 did not take `0049`; that
-number is still unused. Pilot KPIs remain an owner question (D077). This PR
-does not change the B08 tracker row.
+> **B08 — continuous Gmail sync (D076). Migration
+> `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
+> and on creator login, same D068 inclusion rule, no Pub/Sub and no new
+> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. The snapshot
+> commit and `window_end_at` are the same clock. The bounded re-scan's
+> `messages.list` omits `before:`, and the message ids it returns are the
+> snapshot sent ids, so a sent message inside the snapshot is stored even
+> when it has no numeric `historyId` and its date is after `window_end_at`.
+> `history_id` does not advance past a non-draft sent snapshot message this
+> run did not store, except a message dated before the forward window: that
+> exclusion is intentional and the cursor still advances. Awaiting re-audit.
+> `0046` is D01 on `main`. This PR keeps `0047` and adds `0048` so the
+> commercial classifier decodes `&nbsp;`, `&amp;`, `&lt;`, and `&gt;` without
+> regard to case. `0045` is not edited. `0048` is not D078. D07 (D078,
+> migration `0050`) is merged as PR #56. This PR does not edit `0050`. Pilot
+> KPIs are not in D076 and are not in this PR. Do not merge from automation.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

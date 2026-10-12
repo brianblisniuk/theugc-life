@@ -43,6 +43,13 @@ export interface GmailHistoricalReadAdapter {
     windowStartMs: number;
     windowEndMs: number;
     pageToken: string | null;
+    /**
+     * Snapshot-anchored sync omits `before:`. The profile historyId already
+     * bounds the mailbox, and `before:ceil(windowEnd)` drops a sent message
+     * that exists inside that snapshot when its second is at or after the
+     * exclusive bound.
+     */
+    omitUpperBound?: boolean;
   }): Promise<{
     candidates: { messageId: string; threadId: string }[];
     nextPageToken: string | null;
@@ -85,8 +92,13 @@ const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
  * not a database column. A Gmail search query is a capability — it can ask for
  * anything in the mailbox — and B03 constructs the whole of it.
  */
-export function buildSentWindowQuery(windowStartMs: number, windowEndMs: number): string {
+export function buildSentWindowQuery(
+  windowStartMs: number,
+  windowEndMs: number,
+  options?: { omitUpperBound?: boolean },
+): string {
   const after = Math.max(Math.floor(windowStartMs / 1000) - 1, 0);
+  if (options?.omitUpperBound) return `after:${after}`;
   const before = Math.ceil(windowEndMs / 1000);
   return `after:${after} before:${before}`;
 }
@@ -112,14 +124,17 @@ function providerReason(body: unknown): unknown {
  * a query parameter, never a log line, never an error, never a row.
  */
 export const gmailHistoricalReadAdapter: GmailHistoricalReadAdapter = {
-  async listSentMessages({ accessToken, windowStartMs, windowEndMs, pageToken }) {
+  async listSentMessages({ accessToken, windowStartMs, windowEndMs, pageToken, omitUpperBound }) {
     const url = new URL(`${GMAIL_API}/messages`);
     // SENT-ROOTED. The label is what makes this an outreach-shaped acquisition
     // rather than an inbox crawl.
     url.searchParams.set("labelIds", "SENT");
     url.searchParams.set("maxResults", String(MESSAGES_LIST_MAX_RESULTS));
     url.searchParams.set("includeSpamTrash", "true");
-    url.searchParams.set("q", buildSentWindowQuery(windowStartMs, windowEndMs));
+    url.searchParams.set(
+      "q",
+      buildSentWindowQuery(windowStartMs, windowEndMs, { omitUpperBound }),
+    );
     // Ask for only what B03 uses. `resultSizeEstimate` is deliberately absent:
     // it is an estimate, and the absence of `nextPageToken` is the only
     // completion signal this pipeline trusts.

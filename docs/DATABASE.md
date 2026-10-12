@@ -2846,7 +2846,7 @@ At minimum:
     value. Records only: no charge and no payment provider. A B07 structure
     may be copied into a suggestion and cannot overwrite the creator row.
     Does not write `collaborations.private_value_*`, outreach events, or
-    public intelligence. `0047` and `0048` are reserved by open PR #53.
-    `0049` is left free for open PR #55.
+    public intelligence. `0047` and `0048` stay on open PR #53 (B08).
+    E01 (PR #55) added no migration. `0049` is still unused.
 
 Every migration must be reproducible from an empty database.
