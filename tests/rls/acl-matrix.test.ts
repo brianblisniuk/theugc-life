@@ -509,6 +509,51 @@ d("explicit ACL contract (0024)", () => {
     expect(absent!.auth).toBe(false);
     expect(absent!.svc).toBe(false);
     expect(absent!.public_exec).toBe(false);
+
+    const helpers = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, private, pg_temp%'
+               as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'private'
+         and p.proname in (
+           'gmail_commercial_classifier_clean_text',
+           'gmail_commercial_text_is_explicit_booking',
+           'gmail_commercial_stored_text_is_explicit_booking',
+           'gmail_commercial_b06_fingerprint_drifted',
+           'gmail_commercial_mark_b06_fingerprint_stale'
+         )
+       order by p.proname
+    `);
+    expect(helpers.map((row) => row.proname)).toEqual([
+      "gmail_commercial_b06_fingerprint_drifted",
+      "gmail_commercial_classifier_clean_text",
+      "gmail_commercial_mark_b06_fingerprint_stale",
+      "gmail_commercial_stored_text_is_explicit_booking",
+      "gmail_commercial_text_is_explicit_booking",
+    ]);
+    for (const row of helpers) {
+      expect(row.definer, row.proname).toBe(false);
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(false);
+      expect(row.svc, row.proname).toBe(false);
+      expect(row.public_exec, row.proname).toBe(false);
+    }
   });
 
   it("pins empty search_path and keeps B08 sync RPCs service_role-only", async () => {

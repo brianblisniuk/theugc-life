@@ -3,8 +3,8 @@
 -- ===========================================================================
 -- Polls Gmail history.list forward from the last completed historical-import
 -- window end. Same sent-rooted inclusion rule as D068. No Pub/Sub, no
--- gmail.send, no new scope. 0045 and 0046 are left for the parallel B07.1 and
--- D01 blocks; this file is the next free number after that reservation.
+-- gmail.send, no new scope. 0045 is B07.1 on main. 0046 stays reserved for
+-- D01. This file is the next free number after that reservation.
 --
 -- The 15-minute cadence is a database due-time, discharged by the same
 -- operator-worker entrypoint the repo already uses for Gmail jobs. There is

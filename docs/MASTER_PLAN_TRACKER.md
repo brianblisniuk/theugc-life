@@ -292,7 +292,7 @@ is B02.
 | B04 | **DONE** — PR #36, merge `773556f38bfa17ac4b078efae51953024babab52` | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | **DONE** — PR #38, merge `c6cd180ea27a3901a365526a29371121f8cedc5c` | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
-| B07 | **SLICE 1 MERGED** — PR #50, rules engine only, migration `0044`, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5` (D072/D075). Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
+| B07 | **SLICE 1 MERGED** — PR #50, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`, migration `0044` (D072/D075). **B07.1 MERGED** — PR #51, merge `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`, migration `0045`: one-sided `agreement_observed` rejected from stored text; creator reads mark a drifted B06 fingerprint stale. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
 | B08 | **INCREMENTAL SYNC IN REVIEW** — PR #53, D076, migration `0047`, branch `feat/b08-gmail-incremental-sync`. History polling and login trigger only. Pilot quality/data-density KPIs are still gated: D076 does not define them. | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
 **Base rounds:** 8  
@@ -632,13 +632,22 @@ timing flake) and explicit human acceptance.
 `161e4c0d7694b3e12b3b496c1393037b2d0e57a5` into `main`. Rules engine only
 (D072/D075). Model-backed inference remains gated, so this is not B07 done.
 
+**B07.1 (PR #51) is merged**, as merge commit
+`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852` into `main`. Migration
+`0045_gmail_commercial_meaning_followups.sql` does not edit `0044`. A
+one-sided accept cannot be stored as `agreement_observed` by setting a
+caller flag, and a creator read marks the machine interpretation stale when
+the bound B06 classification or chronology fingerprint has changed in place.
+Model-backed inference remains gated, so this is not B07 done.
+
 The open implementation block is:
 
 > **B08 — continuous Gmail sync (D076). Migration
 > `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
 > and on creator login, same D068 inclusion rule, no Pub/Sub and no new
-> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. Pilot KPIs
-> are not in D076 and are not in this PR. Do not merge from automation.**
+> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. `0046` stays
+> reserved for D01. Pilot KPIs are not in D076 and are not in this PR. Do
+> not merge from automation.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

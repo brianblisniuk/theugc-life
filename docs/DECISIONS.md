@@ -3028,7 +3028,8 @@ Pilot quality and data-density KPIs are named on the B08 tracker row and are
 not defined here. They are not part of this migration. B08 is not done until
 that instrumentation has its own decision.
 
-`0045` and `0046` are in use on the parallel B07.1 and D01 branches. This
-block takes `0047`, the next free number after that reservation. D074 still
-applies: a reserved number is advisory until the migration is written against
-live `main`.
+`0045_gmail_commercial_meaning_followups.sql` is B07.1, merged to `main` as
+PR #51 (`187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`). `0046` stays reserved for
+D01 (PR #52). This block keeps `0047`, the next free number after that
+reservation. D074 still applies: a reserved number is advisory until the
+migration is written against live `main`.
