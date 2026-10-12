@@ -292,7 +292,7 @@ is B02.
 | B04 | **DONE** — PR #36, merge `773556f38bfa17ac4b078efae51953024babab52` | normalized thread/message/event representation | provider IDs preserved; private raw vs derived data boundary explicit |
 | B05 | **DONE** — PR #37, merge `029d19a4236ea042b03cfcc0ba7d63a376a55691` | private creator-outreach interpretation + commercial-target/contact observation | measurable precision/recall; ambiguous target identity cannot silently merge |
 | B06 | **DONE** — PR #38, merge `c6cd180ea27a3901a365526a29371121f8cedc5c` | private reply chronology + response timing (D071) | qualifying human reply semantics explicit; auto/delivery noise separated |
-| B07 | **SLICE 1 IN REVIEW** — PR #50, rules engine only, migration `0044` (D072/D075). Audit of `f34f1d8` failed; correction is on the same PR. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
+| B07 | **SLICE 1 MERGED** — PR #50, merge `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`, migration `0044` (D072/D075). **B07.1 follow-ups IN AUDIT** — PR #51, branch `fix/b07-1-followups`, migration `0045`: one-sided `agreement_observed` rejected from stored text; creator reads mark a drifted B06 fingerprint stale. Model-backed inference still gated. Not the whole of B07. | reply/outcome classification + creator correction loop | structured taxonomy; confidence; correction provenance |
 | B08 | GATED | ongoing incremental Gmail sync + pilot instrumentation | new sent/replies arrive without full re-import; quality/data-density KPIs observable |
 
 **Base rounds:** 8  
@@ -630,12 +630,18 @@ timing flake) and explicit human acceptance.
 
 The open implementation block is:
 
-> **B07 slice 1 — Gmail commercial meaning, rules engine only (D072/D075).
-> Migration `0044_gmail_commercial_meaning.sql`. No external model and no
-> provider receives Gmail data. Open as PR #50 on
-> `feat/b07-slice1-rules-engine`. Audit of `f34f1d8` failed; the correction
-> is on the same PR and is not merged. Model-backed inference remains
-> gated, so this is not B07 done.**
+> **B07 slice 1 is merged** as PR #50, merge commit
+> `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`. Migration
+> `0044_gmail_commercial_meaning.sql`. No external model and no provider
+> receives Gmail data. Model-backed inference remains gated, so this is
+> not B07 done.
+>
+> **B07.1 follow-ups are open as PR #51** on `fix/b07-1-followups`, state
+> AUDITING. Migration `0045_gmail_commercial_meaning_followups.sql` does
+> not edit `0044`. A one-sided accept cannot be stored as
+> `agreement_observed` by setting a caller flag, and a creator read marks
+> the machine interpretation stale when the bound B06 classification or
+> chronology fingerprint has changed in place. Do not merge from automation.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

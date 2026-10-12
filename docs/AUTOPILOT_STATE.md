@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `0d176e42a7487c24c42f7d448f1fb3b3912535e3` (merge of PR #49, 2026-10-12)  
-**State:** AWAITING_CI. PR #50, branch `feat/b07-slice1-rules-engine`. Independent audit of `f34f1d8bbea6790ca765bbe14cd0d3f0e7f311e4` failed (comment 6122485417). The correction is on this same PR. `.grok/autopilot-state.json` does not name this correction commit as `expected_head`. Live GitHub is the head to verify. Do not merge `f34f1d8`.  
-**Current frontier:** B07 slice 1. The owner authorized a deterministic rules engine (D075, reconciliation only). No external model runs, and no provider receives Gmail data. Model-backed inference remains gated. This slice is not the whole of B07.
+**Last verified main:** `161e4c0d7694b3e12b3b496c1393037b2d0e57a5` (merge of PR #50, 2026-10-12)
+**State:** AUDITING. PR #51, branch `fix/b07-1-followups`. This is the B07.1 follow-up to the non-blocking residuals on the PR #50 re-audit. The work order's awaiting-audit gate is the schema state `AUDITING`. `.grok/autopilot-state.json` does not name this commit as `expected_head`. Live GitHub is the head to verify. Do not merge.
+**Current frontier:** B07.1. Slice 1 (rules engine, migration `0044`) is merged. This PR adds migration `0045`: `agreement_observed` requires stored booking text, and creator reads mark a drifted B06 classification/chronology fingerprint stale. No external model runs, and no provider receives Gmail data. Model-backed inference remains gated. This is not the whole of B07.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -22,15 +22,16 @@
 - PR #44 — Autonomous engineering system bootstrap — `119aa691d540a1a5a58cfe44e678562ddb4a3a37`
 - Direct push (no PR) — autopilot state update — `0844874c9304ce63e7393a22bf8951b5a5e93061`
 - PR #47 — Baseline security corrections (0043, tenant/grant/webhook tests) — `f48a11364b10fd75972318f7e742a0d334d785f5`
-- PR #46 — Autopilot state after PR #45 + ruleset — `60b674d142daa0e0e46dee298c61f573ac6e8f06`
+- PR #46 — Autopilot state after PR #45 + ruleset — `60b674d142daa0e46dee298c61f573ac6e8f06`
 - PR #45 — Governance reconciliation (0844874 note, D073 Rebill index, enforcement reality) — `186f4cdb98b79278a52258abe23ec96afb88483a`
 - PR #48 — Baseline reconciliation — `d71e92a189e566af09d2d53a592f19e1384bbc50`
 - PR #49 — Autonomous engineering system v1 — `0d176e42a7487c24c42f7d448f1fb3b3912535e3`
+- PR #50 — B07 slice 1 rules engine — `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`
 
 ## Next action
-- B07 slice 1 is PR #50 (`feat/b07-slice1-rules-engine`). Audit of `f34f1d8` failed; the correction stays on this PR. State is AWAITING_CI. Do not merge from automation.
+- B07.1 is PR #51 (`fix/b07-1-followups`). State is AUDITING. Do not merge from automation.
 - Model-backed B07 inference and B08 stay gated.
-- Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N10 (stale tracker §9) is corrected in this PR.
+- BASE-N5 and BASE-N9 remain non-blocking and are outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state PRs).
 - Owner interaction happens only via human-frontier labels.
 
