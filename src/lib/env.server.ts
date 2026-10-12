@@ -14,6 +14,8 @@ const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Optional until a real payment provider is connected.
+  BILLING_WEBHOOK_SECRET: z.string().min(1).optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
@@ -30,6 +32,7 @@ export function serverEnv(): ServerEnv {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
+    BILLING_WEBHOOK_SECRET: process.env.BILLING_WEBHOOK_SECRET,
   });
   if (!parsed.success) {
     throw new Error(`Invalid server environment variables:\n${formatIssues(parsed.error)}`);
