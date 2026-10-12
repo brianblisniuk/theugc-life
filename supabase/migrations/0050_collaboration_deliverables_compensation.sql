@@ -4,7 +4,7 @@
 -- (E01, PR #55) adds no migration and still ends at 0046.
 -- Open PR #53 (B08) reserves 0047_gmail_incremental_sync.sql and
 -- 0048_gmail_commercial_clean_text_entities.sql, and D076.
--- 0049 was left free for E01 and is still unused.
+-- 0049 was left free for E01. Addendum (13 Oct 2026): 0049 was later used by D06 (D080).
 -- D077 is C01 on main. This block is D078.
 --
 -- Agreed compensation is the creator's record of what a won collaboration is

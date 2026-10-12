@@ -71,6 +71,11 @@ const CONTRACT: Record<string, Expected> = {
   collaboration_agreed_compensations: { anon: "", authenticated: "S", serviceRole: "all" },
   collaboration_compensation_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
   collaboration_deliverables: { anon: "", authenticated: "S", serviceRole: "all" },
+  // D06 (0049, D080). The creator link and its Gmail suggestions are private.
+  // The browser can read its own rows; writes go through service-role RPCs.
+  pipeline_inbox_bindings: { anon: "", authenticated: "S", serviceRole: "all" },
+  pipeline_inbox_readings: { anon: "", authenticated: "S", serviceRole: "all" },
+  pipeline_inbox_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
 
   // Intelligence. Base aggregates are unreachable by any client role.
   hotel_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
@@ -832,6 +837,110 @@ d("explicit ACL contract (0024)", () => {
     expect(currency!.auth).toBe(true);
     expect(currency!.svc).toBe(true);
     expect(currency!.public_exec).toBe(false);
+  });
+
+  it("pins D06 inbox RPCs and keeps client roles off the writers", async () => {
+    const rows = await adminQuery<{
+      proname: string;
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select p.proname,
+             has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname in (
+           'bind_pipeline_inbox_thread',
+           'unbind_pipeline_inbox_thread',
+           'refresh_pipeline_inbox_suggestions',
+           'dismiss_pipeline_inbox_suggestion',
+           'accept_pipeline_inbox_suggestion',
+           'enforce_pipeline_inbox_same_creator',
+           'enforce_pipeline_inbox_writer',
+           'enforce_pipeline_inbox_item_owner'
+         )
+       order by p.proname
+    `);
+    expect(rows.map((row) => row.proname)).toEqual([
+      "accept_pipeline_inbox_suggestion",
+      "bind_pipeline_inbox_thread",
+      "dismiss_pipeline_inbox_suggestion",
+      "enforce_pipeline_inbox_item_owner",
+      "enforce_pipeline_inbox_same_creator",
+      "enforce_pipeline_inbox_writer",
+      "refresh_pipeline_inbox_suggestions",
+      "unbind_pipeline_inbox_thread",
+    ]);
+    for (const row of rows) {
+      expect(row.definer, row.proname).toBe(true);
+      expect(row.pinned, row.proname).toBe(true);
+      expect(row.anon, row.proname).toBe(false);
+      expect(row.auth, row.proname).toBe(false);
+      expect(row.svc, row.proname).toBe(true);
+      expect(row.public_exec, row.proname).toBe(false);
+    }
+
+    const [internal] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = '_pipeline_inbox_sync_suggestions'
+    `);
+    expect(internal).toBeDefined();
+    expect(internal!.definer).toBe(true);
+    expect(internal!.pinned).toBe(true);
+    expect(internal!.anon).toBe(false);
+    expect(internal!.auth).toBe(false);
+    expect(internal!.svc).toBe(false);
+    expect(internal!.public_exec).toBe(false);
+
+    const [reader] = await adminQuery<{
+      anon: boolean;
+      auth: boolean;
+      svc: boolean;
+      public_exec: boolean;
+      pinned: boolean;
+      definer: boolean;
+    }>(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
+             has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
+             p.prosecdef as definer
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'read_pipeline_inbox_unity'
+    `);
+    expect(reader).toBeDefined();
+    expect(reader!.definer).toBe(false);
+    expect(reader!.pinned).toBe(true);
+    expect(reader!.anon).toBe(false);
+    expect(reader!.auth).toBe(true);
+    expect(reader!.svc).toBe(true);
+    expect(reader!.public_exec).toBe(false);
   });
 });
 

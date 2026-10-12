@@ -365,7 +365,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
-| D06 | PLANNED | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
+| D06 | **IN PR #58** — migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Not merged. Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | PLANNED | creator context + personal analytics + verified proof/portfolio layer | history is reused to improve next opportunity, not just archived |
 
@@ -401,7 +401,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | E01 | **DONE** — PR #55, merge `ab0507461b4b47b21112dd07589b4b8a88d3efb3`. Discover + Hotel Detail over published canonical hotels. E01 left an empty map slot and did not call a tile service. No migration. The slot is filled by MAP (PR #57). | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
-| MAP | **DONE** — PR #57. Google Maps JavaScript API (D079) on Discover (the current filtered page) and Hotel Detail (one pin). Key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. A missing key renders no map and no error. No migration. `0049` stays unused. Merge SHA is recorded by the next block. | Fill the E01 map slot | Published hotels only; no private creator data is sent to Google |
+| MAP | **DONE** — PR #57, merge `023a354c8592411e1ac85c818324589993f358a6`. Google Maps JavaScript API (D079) on Discover (the current filtered page) and Hotel Detail (one pin). Key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. A missing key renders no map and no error. No migration. | Fill the E01 map slot | Published hotels only; no private creator data is sent to Google |
 | E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | PLANNED | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
@@ -664,7 +664,7 @@ call a tile service. No migration. MAP (PR #57, D079) fills that slot.
 `61d0e385894670bc55a78675e64526c353c288d5` into `main`. Migration
 `0050_collaboration_deliverables_compensation.sql`. D078 is Accepted.
 Compensation is strategic data used to value each piece of content. Records
-only: it is not a charge. E01 did not take `0049`; that number is still unused.
+only: it is not a charge. E01 did not take `0049`. D06 (PR #58, not merged) uses `0049`. D080 is Accepted (Brian, 13 Oct 2026). D079 is Google Maps (PR #57).
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
@@ -681,7 +681,7 @@ only: it is not a charge. E01 did not take `0049`; that number is still unused.
 > classifier decodes `&nbsp;`, `&amp;`, `&lt;`, and `&gt;` without regard to
 > case. `0045` is not edited. `0048` is not D078. D07 (D078, migration `0050`)
 > is merged as PR #56. B08 does not edit `0050`. Pilot KPIs are not in D076.
-> `0049` stays unused.
+> B08 does not take `0049`. D06 (PR #58) uses it.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

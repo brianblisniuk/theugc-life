@@ -4,7 +4,7 @@
 **Base:** `main` `eb136190f676e9201b6b39de4b570d51e52da73d` (merge of PR #53, B08)
 **Branch:** `cursor/map-google-js-7ba9`
 **Decision:** D079
-**Migration:** none. `0049` stays unused.
+**Migration:** none.
 
 One PR for the whole block, including the tracker and autopilot state. Do not merge.
 

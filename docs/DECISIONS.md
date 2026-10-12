@@ -3056,7 +3056,7 @@ is D01, merged to `main` as PR #52 (`4062170212beb8b978a248ef219eb91ddbfb080b`).
 This block keeps `0047`. D074 still applies: a reserved number is advisory
 until the migration is written against live `main`.
 
-D077 below is Proposed and stays Proposed. D078 is Accepted and merged as PR #56 (`61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`). This block does not take D078 and does not edit `0050`. `0048` on this branch is the classifier entity migration, not a decision number. `0049` is still unused.
+D077 below is Proposed and stays Proposed. D078 is Accepted and merged as PR #56 (`61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`). This block does not take D078 and does not edit `0050`. `0048` on this branch is the classifier entity migration, not a decision number. B08 does not take `0049`.
 
 ## D077 — Normalized intelligence facts trace to a canonical target and private evidence (C01)
 
@@ -3290,7 +3290,7 @@ is passed to the loader or the marker.
 A marker click navigates inside this app to `/app/hotels/{uuid}`. It is not
 a Google request.
 
-No migration. `0049` stays unused. No Cloud Map ID, so the map uses the
+No migration. Addendum (13 Oct 2026): `0049` was later used by D06 (D080). No Cloud Map ID, so the map uses the
 classic `Marker` rather than Advanced Markers. POI clicks are off
 (`clickableIcons: false`) so the map does not open Google's place cards.
 
@@ -3301,3 +3301,66 @@ classic `Marker` rather than Advanced Markers. POI clicks are off
 - No production key and no Netlify change in the implementation PR.
 - No marker clustering. The mounted set is one page, at most 50 pins.
 - No selected-marker sync beyond opening the hotel the marker locates.
+
+## D080 — A linked Gmail thread and a pipeline cycle share one creator-owned status (D06)
+
+Status: **Accepted** — Brian, 13 Oct 2026. The reading below is unchanged
+from the proposal. D072, D076, D078, and D079 are unchanged.
+
+Numbering: D080 follows D079. D079 is Google Maps (PR #57, merged
+`023a354c8592411e1ac85c818324589993f358a6`) and is not this decision.
+Migration `0049_inbox_pipeline_unity.sql`. `0050` is D07 on main and is not
+edited.
+
+Depends on D043, D045, D068, D072, and D076. B06 chronology, B07 commercial
+meaning, and B08 incremental sync stay the producers of inbox state. This
+decision does not change their machine rules.
+
+### The record
+
+`pipeline_items.status` is the only CRM status. A B07 thread commercial
+state is an advisory reading stored beside an explicit link. Refresh copies
+that reading. It does not call `transition_pipeline_item` or
+`progress_pipeline_deal`, and it does not insert an outreach event or a
+collaboration.
+
+### The link
+
+The creator binds one pipeline item to one stored thread
+`(mail_account_id, provider_thread_id)` on a connected mailbox they own.
+No match is inferred from a hotel name, a recipient, or a B05 target. One
+item has one current thread. One thread has one current item. Unbinding
+removes the current link and leaves the pipeline status where the creator
+put it.
+
+### Suggestions
+
+A non-stale current B07 reading may open these suggestions:
+
+| Suggestion | When | What accept does |
+|---|---|---|
+| `mark_replied` | An effective human reply exists (B07 §15: creator reply-nature `human_reply`, or a current B06 `qualifying_human_reply` when reply-nature is absent, cleared, or `uncertain`; `automated`, `delivery`, and `not_reply` suppress it) and the advisory state is `unresolved`, `engaged`, `negotiating`, `agreement_observed`, or `declined_observed`. Not when the state is null or `ambiguous`. | The creator supplies a sentiment. The existing `mark_replied` transition runs. The machine disposition is not the sentiment. |
+| `open_negotiation` | The advisory state is `negotiating`. | The existing `start_negotiation` transition runs. It does not mark the deal won. |
+| `review_agreement` | The advisory state is `agreement_observed`. | The creator's acknowledgement is stored. No collaboration is created and the cycle is not set to `won`. |
+| `review_decline` | The advisory state is `declined_observed`, the latest current non-sent message carries `rejection`, and that message does not carry `redirect` or `timing_constraint`. A thread that also contains `redirect` does not get this suggestion. | The creator's acknowledgement is stored. The cycle is not closed and `deal_lost` is not written. |
+
+A redirect is not a rejection. Silence, a null commercial state, and
+`ambiguous` do not suggest `ghosted` or `no_reply`. A dismissed or accepted
+suggestion for one machine attempt is not reopened by another refresh of
+that same attempt. A newer attempt may add a new suggestion. A pipeline
+status that already covers the suggestion is stored as `creator_overrides`
+and is not applied again. A stale reading is not applied.
+
+### Privacy
+
+These rows are private to the owning creator. Another creator cannot read,
+list, bind, unbind, refresh, accept, or dismiss them by id. A missing id
+and another creator's id return the same `not_found`.
+
+### What this decision does not do
+
+- No new OAuth scope, no `gmail.send`, no new provider, no production
+  deploy, and no production database change.
+- No change to D072 machine meanings.
+- No automatic thread-to-hotel match.
+- No promotion of these rows into a C01 fact. D077 remains Proposed.

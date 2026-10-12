@@ -33,6 +33,7 @@ import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
 import { resolveSession } from "@/lib/auth/guards";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
+import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/queries";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
@@ -116,6 +117,11 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
     collaboration.status === "found"
       ? await getCollaborationWorkspace(relationship.relationship.pipelineItemId)
       : ({ status: "not_found" } as const);
+  const inbox =
+    relationship.status === "open"
+      ? await getInboxUnity(relationship.relationship.pipelineItemId)
+      : undefined;
+  const mailboxes = relationship.status === "open" ? await listConnectedMailboxes() : undefined;
 
   const [session, trips] = await Promise.all([resolveSession(), listTrips()]);
   const badges =
@@ -249,6 +255,8 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
           relationship={relationship}
           collaboration={collaboration}
           workspace={workspace}
+          inbox={inbox}
+          mailboxes={mailboxes}
         />
         <AddToTrip
           hotelId={hotel.id}

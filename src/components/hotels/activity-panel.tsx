@@ -15,9 +15,11 @@ import Link from "next/link";
 
 import { CollaborationLifecycle } from "@/components/pipeline/collaboration-lifecycle";
 import { CollaborationWorkspace } from "@/components/pipeline/collaboration-workspace";
+import { InboxLink } from "@/components/pipeline/inbox-link";
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { WorkspaceLoad } from "@/lib/collaboration/queries";
+import type { InboxLoad, MailboxLoad } from "@/lib/inbox-pipeline/contract";
 import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
 import {
   activityPanelState,
@@ -45,6 +47,8 @@ export function ActivityPanel({
   relationship,
   collaboration,
   workspace,
+  inbox,
+  mailboxes,
 }: {
   hotelId: string;
   relationship: OpenRelationshipResult;
@@ -52,6 +56,9 @@ export function ActivityPanel({
   collaboration: CollaborationLoad;
   /** Deliverables and agreed compensation for that collaboration. */
   workspace: WorkspaceLoad;
+  /** Inbox link for an open cycle. Omitted when there is no cycle to attach it to. */
+  inbox?: InboxLoad;
+  mailboxes?: MailboxLoad;
 }) {
   const state = activityPanelState(relationship);
 
@@ -137,6 +144,15 @@ export function ActivityPanel({
             <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
             <p className="max-w-prose text-sm text-muted">{deal.body}</p>
           </div>
+        ) : null}
+
+        {inbox && mailboxes && relationship.status === "open" ? (
+          <InboxLink
+            pipelineItemId={relationship.relationship.pipelineItemId}
+            hotelId={hotelId}
+            inbox={inbox}
+            mailboxes={mailboxes}
+          />
         ) : null}
 
         {shouldOfferWorkflow(state) && relationship.status === "open" ? (
