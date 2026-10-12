@@ -11,8 +11,14 @@
 -- no cron daemon in this repository (B03). Creator login sets the due flag.
 --
 -- A bounded re-scan captures users.getProfile before messages.list and
--- threads.get, and completion stores that earlier historyId. The pipeline
--- step holds a cursor lease so two workers cannot both insert attempts.
+-- threads.get, and completion stores that earlier historyId. Committing the
+-- profile snapshot, or a history.list page, moves window_end_at to that same
+-- clock before those later reads filter on it. A non-draft sent message that
+-- was inside the snapshot is stored even when its internalDate is slightly
+-- later than that clock. Completion does not advance history_id past a
+-- non-draft sent snapshot message this run did not store. The pipeline step
+-- holds a cursor lease, renewed while the pipeline is still running, so two
+-- workers cannot both insert attempts.
 
 -- ---------------------------------------------------------------------------
 -- Tables
@@ -70,6 +76,8 @@ create table private.gmail_sync_runs (
   constraint gmail_sync_runs_window_order check (window_start_at < window_end_at),
   history_id_start text,
   history_id_latest text,
+  -- True when a non-draft SENT message from this snapshot was seen and not stored.
+  snapshot_sent_withheld boolean not null default false,
   page_token text,
   enumeration_complete boolean not null default false,
   known_threads_enqueued boolean not null default false,
@@ -112,7 +120,7 @@ create table private.gmail_sync_runs (
 );
 
 comment on table private.gmail_sync_runs is
-  'B08: one forward sync of one mailbox over a window fixed at run start. history_list, or a bounded re-scan when the historyId is missing or rejected.';
+  'B08: one forward sync of one mailbox. window_end_at starts at claim and moves to the history snapshot commit. history_list, or a bounded re-scan when the historyId is missing or rejected.';
 
 create unique index gmail_sync_runs_one_active_uidx
   on private.gmail_sync_runs (mail_account_id)
@@ -124,6 +132,9 @@ create table private.gmail_sync_threads (
   user_id uuid not null,
   mail_account_id uuid not null,
   provider_thread_id text not null check (length(btrim(provider_thread_id)) > 0),
+  -- Ids history.list included in this snapshot. Empty on a bounded re-scan.
+  snapshot_message_ids text[] not null default '{}',
+  snapshot_sent_message_ids text[] not null default '{}',
   status text not null default 'pending'
     check (status in ('pending', 'complete', 'filtered_out', 'gone', 'failed')),
   completed_at timestamptz,
@@ -790,9 +801,9 @@ begin
           select 1 from private.gmail_sync_threads t where t.run_id = v_run.id
         ) then
     -- Profile historyId is taken before messages.list / threads.get.
-    -- Completion stores this earlier id. A profile read after those fetches
-    -- would skip mail that arrived during the scan: that mail is outside
-    -- this run's window, and the next history.list would start too late.
+    -- Committing it moves window_end_at to that same clock. A profile read
+    -- after those fetches is not stored: mail that arrives during the scan
+    -- is outside this run, and the next history.list starts at this id.
     v_step := 'capture_history';
     v_thread := null;
   elsif v_run.mode = 'bounded_rescan' and not v_run.enumeration_complete then
@@ -893,6 +904,10 @@ declare
   v_want_pending boolean;
   v_stored boolean;
   v_status text;
+  v_ids text[];
+  v_sent_ids text[];
+  v_mid text;
+  v_message jsonb;
 begin
   if p_history_id is null or length(btrim(p_history_id)) = 0 then
     raise exception 'history page is missing historyId'
@@ -952,23 +967,60 @@ begin
 
     v_status := case when v_want_pending or v_stored then 'pending' else 'filtered_out' end;
 
+    v_ids := '{}'::text[];
+    v_sent_ids := '{}'::text[];
+    for v_message in
+      select value from jsonb_array_elements(v_item -> 'messages') as m(value)
+    loop
+      v_mid := btrim(coalesce(v_message ->> 'provider_message_id', ''));
+      if v_mid <> '' then
+        v_ids := v_ids || v_mid;
+        if (v_message -> 'label_ids') ? 'SENT'
+           and not ((v_message -> 'label_ids') ? 'DRAFT') then
+          v_sent_ids := v_sent_ids || v_mid;
+        end if;
+      end if;
+    end loop;
+
     insert into private.gmail_sync_threads
-      (run_id, user_id, mail_account_id, provider_thread_id, status, completed_at)
+      (run_id, user_id, mail_account_id, provider_thread_id, status, completed_at,
+       snapshot_message_ids, snapshot_sent_message_ids)
     values (
       p_run_id, v_run.user_id, v_run.mail_account_id, v_thread, v_status,
-      case when v_status = 'filtered_out' then pg_catalog.now() else null end
+      case when v_status = 'filtered_out' then pg_catalog.now() else null end,
+      v_ids, v_sent_ids
     )
     on conflict (run_id, provider_thread_id) do update
-      set status = 'pending',
-          completed_at = null
-      where private.gmail_sync_threads.status = 'filtered_out'
-        and excluded.status = 'pending';
+      set snapshot_message_ids = (
+            select coalesce(array_agg(distinct item), '{}'::text[])
+              from unnest(
+                private.gmail_sync_threads.snapshot_message_ids || excluded.snapshot_message_ids
+              ) as item
+          ),
+          snapshot_sent_message_ids = (
+            select coalesce(array_agg(distinct item), '{}'::text[])
+              from unnest(
+                private.gmail_sync_threads.snapshot_sent_message_ids
+                || excluded.snapshot_sent_message_ids
+              ) as item
+          ),
+          status = case
+            when private.gmail_sync_threads.status = 'filtered_out'
+             and excluded.status = 'pending' then 'pending'
+            else private.gmail_sync_threads.status
+          end,
+          completed_at = case
+            when private.gmail_sync_threads.status = 'filtered_out'
+             and excluded.status = 'pending' then null
+            else private.gmail_sync_threads.completed_at
+          end;
   end loop;
 
   update private.gmail_sync_runs
      set page_token = p_next_page_token,
          enumeration_complete = p_next_page_token is null,
          history_id_latest = p_history_id,
+         window_end_at = greatest(window_end_at, pg_catalog.clock_timestamp()),
          threads_filtered_out = (
            select count(*)::int from private.gmail_sync_threads t
             where t.run_id = p_run_id and t.status = 'filtered_out'
@@ -1200,6 +1252,9 @@ declare
   v_stored integer := 0;
   v_updated integer := 0;
   v_existing private.gmail_raw_messages%rowtype;
+  v_id_match boolean;
+  v_history_match boolean;
+  v_withheld boolean := false;
 begin
   v_began := private.gmail_sync_begin_commit(
     p_user_id, p_run_id, p_lease_token, 'fetch_thread',
@@ -1252,6 +1307,22 @@ begin
          and not ((m -> 'label_ids') ? 'DRAFT')
     )
     or exists (
+      select 1
+        from jsonb_array_elements(p_messages) m
+       where (m -> 'label_ids') ? 'SENT'
+         and not ((m -> 'label_ids') ? 'DRAFT')
+         and (
+           (m ->> 'provider_message_id') = any (v_thread.snapshot_message_ids)
+           or (
+             (m ->> 'internal_date')::timestamptz >= v_run.window_start_at
+             and coalesce(m ->> 'provider_history_id', '') ~ '^[0-9]+$'
+             and coalesce(v_run.history_id_latest, '') ~ '^[0-9]+$'
+             and (m ->> 'provider_history_id')::numeric
+               <= (v_run.history_id_latest)::numeric
+           )
+         )
+    )
+    or exists (
       select 1 from private.gmail_raw_messages raw
        where raw.mail_account_id = v_run.mail_account_id
          and raw.provider_thread_id = p_provider_thread_id
@@ -1265,7 +1336,16 @@ begin
        set status = 'filtered_out', completed_at = pg_catalog.now()
      where id = v_thread.id;
     update private.gmail_sync_runs
-       set threads_filtered_out = (
+       set snapshot_sent_withheld = snapshot_sent_withheld or exists (
+             select 1
+               from unnest(v_thread.snapshot_sent_message_ids) as mid(provider_message_id)
+              where not exists (
+                select 1 from private.gmail_raw_messages raw
+                 where raw.mail_account_id = v_run.mail_account_id
+                   and raw.provider_message_id = mid.provider_message_id
+              )
+           ),
+           threads_filtered_out = (
              select count(*)::int from private.gmail_sync_threads t
               where t.run_id = p_run_id and t.status = 'filtered_out'
            ),
@@ -1287,7 +1367,20 @@ begin
       continue;
     end if;
     v_internal := (v_msg ->> 'internal_date')::timestamptz;
-    if v_internal < v_run.window_start_at or v_internal >= v_run.window_end_at then
+    v_id_match := (v_msg ->> 'provider_message_id') = any (v_thread.snapshot_message_ids);
+    v_history_match :=
+      v_internal >= v_run.window_start_at
+      and coalesce(v_msg ->> 'provider_history_id', '') ~ '^[0-9]+$'
+      and coalesce(v_run.history_id_latest, '') ~ '^[0-9]+$'
+      and (v_msg ->> 'provider_history_id')::numeric <= (v_run.history_id_latest)::numeric;
+    if not v_id_match
+       and (
+         v_internal < v_run.window_start_at
+         or (v_internal >= v_run.window_end_at and not v_history_match)
+       ) then
+      if (v_msg -> 'label_ids') ? 'SENT' and (v_id_match or v_history_match) then
+        v_withheld := true;
+      end if;
       continue;
     end if;
 
@@ -1347,9 +1440,23 @@ begin
      set status = 'complete', completed_at = pg_catalog.now(), last_error_code = null
    where id = v_thread.id;
 
+  if v_withheld
+     or exists (
+       select 1
+         from unnest(v_thread.snapshot_sent_message_ids) as mid(provider_message_id)
+        where not exists (
+          select 1 from private.gmail_raw_messages raw
+           where raw.mail_account_id = v_run.mail_account_id
+             and raw.provider_message_id = mid.provider_message_id
+        )
+     ) then
+    v_withheld := true;
+  end if;
+
   update private.gmail_sync_runs
      set messages_stored = messages_stored + v_stored,
          messages_updated = messages_updated + v_updated,
+         snapshot_sent_withheld = snapshot_sent_withheld or v_withheld,
          estimated_gmail_quota_units =
            estimated_gmail_quota_units + greatest(coalesce(p_quota_units, 0), 0),
          step_attempt_count = 0,
@@ -1568,6 +1675,7 @@ begin
 
   update private.gmail_sync_runs
      set history_id_latest = p_history_id,
+         window_end_at = greatest(window_end_at, pg_catalog.clock_timestamp()),
          estimated_gmail_quota_units =
            estimated_gmail_quota_units + greatest(coalesce(p_quota_units, 0), 0),
          step_attempt_count = 0,
@@ -1599,6 +1707,7 @@ declare
   v_run private.gmail_sync_runs%rowtype;
   v_failed integer;
   v_pending integer;
+  v_withheld boolean;
 begin
   v_began := private.gmail_sync_begin_commit(
     p_user_id, p_run_id, p_lease_token, 'complete_run',
@@ -1620,6 +1729,21 @@ begin
     return jsonb_build_object('result', 'not_complete');
   end if;
 
+  select v_run.snapshot_sent_withheld
+      or exists (
+        select 1
+          from private.gmail_sync_threads t
+          cross join lateral unnest(t.snapshot_sent_message_ids) as mid(provider_message_id)
+         where t.run_id = p_run_id
+           and t.status is distinct from 'gone'
+           and not exists (
+             select 1 from private.gmail_raw_messages raw
+              where raw.mail_account_id = v_run.mail_account_id
+                and raw.provider_message_id = mid.provider_message_id
+           )
+      )
+    into v_withheld;
+
   update private.gmail_sync_runs
      set status = 'completed',
          completed_at = pg_catalog.now(),
@@ -1632,8 +1756,14 @@ begin
    where id = p_run_id;
 
   update private.gmail_sync_cursors
-     set history_id = v_run.history_id_latest,
-         horizon_end_at = v_run.window_end_at,
+     set history_id = case
+           when v_withheld then history_id
+           else v_run.history_id_latest
+         end,
+         horizon_end_at = case
+           when v_withheld then horizon_end_at
+           else v_run.window_end_at
+         end,
          next_sync_at = pg_catalog.clock_timestamp() + interval '15 minutes',
          login_sync_requested = false,
          pipeline_pending = true,
@@ -1644,7 +1774,7 @@ begin
   return jsonb_build_object(
     'result', 'ok',
     'status', 'completed',
-    'history_id_advanced', true,
+    'history_id_advanced', not v_withheld,
     'messages_stored', v_run.messages_stored
   );
 end;
@@ -1833,6 +1963,52 @@ begin
    where mail_account_id = p_mail_account_id and user_id = p_user_id;
 
   return jsonb_build_object('result', 'ok');
+end;
+$$;
+
+-- Extends the pipeline lease while the worker is still inside run_pipeline.
+-- A token that no longer matches is left alone, so a late renew cannot put
+-- another worker's lease back.
+create or replace function public.gmail_incremental_sync_renew_pipeline(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_lease_token uuid,
+  p_lease_seconds integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_updated integer;
+begin
+  if p_lease_seconds is null or p_lease_seconds < 1 or p_lease_seconds > 600 then
+    raise exception 'gmail_incremental_sync_renew_pipeline lease must be 1..600 seconds'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  if not exists (
+    select 1 from public.mail_accounts m
+     where m.id = p_mail_account_id and m.user_id = p_user_id
+  ) then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  update private.gmail_sync_cursors
+     set pipeline_lease_expires_at =
+           pg_catalog.clock_timestamp() + make_interval(secs => p_lease_seconds),
+         updated_at = pg_catalog.now()
+   where mail_account_id = p_mail_account_id
+     and user_id = p_user_id
+     and pipeline_pending
+     and pipeline_lease_token = p_lease_token;
+  get diagnostics v_updated = row_count;
+
+  if v_updated = 1 then
+    return jsonb_build_object('result', 'ok');
+  end if;
+  return jsonb_build_object('result', 'stale_lease');
 end;
 $$;
 
@@ -2052,6 +2228,7 @@ begin
     'public.gmail_incremental_sync_cancel_connection_stopped(uuid,uuid)',
     'public.gmail_incremental_sync_mark_pipeline_done(uuid,uuid,uuid)',
     'public.gmail_incremental_sync_release_pipeline(uuid,uuid,uuid)',
+    'public.gmail_incremental_sync_renew_pipeline(uuid,uuid,uuid,integer)',
     'public.gmail_incremental_sync_list_pipeline_threads(uuid,uuid,integer)',
     'public.gmail_incremental_sync_purge_for_deletion(uuid,uuid,uuid)',
     'public.gmail_incremental_sync_status(uuid,uuid)'

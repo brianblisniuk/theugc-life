@@ -342,6 +342,200 @@ d("B08 incremental sync", () => {
     );
   });
 
+  async function messageInsideSnapshotAfterClaimWindow(input: {
+    label: string;
+    historyId: string | null;
+    snapshotHistoryId: string;
+    place: "profile" | "history";
+  }) {
+    const { mail, imported } = await ready(input.label, input.historyId);
+    const threads: Record<string, ReturnType<typeof thread>> = {};
+    const placed = { internalDateMs: 0 };
+    const placeMessage = async () => {
+      if (placed.internalDateMs !== 0) return;
+      const run = await client.query<{ window_end_at: Date }>(
+        `select window_end_at from private.gmail_sync_runs
+          where mail_account_id = $1 and status = 'runnable'`,
+        [mail.mailAccountId],
+      );
+      // Later than the claim window by enough that the snapshot commit's own
+      // clock cannot catch it. The message already exists when the snapshot
+      // is taken.
+      placed.internalDateMs = run.rows[0]!.window_end_at.getTime() + 5_000;
+      threads["t-snap"] = thread("t-snap", [
+        textMessage({
+          id: "m-snap",
+          threadId: "t-snap",
+          internalDateMs: placed.internalDateMs,
+          historyId: input.place === "profile" ? input.snapshotHistoryId : "9001",
+          labelIds: ["SENT"],
+        }),
+      ]);
+    };
+    const gmail = createFakeIncremental({
+      sentThreadIds: input.place === "profile" ? ["t-snap"] : [],
+      profileHistoryId: input.snapshotHistoryId,
+      profileHistoryIdAfterScan: "9000",
+      threads,
+      historyPages:
+        input.place === "history"
+          ? [
+              {
+                historyId: input.snapshotHistoryId,
+                nextPageToken: null,
+                threads: [
+                  {
+                    providerThreadId: "t-snap",
+                    labelIds: ["SENT"],
+                    messageIds: ["m-snap"],
+                  },
+                ],
+              },
+            ]
+          : undefined,
+      beforeGetProfile: input.place === "profile" ? placeMessage : undefined,
+      beforeListHistory: input.place === "history" ? placeMessage : undefined,
+    });
+
+    const first = await runAccountSync(mail, depsFor(client, gmail));
+    expect(first.result).toBe("not_due");
+    expect(await rawCount(client, mail.mailAccountId)).toBe(1);
+    const ids = await client.query<{ provider_message_id: string }>(
+      `select provider_message_id from private.gmail_raw_messages
+        where mail_account_id = $1 order by provider_message_id`,
+      [mail.mailAccountId],
+    );
+    expect(ids.rows.map((row) => row.provider_message_id)).toEqual(["m-snap"]);
+    const cursor = await cursorOf(client, mail.mailAccountId);
+    expect(cursor.history_id).toBe(input.snapshotHistoryId);
+    expect(cursor.horizon_end_at.getTime()).toBeGreaterThan(imported.horizon.getTime());
+
+    await client.query(
+      "update private.gmail_sync_cursors set next_sync_at = now() where mail_account_id = $1",
+      [mail.mailAccountId],
+    );
+    const second = createFakeIncremental({
+      historyByStart: {
+        [input.snapshotHistoryId]: {
+          historyId: input.snapshotHistoryId,
+          nextPageToken: null,
+          threads: [],
+        },
+      },
+    });
+    const again = await runAccountSync(mail, depsFor(client, second));
+    expect(again.result).toBe("not_due");
+    expect(second.calls.historyStarts.at(-1)).toBe(input.snapshotHistoryId);
+    expect(await rawCount(client, mail.mailAccountId)).toBe(1);
+  }
+
+  it("stores sent mail that is inside the profile snapshot and after the claim window", async () => {
+    await messageInsideSnapshotAfterClaimWindow({
+      label: "b08-snap-profile",
+      historyId: null,
+      snapshotHistoryId: "500",
+      place: "profile",
+    });
+  });
+
+  it("stores sent mail that is inside the history.list snapshot and after the claim window", async () => {
+    await messageInsideSnapshotAfterClaimWindow({
+      label: "b08-snap-history",
+      historyId: "100",
+      snapshotHistoryId: "700",
+      place: "history",
+    });
+  });
+
+  it("does not advance history_id past a snapshot sent message this run did not store", async () => {
+    const { mail, imported } = await ready("b08-withhold", "100");
+    const db = rpc(client);
+    const claim = await db.rpc("gmail_incremental_sync_claim_step", {
+      p_user_id: mail.userId,
+      p_mail_account_id: mail.mailAccountId,
+      p_lease_seconds: 30,
+    });
+    const body = claim.data as {
+      result: string;
+      run_id: string;
+      lease_token: string;
+      authorization_revision: number;
+      step: string;
+    };
+    expect(body.result).toBe("ok");
+    expect(body.step).toBe("enumerate_history");
+    const page = await db.rpc("gmail_incremental_sync_commit_history_page", {
+      p_user_id: mail.userId,
+      p_run_id: body.run_id,
+      p_lease_token: body.lease_token,
+      p_expected_authorization_revision: body.authorization_revision,
+      p_page_token_used: null,
+      p_next_page_token: null,
+      p_history_id: "700",
+      p_threads: [
+        {
+          provider_thread_id: "t-lost",
+          messages: [{ provider_message_id: "m-lost", label_ids: ["SENT"] }],
+        },
+      ],
+      p_quota_units: 2,
+    });
+    expect((page.data as { result: string }).result).toBe("ok");
+
+    const fetchClaim = await db.rpc("gmail_incremental_sync_claim_step", {
+      p_user_id: mail.userId,
+      p_mail_account_id: mail.mailAccountId,
+      p_lease_seconds: 30,
+    });
+    const fetchBody = fetchClaim.data as {
+      result: string;
+      step: string;
+      run_id: string;
+      lease_token: string;
+      authorization_revision: number;
+      provider_thread_id: string;
+    };
+    expect(fetchBody.result).toBe("ok");
+    expect(fetchBody.step).toBe("fetch_thread");
+    expect(fetchBody.provider_thread_id).toBe("t-lost");
+    const dropped = await db.rpc("gmail_incremental_sync_commit_thread", {
+      p_user_id: mail.userId,
+      p_run_id: fetchBody.run_id,
+      p_lease_token: fetchBody.lease_token,
+      p_expected_authorization_revision: fetchBody.authorization_revision,
+      p_provider_thread_id: "t-lost",
+      p_messages: [],
+      p_quota_units: 40,
+    });
+    expect((dropped.data as { result: string }).result).toBe("filtered_out");
+
+    const doneClaim = await db.rpc("gmail_incremental_sync_claim_step", {
+      p_user_id: mail.userId,
+      p_mail_account_id: mail.mailAccountId,
+      p_lease_seconds: 30,
+    });
+    const doneBody = doneClaim.data as {
+      result: string;
+      step: string;
+      run_id: string;
+      lease_token: string;
+      authorization_revision: number;
+    };
+    expect(doneBody.step).toBe("complete_run");
+    const done = await db.rpc("gmail_incremental_sync_commit_completion", {
+      p_user_id: mail.userId,
+      p_run_id: doneBody.run_id,
+      p_lease_token: doneBody.lease_token,
+      p_expected_authorization_revision: doneBody.authorization_revision,
+    });
+    expect((done.data as { result: string; history_id_advanced: boolean }).result).toBe("ok");
+    expect((done.data as { history_id_advanced: boolean }).history_id_advanced).toBe(false);
+    const cursor = await cursorOf(client, mail.mailAccountId);
+    expect(cursor.history_id).toBe("100");
+    expect(cursor.horizon_end_at.getTime()).toBe(imported.horizon.getTime());
+    expect(await rawCount(client, mail.mailAccountId)).toBe(0);
+  });
+
   it("picks up mail that arrives during a historyId 404 re-scan on the next poll", async () => {
     await mailArrivingDuringRescan(
       "b08-gap-404",
@@ -764,6 +958,47 @@ d("B08 incremental sync", () => {
       [mail.mailAccountId],
     );
     expect(attempts.rows[0]!.n).toBe(1);
+  });
+
+  it("renews the pipeline lease so a second worker cannot enter after the original lease expires", async () => {
+    const { mail } = await ready("b08-pipeline-renew", "100");
+    const gmail = createFakeIncremental({
+      historyPages: [{ historyId: "240", nextPageToken: null, threads: [] }],
+    });
+    const other = new Client({ connectionString: TEST_DB });
+    await other.connect();
+    let nestedResult = "";
+    try {
+      const outcome = await runAccountSync(
+        mail,
+        syncDeps({
+          db: rpc(client),
+          gmail,
+          accessToken: async () => ({ result: "ok", accessToken: "fake-token" }),
+          leaseSeconds: 1,
+          runPipeline: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            const nested = await runAccountSync(
+              mail,
+              syncDeps({
+                db: rpc(other),
+                gmail: createFakeIncremental(),
+                accessToken: async () => ({ result: "ok", accessToken: "fake-token" }),
+                runPipeline: async () => {
+                  throw new Error("second worker entered the pipeline");
+                },
+              }),
+            );
+            nestedResult = nested.result;
+            return { completed: true };
+          },
+        }),
+      );
+      expect(nestedResult).toBe("leased");
+      expect(outcome.result).toBe("not_due");
+    } finally {
+      await other.end();
+    }
   });
 
   it("resumes a reauth pause when the mailbox is connected again", async () => {

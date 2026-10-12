@@ -652,8 +652,10 @@ Model-backed inference remains gated, so this is not B07 done.
 > **B08 — continuous Gmail sync (D076). Migration
 > `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
 > and on creator login, same D068 inclusion rule, no Pub/Sub and no new
-> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. Awaiting
-> re-audit. `0046` is D01 on `main` (PR #52, `4062170`). This PR keeps
+> scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. The snapshot
+> commit and `window_end_at` are the same clock, and `history_id` does not
+> advance past a non-draft sent snapshot message this run did not store.
+> Awaiting re-audit. `0046` is D01 on `main` (PR #52, `4062170`). This PR keeps
 > `0047` and adds `0048` so the commercial classifier decodes `&nbsp;`,
 > `&amp;`, `&lt;`, and `&gt;` without regard to case. `0045` is not edited.
 > `0048` is not D078. D078 is used by D07 PR #56. Pilot KPIs are not in

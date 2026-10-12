@@ -4,7 +4,7 @@ Status: implementation contract for D076. D076 wins if this file disagrees with 
 
 ## What a sync is
 
-One mailbox, one forward window fixed when the run starts: `[horizon_end_at, clock_timestamp())`. The horizon begins as the greatest completed historical-import `window_end_at` for that mailbox. It advances to this run's `window_end_at` only when the run completes.
+One mailbox, one forward window. It opens at the previous horizon. `window_end_at` starts when the run is claimed and moves to the database clock when the history snapshot is committed (`users.getProfile` for a bounded re-scan, each `history.list` page otherwise), before `messages.list` or `threads.get` filter on it. The horizon begins as the greatest completed historical-import `window_end_at` for that mailbox. It advances to this run's `window_end_at` only when the run completes and every non-draft sent snapshot message this run saw was stored.
 
 ## How mail is chosen
 
@@ -16,7 +16,7 @@ When `historyId` is null, or Gmail returns HTTP 404 for `history.list`, the run 
 2. `messages.list` on `SENT` inside the forward window.
 3. `threads.get` for already-stored non-draft `SENT` threads, in provider-thread-id order, 100 at a time.
 
-Mail that arrives during that re-scan has a later history id. The next `history.list` starts at the pre-scan id and returns it. A `history.list` run does not call `users.getProfile`; its `historyId` is the one from the list response, captured before thread fetches.
+Mail that arrives during that re-scan has a later history id. The next `history.list` starts at the pre-scan id and returns it. A message already inside the snapshot is stored even when its `internalDate` is slightly later than the snapshot clock. A `history.list` run does not call `users.getProfile`; its `historyId` is the one from the list response, captured before thread fetches, and that commit moves `window_end_at` to the same clock.
 
 Messages are stored only when `internalDate` is inside the run window. Drafts are dropped before storage. The primary key remains `(mail_account_id, provider_message_id)`.
 

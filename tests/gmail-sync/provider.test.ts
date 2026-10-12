@@ -28,6 +28,21 @@ describe("B08 history parsing and request shape", () => {
     expect(buildProfileUrl().searchParams.get("fields")).toBe("historyId");
   });
 
+  it("keeps the added message id from a history page", () => {
+    const page = parseGmailHistoryResponse({
+      historyId: "7",
+      history: [
+        { messagesAdded: [{ message: { id: "m1", threadId: "t", labelIds: ["SENT"] } }] },
+      ],
+    });
+    expect(page.threads).toEqual([
+      {
+        providerThreadId: "t",
+        messages: [{ providerMessageId: "m1", labelIds: ["SENT"] }],
+      },
+    ]);
+  });
+
   it("treats a history body with no records as an empty page, not a missing mailbox", () => {
     const page = parseGmailHistoryResponse({ historyId: "7" });
     expect(page).toEqual({ historyId: "7", nextPageToken: null, threads: [] });

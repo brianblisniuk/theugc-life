@@ -100,6 +100,19 @@ export async function runAccountSync(
     if (claim.result === "ok" && claim.step === "run_pipeline") {
       const pipelineLease = claim.lease_token;
       if (!pipelineLease) return { result: "failed", gmailCalls, step: "run_pipeline" };
+      const renewEveryMs = Math.min(
+        30_000,
+        Math.max(250, Math.floor((deps.leaseSeconds * 1000) / 3)),
+      );
+      const renewTimer = setInterval(() => {
+        void rpc(deps, "gmail_incremental_sync_renew_pipeline", {
+          p_user_id: input.userId,
+          p_mail_account_id: input.mailAccountId,
+          p_lease_token: pipelineLease,
+          p_lease_seconds: deps.leaseSeconds,
+        }).catch(() => undefined);
+      }, renewEveryMs);
+      renewTimer.unref?.();
       try {
         const piped = await deps.runPipeline({
           userId: input.userId,
@@ -127,6 +140,8 @@ export async function runAccountSync(
           p_lease_token: pipelineLease,
         });
         throw error;
+      } finally {
+        clearInterval(renewTimer);
       }
       continue;
     }
@@ -211,7 +226,10 @@ async function dischargeStep(
         p_history_id: page.historyId,
         p_threads: page.threads.map((thread) => ({
           provider_thread_id: thread.providerThreadId,
-          messages: thread.messages.map((message) => ({ label_ids: message.labelIds })),
+          messages: thread.messages.map((message) => ({
+            provider_message_id: message.providerMessageId,
+            label_ids: message.labelIds,
+          })),
         })),
         p_quota_units: page.quotaUnits,
       });
@@ -245,9 +263,12 @@ async function dischargeStep(
         accessToken,
         threadId: threadId!,
       });
+      // The database applies the snapshot cut. Messages past window_end_at still
+      // have to arrive here: a non-draft sent message inside the snapshot is
+      // stored, and one this run saw but did not store must not advance history_id.
       const sanitized = sanitizeThread(fetched.thread, {
         startMs: Date.parse(claim.window_start_at!),
-        endMs: Date.parse(claim.window_end_at!),
+        endMs: Number.MAX_SAFE_INTEGER,
       });
       const committed = await rpc(deps, "gmail_incremental_sync_commit_thread", {
         p_user_id: input.userId,

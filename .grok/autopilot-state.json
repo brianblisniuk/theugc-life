@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 989e7f0 (PR #54, D077 Proposed, docs only). B08 (D076) is PR #53 and keeps migration 0047. 0048 is this branch's classifier entity decode and is not D078. D078 is used by D07 PR #56. D077 stays Proposed. The schema has no AWAITING_AUDIT value, so state is AUDITING. This commit cannot name itself, so expected_head stays null. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 989e7f0 (PR #54, D077 Proposed, docs only). B08 (D076) is PR #53 and keeps migration 0047. The history snapshot commit and window_end_at are the same clock. 0048 is this branch's classifier entity decode and is not D078. D078 is used by D07 PR #56. D077 stays Proposed. The schema has no AWAITING_AUDIT value, so state is AUDITING. This commit cannot name itself, so expected_head stays null. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",

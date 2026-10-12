@@ -21,7 +21,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 export interface HistoryThreadNotice {
   providerThreadId: string;
-  messages: { labelIds: string[] }[];
+  messages: { providerMessageId: string | null; labelIds: string[] }[];
 }
 
 export interface HistoryPage {
@@ -42,7 +42,7 @@ export function parseGmailHistoryResponse(body: unknown): HistoryPage {
     throw malformed("history_list");
   }
 
-  const byThread = new Map<string, { labelIds: string[] }[]>();
+  const byThread = new Map<string, { providerMessageId: string | null; labelIds: string[] }[]>();
   for (const record of body.history ?? []) {
     if (!isPlainObject(record)) throw malformed("history_list");
     if (record.messagesAdded === undefined) continue;
@@ -59,8 +59,15 @@ export function parseGmailHistoryResponse(body: unknown): HistoryPage {
         throw malformed("history_list");
       }
       const labels = message.labelIds as string[];
+      let providerMessageId: string | null = null;
+      if (message.id !== undefined) {
+        if (typeof message.id !== "string" || message.id.trim() === "") {
+          throw malformed("history_list");
+        }
+        providerMessageId = message.id.trim();
+      }
       const existing = byThread.get(threadId) ?? [];
-      existing.push({ labelIds: labels });
+      existing.push({ providerMessageId, labelIds: labels });
       byThread.set(threadId, existing);
     }
   }

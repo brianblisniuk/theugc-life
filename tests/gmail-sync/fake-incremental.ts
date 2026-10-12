@@ -12,7 +12,7 @@ import type { GmailIncrementalReadAdapter } from "@/lib/gmail/sync/read-adapter"
 export interface FakeHistoryPage {
   historyId: string;
   nextPageToken: string | null;
-  threads: { providerThreadId: string; labelIds: string[] }[];
+  threads: { providerThreadId: string; labelIds: string[]; messageIds?: string[] }[];
 }
 
 export interface FakeIncrementalCalls {
@@ -45,6 +45,8 @@ export function createFakeIncremental(
     profileHistoryIdAfterScan?: string;
     historyByStart?: Record<string, FakeHistoryPage>;
     beforeGetThread?: (threadId: string) => Promise<void>;
+    beforeListHistory?: () => Promise<void>;
+    beforeGetProfile?: () => Promise<void>;
     profileError?: GmailReadError | null;
   } = {},
 ): FakeIncremental {
@@ -68,6 +70,7 @@ export function createFakeIncremental(
 
     async listHistory({ startHistoryId, pageToken }) {
       calls.order.push("history");
+      if (options.beforeListHistory) await options.beforeListHistory();
       calls.historyStarts.push(startHistoryId);
       calls.historyPageTokens.push(pageToken);
       const failure = historyErrors.shift();
@@ -89,7 +92,13 @@ export function createFakeIncremental(
         nextPageToken: page?.nextPageToken ?? null,
         threads: (page?.threads ?? []).map((thread) => ({
           providerThreadId: thread.providerThreadId,
-          messages: [{ labelIds: thread.labelIds }],
+          messages:
+            thread.messageIds && thread.messageIds.length > 0
+              ? thread.messageIds.map((id) => ({
+                  providerMessageId: id,
+                  labelIds: thread.labelIds,
+                }))
+              : [{ providerMessageId: null, labelIds: thread.labelIds }],
         })),
         quotaUnits: HISTORY_LIST_QUOTA_UNITS,
       };
@@ -134,6 +143,7 @@ export function createFakeIncremental(
 
     async getProfileHistoryId() {
       calls.order.push("profile");
+      if (options.beforeGetProfile) await options.beforeGetProfile();
       calls.profileCalls += 1;
       if (options.profileError) throw options.profileError;
       const scanStarted = calls.sentCalls > 0 || calls.threadIds.length > 0;

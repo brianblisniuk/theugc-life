@@ -2997,7 +2997,14 @@ has already stored as non-draft `SENT`. Mail that arrives during the scan is
 outside this run's window. The next `history.list` starts at the pre-scan id,
 so that mail is returned inside the next forward window. A `history.list` run
 takes its `historyId` from the list response before thread fetches, not from
-a later profile call. A 404 from `threads.get`
+a later profile call. The historyId committed with that snapshot and the run's
+`window_end_at` are one cut. Committing the profile snapshot, or a history.list
+page, sets `window_end_at` to the database clock at that commit, before
+`messages.list` or `threads.get` filter on it. Completion stores that snapshot
+historyId and moves the horizon to that window end. A non-draft sent-rooted
+message inside the snapshot is stored even when `internalDate` is slightly
+later than that clock. Completion does not advance `history_id` past a
+non-draft sent-rooted message this run saw and did not store. A 404 from `threads.get`
 is still a missing thread. It does not expire the cursor.
 
 `history.list` is requested with `historyTypes=messageAdded` only. A missing
@@ -3011,7 +3018,8 @@ overlapping run updates one row instead of inserting a second copy. One
 mailbox has one active sync run, held by a lease. A concurrent worker does
 not start a second run. The local pipeline after a completed run takes the
 same kind of lease. Login and `gmail:sync:work` cannot both run it while that
-lease is held, so commercial attempts are not inserted twice.
+lease is held, and the lease is renewed until that pipeline finishes, so
+commercial attempts are not inserted twice.
 
 Disconnect, deletion pending, and deleted cancel runnable and paused sync runs
 and clear the login-due flag. Sync does not run after that. Reconnect does not
