@@ -72,22 +72,26 @@ Authenticated map/search/filter experience.
 ### `/app/hotels/[id]`
 Authenticated hotel workspace using UUID.
 Includes entitlement-aware contact section and private creator relationship.
+`from` and `trip` choose the breadcrumb only (D081, Accepted). They do not
+authorize the read. The map marker and Discover cards omit them.
 
 ### `/app/pipeline`
 List/Kanban CRM.
 
 ### `/app/inbox`
 The creator's pipeline inbox links. Read-only. No message body and no send.
-Not in the primary navigation until E02 places it there.
+Not a primary navigation item. D081's inbox is `/app/pipeline?surface=inbox`.
 
 ### `/app/collaborations`
 The creator's collaborations. Read-only. Agreed compensation stays on the hotel
-workspace and is not listed here. Not in the primary navigation until E02
-places it there.
+workspace and is not listed here. Not a primary navigation item. D081's
+collaborations are `/app/pipeline?surface=collaborations`.
 
 Recommended query params:
 - `view=list|board`
 - filters may use URL search params.
+- `surface=inbox` frames the same list as the inbox (D081, Accepted). It is not a new route.
+- `surface=collaborations` lists won cycles. It is not a new route.
 
 ### `/app/trips`
 Trip list.

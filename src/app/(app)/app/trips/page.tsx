@@ -8,7 +8,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/shell/page-header";
 import { TripCreateForm } from "@/components/trips/trip-forms";
+import { listCrumbs } from "@/lib/shell/navigation";
 import { listDestinations, listTrips, type TripRecord } from "@/lib/trips/queries";
 import { tripStatusLabel } from "@/lib/trips/types";
 
@@ -48,13 +50,11 @@ export default async function TripsPage() {
 
   return (
     <div className="space-y-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-text">Trips</h1>
-        <p className="max-w-prose text-sm text-muted">
-          One place for a destination, the hotels you’re targeting, and the outreach tied to that
-          trip. Trips stay private.
-        </p>
-      </header>
+      <PageHeader
+        title="Trips"
+        description="One place for a destination, the hotels you’re targeting, and the outreach tied to that trip. Trips stay private."
+        crumbs={listCrumbs("Trips")}
+      />
 
       {failed ? (
         <EmptyState

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { GmailConnectionPanel } from "@/components/gmail/gmail-connection-panel";
+import { PageHeader } from "@/components/shell/page-header";
+import { listCrumbs } from "@/lib/shell/navigation";
 import { requireUser } from "@/lib/auth/guards";
 import { listGmailAccounts } from "@/lib/gmail/connection.server";
 import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
@@ -25,7 +27,11 @@ export default async function AccountPage({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-text">Account</h1>
+      <PageHeader
+        title="Account"
+        description="Mailbox connection for inbox readings lives on this page."
+        crumbs={listCrumbs("Account")}
+      />
       <dl className="grid gap-4 rounded-[var(--radius-app)] border border-border bg-surface p-5 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-muted">Email</dt>

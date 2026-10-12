@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
 import {
   ACTIVATION_COPY,
@@ -9,11 +10,15 @@ import {
   homeView,
 } from "@/lib/onboarding/activation";
 import { loadHomeProgress } from "@/lib/onboarding/queries";
+import { WORKSPACES } from "@/lib/shell/navigation";
 
 const ctaClass =
   "inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast";
 
-/** Home. The first useful flow is derived from rows the creator already owns (D082). */
+/**
+ * Home. The E02 shell (D081, Accepted) stays: one heading and the existing
+ * workspace links. The first useful flow under it is derived (D082, Proposed).
+ */
 export default async function AppHomePage() {
   const session = await requireUser("/app");
   const progress = await loadHomeProgress(session.userId);
@@ -22,12 +27,25 @@ export default async function AppHomePage() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-text">Welcome, {name}</h1>
-        <p className="max-w-prose text-sm text-muted">
-          Connect Gmail, plan a trip, save a hotel, then continue in your pipeline.
-        </p>
-      </header>
+      <PageHeader
+        title={`Welcome, ${name}`}
+        description="Discover hotels, plan a trip, and keep pipeline, inbox, and collaborations in one place."
+      />
+      <nav
+        aria-label="Workspaces"
+        className="-mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 lg:grid-cols-3"
+      >
+        {WORKSPACES.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex min-h-11 min-w-[12rem] shrink-0 flex-col justify-center rounded-[var(--radius-app)] border border-border bg-surface px-4 py-3 md:min-w-0"
+          >
+            <span className="text-sm font-semibold text-text">{item.label}</span>
+            <span className="text-xs text-muted">{item.note}</span>
+          </Link>
+        ))}
+      </nav>
 
       {view.kind === "blocked" ? (
         <EmptyState title={view.title} description={view.body}>

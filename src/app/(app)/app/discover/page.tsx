@@ -17,7 +17,9 @@ import { EmptyState } from "@/components/empty-state";
 import { DiscoverFilters } from "@/components/hotels/discover-filters";
 import { HotelCard } from "@/components/hotels/hotel-card";
 import { HotelMap } from "@/components/hotels/hotel-map";
+import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
+import { listCrumbs } from "@/lib/shell/navigation";
 import {
   buildDiscoverHref,
   hasActiveFilters,
@@ -80,13 +82,11 @@ export default async function DiscoverPage({
       <div className="space-y-6">
         <AnalyticsPageView event="discover_viewed" />
 
-        <header className="space-y-1">
-          <h1 className="text-2xl font-semibold text-text">Discover</h1>
-          <p className="max-w-prose text-sm text-muted">
-            Published hotels, by destination. Creator activity appears only when the public record
-            is strong enough to show.
-          </p>
-        </header>
+        <PageHeader
+          title="Discover"
+          description="Published hotels, by destination. Creator activity appears only when the public record is strong enough to show."
+          crumbs={listCrumbs("Discover")}
+        />
 
         <DiscoverFilters
           query={query}

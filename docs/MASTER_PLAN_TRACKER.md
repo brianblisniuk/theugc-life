@@ -402,8 +402,8 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 |---|---|---|---|
 | E01 | **DONE** — PR #55, merge `ab0507461b4b47b21112dd07589b4b8a88d3efb3`. Discover + Hotel Detail over published canonical hotels. E01 left an empty map slot and did not call a tile service. No migration. The slot is filled by MAP (PR #57). | Sunlit Creator OS Discover + Hotel Detail (map deferred) | A2 visual direction, real canonical data, no demo leakage |
 | MAP | **DONE** — PR #57, merge `023a354c8592411e1ac85c818324589993f358a6`. Google Maps JavaScript API (D079) on Discover (the current filtered page) and Hotel Detail (one pin). Key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. A missing key renders no map and no error. No migration. | Fill the E01 map slot | Published hotels only; no private creator data is sent to Google |
-| E02 | PLANNED | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
-| E03 | **DONE — PR #60**. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item. Empty and error stay distinct. Primary navigation is unchanged. The merge SHA is recorded by the next block. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
+| E02 | **DONE** — PR #59, merge `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted (Brian, 12 Oct 2026). Primary navigation stays the PRD §6 five items. Inbox and Collaborations are pipeline surfaces. | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
+| E03 | **DONE — PR #60**. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. The merge SHA is recorded by the next block. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | PLANNED | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
 | E05 | PLANNED | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 
@@ -668,10 +668,13 @@ only: it is not a charge. E01 did not take `0049`. D06 (PR #58) is merged at
 `6b59318bbe33897a5204f42fa2292eccaf6d13a7` and uses `0049`. D080 is Accepted
 (Brian, 13 Oct 2026). D079 is Google Maps (PR #57).
 
-**PR #60 merges E03.** No migration. D082 is Proposed and is not
-Accepted. Home derives the first useful flow from a connected Gmail mailbox,
-a trip, and a saved hotel. Inbox and Collaborations are read-only lists and
-are not in the primary navigation. E02 remains planned. `0051` is not taken.
+**E02 (PR #59) is merged**, as merge commit
+`edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted
+(Brian, 12 Oct 2026). The shell is unchanged by E03.
+
+**PR #60 merges E03.** No migration. D082 is Proposed and is not Accepted.
+Home derives the first useful flow from a connected Gmail mailbox, a trip,
+and a saved hotel, inside that shell. `0051` is not taken.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
@@ -688,7 +691,7 @@ are not in the primary navigation. E02 remains planned. `0051` is not taken.
 > classifier decodes `&nbsp;`, `&amp;`, `&lt;`, and `&gt;` without regard to
 > case. `0045` is not edited. `0048` is not D078. D07 (D078, migration `0050`)
 > is merged as PR #56. B08 does not edit `0050`. Pilot KPIs are not in D076.
-> B08 does not take `0049`. D06 (PR #58) uses it.
+> B08 does not take `0049`. D06 (PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`) uses it.
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

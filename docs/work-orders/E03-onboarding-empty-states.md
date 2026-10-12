@@ -3,7 +3,7 @@
 **Status:** Binding work order for PR #60. Awaiting independent audit. Do not merge.  
 **Base:** `main` `6b59318bbe33897a5204f42fa2292eccaf6d13a7` (merge of PR #58, D06)  
 **Branch:** `cursor/e03-onboarding-empty-states-c2d6`  
-**Migration:** none. Progress is derived. `0051` is not used. D081 is reserved for parallel E02.
+**Migration:** none. Progress is derived. `0051` is not used. D081 is Accepted (E02, PR #59). This block does not change that shell.
 
 One PR for the whole block, including the tracker and autopilot state. Do not merge.
 

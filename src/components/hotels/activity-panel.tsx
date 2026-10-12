@@ -21,6 +21,7 @@ import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { WorkspaceLoad } from "@/lib/collaboration/queries";
 import type { InboxLoad, MailboxLoad } from "@/lib/inbox-pipeline/contract";
 import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
+import { SHELL_NOTES } from "@/lib/shell/navigation";
 import {
   activityPanelState,
   collaborationPanelState,
@@ -49,6 +50,7 @@ export function ActivityPanel({
   workspace,
   inbox,
   mailboxes,
+  pipelineHref,
 }: {
   hotelId: string;
   relationship: OpenRelationshipResult;
@@ -59,6 +61,8 @@ export function ActivityPanel({
   /** Inbox link for an open cycle. Omitted when there is no cycle to attach it to. */
   inbox?: InboxLoad;
   mailboxes?: MailboxLoad;
+  /** Where "View in Pipeline" returns. Defaults to the full pipeline list. */
+  pipelineHref?: string;
 }) {
   const state = activityPanelState(relationship);
 
@@ -69,6 +73,8 @@ export function ActivityPanel({
           <h3 className="text-base font-semibold text-text">{state.title}</h3>
           <p className="max-w-prose text-sm text-muted">{state.body}</p>
         </div>
+        <div id="inbox" className="scroll-mt-24" />
+        <div id="collaboration" className="scroll-mt-24" />
       </Panel>
     );
   }
@@ -86,7 +92,10 @@ export function ActivityPanel({
         </div>
 
         {deal.kind === "lifecycle" ? (
-          <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-background p-4">
+          <div
+            id="collaboration"
+            className="scroll-mt-24 space-y-3 rounded-[var(--radius-app)] border border-border bg-background p-4"
+          >
             <div className="space-y-1">
               <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
               <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
@@ -140,20 +149,32 @@ export function ActivityPanel({
             ) : null}
           </div>
         ) : deal.kind === "load_error" || deal.kind === "integrity_problem" ? (
-          <div className="space-y-1 rounded-[var(--radius-app)] border border-border bg-background p-4">
+          <div
+            id="collaboration"
+            className="scroll-mt-24 space-y-1 rounded-[var(--radius-app)] border border-border bg-background p-4"
+          >
             <h4 className="text-sm font-semibold text-text">{deal.title}</h4>
             <p className="max-w-prose text-sm text-muted">{deal.body}</p>
           </div>
-        ) : null}
+        ) : (
+          <div id="collaboration" className="scroll-mt-24 space-y-1">
+            <h4 className="text-sm font-semibold text-text">Collaboration</h4>
+            <p className="max-w-prose text-sm text-muted">{SHELL_NOTES.collaborationNeedsWin}</p>
+          </div>
+        )}
 
         {inbox && mailboxes && relationship.status === "open" ? (
-          <InboxLink
-            pipelineItemId={relationship.relationship.pipelineItemId}
-            hotelId={hotelId}
-            inbox={inbox}
-            mailboxes={mailboxes}
-          />
-        ) : null}
+          <div id="inbox" className="scroll-mt-24">
+            <InboxLink
+              pipelineItemId={relationship.relationship.pipelineItemId}
+              hotelId={hotelId}
+              inbox={inbox}
+              mailboxes={mailboxes}
+            />
+          </div>
+        ) : (
+          <div id="inbox" className="scroll-mt-24" />
+        )}
 
         {shouldOfferWorkflow(state) && relationship.status === "open" ? (
           <WorkflowActions
@@ -164,7 +185,7 @@ export function ActivityPanel({
         ) : null}
 
         <Link
-          href="/app/pipeline"
+          href={pipelineHref ?? "/app/pipeline"}
           className="inline-flex rounded-[var(--radius-app)] border border-border px-4 py-2 text-sm font-medium text-text hover:bg-background"
         >
           View in Pipeline
@@ -183,6 +204,14 @@ export function ActivityPanel({
       </div>
 
       <SaveHotelButton hotelId={hotelId} />
+      <div id="inbox" className="scroll-mt-24 space-y-1">
+        <h4 className="text-sm font-semibold text-text">Inbox</h4>
+        <p className="max-w-prose text-sm text-muted">{SHELL_NOTES.inboxNeedsCycle}</p>
+      </div>
+      <div id="collaboration" className="scroll-mt-24 space-y-1">
+        <h4 className="text-sm font-semibold text-text">Collaboration</h4>
+        <p className="max-w-prose text-sm text-muted">{SHELL_NOTES.collaborationNeedsWin}</p>
+      </div>
     </Panel>
   );
 }

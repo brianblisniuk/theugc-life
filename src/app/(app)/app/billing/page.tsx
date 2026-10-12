@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/shell/page-header";
+import { listCrumbs } from "@/lib/shell/navigation";
 import { requireUser } from "@/lib/auth/guards";
 import { loadBillingAccess } from "@/lib/billing/queries";
 import { billingAccessState } from "@/lib/billing/view";
@@ -28,7 +30,7 @@ export default async function BillingPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-text">Billing &amp; access</h1>
+      <PageHeader title="Billing & access" crumbs={listCrumbs("Billing")} />
 
       {state.kind === "error" ? (
         <EmptyState title={state.title} description={state.body} />
