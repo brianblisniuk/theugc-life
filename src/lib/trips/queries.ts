@@ -8,6 +8,7 @@
 import "server-only";
 
 import { FREE_LIMITS } from "@/lib/config";
+import { sanitizeSearchTerm } from "@/lib/hotels/filters";
 import { isUuid } from "@/lib/hotels/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -216,41 +217,87 @@ export async function listShortlist(
   }
 }
 
-/** Bounded list of the caller's pipeline items, for linking onto this trip. */
+/**
+ * One page of the caller's pipeline, newest activity first.
+ * Pro is not capped at 100 relationships, so the workspace pages and searches
+ * instead of silently dropping older items.
+ */
+export const TRIP_PIPELINE_PAGE_SIZE = 100;
+
+export interface LinkablePipelinePage {
+  status: "ok";
+  items: LinkablePipelineItem[];
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  query: string | null;
+}
+
+function pipelinePage(raw: number | null | undefined): number {
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1) return 1;
+  return raw;
+}
+
+function mapLinkableRow(row: unknown): LinkablePipelineItem | null {
+  const record = row as {
+    id?: unknown;
+    status?: unknown;
+    trip_id?: unknown;
+    hotel?: { name?: unknown } | { name?: unknown }[];
+  };
+  const hotel = Array.isArray(record.hotel) ? record.hotel[0] : record.hotel;
+  if (typeof record.id !== "string" || typeof record.status !== "string") return null;
+  return {
+    id: record.id,
+    status: record.status,
+    tripId: typeof record.trip_id === "string" ? record.trip_id : null,
+    hotelName: hotel && typeof hotel.name === "string" ? hotel.name : "Hotel",
+  };
+}
+
+/** The caller's pipeline items, paged and searchable, for linking onto a trip. */
 export async function listLinkablePipelineItems(
+  options: { query?: string | null; page?: number } = {},
   injected?: TripQueryClient,
-): Promise<
-  { status: "ok"; items: LinkablePipelineItem[]; truncated: boolean } | { status: "error" }
-> {
-  const limit = 100;
+): Promise<LinkablePipelinePage | { status: "error" }> {
+  const page = pipelinePage(options.page);
+  const query = sanitizeSearchTerm(options.query);
+  const pageSize = TRIP_PIPELINE_PAGE_SIZE;
+  const from = (page - 1) * pageSize;
   try {
     const supabase = await clientOrInjected(injected);
-    const { data, error } = await supabase
+    let request = supabase
       .from("pipeline_items")
-      .select("id, status, trip_id, hotel:hotels(name)")
+      .select(
+        query
+          ? "id, status, trip_id, hotel:hotels!inner(name)"
+          : "id, status, trip_id, hotel:hotels(name)",
+      )
       .order("last_activity_at", { ascending: false })
-      .limit(limit + 1);
+      .order("id", { ascending: true });
+    // The filter path is the select alias (`hotel`), which is what PostgREST
+    // binds an embedded `!inner` resource to.
+    if (query) request = request.ilike("hotel.name", `%${query}%`);
+    // range is inclusive, so this asks for one extra row to detect a next page.
+    const { data, error } = await request.range(from, from + pageSize);
     if (error) return { status: "error" };
     const rows = data ?? [];
-    const truncated = rows.length > limit;
+    const hasNext = rows.length > pageSize;
     const items: LinkablePipelineItem[] = [];
-    for (const row of rows.slice(0, limit)) {
-      const record = row as {
-        id?: unknown;
-        status?: unknown;
-        trip_id?: unknown;
-        hotel?: { name?: unknown } | { name?: unknown }[];
-      };
-      const hotel = Array.isArray(record.hotel) ? record.hotel[0] : record.hotel;
-      if (typeof record.id !== "string" || typeof record.status !== "string") continue;
-      items.push({
-        id: record.id,
-        status: record.status,
-        tripId: typeof record.trip_id === "string" ? record.trip_id : null,
-        hotelName: hotel && typeof hotel.name === "string" ? hotel.name : "Hotel",
-      });
+    for (const row of rows.slice(0, pageSize)) {
+      const item = mapLinkableRow(row);
+      if (item) items.push(item);
     }
-    return { status: "ok", items, truncated };
+    return {
+      status: "ok",
+      items,
+      page,
+      pageSize,
+      hasNext,
+      hasPrevious: page > 1,
+      query,
+    };
   } catch {
     return { status: "error" };
   }

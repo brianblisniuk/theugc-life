@@ -197,6 +197,46 @@ create trigger pipeline_items_trip_same_creator
   before insert or update of trip_id, creator_id on public.pipeline_items
   for each row execute function public.enforce_pipeline_item_trip_same_creator();
 
+-- The pipeline trigger does not see a change to trips.creator_id. Reject that
+-- change when a linked pipeline item would then belong to someone else.
+create or replace function public.enforce_trip_creator_matches_pipeline()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.creator_id is not distinct from old.creator_id then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+      from public.pipeline_items pi
+     where pi.trip_id = new.id
+       and pi.creator_id is distinct from new.creator_id
+  ) then
+    raise exception 'pipeline item and trip must belong to the same creator'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.enforce_trip_creator_matches_pipeline() is
+  'Rejects a trips.creator_id change that would leave a pipeline item linked to a trip owned by a different creator. SECURITY DEFINER so the check sees every linked item. search_path is pinned empty.';
+
+revoke all on function public.enforce_trip_creator_matches_pipeline()
+  from public, anon, authenticated;
+grant execute on function public.enforce_trip_creator_matches_pipeline()
+  to service_role;
+
+drop trigger if exists trips_creator_matches_pipeline on public.trips;
+create trigger trips_creator_matches_pipeline
+  before update of creator_id on public.trips
+  for each row execute function public.enforce_trip_creator_matches_pipeline();
+
 create index if not exists pipeline_items_trip_idx
   on public.pipeline_items (trip_id)
   where trip_id is not null;
@@ -308,10 +348,14 @@ declare
   v_creator_id uuid;
   v_name text;
   v_old_status text;
+  v_old_destination uuid;
   v_limit integer;
-  v_exempt boolean;
+  v_pro boolean;
+  v_new_exempt boolean;
+  v_old_exempt boolean;
+  v_new_counts boolean;
+  v_old_counts boolean;
   v_active integer;
-  v_increases boolean;
 begin
   if p_user_id is null or p_trip_id is null or p_destination_id is null then
     return jsonb_build_object('result', 'invalid_input');
@@ -340,7 +384,8 @@ begin
 
   perform 1 from public.creator_profiles where id = v_creator_id for update;
 
-  select t.status into v_old_status
+  select t.status, t.destination_id
+    into v_old_status, v_old_destination
     from public.trips t
    where t.id = p_trip_id
      and t.creator_id = v_creator_id
@@ -354,17 +399,26 @@ begin
     return jsonb_build_object('result', 'destination_not_found');
   end if;
 
-  v_increases := p_status in ('planning', 'upcoming', 'active')
-    and v_old_status not in ('planning', 'upcoming', 'active');
+  v_new_counts := p_status in ('planning', 'upcoming', 'active');
+  v_old_counts := v_old_status in ('planning', 'upcoming', 'active');
 
   v_limit := greatest(coalesce(p_free_active_trip_limit, 0), 0);
-  v_exempt := public._has_active_pro(p_user_id)
+  v_pro := public._has_active_pro(p_user_id);
+  v_new_exempt := v_pro
     or public._has_active_destination_access(p_user_id, p_destination_id);
+  v_old_exempt := v_pro
+    or public._has_active_destination_access(p_user_id, v_old_destination);
 
-  if v_increases and not v_exempt then
+  -- A counting trip outside Pro and outside a covering destination pass
+  -- consumes a Free slot (D056). Re-check when this write newly consumes one:
+  -- the trip was terminal, or its previous destination was exempt and the new
+  -- one is not. Count the creator's OTHER counting trips so the trip that
+  -- already occupies the slot can still be retargeted.
+  if v_new_counts and not v_new_exempt and (not v_old_counts or v_old_exempt) then
     select count(*)::integer into v_active
       from public.trips t
      where t.creator_id = v_creator_id
+       and t.id <> p_trip_id
        and t.status in ('planning', 'upcoming', 'active');
 
     if v_active >= v_limit then
@@ -390,7 +444,7 @@ end;
 $$;
 
 comment on function public.update_trip(uuid, uuid, uuid, text, date, date, text, integer) is
-  'Updates the caller''s own trip. Does not change visibility. Re-checks the Free active-trip allowance only when the trip moves from a terminal status into a counting one. Existing counting trips stay editable after entitlement expiry (D014).';
+  'Updates the caller''s own trip. Does not change visibility. Re-checks the Free active-trip allowance when the result counts, the new destination is not exempt, and the trip previously did not count or its previous destination was exempt (D056). Other counting trips are counted, so the single trip that already occupies a Free slot can change destination. Existing counting trips stay editable after entitlement expiry (D014).';
 
 create or replace function public.delete_trip(
   p_user_id uuid,

@@ -136,7 +136,9 @@ Client writes on `trips` and `trip_hotels` were revoked in migration 0046 for
 the same reason: the Free active-trip allowance and the canonical-hotel
 shortlist check live in the RPCs. `link_pipeline_item_to_trip` is the only
 writer of `pipeline_items.trip_id`. A trigger rejects a trip owned by a
-different creator even if that RPC is bypassed. RLS remains the read boundary.
+different creator even if that RPC is bypassed. A second trigger rejects a
+`trips.creator_id` change that would leave a pipeline item linked across
+creators. RLS remains the read boundary.
 
 The RLS policies on those tables are retained as defence in depth, not as the
 mechanism: both layers must hold independently (D046).

@@ -355,7 +355,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| D01 | **AWAITING AUDIT** — PR #52, branch `feat/d01-trips`, migration `0046`. Not merged. | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
+| D01 | **AWAITING RE-AUDIT** — PR #52, branch `feat/d01-trips`, migration `0046`. Audit of `c7ccd52` failed; correction is on the same PR. Not merged. | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
@@ -644,7 +644,8 @@ The open implementation block is:
 > **D01 — Trips: destination, dates, shortlist, and a summary derived from
 > pipeline items and collaborations linked by `trip_id`. Migration
 > `0046_trips_context.sql` (0045 is merged on main with B07.1). Open as
-> PR #52 on `feat/d01-trips`. Awaiting independent audit. Not merged.**
+> PR #52 on `feat/d01-trips`. Audit of `c7ccd52` failed; the correction is
+> on the same PR and awaits re-audit. Not merged.**
 
 **B03 external audit amendment #4 (2026-08-30)** closed one merge-blocking
 privacy-boundary defect against head `de4ba0e`:

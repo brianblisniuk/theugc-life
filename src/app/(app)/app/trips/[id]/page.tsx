@@ -38,6 +38,27 @@ function first(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
+function pipelinePageParam(raw: string | null): number {
+  if (!raw || !/^\d+$/.test(raw)) return 1;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+function workspaceHref(
+  tripId: string,
+  params: { q?: string | null; pipeline?: string | null; pipelinePage?: number },
+): string {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.pipeline) search.set("pipeline", params.pipeline);
+  if (params.pipelinePage && params.pipelinePage > 1) {
+    search.set("pipeline_page", String(params.pipelinePage));
+  }
+  const qs = search.toString();
+  return qs ? `/app/trips/${tripId}?${qs}` : `/app/trips/${tripId}`;
+}
+
 function Summary({ metrics }: { metrics: TripMetrics }) {
   return (
     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -71,16 +92,18 @@ export default async function TripWorkspacePage({
   }
   if (!loaded.trip) notFound();
   const trip = loaded.trip;
+  const hotelQuery = sanitizeSearchTerm(first(raw.q));
+  const pipelineQuery = sanitizeSearchTerm(first(raw.pipeline));
+  const pipelinePage = pipelinePageParam(first(raw.pipeline_page));
 
   const [summary, shortlist, pipeline, destinations] = await Promise.all([
     getTripSummary(trip.id),
     listShortlist(trip.id),
-    listLinkablePipelineItems(),
+    listLinkablePipelineItems({ query: pipelineQuery, page: pipelinePage }),
     listDestinations(),
   ]);
 
   const discoverHref = buildDiscoverHref({ destination: trip.destinationSlug });
-  const hotelQuery = sanitizeSearchTerm(first(raw.q));
   let hotelMatches: { id: string; name: string }[] = [];
   let hotelSearchFailed = false;
   if (hotelQuery) {
@@ -170,6 +193,10 @@ export default async function TripWorkspacePage({
           className="flex flex-wrap gap-2"
           role="search"
         >
+          {pipelineQuery ? <input type="hidden" name="pipeline" value={pipelineQuery} /> : null}
+          {pipeline.status === "ok" && pipeline.page > 1 ? (
+            <input type="hidden" name="pipeline_page" value={String(pipeline.page)} />
+          ) : null}
           <label className="sr-only" htmlFor="shortlist-q">
             Search hotels in {trip.destinationName}
           </label>
@@ -211,45 +238,91 @@ export default async function TripWorkspacePage({
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-text">Pipeline on this trip</h2>
+        <form action={`/app/trips/${trip.id}`} method="get" className="flex flex-wrap gap-2" role="search">
+          {hotelQuery ? <input type="hidden" name="q" value={hotelQuery} /> : null}
+          <label className="sr-only" htmlFor="pipeline-q">
+            Find a pipeline hotel
+          </label>
+          <input
+            id="pipeline-q"
+            name="pipeline"
+            type="search"
+            defaultValue={pipelineQuery ?? ""}
+            placeholder="Find a pipeline hotel"
+            className="min-w-0 flex-1 rounded-[var(--radius-app)] border border-border bg-background px-3 py-2 text-sm text-text"
+          />
+          <button
+            type="submit"
+            className="rounded-[var(--radius-app)] border border-border px-4 py-2 text-sm font-medium text-text"
+          >
+            Find
+          </button>
+        </form>
         {pipeline.status === "error" ? (
           <p className="text-sm text-muted">We couldn’t load your pipeline. Reload to try again.</p>
         ) : pipeline.items.length === 0 ? (
           <p className="text-sm text-muted">
-            You don’t have pipeline items to link yet. Save a hotel from Discover first.
+            {pipeline.query
+              ? "No pipeline hotels matched that search."
+              : pipeline.page > 1
+                ? "No more pipeline items on this page."
+                : "You don’t have pipeline items to link yet. Save a hotel from Discover first."}
           </p>
         ) : (
-          <>
-            <ul className="space-y-2">
-              {pipeline.items.map((item) => {
-                const linked = item.tripId === trip.id;
-                return (
-                  <li
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-app)] border border-border bg-surface px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-text">{item.hotelName}</p>
-                      <p className="text-xs text-muted">
-                        {pipelineStatusLabel(item.status)}
-                        {linked
-                          ? " · Linked to this trip"
-                          : item.tripId
-                            ? " · Linked to another trip"
-                            : ""}
-                      </p>
-                    </div>
-                    <PipelineLinkButton tripId={trip.id} pipelineItemId={item.id} linked={linked} />
-                  </li>
-                );
-              })}
-            </ul>
-            {pipeline.truncated ? (
-              <p className="text-sm text-muted">
-                Showing the 100 most recently active pipeline items.
-              </p>
-            ) : null}
-          </>
+          <ul className="space-y-2">
+            {pipeline.items.map((item) => {
+              const linked = item.tripId === trip.id;
+              return (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-app)] border border-border bg-surface px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-text">{item.hotelName}</p>
+                    <p className="text-xs text-muted">
+                      {pipelineStatusLabel(item.status)}
+                      {linked
+                        ? " · Linked to this trip"
+                        : item.tripId
+                          ? " · Linked to another trip"
+                          : ""}
+                    </p>
+                  </div>
+                  <PipelineLinkButton tripId={trip.id} pipelineItemId={item.id} linked={linked} />
+                </li>
+              );
+            })}
+          </ul>
         )}
+        {pipeline.status === "ok" && (pipeline.hasPrevious || pipeline.hasNext) ? (
+          <p className="flex flex-wrap items-center gap-3 text-sm text-muted">
+            <span>Page {pipeline.page}</span>
+            {pipeline.hasPrevious ? (
+              <Link
+                href={workspaceHref(trip.id, {
+                  q: hotelQuery,
+                  pipeline: pipeline.query,
+                  pipelinePage: pipeline.page - 1,
+                })}
+                className="underline hover:text-text"
+              >
+                Newer
+              </Link>
+            ) : null}
+            {pipeline.hasNext ? (
+              <Link
+                href={workspaceHref(trip.id, {
+                  q: hotelQuery,
+                  pipeline: pipeline.query,
+                  pipelinePage: pipeline.page + 1,
+                })}
+                className="underline hover:text-text"
+              >
+                Older
+              </Link>
+            ) : null}
+          </p>
+        ) : null}
       </section>
 
       <section className="space-y-4 rounded-[var(--radius-app)] border border-border bg-surface p-4">

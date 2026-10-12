@@ -1,10 +1,10 @@
 # D01 — Trips
 
 **Status:** Binding work order for this PR. Awaiting independent audit. Do not merge.  
-**Base:** `main` `161e4c0d7694b3e12b3b496c1393037b2d0e57a5`  
+**Base:** `main` `187af6a3d4b4b5f6db1ec6d1f77ca975e791f852`  
 **Branch:** `feat/d01-trips`  
 **Migration:** `0046_trips_context.sql`  
-0045 is `0045_gmail_commercial_meaning_followups.sql` on `fix/b07-1-followups` (`bdf1cb3`). This block takes the next free number, 0046.
+0045 is `0045_gmail_commercial_meaning_followups.sql`, merged with B07.1 (PR #51). This block keeps 0046. PR #53 (B08) uses 0047.
 
 One PR for the whole block. Do not merge.
 
@@ -25,6 +25,8 @@ No new commercial number and no new status were added.
 - Exemption uses the existing helpers the pipeline RPCs already use. Active Pro is exempt worldwide. An active destination entitlement exempts a trip in that destination or a descendant. A non-exempt create counts every active trip, the same way `save_hotel_to_pipeline` counts every open relationship when the hotel being saved is outside the entitlement.
 - A trip that already counts stays editable after the entitlement is revoked. Expiry does not delete trips (D014) and does not call `delete_trip`.
 - Moving a terminal trip back into a counting status re-checks the allowance.
+- Moving a counting trip from an exempt destination onto a destination that is not exempt re-checks the same allowance (D056). The count is the creator's other counting trips. A Free user can still retarget the one trip that already occupies their slot. After the entitlement is revoked, a trip that already counts stays editable, including its destination (D014).
+- `trips.creator_id` cannot change while a pipeline item owned by a different creator is linked to that trip.
 - A row in `public.hotels` is the canonical published hotel (D062). Shortlist rejects any other id.
 - Summary counts are unknown (JSON null) when the trip has no linked pipeline rows. Unknown is not zero. A real zero is returned only when linked rows exist and that bucket is empty.
 - `follow_up` is not a reply. A confirmed collaboration is a collaboration in `agreed`, `scheduled`, `active`, or `completed` (D045). `cancelled` is not counted as confirmed.

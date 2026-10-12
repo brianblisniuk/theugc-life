@@ -188,6 +188,32 @@ d("D01 — Free active-trip allowance", () => {
     expect(nowPlanning.result).toBe("updated");
   });
 
+  it("lets a Free user retarget their single counting trip and still blocks a second", async () => {
+    const created = await create(U.free, DEST.outside, "planning");
+    expect(created.result).toBe("created");
+
+    const moved = await update(U.free, String(created.trip_id), DEST.parent, "upcoming");
+    expect(moved.result).toBe("updated");
+    const rows = await adminQuery<{ destination_id: string; status: string }>(
+      "select destination_id, status from public.trips where id = $1",
+      [created.trip_id],
+    );
+    expect(rows[0]).toMatchObject({ destination_id: DEST.parent, status: "upcoming" });
+
+    const second = await create(U.free, DEST.outside, "planning");
+    expect(second.result).toBe("limit_reached");
+    expect(
+      (
+        await adminQuery<{ n: string }>(
+          `select count(*)::text as n from public.trips t
+             join public.creator_profiles cp on cp.id = t.creator_id
+            where cp.user_id = $1`,
+          [U.free],
+        )
+      )[0]!.n,
+    ).toBe("1");
+  });
+
   it("still lets the owner edit the one active trip", async () => {
     const created = await create(
       U.free,
@@ -271,6 +297,80 @@ d("D01 — entitlement exemption and expiry retention", () => {
     // The outside create counts every active trip, matching save_hotel_to_pipeline.
     const outside = await create(U.dest, DEST.outside, "planning");
     expect(outside.result).toBe("limit_reached");
+  });
+
+  it("refuses to move an extra counting trip outside the destination pass", async () => {
+    const first = await create(U.dest, DEST.parent, "planning");
+    const second = await create(U.dest, DEST.child, "active");
+    expect(first.result).toBe("created");
+    expect(second.result).toBe("created");
+
+    const moved = await update(U.dest, String(first.trip_id), DEST.outside, "planning");
+    expect(moved.result).toBe("limit_reached");
+    expect(moved.limit).toBe(FREE_LIMITS.activeTrips);
+    const stayed = await adminQuery<{ destination_id: string; status: string }>(
+      "select destination_id, status from public.trips where id = $1",
+      [first.trip_id],
+    );
+    expect(stayed[0]).toMatchObject({ destination_id: DEST.parent, status: "planning" });
+
+    const alsoMoved = await update(U.dest, String(second.trip_id), DEST.outside, "upcoming");
+    expect(alsoMoved.result).toBe("limit_reached");
+    const secondRow = await adminQuery<{ destination_id: string }>(
+      "select destination_id from public.trips where id = $1",
+      [second.trip_id],
+    );
+    expect(secondRow[0]!.destination_id).toBe(DEST.child);
+  });
+
+  it("lets a pass holder retarget their only counting trip outside the pass", async () => {
+    const only = await create(U.dest, DEST.parent, "planning");
+    expect(only.result).toBe("created");
+    const moved = await update(U.dest, String(only.trip_id), DEST.outside, "upcoming");
+    expect(moved.result).toBe("updated");
+    const row = await adminQuery<{ destination_id: string }>(
+      "select destination_id from public.trips where id = $1",
+      [only.trip_id],
+    );
+    expect(row[0]!.destination_id).toBe(DEST.outside);
+  });
+
+  it("still re-checks when a completed trip is reactivated onto an outside destination", async () => {
+    const current = await create(U.dest, DEST.parent, "active");
+    const history = await create(U.dest, DEST.child, "completed");
+    expect(current.result).toBe("created");
+    expect(history.result).toBe("created");
+
+    const reactivated = await update(U.dest, String(history.trip_id), DEST.outside, "planning");
+    expect(reactivated.result).toBe("limit_reached");
+    const row = await adminQuery<{ destination_id: string; status: string }>(
+      "select destination_id, status from public.trips where id = $1",
+      [history.trip_id],
+    );
+    expect(row[0]).toMatchObject({ destination_id: DEST.child, status: "completed" });
+  });
+
+  it("keeps an already-counting trip editable after the pass is revoked", async () => {
+    const inside = await create(U.dest, DEST.parent, "planning");
+    const alsoInside = await create(U.dest, DEST.child, "active");
+    expect(inside.result).toBe("created");
+    expect(alsoInside.result).toBe("created");
+
+    await adminQuery(
+      "update public.access_entitlements set status = 'revoked' where user_id = $1 and access_type = 'destination'",
+      [U.dest],
+    );
+    try {
+      const edited = await update(U.dest, String(inside.trip_id), DEST.parent, "upcoming");
+      expect(edited.result).toBe("updated");
+      const moved = await update(U.dest, String(inside.trip_id), DEST.outside, "upcoming");
+      expect(moved.result).toBe("updated");
+    } finally {
+      await adminQuery(
+        "update public.access_entitlements set status = 'active' where user_id = $1 and access_type = 'destination'",
+        [U.dest],
+      );
+    }
   });
 
   it("a pass does not remove the Free slot when no trip exists yet", async () => {
@@ -416,6 +516,31 @@ d("D01 — shortlist, linking, and cross-tenant fences", () => {
       [aItem!.id],
     );
     expect(after[0]!.trip_id).toBe(aTrip.trip_id);
+  });
+
+  it("rejects a trip creator change that would leave a cross-tenant pipeline link", async () => {
+    const trip = await create(U.free, DEST.outside);
+    const owner = await creatorId(U.free);
+    const other = await creatorId(U.other);
+    const [item] = await adminQuery<{ id: string }>(
+      "insert into public.pipeline_items (creator_id, hotel_id, trip_id, status) values ($1,$2,$3,'saved') returning id",
+      [owner, HOTEL.outside, trip.trip_id],
+    );
+
+    await expect(
+      adminQuery("update public.trips set creator_id = $1 where id = $2", [other, trip.trip_id]),
+    ).rejects.toThrow(/same creator/);
+
+    const tripRow = await adminQuery<{ creator_id: string }>(
+      "select creator_id from public.trips where id = $1",
+      [trip.trip_id],
+    );
+    const itemRow = await adminQuery<{ creator_id: string; trip_id: string }>(
+      "select creator_id, trip_id from public.pipeline_items where id = $1",
+      [item!.id],
+    );
+    expect(tripRow[0]!.creator_id).toBe(owner);
+    expect(itemRow[0]).toMatchObject({ creator_id: owner, trip_id: trip.trip_id });
   });
 
   it("deleting a trip unlinks pipeline items and does not delete them", async () => {

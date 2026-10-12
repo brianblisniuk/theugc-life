@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate. D01 is awaiting independent audit (schema state AUDITING; there is no AWAITING_AUDIT token). Do not merge PR #52. expected_head stays null because this commit cannot name itself. B07.1 (PR #51) is merged.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Updated only inside each block's closing PR (docs-state-sync). Validate: npm run autopilot:validate. D01 audit of c7ccd52 failed; the correction is on PR #52 and awaits re-audit (schema state AUDITING). Do not merge. expected_head stays null because this commit cannot name itself. B07.1 (PR #51) is merged.",
   "schema_version": 1,
   "as_of": "2026-10-12",
   "state": "AUDITING",
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "Independent audit of D01 PR #52 on feat/d01-trips. Do not merge. After that merge, the next planned block is D02 Contact Hub. B07.1 is merged (PR #51). Model-backed B07 inference and B08 stay gated."
+  "next_dependency": "Re-audit of D01 PR #52 on feat/d01-trips after the c7ccd52 FAIL (destination-move allowance, rebase onto 187af6a, creator_id fence, pipeline paging). Do not merge. After that merge, the next planned block is D02 Contact Hub. B07.1 is merged (PR #51). Model-backed B07 inference and B08 stay gated."
 }

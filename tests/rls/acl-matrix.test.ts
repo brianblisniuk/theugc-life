@@ -581,7 +581,8 @@ d("explicit ACL contract (0024)", () => {
            'create_trip', 'update_trip', 'delete_trip',
            'add_trip_hotel', 'remove_trip_hotel',
            'link_pipeline_item_to_trip',
-           'enforce_pipeline_item_trip_same_creator'
+           'enforce_pipeline_item_trip_same_creator',
+           'enforce_trip_creator_matches_pipeline'
          )
        order by p.proname
     `);
@@ -590,6 +591,7 @@ d("explicit ACL contract (0024)", () => {
       "create_trip",
       "delete_trip",
       "enforce_pipeline_item_trip_same_creator",
+      "enforce_trip_creator_matches_pipeline",
       "link_pipeline_item_to_trip",
       "remove_trip_hotel",
       "update_trip",
