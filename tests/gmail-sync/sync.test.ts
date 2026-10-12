@@ -311,6 +311,12 @@ d("B08 incremental sync", () => {
     expect(gmail.calls.profileCalls).toBe(1);
     expect((await cursorOf(client, mail.mailAccountId)).history_id).toBe("100");
     expect(await rawCount(client, mail.mailAccountId)).toBe(0);
+    const duringSnap = await client.query<{ snapshot_sent_message_ids: string[] }>(
+      `select snapshot_sent_message_ids from private.gmail_sync_threads
+        where mail_account_id = $1 and provider_thread_id = 't-during'`,
+      [mail.mailAccountId],
+    );
+    expect(duringSnap.rows[0]?.snapshot_sent_message_ids ?? []).not.toContain("m-during");
 
     await client.query("select pg_sleep(0.05)");
     await client.query(
@@ -470,6 +476,75 @@ d("B08 incremental sync", () => {
       place: "profile",
       atExclusiveBeforeSecond: true,
     });
+  });
+
+  it("stores a profile-snapshot sent message that has no historyId and is dated after the window", async () => {
+    const { mail, imported } = await ready("b08-bare-history", null);
+    const threads: Record<string, ReturnType<typeof thread>> = {};
+    const placed = { internalDateMs: 0 };
+    const gmail = createFakeIncremental({
+      sentThreadIds: ["t-bare"],
+      profileHistoryId: "500",
+      profileHistoryIdAfterScan: "9000",
+      threads,
+      beforeGetProfile: async () => {
+        if (placed.internalDateMs !== 0) return;
+        const run = await client.query<{ window_end_at: Date }>(
+          `select window_end_at from private.gmail_sync_runs
+            where mail_account_id = $1 and status = 'runnable'`,
+          [mail.mailAccountId],
+        );
+        placed.internalDateMs = run.rows[0]!.window_end_at.getTime() + 5_000;
+        const message = textMessage({
+          id: "m-bare",
+          threadId: "t-bare",
+          internalDateMs: placed.internalDateMs,
+          labelIds: ["SENT"],
+        });
+        delete message.historyId;
+        threads["t-bare"] = thread("t-bare", [message]);
+      },
+    });
+
+    const first = await runAccountSync(mail, depsFor(client, gmail));
+    expect(first.result).toBe("not_due");
+    expect(gmail.calls.order.slice(0, 3)).toEqual(["profile", "sent", "thread"]);
+    expect(gmail.calls.threadIds).toEqual(["t-bare"]);
+    expect(await rawCount(client, mail.mailAccountId)).toBe(1);
+    const ids = await client.query<{ provider_message_id: string }>(
+      `select provider_message_id from private.gmail_raw_messages
+        where mail_account_id = $1`,
+      [mail.mailAccountId],
+    );
+    expect(ids.rows.map((row) => row.provider_message_id)).toEqual(["m-bare"]);
+    const snap = await client.query<{
+      status: string;
+      snapshot_sent_message_ids: string[];
+    }>(
+      `select status, snapshot_sent_message_ids from private.gmail_sync_threads
+        where mail_account_id = $1 and provider_thread_id = 't-bare'`,
+      [mail.mailAccountId],
+    );
+    expect(snap.rows[0]?.status).toBe("complete");
+    expect(snap.rows[0]?.snapshot_sent_message_ids).toEqual(["m-bare"]);
+    const cursor = await cursorOf(client, mail.mailAccountId);
+    expect(cursor.history_id).toBe("500");
+    expect(cursor.horizon_end_at.getTime()).toBeGreaterThan(imported.horizon.getTime());
+
+    await client.query(
+      "update private.gmail_sync_cursors set next_sync_at = now() where mail_account_id = $1",
+      [mail.mailAccountId],
+    );
+    const second = createFakeIncremental({
+      historyByStart: {
+        "500": { historyId: "500", nextPageToken: null, threads: [] },
+      },
+    });
+    const again = await runAccountSync(mail, depsFor(client, second));
+    expect(again.result).toBe("not_due");
+    expect(second.calls.historyStarts).toEqual(["500"]);
+    expect(await rawCount(client, mail.mailAccountId)).toBe(1);
+    expect((await cursorOf(client, mail.mailAccountId)).history_id).toBe("500");
   });
 
   it("stores sent mail that is inside the history.list snapshot and after the claim window", async () => {

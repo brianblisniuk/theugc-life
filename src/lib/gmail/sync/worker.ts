@@ -255,7 +255,13 @@ async function dischargeStep(
         p_expected_authorization_revision: revision,
         p_page_token_used: claim.page_token ?? null,
         p_next_page_token: page.nextPageToken,
-        p_thread_ids: page.candidates.map((candidate) => candidate.threadId),
+        // The search already named the message. Persist that id before
+        // threads.get so a snapshot sent message with no numeric historyId
+        // is stored, or withholds the cursor, the same way history.list does.
+        p_candidates: page.candidates.map((candidate) => ({
+          provider_thread_id: candidate.threadId,
+          provider_message_id: candidate.messageId,
+        })),
         p_quota_units: page.quotaUnits,
       });
       return { result: committed.result === "ok" ? "progressed" : committed.result, step };

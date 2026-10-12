@@ -114,22 +114,24 @@ export function createFakeIncremental(
       const after = Number(/after:(\d+)/.exec(query)?.[1]);
       const beforeMatch = /before:(\d+)/.exec(query);
       const before = beforeMatch ? Number(beforeMatch[1]) : null;
-      const candidates = (options.sentThreadIds ?? []).flatMap((threadId, index) => {
+      const candidates = (options.sentThreadIds ?? []).flatMap((threadId) => {
         const messages = threads[threadId]?.messages ?? [];
+        // A thread with no body yet is discovered, but it has no message id.
+        // Mail injected later, during threads.get, must stay off the snapshot
+        // id list so the cursor can still move.
         if (messages.length === 0) {
-          return [{ messageId: `sent-${index}`, threadId }];
+          return [{ messageId: "", threadId }];
         }
-        const matches = messages.some((message) => {
+        return messages.flatMap((message) => {
           const labels = message.labelIds ?? [];
-          if (!labels.includes("SENT") || labels.includes("DRAFT")) return false;
+          if (!labels.includes("SENT") || labels.includes("DRAFT")) return [];
           const ms = Number(message.internalDate);
-          if (!Number.isFinite(ms)) return false;
+          if (!Number.isFinite(ms)) return [];
           const second = Math.floor(ms / 1000);
-          if (!(second > after)) return false;
-          if (before !== null && !(second < before)) return false;
-          return true;
+          if (!(second > after)) return [];
+          if (before !== null && !(second < before)) return [];
+          return [{ messageId: message.id ?? "", threadId }];
         });
-        return matches ? [{ messageId: `sent-${index}`, threadId }] : [];
       });
       return {
         candidates,

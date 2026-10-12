@@ -3150,11 +3150,9 @@ content. It is a creator record. It is not a charge.
 
 Numbering: D076 is reserved by open PR #53 (B08). D077 is C01, merged on
 `main` `989e7f020f07362113b3e9b00fd9950293808f10`, and is still Proposed.
-D078 is Accepted and merged as PR #56
-(`61d0e385894670bc55a78675e64526c353c288d5`). Migration
-`0050_collaboration_deliverables_compensation.sql` is on `main`. E01
-(PR #55) added no migration. `0049` is still unused. Open PR #53 keeps
-`0047` and `0048` and does not edit `0050`.
+D078 is the next free number. Migration `0050_collaboration_deliverables_compensation.sql`.
+`main` ends at `0046`. Open PR #53 reserves `0047` and `0048`. `0049` is
+left free because open PR #55 (E01) may take it.
 
 Depends on D045 (a won deal is a collaboration), D072 (compensation
 vocabulary), and the existing collaboration lifecycle. This decision does

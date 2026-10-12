@@ -13,7 +13,10 @@
 -- A bounded re-scan captures users.getProfile before messages.list and
 -- threads.get, and completion stores that earlier historyId. That
 -- messages.list omits before:, because before:ceil(window_end) drops a sent
--- message already inside the snapshot. Committing the profile snapshot, or a
+-- message already inside the snapshot. That search's message ids are written
+-- to snapshot_message_ids and snapshot_sent_message_ids before threads.get,
+-- so a sent message with no numeric historyId is still stored when its date
+-- is after window_end_at. Committing the profile snapshot, or a
 -- history.list page, moves window_end_at to that same clock before those
 -- later reads filter on it. A non-draft sent message that was inside the
 -- snapshot is stored even when its internalDate is slightly later than that
@@ -1107,7 +1110,7 @@ create or replace function public.gmail_incremental_sync_commit_sent_page(
   p_expected_authorization_revision bigint,
   p_page_token_used text,
   p_next_page_token text,
-  p_thread_ids text[],
+  p_candidates jsonb,
   p_quota_units integer
 )
 returns jsonb
@@ -1134,14 +1137,62 @@ begin
     return jsonb_build_object('result', 'already_applied');
   end if;
 
+  if p_candidates is null or jsonb_typeof(p_candidates) <> 'array' then
+    raise exception 'sent page candidates must be a json array'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  if exists (
+    select 1
+      from jsonb_array_elements(p_candidates) as c
+     where btrim(coalesce(c ->> 'provider_thread_id', '')) = ''
+  ) then
+    raise exception 'sent page candidate is missing a thread id'
+      using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- messages.list is a SENT search. Its message ids are the snapshot, the
+  -- same record history.list keeps, so a later threads.get with no numeric
+  -- historyId is still inside the snapshot.
   insert into private.gmail_sync_threads
-    (run_id, user_id, mail_account_id, provider_thread_id, status)
-  select p_run_id, v_run.user_id, v_run.mail_account_id, btrim(t), 'pending'
-    from unnest(coalesce(p_thread_ids, '{}'::text[])) as t
-   where btrim(t) <> ''
+    (run_id, user_id, mail_account_id, provider_thread_id, status,
+     snapshot_message_ids, snapshot_sent_message_ids)
+  select p_run_id, v_run.user_id, v_run.mail_account_id, s.thread_id, 'pending',
+         s.ids, s.ids
+    from (
+      select btrim(c ->> 'provider_thread_id') as thread_id,
+             coalesce(
+               array_agg(distinct btrim(c ->> 'provider_message_id'))
+                 filter (
+                   where btrim(coalesce(c ->> 'provider_message_id', '')) <> ''
+                 ),
+               '{}'::text[]
+             ) as ids
+        from jsonb_array_elements(p_candidates) as c
+       group by btrim(c ->> 'provider_thread_id')
+    ) as s
   on conflict (run_id, provider_thread_id) do update
-    set status = 'pending', completed_at = null
-    where private.gmail_sync_threads.status = 'filtered_out';
+    set snapshot_message_ids = (
+          select coalesce(array_agg(distinct item), '{}'::text[])
+            from unnest(
+              private.gmail_sync_threads.snapshot_message_ids || excluded.snapshot_message_ids
+            ) as item
+        ),
+        snapshot_sent_message_ids = (
+          select coalesce(array_agg(distinct item), '{}'::text[])
+            from unnest(
+              private.gmail_sync_threads.snapshot_sent_message_ids
+              || excluded.snapshot_sent_message_ids
+            ) as item
+        ),
+        status = case
+          when private.gmail_sync_threads.status = 'filtered_out' then 'pending'
+          else private.gmail_sync_threads.status
+        end,
+        completed_at = case
+          when private.gmail_sync_threads.status = 'filtered_out' then null
+          else private.gmail_sync_threads.completed_at
+        end;
 
   update private.gmail_sync_runs
      set page_token = p_next_page_token,
@@ -2237,7 +2288,7 @@ begin
     'public.gmail_incremental_sync_validate_claim(uuid,uuid,uuid,bigint,text,text)',
     'public.gmail_incremental_sync_commit_history_page(uuid,uuid,uuid,bigint,text,text,text,jsonb,integer)',
     'public.gmail_incremental_sync_history_expired(uuid,uuid,uuid,bigint)',
-    'public.gmail_incremental_sync_commit_sent_page(uuid,uuid,uuid,bigint,text,text,text[],integer)',
+    'public.gmail_incremental_sync_commit_sent_page(uuid,uuid,uuid,bigint,text,text,jsonb,integer)',
     'public.gmail_incremental_sync_commit_enqueue_known(uuid,uuid,uuid,bigint)',
     'public.gmail_incremental_sync_commit_thread(uuid,uuid,uuid,bigint,text,jsonb,integer)',
     'public.gmail_incremental_sync_record_thread_gone(uuid,uuid,uuid,bigint,text,integer)',

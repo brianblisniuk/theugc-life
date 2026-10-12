@@ -670,8 +670,9 @@ only: it is not a charge. E01 did not take `0049`; that number is still unused.
 > and on creator login, same D068 inclusion rule, no Pub/Sub and no new
 > scope. Open as PR #53 on `feat/b08-gmail-incremental-sync`. The snapshot
 > commit and `window_end_at` are the same clock. The bounded re-scan's
-> `messages.list` omits `before:`, so a sent message inside the snapshot is
-> not dropped when its unix second is at or after `ceil(window_end)`.
+> `messages.list` omits `before:`, and the message ids it returns are the
+> snapshot sent ids, so a sent message inside the snapshot is stored even
+> when it has no numeric `historyId` and its date is after `window_end_at`.
 > `history_id` does not advance past a non-draft sent snapshot message this
 > run did not store, except a message dated before the forward window: that
 > exclusion is intentional and the cursor still advances. Awaiting re-audit.
