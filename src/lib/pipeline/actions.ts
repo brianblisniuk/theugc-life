@@ -15,7 +15,8 @@ import { revalidatePath } from "next/cache";
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 
-export const PIPELINE_ENTITLEMENTS = bindServerActions([
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions([
   "pipeline.save",
   "pipeline.engage",
   "pipeline.own",

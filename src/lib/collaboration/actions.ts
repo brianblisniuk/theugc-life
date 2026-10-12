@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 
-export const COLLABORATION_ENTITLEMENTS = bindServerActions(["collaborations.compensation"]);
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions(["collaborations.compensation"]);
 
 import { parseCompensationForm, parseDeliverableForm, parsePrefillForm } from "./contract";
 import {

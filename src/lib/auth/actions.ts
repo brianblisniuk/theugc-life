@@ -10,7 +10,9 @@ import { logger } from "@/lib/logger";
 import { POST_ONBOARDING_PATH } from "@/lib/onboarding/activation";
 import { createClient } from "@/lib/supabase/server";
 
-export const AUTH_ENTITLEMENTS = bindServerActions(["auth.session", "profile.own"]);
+// Load-time binding. A "use server" module may export only async functions,
+// so this array is not exported.
+bindServerActions(["auth.session", "profile.own"]);
 
 export interface AuthActionState {
   error?: string;
