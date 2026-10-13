@@ -160,8 +160,10 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
 
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
   await ada.getByRole("button", { name: "Link thread" }).click();
-  await expect(ada.getByText("Saved", { exact: true })).toBeVisible();
-  await expect(ada.getByText(FIXTURE_THREAD_ID)).toBeVisible();
+  // The pipeline status heading is also "Saved". The write result is its own paragraph.
+  await expect(ada.locator("#inbox p").filter({ hasText: /^Saved$/ })).toBeVisible();
+  await ada.reload();
+  await expect(ada.getByText(`Linked thread ${FIXTURE_THREAD_ID}`)).toBeVisible();
 
   await ada.getByRole("button", { name: "Mark as pitched" }).click();
   await ada.locator("#pitch-channel").selectOption("email");
@@ -192,7 +194,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
 
   await ada.locator("#compensation-structure").selectOption("in_kind");
   await ada.getByRole("button", { name: "Save compensation" }).click();
-  await expect(ada.getByText("Saved", { exact: true }).first()).toBeVisible();
+  await expect(ada.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ })).toBeVisible();
   await ada.getByLabel("Platform").fill(PLATFORM);
   await ada.getByRole("button", { name: "Add deliverable" }).click();
   await ada.reload();
