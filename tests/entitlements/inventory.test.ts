@@ -12,6 +12,7 @@ import * as creditActions from "@/lib/credits/actions";
 import * as pitchActions from "@/lib/pitch/actions";
 import * as authActions from "@/lib/auth/actions";
 import * as collaborationActions from "@/lib/collaboration/actions";
+import * as contractActions from "@/lib/contracts/actions";
 import * as collaborationDetectionActions from "@/lib/gmail/collaboration/actions";
 import * as gmailActions from "@/lib/gmail/actions";
 import * as inboxActions from "@/lib/inbox-pipeline/actions";
@@ -95,6 +96,7 @@ describe("entitlement inventory", () => {
     const exported = [
       ...exportedFunctions(authActions),
       ...exportedFunctions(collaborationActions),
+      ...exportedFunctions(contractActions),
       ...exportedFunctions(gmailActions),
       ...exportedFunctions(collaborationDetectionActions),
       ...exportedFunctions(inboxActions),

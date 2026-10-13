@@ -380,6 +380,31 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["D078", "D014"],
   },
   {
+    id: "collaborations.contracts",
+    module: "Collaborations",
+    summary:
+      "Agreement drafts and their templates belong to the creator who owns the won deal. They are not legal advice, not a message, and not another creator's Pro.",
+    routes: ["/app/hotels/[id]"],
+    sourceFiles: [
+      "src/lib/contracts/actions.ts",
+      "src/lib/contracts/queries.ts",
+      "src/components/pipeline/contract-drafts.tsx",
+    ],
+    serverActions: ["generateContractAction", "saveContractAction", "deleteContractAction"],
+    rpcs: [
+      "generate_collaboration_contract",
+      "update_collaboration_contract",
+      "delete_collaboration_contract",
+    ],
+    rule: { kind: "owner_private" },
+    anon: "deny",
+    enforcement: {
+      kind: "owner_rows",
+      tables: ["contract_templates", "collaboration_contracts"],
+    },
+    sources: ["D114", "D098", "D078", "D014"],
+  },
+  {
     id: "gmail.connect",
     module: "Gmail",
     summary:

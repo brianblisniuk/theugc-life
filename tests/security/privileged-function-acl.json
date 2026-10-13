@@ -1618,5 +1618,45 @@
     "authenticated": false,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "delete_collaboration_contract",
+    "args": "p_user_id uuid, p_contract_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_collaboration_contract_scope",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "generate_collaboration_contract",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_kind text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "update_collaboration_contract",
+    "args": "p_user_id uuid, p_contract_id uuid, p_title text, p_body text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
   }
 ]
