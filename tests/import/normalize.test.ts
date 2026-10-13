@@ -92,5 +92,9 @@ describe("verification status", () => {
     expect(normalizeVerificationStatus("masked")).toBe("invalid");
     expect(normalizeVerificationStatus("")).toBe("unverified");
     expect(normalizeVerificationStatus("something else")).toBe("unverified");
+    expect(normalizeVerificationStatus("reported")).toBe("probable");
+    expect(normalizeVerificationStatus("Reported")).toBe("probable");
+    expect(normalizeVerificationStatus("not reported")).toBe("unverified");
+    expect(normalizeVerificationStatus("unreported")).toBe("unverified");
   });
 });

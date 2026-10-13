@@ -11,6 +11,7 @@
  *    + property-specific URL, so those forbidden keys cannot drive identity.
  *  - False merges are worse than temporary duplicates.
  */
+import { isOrgType, organizationTypeForContact } from "./aliases";
 import { foldForMatch } from "./normalize";
 import type { ContactRecord, PropertyRecord } from "./contract";
 import { resolveDestination as resolveDestinationCatalog, type CatalogAlias } from "./destination";
@@ -263,28 +264,26 @@ function resolveProperty(
 function deriveOrganizationCandidates(contactRows: StagedRow[]): OrganizationCandidate[] {
   const out: OrganizationCandidate[] = [];
   const seen = new Set<string>();
-  const scopeToType: Record<string, string> = {
-    group: "hotel_group",
-    operator: "operator",
-    agency: "pr_agency",
-    brand: "hotel_group",
-  };
   for (const row of contactRows) {
     const c = row.normalized as unknown as ContactRecord;
-    if (!c.contactScope || !(c.contactScope in scopeToType)) continue;
     // Explicit organization name is required — never inferred.
     if (!c.organizationName) continue;
-    const key = `${c.contactScope}:${foldForMatch(c.organizationName)}`;
+    const inferredType = organizationTypeForContact(c);
+    if (!inferredType || !isOrgType(inferredType)) continue;
+    const scope = c.contactScope ?? "unknown";
+    const key = `${inferredType}:${foldForMatch(c.organizationName)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
       name: c.organizationName,
-      inferredType: scopeToType[c.contactScope]!,
-      scope: c.contactScope,
+      inferredType,
+      scope,
       sourcePropertyKey: c.sourcePropertyKey,
       sheetName: row.sheetName,
       sourceRowNumber: row.sourceRowNumber,
-      reason: `Explicit organization_name with "${c.contactScope}" scope (broader than one property).`,
+      reason: c.organizationType
+        ? `Explicit organization_name with organization type "${c.organizationType}".`
+        : `Explicit organization_name with "${scope}" scope (broader than one property).`,
     });
   }
   return out;

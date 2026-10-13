@@ -5,18 +5,18 @@
  * validated canonical staging rows. Every row keeps its raw lineage, a stable
  * fingerprint, the normalized record, and a validation verdict.
  */
+import { normalizeClaimType, normalizeContactScope, normalizeDepartment } from "./aliases";
 import {
-  CLAIM_TYPES,
-  CONTACT_SCOPES,
-  DEPARTMENTS,
   SOURCE_TYPES,
   type ContactRecord,
   type EvidenceRecord,
+  type OrgType,
   type PropertyRecord,
   type RowKind,
 } from "./contract";
 import { rowFingerprint } from "./fingerprint";
 import {
+  classifyVerificationStatus,
   extractEmails,
   foldForMatch,
   isGenericMailbox,
@@ -26,10 +26,10 @@ import {
   normalizeSlug,
   normalizeString,
   normalizeUrl,
-  normalizeVerificationStatus,
   parseNumber,
 } from "./normalize";
 import type { RawRow, RawSheets } from "./parse";
+import { REASON, reason } from "./rejections";
 
 export type ValidationStatus = "valid" | "warning" | "review" | "rejected";
 
@@ -96,6 +96,7 @@ export function mapProperty(raw: RawRow): StagedRow {
 
   if (!propertyName) {
     errors.push("property_name is required");
+    errors.push(reason(REASON.missingPropertyName));
     return {
       sheetName: raw.sheetName,
       sourceRowNumber: raw.sourceRowNumber,
@@ -193,6 +194,7 @@ export function mapContact(raw: RawRow): StagedRow {
   const sourcePropertyKey = normalizeString(pick(raw.data, "source_property_id"));
   if (!sourcePropertyKey) {
     errors.push("contact has no source_property_id to attach to");
+    errors.push(reason(REASON.missingSourcePropertyId));
     return baseRejected(raw, "contact", null, errors, warnings);
   }
 
@@ -200,10 +202,16 @@ export function mapContact(raw: RawRow): StagedRow {
   const extraction = extractEmails(emailCell);
   let email: string | null = null;
   let generic = false;
-  let verification = normalizeVerificationStatus(pick(raw.data, "verification_status"));
+  const verificationClass = classifyVerificationStatus(pick(raw.data, "verification_status"));
+  let verification = verificationClass.status;
+  if (verificationClass.unmapped) {
+    warnings.push(reason(REASON.verificationUnmapped));
+    status = worst(status, "warning");
+  }
 
   if (extraction.masked) {
     warnings.push("masked/obfuscated email rejected as endpoint");
+    warnings.push(reason(REASON.maskedEmail));
     verification = "invalid";
     status = worst(status, "warning");
   } else if (extraction.emails.length >= 1) {
@@ -211,53 +219,70 @@ export function mapContact(raw: RawRow): StagedRow {
     generic = email ? isGenericMailbox(email) : false;
     if (extraction.emails.length > 1) {
       warnings.push(`multiple emails in one cell; kept first (${extraction.emails.length})`);
+      warnings.push(reason(REASON.multipleEmails));
       status = worst(status, "warning");
     }
   }
 
   const contactNameRaw = normalizeString(pick(raw.data, "contact_name"));
   const phone = normalizeString(pick(raw.data, "phone"));
+  const linkedinUrl = normalizeUrl(pick(raw.data, "linkedin_url")).normalized;
 
-  if (!email && !contactNameRaw && !phone) {
-    errors.push("contact has no usable endpoint (no valid email, name, or phone)");
+  // A LinkedIn URL is an endpoint (child policy already treats it as one). A
+  // name alone is not an endpoint and is rejected here only when email, phone,
+  // and LinkedIn are all absent.
+  if (!email && !contactNameRaw && !phone && !linkedinUrl) {
+    errors.push("contact has no usable endpoint (no valid email, name, phone, or linkedin)");
+    errors.push(reason(REASON.noUsableEndpoint));
     return baseRejected(raw, "contact", sourcePropertyKey, errors, warnings);
   }
   if (!email && !extraction.masked) {
     warnings.push("no valid email endpoint for contact");
+    warnings.push(reason(REASON.noValidEmail));
     status = worst(status, "review");
   }
 
-  const deptRaw = normalizeString(pick(raw.data, "department"));
-  const deptFolded = deptRaw ? foldForMatch(deptRaw).replace(/ /g, "_") : null;
-  const department = inTaxonomy(DEPARTMENTS, deptFolded) ? deptFolded : deptRaw ? "other" : null;
-
-  const scopeRaw = normalizeString(pick(raw.data, "contact_scope"));
-  const scopeFolded = scopeRaw ? foldForMatch(scopeRaw) : null;
-  const contactScope = inTaxonomy(CONTACT_SCOPES, scopeFolded)
-    ? scopeFolded
-    : scopeRaw
-      ? "unknown"
-      : null;
+  const departmentResult = normalizeDepartment(pick(raw.data, "department"));
+  if (departmentResult.unmapped) {
+    warnings.push(reason(REASON.departmentUnmapped));
+    status = worst(status, "warning");
+  }
+  const scopeResult = normalizeContactScope(pick(raw.data, "contact_scope"));
+  if (scopeResult.unmapped) {
+    warnings.push(reason(REASON.scopeUnmapped));
+    status = worst(status, "warning");
+  }
+  const department = departmentResult.value;
+  const contactScope = scopeResult.value;
 
   // Never label an inferred value verified just because it parses.
   if (email && verification === "verified") {
     const providedVerifiedAt = normalizeString(pick(raw.data, "verified_at"));
     if (!providedVerifiedAt) {
       warnings.push("verification=verified without verified_at; downgraded to probable");
+      warnings.push(reason(REASON.verifiedWithoutTimestamp));
       verification = "probable";
       status = worst(status, "warning");
     }
   }
 
   // Explicit organization identity only (review F1). Never inferred from a
-  // person's name, email, or property key.
-  const organizationName = normalizeString(pick(raw.data, "organization_name"));
+  // person's name, email, or property key. Typed columns (hotel group,
+  // management company, agency, operator) are organization_name aliases.
+  const organization = readOrganization(raw.data);
+  if (organization.conflict) {
+    warnings.push(reason(REASON.organizationColumnConflict));
+    status = worst(status, "warning");
+  }
+  const organizationName = organization.name;
+  const organizationType = organization.type;
   const orgLikeScope =
     contactScope !== null && ["brand", "group", "operator", "agency"].includes(contactScope);
   if (orgLikeScope && !organizationName) {
     warnings.push(
       "organization_identity_missing: broader-than-property scope without an explicit organization_name; kept attached to property for review",
     );
+    warnings.push(reason(REASON.organizationIdentityMissing));
     status = worst(status, "review");
   }
 
@@ -270,9 +295,10 @@ export function mapContact(raw: RawRow): StagedRow {
     email,
     isGenericMailbox: generic,
     phone,
-    linkedinUrl: normalizeUrl(pick(raw.data, "linkedin_url")).normalized,
+    linkedinUrl,
     contactScope,
     organizationName,
+    organizationType,
     verificationStatus: verification,
     sourceUrl: normalizeUrl(pick(raw.data, "source_url")).normalized,
     verifiedAt: normalizeString(pick(raw.data, "verified_at")),
@@ -302,27 +328,34 @@ export function mapEvidence(raw: RawRow): StagedRow {
   const sourcePropertyKey = normalizeString(pick(raw.data, "source_property_id"));
   if (!sourcePropertyKey) {
     errors.push("evidence has no source_property_id to attach to");
+    errors.push(reason(REASON.missingSourcePropertyId));
     return baseRejected(raw, "evidence", null, errors, warnings);
   }
 
-  const claimRaw = foldForMatch(normalizeString(pick(raw.data, "claim_type")) ?? "").replace(
-    / /g,
-    "_",
-  );
-  const claimType = inTaxonomy(CLAIM_TYPES, claimRaw) ? claimRaw : "other";
+  const claim = normalizeClaimType(pick(raw.data, "claim_type"));
+  if (claim.unmapped) warnings.push(reason(REASON.claimUnmapped));
 
   const sourceTypeRaw = foldForMatch(normalizeString(pick(raw.data, "source_type")) ?? "").replace(
     / /g,
     "_",
   );
   const sourceType = inTaxonomy(SOURCE_TYPES, sourceTypeRaw) ? sourceTypeRaw : "unknown";
+  if (normalizeString(pick(raw.data, "source_type")) && !inTaxonomy(SOURCE_TYPES, sourceTypeRaw)) {
+    warnings.push(reason(REASON.sourceTypeUnmapped));
+  }
+
+  const verificationClass = classifyVerificationStatus(pick(raw.data, "verification_status"));
+  if (verificationClass.unmapped) warnings.push(reason(REASON.verificationUnmapped));
+
+  let status: ValidationStatus = "valid";
+  if (warnings.length > 0) status = "warning";
 
   const record: EvidenceRecord = {
     sourcePropertyKey,
-    claimType,
+    claimType: claim.value,
     sourceType,
     sourceUrl: normalizeUrl(pick(raw.data, "source_url")).normalized,
-    verificationStatus: normalizeVerificationStatus(pick(raw.data, "verification_status")),
+    verificationStatus: verificationClass.status,
     observedAt: normalizeString(pick(raw.data, "observed_at")),
     notes: normalizeString(pick(raw.data, "notes")),
   };
@@ -335,10 +368,51 @@ export function mapEvidence(raw: RawRow): StagedRow {
     raw: raw.data,
     rawFingerprint: rowFingerprint(raw.data),
     normalized: record as unknown as Record<string, unknown>,
-    status: "valid",
+    status,
     errors,
     warnings,
   };
+}
+
+/**
+ * Organization columns, most specific contract name first. A typed column is
+ * used only when `organization_name` itself is empty, or when it repeats the
+ * same name (so we learn the type without inventing a second organization).
+ */
+const ORGANIZATION_COLUMNS: { header: string; type: OrgType | null }[] = [
+  { header: "organization_name", type: null },
+  { header: "organisation_name", type: null },
+  { header: "org_name", type: null },
+  { header: "hotel_group", type: "hotel_group" },
+  { header: "hotel_group_name", type: "hotel_group" },
+  { header: "group_name", type: "hotel_group" },
+  { header: "management_company", type: "management_company" },
+  { header: "management_company_name", type: "management_company" },
+  { header: "operator_name", type: "operator" },
+  { header: "agency_name", type: "pr_agency" },
+  { header: "company_name", type: null },
+  { header: "company", type: null },
+  { header: "organization", type: null },
+  { header: "organisation", type: null },
+];
+
+function readOrganization(data: Record<string, string | null>): {
+  name: string | null;
+  type: OrgType | null;
+  conflict: boolean;
+} {
+  const filled = ORGANIZATION_COLUMNS.flatMap((column) => {
+    const name = normalizeString(pick(data, column.header));
+    return name ? [{ name, type: column.type }] : [];
+  });
+  if (filled.length === 0) return { name: null, type: null, conflict: false };
+  const primary = filled[0]!;
+  const sameName = filled.filter(
+    (entry) => foldForMatch(entry.name) === foldForMatch(primary.name),
+  );
+  const typed = sameName.find((entry) => entry.type !== null);
+  const conflict = filled.some((entry) => foldForMatch(entry.name) !== foldForMatch(primary.name));
+  return { name: primary.name, type: typed?.type ?? primary.type, conflict };
 }
 
 function baseRejected(
@@ -369,5 +443,17 @@ export function stageRawSheets(sheets: RawSheets): StagedDataset {
     ...sheets.contacts.map(mapContact),
     ...sheets.evidence.map(mapEvidence),
   ];
+  const propertyKeys = new Set(
+    rows
+      .filter((row) => row.rowKind === "property" && row.status !== "rejected")
+      .map((row) => row.sourcePropertyKey)
+      .filter((key): key is string => key !== null),
+  );
+  for (const row of rows) {
+    if (row.rowKind === "property" || row.status === "rejected" || !row.sourcePropertyKey) continue;
+    if (propertyKeys.has(row.sourcePropertyKey)) continue;
+    row.warnings.push(reason(REASON.sourcePropertyMissing));
+    row.status = worst(row.status, "review");
+  }
   return { rows };
 }

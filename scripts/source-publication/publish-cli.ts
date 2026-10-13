@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const target = resolvePublicationTarget(process.env, { apply: args.apply });
   const items = readPublicationManifest(args.manifest);
 
-  const client = new Client({ connectionString: target.url });
+  const client = new Client(target.config);
   await client.connect();
   try {
     console.info("\n[source-publication:apply] A05 atomic D062 publication\n");

@@ -4,6 +4,9 @@
  *
  *   npm run import:dry-run -- --file <path> [--contacts <csv>] [--evidence <csv>]
  *   npm run import:dry-run -- --file <path> --adapter <legacy-key> [--force]
+ *
+ * A batch for the same file and parser version is not reused silently. Pass
+ * `--force` to reuse it; the command warns that the file was not re-parsed.
  */
 import { dryRunFile } from "../../src/lib/import/pipeline";
 import { fail, getClient, parseArgs, requireString } from "./_shared";
@@ -26,10 +29,20 @@ async function main() {
       force: args.force === true,
     });
     const s = result.report.summary;
-    console.info(`\n[import:dry-run] batch ${result.batchId}${result.reused ? " (reused)" : ""}`);
+    if (result.forcedReuse) {
+      console.warn(
+        `\n[import:dry-run] WARNING: reusing existing batch ${result.batchId} because --force was set. The file was not re-parsed.`,
+      );
+    }
+    console.info(
+      `\n[import:dry-run] batch ${result.batchId}${result.forcedReuse ? " (reused; --force)" : ""}`,
+    );
     console.info(`  properties=${s.properties} contacts=${s.contacts} evidence=${s.evidence}`);
     console.info(
       `  valid=${s.validRows} warning=${s.warningRows} review=${s.reviewRows} rejected=${s.rejectedRows}`,
+    );
+    console.info(
+      `  promotion defaults: include=${s.promotionInclude} defer=${s.promotionDefer} exclude=${s.promotionExclude}`,
     );
     console.info(
       `  safe-matches=${s.deterministicSafeMatches} fuzzy=${s.fuzzyReviewCandidates} ` +

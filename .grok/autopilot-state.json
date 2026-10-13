@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 621bc557762a70242b08a02afca94bca6c08f08d (PR #64, E05). UX01 is PR #65 on cursor/ux01-sunlit-creator-os-79af. Migration 0055. D095–D098 are Accepted. D089–D091 are unchanged. The public-profile toggle follows the stored flag. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 9a449239df1ebd859d4876c35e83e35007cf41af (PR #65, UX01). DATA01 is PR #66 on cursor/data01-hotel-catalog-import-5dcd. No new decision. No migration. D095–D098 stay Accepted. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "621bc557762a70242b08a02afca94bca6c08f08d",
-  "active_block": "UX01 Sunlit Creator OS, onboarding, public profile, Free tiers",
-  "branch": "cursor/ux01-sunlit-creator-os-79af",
-  "pr": 65,
+  "last_recorded_main": "9a449239df1ebd859d4876c35e83e35007cf41af",
+  "active_block": "DATA01 hotel catalog importer",
+  "branch": "cursor/data01-hotel-catalog-import-5dcd",
+  "pr": 66,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "621bc557762a70242b08a02afca94bca6c08f08d",
+    "ref": "9a449239df1ebd859d4876c35e83e35007cf41af",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "UX01 is PR #65 on cursor/ux01-sunlit-creator-os-79af. Migration 0055. D095–D098 are Accepted. Wait for verify on the exact head. Do not merge."
+  "next_dependency": "DATA01 hotel catalog importer is PR #66 on cursor/data01-hotel-catalog-import-5dcd. UX01 is merged (PR #65, 9a44923). No migration. Wait for verify on the exact head of both the push and pull_request runs. Do not merge."
 }

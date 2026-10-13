@@ -150,6 +150,13 @@ export const contactRecordSchema = z.object({
    * name. It is never inferred from contact_name, email, or the property key.
    */
   organizationName: z.string().nullable(),
+  /**
+   * Set only from a typed organization column (`management_company`,
+   * `hotel_group`, `agency_name`, `operator_name`). Null when the name came
+   * from `organization_name` alone — scope may still imply a type at promotion.
+   * Optional so rows staged before this field existed still load.
+   */
+  organizationType: z.enum(ORG_TYPES).nullable().optional(),
   verificationStatus: z.enum(VERIFICATION_STATUSES),
   sourceUrl: z.string().nullable(),
   verifiedAt: z.string().nullable(),

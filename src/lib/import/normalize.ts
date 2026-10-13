@@ -238,18 +238,42 @@ const VERIFICATION_ALIASES: Record<string, VerificationStatus> = {
 };
 
 /**
+ * Exact-only tokens. `reported` is probable (a source reported the endpoint;
+ * that is not an official verification). It is not a substring alias: "not
+ * reported" and "unreported" stay unverified.
+ */
+const VERIFICATION_EXACT: Record<string, VerificationStatus> = {
+  ...VERIFICATION_ALIASES,
+  reported: "probable",
+  unreported: "unverified",
+  "not reported": "unverified",
+};
+
+export interface VerificationClassification {
+  status: VerificationStatus;
+  /** True when a non-empty token was not a known status and fell back. */
+  unmapped: boolean;
+}
+
+/**
  * Map a raw verification token to the taxonomy. Defaults to `unverified`. Never
  * promotes to `verified` from a weaker token (HOTEL_DATA_CONTRACT §5).
+ * `reported` maps to `probable`.
  */
-export function normalizeVerificationStatus(input: unknown): VerificationStatus {
+export function classifyVerificationStatus(input: unknown): VerificationClassification {
   const s = normalizeString(input);
-  if (!s) return "unverified";
+  if (!s) return { status: "unverified", unmapped: false };
   const folded = foldForMatch(s);
-  if (VERIFICATION_ALIASES[folded]) return VERIFICATION_ALIASES[folded];
+  const exact = VERIFICATION_EXACT[folded];
+  if (exact) return { status: exact, unmapped: false };
   for (const [alias, status] of Object.entries(VERIFICATION_ALIASES)) {
-    if (folded.includes(alias)) return status;
+    if (folded.includes(alias)) return { status, unmapped: false };
   }
-  return "unverified";
+  return { status: "unverified", unmapped: true };
+}
+
+export function normalizeVerificationStatus(input: unknown): VerificationStatus {
+  return classifyVerificationStatus(input).status;
 }
 
 /** Normalize a destination slug to canonical lowercase-hyphen form. */

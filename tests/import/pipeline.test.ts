@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadExistingData } from "@/lib/import/db";
 import { readCanonicalSource } from "@/lib/import/parse";
-import { dryRunFile } from "@/lib/import/pipeline";
+import { BatchReuseError, dryRunFile } from "@/lib/import/pipeline";
 import { resolveEntities } from "@/lib/import/resolve";
 import { stageRawSheets } from "@/lib/import/stage";
 
@@ -104,26 +104,59 @@ d("standard importer dry-run", () => {
     expect(result.paths.md).toContain("data/imports/reports");
   });
 
-  it("is idempotent: re-running the same file reuses the batch (no duplication)", async () => {
-    const first = await dryRunFile(client, {
+  it("refuses to reuse a batch unless --force, and force warns by reusing", async () => {
+    await expect(
+      dryRunFile(client, {
+        file: files.properties,
+        contacts: files.contacts,
+        evidence: files.evidence,
+        sourceName: "synthetic-canonical",
+      }),
+    ).rejects.toBeInstanceOf(BatchReuseError);
+
+    const forced = await dryRunFile(client, {
       file: files.properties,
       contacts: files.contacts,
       evidence: files.evidence,
       sourceName: "synthetic-canonical",
+      force: true,
     });
-    const second = await dryRunFile(client, {
-      file: files.properties,
-      contacts: files.contacts,
-      evidence: files.evidence,
-      sourceName: "synthetic-canonical",
-    });
-    expect(second.reused).toBe(true);
-    expect(second.batchId).toBe(first.batchId);
+    expect(forced.reused).toBe(true);
+    expect(forced.forcedReuse).toBe(true);
 
     const batchCount = await client.query<{ n: string }>(
       "select count(*)::text as n from public.import_batches where source_name = 'synthetic-canonical'",
     );
     expect(Number(batchCount.rows[0]!.n)).toBe(1);
+  });
+
+  it("force replaces an incomplete parsing batch instead of reusing the partial load", async () => {
+    const partial = path.join(dir, "partial.csv");
+    await writeFile(
+      partial,
+      [
+        "source_property_id,property_name,country_code,destination_name,source_url",
+        "p,Partial Hotel,ID,PipeUbud,https://partial.example",
+      ].join("\n"),
+      "utf8",
+    );
+    const first = await dryRunFile(client, { file: partial, sourceName: "partial-batch" });
+    await client.query("update public.import_batches set status = 'parsing' where id = $1", [
+      first.batchId,
+    ]);
+    const second = await dryRunFile(client, {
+      file: partial,
+      sourceName: "partial-batch",
+      force: true,
+    });
+    expect(second.reused).toBe(false);
+    expect(second.forcedReuse).toBe(false);
+    expect(second.batchId).not.toBe(first.batchId);
+    const old = await client.query<{ status: string }>(
+      "select status from public.import_batches where id = $1",
+      [first.batchId],
+    );
+    expect(old.rows[0]!.status).toBe("failed");
   });
 
   it("promotes NOTHING to canonical hotel/contact tables", async () => {

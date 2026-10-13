@@ -8,7 +8,9 @@
  */
 import type { Client, PoolClient } from "pg";
 
-import type { ContactRecord, EvidenceRecord, PropertyRecord } from "./contract";
+import { organizationRelationship, organizationTypeForContact } from "./aliases";
+import type { ContactRecord, EvidenceRecord, OrgType, PropertyRecord } from "./contract";
+import { foldForMatch } from "./normalize";
 import { computeBatchApprovalState } from "./review";
 import { finalContactInclusion, finalEvidenceInclusion, type ChildDecision } from "./childPolicy";
 import { acquireBatchLock, loadBatchData, releaseBatchLock, type BatchRow } from "./db";
@@ -147,6 +149,50 @@ async function createEvidenceForRow(
   );
   await addLink(db, opts.importRowId, "editorial_evidence", ins.rows[0]!.id, "evidence_for");
   return 1;
+}
+
+/**
+ * Persist an explicit organization name as an organization row and a hotel
+ * link. The contact string is already stored on hotel_contacts. A name with
+ * no typed column and no broader-than-property scope is left on the contact
+ * only — a hotel group or management company is not invented from a person,
+ * an email, or the property.
+ */
+async function linkExplicitOrganization(
+  db: Db,
+  hotelId: string,
+  contact: ContactRecord,
+): Promise<void> {
+  if (!contact.organizationName) return;
+  const orgType = organizationTypeForContact(contact);
+  if (!orgType) return;
+  const orgId = await ensureOrganization(db, contact.organizationName, orgType);
+  const relationship = organizationRelationship(orgType);
+  await db.query(
+    `insert into public.hotel_organizations (hotel_id, organization_id, relationship)
+     values ($1, $2, $3)
+     on conflict (hotel_id, organization_id, relationship) do nothing`,
+    [hotelId, orgId, relationship],
+  );
+}
+
+async function ensureOrganization(db: Db, name: string, orgType: OrgType): Promise<string> {
+  const normalized = foldForMatch(name);
+  const existing = await db.query<{ id: string }>(
+    `select id from public.organizations
+       where normalized_name = $1 and org_type = $2
+       order by created_at
+       limit 1`,
+    [normalized, orgType],
+  );
+  if (existing.rows[0]) return existing.rows[0].id;
+  const inserted = await db.query<{ id: string }>(
+    `insert into public.organizations (name, normalized_name, org_type)
+     values ($1, $2, $3)
+     returning id`,
+    [name, normalized, orgType],
+  );
+  return inserted.rows[0]!.id;
 }
 
 const ORG_CLAIM_BY_SCOPE: Record<string, string> = {
@@ -310,6 +356,8 @@ async function promoteContactsAndEvidence(
         plan.contactsCreated++;
       }
     }
+
+    await linkExplicitOrganization(db, hotelId, c);
 
     // Contact provenance + organization relationship evidence.
     if (c.sourceUrl || c.organizationName) {
