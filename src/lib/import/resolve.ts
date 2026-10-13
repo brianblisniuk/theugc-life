@@ -77,7 +77,8 @@ export interface ResolutionResult {
   organizationCandidates: OrganizationCandidate[];
 }
 
-const FUZZY_THRESHOLD = 0.82;
+/** Dice review bar. Review candidates only — never an automatic merge. */
+export const FUZZY_THRESHOLD = 0.82;
 
 /** Dice coefficient over character bigrams (0..1). */
 export function diceSimilarity(a: string, b: string): number {

@@ -1526,8 +1526,12 @@ d("property-content infrastructure (0027)", () => {
       for (const forbidden of ["hotelbeds_id", "booking_id", "expedia_id", "source_property_id"]) {
         expect(names).not.toContain(forbidden);
       }
-      // And no provider-shaped column crept in under another name.
-      expect(names.filter((n) => /hotelbeds|booking_com|expedia|giata/.test(n))).toEqual([]);
+      // D106 adds hotelbeds_code as a nullable import idempotency key. It is
+      // not hotels.id and not a second provider primary key. Nothing else
+      // provider-shaped belongs on the canonical row.
+      expect(names.filter((n) => /hotelbeds|booking_com|expedia|giata/.test(n))).toEqual([
+        "hotelbeds_code",
+      ]);
     });
 
     it("introduces no publication_status or canonical draft tier", async () => {

@@ -114,7 +114,8 @@ export async function getDestinationRank(destinationId: string): Promise<RankLoa
   for (const item of row.hotels) {
     if (!item || typeof item !== "object") return { status: "error" };
     const hotel = item as Record<string, unknown>;
-    if ("evidence_id" in hotel || "owner_user_id" in hotel || "score" in hotel) return { status: "error" };
+    if ("evidence_id" in hotel || "owner_user_id" in hotel || "score" in hotel)
+      return { status: "error" };
     const hotelId = typeof hotel.hotel_id === "string" ? hotel.hotel_id : "";
     if (!isUuid(hotelId)) return { status: "error" };
     ids.push(hotelId);
@@ -135,7 +136,9 @@ export async function getDestinationRank(destinationId: string): Promise<RankLoa
     const supabase = await createClient();
     const { data: hotels, error } = await supabase
       .from("hotels")
-      .select("id, name, destination_id, star_rating, latitude, longitude, active_status")
+      .select(
+        "id, name, destination_id, star_rating, star_rating_source, star_rating_confidence, latitude, longitude, active_status",
+      )
       .in("id", ids);
     if (error) return { status: "error" };
     const names = new Map<string, string>();
@@ -145,6 +148,8 @@ export async function getDestinationRank(destinationId: string): Promise<RankLoa
         name: string;
         destination_id: string | null;
         star_rating: number | null;
+        star_rating_source: string | null;
+        star_rating_confidence: string | null;
         latitude: number | null;
         longitude: number | null;
         active_status: string | null;
@@ -156,6 +161,8 @@ export async function getDestinationRank(destinationId: string): Promise<RankLoa
           latitude: row.latitude,
           longitude: row.longitude,
           activeStatus: row.active_status,
+          starRatingSource: row.star_rating_source,
+          starRatingConfidence: row.star_rating_confidence,
         })
       ) {
         continue;

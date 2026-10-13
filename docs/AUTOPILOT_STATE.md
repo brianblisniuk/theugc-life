@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66, DATA01, 2026-10-13)  
-**State:** AWAITING_CI. C02–C05 network intelligence. PR #67. Branch `cursor/c02-c05-network-intelligence-a035`. D077 is Accepted. D099. Migration `0056`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** C02–C05. DATA01 is merged. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
+**Last verified main:** `9a747b217a8c560f08c87bed1b2542f4521ac25e` (merge of PR #67, C02–C05, 2026-10-13)  
+**State:** AWAITING_CI. HB01 Hotelbeds provisional star rating. PR #69. Branch `cursor/hb01-hotelbeds-provisional-stars-a926`. D106. Migration `0059`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** HB01. C02–C05 is merged. DATA01 is merged. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -43,19 +43,14 @@
 - PR #64 — E05 E2E, observability, launch checklist, migration `0054` — `621bc557762a70242b08a02afca94bca6c08f08d`
 - PR #65 — UX01 Sunlit Creator OS, D095–D098 Accepted, migration `0055` — `9a449239df1ebd859d4876c35e83e35007cf41af`
 - PR #66 — DATA01 hotel catalog importer — `502ae69ecb192dc3678a27619a557bb1012ff0e5`
+- PR #67 — C02–C05 network intelligence, D099, migration `0056` — `9a747b217a8c560f08c87bed1b2542f4521ac25e`
 
 ## Next action
-- C02–C05 network intelligence is PR #67 on branch `cursor/c02-c05-network-intelligence-a035`. State is AWAITING_CI. D077 is Accepted. D099. Migration `0056`. A Gmail deletion purge and the mailbox `deleted` state remove that mailbox's Gmail facts and confirmations. Manual facts stay. `expected_head` stays null. Do not merge from automation.
-- DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055`.
-- E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
-- D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.
-- E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.
-- D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
-- E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). D095 supersedes the checklist.
-- E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
-- D077 is Accepted (Brian, 13 Oct 2026). D099 closes the three C01 questions and is the C02–C05 implementation. Model-backed B07 inference stays out of this PR.
-- D092–D094 stay Proposed.
-- Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
+- HB01 Hotelbeds provisional star rating is PR #69 on branch `cursor/hb01-hotelbeds-provisional-stars-a926`. D106. Migration `0059`. State is AWAITING_CI. `expected_head` stays null. Do not merge from automation.
+- C02–C05 is merged (PR #67, `9a747b2`). D099 stays Accepted. Migration `0056` stays as merged. This block does not edit `0056`.
+- DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`).
+- D092–D094 stay Proposed. D082 and D086–D088 stay Proposed where D095–D097 do not supersede them.
+- Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this block.
 - **State updates ride in each block's closing PR** (no standalone state-only PRs).
 - Owner interaction happens only via human-frontier labels.
 

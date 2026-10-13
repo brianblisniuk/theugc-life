@@ -12,7 +12,8 @@ on conflict (id) do nothing;
 
 insert into public.hotels (
   id, name, slug, destination_id, country_code, address,
-  latitude, longitude, star_rating, active_status
+  latitude, longitude, star_rating, star_rating_source, star_rating_confidence,
+  active_status
 )
 values (
   '22222222-2222-4222-8222-222222222222',
@@ -24,6 +25,8 @@ values (
   25.7617,
   -80.1918,
   5,
+  'owner',
+  'confirmed',
   'active'
 )
 on conflict (id) do nothing;

@@ -45,6 +45,7 @@ import type {
 import {
   isPublishedCanonicalHotel,
   PUBLISHED_ACTIVE_STATUSES,
+  PUBLISHABLE_STAR_PROVENANCE_OR,
   PUBLISHED_STAR_RATINGS,
 } from "./publication";
 
@@ -58,7 +59,7 @@ export type { ContactAccessResult } from "./access";
  * onto `HotelSummary`. The pin is a separate object with only public location
  * fields, and it is sent to Google only as a marker position.
  */
-const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, latitude, longitude, destination:destinations(id, name, slug, country_code)`;
+const HOTEL_SELECT = `${HOTEL_PUBLIC_COLUMNS.join(", ")}, latitude, longitude, star_rating_source, star_rating_confidence, destination:destinations(id, name, slug, country_code)`;
 
 /**
  * The Supabase client surface these queries use. Aliasing it lets tests inject
@@ -197,6 +198,18 @@ function publicationFacts(row: RawHotel) {
     latitude: toNumber(row.latitude),
     longitude: toNumber(row.longitude),
     activeStatus: typeof row.active_status === "string" ? row.active_status : null,
+    starRatingSource:
+      row.star_rating_source === undefined
+        ? undefined
+        : typeof row.star_rating_source === "string"
+          ? row.star_rating_source
+          : null,
+    starRatingConfidence:
+      row.star_rating_confidence === undefined
+        ? undefined
+        : typeof row.star_rating_confidence === "string"
+          ? row.star_rating_confidence
+          : null,
   };
 }
 
@@ -258,7 +271,8 @@ function applyPublishedFilters(builder: HotelReadBuilder): HotelReadBuilder {
     .lte("latitude", 90)
     .gte("longitude", -180)
     .lte("longitude", 180)
-    .in("active_status", PUBLISHED_ACTIVE_STATUSES);
+    .in("active_status", PUBLISHED_ACTIVE_STATUSES)
+    .or(PUBLISHABLE_STAR_PROVENANCE_OR);
 }
 
 const INTELLIGENCE_FILTER_LIMIT = 5000;
