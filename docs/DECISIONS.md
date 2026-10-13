@@ -4226,3 +4226,39 @@ The read is the signed-in owner. Another creator gets `not_found` and no
 ids. RLS selects `creator_id = current_creator_id()`. Writes go through the
 detection functions. The requested Gmail scope stays `gmail.readonly`.
 
+## D110 — Pitch drafts are templates the creator copies (F02)
+
+Status: **Accepted for this block.** D03 and D04 stay open. This block does
+not choose an AI vendor and does not send mail.
+
+A pitch template is a subject and a body the creator saves. A pitch draft is
+a subject and a body for one hotel, optionally one of that creator's trips.
+The only personalizer wired here is `template`. `PITCH_PERSONALIZER` unset or
+`template` fills variables from facts already on the creator's account and
+from the published hotel. Any other value is refused and does not call that
+provider. A missing fact is left out. A hotel name cannot expand another
+fact. The draft does not invent a stay, a reply rate, a score, or an audience
+number.
+
+`variables_used` stores the fact keys that were available at save. It does
+not store the values. An email address is not a key. The address is used only
+as the mailto recipient, and only when this user may already see that
+contact. It is not written on the draft.
+
+`delivery` is `unsent`, `copied`, or `mailto_opened`. Copy puts the text on
+the clipboard. Mailto opens the creator's own mail client. Neither is a sent
+pitch, and neither writes the outreach ledger or pipeline status. Marking a
+hotel as pitched stays the existing pipeline action.
+
+Rows are owner-private at every tier (D098). The canon plan withholds Gmail
+detection and assisted sending from Free. This block does neither, so it does
+not add a plan gate. User A cannot read, list, update, or delete User B's
+templates or drafts. A draft cannot cite User B's trip or template.
+
+### What this decision does not do
+
+- No model call and no vendor SDK (D03 stays open).
+- No send, no Gmail write, and no `pitch_sent` from copy or mailto (D04 stays open).
+- No credit debit. A draft does not unlock a contact.
+- No change to migrations `0060`–`0063`.
+

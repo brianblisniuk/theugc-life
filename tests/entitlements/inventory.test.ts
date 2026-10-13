@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import * as creditActions from "@/lib/credits/actions";
+import * as pitchActions from "@/lib/pitch/actions";
 import * as authActions from "@/lib/auth/actions";
 import * as collaborationActions from "@/lib/collaboration/actions";
 import * as collaborationDetectionActions from "@/lib/gmail/collaboration/actions";
@@ -103,6 +104,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(shareActions),
       ...exportedFunctions(tripActions),
       ...exportedFunctions(creditActions),
+      ...exportedFunctions(pitchActions),
     ].sort();
     const listed = [...serverActionIndex().keys()].sort();
     expect(listed).toEqual(exported);

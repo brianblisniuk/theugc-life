@@ -722,6 +722,30 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["docs/ROUTES.md", "E05"],
   },
   {
+    id: "pitch.drafts",
+    module: "Pitch",
+    summary:
+      "Pitch templates and drafts are the creator's, at every tier. Copy and a mailto draft are not a sent pitch. Another creator's Pro row does not reveal them.",
+    routes: ["/app/hotels/[id]/pitch", "/app/profile/pitches"],
+    sourceFiles: [
+      "src/app/(app)/app/hotels/[id]/pitch/page.tsx",
+      "src/app/(app)/app/profile/pitches/page.tsx",
+      "src/lib/pitch/actions.ts",
+      "src/lib/pitch/queries.ts",
+    ],
+    serverActions: [
+      "savePitchTemplateAction",
+      "archivePitchTemplateAction",
+      "savePitchDraftAction",
+      "recordPitchDeliveryAction",
+    ],
+    rpcs: [],
+    rule: { kind: "owner_private" },
+    anon: "deny",
+    enforcement: { kind: "owner_rows", tables: ["pitch_templates", "pitch_drafts"] },
+    sources: ["D098", "D110", "canon v1.1 F02"],
+  },
+  {
     id: "admin.staff",
     module: "Admin",
     summary:

@@ -12,7 +12,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
-import { listCrumbs, tripHotelHref } from "@/lib/shell/navigation";
+import { listCrumbs, pitchHref, tripHotelHref } from "@/lib/shell/navigation";
 import {
   PipelineLinkButton,
   ShortlistAddButton,
@@ -173,6 +173,7 @@ export default async function TripWorkspacePage({
           <ul className="space-y-2">
             {shortlist.hotels.map((hotel) => {
               const href = tripHotelHref(trip.id, hotel.id);
+              const pitch = pitchHref(hotel.id, trip.id);
               return (
                 <li
                   key={hotel.id}
@@ -185,7 +186,14 @@ export default async function TripWorkspacePage({
                   ) : (
                     <span className="text-sm font-medium text-text">{hotel.name}</span>
                   )}
-                  <ShortlistRemoveButton tripId={trip.id} hotelId={hotel.id} />
+                  <span className="flex items-center gap-3">
+                    {pitch ? (
+                      <Link href={pitch} className="text-sm text-text underline">
+                        Pitch
+                      </Link>
+                    ) : null}
+                    <ShortlistRemoveButton tripId={trip.id} hotelId={hotel.id} />
+                  </span>
                 </li>
               );
             })}

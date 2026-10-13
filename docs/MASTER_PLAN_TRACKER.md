@@ -737,13 +737,21 @@ still a cache hit. An accepted bounce stays invalid. Open amounts stay
 pending config (D101). Agency F01–F04 stay planned.
 
 **F01 Gmail collaboration detection** (canon v1.1, not the agency F01 row)
-is PR #71. Migration `0061_gmail_collaboration_detection.sql`. D107.
-A linked thread can suggest a pitch, a human reply, or a collaboration.
-Free detection stays paused under the same gate as `0060`. The classifier
-is the heuristic adapter. Confirmation of a pitch or a human reply uses the
-existing manual transition. Confirmation of a collaboration writes no CRM
-row and no hotel fact. Deletion purge removes the suggestions. Disconnect
-does not. `0060` is not edited. Do not merge.
+is merged as PR #71, merge
+`12630bb9d616fdb63ad97d2e61fe5668723eac67`. Migration
+`0061_gmail_collaboration_detection.sql`. D107. A linked thread can suggest
+a pitch, a human reply, or a collaboration. Free detection stays paused
+under the same gate as `0060`. The classifier is the heuristic adapter.
+Confirmation of a pitch or a human reply uses the existing manual
+transition. Confirmation of a collaboration writes no CRM row and no hotel
+fact. Deletion purge removes the suggestions. Disconnect does not. `0060`
+is not edited.
+
+**F02 pitch templates** (canon v1.1, not the agency F02 row in the table
+above) is this block. Migration `0064_pitch_templates.sql`. D110. A draft is
+filled from facts the creator already has. Copy and a mailto draft are not a
+sent pitch. D03 and D04 stay open: no model vendor and no send. `0060` and
+`0061` are not edited. `0062` and `0063` are not this file. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

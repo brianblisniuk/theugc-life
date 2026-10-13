@@ -63,6 +63,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `commerce.grant` | Billing | system grant. A purchase is not access |
 | `marketing.public` | Marketing | public page |
 | `ops.health` | Operations | public page. The body is status ok and nothing else |
+| `pitch.drafts` | Pitch | owner, every tier (D098, D110). Copy and a mailto draft are not a sent pitch |
 | `admin.staff` | Admin | staff role. Pro does not grant it |
 
 ## Enforcement

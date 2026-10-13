@@ -147,6 +147,37 @@ still requires an https `proof_url`.
 Constraint: exactly one usable asset source (`storage_path` or `external_url`) where required.
 Types: `video`, `image`, `link`, `case_study`.
 
+### pitch_templates
+Creator-owned reusable subject and body (0064, D110). Anon has no privilege.
+Archiving sets `archived_at`. The row stays the owner's.
+
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `name text` — 1–80 characters, trimmed
+- `subject text` — 1–200 characters
+- `body text` — 1–8000 characters
+- `archived_at timestamptz NULL`
+- timestamps
+
+### pitch_drafts
+Creator-owned draft for one hotel (0064, D110). `delivery` is `unsent`,
+`copied`, or `mailto_opened`. None of those is a sent pitch. `variables_used`
+is a JSON array of fact keys, not fact values, and not an address. A trip or
+a saved template on the draft must belong to the same creator.
+
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `hotel_id uuid FK hotels(id) ON DELETE CASCADE`
+- `trip_id uuid NULL FK trips(id) ON DELETE SET NULL`
+- `template_id uuid NULL FK pitch_templates(id) ON DELETE SET NULL`
+- `system_template_key text NULL` — `introduction`, `stay`, `follow_up`, `return_visit`
+- `subject text`, `body text`
+- `variables_used jsonb`
+- `delivery text`
+- timestamps
+
+`template_id` and `system_template_key` are not both set. Both may be null.
+
 ## 5. Geography and inventory
 
 ### destinations
@@ -2960,5 +2991,10 @@ At minimum:
     a human reply, and a collaboration on an inbox link the creator already
     made. Free stays paused. Confirming a collaboration writes no outreach
     event and no hotel fact. `0060` is not edited.
+32. Pitch templates and drafts (0064, D110) — creator-owned templates and one
+    draft per save for one hotel. Personalization is template variables. Copy
+    and a mailto draft are delivery marks. Neither sends mail and neither
+    writes the outreach ledger. `0060` and `0061` are not edited. `0062` and
+    `0063` are not this file.
 
 Every migration must be reproducible from an empty database.
