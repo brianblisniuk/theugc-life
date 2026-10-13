@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 28656f46dd71f9887e6305cf2e0349099e8f2a9e (PR #69, HB01, D106, migration 0059). F05 contact credits merges as PR #68 on cursor/f05-credits-foundation-8e1e. D100–D105. Migrations 0057, 0058, and 0060. The Gmail pause is 0060 because 0059 is HB01. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 85186fdc18f65db9233c5df9155a65674740e551 (PR #68, F05 contact credits, D100–D105, migrations 0057, 0058, and 0060). F01 Gmail collaboration detection is this branch. D107. Migration 0061. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "28656f46dd71f9887e6305cf2e0349099e8f2a9e",
-  "active_block": "F05 contact credits",
-  "branch": "cursor/f05-credits-foundation-8e1e",
-  "pr": 68,
+  "last_recorded_main": "85186fdc18f65db9233c5df9155a65674740e551",
+  "active_block": "F01 Gmail collaboration detection",
+  "branch": "cursor/f01-gmail-collaboration-detection-e7ba",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "28656f46dd71f9887e6305cf2e0349099e8f2a9e",
+    "ref": "85186fdc18f65db9233c5df9155a65674740e551",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "PR #68 merges F05 contact credits onto main 28656f4 (PR #69). D100–D105. Migrations 0057, 0058, and 0060. Migration 0059 stays the HB01 star provenance file. Open amounts stay pending config. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "F01 Gmail collaboration detection on cursor/f01-gmail-collaboration-detection-e7ba. D107. Migration 0061. Base is main 85186fd (PR #68). Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }

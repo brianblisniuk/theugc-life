@@ -35,6 +35,7 @@ import { HotelSectionNav } from "@/components/shell/hotel-section-nav";
 import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
+import { getCollaborationSuggestions } from "@/lib/gmail/collaboration/queries";
 import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/queries";
 import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
 import { contactSectionState } from "@/lib/hotels/access";
@@ -166,6 +167,10 @@ export default async function HotelDetailPage({
   const gmailPrompt =
     relationship.status === "open"
       ? await getGmailNetworkPrompt(relationship.relationship.pipelineItemId)
+      : undefined;
+  const collaborationSuggestions =
+    relationship.status === "open"
+      ? await getCollaborationSuggestions(relationship.relationship.pipelineItemId)
       : undefined;
   const [network, ownFacts] = await Promise.all([
     getNetworkHotel(hotel.id),
@@ -366,6 +371,7 @@ export default async function HotelDetailPage({
           inbox={inbox}
           mailboxes={mailboxes}
           gmailPrompt={gmailPrompt}
+          collaborationSuggestions={collaborationSuggestions}
           pipelineHref={pipelineReturnHref(origin)}
         />
         <div id="trip" className="scroll-mt-24">

@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `28656f46dd71f9887e6305cf2e0349099e8f2a9e` (merge of PR #69, HB01, 2026-10-13)  
-**State:** AWAITING_CI. F05 contact credits. PR #68. Branch `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057`, `0058`, and `0060`. Migration `0059` is HB01 and stays on main. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** F05 contact credits. HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D106 stays Accepted. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
+**Last verified main:** `85186fdc18f65db9233c5df9155a65674740e551` (merge of PR #68, F05 contact credits, 2026-10-13)  
+**State:** AWAITING_CI. F01 Gmail collaboration detection. Branch `cursor/f01-gmail-collaboration-detection-e7ba`. D107. Migration `0061`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** F01 Gmail collaboration detection. F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -45,9 +45,10 @@
 - PR #66 — DATA01 hotel catalog importer — `502ae69ecb192dc3678a27619a557bb1012ff0e5`
 - PR #67 — C02–C05 network intelligence, D099, migration `0056` — `9a747b217a8c560f08c87bed1b2542f4521ac25e`
 - PR #69 — HB01 Hotelbeds provisional star rating, D106, migration `0059` — `28656f46dd71f9887e6305cf2e0349099e8f2a9e`
+- PR #68 — F05 contact credits, D100–D105, migrations `0057`, `0058`, and `0060` — `85186fdc18f65db9233c5df9155a65674740e551`
 
 ## Next action
-- PR #68 merges F05 contact credits on `cursor/f05-credits-foundation-8e1e` onto main `28656f4`. D100–D105. Migrations `0057`, `0058`, and `0060`. Migration `0059` stays HB01. Open amounts stay pending config. `expected_head` stays null. Do not merge from automation.
+- F01 Gmail collaboration detection on `cursor/f01-gmail-collaboration-detection-e7ba`. D107. Migration `0061`. Base is main `85186fd` (PR #68). `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
 - HB01 is merged (PR #69, `28656f4`, migration `0059`). This PR does not edit that file.
 - C02–C05 is merged (PR #67, `9a747b2`). DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055` or `0056`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.

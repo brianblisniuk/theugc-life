@@ -14,11 +14,13 @@
 import Link from "next/link";
 
 import { CollaborationLifecycle } from "@/components/pipeline/collaboration-lifecycle";
+import { CollaborationSuggestions } from "@/components/pipeline/collaboration-suggestions";
 import { CollaborationWorkspace } from "@/components/pipeline/collaboration-workspace";
 import { InboxLink } from "@/components/pipeline/inbox-link";
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { WorkspaceLoad } from "@/lib/collaboration/queries";
+import type { CollaborationSuggestionLoad } from "@/lib/gmail/collaboration/contract";
 import type { InboxLoad, MailboxLoad } from "@/lib/inbox-pipeline/contract";
 import type { GmailPromptLoad } from "@/lib/network-intelligence/contract";
 import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
@@ -52,6 +54,7 @@ export function ActivityPanel({
   inbox,
   mailboxes,
   gmailPrompt,
+  collaborationSuggestions,
   pipelineHref,
 }: {
   hotelId: string;
@@ -64,6 +67,7 @@ export function ActivityPanel({
   inbox?: InboxLoad;
   mailboxes?: MailboxLoad;
   gmailPrompt?: GmailPromptLoad;
+  collaborationSuggestions?: CollaborationSuggestionLoad;
   /** Where "View in Pipeline" returns. Defaults to the full pipeline list. */
   pipelineHref?: string;
 }) {
@@ -175,6 +179,13 @@ export function ActivityPanel({
               mailboxes={mailboxes}
               gmailPrompt={gmailPrompt}
             />
+            {collaborationSuggestions ? (
+              <CollaborationSuggestions
+                pipelineItemId={relationship.relationship.pipelineItemId}
+                hotelId={hotelId}
+                load={collaborationSuggestions}
+              />
+            ) : null}
           </div>
         ) : (
           <div id="inbox" className="scroll-mt-24" />

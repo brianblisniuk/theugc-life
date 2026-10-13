@@ -1,4 +1,6 @@
 import { interpretOneThread as interpretCommercialThread } from "@/lib/gmail/commercial/service";
+import { assertCollaborationClassifier } from "@/lib/gmail/collaboration/classifier";
+import { refreshGmailCollaborationSuggestions } from "@/lib/gmail/collaboration/service";
 import { normalizeMailboxUntilIdle } from "@/lib/gmail/normalize/service";
 import { outreachInterpretMailboxUntilIdle } from "@/lib/gmail/outreach/service";
 import { interpretUntilIdle as interpretRepliesUntilIdle } from "@/lib/gmail/reply/service";
@@ -13,6 +15,8 @@ export async function runStoredGmailPipeline(
   db: ImportDeps["db"],
   input: { userId: string; mailAccountId: string },
 ): Promise<{ completed: boolean }> {
+  // Refuse a non-heuristic classifier before any stored thread is interpreted.
+  assertCollaborationClassifier();
   const deps = { db };
   await normalizeMailboxUntilIdle(deps, {
     userId: input.userId,
@@ -91,6 +95,18 @@ export async function runStoredGmailPipeline(
         }
       } catch {
         console.error("[gmail] inbox suggestion refresh failed for one thread", {
+          mailAccountId: input.mailAccountId,
+          normalizedThreadId,
+        });
+      }
+      try {
+        await refreshGmailCollaborationSuggestions(db, {
+          userId: input.userId,
+          mailAccountId: input.mailAccountId,
+          normalizedThreadId,
+        });
+      } catch {
+        console.error("[gmail] collaboration detection failed for one thread", {
           mailAccountId: input.mailAccountId,
           normalizedThreadId,
         });
