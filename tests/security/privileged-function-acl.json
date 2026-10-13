@@ -1418,5 +1418,125 @@
     "authenticated": true,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_caller_is_admin",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "admin_grant_credits",
+    "args": "p_user_id uuid, p_amount integer, p_idempotency_key text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "credit_balance",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "grant_free_credits",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "has_unlocked_hotel_contact",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "own_credit_balance",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_unlocked_contact",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "review_contact_report",
+    "args": "p_report_id uuid, p_decision text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "grandfather_visible_contact_unlocks",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "seed_imported_contact_cache",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "unlock_hotel_contact",
+    "args": "p_hotel_id uuid, p_idempotency_key text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "upsert_contact_cache",
+    "args": "p_hotel_id uuid, p_email text, p_status text, p_raw jsonb",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
   }
 ]

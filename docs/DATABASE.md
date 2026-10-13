@@ -248,6 +248,22 @@ Source types: editorial, public_source, creator_signal, hotel_claim.
 
 Never expose this table through unrestricted public selects.
 
+Select is allowed for a row when `has_unlocked_hotel_contact(hotel_id)` is true for `auth.uid()`, or when `is_admin_or_editor()` is true (D100, migration `0057`). A Pass or Pro entitlement is not that predicate.
+
+### Contact credits (migrations 0057 and 0058)
+
+The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
+
+- `credit_config` — one row. Free grant, Pro monthly credits, Pro+ monthly credits, unlock cost, charge-on-not-found, cache TTL days, pack sizes. Pending owner numbers (D101). Clients have no privilege.
+- `credit_ledger` — append-only. `delta <> 0`. Reasons: `free_grant`, `plan_grant`, `pack_purchase`, `admin_grant`, `courtesy`, `unlock`, `reversal`. Unique `(user_id, idempotency_key)`. Owner select. Admin select. No update or delete grant, and a trigger rejects both.
+- `contact_cache` — one row per hotel. Source `owner_import`, `provider`, or `admin`. Status `found`, `not_found`, or `invalid`. `raw_provider_response` stays on this table. No client select. Existing `hotel_contacts` emails are seeded as `owner_import` (D103).
+- `contact_unlocks` — unique `(user_id, hotel_id)`. Owner select. Admin select.
+- `contact_reports` — owner insert and select. Admin update. One pending report per user and hotel.
+
+`unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
+
+Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here.
+
 ## 5a. Property-content source infrastructure (migration 0027)
 
 Provider-sourced property data enters the controlled pipeline through these six

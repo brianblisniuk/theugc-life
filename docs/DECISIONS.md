@@ -3879,8 +3879,9 @@ and does not render it.
 
 Status: **Accepted (Brian, 13 Oct 2026).** Plans limit the written D056
 quotas: saved hotels, engaged pipeline items, and active trips, counting
-only outside-coverage rows. Premium intelligence and premium contacts stay
-Pass inside the entitled destination and Pro worldwide.
+only outside-coverage rows. Premium intelligence stays Pass inside the
+entitled destination and Pro worldwide. D100 supersedes the contact half
+of that sentence: a contact is a credit unlock, not a Pass or Pro grant.
 
 Every inventory entry that was undecided is now Free:
 
@@ -4017,7 +4018,96 @@ It appends a decision and does not change the aggregate.
   `authenticated`, and `service_role`. Writes go through security-definer
   functions with an empty search path. The service-role key stays off the
   client.
-- No change to D056 premium contacts or to migration `0055`.
+- No change to D056 premium contacts or to migration `0055`. D100, in a
+  later block, is the contact-access change. This decision does not make it.
+
+## D100 — Contact credits (canon v1.1)
+
+Status: **Accepted** for the access rule. The owner's canonical document
+(creator credits, v1.1) overrides earlier contact-gating sentences where
+they conflict, including the contact half of D056, D098, and PERMISSIONS.md
+§7. Premium intelligence stays on `has_premium_hotel_access`.
+
+One credit unlocks the email contact of one hotel for one user. Another
+user's Pass, Pro, or unlock does not reveal it. Opening a hotel this user
+already unlocked costs nothing. A cache hit still costs this user the
+configured unlock cost, including a found email older than the TTL. The
+provider runs only when that hotel has no cache row. Access is
+the ledger and the unlock row. A payment, a subscription, or a webhook body
+is not an unlock (D007).
+
+The provider sits behind `ContactProvider`. Only the fake provider is
+wired. `CONTACT_PROVIDER` unset or `fake` starts. Any other value refuses
+to start. This block performs no real provider call, no real charge, and
+no payment integration. The provider runs only when the hotel has no cache
+row. A stored found email stays a cache hit after the configured TTL. A
+provider write does not replace an address already stored. An accepted
+bounce leaves that cache invalid and unreadable, including to a user who
+already unlocked it, until a later verified address exists. The review
+action does not call the provider.
+
+The ledger is append-only and idempotent per `(user_id, idempotency_key)`.
+Unlock takes a per-user transaction lock. No role may update or delete a
+ledger row. The service-role key stays off the client.
+
+Courtesy credit for a bad contact is a refund of that unlock, not a reward
+for contributing data (D001 is unchanged).
+
+## D101 — Credit numbers are pending config
+
+Status: **Proposed.** The owner has not set the amounts. The running values
+are placeholders so the pilot can exercise the ledger. They are not a price.
+
+| Setting | Placeholder |
+|---|---|
+| Free credits, once, not monthly | 15 |
+| Pro monthly credits | 50 |
+| Pro+ monthly credits | 150 |
+| Pack sizes | 10, 25, 50 |
+| Cache TTL | 365 days |
+| Charge when the provider finds nothing | no |
+| Unlock cost | 1 |
+
+Both `credit_config` and `CREDITS_CONFIG` carry these values. A test fails
+if they diverge. The unlock function reads the table. A monthly grant job
+and pack checkout are not in this block.
+
+## D102 — Pass stays; Free Gmail sync pauses
+
+Status: **Accepted** for this block. D051, D056, and D098 still govern
+Destination Pass and Creator Pro. This block does not remove Pass.
+Premium intelligence still uses `has_premium_hotel_access`.
+
+Gmail data stays on Free. Login sync and the scheduled due list do not
+run for a user who has neither an active Pro entitlement nor an active
+Destination Pass. Mailboxes, credentials, cursors, and messages are not
+deleted. An active Pro or Destination Pass resumes those two entry
+points. Claim of a run already started is unchanged.
+
+## D103 — Imported contacts stay visible to who could already see them
+
+Status: **Accepted.** Existing `hotel_contacts` emails are seeded into
+`contact_cache` as `owner_import`. A creator who did not already have
+visibility pays the configured unlock cost and does not call the provider.
+Migration `0058` inserts `contact_unlocks` for every hotel each existing
+user could already see: active Pro, an active Destination Pass that covers
+the hotel, and admin or editor. Each of those unlocks is a net-zero ledger
+pair (`plan_grant` of the live unlock cost, then an `unlock` debit) so the
+Free grant is not consumed. A second run inserts nothing. Users created
+after the migration are not included.
+
+## D104 — Onboarding does not spend credits
+
+Status: **Accepted.** Rendering an onboarding card does not unlock a hotel
+and does not debit the ledger. The card shows "Unlock contact (1 credit)"
+when the cost is 1, or "Already unlocked" when this user owns it. The card
+does not include the email.
+
+## D105 — Pilot credits are admin grants
+
+Status: **Accepted.** Credits in this pilot are granted by an admin action.
+There is no checkout. The out-of-credits state says packs are not for sale
+and that an admin can grant credits. It does not link to billing.
 
 ## D106 — Hotelbeds category is a provisional, publishable star rating
 

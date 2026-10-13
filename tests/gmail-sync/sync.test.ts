@@ -951,6 +951,12 @@ d("B08 incremental sync", () => {
     expect(quiet.result).toBe("not_due");
     expect(quiet.gmailCalls).toBe(0);
 
+    await client.query(
+      `insert into public.access_entitlements
+         (user_id, access_type, status, starts_at, source, source_reference)
+       values ($1, 'pro', 'active', now(), 'test', $2)`,
+      [owner.mail.userId, `b08-login-pro-${owner.mail.userId}`],
+    );
     await syncOnCreatorLogin(owner.mail.userId, depsFor(client, gmail));
     const ownerRuns = await client.query<{ n: number }>(
       `select count(*)::int as n from private.gmail_sync_runs
@@ -964,6 +970,71 @@ d("B08 incremental sync", () => {
     expect(ownerRuns.rows[0]!.n).toBe(1);
     expect(otherRuns.rows[0]!.n).toBe(0);
     expect(gmail.calls.historyStarts).toEqual(["100"]);
+  });
+
+  it("pauses Free Gmail sync at login and on the due list without deleting mailbox data", async () => {
+    const free = await ready("b08-free-pause", "100");
+    const paid = await ready("b08-paid-due", "100");
+    await client.query(
+      `insert into public.access_entitlements
+         (user_id, access_type, status, starts_at, source, source_reference)
+       values ($1, 'pro', 'active', now(), 'test', $2)`,
+      [paid.mail.userId, `b08-due-pro-${paid.mail.userId}`],
+    );
+    await client.query(
+      `update private.gmail_sync_cursors
+          set login_sync_requested = true, next_sync_at = now() - interval '1 minute'
+        where mail_account_id = $1`,
+      [free.mail.mailAccountId],
+    );
+
+    const snapshot = async (mailAccountId: string) => {
+      const counts = await client.query<{
+        accounts: number;
+        creds: number;
+        cursors: number;
+        messages: number;
+        runs: number;
+      }>(
+        `select
+           (select count(*)::int from public.mail_accounts where id = $1) as accounts,
+           (select count(*)::int from private.gmail_oauth_credentials where mail_account_id = $1) as creds,
+           (select count(*)::int from private.gmail_sync_cursors where mail_account_id = $1) as cursors,
+           (select count(*)::int from private.gmail_raw_messages where mail_account_id = $1) as messages,
+           (select count(*)::int from private.gmail_sync_runs where mail_account_id = $1) as runs`,
+        [mailAccountId],
+      );
+      const state = await client.query<{ connection_state: string }>(
+        "select connection_state from public.mail_accounts where id = $1",
+        [mailAccountId],
+      );
+      return { ...counts.rows[0]!, connection_state: state.rows[0]!.connection_state };
+    };
+
+    const before = await snapshot(free.mail.mailAccountId);
+    const gmail = createFakeIncremental();
+    await syncOnCreatorLogin(free.mail.userId, depsFor(client, gmail));
+    expect(gmail.calls.historyStarts).toEqual([]);
+    expect(await snapshot(free.mail.mailAccountId)).toEqual(before);
+
+    const requested = await client.query<{
+      result: { result: string; mailboxes_marked: number; mail_account_ids: string[] };
+    }>("select public.gmail_incremental_sync_request_login($1) as result", [free.mail.userId]);
+    expect(requested.rows[0]!.result).toMatchObject({
+      result: "ok",
+      mailboxes_marked: 0,
+      mail_account_ids: [],
+    });
+    const cursor = await cursorOf(client, free.mail.mailAccountId);
+    expect(cursor.login_sync_requested).toBe(true);
+
+    const listed = await client.query<{
+      result: { accounts: { mail_account_id: string }[] };
+    }>("select public.gmail_incremental_sync_list_due(100) as result");
+    const dueIds = listed.rows[0]!.result.accounts.map((row) => row.mail_account_id);
+    expect(dueIds).toContain(paid.mail.mailAccountId);
+    expect(dueIds).not.toContain(free.mail.mailAccountId);
+    expect(await snapshot(free.mail.mailAccountId)).toEqual(before);
   });
 
   it("advances B06 only for the thread this sync fetched", async () => {

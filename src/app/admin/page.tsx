@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
+import { AdminGrantForm, AdminReportQueue } from "@/components/admin/credit-admin";
 import { requireRole } from "@/lib/auth/guards";
+import { listPendingContactReports } from "@/lib/credits/queries";
 import { factTypeLabel, responseTimeBandLabel } from "@/lib/network-intelligence/display";
 import { getAdminPilotKpis, getAdminProvenance } from "@/lib/network-intelligence/queries";
 
@@ -16,7 +18,10 @@ export default async function AdminHomePage({
   const factId = typeof raw.fact === "string" ? raw.fact : "";
   const isAdmin = session.role === "admin";
   const kpis = isAdmin ? await getAdminPilotKpis() : { status: "hidden" as const };
-  const provenance = isAdmin && factId ? await getAdminProvenance(factId) : { status: "hidden" as const };
+  const reports = isAdmin ? await listPendingContactReports() : { status: "hidden" as const };
+  const grantKey = crypto.randomUUID();
+  const provenance =
+    isAdmin && factId ? await getAdminProvenance(factId) : { status: "hidden" as const };
 
   return (
     <div className="space-y-8">
@@ -28,7 +33,9 @@ export default async function AdminHomePage({
       {session.role !== "admin" ? (
         <p className="text-sm text-muted">These measures are limited to admins.</p>
       ) : kpis.status === "error" ? (
-        <p className="text-sm text-muted">The pilot measures could not be loaded. That is not a zero.</p>
+        <p className="text-sm text-muted">
+          The pilot measures could not be loaded. That is not a zero.
+        </p>
       ) : kpis.status === "hidden" ? null : (
         <section className="space-y-3" data-testid="admin-pilot-kpis">
           <h2 className="text-lg font-semibold text-text">Pilot</h2>
@@ -44,7 +51,9 @@ export default async function AdminHomePage({
             <div className="flex gap-2">
               <dt className="text-muted">Confirmed share</dt>
               <dd className="text-text">
-                {kpis.kpis.gmailConfirmedPct === null ? "Not enough answers" : `${kpis.kpis.gmailConfirmedPct}%`}
+                {kpis.kpis.gmailConfirmedPct === null
+                  ? "Not enough answers"
+                  : `${kpis.kpis.gmailConfirmedPct}%`}
               </dd>
             </div>
             <div className="flex gap-2">
@@ -76,7 +85,9 @@ export default async function AdminHomePage({
           <div>
             <h3 className="text-sm font-semibold text-text">Hotel response time</h3>
             {kpis.kpis.hotelResponseTime.length === 0 ? (
-              <p className="text-sm text-muted">No hotel has three creators and five observations yet.</p>
+              <p className="text-sm text-muted">
+                No hotel has three creators and five observations yet.
+              </p>
             ) : (
               <ul className="mt-1 space-y-1 text-sm text-muted">
                 {kpis.kpis.hotelResponseTime.map((row) => (
@@ -140,6 +151,30 @@ export default async function AdminHomePage({
                 <dd className="text-text">{provenance.provenance.ownerUserId}</dd>
               </div>
             </dl>
+          ) : null}
+        </section>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-text">Credit grants</h2>
+          <p className="max-w-prose text-sm text-muted">
+            Pilot credits are granted here. This is not a purchase and it does not call a payment
+            provider.
+          </p>
+          <AdminGrantForm idempotencyKey={grantKey} />
+        </section>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-text">Contact reports</h2>
+          {reports.status === "error" ? (
+            <p className="text-sm text-muted">
+              Reports could not be loaded. That is not an empty queue.
+            </p>
+          ) : reports.status === "ok" ? (
+            <AdminReportQueue reports={reports.reports} />
           ) : null}
         </section>
       ) : null}

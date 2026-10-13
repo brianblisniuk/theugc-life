@@ -17,12 +17,14 @@ export async function enforcePremiumHotelAccess(hotelId: string): Promise<Contac
   const contacts = featureById("hotel.premium_contacts");
   const intelligence = featureById("hotel.premium_intelligence");
   if (
-    contacts.enforcement.kind !== "premium_contacts" ||
     intelligence.enforcement.kind !== "premium_intelligence" ||
-    !contacts.rpcs.includes(PREMIUM_HOTEL_RPC) ||
-    !intelligence.rpcs.includes(PREMIUM_HOTEL_RPC)
+    !intelligence.rpcs.includes(PREMIUM_HOTEL_RPC) ||
+    contacts.rule.kind !== "credit_unlock" ||
+    contacts.rpcs.includes(PREMIUM_HOTEL_RPC)
   ) {
-    throw new Error("premium hotel surfaces must share has_premium_hotel_access");
+    throw new Error(
+      "premium intelligence stays on has_premium_hotel_access; contacts are an unlock",
+    );
   }
 
   if (!isUuid(hotelId)) return { status: "denied" };

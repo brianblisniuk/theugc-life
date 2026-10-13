@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import * as creditActions from "@/lib/credits/actions";
 import * as authActions from "@/lib/auth/actions";
 import * as collaborationActions from "@/lib/collaboration/actions";
 import * as gmailActions from "@/lib/gmail/actions";
@@ -57,6 +58,7 @@ function ctx(overrides: Partial<AccessContext> = {}): AccessContext {
     withinFreeLimit: true,
     owner: true,
     staff: false,
+    creditUnlocked: false,
     ...overrides,
   };
 }
@@ -98,6 +100,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(profileActions),
       ...exportedFunctions(shareActions),
       ...exportedFunctions(tripActions),
+      ...exportedFunctions(creditActions),
     ].sort();
     const listed = [...serverActionIndex().keys()].sort();
     expect(listed).toEqual(exported);
@@ -110,8 +113,15 @@ describe("entitlement inventory", () => {
     expect(doc).toContain("0051_outside_free_allowance.sql");
     expect(doc).toContain("outside-coverage rows");
     for (const entry of INVENTORY) expect(doc).toContain(entry.id);
-    expect(questionsForBrian()).toEqual([]);
-    expect(INVENTORY.some((entry) => entry.rule.kind === "undecided")).toBe(false);
+    expect(questionsForBrian()).toEqual([
+      {
+        id: "credits.pending_numbers",
+        question: featureById("credits.pending_numbers").question,
+      },
+    ]);
+    expect(
+      INVENTORY.filter((entry) => entry.rule.kind === "undecided").map((entry) => entry.id),
+    ).toEqual(["credits.pending_numbers"]);
   });
 
   it("reads workspace limits from FREE_LIMITS and nowhere else", () => {
@@ -218,6 +228,25 @@ describe("entitlement inventory", () => {
       if (entry.rule.kind === "staff_role") {
         table.push({ id: entry.id, ctx: ctx({ pro: true, staff: false }), decision: "deny" });
         table.push({ id: entry.id, ctx: ctx({ staff: true, pro: false }), decision: "allow" });
+        continue;
+      }
+      if (entry.rule.kind === "credit_unlock") {
+        table.push({ id: entry.id, ctx: ctx(), decision: "deny" });
+        table.push({
+          id: entry.id,
+          ctx: ctx({ pro: true, destinationCovers: true }),
+          decision: "deny",
+        });
+        table.push({
+          id: entry.id,
+          ctx: ctx({ creditUnlocked: true, pro: false }),
+          decision: "allow",
+        });
+        table.push({
+          id: entry.id,
+          ctx: ctx({ staff: true, creditUnlocked: false }),
+          decision: "allow",
+        });
       }
     }
 
@@ -231,10 +260,10 @@ describe("entitlement inventory", () => {
 
   it("has no undecided feature left for a Pro context to skip", () => {
     const undecided = INVENTORY.filter((entry) => entry.rule.kind === "undecided");
-    expect(undecided).toEqual([]);
-    expect(decideAccess(featureById("profile.personal_analytics"), ctx({ owner: true, pro: false }))).toBe(
-      "allow",
-    );
+    expect(undecided.map((entry) => entry.id)).toEqual(["credits.pending_numbers"]);
+    expect(
+      decideAccess(featureById("profile.personal_analytics"), ctx({ owner: true, pro: false })),
+    ).toBe("allow");
     expect(decideAccess(featureById("profile.share_link"), ctx({ owner: false, pro: true }))).toBe(
       "deny",
     );

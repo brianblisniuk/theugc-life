@@ -1,0 +1,122 @@
+"use client";
+
+import { useState } from "react";
+import { useFormStatus } from "react-dom";
+
+import { capture } from "@/lib/analytics";
+import {
+  ALREADY_UNLOCKED_LABEL,
+  OUT_OF_CREDITS_COPY,
+  unlockChrome,
+  unlockContactLabel,
+} from "@/lib/credits/config";
+import { unlockHotelContactAction } from "@/lib/credits/actions";
+import type { UnlockActionResult } from "@/lib/credits/types";
+
+function SubmitButton({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+    >
+      {pending ? "Unlocking…" : label}
+    </button>
+  );
+}
+
+/**
+ * Explicit unlock. Rendering this control does not spend a credit.
+ * Onboarding passes showEmail false so the card never carries an address.
+ */
+export function UnlockContact({
+  hotelId,
+  unlocked,
+  balance,
+  cost,
+  showEmail,
+}: {
+  hotelId: string;
+  unlocked: boolean;
+  balance: number | null;
+  cost: number;
+  showEmail: boolean;
+}) {
+  const [result, setResult] = useState<UnlockActionResult | null>(null);
+  const chrome = unlockChrome({
+    unlocked: unlocked || result?.status === "unlocked" || result?.status === "already_unlocked",
+    balance:
+      result && "balance" in result && result.balance !== undefined ? result.balance : balance,
+    cost,
+  });
+  const label = unlockContactLabel(cost);
+
+  if (chrome === "already") {
+    const email =
+      showEmail && result && (result.status === "unlocked" || result.status === "already_unlocked")
+        ? result.email
+        : null;
+    return (
+      <div className="space-y-2" data-testid="unlock-state">
+        <p className="text-sm font-semibold text-text">{ALREADY_UNLOCKED_LABEL}</p>
+        {email ? (
+          <p className="text-sm text-text">
+            <a className="underline" href={`mailto:${email}`}>
+              {email}
+            </a>
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (chrome === "out") {
+    return (
+      <div
+        className="space-y-2 rounded-[var(--radius-app)] border border-border bg-surface p-4"
+        role="status"
+      >
+        <p className="text-sm font-semibold text-text">{OUT_OF_CREDITS_COPY}</p>
+      </div>
+    );
+  }
+
+  if (chrome === "unknown") {
+    return (
+      <p className="text-sm text-muted">
+        We couldn&rsquo;t read your credits. Reload the page. This is not an empty balance.
+      </p>
+    );
+  }
+
+  async function onSubmit(formData: FormData) {
+    capture("contact_unlock_clicked", { hotel_id: hotelId });
+    const outcome = await unlockHotelContactAction(formData);
+    setResult(outcome);
+    if (outcome.status === "unlocked" || outcome.status === "already_unlocked") {
+      capture("credit_unlock", { hotel_id: hotelId });
+    } else if (outcome.status === "insufficient_credits") {
+      capture("credit_insufficient", { hotel_id: hotelId });
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <form action={onSubmit}>
+        <input type="hidden" name="hotelId" value={hotelId} />
+        <SubmitButton label={label} />
+      </form>
+      {result?.status === "not_found" ? (
+        <p className="text-sm text-muted" role="status">
+          Contact not available yet. This did not use a credit.
+        </p>
+      ) : null}
+      {result?.status === "error" || result?.status === "hotel_missing" ? (
+        <p className="text-sm text-muted" role="status">
+          The unlock didn&rsquo;t finish. Reload and try again. This is not a missing contact.
+        </p>
+      ) : null}
+    </div>
+  );
+}

@@ -5,11 +5,9 @@
  *   1. identity/location  2. creator intelligence  3. premium contact
  *   4. the creator's private relationship
  *
- * Premium contacts and Premium Intelligence are both authorized BEFORE they are
- * fetched: when the database says the caller has no access, neither query is
- * issued, so no protected value is loaded, rendered, or serialized. One
- * entitlement answer drives both, so the two sections can never disagree about
- * whether this creator has access.
+ * Contacts and Premium Intelligence are authorized separately. A contact is
+ * loaded only after an unlock (or for admin/editor). Premium intelligence still
+ * uses has_premium_hotel_access. A Pass does not reveal an email.
  *
  * Internal import/provenance fields are never surfaced here.
  */
@@ -20,17 +18,15 @@ import type { Metadata } from "next";
 import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
 import { AddToTrip } from "@/components/hotels/add-to-trip";
+import { ReportContact } from "@/components/contacts/report-contact";
+import { UnlockContact } from "@/components/contacts/unlock-contact";
 import { ContactCard } from "@/components/hotels/contact-card";
 import { HotelMap } from "@/components/hotels/hotel-map";
-import {
-  NetworkIntelligencePanel,
-  PersonalFacts,
-} from "@/components/intelligence/network-panel";
+import { NetworkIntelligencePanel, PersonalFacts } from "@/components/intelligence/network-panel";
 import {
   IntelligencePanel,
   PremiumIntelligencePanel,
 } from "@/components/hotels/intelligence-panel";
-import { LockedContactSection } from "@/components/hotels/locked-contact";
 import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
@@ -40,6 +36,7 @@ import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
 import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/queries";
+import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
@@ -125,25 +122,29 @@ export default async function HotelDetailPage({
   if (!loaded) notFound();
   const hotel = loaded.hotel;
 
-  // Access is resolved first; contacts are only fetched when authorized.
-  const [{ access, contacts, failed: contactsFailed }, intelligence, relationship] =
-    await Promise.all([
-      getHotelContactsIfAuthorized(hotel.id),
-      getHotelIntelligence(hotel.id),
-      getOpenRelationship(hotel.id),
-    ]);
+  // Contacts follow unlock ownership. Intelligence keeps the Pass/Pro gate.
+  const [contactPanel, intelligenceAccess, intelligence, relationship] = await Promise.all([
+    getHotelContactsIfAuthorized(hotel.id),
+    enforcePremiumHotelAccess(hotel.id),
+    getHotelIntelligence(hotel.id),
+    getOpenRelationship(hotel.id),
+  ]);
+  const { access, contacts, failed: contactsFailed, via, cacheEmail, balance, cost } = contactPanel;
 
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
   const statusNote = ACTIVE_STATUS_LABEL[hotel.activeStatus];
-  const contactState = contactSectionState({ access, contacts, failed: contactsFailed });
+  const contactState = contactSectionState({
+    access,
+    contacts: contacts.length > 0 || cacheEmail ? [{}] : [],
+    failed: contactsFailed,
+  });
 
-  // Premium intelligence uses the SAME entitlement answer as contacts. It is
-  // only queried when that answer is an explicit `allowed`: a denial and a
-  // failed check both skip the query, so security stays fail-closed, and the
-  // panel can still tell "locked" apart from "we could not check".
-  const premium = access.status === "allowed" ? await getHotelPremiumIntelligence(hotel.id) : null;
-  const premiumState = premiumIntelligenceState({ access, result: premium });
+  // Premium intelligence is not a contact unlock. Denied and error both skip
+  // the query, so security stays fail-closed.
+  const premium =
+    intelligenceAccess.status === "allowed" ? await getHotelPremiumIntelligence(hotel.id) : null;
+  const premiumState = premiumIntelligenceState({ access: intelligenceAccess, result: premium });
 
   // Only a won cycle has a collaboration to show, so only a won cycle pays for
   // the query. Its own tri-state answer is what the panel renders.
@@ -171,7 +172,9 @@ export default async function HotelDetailPage({
     getOwnNetworkFacts(hotel.id),
   ]);
   const destinationId = hotel.destination?.id ?? null;
-  const rank = destinationId ? await getDestinationRank(destinationId) : { status: "ok" as const, hotels: [] };
+  const rank = destinationId
+    ? await getDestinationRank(destinationId)
+    : { status: "ok" as const, hotels: [] };
   const prioritized = await getOwnNetworkPriority(hotel.id);
   if (network.status === "ok" && networkPanelState(network) !== "error") {
     await recordNetworkView(hotel.id);
@@ -204,7 +207,10 @@ export default async function HotelDetailPage({
 
       <PageHeader title={hotel.name} crumbs={trail} back={backLink(trail)} />
       {firstHotelNotice && relationship.status === "open" ? (
-        <p className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-contrast" role="status">
+        <p
+          className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-contrast"
+          role="status"
+        >
           {FIRST_RUN_COPY.savedToast}
         </p>
       ) : null}
@@ -279,13 +285,34 @@ export default async function HotelDetailPage({
       {/* 3. Premium contact */}
       <Section id="contact" title="Hotel contact">
         {contactState === "contacts" ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {contacts.map((contact) => (
-              <ContactCard key={contact.id} contact={contact} />
-            ))}
+          <div className="space-y-4">
+            {via === "unlock" ? (
+              <p className="text-sm font-semibold text-text">Already unlocked</p>
+            ) : null}
+            <div className="grid gap-4 md:grid-cols-2">
+              {contacts.map((contact) => (
+                <ContactCard key={contact.id} contact={contact} />
+              ))}
+            </div>
+            {contacts.length === 0 && cacheEmail ? (
+              <p className="text-sm text-text">
+                <a className="underline" href={`mailto:${cacheEmail}`}>
+                  {cacheEmail}
+                </a>
+              </p>
+            ) : null}
+            {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
           </div>
         ) : contactState === "locked" ? (
-          <LockedContactSection />
+          <div className="space-y-4">
+            <UnlockContact
+              hotelId={hotel.id}
+              unlocked={false}
+              balance={balance}
+              cost={cost}
+              showEmail
+            />
+          </div>
         ) : contactState === "access-error" ? (
           // The entitlement CHECK failed. We did not learn that this creator
           // lacks access, so we must not imply it — no upgrade CTA here (F1).
@@ -308,12 +335,17 @@ export default async function HotelDetailPage({
             </p>
           </div>
         ) : (
-          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+          <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6">
+            {via === "unlock" ? (
+              <p className="text-sm font-semibold text-text">Already unlocked</p>
+            ) : null}
             <h3 className="text-base font-semibold text-text">No contact on file yet</h3>
-            <p className="mt-2 max-w-prose text-sm text-muted">
-              We haven&rsquo;t published a verified contact for this hotel yet. It will appear here
-              once our editorial team verifies one.
+            <p className="max-w-prose text-sm text-muted">
+              {via === "unlock"
+                ? "This unlock did not return an email. Reporting it is how a courtesy credit starts."
+                : "We haven’t published a verified contact for this hotel yet."}
             </p>
+            {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
           </div>
         )}
       </Section>

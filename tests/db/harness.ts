@@ -124,6 +124,39 @@ export async function queryAs<T = Record<string, unknown>>(
   }
 }
 
+/**
+ * Like `queryAs`, but COMMIT. Use it when a later statement, or a second
+ * connection, must see the row. Grant and RLS failures roll back and return
+ * `error`. Callers that change shared rows have to clean them up: the ledger
+ * trigger refuses DELETE.
+ */
+export async function commitAs<T = Record<string, unknown>>(
+  opts: AsOptions,
+  sql: string,
+  params: unknown[] = [],
+): Promise<AsResult<T>> {
+  const client: PoolClient = await getPool().connect();
+  try {
+    await client.query("begin");
+    await client.query(`set local role ${opts.role}`);
+    const claims = opts.sub ? JSON.stringify({ sub: opts.sub }) : "{}";
+    await client.query("select set_config('request.jwt.claims', $1, true)", [claims]);
+    const res = await client.query(sql, params);
+    await client.query("commit");
+    return { rows: res.rows as T[], error: null };
+  } catch (err) {
+    try {
+      await client.query("rollback");
+    } catch {
+      /* ignore rollback error */
+    }
+    const e = err as { code?: string; message: string };
+    return { rows: [], error: { code: e.code, message: e.message } };
+  } finally {
+    client.release();
+  }
+}
+
 /** Close pool after the suite. */
 export async function teardownDatabase(): Promise<void> {
   if (pool) {

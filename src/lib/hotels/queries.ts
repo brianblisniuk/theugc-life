@@ -5,23 +5,26 @@
  * with the caller's identity (`auth.uid()`) and remains authoritative. The
  * service-role client is never used for creator-facing reads.
  *
- * Security model for premium contacts:
- *   1. `getHotelContactAccess` asks the database whether this user may see
- *      contacts (self-scoped `has_premium_hotel_access` wrapper).
- *   2. Only when that is true does `getHotelContactsIfAuthorized` issue the
- *      contact query at all. Unauthorized callers never cause email/phone/
- *      LinkedIn values to be selected, transferred, or serialized to the client
- *      — the locked state is rendered from an access flag alone.
- *   3. `hotel_contacts` RLS (`using (public.has_premium_hotel_access(hotel_id))`)
- *      remains the backstop if application code is ever wrong.
+ * Security model for hotel contacts (D100):
+ *   1. `getHotelContactAccess` asks whether this user owns an unlock, or is
+ *      admin/editor. A Pass or Pro row is not enough.
+ *   2. Only then does `getHotelContactsIfAuthorized` query `hotel_contacts`.
+ *      A locked caller never loads an email.
+ *   3. `hotel_contacts` RLS (own `contact_unlocks` row, or admin/editor) is
+ *      the backstop. `has_premium_hotel_access` still gates intelligence.
  */
 import "server-only";
 
-import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
+import {
+  configuredUnlockCost,
+  getOwnCreditBalance,
+  getUnlockedCacheEmail,
+} from "@/lib/credits/queries";
+import { resolveSession } from "@/lib/auth/guards";
 import { publicMapPin, type PublicMapPin } from "@/lib/maps/pins";
 import { createClient } from "@/lib/supabase/server";
 
-import { mayQueryContacts, type ContactAccessResult } from "./access";
+import { mapContactAccess, mayQueryContacts, type ContactAccessResult } from "./access";
 import {
   assembleCreatorBadges,
   PUBLIC_CARD_INTELLIGENCE_COLUMNS,
@@ -445,22 +448,50 @@ export async function getHotelById(
  * Returns a three-state result: a failed check is `error`, never `denied`, so
  * a transient outage cannot tell a paying creator they lack access (F1).
  */
+export interface HotelContactPanel {
+  access: ContactAccessResult;
+  /** Staff may read without an unlock row. They are not "already unlocked". */
+  via: "unlock" | "staff" | "none";
+  contacts: HotelContact[];
+  failed: boolean;
+  /** Cache email when hotel_contacts has no row. Null unless this caller may see it. */
+  cacheEmail: string | null;
+  balance: number | null;
+  cost: number;
+}
+
 export async function getHotelContactAccess(hotelId: string): Promise<ContactAccessResult> {
-  // The inventory names the helper. The database still answers for auth.uid().
-  return enforcePremiumHotelAccess(hotelId);
+  if (!isUuid(hotelId)) return { status: "denied" };
+  const session = await resolveSession();
+  if (session.status === "error") return { status: "error" };
+  if (session.status !== "authenticated") return { status: "denied" };
+  if (session.session.role === "admin" || session.session.role === "editor") {
+    return { status: "allowed" };
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("has_unlocked_hotel_contact", { p_hotel_id: hotelId });
+  return mapContactAccess({ data, error });
 }
 
 /**
- * Return contacts ONLY for an authorized caller. When access is false this does
- * not query `hotel_contacts` at all, so no premium value is ever loaded into
- * the server render or serialized to the client.
+ * Return contacts ONLY for an unlock owner or staff. A locked caller does not
+ * query `hotel_contacts` or the cache email.
  */
-export async function getHotelContactsIfAuthorized(
-  hotelId: string,
-): Promise<{ access: ContactAccessResult; contacts: HotelContact[]; failed: boolean }> {
+export async function getHotelContactsIfAuthorized(hotelId: string): Promise<HotelContactPanel> {
+  const cost = configuredUnlockCost();
   const access = await getHotelContactAccess(hotelId);
+  const balanceResult = await getOwnCreditBalance();
+  const balance = balanceResult.status === "ok" ? balanceResult.balance : null;
   // Denied AND error both skip the query — security stays fail-closed.
-  if (!mayQueryContacts(access)) return { access, contacts: [], failed: false };
+  if (!mayQueryContacts(access)) {
+    return { access, via: "none", contacts: [], failed: false, cacheEmail: null, balance, cost };
+  }
+  const session = await resolveSession();
+  const via =
+    session.status === "authenticated" &&
+    (session.session.role === "admin" || session.session.role === "editor")
+      ? "staff"
+      : "unlock";
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -470,7 +501,9 @@ export async function getHotelContactsIfAuthorized(
 
   // A failed fetch is NOT "this hotel has no contact" — the caller must be able
   // to tell the difference so an entitled user is never told data is absent.
-  if (error) return { access, contacts: [], failed: true };
+  if (error) {
+    return { access, via, contacts: [], failed: true, cacheEmail: null, balance, cost };
+  }
 
   const contacts = (data ?? [])
     .map((raw) => {
@@ -503,7 +536,10 @@ export async function getHotelContactsIfAuthorized(
         (VERIFICATION_RANK[b.verificationStatus ?? ""] ?? 9),
     );
 
-  return { access, contacts, failed: false };
+  const cacheEmail = contacts.some((contact) => contact.email)
+    ? null
+    : await getUnlockedCacheEmail(hotelId);
+  return { access, via, contacts, failed: false, cacheEmail, balance, cost };
 }
 
 /**

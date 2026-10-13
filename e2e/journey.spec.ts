@@ -173,6 +173,15 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   const ada = await adaContext.newPage();
   const adaUsername = username("e2eada");
   await signUp(ada, { email: adaEmail, name: ADA_NAME, username: adaUsername });
+  const balanceText = async (page: typeof ada) =>
+    (await page.getByTestId("credit-balance").innerText()).replace(/\s+/g, " ").trim();
+  const balanceNumber = (label: string) => {
+    const match = label.match(/^(\d+) credits? left$/);
+    if (!match) throw new Error(`credit counter was ${label}`);
+    return Number(match[1]);
+  };
+  await expect(ada.getByTestId("credit-balance")).toBeVisible();
+  const balanceAfterOnboarding = balanceNumber(await balanceText(ada));
   await seedMailbox({
     loginEmail: adaEmail,
     mailboxEmail: ADA_MAILBOX,
@@ -195,6 +204,15 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.waitForURL(new RegExp(`${HOTEL_PATH}$`));
   await expect(ada.locator('aside[aria-label="Map"]')).toHaveCount(0);
   await expect(ada.locator('script[src*="maps.googleapis.com"]')).toHaveCount(0);
+  expect(balanceNumber(await balanceText(ada))).toBe(balanceAfterOnboarding);
+  await expect(ada.getByRole("button", { name: "Unlock contact (1 credit)" })).toBeVisible();
+  await expect(ada.getByText("found-222222222222@fake-provider.test")).toHaveCount(0);
+  await commitAction(ada, () =>
+    ada.getByRole("button", { name: "Unlock contact (1 credit)" }).click(),
+  );
+  await expect(ada.getByText("Already unlocked")).toBeVisible();
+  await expect(ada.getByText("found-222222222222@fake-provider.test")).toBeVisible();
+  expect(balanceNumber(await balanceText(ada))).toBe(balanceAfterOnboarding - 1);
 
   await commitAction(ada, () => ada.getByRole("button", { name: "Add to trip" }).click());
   await expect(ada.locator("#add-to-trip option:checked")).toContainText("already on this trip");
@@ -238,7 +256,9 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#won-date").fill(day(0));
   await commitAction(ada, () => ada.getByRole("button", { name: "Mark as won" }).click());
   await expect(ada.getByRole("heading", { name: "Won", exact: true })).toBeVisible();
-  await expect(ada.getByRole("heading", { name: "Collaboration agreed", exact: true })).toBeVisible();
+  await expect(
+    ada.getByRole("heading", { name: "Collaboration agreed", exact: true }),
+  ).toBeVisible();
 
   await ada.locator("#compensation-structure").selectOption("in_kind");
   await ada.locator("#in-kind-description").fill("E2E stay");
@@ -349,6 +369,9 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByText("Collaboration agreed")).toHaveCount(0);
   await expect(bea.getByText(BIO)).toHaveCount(0);
   await expect(bea.getByText(ADA_NAME)).toHaveCount(0);
+  await expect(bea.getByText("found-222222222222@fake-provider.test")).toHaveCount(0);
+  await expect(bea.getByText("Already unlocked")).toHaveCount(0);
+  await expect(bea.getByRole("button", { name: "Unlock contact (1 credit)" })).toBeVisible();
 
   await bea.goto("/app/pipeline");
   await expect(bea.getByText("Your pipeline is empty")).toBeVisible();

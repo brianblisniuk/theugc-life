@@ -15,7 +15,8 @@ Migration `0051_outside_free_allowance.sql` corrects the outside Free counters (
 | Rule | Free | Destination Pass | Creator Pro |
 |---|---|---|---|
 | Worldwide discovery, hotel basics, map, public intelligence | Yes | Yes | Yes |
-| Premium intelligence and premium contacts | No | Entitled destination, including descendants | Worldwide |
+| Premium intelligence | No | Entitled destination, including descendants | Worldwide |
+| Hotel contact email | No, until this user unlocks that hotel | A Pass does not reveal it | A Pro row does not reveal it |
 | Open relationships | 10 | Unlimited inside the destination; outside, only outside-coverage rows count toward 10 | Unlimited |
 | Engaged pipeline | 5 | Same exemption; in-destination rows do not consume the outside allowance | Unlimited |
 | Active trips | 1 | Exempt when the trip destination is covered; covered trips do not consume the outside allowance | Unlimited |
@@ -33,7 +34,8 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `hotel.map` | Map | all tiers |
 | `hotel.public_intelligence` | Intelligence | all tiers, including anonymous |
 | `hotel.premium_intelligence` | Intelligence | Pass inside destination, Pro worldwide |
-| `hotel.premium_contacts` | Hotel Detail | same helper as premium intelligence |
+| `hotel.premium_contacts` | Hotel Detail | credit unlock for this user, or staff (D100) |
+| `credits.pending_numbers` | Credits | undecided until the owner sets the amounts (D101) |
 | `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; outside counts only outside-coverage rows; Pro exempt |
 | `pipeline.engage` | Pipeline | Free limit 5; same outside-coverage count |
 | `pipeline.own` | Pipeline | owner, every tier |
@@ -64,7 +66,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 
 ## Enforcement
 
-Premium contacts and premium intelligence both call `has_premium_hotel_access`, named by the inventory. The hotel page still uses one answer for both sections.
+Premium intelligence calls `has_premium_hotel_access`. Contacts do not. A contact is visible when `has_unlocked_hotel_contact` is true for this user, or the caller is admin or editor. The hotel page asks those questions separately.
 
 Save, engage, and active-trip limits are the existing RPCs. The number they receive is `workspaceLimit(...)`, which reads `FREE_LIMITS`. The database still decides the Pass hierarchy. A caller cannot pass a plan flag.
 
@@ -76,4 +78,8 @@ Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a
 
 ## D098 — features without a written tier are Free
 
-D098 (Accepted, 13 Oct 2026) closes the inventory questions. A feature that had no documented tier is Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence, premium contacts, and the D056 workspace limits are unchanged. `questionsForBrian()` returns no questions. `profile.public_card` is the social profile at `/creators/[username]`.
+D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written tier. Those features are Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence and the D056 workspace limits are unchanged. D100 changes contacts: a Pass or Pro row is not an email. `questionsForBrian()` returns one question, `credits.pending_numbers`. `profile.public_card` is the social profile at `/creators/[username]`.
+
+## D101 — pending credit numbers
+
+`credits.pending_numbers` is the only undecided entry. Free credits, Pro and Pro+ monthly credits, pack sizes, cache TTL, and the not-found charge are placeholders in `CREDITS_CONFIG` and `credit_config`. They are not a price. The question for Brian is on the entry.

@@ -67,6 +67,13 @@ const CONTRACT: Record<string, Expected> = {
   destinations: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
   hotels: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
   hotel_contacts: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // F05 (0057, D100). The balance is the sum of the ledger. No client role
+  // can update or delete it. The cache is not a client table.
+  credit_config: { anon: "", authenticated: "", serviceRole: "S" },
+  credit_ledger: { anon: "", authenticated: "S", serviceRole: "S" },
+  contact_cache: { anon: "", authenticated: "", serviceRole: "all" },
+  contact_unlocks: { anon: "", authenticated: "S", serviceRole: "S" },
+  contact_reports: { anon: "", authenticated: "SIU", serviceRole: "all" },
 
   // Commerce is read-only to the browser.
   access_entitlements: { anon: "", authenticated: "S", serviceRole: "all" },
@@ -1133,6 +1140,11 @@ d("the contract behaves as intended for real callers", () => {
       "creator_collaboration_share_marks",
       "creator_deliverable_share_marks",
       "hotel_contacts",
+      "credit_config",
+      "credit_ledger",
+      "contact_cache",
+      "contact_unlocks",
+      "contact_reports",
       "hotel_intelligence",
       "destination_intelligence",
       "subscriptions",

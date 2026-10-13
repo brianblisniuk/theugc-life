@@ -181,13 +181,17 @@ answered elsewhere; a hotel with no contact is still public inventory whose
 contact section is simply empty or locked.
 
 ### Contacts
-- Anonymous: deny
-- Free: deny
-- Destination: allow only if active entitlement covers hotel's destination through hierarchy
-- Pro: allow worldwide
-- Admin/editor: allow for operational duties
+A contact email is visible when this user owns a `contact_unlocks` row for that hotel, or when the caller is admin or editor (D100). Migration `0058` writes those unlock rows for contacts each existing user could already see. A Destination Pass or Creator Pro granted after that migration is not an unlock, and a payment is not an unlock. `has_premium_hotel_access` still gates premium intelligence. It does not gate `hotel_contacts`.
 
-Contact authorization must happen before returning contact fields. Do not return locked contact data and merely blur it in browser.
+- Anonymous: deny
+- Signed-in creator, any plan: deny until that user unlocks that hotel
+- The user who unlocked it: allow, including after a Pass expires
+- Another user, including Pro: deny, even with the hotel id
+- Admin/editor: allow for operational duties, without spending a credit
+
+One configured credit unlocks one hotel for one user. Opening it again costs nothing. The balance is the sum of `credit_ledger`. No role may update or delete a ledger row. `contact_cache` is not selectable by a client role. Contact authorization happens before returning contact fields. Do not return a locked email and blur it in the browser.
+
+Open amounts (Free grant, Pro and Pro+ monthly credits, pack sizes, cache TTL, not-found charge) are `credit_config` (D101). They are not a price. This block does not sell packs and does not call a real provider.
 
 ## 8. CRM plan behavior
 
@@ -205,8 +209,10 @@ limits** (D042). Outside the entitlement, normal Free-tier capabilities and
 limits apply, and a paid Pass never removes a right the account would have had
 as Free.
 
-Existing historical pipeline remains readable after pass expiry; premium contact
-and Premium Intelligence access is removed.
+Existing historical pipeline remains readable after pass expiry. Premium
+Intelligence access is removed. A contact unlock already paid for remains
+that user's unlock (D100). A Pass expiry does not reveal a contact, and it
+does not hide one this user already unlocked.
 
 ### Pro
 Worldwide.

@@ -1,18 +1,24 @@
 /**
  * SECURITY: premium contact authorization (PERMISSIONS.md §7, §13.1–§13.6).
  *
- * The hotel detail page decides whether to fetch contacts by asking the
- * database `has_premium_hotel_access(hotel_id)`, and `hotel_contacts` RLS
- * (`using (public.has_premium_hotel_access(hotel_id))`) is the backstop. These
- * tests exercise BOTH against real Postgres with real roles, so a UI change can
- * never quietly widen access.
+ * Premium intelligence still asks `has_premium_hotel_access`. Contact rows do
+ * not. `hotel_contacts` RLS requires this user's unlock, or admin/editor
+ * (D100). A Pass or Pro row is not an unlock. These tests exercise both
+ * against real Postgres.
  *
  * Highest-priority property: an unauthorized caller can never obtain premium
  * email / phone / LinkedIn values.
  */
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 
-import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "../db/harness";
+import {
+  adminQuery,
+  commitAs,
+  hasTestDb,
+  queryAs,
+  setupDatabase,
+  teardownDatabase,
+} from "../db/harness";
 import { HOTEL, USERS, seed } from "../rls/seed";
 import { HOTEL_PUBLIC_COLUMNS, PREMIUM_CONTACT_FIELDS } from "@/lib/hotels/columns";
 
@@ -102,17 +108,39 @@ d("contact rows — RLS backstop", () => {
     expect(res.error !== null || res.rows.length === 0).toBe(true);
   });
 
-  it("entitled destination creator DOES receive the contact", async () => {
+  it("an entitled destination creator receives no contact until they unlock", async () => {
     const res = await fetchContacts(USERS.destBali, HOTEL.bali);
-    expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
-    expect(res.rows[0]!.email).toBe("premium@leak.test");
+    expect(res.rows).toHaveLength(0);
+    expect(JSON.stringify(res)).not.toContain("premium@leak.test");
   });
 
-  it("Pro DOES receive the contact", async () => {
+  it("Pro receives no contact until they unlock", async () => {
     const res = await fetchContacts(USERS.pro, HOTEL.bali);
-    expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
+    expect(res.rows).toHaveLength(0);
+    expect(JSON.stringify(res)).not.toContain("premium@leak.test");
+  });
+
+  it("the owner of an unlock receives the contact, and the other user still does not", async () => {
+    await adminQuery(
+      `insert into public.contact_cache (hotel_id, email, source, status, last_verified_at)
+       values ($1, 'premium@leak.test', 'owner_import', 'found', now())
+       on conflict (hotel_id) do update
+         set email = excluded.email, status = 'found', last_verified_at = now()`,
+      [HOTEL.bali],
+    );
+    const opened = await commitAs<{ result: { status: string; email: string | null } }>(
+      { role: "authenticated", sub: USERS.free },
+      "select public.unlock_hotel_contact($1, 'contact-access-unlock') as result",
+      [HOTEL.bali],
+    );
+    expect(opened.error).toBeNull();
+    expect(opened.rows[0]?.result.status).toBe("unlocked");
+    expect(opened.rows[0]?.result.email).toBe("premium@leak.test");
+    const visible = await fetchContacts(USERS.free, HOTEL.bali);
+    expect(visible.rows.map((row) => row.email)).toEqual(["premium@leak.test"]);
+    const other = await fetchContacts(USERS.pro, HOTEL.bali);
+    expect(other.rows).toHaveLength(0);
+    expect(JSON.stringify(other)).not.toContain("premium@leak.test");
   });
 
   it("expired and revoked entitlements receive nothing", async () => {
@@ -121,7 +149,7 @@ d("contact rows — RLS backstop", () => {
   });
 
   it("never serializes premium fields for any unauthorized identity", async () => {
-    for (const sub of [USERS.free, USERS.expired, USERS.revoked]) {
+    for (const sub of [USERS.expired, USERS.revoked, USERS.destBali]) {
       const res = await fetchContacts(sub, HOTEL.bali);
       const serialized = JSON.stringify(res.rows);
       for (const field of ["premium@leak.test", "+971500000000", "linkedin.com/in/premium-leak"]) {

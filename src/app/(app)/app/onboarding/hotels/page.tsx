@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { UnlockContact } from "@/components/contacts/unlock-contact";
 import { SaveFirstHotelButton } from "@/components/onboarding/save-first-hotel";
 import { requireUser } from "@/lib/auth/guards";
 import { parseDiscoverQuery } from "@/lib/hotels/filters";
-import { getHotelContactsIfAuthorized, getPublicCardSignals, searchHotels } from "@/lib/hotels/queries";
+import {
+  getHotelContactsIfAuthorized,
+  getPublicCardSignals,
+  searchHotels,
+} from "@/lib/hotels/queries";
 import { nearbyDestinations } from "@/lib/onboarding/destination";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
 import {
@@ -14,6 +19,12 @@ import {
   rankOnboardingHotels,
   type RankedHotel,
 } from "@/lib/onboarding/hotel-cards";
+
+type OnboardingCard = RankedHotel & {
+  unlocked: boolean;
+  balance: number | null;
+  cost: number;
+};
 import { loadHomeProgress } from "@/lib/onboarding/queries";
 import { listDestinations } from "@/lib/trips/queries";
 
@@ -34,7 +45,7 @@ export default async function OnboardingHotelsPage() {
   }
 
   let failed = false;
-  let hotels: RankedHotel[] = [];
+  let hotels: OnboardingCard[] = [];
   try {
     const found = await searchHotels(
       parseDiscoverQuery({ destination: progress.destinationSlug, pageSize: "6" }),
@@ -43,11 +54,12 @@ export default async function OnboardingHotelsPage() {
     const cards = await Promise.all(
       found.hotels.map(async (hotel) => {
         const loaded = await getHotelContactsIfAuthorized(hotel.id);
+        const ownsUnlock = loaded.via === "unlock" && loaded.access.status === "allowed";
         const contact = loaded.failed
           ? onboardingContact("error", null)
           : onboardingContact(
-              loaded.access.status,
-              loaded.access.status === "allowed" ? loaded.contacts : null,
+              ownsUnlock ? "allowed" : loaded.access.status === "error" ? "error" : "denied",
+              ownsUnlock ? loaded.contacts : null,
             );
         const signal = signals?.get(hotel.id) ?? null;
         const context = onboardingContext(signal, signals === null);
@@ -60,7 +72,10 @@ export default async function OnboardingHotelsPage() {
           context: context.text,
           verified: contact.kind === "verified",
           signalScore: context.score,
-        } satisfies RankedHotel;
+          unlocked: ownsUnlock,
+          balance: loaded.balance,
+          cost: loaded.cost,
+        };
       }),
     );
     hotels = rankOnboardingHotels(cards).slice(0, 6);
@@ -93,7 +108,9 @@ export default async function OnboardingHotelsPage() {
       </div>
 
       {failed ? (
-        <p className="text-sm">No pudimos cargar hoteles. Recargá la página. Esto no es un destino sin datos.</p>
+        <p className="text-sm">
+          No pudimos cargar hoteles. Recargá la página. Esto no es un destino sin datos.
+        </p>
       ) : hotels.length === 0 ? (
         <div className="space-y-4">
           <h2 className="text-xl font-extrabold">{FIRST_RUN_COPY.insufficientTitle}</h2>
@@ -111,7 +128,10 @@ export default async function OnboardingHotelsPage() {
               ))}
             </div>
           ) : null}
-          <Link href="/app/discover" className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold">
+          <Link
+            href="/app/discover"
+            className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold"
+          >
             Agregar el primer hotel
           </Link>
         </div>
@@ -120,7 +140,10 @@ export default async function OnboardingHotelsPage() {
           {hotels.map((hotel) => {
             const label = contactLabel(hotel.contact);
             return (
-              <li key={hotel.id} className="grid gap-3 py-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <li
+                key={hotel.id}
+                className="grid gap-3 py-3 sm:grid-cols-[1fr_auto] sm:items-center"
+              >
                 <div>
                   <h2 className="text-lg font-extrabold">
                     <Link href={`/app/hotels/${hotel.id}`} className="hover:underline">
@@ -128,10 +151,21 @@ export default async function OnboardingHotelsPage() {
                     </Link>
                   </h2>
                   {hotel.zone ? <p className="text-[13px] text-[#555]">{hotel.zone}</p> : null}
-                  {label ? <p className="mt-1 text-sm font-semibold text-[#0b6b4b]">{label}</p> : null}
+                  {label ? (
+                    <p className="mt-1 text-sm font-semibold text-[#0b6b4b]">{label}</p>
+                  ) : null}
                   {hotel.context ? <p className="text-xs text-[#555]">{hotel.context}</p> : null}
                 </div>
-                <SaveFirstHotelButton hotelId={hotel.id} />
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <UnlockContact
+                    hotelId={hotel.id}
+                    unlocked={hotel.unlocked}
+                    balance={hotel.balance}
+                    cost={hotel.cost}
+                    showEmail={false}
+                  />
+                  <SaveFirstHotelButton hotelId={hotel.id} />
+                </div>
               </li>
             );
           })}
