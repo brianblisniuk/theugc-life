@@ -771,6 +771,15 @@ balance, and pending Gmail suggestions (D112). Migration
 human reply, then pitch sent, then collaboration, then id. Free Gmail reads
 stay paused and return no suggestion ids (D107). There is no ranking and no
 model. Agency F04 stays planned. `0061`, `0062`, and `0064` are not edited.
+This portfolio PR does not edit `0066` or `src/lib/home`.
+
+**G03 portfolio** (canon v1.1, not the Phase G Coverage Engine row) is PR #76
+on `cursor/g03-portfolio-9c32`. Migrations `0073` and `0074`. D125. A creator
+picks a travel layout and approves confirmed collaborations before they
+appear on the existing hotel share link. Gmail detections are not
+suggestions. The social profile stays free of hotel names. `0066`, `0068`,
+and `0069` are not edited. `0070` stays unused. `0071`/`0072` stay with H01.
+Do not merge.
 
 **G01 contract templates** (canon v1.1, not the Phase G Coverage Engine row)
 is merged as PR #74, merge
@@ -781,11 +790,13 @@ facts stay marked to be filled in. No e-sign, no send, and no external model.
 Phase G Coverage Engine stays gated. This PR does not edit `0068`. `0066` is not that file.
 
 **G02 deliverable deadlines** (canon v1.1, not the agency G02 row in the
-table above) is PR #75. Migration `0069_deliverable_deadlines.sql`. D115.
-D116 is not used. `0070` is reserved and unused. In-app reminders only. The
-UTC day follows the D112 deliverable comparison. No N-day lead and no
-dismiss row, because neither is stated in the decisions. `0050` and `0068`
-are not edited. F04 home files are not edited. Do not merge.
+table above) is merged as PR #75, merge
+`6c77347ce5cbc9e57c4d675f0a5bc636474a0c16`. Migration
+`0069_deliverable_deadlines.sql`. D115. D116 is not used. `0070` is reserved
+and unused. In-app reminders only. The UTC day follows the D112 deliverable
+comparison. No N-day lead and no dismiss row, because neither is stated in
+the decisions. `0050` and `0068` are not edited. F04 home files are not
+edited. This portfolio PR does not edit `0069`.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

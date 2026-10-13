@@ -147,6 +147,23 @@ still requires an https `proof_url`.
 Constraint: exactly one usable asset source (`storage_path` or `external_url`) where required.
 Types: `video`, `image`, `link`, `case_study`.
 
+### creator_portfolio_settings
+The layout the creator picked (0073, D125). One row per creator. No row
+means they have not picked. `template_key` is `journey`, `destinations`, or
+`highlights`. Anon has no privilege. Authenticated may select their own row.
+Writes go through `set_creator_portfolio_template`, which takes the creator
+from `auth.uid()`.
+
+### creator_portfolio_entries
+The creator’s decision about one collaboration they own (0073, D125).
+`decision` is `published` or `dismissed`. No row means the collaboration is
+still a suggestion. Suggestions are not stored. A composite foreign key
+requires the collaboration to belong to the same creator. A trigger refuses
+a row whose collaboration is not `agreed`, `scheduled`, `active`, or
+`completed`. Anon has no privilege. Authenticated may select their own rows.
+Publish, dismiss, and withdraw are security-definer functions with an empty
+`search_path` and no client user id.
+
 ### pitch_templates
 Creator-owned reusable subject and body (0064, D110). Anon has no privilege.
 Archiving sets `archived_at`. The row stays the owner's.
@@ -3031,5 +3048,9 @@ At minimum:
     app classifies overdue, due soon, and upcoming against the UTC day.
     No new table. No message is sent. `0070` is reserved and unused.
     `0050` is not edited.
+37. Travel portfolio (0073 and 0074, D125) — a layout row and a per-collaboration
+    approval. The share read gains a portfolio object only after both a template
+    and a published confirmed collaboration exist. D090 fields are unchanged.
+    `0066`, `0068`, and `0069` are not edited.
 
 Every migration must be reproducible from an empty database.

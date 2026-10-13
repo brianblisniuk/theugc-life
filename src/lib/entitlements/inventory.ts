@@ -683,18 +683,51 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "profile.share_public",
     module: "Profile",
     summary:
-      "A valid share token reads one creator's opted-in fields at /p/[token]. No plan. D098. D091 is unchanged.",
+      "A valid share token reads one creator's opted-in fields at /p/[token], and a published travel portfolio when the creator picked a layout. No plan. D098. D090 fields are unchanged.",
     routes: ["/p/[token]"],
     sourceFiles: [
       "src/app/(public)/p/[token]/page.tsx",
       "supabase/migrations/0053_creator_share_link.sql",
+      "supabase/migrations/0074_creator_portfolio_share.sql",
     ],
     serverActions: [],
     rpcs: ["read_creator_share_profile"],
     rule: { kind: "public_page" },
     anon: "allow",
     enforcement: { kind: "kept_current" },
-    sources: ["D089", "D090", "D091", "D098"],
+    sources: ["D089", "D090", "D091", "D098", "D125"],
+  },
+  {
+    id: "profile.portfolio",
+    module: "Profile",
+    summary:
+      "A travel portfolio layout and per-collaboration approval are Free and owner-only. D125. Approving a collaboration does not put it on the social profile.",
+    routes: ["/app/profile/portfolio"],
+    sourceFiles: [
+      "src/app/(app)/app/profile/portfolio/page.tsx",
+      "src/lib/profile/portfolio-actions.ts",
+      "supabase/migrations/0073_creator_portfolio.sql",
+    ],
+    serverActions: [
+      "setPortfolioTemplate",
+      "publishPortfolioEntry",
+      "dismissPortfolioEntry",
+      "withdrawPortfolioEntry",
+    ],
+    rpcs: [
+      "read_own_creator_portfolio",
+      "set_creator_portfolio_template",
+      "publish_creator_portfolio_entry",
+      "dismiss_creator_portfolio_entry",
+      "withdraw_creator_portfolio_entry",
+    ],
+    rule: { kind: "owner_private" },
+    anon: "deny",
+    enforcement: {
+      kind: "owner_rows",
+      tables: ["creator_portfolio_settings", "creator_portfolio_entries"],
+    },
+    sources: ["D125", "D098", "D096", "D045"],
   },
   {
     id: "profile.public_card",

@@ -79,6 +79,7 @@ let otherPortfolio = "";
 let otherPitchTemplate = "";
 let otherPitchDraft = "";
 let otherContractTemplate = "";
+let otherPortfolioEntry = "";
 let otherContract = "";
 
 function nothing<T>(result: AsResult<T>): boolean {
@@ -335,6 +336,18 @@ d("E04 entitlement inventory enforcement", () => {
       ],
     );
     otherContract = contract[0]!.id;
+
+    await adminQuery(
+      `insert into public.creator_portfolio_settings (creator_id, template_key)
+       values ($1, 'highlights')`,
+      [creators.other],
+    );
+    const portfolioEntry = await adminQuery<{ id: string }>(
+      `insert into public.creator_portfolio_entries (creator_id, collaboration_id, decision)
+       values ($1, $2, 'published') returning id`,
+      [creators.other, otherCollaboration],
+    );
+    otherPortfolioEntry = portfolioEntry[0]!.id;
   });
 
   afterAll(async () => {
@@ -688,6 +701,16 @@ d("E04 entitlement inventory enforcement", () => {
           sql: "select body from public.collaboration_contracts where id = $1",
           params: [otherContract],
           marker: SECRET,
+        },
+        creator_portfolio_settings: {
+          sql: "select template_key from public.creator_portfolio_settings where creator_id = $1",
+          params: [creators.other],
+          marker: "highlights",
+        },
+        creator_portfolio_entries: {
+          sql: "select collaboration_id from public.creator_portfolio_entries where id = $1",
+          params: [otherPortfolioEntry],
+          marker: otherCollaboration,
         },
       };
 

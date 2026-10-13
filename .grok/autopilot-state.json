@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 0a69413beb338c7910d8b9473693a3db7136a6aa (merge of PR #73, F04 home next actions, D112, migration 0066). G02 deliverable deadlines is PR #75. Migration 0069. D115. D114 stays with G01 migration 0068. D116 is unused. 0070 is unused. The Gmail cap keeps human reply, then pitch sent, then collaboration, then id. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16 (merge of PR #75, G02 deliverable deadlines, D115, migration 0069). G03 portfolio is PR #76 on cursor/g03-portfolio-9c32. Migrations 0073 and 0074. D125. D116 and migration 0070 stay unused. 0071 and 0072 stay with H01. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "0a69413beb338c7910d8b9473693a3db7136a6aa",
-  "active_block": "G02 deliverable deadlines",
-  "branch": "cursor/g02-deliverables-reminders-65ab",
-  "pr": 75,
+  "last_recorded_main": "6c77347ce5cbc9e57c4d675f0a5bc636474a0c16",
+  "active_block": "G03 portfolio",
+  "branch": "cursor/g03-portfolio-9c32",
+  "pr": 76,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "0a69413beb338c7910d8b9473693a3db7136a6aa",
+    "ref": "6c77347ce5cbc9e57c4d675f0a5bc636474a0c16",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "G02 deliverable deadlines is PR #75 on cursor/g02-deliverables-reminders-65ab. Migration 0069. D115. In-app reminders only. No dismiss row and no N-day lead. D116 and migration 0070 are unused. F04 is merged (PR #73, 0a69413beb338c7910d8b9473693a3db7136a6aa, migration 0066, D112). The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. Free returns paused and no ids. G01 is merged (PR #74, migration 0068, D114). This PR does not edit 0066 or 0068. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "G03 portfolio is PR #76 on cursor/g03-portfolio-9c32. AWAITING_AUDIT. Migrations 0073 and 0074. D125. A creator picks a travel layout and approves confirmed collaborations before they appear on the hotel share link. Gmail detections are not suggestions. The social profile stays free of hotel names. G02 is merged (PR #75, 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16, migration 0069, D115). D116 and migration 0070 are unused. This PR does not edit 0066, 0068, or 0069. expected_head stays null. Do not merge."
 }

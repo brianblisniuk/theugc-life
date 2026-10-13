@@ -81,6 +81,17 @@ export default async function ProfilePage() {
         </Link>
       </section>
 
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold text-text">Travel portfolio</h2>
+        <p className="max-w-prose text-sm text-muted">
+          A layout and the confirmed collaborations you approve. Nothing is added to the hotel share
+          link until you approve it. Gmail detections are not included.
+        </p>
+        <Link href="/app/profile/portfolio" className="text-sm text-text underline">
+          Edit portfolio
+        </Link>
+      </section>
+
       <PersonalCounts load={counts} />
       <p className="max-w-prose text-sm text-muted">
         Past collaborations stay on this page. They are not part of the public profile.

@@ -4478,3 +4478,81 @@ state. Anon has no table privilege and cannot execute the read.
   Home already lists D112-due deliverables. Sharing this classifier with
   Home is a follow-up after F04 merges.
 
+## D125 — A travel portfolio is a layout plus approved collaborations
+
+Status: **Accepted for this block.** Derived from D045, D088–D091, D096–D098,
+D107, canon v1.1 G03, and the owner’s D086–D088 v2 note. Migrations `0073`
+and `0074`. D115 is merged with G02. D116 and migration `0070` are unused.
+D120–D124 stay with H01. D112 and D114 are unchanged. No new product question
+was open: the rules below are the intersection of those decisions.
+
+### Templates
+
+The creator picks one layout: `journey`, `destinations`, or `highlights`.
+No row means they have not picked. The layout changes arrangement only.
+
+- `journey` lists newest end date first, and the date leads.
+- `destinations` groups by the hotel’s catalog destination name. A missing
+  destination stays unknown. It is not a place this block invents.
+- `highlights` leads with the hotel name. The order is the same date order
+  as `journey`.
+
+None of the three adds a hotel, a date, a rate, a score, or a rank.
+
+### What can be suggested
+
+A suggestion is a collaboration the caller owns whose status is `agreed`,
+`scheduled`, `active`, or `completed`. That is the confirmed set in D045.
+`cancelled` is not confirmed. The suggestion is computed. It is not stored,
+and storing nothing does not publish it.
+
+A Gmail detection is never a suggestion, including a suggestion the creator
+confirmed. D107 does not create a collaboration from that confirmation.
+Negotiation is not a collaboration row, so it is not a suggestion either.
+
+The private payload is the hotel name, the destination name, the
+collaboration type, the status, and the dates. Compensation, contacts,
+private notes, private values, `would_work_again`, `terms_matched`, and
+thread ids are not selected. A missing profile is JSON null, not an empty
+list. An empty array is a successful read of no rows.
+
+### Approval and visibility
+
+`published` is the explicit approval. `dismissed` keeps the collaboration
+off the share link and out of the suggestion list. No row means it is still
+a suggestion. Withdrawing deletes the decision. A still-confirmed
+collaboration becomes a suggestion again.
+
+Past collaborations on the owner’s profile stay the D088 list. This block
+does not add a share control to that list. `public_profile_enabled` and
+`portfolio_visibility` are not written. `/creators/[username]` still does
+not select hotel names, amounts, or portfolio entries (D096, D086 v2).
+
+The feature is Free and owner-only (D098). A Pro row does not read another
+creator’s layout or approvals.
+
+### What the share link exposes
+
+`read_creator_share_profile` keeps every D090 field as it was. It adds
+`portfolio` only when the creator has picked a template and at least one
+published entry still points at a confirmed collaboration. Otherwise the
+key is omitted. Omission is not an empty list.
+
+Each public entry is the hotel name, destination name, collaboration type,
+status, and dates. It has no compensation, contact, note, private value, or
+collaboration id. Compensation stays on the existing D090 field, and only
+there. An open confirmed collaboration appears on the link only when the
+creator published that one entry. It is not added to `past_collaborations`,
+which stays completed and cancelled.
+
+A collaboration that later becomes `cancelled` drops off the portfolio
+object. The private screen says it is no longer confirmed.
+
+### What this decision does not do
+
+- It does not change D089–D091 except to render that portfolio object.
+- It does not put hotel names on the social profile.
+- It does not read Gmail, rank hotels, or call a model.
+- It does not edit migrations `0066`, `0068`, or `0069`, home, contract files,
+  deliverable reminders, or Discover.
+
