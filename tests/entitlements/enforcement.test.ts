@@ -77,6 +77,8 @@ let otherCompensation = "";
 let otherPortfolio = "";
 let otherPitchTemplate = "";
 let otherPitchDraft = "";
+let otherContractTemplate = "";
+let otherContract = "";
 
 function nothing<T>(result: AsResult<T>): boolean {
   return result.error !== null || result.rows.length === 0;
@@ -297,6 +299,33 @@ d("E04 entitlement inventory enforcement", () => {
       [creators.other, baliHotels[0], SECRET],
     );
     otherPitchDraft = pitchDraft[0]!.id;
+
+    await adminQuery("update public.pipeline_items set status = 'won' where id = $1", [
+      otherPipeline,
+    ]);
+    const contractTemplate = await adminQuery<{ id: string }>(
+      `insert into public.contract_templates (creator_id, kind, title, body)
+       values ($1, 'paid', 'Paid collaboration', $2) returning id`,
+      [
+        creators.other,
+        `This template is not legal advice and it is not a signed contract.\n${SECRET}`,
+      ],
+    );
+    otherContractTemplate = contractTemplate[0]!.id;
+    const contract = await adminQuery<{ id: string }>(
+      `insert into public.collaboration_contracts
+         (creator_id, template_id, collaboration_id, pipeline_item_id, kind, title, body, facts_snapshot)
+       values ($1, $2, $3, $4, 'paid', 'Paid collaboration', $5, '{}'::jsonb)
+       returning id`,
+      [
+        creators.other,
+        otherContractTemplate,
+        otherCollaboration,
+        otherPipeline,
+        `This template is not legal advice and it is not a signed contract.\n${SECRET}`,
+      ],
+    );
+    otherContract = contract[0]!.id;
   });
 
   afterAll(async () => {
@@ -634,6 +663,16 @@ d("E04 entitlement inventory enforcement", () => {
         pitch_drafts: {
           sql: "select body from public.pitch_drafts where id = $1",
           params: [otherPitchDraft],
+          marker: SECRET,
+        },
+        contract_templates: {
+          sql: "select body from public.contract_templates where id = $1",
+          params: [otherContractTemplate],
+          marker: SECRET,
+        },
+        collaboration_contracts: {
+          sql: "select body from public.collaboration_contracts where id = $1",
+          params: [otherContract],
           marker: SECRET,
         },
       };
