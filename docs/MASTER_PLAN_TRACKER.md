@@ -736,11 +736,12 @@ pauses without deleting mail. A stored address past the TTL is still a
 cache hit. An accepted bounce stays invalid. Open amounts stay pending
 config (D101). Agency F01–F04 stay planned.
 
-**F05b** saves a hotel on the caller's pipeline in the same transaction as a
-revealed contact unlock (D108). Migration `0062_unlock_saves_pipeline.sql`.
-`0061` is unused. A full Free allowance refuses the unlock and does not
-debit. A refused unlock does not add the hotel. The pipeline card shows the
-unlocked email to that caller only. Do not merge.
+**F05b** is PR #70 on `cursor/f05b-unlock-adds-pipeline-45a2`. It saves a
+hotel on the caller's pipeline in the same transaction as a revealed contact
+unlock (D108). Migration `0062_unlock_saves_pipeline.sql`. `0061` is unused.
+A full Free allowance refuses the unlock and does not debit. A refused unlock
+does not add the hotel. The pipeline card shows the unlocked email to that
+caller only. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
