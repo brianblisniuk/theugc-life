@@ -26,6 +26,9 @@ export const PRODUCT_EVENTS = [
   "hotel_saved",
   // Premium
   "contact_unlock_clicked",
+  "credit_unlock",
+  "credit_insufficient",
+  "contact_report",
   "upgrade_modal_viewed",
   "checkout_started",
   "purchase_completed",

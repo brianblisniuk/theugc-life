@@ -9,10 +9,11 @@
  * is not access (D007). A missing, expired, revoked, pending, or not-yet-started
  * row is Free. It is never Pro.
  *
- * A feature with no written tier is Free (D098). `undecided` remains in the
- * type so a future gap cannot be stored as a plan by accident. This inventory
- * has no undecided entry. Plans limit the written D056 quotas and the written
- * premium hotel surfaces. They do not limit profile, analytics, or the share link.
+ * A feature with no written tier is Free (D098), except `credits.pending_numbers`,
+ * which stays undecided until the owner sets the amounts (D101). Plans limit
+ * the written D056 quotas. Premium intelligence stays on has_premium_hotel_access.
+ * Contacts are a per-user credit unlock (D100). Plans do not limit profile,
+ * analytics, or the share link.
  * The question for Brian is on the entry. This module does not invent a tier.
  */
 import { FREE_LIMITS } from "@/lib/config";
@@ -37,6 +38,8 @@ export type LimitKey = keyof typeof FREE_LIMITS;
  * `public_page` — no session and no plan.
  * `system_grant` — a trusted writer may insert an entitlement row. The row is
  *   the access. A creator plan does not call this, and a purchase alone is not.
+ * `credit_unlock` — this user owns a contact_unlocks row for the hotel, or is
+ *   staff. A Pass or Pro row does not unlock a contact (D100).
  * `undecided` — no written tier. Current behavior stays.
  */
 export type TierRule =
@@ -47,6 +50,7 @@ export type TierRule =
   | { kind: "staff_role" }
   | { kind: "public_page" }
   | { kind: "system_grant" }
+  | { kind: "credit_unlock" }
   | { kind: "undecided" };
 
 export type AnonAccess = "allow" | "deny";
@@ -58,8 +62,9 @@ export type AnonAccess = "allow" | "deny";
 export type Enforcement =
   | { kind: "hotel_select" }
   | { kind: "public_intelligence" }
-  | { kind: "premium_contacts" }
+  | { kind: "contact_unlock" }
   | { kind: "premium_intelligence" }
+  | { kind: "pending_config" }
   | { kind: "save_limit" }
   | { kind: "engage_limit" }
   | { kind: "trip_limit" }
@@ -187,20 +192,38 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "hotel.premium_contacts",
     module: "Hotel Detail",
     summary:
-      "Premium contacts use the same entitlement answer as premium intelligence. Payment does not unlock them.",
-    routes: ["/app/hotels/[id]"],
+      "A contact email is visible after this user unlocks that hotel, or to admin/editor. A Pass or Pro row does not reveal it. One configured credit is one unlock. Payment is not the unlock.",
+    routes: ["/app/hotels/[id]", "/app/onboarding/hotels"],
     sourceFiles: [
       "src/app/(app)/app/hotels/[id]/page.tsx",
       "src/lib/hotels/queries.ts",
       "src/lib/entitlements/gate.ts",
       "src/components/hotels/contact-card.tsx",
+      "src/components/contacts/unlock-contact.tsx",
+      "src/lib/credits/actions.ts",
     ],
-    serverActions: [],
-    rpcs: [PREMIUM_HOTEL_RPC],
-    rule: { kind: "premium_scoped" },
+    serverActions: ["unlockHotelContactAction", "reportContactAction"],
+    rpcs: ["has_unlocked_hotel_contact", "unlock_hotel_contact"],
+    rule: { kind: "credit_unlock" },
     anon: "deny",
-    enforcement: { kind: "premium_contacts" },
-    sources: ["PRD §5.1", "PRD §5.3.1", "D056", "PERMISSIONS.md §7"],
+    enforcement: { kind: "contact_unlock" },
+    sources: ["D100", "D103", "D104", "PERMISSIONS.md §7"],
+  },
+  {
+    id: "credits.pending_numbers",
+    module: "Credits",
+    summary:
+      "Free credits, Pro and Pro+ monthly credits, pack sizes, cache TTL, and the not-found charge are pending owner config. Placeholders live in CREDITS_CONFIG and credit_config.",
+    routes: [],
+    sourceFiles: ["src/lib/credits/config.ts"],
+    serverActions: [],
+    rpcs: [],
+    rule: { kind: "undecided" },
+    anon: "deny",
+    enforcement: { kind: "pending_config" },
+    question:
+      "What are the Free credit total, Pro and Pro+ monthly credits, pack sizes, cache TTL, and the not-found charge? The running values are placeholders, not a price.",
+    sources: ["D101"],
   },
   {
     id: "pipeline.save",
@@ -507,8 +530,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
   {
     id: "profile.personal_analytics",
     module: "Profile",
-    summary:
-      "Personal counts are the caller's recorded outcomes and are Free. D097 and D098.",
+    summary: "Personal counts are the caller's recorded outcomes and are Free. D097 and D098.",
     routes: ["/app/profile"],
     sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/queries.ts"],
     serverActions: [],
@@ -683,8 +705,12 @@ export const INVENTORY: readonly InventoryEntry[] = [
     summary:
       "Admin and editor are staff roles. Creator Pro does not grant hotel writes, entitlement writes, or the admin shell.",
     routes: ["/admin"],
-    sourceFiles: ["src/app/admin/page.tsx", "src/app/admin/layout.tsx"],
-    serverActions: [],
+    sourceFiles: [
+      "src/app/admin/page.tsx",
+      "src/app/admin/layout.tsx",
+      "src/components/admin/credit-admin.tsx",
+    ],
+    serverActions: ["adminGrantCreditsAction", "reviewContactReportAction"],
     rpcs: [],
     rule: { kind: "staff_role" },
     anon: "deny",
@@ -744,6 +770,8 @@ export interface AccessContext {
   owner: boolean;
   /** Caller is admin or editor. A Pro entitlement does not set this. */
   staff: boolean;
+  /** This caller owns a contact unlock for the hotel in question. */
+  creditUnlocked: boolean;
 }
 
 export type AccessDecision = "allow" | "deny" | "undecided";
@@ -770,6 +798,8 @@ export function decideAccess(entry: InventoryEntry, ctx: AccessContext): AccessD
       // A creator context never is the grant. Coverage, including Pro, does not
       // turn a purchase into access.
       return "deny";
+    case "credit_unlock":
+      return ctx.creditUnlocked || ctx.staff ? "allow" : "deny";
     case "undecided":
       return "undecided";
     default: {

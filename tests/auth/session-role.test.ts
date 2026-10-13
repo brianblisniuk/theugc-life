@@ -123,8 +123,16 @@ d("session role resolution", () => {
     }
     await adminQuery("update public.users set role = 'editor' where id = $1", [U.editor]);
     await adminQuery("update public.users set role = 'admin' where id = $1", [U.admin]);
-    // The rowless user is authenticated but has no application row.
-    await adminQuery("delete from public.users where id = $1", [U.rowless]);
+    // The rowless user is authenticated but has no application row. Signup also
+    // wrote an append-only Free grant, so this fixture removes that row with
+    // the guard trigger off and turns the guard back on. This is not erasure.
+    await adminQuery("alter table public.credit_ledger disable trigger credit_ledger_no_delete");
+    try {
+      await adminQuery("delete from public.credit_ledger where user_id = $1", [U.rowless]);
+      await adminQuery("delete from public.users where id = $1", [U.rowless]);
+    } finally {
+      await adminQuery("alter table public.credit_ledger enable trigger credit_ledger_no_delete");
+    }
   }, 60_000);
 
   afterAll(async () => {

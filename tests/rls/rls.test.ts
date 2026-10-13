@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   adminQuery,
+  commitAs,
   hasTestDb,
   queryAs,
   setupDatabase,
@@ -38,7 +39,7 @@ afterAll(async () => {
   await teardownDatabase();
 });
 
-d("hotel_contacts access (PERMISSIONS.md §7, §13.1–§13.6)", () => {
+d("hotel_contacts access (PERMISSIONS.md §7, D100)", () => {
   it("anonymous cannot select any hotel contact", async () => {
     const res = await queryAs({ role: "anon" }, "select id from public.hotel_contacts");
     expect(denied(res)).toBe(true);
@@ -52,17 +53,17 @@ d("hotel_contacts access (PERMISSIONS.md §7, §13.1–§13.6)", () => {
     expect(res.rows).toHaveLength(0);
   });
 
-  it("destination user CAN select entitled (Bali) contact", async () => {
+  it("a destination pass does not reveal the entitled hotel's contact", async () => {
     const res = await queryAs(
       { role: "authenticated", sub: USERS.destBali },
-      "select id from public.hotel_contacts where hotel_id = $1",
+      "select id, email from public.hotel_contacts where hotel_id = $1",
       [HOTEL.bali],
     );
-    expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
+    expect(res.rows).toHaveLength(0);
+    expect(JSON.stringify(res)).not.toContain("bali@h.com");
   });
 
-  it("destination user CANNOT select non-entitled (Ibiza) contact", async () => {
+  it("a destination pass does not reveal a different destination's contact", async () => {
     const res = await queryAs(
       { role: "authenticated", sub: USERS.destBali },
       "select id from public.hotel_contacts where hotel_id = $1",
@@ -71,31 +72,76 @@ d("hotel_contacts access (PERMISSIONS.md §7, §13.1–§13.6)", () => {
     expect(res.rows).toHaveLength(0);
   });
 
-  it("parent (Bali) pass covers descendant (Ubud) hotel contact", async () => {
+  it("a parent pass does not reveal a descendant hotel's contact", async () => {
     const res = await queryAs(
       { role: "authenticated", sub: USERS.destBali },
       "select id from public.hotel_contacts where hotel_id = $1",
       [HOTEL.ubud],
     );
-    expect(res.error).toBeNull();
-    expect(res.rows).toHaveLength(1);
+    expect(res.rows).toHaveLength(0);
   });
 
-  it("pro user can select worldwide contacts", async () => {
+  it("pro does not reveal worldwide contacts", async () => {
     const res = await queryAs(
       { role: "authenticated", sub: USERS.pro },
-      "select id from public.hotel_contacts",
+      "select id, email from public.hotel_contacts",
     );
-    expect(res.error).toBeNull();
-    expect(res.rows.length).toBe(3);
+    expect(res.rows).toHaveLength(0);
+    expect(JSON.stringify(res)).not.toContain("@h.com");
   });
 
-  it("revoked entitlement removes premium contact access (§13.15)", async () => {
+  it("revoked entitlement still has no contact rows", async () => {
     const res = await queryAs(
       { role: "authenticated", sub: USERS.revoked },
       "select id from public.hotel_contacts",
     );
     expect(res.rows).toHaveLength(0);
+  });
+
+  it("staff can read contacts without an unlock", async () => {
+    for (const sub of [USERS.admin, USERS.editor]) {
+      const res = await queryAs(
+        { role: "authenticated", sub },
+        "select id from public.hotel_contacts where hotel_id = $1",
+        [HOTEL.bali],
+      );
+      expect(res.error, sub).toBeNull();
+      expect(res.rows, sub).toHaveLength(1);
+    }
+  });
+
+  it("an unlock lets that user read the contact, and the other user cannot", async () => {
+    const [stored] = await adminQuery<{ email: string }>(
+      "select email from public.hotel_contacts where hotel_id = $1",
+      [HOTEL.bali],
+    );
+    await adminQuery(
+      `insert into public.contact_cache (hotel_id, email, source, status, last_verified_at)
+       values ($1, $2, 'owner_import', 'found', now())
+       on conflict (hotel_id) do nothing`,
+      [HOTEL.bali, stored!.email],
+    );
+    const opened = await commitAs<{ result: { status: string; email: string | null } }>(
+      { role: "authenticated", sub: USERS.free },
+      "select public.unlock_hotel_contact($1, 'rls-unlock-bali') as result",
+      [HOTEL.bali],
+    );
+    expect(opened.error).toBeNull();
+    expect(opened.rows[0]?.result.status).toBe("unlocked");
+    expect(opened.rows[0]?.result.email).toBe(stored!.email);
+    const visible = await queryAs<{ email: string }>(
+      { role: "authenticated", sub: USERS.free },
+      "select email from public.hotel_contacts where hotel_id = $1",
+      [HOTEL.bali],
+    );
+    expect(visible.rows.map((row) => row.email)).toEqual([stored!.email]);
+    const other = await queryAs(
+      { role: "authenticated", sub: USERS.pro },
+      "select email from public.hotel_contacts where hotel_id = $1",
+      [HOTEL.bali],
+    );
+    expect(other.rows).toEqual([]);
+    expect(JSON.stringify(other)).not.toContain(stored!.email);
   });
 });
 
@@ -218,7 +264,7 @@ d("editor boundaries (PERMISSIONS.md §6, §13.12)", () => {
 });
 
 d("expiry/retention (PERMISSIONS.md §8, §13.13)", () => {
-  it("expired pass loses premium contact access", async () => {
+  it("expired pass still has no contact rows", async () => {
     const res = await queryAs(
       { role: "authenticated", sub: USERS.expired },
       "select id from public.hotel_contacts",

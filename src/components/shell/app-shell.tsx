@@ -28,15 +28,25 @@ function mobileClass(active: boolean): string {
   );
 }
 
+function CreditCounter({ label }: { label: string }) {
+  return (
+    <p data-testid="credit-balance" className="text-sm font-semibold text-text">
+      {label}
+    </p>
+  );
+}
+
 function ShellChrome({
   isStaff,
   initials,
+  creditLabel,
   pathname,
   origin,
   navKey,
 }: {
   isStaff: boolean;
   initials: string;
+  creditLabel: string;
   pathname: string;
   origin: ReturnType<typeof parseHotelOrigin> | null;
   navKey: string;
@@ -64,31 +74,34 @@ function ShellChrome({
               );
             })}
           </nav>
-          <div className="ml-auto hidden items-center gap-3 md:flex">
-            {UTILITY_NAV.map((item) => {
-              const active = item.href === utility;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={active ? "text-sm font-semibold text-text" : "text-sm text-[#555]"}
-                >
-                  {item.label}
+          <div className="ml-auto flex items-center gap-3">
+            <CreditCounter label={creditLabel} />
+            <div className="hidden items-center gap-3 md:flex">
+              {UTILITY_NAV.map((item) => {
+                const active = item.href === utility;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={active ? "text-sm font-semibold text-text" : "text-sm text-[#555]"}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+              {isStaff ? (
+                <Link href="/admin" className="text-sm text-[#555]">
+                  Admin
                 </Link>
-              );
-            })}
-            {isStaff ? (
-              <Link href="/admin" className="text-sm text-[#555]">
-                Admin
-              </Link>
-            ) : null}
-            <SignOutButton />
-            <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent">
-              {initials}
-            </span>
+              ) : null}
+              <SignOutButton />
+              <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent">
+                {initials}
+              </span>
+            </div>
           </div>
-          <details key={navKey} className="relative ml-auto md:hidden">
+          <details key={navKey} className="relative md:hidden">
             <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent [&::-webkit-details-marker]:hidden">
               {initials}
             </summary>
@@ -133,10 +146,12 @@ function ShellChrome({
 function ShellHeader({
   isStaff,
   initials,
+  creditLabel,
   pathname,
 }: {
   isStaff: boolean;
   initials: string;
+  creditLabel: string;
   pathname: string;
 }) {
   const search = useSearchParams();
@@ -153,6 +168,7 @@ function ShellHeader({
     <ShellChrome
       isStaff={isStaff}
       initials={initials}
+      creditLabel={creditLabel}
       pathname={pathname}
       origin={origin}
       navKey={navKey}
@@ -163,9 +179,11 @@ function ShellHeader({
 function ShellFrame({
   isStaff,
   initials,
+  creditLabel,
 }: {
   isStaff: boolean;
   initials: string;
+  creditLabel: string;
 }) {
   const pathname = usePathname() || "/app";
   return (
@@ -174,13 +192,19 @@ function ShellFrame({
         <ShellChrome
           isStaff={isStaff}
           initials={initials}
+          creditLabel={creditLabel}
           pathname={pathname}
           origin={null}
           navKey={pathname}
         />
       }
     >
-      <ShellHeader isStaff={isStaff} initials={initials} pathname={pathname} />
+      <ShellHeader
+        isStaff={isStaff}
+        initials={initials}
+        creditLabel={creditLabel}
+        pathname={pathname}
+      />
     </Suspense>
   );
 }
@@ -192,15 +216,17 @@ function ShellFrame({
 export function AppShell({
   isStaff,
   initials,
+  creditLabel,
   children,
 }: {
   isStaff: boolean;
   initials: string;
+  creditLabel: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex min-h-dvh flex-col bg-white text-[#111]">
-      <ShellFrame isStaff={isStaff} initials={initials} />
+      <ShellFrame isStaff={isStaff} initials={initials} creditLabel={creditLabel} />
       <main className="w-full flex-1 px-4 py-6 pb-24 md:px-10 md:py-7 md:pb-8">{children}</main>
     </div>
   );

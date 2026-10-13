@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { requireUser } from "@/lib/auth/guards";
+import { creditsLeftLabel } from "@/lib/credits/config";
+import { getOwnCreditBalance } from "@/lib/credits/queries";
 
 /**
  * Authenticated app shell. Route-group middleware already gates authentication;
@@ -11,6 +13,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isStaff = session.role === "admin" || session.role === "editor";
   const letters = (session.email ?? "").split("@")[0]?.replace(/[^a-z]/gi, "") ?? "";
   const initials = letters.slice(0, 2).toUpperCase() || "•";
+  const credits = await getOwnCreditBalance();
+  const creditLabel =
+    credits.status === "ok" ? creditsLeftLabel(credits.balance) : "Credits unavailable";
 
-  return <AppShell isStaff={isStaff} initials={initials}>{children}</AppShell>;
+  return (
+    <AppShell isStaff={isStaff} initials={initials} creditLabel={creditLabel}>
+      {children}
+    </AppShell>
+  );
 }

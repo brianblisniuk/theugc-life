@@ -1,10 +1,9 @@
 /**
  * First-value hotel cards (D095).
  *
- * A verified name and role are shown only when the caller is already allowed
- * to read that hotel's contacts. Otherwise the card says "Contacto genérico"
- * and does not carry an email. Ordering by "has a verified contact" is the
- * same rule: a denied read does not sort a hotel first.
+ * A verified name and role are shown only when this user already unlocked the
+ * hotel. Otherwise the card says "Contacto genérico" and does not carry an
+ * email. The card never spends a credit by being rendered.
  */
 import type { PublicCardSignal } from "@/lib/hotels/card-signal";
 
@@ -80,4 +79,12 @@ export function rankOnboardingHotels<T extends RankedHotel>(hotels: readonly T[]
 }
 
 /** The card model has no email field. A test fails if one is added. */
-export const ONBOARDING_CARD_KEYS = ["id", "name", "zone", "contact", "context", "verified", "signalScore"] as const;
+export const ONBOARDING_CARD_KEYS = [
+  "id",
+  "name",
+  "zone",
+  "contact",
+  "context",
+  "verified",
+  "signalScore",
+] as const;

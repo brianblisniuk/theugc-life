@@ -12,6 +12,7 @@ import { workspaceLimit, type Enforcement } from "@/lib/entitlements/inventory";
 import { INVENTORY } from "@/lib/entitlements/inventory";
 import {
   adminQuery,
+  commitAs,
   hasTestDb,
   queryAs,
   setupDatabase,
@@ -319,7 +320,85 @@ d("E04 entitlement inventory enforcement", () => {
       return;
     }
 
-    if (enforcement.kind === "premium_contacts" || enforcement.kind === "premium_intelligence") {
+    if (enforcement.kind === "contact_unlock") {
+      const bali = baliHotels[0]!;
+      await adminQuery(
+        `insert into public.contact_cache (hotel_id, email, source, status, last_verified_at)
+         values ($1, $2, 'owner_import', 'found', now())
+         on conflict (hotel_id) do nothing`,
+        [bali, CONTACT],
+      );
+      for (const name of ["free", "pass", "pro", "expired", "revoked", "other"] as const) {
+        const rows = await queryAs<{ email: string }>(
+          { role: "authenticated", sub: ACTORS[name].userId },
+          "select email from public.hotel_contacts where hotel_id = $1",
+          [bali],
+        );
+        expect(rows.rows, id).toEqual([]);
+        expect(JSON.stringify(rows), id).not.toContain(CONTACT);
+      }
+      const anonRows = await queryAs(
+        { role: "anon", sub: null },
+        "select email from public.hotel_contacts where hotel_id = $1",
+        [bali],
+      );
+      expect(nothing(anonRows), id).toBe(true);
+      expect(JSON.stringify(anonRows), id).not.toContain(CONTACT);
+      const unlocked = await commitAs<{ result: { status: string; email: string | null } }>(
+        { role: "authenticated", sub: U.free },
+        "select public.unlock_hotel_contact($1, 'enforcement-unlock') as result",
+        [bali],
+      );
+      expect(unlocked.error, id).toBeNull();
+      expect(unlocked.rows[0]?.result.status, id).toBe("unlocked");
+      expect(unlocked.rows[0]?.result.email, id).toBe(CONTACT);
+      const visible = await queryAs<{ email: string }>(
+        { role: "authenticated", sub: U.free },
+        "select email from public.hotel_contacts where hotel_id = $1",
+        [bali],
+      );
+      expect(visible.rows.map((row) => row.email), id).toEqual([CONTACT]);
+      const stillHidden = await queryAs<{ email: string }>(
+        { role: "authenticated", sub: U.pro },
+        "select email from public.hotel_contacts where hotel_id = $1",
+        [bali],
+      );
+      expect(stillHidden.rows, id).toEqual([]);
+      expect(JSON.stringify(stillHidden), id).not.toContain(CONTACT);
+      return;
+    }
+
+    if (enforcement.kind === "pending_config") {
+      const { CREDITS_CONFIG } = await import("@/lib/credits/config");
+      const rows = await adminQuery<{
+        free_credits: number;
+        pro_monthly_credits: number;
+        pro_plus_monthly_credits: number;
+        unlock_cost: number;
+        charge_on_not_found: boolean;
+        cache_ttl_days: number;
+        pack_sizes: number[];
+      }>(
+        "select free_credits, pro_monthly_credits, pro_plus_monthly_credits, unlock_cost, charge_on_not_found, cache_ttl_days, pack_sizes from public.credit_config",
+      );
+      expect(rows[0], id).toEqual({
+        free_credits: CREDITS_CONFIG.freeCredits,
+        pro_monthly_credits: CREDITS_CONFIG.planMonthlyCredits.pro,
+        pro_plus_monthly_credits: CREDITS_CONFIG.planMonthlyCredits.proPlus,
+        unlock_cost: CREDITS_CONFIG.unlockCost,
+        charge_on_not_found: CREDITS_CONFIG.chargeOnNotFound,
+        cache_ttl_days: CREDITS_CONFIG.cacheTtlDays,
+        pack_sizes: [...CREDITS_CONFIG.packSizes],
+      });
+      const blocked = await queryAs(
+        { role: "authenticated", sub: U.pro },
+        "update public.credit_config set unlock_cost = 0",
+      );
+      expect(blocked.error, id).not.toBeNull();
+      return;
+    }
+
+    if (enforcement.kind === "premium_intelligence") {
       const bali = baliHotels[0]!;
       expect(await premium(actor("anon"), bali), id).toBe(false);
       expect(await premium(actor("free"), bali), id).toBe(false);
@@ -330,27 +409,7 @@ d("E04 entitlement inventory enforcement", () => {
       expect(await premium(actor("pro"), bali), id).toBe(true);
       expect(await premium(actor("pro"), ibizaHotel), id).toBe(true);
 
-      if (enforcement.kind === "premium_contacts") {
-        const freeRows = await queryAs<{ email: string }>(
-          { role: "authenticated", sub: U.free },
-          "select email from public.hotel_contacts where hotel_id = $1",
-          [bali],
-        );
-        expect(freeRows.rows).toEqual([]);
-        const anonRows = await queryAs(
-          { role: "anon", sub: null },
-          "select email from public.hotel_contacts where hotel_id = $1",
-          [bali],
-        );
-        expect(nothing(anonRows)).toBe(true);
-        expect(JSON.stringify(anonRows)).not.toContain(CONTACT);
-        const proRows = await queryAs<{ email: string }>(
-          { role: "authenticated", sub: U.pro },
-          "select email from public.hotel_contacts where hotel_id = $1",
-          [bali],
-        );
-        expect(proRows.rows.map((row) => row.email)).toEqual([CONTACT]);
-      } else {
+      {
         const freeView = await queryAs(
           { role: "authenticated", sub: U.free },
           "select hotel_id from public.hotel_premium_intelligence where hotel_id = $1",

@@ -3879,8 +3879,9 @@ and does not render it.
 
 Status: **Accepted (Brian, 13 Oct 2026).** Plans limit the written D056
 quotas: saved hotels, engaged pipeline items, and active trips, counting
-only outside-coverage rows. Premium intelligence and premium contacts stay
-Pass inside the entitled destination and Pro worldwide.
+only outside-coverage rows. Premium intelligence stays Pass inside the
+entitled destination and Pro worldwide. D100 supersedes the contact half
+of that sentence: a contact is a credit unlock, not a Pass or Pro grant.
 
 Every inventory entry that was undecided is now Free:
 
@@ -4017,5 +4018,79 @@ It appends a decision and does not change the aggregate.
   `authenticated`, and `service_role`. Writes go through security-definer
   functions with an empty search path. The service-role key stays off the
   client.
-- No change to D056 premium contacts or to migration `0055`.
+- No change to D056 premium contacts or to migration `0055`. D100, in a
+  later block, is the contact-access change. This decision does not make it.
+
+## D100 — Contact credits (canon v1.1)
+
+Status: **Accepted** for the access rule. The owner's canonical document
+(creator credits, v1.1) overrides earlier contact-gating sentences where
+they conflict, including the contact half of D056, D098, and PERMISSIONS.md
+§7. Premium intelligence stays on `has_premium_hotel_access`.
+
+One credit unlocks the email contact of one hotel for one user. Another
+user's Pass, Pro, or unlock does not reveal it. Opening a hotel this user
+already unlocked costs nothing. A cache hit still costs this user the
+configured unlock cost. The provider runs only on a cache miss. Access is
+the ledger and the unlock row. A payment, a subscription, or a webhook body
+is not an unlock (D007).
+
+The provider sits behind `ContactProvider`. Only the fake provider is
+wired. `CONTACT_PROVIDER` unset or `fake` starts. Any other value refuses
+to start. This block performs no real provider call, no real charge, and
+no payment integration.
+
+The ledger is append-only and idempotent per `(user_id, idempotency_key)`.
+Unlock takes a per-user transaction lock. No role may update or delete a
+ledger row. The service-role key stays off the client.
+
+Courtesy credit for a bad contact is a refund of that unlock, not a reward
+for contributing data (D001 is unchanged).
+
+## D101 — Credit numbers are pending config
+
+Status: **Proposed.** The owner has not set the amounts. The running values
+are placeholders so the pilot can exercise the ledger. They are not a price.
+
+| Setting | Placeholder |
+|---|---|
+| Free credits, once, not monthly | 15 |
+| Pro monthly credits | 50 |
+| Pro+ monthly credits | 150 |
+| Pack sizes | 10, 25, 50 |
+| Cache TTL | 365 days |
+| Charge when the provider finds nothing | no |
+| Unlock cost | 1 |
+
+Both `credit_config` and `CREDITS_CONFIG` carry these values. A test fails
+if they diverge. The unlock function reads the table. A monthly grant job
+and pack checkout are not in this block.
+
+## D102 — Pass and Gmail gates stay
+
+Status: **Accepted** for this block. D051, D056, and D098 still govern
+Destination Pass, Creator Pro, and Gmail. Gmail stays available on Free
+until a later block. This block does not remove Pass. Premium intelligence
+still uses `has_premium_hotel_access`.
+
+## D103 — Imported contacts are cache rows
+
+Status: **Accepted.** Existing `hotel_contacts` emails are seeded into
+`contact_cache` as `owner_import`. Unlocking one costs the configured
+unlock cost and does not call the provider. Prior Pass or Pro visibility
+is not grandfathered. A creator who could see a contact because of a plan
+cannot see it until they unlock it.
+
+## D104 — Onboarding does not spend credits
+
+Status: **Accepted.** Rendering an onboarding card does not unlock a hotel
+and does not debit the ledger. The card shows "Unlock contact (1 credit)"
+when the cost is 1, or "Already unlocked" when this user owns it. The card
+does not include the email.
+
+## D105 — Pilot credits are admin grants
+
+Status: **Accepted.** Credits in this pilot are granted by an admin action.
+There is no checkout. The out-of-credits state says packs are not for sale
+and that an admin can grant credits. It does not link to billing.
 

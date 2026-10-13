@@ -705,20 +705,27 @@ are not edited.
 `621bc557762a70242b08a02afca94bca6c08f08d`. Migration
 `0054_grant_handle_new_user_to_auth_admin.sql`. D092–D094 stay Proposed.
 
-**UX01 is PR #65** on `cursor/ux01-sunlit-creator-os-79af`. Migration
+**UX01 is merged** as PR #65, merge
+`9a449239df1ebd859d4876c35e83e35007cf41af`. Migration
 `0055_onboarding_and_public_profile.sql`. D095–D098 are Accepted (Brian,
 13 Oct 2026). Direction A is the shell. The first useful minute is a
 catalog destination and a saved hotel. The social profile is off until the
 creator turns it on. Features without a written tier are Free. D056 quotas
-and premium hotel data stay. D089–D091 are unchanged. `0051`–`0054` are
-not edited. Do not merge.
+stay. D100 later changes contact access. D089–D091 are unchanged.
+`0051`–`0054` are not edited.
 
-**C02–C05 are PR #67** on `cursor/c02-c05-network-intelligence-a035`,
-from `main` `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66).
-Migration `0056_network_intelligence_facts.sql`. D077 is Accepted. D099
-records the answers. The public aggregate is anonymous. Gmail enters only
-after Sí. Provenance and the pilot measures are admin-only. `0055` is not
-edited. Do not merge.
+**C02–C05 are merged** as PR #67, merge
+`9a747b217a8c560f08c87bed1b2542f4521ac25e`, from `main`
+`502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66). Migration
+`0056_network_intelligence_facts.sql`. D077 is Accepted. D099 records the
+answers. The public aggregate is anonymous. Gmail enters only after Sí.
+Provenance and the pilot measures are admin-only. `0055` is not edited.
+
+**F05 contact credits** (canon v1.1, not the agency F01–F04 rows below) is
+this block. Migrations `0057_contact_credits.sql` and
+`0058_contact_cache_seed_and_free_grant.sql`. D100–D105. Contacts follow
+an unlock. Open amounts stay pending config (D101). Agency F01–F04 stay
+planned. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

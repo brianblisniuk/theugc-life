@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66, DATA01, 2026-10-13)  
-**State:** AWAITING_CI. C02–C05 network intelligence. PR #67. Branch `cursor/c02-c05-network-intelligence-a035`. D077 is Accepted. D099. Migration `0056`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** C02–C05. DATA01 is merged. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
+**Last verified main:** `9a747b217a8c560f08c87bed1b2542f4521ac25e` (merge of PR #67, C02–C05, 2026-10-13)  
+**State:** AWAITING_CI. F05 contact credits. Branch `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057` and `0058`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** F05 contact credits. C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -43,10 +43,11 @@
 - PR #64 — E05 E2E, observability, launch checklist, migration `0054` — `621bc557762a70242b08a02afca94bca6c08f08d`
 - PR #65 — UX01 Sunlit Creator OS, D095–D098 Accepted, migration `0055` — `9a449239df1ebd859d4876c35e83e35007cf41af`
 - PR #66 — DATA01 hotel catalog importer — `502ae69ecb192dc3678a27619a557bb1012ff0e5`
+- PR #67 — C02–C05 network intelligence, D099, migration `0056` — `9a747b217a8c560f08c87bed1b2542f4521ac25e`
 
 ## Next action
-- C02–C05 network intelligence is PR #67 on branch `cursor/c02-c05-network-intelligence-a035`. State is AWAITING_CI. D077 is Accepted. D099. Migration `0056`. A Gmail deletion purge and the mailbox `deleted` state remove that mailbox's Gmail facts and confirmations. Manual facts stay. `expected_head` stays null. Do not merge from automation.
-- DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055`.
+- F05 contact credits is the open block on `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057` and `0058`. Open amounts stay pending config. `expected_head` stays null. Do not merge from automation.
+- C02–C05 is merged (PR #67, `9a747b2`). DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055` or `0056`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.
 - E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.

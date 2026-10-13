@@ -1712,6 +1712,8 @@ No free-text hotel review system in V1.
 
 ## 14. Contact Freshness and Verification
 
+**D100 (13 Oct 2026).** Seeing a contact is a per-user credit unlock, not a Destination Pass or Creator Pro entitlement. Freshness fields below stay. Open credit amounts are pending config (D101). This section is not a price and not a provider contract.
+
 Every premium contact should support:
 
 - verified_at

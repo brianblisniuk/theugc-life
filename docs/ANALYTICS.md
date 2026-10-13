@@ -73,7 +73,10 @@ Properties may include UTM/referrer and chosen destination; never private notes.
 Avoid firing excessive high-volume map events without sampling/debouncing.
 
 ### Premium
-- `contact_unlock_clicked`
+- `contact_unlock_clicked` — the creator submitted the unlock control
+- `credit_unlock` — the unlock succeeded (`unlocked` or `already_unlocked`)
+- `credit_insufficient` — the balance could not cover the configured cost
+- `contact_report` — the creator filed a contact report
 - `upgrade_modal_viewed`
 - `checkout_started`
 - `purchase_completed`
