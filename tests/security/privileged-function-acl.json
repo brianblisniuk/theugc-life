@@ -1641,6 +1641,56 @@
   },
   {
     "schema": "public",
+    "name": "enforce_creator_portfolio_entry",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_creator_portfolio_template",
+    "args": "p_template text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "publish_creator_portfolio_entry",
+    "args": "p_collaboration_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "dismiss_creator_portfolio_entry",
+    "args": "p_collaboration_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "withdraw_creator_portfolio_entry",
+    "args": "p_collaboration_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "enforce_collaboration_contract_scope",
     "args": "",
     "searchPath": "\"\"",

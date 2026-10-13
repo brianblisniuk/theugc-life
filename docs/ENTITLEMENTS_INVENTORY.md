@@ -65,6 +65,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `profile.share_link` | Profile | owner, Free (D098). D089–D091 unchanged |
 | `profile.share_public` | Profile | public page, no plan (D098) |
 | `profile.public_card` | Profile | public page when the creator turned it on (D096, D097, D098) |
+| `profile.portfolio` | Profile | owner, Free (D125, D098). Layout and explicit approval. Not the social profile |
 | `billing.own` | Billing | owner reads entitlement rows only |
 | `commerce.grant` | Billing | system grant. A purchase is not access |
 | `marketing.public` | Marketing | public page |
@@ -87,6 +88,10 @@ Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a
 ## D098 — features without a written tier are Free
 
 D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written tier. Those features are Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence and the D056 workspace limits are unchanged. D100 changes contacts: a Pass or Pro row is not an email. `questionsForBrian()` returns one question, `credits.pending_numbers`. `profile.public_card` is the social profile at `/creators/[username]`.
+
+## D125 — the travel portfolio is owner-private and Free
+
+`profile.portfolio` is the layout and the per-collaboration approval. No written tier assigns it to Pass or Pro, so it is Free (D098) and still owner-only. A Pro row does not read another creator’s drafts. The hotel share page stays `profile.share_public`. Publishing an entry does not turn on the social profile.
 
 ## D114 — agreement drafts are owner-private and Free
 

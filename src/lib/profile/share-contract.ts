@@ -92,6 +92,19 @@ export interface PublicContentExample {
   href: string;
 }
 
+export interface PublicPortfolioEntry {
+  hotelName: string;
+  destination: string;
+  status: string;
+  typeLabel: string;
+  when: string;
+}
+
+export interface PublicPortfolio {
+  template: "journey" | "destinations" | "highlights";
+  entries: PublicPortfolioEntry[];
+}
+
 export interface PublicShareView {
   bio?: string;
   niche?: string;
@@ -99,6 +112,7 @@ export interface PublicShareView {
   audience?: { followers: string; engagement: string };
   collaborations?: PublicCollaboration[];
   examples?: PublicContentExample[];
+  portfolio?: PublicPortfolio;
 }
 
 export type PublicShareLoad =
@@ -188,6 +202,24 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+const PORTFOLIO_STATUS_LABELS: Record<string, string> = {
+  agreed: "Agreed",
+  scheduled: "Scheduled",
+  active: "Active",
+  completed: "Completed",
+};
+
+const PORTFOLIO_TEMPLATES = new Set(["journey", "destinations", "highlights"]);
+
+const PORTFOLIO_ENTRY_KEYS = [
+  "hotel_name",
+  "destination_name",
+  "collaboration_type",
+  "status",
+  "start_date",
+  "end_date",
+] as const;
+
 const TYPE_LABELS: Record<string, string> = {
   stay: "Stay",
   product: "Product",
@@ -271,6 +303,52 @@ function socialLinks(value: unknown): PublicSocialLink[] | null {
   return links;
 }
 
+function whenLabel(start: string | null, end: string | null): string {
+  if (start && end) return `${start} – ${end}`;
+  return start || end || "Unknown";
+}
+
+function mapPortfolio(value: unknown): PublicPortfolio | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (Object.keys(row).sort().join() !== "entries,template") return null;
+  if (typeof row.template !== "string" || !PORTFOLIO_TEMPLATES.has(row.template)) return null;
+  if (!Array.isArray(row.entries) || row.entries.length === 0) return null;
+  const entries: PublicPortfolioEntry[] = [];
+  for (const raw of row.entries) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const item = raw as Record<string, unknown>;
+    const keys = Object.keys(item).sort();
+    const expected = [...PORTFOLIO_ENTRY_KEYS].sort();
+    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+      return null;
+    }
+    if (banned(item)) return null;
+    if (typeof item.hotel_name !== "string" || !item.hotel_name.trim()) return null;
+    const destination = textOrNull(item.destination_name);
+    if (destination === "bad") return null;
+    if (typeof item.status !== "string" || !PORTFOLIO_STATUS_LABELS[item.status]) return null;
+    const type =
+      item.collaboration_type === null
+        ? "Unknown"
+        : typeof item.collaboration_type === "string"
+          ? TYPE_LABELS[item.collaboration_type]
+          : undefined;
+    if (!type) return null;
+    const start = dateOrNull(item.start_date);
+    const end = dateOrNull(item.end_date);
+    if (start === "bad" || end === "bad") return null;
+    entries.push({
+      hotelName: item.hotel_name.trim(),
+      destination: destination ?? "Unknown",
+      status: PORTFOLIO_STATUS_LABELS[item.status]!,
+      typeLabel: type,
+      when: whenLabel(start, end),
+    });
+  }
+  return { template: row.template as PublicPortfolio["template"], entries };
+}
+
 export function mapPublicShare(payload: unknown): PublicShareLoad {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { status: "error" };
   const row = payload as Record<string, unknown>;
@@ -288,7 +366,7 @@ export function mapPublicShare(payload: unknown): PublicShareLoad {
     return { status: "error" };
   }
   const profile = row.profile as Record<string, unknown>;
-  const allowed = new Set<string>(SHARE_FIELD_KEYS);
+  const allowed = new Set<string>([...SHARE_FIELD_KEYS, "portfolio"]);
   if (Object.keys(profile).some((key) => !allowed.has(key))) return { status: "error" };
 
   const view: PublicShareView = {};
@@ -374,6 +452,12 @@ export function mapPublicShare(payload: unknown): PublicShareLoad {
       });
     }
     view.collaborations = collaborations;
+  }
+
+  if ("portfolio" in profile) {
+    const portfolio = mapPortfolio(profile.portfolio);
+    if (!portfolio) return { status: "error" };
+    view.portfolio = portfolio;
   }
 
   if ("content_examples" in profile) {

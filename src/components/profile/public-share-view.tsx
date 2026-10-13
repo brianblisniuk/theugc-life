@@ -1,4 +1,4 @@
-import type { PublicShareView } from "@/lib/profile/share-contract";
+import type { PublicPortfolio, PublicShareView } from "@/lib/profile/share-contract";
 
 function ExternalLink({ href, children }: { href: string; children: string }) {
   return (
@@ -19,7 +19,8 @@ export function PublicShareView({ view }: { view: PublicShareView }) {
     view.socialLinks === undefined &&
     view.audience === undefined &&
     view.collaborations === undefined &&
-    view.examples === undefined;
+    view.examples === undefined &&
+    view.portfolio === undefined;
 
   return (
     <article className="space-y-8">
@@ -113,6 +114,8 @@ export function PublicShareView({ view }: { view: PublicShareView }) {
         </section>
       ) : null}
 
+      {view.portfolio ? <PortfolioSection portfolio={view.portfolio} /> : null}
+
       {view.examples ? (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-text">Content examples</h2>
@@ -134,5 +137,88 @@ export function PublicShareView({ view }: { view: PublicShareView }) {
         </section>
       ) : null}
     </article>
+  );
+}
+
+function PortfolioSection({ portfolio }: { portfolio: PublicPortfolio }) {
+  const heading =
+    portfolio.template === "destinations"
+      ? "Portfolio by destination"
+      : portfolio.template === "highlights"
+        ? "Portfolio highlights"
+        : "Portfolio journey";
+
+  if (portfolio.template === "journey") {
+    return (
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-text">{heading}</h2>
+        <ol className="space-y-3">
+          {portfolio.entries.map((entry) => (
+            <li
+              key={`${entry.hotelName}-${entry.when}-${entry.status}`}
+              className="space-y-1 rounded-[var(--radius-app)] border border-border bg-surface p-4"
+            >
+              <p className="text-xs font-medium text-muted">{entry.when}</p>
+              <h3 className="text-base font-semibold text-text">{entry.hotelName}</h3>
+              <p className="text-sm text-muted">
+                {entry.destination} · {entry.status}
+                {entry.typeLabel ? ` · ${entry.typeLabel}` : ""}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </section>
+    );
+  }
+
+  if (portfolio.template === "destinations") {
+    const groups: { destination: string; entries: PublicPortfolio["entries"] }[] = [];
+    for (const entry of portfolio.entries) {
+      const last = groups[groups.length - 1];
+      if (last && last.destination === entry.destination) last.entries.push(entry);
+      else groups.push({ destination: entry.destination, entries: [entry] });
+    }
+    return (
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-text">{heading}</h2>
+        {groups.map((group) => (
+          <div key={group.destination} className="space-y-2">
+            <h3 className="text-base font-semibold text-text">{group.destination}</h3>
+            <ul className="space-y-2">
+              {group.entries.map((entry) => (
+                <li key={`${entry.hotelName}-${entry.when}`} className="text-sm text-text">
+                  {entry.hotelName}
+                  <span className="text-muted">
+                    {" "}
+                    · {entry.status} · {entry.when}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold text-text">{heading}</h2>
+      <ul className="space-y-3">
+        {portfolio.entries.map((entry) => (
+          <li
+            key={`${entry.hotelName}-${entry.when}-${entry.status}`}
+            className="space-y-1 rounded-[var(--radius-app)] border border-border bg-surface p-4"
+          >
+            <h3 className="text-xl font-semibold text-text">{entry.hotelName}</h3>
+            <p className="text-sm text-muted">
+              {entry.destination} · {entry.status}
+              {entry.typeLabel ? ` · ${entry.typeLabel}` : ""}
+            </p>
+            <p className="text-xs text-muted">{entry.when}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
