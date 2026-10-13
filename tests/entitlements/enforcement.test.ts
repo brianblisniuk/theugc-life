@@ -681,7 +681,7 @@ d("E04 entitlement inventory enforcement", () => {
     }
 
     if (enforcement.kind === "kept_current") {
-      expect(["undecided", "public_page"]).toContain(
+      expect(["owner_private", "all_tiers", "public_page"]).toContain(
         INVENTORY.find((entry) => entry.id === id)?.rule.kind,
       );
       return;

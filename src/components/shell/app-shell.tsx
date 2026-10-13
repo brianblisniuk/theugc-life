@@ -14,20 +14,29 @@ import {
   parseHotelOrigin,
 } from "@/lib/shell/navigation";
 
-function linkClass(active: boolean, mobile: boolean): string {
-  const size = mobile
-    ? "flex min-h-11 items-center rounded-[var(--radius-app)] px-3 text-sm"
-    : "rounded-[var(--radius-app)] px-3 py-1.5 text-sm";
-  return size + (active ? " bg-surface font-semibold text-text" : " text-muted hover:text-text");
+function primaryClass(active: boolean): string {
+  return (
+    "border-b-[3px] px-3.5 py-2 text-sm font-semibold " +
+    (active ? "border-accent text-text" : "border-transparent text-[#555]")
+  );
+}
+
+function mobileClass(active: boolean): string {
+  return (
+    "flex min-h-11 flex-1 flex-col items-center justify-center px-1 text-[12px] font-semibold " +
+    (active ? "text-text" : "text-[#555]")
+  );
 }
 
 function ShellChrome({
   isStaff,
+  initials,
   pathname,
   origin,
   navKey,
 }: {
   isStaff: boolean;
+  initials: string;
   pathname: string;
   origin: ReturnType<typeof parseHotelOrigin> | null;
   navKey: string;
@@ -35,74 +44,101 @@ function ShellChrome({
   const primary = activePrimaryHref(pathname, origin);
   const utility = activeUtilityHref(pathname);
 
-  const primaryLinks = (mobile: boolean) =>
-    PRIMARY_NAV.map((item) => {
-      const active = item.href === primary;
-      return (
-        <Link
-          key={item.href}
-          href={item.href}
-          aria-current={active ? "page" : undefined}
-          className={linkClass(active, mobile)}
-        >
-          {item.label}
-        </Link>
-      );
-    });
-
-  const utilityLinks = (mobile: boolean) => (
-    <>
-      {UTILITY_NAV.map((item) => {
-        const active = item.href === utility;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            className={linkClass(active, mobile)}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-      {isStaff ? (
-        <Link href="/admin" className={linkClass(false, mobile)}>
-          Admin
-        </Link>
-      ) : null}
-      <SignOutButton />
-    </>
-  );
-
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-6">
+    <>
+      <header className="sticky top-0 z-30 border-b border-[#e6e6e6] bg-white">
+        <div className="flex h-14 items-center gap-3 px-4 md:h-16 md:gap-10 md:px-10">
           <Brand href="/app" />
-          <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
-            {primaryLinks(false)}
+          <nav aria-label="Primary" className="hidden flex-1 items-center gap-1.5 md:flex">
+            {PRIMARY_NAV.map((item) => {
+              const active = item.href === primary;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={primaryClass(active)}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
-        </div>
-        <div className="hidden items-center gap-3 text-sm md:flex">{utilityLinks(false)}</div>
-        <details key={navKey} className="relative md:hidden">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-[var(--radius-app)] px-3 text-sm font-medium text-text [&::-webkit-details-marker]:hidden">
-            Menu
-          </summary>
-          <div className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,18rem)] rounded-[var(--radius-app)] border border-border bg-background p-2">
-            <nav aria-label="Primary" className="flex flex-col">
-              {primaryLinks(true)}
-            </nav>
-            <div className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
-              {utilityLinks(true)}
-            </div>
+          <div className="ml-auto hidden items-center gap-3 md:flex">
+            {UTILITY_NAV.map((item) => {
+              const active = item.href === utility;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={active ? "text-sm font-semibold text-text" : "text-sm text-[#555]"}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+            {isStaff ? (
+              <Link href="/admin" className="text-sm text-[#555]">
+                Admin
+              </Link>
+            ) : null}
+            <SignOutButton />
+            <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent">
+              {initials}
+            </span>
           </div>
-        </details>
-      </div>
-    </header>
+          <details key={navKey} className="relative ml-auto md:hidden">
+            <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent [&::-webkit-details-marker]:hidden">
+              {initials}
+            </summary>
+            <div className="absolute right-0 z-40 mt-2 w-56 rounded-md border border-[#e6e6e6] bg-white p-2">
+              {UTILITY_NAV.map((item) => (
+                <Link key={item.href} href={item.href} className="block px-3 py-2 text-sm">
+                  {item.label}
+                </Link>
+              ))}
+              {isStaff ? (
+                <Link href="/admin" className="block px-3 py-2 text-sm">
+                  Admin
+                </Link>
+              ) : null}
+              <SignOutButton />
+            </div>
+          </details>
+        </div>
+      </header>
+      <nav
+        aria-label="Primary"
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#e6e6e6] bg-white md:hidden"
+      >
+        {PRIMARY_NAV.map((item) => {
+          const active = item.href === primary;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={mobileClass(active)}
+            >
+              <span className={active ? "border-b-[3px] border-accent" : ""}>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </>
   );
 }
 
-function ShellHeader({ isStaff, pathname }: { isStaff: boolean; pathname: string }) {
+function ShellHeader({
+  isStaff,
+  initials,
+  pathname,
+}: {
+  isStaff: boolean;
+  initials: string;
+  pathname: string;
+}) {
   const search = useSearchParams();
   const origin = useMemo(() => {
     if (!pathname.startsWith("/app/hotels/") && pathname !== "/app/hotels") return null;
@@ -113,32 +149,59 @@ function ShellHeader({ isStaff, pathname }: { isStaff: boolean; pathname: string
     return parseHotelOrigin(raw);
   }, [pathname, search]);
   const navKey = `${pathname}?${search.toString()}`;
-  return <ShellChrome isStaff={isStaff} pathname={pathname} origin={origin} navKey={navKey} />;
+  return (
+    <ShellChrome
+      isStaff={isStaff}
+      initials={initials}
+      pathname={pathname}
+      origin={origin}
+      navKey={navKey}
+    />
+  );
 }
 
-function ShellFrame({ isStaff }: { isStaff: boolean }) {
+function ShellFrame({
+  isStaff,
+  initials,
+}: {
+  isStaff: boolean;
+  initials: string;
+}) {
   const pathname = usePathname() || "/app";
   return (
     <Suspense
       fallback={
-        <ShellChrome isStaff={isStaff} pathname={pathname} origin={null} navKey={pathname} />
+        <ShellChrome
+          isStaff={isStaff}
+          initials={initials}
+          pathname={pathname}
+          origin={null}
+          navKey={pathname}
+        />
       }
     >
-      <ShellHeader isStaff={isStaff} pathname={pathname} />
+      <ShellHeader isStaff={isStaff} initials={initials} pathname={pathname} />
     </Suspense>
   );
 }
 
 /**
- * One authenticated shell. Desktop keeps the bar in one row. Below the `md`
- * breakpoint the same links sit in a Menu disclosure with 44px targets.
- * The disclosure remounts closed when the route changes.
+ * Direction A shell. Desktop keeps one row. Narrow screens pin the five
+ * primary items to the bottom. Sun is the active underline, not a status color.
  */
-export function AppShell({ isStaff, children }: { isStaff: boolean; children: React.ReactNode }) {
+export function AppShell({
+  isStaff,
+  initials,
+  children,
+}: {
+  isStaff: boolean;
+  initials: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex min-h-dvh flex-col">
-      <ShellFrame isStaff={isStaff} />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+    <div className="flex min-h-dvh flex-col bg-white text-[#111]">
+      <ShellFrame isStaff={isStaff} initials={initials} />
+      <main className="w-full flex-1 px-4 py-6 pb-24 md:px-10 md:py-7 md:pb-8">{children}</main>
     </div>
   );
 }

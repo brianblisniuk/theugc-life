@@ -1,18 +1,21 @@
 /**
- * First-flow checklist (D082). A failed probe is not an empty step, another
- * creator's row is not progress, and an unfinished Gmail state is not connected.
+ * First useful minute (D095). A failed probe is not an empty step, another
+ * creator's row is not progress, and dismissing the checklist does not mark
+ * a step done. Gmail is not a step.
  */
 import { describe, expect, it } from "vitest";
 
 import {
-  ACTIVATION_COPY,
-  ACTIVATION_HREFS,
+  FIRST_RUN_COPY,
+  FIRST_RUN_HREFS,
   POST_ONBOARDING_PATH,
   gmailProbe,
+  greeting,
   homeView,
   ownedExistence,
+  remainingRequired,
   resolveOwnProfile,
-  type ActivationFacts,
+  type FirstRunFacts,
 } from "@/lib/onboarding/activation";
 
 const AUTH_A = "11111111-1111-1111-1111-111111111111";
@@ -20,12 +23,12 @@ const PROFILE_A = "99999999-9999-9999-9999-999999999999";
 const PROFILE_B = "88888888-8888-8888-8888-888888888888";
 const AUTH_B = "22222222-2222-2222-2222-222222222222";
 
-const OPEN: ActivationFacts = {
-  gmailConfigured: true,
-  gmail: "no",
-  trip: "no",
+const OPEN: FirstRunFacts = {
+  destination: "no",
   saved: "no",
+  pitch: "no",
   followUp: "no",
+  dismissed: false,
 };
 
 describe("activation probes", () => {
@@ -64,7 +67,7 @@ describe("activation probes", () => {
     expect(gmailProbe([], false, "not-a-user")).toBe("error");
   });
 
-  it("another creator's trip does not complete the step, and a failed read is not zero", () => {
+  it("another creator's row does not complete the step, and a failed read is not zero", () => {
     expect(ownedExistence([{ creatorId: PROFILE_B }], false, PROFILE_A)).toBe("no");
     expect(
       ownedExistence([{ creatorId: PROFILE_B }, { creatorId: PROFILE_A }], false, PROFILE_A),
@@ -93,84 +96,74 @@ describe("activation probes", () => {
 });
 
 describe("home checklist", () => {
-  it("sends the creator to the existing account page, not a new OAuth or send scope", () => {
-    expect(POST_ONBOARDING_PATH).toBe("/app");
+  it("asks for a destination and a hotel, and treats the pitch as optional", () => {
+    expect(POST_ONBOARDING_PATH).toBe("/app/onboarding");
     const view = homeView(OPEN);
-    expect(view.kind).toBe("next");
-    if (view.kind !== "next") return;
-    expect(view.current.id).toBe("gmail");
-    expect(view.current.href).toBe("/app/account");
-    expect(view.current.href).toBe(ACTIVATION_HREFS.gmail);
+    expect(view.kind).toBe("checklist");
+    if (view.kind !== "checklist") return;
+    expect(view.steps.map((step) => step.id)).toEqual(["destination", "hotel", "pitch"]);
+    expect(view.steps.map((step) => step.optional)).toEqual([false, false, true]);
+    expect(view.steps.map((step) => step.done)).toEqual([false, false, false]);
+    expect(view.steps[0]?.href).toBe(FIRST_RUN_HREFS.destination);
+    expect(view.steps[1]?.href).toBe(FIRST_RUN_HREFS.hotels);
+    expect(view.remaining).toBe(2);
+    expect(view.followUp).toBeNull();
     const packed = JSON.stringify(view);
     expect(packed).not.toContain("gmail.send");
     expect(packed).not.toContain("/api/integrations/gmail");
-    expect(view.steps.map((step) => step.marker)).toEqual([
-      "Next",
-      "Not yet",
-      "Not yet",
-      "Not yet",
-    ]);
+    expect(packed).not.toContain(FIRST_RUN_COPY.savedToast);
   });
 
-  it("walks gmail, then trip, then discover, and completes save and pipeline together", () => {
-    const afterGmail = homeView({ ...OPEN, gmail: "yes" });
-    expect(afterGmail.kind).toBe("next");
-    if (afterGmail.kind !== "next") return;
-    expect(afterGmail.current.href).toBe("/app/trips");
-
-    const afterTrip = homeView({ ...OPEN, gmail: "yes", trip: "yes" });
-    expect(afterTrip.kind).toBe("next");
-    if (afterTrip.kind !== "next") return;
-    expect(afterTrip.current.href).toBe("/app/discover");
-
-    const ready = homeView({ ...OPEN, gmail: "yes", trip: "yes", saved: "yes" });
-    expect(ready.kind).toBe("ready");
-    if (ready.kind !== "ready") return;
-    expect(ready.followUp).toBe("none");
-    expect(ready.title).toBe(ACTIVATION_COPY.readyNoneTitle);
-    expect(ready.href).toBe("/app/pipeline");
-    expect(ready.steps.every((step) => step.marker === "Done")).toBe(true);
+  it("does not count the optional pitch toward the remaining steps", () => {
+    expect(remainingRequired({ destination: "yes", saved: "no" })).toBe(1);
+    expect(remainingRequired({ destination: "yes", saved: "yes" })).toBe(0);
+    const view = homeView({ ...OPEN, destination: "yes", saved: "yes", pitch: "no" });
+    expect(view.kind).toBe("checklist");
+    if (view.kind !== "checklist") return;
+    expect(view.remaining).toBe(0);
+    expect(view.steps.find((step) => step.id === "pitch")?.done).toBe(false);
+    expect(greeting("Sofi", 2)).toBe("Hola, Sofi. Te faltan 2 pasos.");
+    expect(greeting("Sofi", 1)).toBe("Hola, Sofi. Te falta 1 paso.");
+    expect(greeting("  ", 0)).toBe("Hola, creador.");
   });
 
-  it("does not offer Gmail when the deployment has no Gmail configuration", () => {
-    const view = homeView({ ...OPEN, gmailConfigured: false, gmail: "error" });
-    expect(view.kind).toBe("next");
-    if (view.kind !== "next") return;
-    expect(view.steps.map((step) => step.id)).toEqual(["trip", "save", "pipeline"]);
-    expect(view.current.id).toBe("trip");
+  it("hiding the checklist does not mark an unfinished step done", () => {
+    const view = homeView({ ...OPEN, dismissed: true, followUp: "yes" });
+    expect(view.kind).toBe("hidden");
+    if (view.kind !== "hidden") return;
+    expect(view.followUp).toBe("due");
+    expect(remainingRequired(OPEN)).toBe(2);
+    expect(JSON.stringify(view)).not.toContain("done");
   });
 
-  it("a failed read blocks the checklist instead of telling the creator they have no trip", () => {
-    const view = homeView({ ...OPEN, gmail: "yes", trip: "error", saved: "no" });
+  it("a failed read blocks the checklist instead of saying the destination is empty", () => {
+    const view = homeView({ ...OPEN, destination: "error", dismissed: true });
     expect(view.kind).toBe("blocked");
     if (view.kind !== "blocked") return;
-    expect(view.title).toBe(ACTIVATION_COPY.blockedTitle);
-    expect(view.body).toContain("not a missing connection");
-    expect(view.body).not.toContain("No trips");
-    expect(JSON.stringify(view)).not.toContain(ACTIVATION_COPY.tripCta);
+    expect(view.title).toBe(FIRST_RUN_COPY.blockedTitle);
+    expect(view.body).toContain("no es un destino vacío");
+    expect(view.body).not.toContain(FIRST_RUN_COPY.insufficientTitle);
   });
 
   it("a failed follow-up read is not an empty due list", () => {
     const view = homeView({
       ...OPEN,
-      gmail: "yes",
-      trip: "yes",
+      destination: "yes",
       saved: "yes",
       followUp: "error",
     });
-    expect(view.kind).toBe("ready");
-    if (view.kind !== "ready") return;
-    expect(view.followUp).toBe("error");
-    expect(view.title).toBe(ACTIVATION_COPY.readyErrorTitle);
-    expect(view.title).not.toBe(ACTIVATION_COPY.readyNoneTitle);
-    expect(view.body).toContain("not an empty follow-up list");
+    expect(view.kind).toBe("blocked");
+    if (view.kind !== "blocked") return;
+    expect(view.body).toContain("no es un destino vacío");
+    expect(view.title).not.toContain("nada");
   });
 
-  it("shows a due follow-up without hiding the unfinished step", () => {
-    const view = homeView({ ...OPEN, gmail: "yes", followUp: "yes" });
-    expect(view.kind).toBe("next");
-    if (view.kind !== "next") return;
-    expect(view.current.id).toBe("trip");
+  it("shows a due follow-up beside the unfinished hotel step", () => {
+    const view = homeView({ ...OPEN, destination: "yes", followUp: "yes" });
+    expect(view.kind).toBe("checklist");
+    if (view.kind !== "checklist") return;
+    expect(view.steps.find((step) => step.id === "hotel")?.done).toBe(false);
     expect(view.followUp).toBe("due");
+    expect(view.remaining).toBe(1);
   });
 });

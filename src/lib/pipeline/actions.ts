@@ -11,6 +11,7 @@
  * ever sent to the client.
  */
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
@@ -160,6 +161,23 @@ export async function progressCollaborationAction(
   }
 
   return result;
+}
+
+/**
+ * D095. Saves the hotel, then opens it. The redirect runs only after the
+ * pipeline row exists. A failed save stays on the form and does not toast.
+ */
+export async function saveOnboardingHotelAction(formData: FormData): Promise<SaveResult> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const hotelId = formData.get("hotelId");
+  if (typeof hotelId !== "string") return { result: "error" };
+  const result = await saveHotelToPipeline(resolution.session.userId, hotelId);
+  if (!isSaveSuccessful(result)) return result;
+  revalidatePath(`/app/hotels/${hotelId}`);
+  revalidatePath("/app/pipeline");
+  revalidatePath("/app");
+  redirect(`/app/hotels/${hotelId}?from=pipeline&notice=first-hotel`);
 }
 
 export async function updatePipelineNotesAction(

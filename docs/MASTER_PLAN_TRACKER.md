@@ -406,7 +406,8 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E02 | **DONE** — PR #59, merge `edc326dc5a0f22956a0b6572a9486d56df15572f`. No migration. D081 is Accepted (Brian, 12 Oct 2026). Primary navigation stays the PRD §6 five items. Inbox and Collaborations are pipeline surfaces. | Home + Trips + Pipeline + Inbox + Collaboration product coherence | one navigation/information architecture; no module feels like separate software |
 | E03 | **DONE** — PR #60, merge `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | **DONE** — PR #62, merge `dc5979eed799d1724eb36482eb0067d3e9f0fe55`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
-| E05 | **IN PR** — PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`, so `0044` applies with the extension in `extensions` or in `public`. D092–D094 Proposed. Playwright against local Supabase, redacted logs, `/api/health`, RLS and security-definer checks, launch checklist. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
+| E05 | **DONE** — PR #64, merge `621bc557762a70242b08a02afca94bca6c08f08d`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 stay Proposed. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
+| UX01 | **IN PR** — PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. Direction A shell on Inicio, Descubrir, and Pipeline. Do not merge. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -700,16 +701,17 @@ A creator creates, views, rotates, and revokes one link. The public page
 and the public read stay UNDECIDED in the E04 inventory. `0051` and `0052`
 are not edited.
 
-**E05 is PR #64.** Branch
-`cursor/e05-e2e-observability-launch-f88c`. Migration
-`0054_grant_handle_new_user_to_auth_admin.sql` grants execute on the
-signup trigger to `supabase_auth_admin` when that role exists. `0039`
-installs `public.digest` and `public.gen_random_bytes` only when hosted
-pgcrypto is not already in `public`, so `0040` and `0044` resolve
-`digest()` on both layouts and `0053` calls `public.digest` with an empty
-search path. Those files have never been applied to the hosted project.
-D092–D094 are Proposed. The launch checklist names the owner steps that
-are not done.
+**E05 (PR #64) is merged**, as merge commit
+`621bc557762a70242b08a02afca94bca6c08f08d`. Migration
+`0054_grant_handle_new_user_to_auth_admin.sql`. D092–D094 stay Proposed.
+
+**UX01 is PR #65** on `cursor/ux01-sunlit-creator-os-79af`. Migration
+`0055_onboarding_and_public_profile.sql`. D095–D098 are Accepted (Brian,
+13 Oct 2026). Direction A is the shell. The first useful minute is a
+catalog destination and a saved hotel. The social profile is off until the
+creator turns it on. Features without a written tier are Free. D056 quotas
+and premium hotel data stay. D089–D091 are unchanged. `0051`–`0054` are
+not edited. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

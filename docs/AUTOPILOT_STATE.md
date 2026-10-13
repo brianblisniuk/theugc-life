@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `1fc15658fc69acaa799860f8340736e15e1f5728` (merge of PR #63, D09, 2026-10-12)  
-**State:** AWAITING_AUDIT. E05 E2E, observability, security/privacy QA, and launch checklist. PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. Migration `0054` grants the signup trigger to `supabase_auth_admin`. `0039` installs `public.digest` and `public.gen_random_bytes` only when pgcrypto is not already in `public`. `0053` calls `public.digest`. D092–D094 are Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** E05. Failure, retry, and admin paths are tested. The launch-candidate gate names the owner steps that are not done. D09 is merged. D086–D088 stay Proposed. D077 stays Proposed.
+**Last verified main:** `621bc557762a70242b08a02afca94bca6c08f08d` (merge of PR #64, E05, 2026-10-13)  
+**State:** AWAITING_CI. UX01 Sunlit Creator OS shell, D095 onboarding, D096–D097 public profile, D098 Free for undocumented gates. PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055`. The public-profile toggle follows the stored flag (the saved result does not invert the refreshed prop). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** UX01. E05 is merged. D095–D098 are Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -40,13 +40,15 @@
 - PR #61 — D08 private profile and personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
 - PR #62 — E04 Pass/Pro entitlement inventory, migration `0051` — `dc5979eed799d1724eb36482eb0067d3e9f0fe55`
 - PR #63 — D09 creator profile share link, D089–D091 Accepted, migration `0053` — `1fc15658fc69acaa799860f8340736e15e1f5728`
+- PR #64 — E05 E2E, observability, launch checklist, migration `0054` — `621bc557762a70242b08a02afca94bca6c08f08d`
 
 ## Next action
-- E05 is PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. State is AWAITING_AUDIT. Do not merge from automation.
-- D09 is merged (PR #63, `1fc1565`, migration `0053`). This PR points `0053` at `public.digest` so an empty search path still resolves on the hosted layout.
+- UX01 is PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. State is AWAITING_CI. Do not merge from automation.
+- E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
+- D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.
 - E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.
 - D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
-- E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). Empty and error stay distinct.
+- E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). D095 supersedes the checklist.
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.
 - D092–D094 stay Proposed.

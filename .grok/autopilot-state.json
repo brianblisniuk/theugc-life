@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 1fc15658fc69acaa799860f8340736e15e1f5728 (PR #63, D09). E05 is PR #64. Migration 0054 grants the signup trigger to supabase_auth_admin. 0039 installs public.digest and public.gen_random_bytes only when pgcrypto is not already in public. 0053 calls public.digest. D092–D094 are Proposed. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 621bc557762a70242b08a02afca94bca6c08f08d (PR #64, E05). UX01 is PR #65 on cursor/ux01-sunlit-creator-os-79af. Migration 0055. D095–D098 are Accepted. D089–D091 are unchanged. The public-profile toggle follows the stored flag. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
-  "as_of": "2026-10-12",
-  "state": "AWAITING_AUDIT",
-  "last_recorded_main": "1fc15658fc69acaa799860f8340736e15e1f5728",
-  "active_block": "E05 E2E, observability, security/privacy QA, launch checklist",
-  "branch": "cursor/e05-e2e-observability-launch-f88c",
-  "pr": 64,
+  "as_of": "2026-10-13",
+  "state": "AWAITING_CI",
+  "last_recorded_main": "621bc557762a70242b08a02afca94bca6c08f08d",
+  "active_block": "UX01 Sunlit Creator OS, onboarding, public profile, Free tiers",
+  "branch": "cursor/ux01-sunlit-creator-os-79af",
+  "pr": 65,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "1fc15658fc69acaa799860f8340736e15e1f5728",
+    "ref": "621bc557762a70242b08a02afca94bca6c08f08d",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "E05 is PR #64. It awaits audit and exact-head verify. D09 is merged (PR #63, 1fc1565). Migration 0054 grants the signup trigger to supabase_auth_admin. 0039 installs public.digest and public.gen_random_bytes only when pgcrypto is not already in public. 0053 calls public.digest. D092–D094 are Proposed. Do not merge."
+  "next_dependency": "UX01 is PR #65 on cursor/ux01-sunlit-creator-os-79af. Migration 0055. D095–D098 are Accepted. Wait for verify on the exact head. Do not merge."
 }

@@ -9,7 +9,10 @@
  * is not access (D007). A missing, expired, revoked, pending, or not-yet-started
  * row is Free. It is never Pro.
  *
- * A feature with no written tier is `undecided`. Its current behavior stays.
+ * A feature with no written tier is Free (D098). `undecided` remains in the
+ * type so a future gap cannot be stored as a plan by accident. This inventory
+ * has no undecided entry. Plans limit the written D056 quotas and the written
+ * premium hotel surfaces. They do not limit profile, analytics, or the share link.
  * The question for Brian is on the entry. This module does not invent a tier.
  */
 import { FREE_LIMITS } from "@/lib/config";
@@ -370,12 +373,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     ],
     serverActions: ["grantGmailConsentAction", "disconnectGmailAction"],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["mail_accounts"] },
-    sources: ["D018", "D067"],
-    question:
-      "Is connecting and disconnecting Gmail a Free capability, or does a Destination Pass or Pro gate it? No accepted decision assigns a tier. Current behavior is unchanged: a signed-in creator can connect and disconnect only their own mailbox.",
+    sources: ["D018", "D067", "D098"],
   },
   {
     id: "gmail.sync",
@@ -386,32 +387,36 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sourceFiles: ["src/lib/gmail/sync/worker.server.ts", "src/lib/gmail/sync/on-login.server.ts"],
     serverActions: [],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["mail_accounts"] },
-    sources: ["D068", "D076", "D067"],
-    question:
-      "Is Gmail historical import and incremental sync a Free capability, or a Pass/Pro capability? No accepted decision assigns a tier. Current behavior is unchanged: sync follows the creator's own mailbox and consent, not an entitlement row.",
+    sources: ["D068", "D076", "D067", "D098"],
   },
   {
     id: "onboarding.activation",
     module: "Onboarding",
     summary:
-      "The first-flow checklist is derived from rows the creator owns. D082 is Proposed and assigns no tier. The checklist does not block the app.",
-    routes: ["/onboarding", "/app"],
+      "The first useful minute is Free. A destination, a saved hotel, and an optional pitch. D095. No plan check.",
+    routes: ["/onboarding", "/app", "/app/onboarding", "/app/onboarding/hotels"],
     sourceFiles: [
       "src/app/(auth)/onboarding/page.tsx",
       "src/app/(app)/app/page.tsx",
+      "src/app/(app)/app/onboarding/page.tsx",
+      "src/app/(app)/app/onboarding/hotels/page.tsx",
       "src/lib/onboarding/activation.ts",
+      "src/lib/onboarding/actions.ts",
+      "src/lib/onboarding/first-run.ts",
     ],
-    serverActions: [],
+    serverActions: [
+      "chooseOnboardingDestination",
+      "dismissOnboardingChecklist",
+      "saveOnboardingHotelAction",
+    ],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "kept_current" },
-    sources: ["D082", "PRD §7.1"],
-    question:
-      "Does the onboarding checklist, or any step in it, require a Destination Pass or Pro? D082 is Proposed and does not assign a tier. Current behavior is unchanged: the checklist does not block the rest of the app.",
+    sources: ["D095", "D098", "PRD §7.1"],
   },
   {
     id: "home.dashboard",
@@ -422,12 +427,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sourceFiles: ["src/app/(app)/app/page.tsx"],
     serverActions: [],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "kept_current" },
-    sources: ["PRD §6", "PRD §7.1", "D081"],
-    question:
-      "Is Home available on Free, or does some block on it require a Pass or Pro? No accepted decision assigns Home a tier. Current behavior is unchanged: any signed-in creator can open it.",
+    sources: ["PRD §6", "PRD §7.1", "D081", "D098"],
   },
   {
     id: "account.settings",
@@ -438,12 +441,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sourceFiles: ["src/app/(app)/app/account/page.tsx"],
     serverActions: [],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "kept_current" },
-    sources: ["docs/ROUTES.md §4"],
-    question:
-      "Is the account page available on Free? No accepted decision assigns it a tier. Current behavior is unchanged: any signed-in creator can open their own account page.",
+    sources: ["docs/ROUTES.md §4", "D098"],
   },
   {
     id: "auth.session",
@@ -461,12 +462,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     ],
     serverActions: ["signIn", "signUp", "signOut", "requestPasswordReset", "updatePassword"],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "all_tiers" },
     anon: "allow",
     enforcement: { kind: "kept_current" },
-    sources: ["PRD §4.1", "PRD §4.2", "docs/ROUTES.md §3"],
-    question:
-      "Confirm sign-in, sign-up, and password reset stay outside Pass and Pro. No accepted decision assigns them a tier. Current behavior is unchanged.",
+    sources: ["PRD §4.1", "PRD §4.2", "docs/ROUTES.md §3", "D098"],
   },
   {
     id: "profile.own",
@@ -480,7 +479,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/lib/auth/actions.ts",
       "src/lib/profile/actions.ts",
     ],
-    serverActions: ["completeOnboarding", "updateCreatorProfile"],
+    serverActions: ["completeOnboarding", "updateCreatorProfile", "setPublicProfileEnabled"],
     rpcs: [],
     rule: { kind: "owner_private" },
     anon: "deny",
@@ -491,7 +490,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "profile.basic_vs_full",
     module: "Profile",
     summary:
-      "The plan matrix says Free profile/portfolio is Basic and Pass/Pro is Yes. Nothing written says what Basic withholds. The editor is unchanged.",
+      "The full profile editor is Free. Nothing on it is withheld for a Destination Pass or Pro. D098.",
     routes: ["/app/profile", "/app/profile/portfolio"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
@@ -499,34 +498,30 @@ export const INVENTORY: readonly InventoryEntry[] = [
     ],
     serverActions: [],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "kept_current" },
-    sources: ["PRD §5.3.1", "PRD §10.2", "PRD §7.6"],
-    question:
-      "What does Basic withhold on Free that a Destination Pass or Pro profile includes? PRD §10.2 says a Free creator can manage their own profile, and §5.3.1 does not name the locked fields. Current behavior is unchanged.",
+    sources: ["PRD §5.3.1", "PRD §10.2", "PRD §7.6", "D098"],
   },
   {
     id: "profile.personal_analytics",
     module: "Profile",
     summary:
-      "Personal counts are the caller's recorded outcomes. No accepted decision assigns Free, Pass, or Pro. The read stays creator_personal_counts for the signed-in creator.",
+      "Personal counts are the caller's recorded outcomes and are Free. D097 and D098.",
     routes: ["/app/profile"],
     sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/queries.ts"],
     serverActions: [],
     rpcs: ["creator_personal_counts"],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "caller_scoped_rpc", rpc: "creator_personal_counts" },
-    sources: ["D087"],
-    question:
-      "Are creator-recorded personal counts a Free capability, or does a Destination Pass or Pro gate them? D087 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own counts.",
+    sources: ["D087", "D097", "D098"],
   },
   {
     id: "profile.past_collaborations",
     module: "Profile",
     summary:
-      "Past collaborations are the caller's completed and cancelled rows. No accepted decision assigns Free, Pass, or Pro. The read stays creator_past_collaborations for the signed-in creator.",
+      "Past collaborations stay a private Free list. They are not on the social profile. D097. The hotel share link is unchanged.",
     routes: ["/app/profile", "/app/hotels/[id]"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
@@ -535,18 +530,16 @@ export const INVENTORY: readonly InventoryEntry[] = [
     ],
     serverActions: [],
     rpcs: ["creator_past_collaborations"],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "caller_scoped_rpc", rpc: "creator_past_collaborations" },
-    sources: ["D088"],
-    question:
-      "Are past collaborations a Free capability, or does a Destination Pass or Pro gate the private list? D088 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own completed and cancelled collaborations.",
+    sources: ["D088", "D097", "D098"],
   },
   {
     id: "profile.field_opt_ins",
     module: "Profile",
     summary:
-      "A per-field opt-in is owner-only and private by default. No accepted decision assigns Free, Pass, or Pro. The hotel read is profile.share_public.",
+      "A per-field opt-in for the hotel share link is Free and owner-only. D098. D090 is unchanged.",
     routes: ["/app/profile"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
@@ -554,18 +547,16 @@ export const INVENTORY: readonly InventoryEntry[] = [
     ],
     serverActions: [],
     rpcs: [],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["creator_profile_field_opt_ins"] },
-    sources: ["D086"],
-    question:
-      "Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, and no row means not shared.",
+    sources: ["D086", "D090", "D098"],
   },
   {
     id: "profile.share_link",
     module: "Profile",
     summary:
-      "The signed-in creator creates, rotates, and revokes their own hotel share link, and sets audience figures, field opt-ins, and share marks. No accepted decision assigns Free, Pass, or Pro.",
+      "Creating, rotating, and revoking the hotel share link is Free. D098. D089 and D090 are unchanged.",
     routes: ["/app/profile"],
     sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/share-actions.ts"],
     serverActions: [
@@ -587,18 +578,16 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "set_collaboration_share_mark",
       "set_deliverable_share_mark",
     ],
-    rule: { kind: "undecided" },
+    rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "kept_current" },
-    sources: ["D089", "D090"],
-    question:
-      "Does creating, rotating, or revoking a hotel share link, or setting its opt-ins and share marks, require a Destination Pass or Pro, or is it available on Free? D089 and D090 do not assign a tier. Current behavior is unchanged: the signed-in creator manages only their own link.",
+    sources: ["D089", "D090", "D098"],
   },
   {
     id: "profile.share_public",
     module: "Profile",
     summary:
-      "A valid share token reads one creator's opted-in fields at /p/[token]. There is no session. No accepted decision assigns Free, Pass, or Pro. The read is read_creator_share_profile.",
+      "A valid share token reads one creator's opted-in fields at /p/[token]. No plan. D098. D091 is unchanged.",
     routes: ["/p/[token]"],
     sourceFiles: [
       "src/app/(public)/p/[token]/page.tsx",
@@ -606,12 +595,27 @@ export const INVENTORY: readonly InventoryEntry[] = [
     ],
     serverActions: [],
     rpcs: ["read_creator_share_profile"],
-    rule: { kind: "undecided" },
+    rule: { kind: "public_page" },
     anon: "allow",
     enforcement: { kind: "kept_current" },
-    sources: ["D089", "D090", "D091"],
-    question:
-      "Does opening a hotel share link require a Destination Pass or Pro, or does a valid token stay readable with no plan? D089 does not assign a tier. Current behavior is unchanged: /p/[token] does not check an entitlement row.",
+    sources: ["D089", "D090", "D091", "D098"],
+  },
+  {
+    id: "profile.public_card",
+    module: "Profile",
+    summary:
+      "The social profile at /creators/[username] is Free. It shows basic fields and simple counts only when the creator turned it on. D096.",
+    routes: ["/creators/[username]"],
+    sourceFiles: [
+      "src/app/(public)/creators/[username]/page.tsx",
+      "src/lib/profile/public-card.ts",
+    ],
+    serverActions: [],
+    rpcs: ["read_public_creator_card"],
+    rule: { kind: "public_page" },
+    anon: "allow",
+    enforcement: { kind: "kept_current" },
+    sources: ["D096", "D097", "D098"],
   },
   {
     id: "billing.own",

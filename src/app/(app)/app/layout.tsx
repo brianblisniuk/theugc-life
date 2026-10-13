@@ -9,6 +9,8 @@ import { requireUser } from "@/lib/auth/guards";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireUser("/app");
   const isStaff = session.role === "admin" || session.role === "editor";
+  const letters = (session.email ?? "").split("@")[0]?.replace(/[^a-z]/gi, "") ?? "";
+  const initials = letters.slice(0, 2).toUpperCase() || "•";
 
-  return <AppShell isStaff={isStaff}>{children}</AppShell>;
+  return <AppShell isStaff={isStaff} initials={initials}>{children}</AppShell>;
 }

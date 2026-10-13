@@ -51,13 +51,13 @@ function assertAppPath(href: string) {
 }
 
 describe("primary navigation stays the approved five", () => {
-  it("names Home, Discover, Pipeline, Trips, and Profile", () => {
+  it("names Inicio, Descubrir, Pipeline, Viajes, and Perfil", () => {
     expect(PRIMARY_NAV.map((item) => item.label)).toEqual([
-      "Home",
-      "Discover",
+      "Inicio",
+      "Descubrir",
       "Pipeline",
-      "Trips",
-      "Profile",
+      "Viajes",
+      "Perfil",
     ]);
   });
 
@@ -107,9 +107,9 @@ describe("hotel origin is an allowlist", () => {
       kind: "discover",
     });
     const crumbs = hotelCrumbs({ kind: "trip", tripId: TRIP }, "Casa");
-    expect(crumbs.map((crumb) => crumb.label)).toEqual(["Home", "Trips", "Trip", "Casa"]);
+    expect(crumbs.map((crumb) => crumb.label)).toEqual(["Inicio", "Viajes", "Viaje", "Casa"]);
     expect(crumbs[2]?.href).toBe(`/app/trips/${TRIP}`);
-    expect(backLink(crumbs)).toEqual({ href: `/app/trips/${TRIP}`, label: "Trip" });
+    expect(backLink(crumbs)).toEqual({ href: `/app/trips/${TRIP}`, label: "Viaje" });
   });
 
   it("builds hotel hrefs with no extra query and no off-site target", () => {

@@ -17,8 +17,10 @@ export function PipelineSurfaceNav({ surface }: { surface: PipelineSurface }) {
             href={item.href}
             aria-current={current ? "page" : undefined}
             className={
-              "inline-flex min-h-11 shrink-0 items-center rounded-[var(--radius-app)] px-3 text-sm " +
-              (current ? "bg-surface font-semibold text-text" : "text-muted hover:text-text")
+              "inline-flex min-h-11 shrink-0 items-center rounded-md border px-3 text-sm font-semibold " +
+              (current
+                ? "border-[#111] bg-[#111] text-accent"
+                : "border-[#ccc] text-[#111]")
             }
           >
             {item.label}

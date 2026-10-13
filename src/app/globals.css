@@ -9,31 +9,16 @@
  */
 :root {
   --background: #ffffff;
-  --surface: #f7f7f8;
-  --text: #14161a;
-  --muted: #5b6270;
-  --border: #e5e7eb;
+  --surface: #ffffff;
+  --text: #111111;
+  --muted: #555555;
+  --border: #e6e6e6;
   --accent: #ffe01b;
-  --accent-contrast: #14161a;
-  --success: #16a34a;
-  --warning: #b45309;
+  --accent-contrast: #111111;
+  --success: #0b6b4b;
+  --warning: #b4400b;
   --danger: #dc2626;
-  --radius: 0.625rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d0f12;
-    --surface: #16191e;
-    --text: #f2f4f7;
-    --muted: #9aa2b1;
-    --border: #262b33;
-    --accent: #ffe01b;
-    --accent-contrast: #14161a;
-    --success: #22c55e;
-    --warning: #c2410c;
-    --danger: #ef4444;
-  }
+  --radius: 6px;
 }
 
 @theme inline {

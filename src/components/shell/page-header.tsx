@@ -52,7 +52,7 @@ export function PageHeader({
         </p>
       ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-text">{title}</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight text-text">{title}</h1>
         {actions}
       </div>
       {description ? <div className="max-w-prose text-sm text-muted">{description}</div> : null}
