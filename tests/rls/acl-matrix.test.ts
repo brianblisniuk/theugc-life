@@ -46,6 +46,10 @@ const CONTRACT: Record<string, Expected> = {
 
   // Creator identity and portfolio. Public rows are anonymously readable.
   creator_profiles: { anon: "S", authenticated: "SIU", serviceRole: "all" },
+  // D095 (0055). Owner-only destination choice. Anon has no privilege.
+  // Authenticated may select, insert, and update their own row. Delete is
+  // the cascade from the profile, which the trusted role can run.
+  creator_onboarding_state: { anon: "", authenticated: "SIU", serviceRole: "all" },
   // D08 (0052, D086 Proposed). Per-field opt-in for a later hotel share link.
   // Private by default. Anon has no privilege. The owner may write their own
   // rows; this PR's UI does not. There is no share token on this table.
@@ -1120,6 +1124,7 @@ d("the contract behaves as intended for real callers", () => {
       "outreach_events",
       "collaborations",
       "creator_profile_field_opt_ins",
+      "creator_onboarding_state",
       "creator_self_reported_audience",
       "creator_share_links",
       "creator_collaboration_share_marks",

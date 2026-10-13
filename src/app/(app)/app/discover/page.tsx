@@ -86,12 +86,12 @@ export default async function DiscoverPage({
       : { status: "unknown" as const };
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_32rem] xl:items-start">
       <div className="space-y-6">
         <AnalyticsPageView event="discover_viewed" />
 
         <PageHeader
-          title="Discover"
+          title="Descubrir"
           description="Published hotels, by destination. Creator activity appears only when the public record is strong enough to show."
           crumbs={listCrumbs("Discover")}
         />

@@ -3413,9 +3413,10 @@ alone.
 
 ## D082 — The first useful flow is derived from rows the creator already owns (E03)
 
-Status: **Proposed (requires owner acceptance)** — not Accepted. D081 is
-Accepted and owns the shell. This entry does not change that shell and does
-not add a table.
+Status: **Proposed (requires owner acceptance)** — not Accepted. Superseded
+for the checklist by **D095** (Accepted, 13 Oct 2026). This entry stays as
+the E03 reading. D081 is Accepted and owns the shell. This entry does not
+change that shell and does not add a table.
 
 Depends on D018, D023, D045, D059, D067, D080, and D081. It does not change
 Gmail scopes, consent, or CRM status.
@@ -3475,10 +3476,11 @@ shows only the caller’s rows and does not use that count.
 
 ## D086 — The Profile page edits the creator’s private profile (D08)
 
-Status: **Proposed (requires owner acceptance)** — not Accepted. D081 is
-Accepted and keeps Profile as a primary item at `/app/profile`. D083–D085 are
-reserved by parallel blocks. This block uses D086–D088 and migration `0052`.
-`0051` stays free for E04.
+Status: **Proposed (requires owner acceptance)** — not Accepted. The social
+profile toggle is **D096** (Accepted, 13 Oct 2026). The hotel share link
+stays **D089–D091**. D081 is Accepted and keeps Profile as a primary item at
+`/app/profile`. D083–D085 are reserved by parallel blocks. This block uses
+D086–D088 and migration `0052`. `0051` stays free for E04.
 
 Depends on the columns already on `creator_profiles` (PRD §7.6, PRD §9.2) and
 on the onboarding rules for display name and username. It adds no column to
@@ -3540,8 +3542,10 @@ The write does not include `public_profile_enabled` or `portfolio_visibility`.
 
 ## D087 — Personal analytics are counts of creator-recorded outcomes (D08)
 
-Status: **Proposed (requires owner acceptance)** — not Accepted. D072, D078,
-D080, and D081 are unchanged. D077 is not used.
+Status: **Proposed (requires owner acceptance)** — not Accepted. Showing
+those same counts on a public profile is **D097** (Accepted, 13 Oct 2026).
+The count definitions in this entry are unchanged. D072, D078, D080, and
+D081 are unchanged. D077 is not used.
 
 ### What is counted
 
@@ -3575,7 +3579,9 @@ agreements.
 
 ## D088 — Past collaborations are a private list of links (D08)
 
-Status: **Proposed (requires owner acceptance)** — not Accepted.
+Status: **Proposed (requires owner acceptance)** — not Accepted. **D097**
+keeps this list off the social profile. The hotel share link may still
+include an opted-in past collaboration (D089–D091). That link is unchanged.
 
 ### What the list contains
 
@@ -3769,4 +3775,124 @@ image and leaves pgcrypto in `extensions`.
 - No production deploy.
 - No price change.
 - No Rebill integration.
+
+## D095 — The first useful minute is a destination and a saved hotel (UX01)
+
+Status: **Accepted (Brian, 13 Oct 2026).** Supersedes the Proposed D082
+checklist. D081’s five primary routes stay. Migration `0055` adds
+`creator_onboarding_state`. It does not edit `0039`–`0054`.
+
+The creator is already signed in. Display name and username stay on
+`/onboarding`, because a public username still has to exist. After that
+save the next page is one question: “¿A qué destino estás apuntando ahora?”
+Search and chips only offer destinations already in the catalog (Bali,
+México, and Japón when those names exist). The helper says the choice only
+filters hotels and can be changed.
+
+The hotels on the next screen come from the published catalog, not from
+Gmail. Three to six cards. Each card shows the name and zone. A verified
+contact name and role appear only when the caller already has premium
+contact access for that hotel. Otherwise the card says “Contacto genérico”
+and carries no email. Ordering by “has a verified contact” uses the same
+rule, so a Free caller is not told which hotels have verified contacts.
+A short public-signal line may say the hotel works with creators or that
+data is still insufficient. A failed intelligence read is not labeled
+insufficient. If the catalog has no hotel for that destination, the page
+says so and offers nearby catalog destinations or Discover. It does not
+invent a hotel.
+
+Saving writes a pipeline item through the existing save, then opens the
+hotel. The toast “Listo. Ya tenés tu primer hotel en el pipeline.” renders
+only when that page loaded an open relationship. A failed save does not
+redirect and does not toast.
+
+A pipeline item does not require a trip. This block does not create a
+draft trip and does not consume the Free active-trip allowance.
+
+The home checklist is dismissible and does not block the app. The steps
+are “Elegiste tu destino”, “Guardaste tu primer hotel”, and the optional
+“Preparaste el primer pitch”. A pitch note or a creator-recorded
+`pitch_sent` completes the optional step. Dismissing hides the list. It
+does not mark a step done. A failed read blocks the checklist. It is not
+an empty destination and not “nothing is due”.
+
+### What this decision does not do
+
+- No portfolio, rates, socials, full trip form, or network analytics.
+- No new Gmail scope and no send.
+- No weakening of D056 premium contacts. The hotel page still gates email.
+- No new commercial tier. The flow is Free (D098).
+
+## D096 — A creator can turn a social profile on (UX01)
+
+Status: **Accepted (Brian, 13 Oct 2026).** Supersedes the open question in
+Proposed D086 about `/creators/[username]`. D089–D091 are unchanged.
+
+`creator_profiles.public_profile_enabled` stays false until the creator
+turns it on from their own profile. The toggle writes only that column.
+It does not set `portfolio_visibility`, field opt-ins, or the hotel share
+link.
+
+`/creators/[username]` calls `read_public_creator_card`. The function is
+security definer with an empty search path. A missing username and a
+private profile both return SQL null. Null is not a zeroed card. Anon may
+execute it. The page renders only the projected fields: basic editable
+profile data and the D097 counts. Hotel names, contacts, amounts, deals,
+past collaborations, and portfolio assets are not selected.
+
+Onboarding state is not a column on `creator_profiles`, because a public
+profile row is world-readable. It lives on `creator_onboarding_state`,
+which is owner-only.
+
+### What this decision does not do
+
+- No automatic public portfolio.
+- No change to `/p/[token]` or to `read_creator_share_profile`.
+- No anon policy that selects pipeline, mail, or collaboration rows.
+
+## D097 — Public counts stay simple, and past collaborations stay off that page (UX01)
+
+Status: **Accepted (Brian, 13 Oct 2026).** The count definitions stay the
+ones in Proposed D087. Proposed D088’s private list stays private.
+
+The public card shows outreach, replies, agreements, completed
+collaborations, and deliverables approved. Those are the same
+creator-recorded counts as `creator_personal_counts`. No percentages, no
+reply rate, no ghosted count, and no Gmail or network reading. A missing
+profile is null, not zero.
+
+Past collaborations stay on the owner’s profile and, when opted in, on the
+hotel share link. The social profile has no share control for that list
+and does not render it.
+
+### What this decision does not do
+
+- No new metric.
+- No change to the D09 opt-in field `past_collaborations`.
+- No compensation amount on the public card.
+
+## D098 — A feature with no written tier is Free (UX01)
+
+Status: **Accepted (Brian, 13 Oct 2026).** Plans limit the written D056
+quotas: saved hotels, engaged pipeline items, and active trips, counting
+only outside-coverage rows. Premium intelligence and premium contacts stay
+Pass inside the entitled destination and Pro worldwide.
+
+Every inventory entry that was undecided is now Free:
+
+- Owner features (Gmail connect and sync, onboarding, home, account, the
+  full profile editor, personal counts, past collaborations, field opt-ins,
+  and the hotel share-link controls) are `owner_private`. A Pro row does
+  not let one creator read another creator’s rows.
+- Sign-in, sign-up, and password reset are `all_tiers`.
+- The hotel share page and the social profile are `public_page`.
+
+`questionsForBrian()` is empty. Nothing in this decision removes a
+documented premium gate or raises a Free quota.
+
+### What this decision does not do
+
+- No price change and no Rebill change.
+- No edit of migration `0051`.
+- No grant of premium contacts or premium intelligence to Free.
 

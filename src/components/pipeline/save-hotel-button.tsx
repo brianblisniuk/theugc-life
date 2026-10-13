@@ -17,20 +17,28 @@ import { saveHotelAction } from "@/lib/pipeline/actions";
 import type { SaveResult } from "@/lib/pipeline/types";
 import { saveControlState, shouldOfferUpgrade } from "@/lib/pipeline/view";
 
-function SubmitButton() {
+function SubmitButton({ idle, pendingLabel }: { idle: string; pendingLabel: string }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+      className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
     >
-      {pending ? "Saving…" : "Save to Pipeline"}
+      {pending ? pendingLabel : idle}
     </button>
   );
 }
 
-export function SaveHotelButton({ hotelId }: { hotelId: string }) {
+export function SaveHotelButton({
+  hotelId,
+  idle = "Save to Pipeline",
+  pendingLabel = "Saving…",
+}: {
+  hotelId: string;
+  idle?: string;
+  pendingLabel?: string;
+}) {
   const [result, setResult] = useState<SaveResult | null>(null);
 
   async function onSubmit(formData: FormData) {
@@ -66,7 +74,7 @@ export function SaveHotelButton({ hotelId }: { hotelId: string }) {
     <div className="space-y-2">
       <form action={onSubmit}>
         <input type="hidden" name="hotelId" value={hotelId} />
-        <SubmitButton />
+        <SubmitButton idle={idle} pendingLabel={pendingLabel} />
       </form>
 
       {state.kind === "limit" || state.kind === "problem" ? (

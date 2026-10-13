@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/hotels/ids";
 
 import { mapPastCollaborations, mapPersonalCounts } from "./contract";
+import { projectPublicCard } from "./public-card";
 import type { CreatorProfileFields, PastCollaborationsLoad, PersonalCountsLoad } from "./contract";
 
 const PROFILE_COLUMNS =
@@ -65,6 +66,43 @@ export async function getOwnProfile(userId: string): Promise<ProfileLoad> {
     };
   } catch {
     return { status: "error" };
+  }
+}
+
+export async function getProfileVisibility(
+  userId: string,
+): Promise<{ status: "ok"; enabled: boolean; username: string } | { status: "error" }> {
+  if (!isUuid(userId)) return { status: "error" };
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("creator_profiles")
+      .select("public_profile_enabled, username")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error || !data) return { status: "error" };
+    const row = data as { public_profile_enabled?: unknown; username?: unknown };
+    return {
+      status: "ok",
+      enabled: row.public_profile_enabled === true,
+      username: typeof row.username === "string" ? row.username : "",
+    };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export async function readPublicCreatorCard(username: string) {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("read_public_creator_card", {
+      p_username: username,
+    });
+    if (error) return { status: "error" as const };
+    const card = projectPublicCard(data);
+    return card ? { status: "ok" as const, card } : { status: "missing" as const };
+  } catch {
+    return { status: "error" as const };
   }
 }
 

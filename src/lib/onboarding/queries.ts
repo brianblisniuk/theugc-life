@@ -1,15 +1,20 @@
 /**
- * Home activation reads. The cookie-bound client is the boundary: RLS already
- * hides another creator's rows. The probes below still drop a row whose owner
- * id is not the session's, so a mixed payload cannot complete someone else's step.
+ * Home checklist reads (D095). The cookie-bound client is the boundary.
+ * A row whose owner is not the session does not complete a step, and a
+ * failed read is not "not done".
  */
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
-import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
+import { isUuid } from "@/lib/hotels/ids";
 
-import { gmailProbe, ownedExistence, resolveOwnProfile, type ActivationFacts } from "./activation";
-import { GMAIL_PROBE_COLUMNS, PROFILE_COLUMNS } from "@/lib/surfaces/lists";
+import {
+  ownedExistence,
+  resolveOwnProfile,
+  type FirstRunFacts,
+  type Probe,
+} from "./first-run";
+import { PROFILE_COLUMNS } from "@/lib/surfaces/lists";
 
 type QueryResult = {
   data: unknown;
@@ -32,9 +37,14 @@ type QueryChain = {
   then: PromiseLike<QueryResult>["then"];
 };
 
+export type FollowUpHotel = { name: string; hotelId: string };
+
 export type HomeProgress = {
   displayName: string | null;
-  facts: ActivationFacts;
+  destinationName: string | null;
+  destinationSlug: string | null;
+  facts: FirstRunFacts;
+  followUpHotel: FollowUpHotel | null;
 };
 
 function asRecords(data: unknown): Record<string, unknown>[] | null {
@@ -47,25 +57,7 @@ function asRecords(data: unknown): Record<string, unknown>[] | null {
   return rows;
 }
 
-function mapGmail(
-  result: QueryResult | null,
-  configured: boolean,
-  authUserId: string,
-): ActivationFacts["gmail"] {
-  if (!configured || result === null) return gmailProbe([], false, authUserId);
-  const rows = asRecords(result.data);
-  if (result.error !== null || rows === null) return gmailProbe(null, true, authUserId);
-  const mapped = [];
-  for (const row of rows) {
-    if (typeof row.user_id !== "string" || typeof row.connection_state !== "string") {
-      return gmailProbe(null, true, authUserId);
-    }
-    mapped.push({ userId: row.user_id, connectionState: row.connection_state });
-  }
-  return gmailProbe(mapped, false, authUserId);
-}
-
-function mapOwners(result: QueryResult, profileId: string): ActivationFacts["trip"] {
+function mapOwners(result: QueryResult, profileId: string): Probe {
   const rows = asRecords(result.data);
   if (result.error !== null || rows === null) return ownedExistence(null, true, profileId);
   const mapped = [];
@@ -76,6 +68,97 @@ function mapOwners(result: QueryResult, profileId: string): ActivationFacts["tri
   return ownedExistence(mapped, false, profileId);
 }
 
+function blocked(displayName: string | null = null): HomeProgress {
+  return {
+    displayName,
+    destinationName: null,
+    destinationSlug: null,
+    followUpHotel: null,
+    facts: {
+      destination: "error",
+      saved: "error",
+      pitch: "error",
+      followUp: "error",
+      dismissed: false,
+    },
+  };
+}
+
+function destinationFields(row: Record<string, unknown>): { name: string | null; slug: string | null } {
+  const nested = row.destination;
+  if (!nested || typeof nested !== "object") return { name: null, slug: null };
+  const record = nested as { name?: unknown; slug?: unknown };
+  const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : null;
+  const slug = typeof record.slug === "string" && record.slug.trim() ? record.slug.trim() : null;
+  return { name, slug };
+}
+
+function mapDestination(
+  result: QueryResult,
+  profileId: string,
+): { probe: Probe; dismissed: boolean; name: string | null; slug: string | null } {
+  const rows = asRecords(result.data);
+  if (result.error !== null || rows === null) {
+    return { probe: "error", dismissed: false, name: null, slug: null };
+  }
+  const own = rows.filter((row) => row.creator_id === profileId);
+  if (own.length === 0) return { probe: "no", dismissed: false, name: null, slug: null };
+  const row = own[0]!;
+  if (!("destination_id" in row) || !("checklist_dismissed_at" in row)) {
+    return { probe: "error", dismissed: false, name: null, slug: null };
+  }
+  const dismissed = row.checklist_dismissed_at != null;
+  const destinationId = row.destination_id;
+  const fields = destinationFields(row);
+  if (destinationId == null) return { probe: "no", dismissed, name: null, slug: null };
+  if (typeof destinationId !== "string" || !isUuid(destinationId)) {
+    return { probe: "error", dismissed: false, name: null, slug: null };
+  }
+  return { probe: "yes", dismissed, name: fields.name, slug: fields.slug };
+}
+
+function mapPitch(notes: QueryResult, events: QueryResult, profileId: string): Probe {
+  const noteRows = asRecords(notes.data);
+  const eventRows = asRecords(events.data);
+  if (notes.error !== null || events.error !== null || noteRows === null || eventRows === null) {
+    return "error";
+  }
+  for (const row of noteRows) {
+    if (typeof row.creator_id !== "string") return "error";
+    if (row.creator_id !== profileId) continue;
+    if (typeof row.private_notes === "string" && row.private_notes.trim().length > 0) return "yes";
+  }
+  for (const row of eventRows) {
+    if (typeof row.creator_id !== "string") return "error";
+    if (row.creator_id === profileId && row.event_type === "pitch_sent" && row.source === "manual_creator") {
+      return "yes";
+    }
+  }
+  return "no";
+}
+
+function mapFollowUp(
+  result: QueryResult,
+  profileId: string,
+): { probe: Probe; hotel: FollowUpHotel | null } {
+  const rows = asRecords(result.data);
+  if (result.error !== null || rows === null) return { probe: "error", hotel: null };
+  for (const row of rows) {
+    if (typeof row.creator_id !== "string" || typeof row.hotel_id !== "string") {
+      return { probe: "error", hotel: null };
+    }
+    if (row.creator_id !== profileId || !isUuid(row.hotel_id)) continue;
+    const nested = row.hotel;
+    const name =
+      nested && typeof nested === "object" && typeof (nested as { name?: unknown }).name === "string"
+        ? (nested as { name: string }).name.trim()
+        : "";
+    if (!name) return { probe: "error", hotel: null };
+    return { probe: "yes", hotel: { name, hotelId: row.hotel_id } };
+  }
+  return { probe: "no", hotel: null };
+}
+
 async function clientOr(injected?: OwnedQueryClient): Promise<OwnedQueryClient> {
   if (injected) return injected;
   return (await createClient()) as unknown as OwnedQueryClient;
@@ -83,34 +166,27 @@ async function clientOr(injected?: OwnedQueryClient): Promise<OwnedQueryClient> 
 
 export async function loadHomeProgress(
   authUserId: string,
-  injected?: { client?: OwnedQueryClient; gmailConfigured?: boolean },
+  injected?: { client?: OwnedQueryClient },
 ): Promise<HomeProgress> {
-  const gmailConfigured = injected?.gmailConfigured ?? isGmailOAuthConfigured();
+  if (!isUuid(authUserId)) return blocked();
   try {
     const supabase = await clientOr(injected?.client);
-    const profileQuery = supabase
+    const profileResult = await supabase
       .from("creator_profiles")
       .select(PROFILE_COLUMNS)
       .eq("user_id", authUserId)
       .maybeSingle();
-    const gmailQuery = gmailConfigured
-      ? supabase.from("mail_accounts").select(GMAIL_PROBE_COLUMNS).eq("user_id", authUserId)
-      : Promise.resolve(null);
-
-    const [profileResult, gmailResult] = await Promise.all([profileQuery, gmailQuery]);
     const profile = resolveOwnProfile(profileResult.data, profileResult.error !== null, authUserId);
+    if (profile.status !== "ok") return blocked();
 
-    const gmail = mapGmail(gmailResult, gmailConfigured, authUserId);
-
-    if (profile.status !== "ok") {
-      return {
-        displayName: null,
-        facts: { gmailConfigured, gmail, trip: "error", saved: "error", followUp: "error" },
-      };
-    }
-
-    const [trips, saved, followUps] = await Promise.all([
-      supabase.from("trips").select("id, creator_id").eq("creator_id", profile.profileId).limit(1),
+    const [destination, saved, notes, events, followUps] = await Promise.all([
+      supabase
+        .from("creator_onboarding_state")
+        .select(
+          "creator_id, destination_id, checklist_dismissed_at, destination:destinations(name, slug)",
+        )
+        .eq("creator_id", profile.profileId)
+        .limit(1),
       supabase
         .from("pipeline_items")
         .select("id, creator_id")
@@ -118,32 +194,39 @@ export async function loadHomeProgress(
         .limit(1),
       supabase
         .from("pipeline_items")
-        .select("id, creator_id, next_followup_at")
+        .select("id, creator_id, private_notes")
+        .eq("creator_id", profile.profileId)
+        .limit(20),
+      supabase
+        .from("outreach_events")
+        .select("id, creator_id, event_type, source")
+        .eq("creator_id", profile.profileId)
+        .eq("event_type", "pitch_sent")
+        .limit(5),
+      supabase
+        .from("pipeline_items")
+        .select("id, creator_id, hotel_id, next_followup_at, hotel:hotels(name)")
         .eq("creator_id", profile.profileId)
         .not("next_followup_at", "is", null)
         .limit(1),
     ]);
 
+    const destinationState = mapDestination(destination, profile.profileId);
+    const followUp = mapFollowUp(followUps, profile.profileId);
     return {
       displayName: profile.displayName,
+      destinationName: destinationState.name,
+      destinationSlug: destinationState.slug,
+      followUpHotel: followUp.hotel,
       facts: {
-        gmailConfigured,
-        gmail,
-        trip: mapOwners(trips, profile.profileId),
+        destination: destinationState.probe,
         saved: mapOwners(saved, profile.profileId),
-        followUp: mapOwners(followUps, profile.profileId),
+        pitch: mapPitch(notes, events, profile.profileId),
+        followUp: followUp.probe,
+        dismissed: destinationState.dismissed,
       },
     };
   } catch {
-    return {
-      displayName: null,
-      facts: {
-        gmailConfigured,
-        gmail: gmailConfigured ? "error" : "no",
-        trip: "error",
-        saved: "error",
-        followUp: "error",
-      },
-    };
+    return blocked();
   }
 }

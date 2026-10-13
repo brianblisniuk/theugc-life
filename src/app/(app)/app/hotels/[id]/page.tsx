@@ -47,6 +47,7 @@ import {
   loadSessionCreatorBadges,
 } from "@/lib/hotels/queries";
 import { getPastCollaborations } from "@/lib/profile/queries";
+import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
 import {
   backLink,
@@ -103,7 +104,9 @@ export default async function HotelDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
-  const origin = parseHotelOrigin(await searchParams);
+  const raw = await searchParams;
+  const origin = parseHotelOrigin(raw);
+  const firstHotelNotice = raw.notice === "first-hotel";
 
   const loaded = await loadHotel(id);
   if (!loaded) notFound();
@@ -173,6 +176,11 @@ export default async function HotelDetailPage({
       <AnalyticsPageView event="hotel_viewed" />
 
       <PageHeader title={hotel.name} crumbs={trail} back={backLink(trail)} />
+      {firstHotelNotice && relationship.status === "open" ? (
+        <p className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-contrast" role="status">
+          {FIRST_RUN_COPY.savedToast}
+        </p>
+      ) : null}
       <HotelSectionNav />
 
       {/* 1. Identity / location. No photograph is invented (D064). */}

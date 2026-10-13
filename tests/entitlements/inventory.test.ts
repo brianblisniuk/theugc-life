@@ -12,6 +12,7 @@ import * as authActions from "@/lib/auth/actions";
 import * as collaborationActions from "@/lib/collaboration/actions";
 import * as gmailActions from "@/lib/gmail/actions";
 import * as inboxActions from "@/lib/inbox-pipeline/actions";
+import * as onboardingActions from "@/lib/onboarding/actions";
 import * as pipelineActions from "@/lib/pipeline/actions";
 import * as profileActions from "@/lib/profile/actions";
 import * as shareActions from "@/lib/profile/share-actions";
@@ -92,6 +93,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(collaborationActions),
       ...exportedFunctions(gmailActions),
       ...exportedFunctions(inboxActions),
+      ...exportedFunctions(onboardingActions),
       ...exportedFunctions(pipelineActions),
       ...exportedFunctions(profileActions),
       ...exportedFunctions(shareActions),
@@ -101,19 +103,15 @@ describe("entitlement inventory", () => {
     expect(listed).toEqual(exported);
   });
 
-  it("keeps the doc in step with the module, including every UNDECIDED question", () => {
+  it("keeps the doc in step with the module, and records that undecided features are Free", () => {
     const doc = readFileSync(path.join(ROOT, "docs/ENTITLEMENTS_INVENTORY.md"), "utf8");
-    expect(doc).toContain("UNDECIDED");
+    expect(doc).toContain("D098");
     expect(doc).toContain("Contradictory gates fixed");
     expect(doc).toContain("0051_outside_free_allowance.sql");
     expect(doc).toContain("outside-coverage rows");
     for (const entry of INVENTORY) expect(doc).toContain(entry.id);
-    const questions = questionsForBrian();
-    expect(questions.length).toBeGreaterThan(0);
-    for (const question of questions) {
-      expect(question.question.length).toBeGreaterThan(20);
-      expect(doc).toContain(question.question);
-    }
+    expect(questionsForBrian()).toEqual([]);
+    expect(INVENTORY.some((entry) => entry.rule.kind === "undecided")).toBe(false);
   });
 
   it("reads workspace limits from FREE_LIMITS and nowhere else", () => {
@@ -163,7 +161,7 @@ describe("entitlement inventory", () => {
     ).toEqual({ pro: false, destinationCovers: false });
   });
 
-  it("decides every written rule, and leaves UNDECIDED undecided even for Pro", () => {
+  it("decides every written rule, including Free for features that had no tier", () => {
     const table: { id: string; ctx: AccessContext; decision: "allow" | "deny" | "undecided" }[] =
       [];
     for (const entry of INVENTORY) {
@@ -231,24 +229,16 @@ describe("entitlement inventory", () => {
     expect([...seen].sort()).toEqual(INVENTORY.map((entry) => entry.id).sort());
   });
 
-  it("does not let a Pro context allow an UNDECIDED feature", () => {
+  it("has no undecided feature left for a Pro context to skip", () => {
     const undecided = INVENTORY.filter((entry) => entry.rule.kind === "undecided");
-    expect(undecided.map((entry) => entry.id).sort()).toEqual([
-      "account.settings",
-      "auth.session",
-      "gmail.connect",
-      "gmail.sync",
-      "home.dashboard",
-      "onboarding.activation",
-      "profile.basic_vs_full",
-      "profile.field_opt_ins",
-      "profile.past_collaborations",
-      "profile.personal_analytics",
-      "profile.share_link",
-      "profile.share_public",
-    ]);
-    for (const entry of undecided) {
-      expect(decideAccess(entry, ctx({ pro: true }))).toBe("undecided");
-    }
+    expect(undecided).toEqual([]);
+    expect(decideAccess(featureById("profile.personal_analytics"), ctx({ owner: true, pro: false }))).toBe(
+      "allow",
+    );
+    expect(decideAccess(featureById("profile.share_link"), ctx({ owner: false, pro: true }))).toBe(
+      "deny",
+    );
+    expect(decideAccess(featureById("profile.share_public"), ctx())).toBe("allow");
+    expect(decideAccess(featureById("profile.public_card"), ctx())).toBe("allow");
   });
 });

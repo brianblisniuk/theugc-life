@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
 import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
+import { PipelineBoard } from "@/components/pipeline/pipeline-board";
 import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filter";
 import { PageHeader } from "@/components/shell/page-header";
 import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
@@ -127,7 +128,7 @@ export default async function PipelinePage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={heading.title}
+          title={heading.title}
         description={
           surface === "inbox" ? (
             <>
@@ -156,6 +157,18 @@ export default async function PipelinePage({
           title={state.title}
           description="Something went wrong on our side. Reload the page to try again."
         />
+      ) : state.kind === "items" && surface === "all" && !status ? (
+        <div className="space-y-3">
+          <p className="text-sm text-[#555]">
+            {state.summary}
+            {loaded ? ` · ${loaded.total} ciclos` : ""}
+          </p>
+          <p className="text-sm text-[#555]">
+            Lo que se lee de Gmail es una sugerencia; vos confirmás el estado.
+          </p>
+          <PipelineBoard items={items} surface={surface} />
+          {state.pagination ? <PipelinePagination state={state.pagination} /> : null}
+        </div>
       ) : state.kind === "items" ? (
         <div className="space-y-3">
           <p className="text-sm text-muted" role="status" aria-live="polite">

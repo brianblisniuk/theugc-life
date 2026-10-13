@@ -84,6 +84,8 @@ async function signUp(page: Page, input: { email: string; name: string; username
   await page.getByLabel("Display name").fill(input.name);
   await page.getByLabel("Username").fill(input.username);
   await page.getByRole("button", { name: "Continue" }).click();
+  await page.waitForURL((url) => url.pathname === "/app/onboarding");
+  await page.getByRole("link", { name: "Ir al inicio" }).click();
   await page.waitForURL((url) => url.pathname === "/app");
 }
 
@@ -220,7 +222,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
-  await ada.getByRole("link", { name: "Profile" }).click();
+  await ada.getByRole("link", { name: "Perfil" }).click();
   await ada.waitForURL("**/app/profile");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());

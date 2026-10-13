@@ -42,19 +42,20 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `inbox.own` | Inbox | owner. Not a separate plan |
 | `collaborations.lifecycle` | Collaborations | owner, on a relationship they already have |
 | `collaborations.compensation` | Collaborations | owner. Not a charge |
-| `gmail.connect` | Gmail | UNDECIDED |
-| `gmail.sync` | Gmail | UNDECIDED |
-| `onboarding.activation` | Onboarding | UNDECIDED |
-| `home.dashboard` | Home | UNDECIDED |
-| `account.settings` | Account | UNDECIDED |
-| `auth.session` | Auth | UNDECIDED |
-| `profile.own` | Profile | owner. Free can manage their own profile, including `updateCreatorProfile` |
-| `profile.basic_vs_full` | Profile | UNDECIDED |
-| `profile.personal_analytics` | Profile | UNDECIDED |
-| `profile.past_collaborations` | Profile | UNDECIDED |
-| `profile.field_opt_ins` | Profile | UNDECIDED |
-| `profile.share_link` | Profile | UNDECIDED |
-| `profile.share_public` | Profile | UNDECIDED |
+| `gmail.connect` | Gmail | owner, Free (D098) |
+| `gmail.sync` | Gmail | owner, Free (D098) |
+| `onboarding.activation` | Onboarding | owner, Free (D095, D098) |
+| `home.dashboard` | Home | owner, Free (D098) |
+| `account.settings` | Account | owner, Free (D098) |
+| `auth.session` | Auth | all tiers (D098) |
+| `profile.own` | Profile | owner. Free can manage their own profile, including `updateCreatorProfile` and `setPublicProfileEnabled` |
+| `profile.basic_vs_full` | Profile | owner, full editor is Free (D098) |
+| `profile.personal_analytics` | Profile | owner, Free (D097, D098) |
+| `profile.past_collaborations` | Profile | owner, Free, private list (D097, D098) |
+| `profile.field_opt_ins` | Profile | owner, Free (D098) |
+| `profile.share_link` | Profile | owner, Free (D098). D089–D091 unchanged |
+| `profile.share_public` | Profile | public page, no plan (D098) |
+| `profile.public_card` | Profile | public page when the creator turned it on (D096, D097, D098) |
 | `billing.own` | Billing | owner reads entitlement rows only |
 | `commerce.grant` | Billing | system grant. A purchase is not access |
 | `marketing.public` | Marketing | public page |
@@ -71,21 +72,8 @@ Own-row surfaces stay on RLS. A Pro entitlement does not select another creator'
 
 ## Contradictory gates fixed
 
-Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a save, an engagement, or an active trip was outside coverage, `save_hotel_to_pipeline`, `transition_pipeline_item`, `create_trip`, and `update_trip` counted in-destination rows toward the Free allowance. A Destination Pass holder who used the in-destination exemption lost the outside Free allowance a Free account would keep. That contradicted D056, PRD §5.2, and PERMISSIONS.md §8. Those counters now count only outside-coverage rows. Pro stays exempt worldwide. Missing, expired, revoked, pending, and not-yet-started rows stay Free. UNDECIDED features are unchanged.
+Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a save, an engagement, or an active trip was outside coverage, `save_hotel_to_pipeline`, `transition_pipeline_item`, `create_trip`, and `update_trip` counted in-destination rows toward the Free allowance. A Destination Pass holder who used the in-destination exemption lost the outside Free allowance a Free account would keep. That contradicted D056, PRD §5.2, and PERMISSIONS.md §8. Those counters now count only outside-coverage rows. Pro stays exempt worldwide. Missing, expired, revoked, pending, and not-yet-started rows stay Free.
 
-## Questions for Brian
+## D098 — features without a written tier are Free
 
-These features have no written tier. Current behavior is unchanged.
-
-- `gmail.connect` — Is connecting and disconnecting Gmail a Free capability, or does a Destination Pass or Pro gate it? No accepted decision assigns a tier. Current behavior is unchanged: a signed-in creator can connect and disconnect only their own mailbox.
-- `gmail.sync` — Is Gmail historical import and incremental sync a Free capability, or a Pass/Pro capability? No accepted decision assigns a tier. Current behavior is unchanged: sync follows the creator's own mailbox and consent, not an entitlement row.
-- `onboarding.activation` — Does the onboarding checklist, or any step in it, require a Destination Pass or Pro? D082 is Proposed and does not assign a tier. Current behavior is unchanged: the checklist does not block the rest of the app.
-- `home.dashboard` — Is Home available on Free, or does some block on it require a Pass or Pro? No accepted decision assigns Home a tier. Current behavior is unchanged: any signed-in creator can open it.
-- `account.settings` — Is the account page available on Free? No accepted decision assigns it a tier. Current behavior is unchanged: any signed-in creator can open their own account page.
-- `auth.session` — Confirm sign-in, sign-up, and password reset stay outside Pass and Pro. No accepted decision assigns them a tier. Current behavior is unchanged.
-- `profile.basic_vs_full` — What does Basic withhold on Free that a Destination Pass or Pro profile includes? PRD §10.2 says a Free creator can manage their own profile, and §5.3.1 does not name the locked fields. Current behavior is unchanged.
-- `profile.personal_analytics` — Are creator-recorded personal counts a Free capability, or does a Destination Pass or Pro gate them? D087 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own counts.
-- `profile.past_collaborations` — Are past collaborations a Free capability, or does a Destination Pass or Pro gate the private list? D088 is Proposed and does not assign a tier. Current behavior is unchanged: the signed-in creator reads only their own completed and cancelled collaborations.
-- `profile.field_opt_ins` — Does a per-field profile opt-in require a Destination Pass or Pro, or is it available on Free? D086 is Proposed and does not assign a tier. Current behavior is unchanged: the row is owner-only, and no row means not shared.
-- `profile.share_link` — Does creating, rotating, or revoking a hotel share link, or setting its opt-ins and share marks, require a Destination Pass or Pro, or is it available on Free? D089 and D090 do not assign a tier. Current behavior is unchanged: the signed-in creator manages only their own link.
-- `profile.share_public` — Does opening a hotel share link require a Destination Pass or Pro, or does a valid token stay readable with no plan? D089 does not assign a tier. Current behavior is unchanged: /p/[token] does not check an entitlement row. The public read is `read_creator_share_profile`.
+D098 (Accepted, 13 Oct 2026) closes the inventory questions. A feature that had no documented tier is Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence, premium contacts, and the D056 workspace limits are unchanged. `questionsForBrian()` returns no questions. `profile.public_card` is the social profile at `/creators/[username]`.

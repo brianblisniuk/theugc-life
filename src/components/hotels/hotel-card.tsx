@@ -8,6 +8,7 @@
 import Link from "next/link";
 
 import { NoPhoto } from "@/components/hotels/no-photo";
+import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { StarRating } from "@/components/hotels/star-rating";
 import {
   hasPublicCardSignal,
@@ -44,44 +45,53 @@ export function HotelCard({
   const onTrip = shouldShowTripBadge(badge);
 
   return (
-    <article className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3 py-3">
+    <article className="grid grid-cols-1 gap-3 border-b border-[#ececec] py-3 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4">
       <NoPhoto name={hotel.name} />
-      <div className="min-w-0 space-y-1">
-        <h3 className="text-base font-semibold text-text">
-          <Link href={href} className="hover:underline">
-            {hotel.name}
-          </Link>
-        </h3>
-        {location ? <p className="text-sm text-muted">{location}</p> : null}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          {type ? <span className="text-xs text-muted">{type}</span> : null}
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-lg font-extrabold tracking-tight text-text">
+            <Link href={href} className="hover:underline">
+              {hotel.name}
+            </Link>
+          </h3>
+          {location || type ? (
+            <p className="text-[13px] text-[#555]">
+              {[location, type].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
           <StarRating rating={hotel.starRating} />
           {CLOSED_LABEL[hotel.activeStatus] ? (
-            <span className="text-xs text-text">{CLOSED_LABEL[hotel.activeStatus]}</span>
+            <p className="text-xs text-text">{CLOSED_LABEL[hotel.activeStatus]}</p>
           ) : null}
+          {showSignal && signal ? (
+            <p className="text-sm font-semibold text-[#0b6b4b]">
+              {[
+                signal.activity,
+                signal.recency,
+                signal.collaborationObserved ? "Creator collaboration observed" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
+          {pipeline || onTrip ? (
+            <p className="text-xs text-[#555]">
+              {[pipeline, onTrip ? "On a trip" : null].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
+          <p className="text-xs text-[#555]">Contacto · Pass</p>
         </div>
-        {showSignal && signal ? (
-          <p className="text-sm text-text">
-            {[
-              signal.activity,
-              signal.recency,
-              signal.collaborationObserved ? "Creator collaboration observed" : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        ) : null}
-        {pipeline || onTrip ? (
-          <p className="text-xs text-muted">
-            {[pipeline, onTrip ? "On a trip" : null].filter(Boolean).join(" · ")}
-          </p>
-        ) : null}
-        <p>
-          <Link href={href} className="text-sm font-medium text-text underline hover:no-underline">
-            View hotel
-          </Link>
-        </p>
-      </div>
+        <div className="flex flex-col items-end gap-2">
+          {pipeline ? (
+            <Link
+              href={`${href}?from=pipeline`}
+              className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
+            >
+              Guardado
+            </Link>
+          ) : (
+            <SaveHotelButton hotelId={hotel.id} idle="Guardar" pendingLabel="Guardando…" />
+          )}
+        </div>
     </article>
   );
 }

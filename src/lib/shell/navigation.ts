@@ -9,11 +9,11 @@
 import { isUuid } from "@/lib/hotels/ids";
 
 export const PRIMARY_NAV = [
-  { href: "/app", label: "Home" },
-  { href: "/app/discover", label: "Discover" },
+  { href: "/app", label: "Inicio" },
+  { href: "/app/discover", label: "Descubrir" },
   { href: "/app/pipeline", label: "Pipeline" },
-  { href: "/app/trips", label: "Trips" },
-  { href: "/app/profile", label: "Profile" },
+  { href: "/app/trips", label: "Viajes" },
+  { href: "/app/profile", label: "Perfil" },
 ] as const;
 
 export const UTILITY_NAV = [
@@ -108,12 +108,12 @@ export function pipelineQueryStatus(
 
 export function pipelineSurfaces(): { id: PipelineSurface; href: string; label: string }[] {
   return [
-    { id: "all", href: "/app/pipeline", label: "All" },
-    { id: "inbox", href: "/app/pipeline?surface=inbox", label: "Inbox" },
+    { id: "all", href: "/app/pipeline", label: "Todos los ciclos" },
+    { id: "inbox", href: "/app/pipeline?surface=inbox", label: "Inbox · con mails" },
     {
       id: "collaborations",
       href: "/app/pipeline?surface=collaborations",
-      label: "Collaborations",
+      label: "Colaboraciones · ganados",
     },
   ];
 }
@@ -204,11 +204,11 @@ export function tripHotelHref(tripId: string, hotelId: string): string | null {
 }
 
 export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
-  const home: Crumb = { label: "Home", href: "/app" };
+  const home: Crumb = { label: "Inicio", href: "/app" };
   const current: Crumb = { label: hotelName.trim() || "Hotel" };
   switch (origin.kind) {
     case "discover":
-      return [home, { label: "Discover", href: "/app/discover" }, current];
+      return [home, { label: "Descubrir", href: "/app/discover" }, current];
     case "pipeline":
       return [home, { label: "Pipeline", href: "/app/pipeline" }, current];
     case "inbox":
@@ -228,8 +228,8 @@ export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
     case "trip":
       return [
         home,
-        { label: "Trips", href: "/app/trips" },
-        { label: "Trip", href: `/app/trips/${origin.tripId}` },
+        { label: "Viajes", href: "/app/trips" },
+        { label: "Viaje", href: `/app/trips/${origin.tripId}` },
         current,
       ];
   }
@@ -288,7 +288,7 @@ export function pipelineRowLinks(
 }
 
 export function listCrumbs(current: string, parent?: { href: string; label: string }): Crumb[] {
-  const home: Crumb = { label: "Home", href: "/app" };
+  const home: Crumb = { label: "Inicio", href: "/app" };
   if (!parent) return [home, { label: current }];
   return [home, parent, { label: current }];
 }
