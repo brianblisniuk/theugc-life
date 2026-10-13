@@ -44,6 +44,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `inbox.own` | Inbox | owner. Not a separate plan |
 | `collaborations.lifecycle` | Collaborations | owner, on a relationship they already have |
 | `collaborations.compensation` | Collaborations | owner. Not a charge |
+| `collaborations.contracts` | Collaborations | owner, Free (D114, D098). A private draft, not a message and not legal advice |
 | `gmail.connect` | Gmail | owner, Free (D098) |
 | `gmail.sync` | Gmail | owner. Login and scheduled sync pause on Free (D102). Stored mail stays |
 | `gmail.collaboration_detection` | Gmail | owner. Detection pauses on Free (D102, D107). Suggestions until the creator confirms |
@@ -81,6 +82,10 @@ Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a
 ## D098 — features without a written tier are Free
 
 D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written tier. Those features are Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence and the D056 workspace limits are unchanged. D100 changes contacts: a Pass or Pro row is not an email. `questionsForBrian()` returns one question, `credits.pending_numbers`. `profile.public_card` is the social profile at `/creators/[username]`.
+
+## D114 — agreement drafts are owner-private and Free
+
+`collaborations.contracts` is the won-deal agreement draft. No written tier assigns it to Pass or Pro, so it is Free (D098) and still owner-only. A Pro row does not read another creator's template or draft.
 
 ## D101 — pending credit numbers
 

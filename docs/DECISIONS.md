@@ -4364,3 +4364,49 @@ names. Home does not send mail and does not call an AI vendor.
 - It does not show User B's pipeline, deliverable, balance, or suggestion
   id on User A's home.
 
+## D114 — A won deal can become a private agreement draft
+
+Status: **Accepted** for this block. Canon v1.1 G01 asks for contract templates
+(hotel stay / barter, paid, and usage rights) generated from a won deal.
+Migration `0068_collaboration_contract_templates.sql`. D110 is F02 pitch
+templates. This block does not edit `0061`, `0062`, or `0064`.
+
+The caller can generate a draft only from a pipeline item they own whose
+status is `won`, and only when that item has exactly one collaboration they
+own. A negotiating, saved, or closed item returns `not_won` for the owner and
+`not_found` for anyone else. The three templates are rows on
+`contract_templates`, one per creator and kind. The draft is a row on
+`collaboration_contracts` with status `draft`. There is no sent status and no
+signed status.
+
+The draft is filled from facts already stored: the creator profile, a
+self-reported audience only when that row has a number or a phrase, the hotel
+and its destination, the deal's trip dates when the trip belongs to that
+creator, the collaboration dates and type, and the D078 deliverables and
+agreed compensation. A missing fact is the marker `[to be filled in]`. A
+recorded zero stays zero. An explicit unpaid agreement stays unpaid and does
+not become a cash amount. `collaborations.private_value_*` is not copied.
+Unknown is not turned into zero. The generator does not add a territory, a
+duration, an exclusivity term, or a fee that was not stored. Usage-rights
+blanks stay blanks.
+
+The owner may edit the title and body and delete the draft. The deal, the
+template, the kind, and the generation snapshot do not move when the text is
+edited. The sentence "This template is not legal advice and it is not a
+signed contract." is on the screen, in every template, and in every saved
+draft. Copy and print keep that sentence.
+
+Row access is RLS: `creator_id = current_creator_id()`. Composite foreign
+keys require the template, the collaboration, the pipeline item, and any trip
+to share that creator. A trigger rejects a draft for a deal that is not won,
+a collaboration on a different item, or a trip that is not that deal's trip.
+Another creator's id is `not_found` and writes nothing. No message is sent.
+No e-sign vendor is called. No external model is called. The feature is Free
+for the owner (D098) because no written tier assigns it to Pass or Pro.
+
+### What this decision does not do
+
+- It does not sign, send, or file the draft.
+- It does not choose a legal jurisdiction or invent terms for a missing fact.
+- It does not read or write pitch templates, Gmail detection, or contact unlocks.
+

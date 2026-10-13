@@ -773,6 +773,14 @@ stay paused and return no suggestion ids (D107). There is no ranking and no
 model. Agency F04 stays planned. `0061`, `0062`, and `0064` are not edited.
 Do not merge.
 
+**G01 contract templates** (canon v1.1, not the Phase G Coverage Engine row)
+is merged as PR #74, merge
+`f4f0bb7ebafa72ac46bfe78b29267016e6d85235`. Migration
+`0068_collaboration_contract_templates.sql`. D114. A won deal can generate a
+private draft from a hotel-stay, paid, or usage-rights template. Missing
+facts stay marked to be filled in. No e-sign, no send, and no external model.
+Phase G Coverage Engine stays gated. `0066` is not that file.
+
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
 > `0047_gmail_incremental_sync.sql`. History polling about every 15 minutes
