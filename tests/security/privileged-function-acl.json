@@ -1491,6 +1491,16 @@
   },
   {
     "schema": "public",
+    "name": "read_own_unlocked_contacts",
+    "args": "p_hotel_ids uuid[]",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "review_contact_report",
     "args": "p_report_id uuid, p_decision text",
     "searchPath": "\"\"",

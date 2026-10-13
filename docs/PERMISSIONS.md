@@ -189,7 +189,7 @@ A contact email is visible when this user owns a `contact_unlocks` row for that 
 - Another user, including Pro: deny, even with the hotel id
 - Admin/editor: allow for operational duties, without spending a credit
 
-One configured credit unlocks one hotel for one user. Opening it again costs nothing. The balance is the sum of `credit_ledger`. No role may update or delete a ledger row. `contact_cache` is not selectable by a client role. Contact authorization happens before returning contact fields. Do not return a locked email and blur it in the browser.
+One configured credit unlocks one hotel for one user. Opening it again costs nothing. A revealed unlock also saves that hotel on the caller's pipeline in the same transaction (D108). The other user's pipeline and the other user's unlock stay invisible. The balance is the sum of `credit_ledger`. No role may update or delete a ledger row. `contact_cache` is not selectable by a client role. Contact authorization happens before returning contact fields. Do not return a locked email and blur it in the browser.
 
 Open amounts (Free grant, Pro and Pro+ monthly credits, pack sizes, cache TTL, not-found charge) are `credit_config` (D101). They are not a price. This block does not sell packs and does not call a real provider.
 

@@ -25,6 +25,7 @@ import {
   activityPanelState,
   freeLimitExplanation,
   normalizeStatusFilter,
+  pipelineContactEmail,
   pipelineListState,
   pipelinePageHref,
   saveControlState,
@@ -363,5 +364,18 @@ describe("status filter parsing", () => {
     for (const raw of [undefined, null, "", "SAVED", "drop table", "unknown"]) {
       expect(normalizeStatusFilter(raw)).toBeNull();
     }
+  });
+});
+
+describe("pipeline card contact", () => {
+  const hotel = "11111111-1111-4111-8111-111111111111";
+  const other = "22222222-2222-4222-8222-222222222222";
+
+  it("shows only the email the caller map contains", () => {
+    const emails = new Map<string, string>([[hotel, "ada@hotel.test"]]);
+    expect(pipelineContactEmail(hotel, emails)).toBe("ada@hotel.test");
+    expect(pipelineContactEmail(other, emails)).toBeNull();
+    expect(pipelineContactEmail(null, emails)).toBeNull();
+    expect(pipelineContactEmail(hotel, new Map([[hotel, ""]]))).toBeNull();
   });
 });

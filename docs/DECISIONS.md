@@ -4169,3 +4169,49 @@ Otherwise the hotel is not inserted. No destination is invented.
 - It does not change production data from this block. The migration is the
   schema change; running it against production is a later, separate action.
 
+## D108 — A successful contact unlock is saved on the pipeline
+
+Status: **Accepted** for this block (Brian, 13 Oct 2026). Migration
+`0062_unlock_saves_pipeline.sql`. `0061` stays unused so F01 can take it.
+D100–D105 are unchanged. D042 and D095 still apply.
+
+Unlocking a contact and having that hotel in the pipeline are one action.
+`unlock_hotel_contact` calls `save_hotel_to_pipeline` in the same transaction
+as a debit that reveals an email. The row status is `saved` when this call
+creates it. An open cycle that is already there is left as it is, including
+a status other than `saved`, and it is not duplicated. A second unlock of
+the same hotel does not debit and does not insert a second open cycle.
+
+The Free open-relationship allowance is the existing save rule. The number
+is `FREE_LIMITS.savedHotels` and is not taken from the client. Pro is exempt
+worldwide. A Destination Pass is exempt inside its destination, and
+in-destination rows do not consume the outside allowance (D056). When a new
+row would be refused, the unlock returns `pipeline_limit`, debits nothing,
+and returns no email. That answer does not depend on whether a contact is
+stored, so a full pipeline is not a way to probe which hotels have emails.
+A cache hit still costs the configured unlock credit and still saves.
+
+A refused unlock does not add the hotel. `insufficient_credits`,
+`not_found`, `needs_provider`, `hotel_missing`, and an idempotent replay of
+a key that did not unlock this hotel write no pipeline row. A not-found
+charge, when that policy is on, still does not add the hotel.
+
+A pipeline item does not require a trip (D095). This block does not create
+a draft trip and does not set `trip_id`. The unlocked email is readable from
+the caller's pipeline card through `read_own_unlocked_contacts`. Another
+user's unlock is not in that result.
+
+The toast "Added to Pipeline" is shown only when this call inserted the row.
+
+A repeat unlock repairs a missing pipeline row when the caller owns a
+servable email and has no pipeline row for that hotel, including a closed
+one. It does not reopen a closed cycle. A first unlock whose only existing
+cycle is closed starts a new `saved` cycle, which is the existing save rule
+(D023). This block does not backfill unlocks that are never opened again.
+
+### What this decision does not do
+
+- It does not change credit amounts (D101) or call a real contact provider.
+- It does not exempt an unlock from the Free saved-hotel allowance.
+- It does not reveal User A's email or pipeline row to User B.
+

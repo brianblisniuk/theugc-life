@@ -7,11 +7,13 @@ import { capture } from "@/lib/analytics";
 import {
   ALREADY_UNLOCKED_LABEL,
   OUT_OF_CREDITS_COPY,
+  addedToPipelineToast,
   unlockChrome,
   unlockContactLabel,
 } from "@/lib/credits/config";
 import { unlockHotelContactAction } from "@/lib/credits/actions";
 import type { UnlockActionResult } from "@/lib/credits/types";
+import { PIPELINE_COPY, freeLimitExplanation } from "@/lib/pipeline/view";
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -57,6 +59,7 @@ export function UnlockContact({
       showEmail && result && (result.status === "unlocked" || result.status === "already_unlocked")
         ? result.email
         : null;
+    const added = addedToPipelineToast(result);
     return (
       <div className="space-y-2" data-testid="unlock-state">
         <p className="text-sm font-semibold text-text">{ALREADY_UNLOCKED_LABEL}</p>
@@ -65,6 +68,15 @@ export function UnlockContact({
             <a className="underline" href={`mailto:${email}`}>
               {email}
             </a>
+          </p>
+        ) : null}
+        {added ? (
+          <p
+            className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-contrast"
+            role="status"
+            data-testid="added-to-pipeline"
+          >
+            {added}
           </p>
         ) : null}
       </div>
@@ -96,6 +108,7 @@ export function UnlockContact({
     setResult(outcome);
     if (outcome.status === "unlocked" || outcome.status === "already_unlocked") {
       capture("credit_unlock", { hotel_id: hotelId });
+      if (outcome.pipelineAdded) capture("hotel_saved", { hotel_id: hotelId });
     } else if (outcome.status === "insufficient_credits") {
       capture("credit_insufficient", { hotel_id: hotelId });
     }
@@ -111,6 +124,14 @@ export function UnlockContact({
         <p className="text-sm text-muted" role="status">
           Contact not available yet. This did not use a credit.
         </p>
+      ) : null}
+      {result?.status === "pipeline_limit" ? (
+        <div role="status" className="space-y-2">
+          <p className="text-sm font-medium text-text">{PIPELINE_COPY.limitTitle}</p>
+          {result.limit !== null ? (
+            <p className="max-w-prose text-sm text-muted">{freeLimitExplanation(result.limit)}</p>
+          ) : null}
+        </div>
       ) : null}
       {result?.status === "error" || result?.status === "hotel_missing" ? (
         <p className="text-sm text-muted" role="status">

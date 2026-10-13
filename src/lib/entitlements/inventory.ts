@@ -257,7 +257,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "pipeline.own",
     module: "Pipeline",
     summary:
-      "A creator reads and notes their own pipeline at every tier. Expiry does not remove those rows. Another creator's Pro entitlement does not.",
+      "A creator reads and notes their own pipeline at every tier. An unlocked contact email for that hotel is shown on the card. Expiry does not remove those rows. Another creator's Pro entitlement does not.",
     routes: ["/app/pipeline"],
     sourceFiles: [
       "src/app/(app)/app/pipeline/page.tsx",
@@ -265,7 +265,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/lib/pipeline/queries.ts",
     ],
     serverActions: ["updatePipelineNotesAction", "recordNetworkPriorityAction"],
-    rpcs: ["update_pipeline_private_notes"],
+    rpcs: ["update_pipeline_private_notes", "read_own_unlocked_contacts"],
     rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["pipeline_items"] },

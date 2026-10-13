@@ -8,9 +8,12 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { FREE_LIMITS } from "@/lib/config";
 import {
+  ADDED_TO_PIPELINE_TOAST,
   ALREADY_UNLOCKED_LABEL,
   CREDITS_CONFIG,
+  addedToPipelineToast,
   creditsLeftLabel,
   OUT_OF_CREDITS_COPY,
   unlockChrome,
@@ -61,9 +64,32 @@ describe("credit config placeholders", () => {
     expect(creditsLeftLabel(1)).toBe("1 credit left");
     expect(creditsLeftLabel(15)).toBe("15 credits left");
     expect(OUT_OF_CREDITS_COPY).not.toMatch(/checkout|billing|buy/i);
+    expect(addedToPipelineToast({ status: "unlocked", pipelineAdded: true })).toBe(
+      ADDED_TO_PIPELINE_TOAST,
+    );
+    expect(addedToPipelineToast({ status: "already_unlocked", pipelineAdded: true })).toBe(
+      ADDED_TO_PIPELINE_TOAST,
+    );
+    expect(addedToPipelineToast({ status: "unlocked", pipelineAdded: false })).toBeNull();
+    expect(
+      addedToPipelineToast({ status: "insufficient_credits", pipelineAdded: true }),
+    ).toBeNull();
+    expect(addedToPipelineToast({ status: "not_found", pipelineAdded: true })).toBeNull();
+    expect(addedToPipelineToast({ status: "pipeline_limit", pipelineAdded: true })).toBeNull();
+    expect(addedToPipelineToast(null)).toBeNull();
     expect(unlockChrome({ unlocked: true, balance: 0, cost: 1 })).toBe("already");
     expect(unlockChrome({ unlocked: false, balance: null, cost: 1 })).toBe("unknown");
     expect(unlockChrome({ unlocked: false, balance: 0, cost: 1 })).toBe("out");
     expect(unlockChrome({ unlocked: false, balance: 1, cost: 1 })).toBe("unlock");
+  });
+
+  it("pins the unlock pipeline allowance to FREE_LIMITS.savedHotels", () => {
+    const sql = readFileSync(
+      path.join(ROOT, "supabase/migrations/0062_unlock_saves_pipeline.sql"),
+      "utf8",
+    );
+    expect(sql).toContain(`v_free_saved_hotels constant integer := ${FREE_LIMITS.savedHotels};`);
+    expect(sql).toContain("save_hotel_to_pipeline");
+    expect(sql).not.toContain("insert into public.trips");
   });
 });

@@ -25,6 +25,36 @@ export async function getOwnCreditBalance(): Promise<CreditBalanceResult> {
   }
 }
 
+/**
+ * Cache emails for pipeline cards. The database drops hotels this caller has
+ * not unlocked. A failed read is an empty map, not another creator's address.
+ */
+export async function readUnlockedContactEmails(
+  hotelIds: readonly string[],
+): Promise<Map<string, string>> {
+  const ids = [...new Set(hotelIds.filter((id) => id.length > 0))];
+  if (ids.length === 0) return new Map();
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("read_own_unlocked_contacts", {
+      p_hotel_ids: ids,
+    });
+    if (error || !Array.isArray(data)) return new Map();
+    const emails = new Map<string, string>();
+    for (const row of data) {
+      if (!row || typeof row !== "object") continue;
+      const hotelId = (row as { hotel_id?: unknown }).hotel_id;
+      const email = (row as { email?: unknown }).email;
+      if (typeof hotelId === "string" && typeof email === "string" && email.length > 0) {
+        emails.set(hotelId, email);
+      }
+    }
+    return emails;
+  } catch {
+    return new Map();
+  }
+}
+
 /** Cache email only when the database says this caller may see it. */
 export async function getUnlockedCacheEmail(hotelId: string): Promise<string | null> {
   const supabase = await createClient();

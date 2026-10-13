@@ -262,7 +262,9 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 
 `unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
 
-Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here.
+Migration `0062` (D108) makes a revealed unlock call `save_hotel_to_pipeline` in that same transaction. A new row is `saved`. An open cycle is not duplicated and its status is not reset. The Free allowance is `FREE_LIMITS.savedHotels`, not a client argument. `pipeline_limit` debits nothing and returns no email. `read_own_unlocked_contacts(uuid[])` returns cache emails for hotels this caller unlocked, or for admin/editor. A pipeline item still does not require a trip.
+
+Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. `0061` is not used.
 
 ## 5a. Property-content source infrastructure (migration 0027)
 
