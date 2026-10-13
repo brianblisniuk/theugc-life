@@ -196,11 +196,18 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#in-kind-description").fill("E2E stay");
   await ada.getByRole("button", { name: "Save compensation" }).click();
   await expect(ada.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ })).toBeVisible();
-  await ada.getByLabel("Platform").fill(PLATFORM);
-  await ada.getByRole("button", { name: "Add deliverable" }).click();
+  const deliverableForm = ada.locator("form").filter({
+    has: ada.getByRole("button", { name: "Add deliverable" }),
+  });
+  await deliverableForm.getByLabel("Platform").fill(PLATFORM);
+  await deliverableForm.getByRole("button", { name: "Add deliverable" }).click();
+  await expect(
+    deliverableForm.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ }),
+  ).toBeVisible();
   await ada.reload();
   await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
-  await expect(ada.getByText(PLATFORM)).toBeVisible();
+  await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
+  await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
   await ada.getByRole("link", { name: "Profile" }).click();
   await ada.waitForURL("**/app/profile");
