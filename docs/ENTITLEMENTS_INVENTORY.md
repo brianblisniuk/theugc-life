@@ -50,7 +50,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `gmail.sync` | Gmail | owner. Login and scheduled sync pause on Free (D102). Stored mail stays |
 | `gmail.collaboration_detection` | Gmail | owner. Detection pauses on Free (D102, D107). Suggestions until the creator confirms |
 | `onboarding.activation` | Onboarding | owner, Free (D095, D098) |
-| `home.dashboard` | Home | owner, Free (D098) |
+| `home.dashboard` | Home | owner, Free (D098). Gmail suggestion ids on Home follow D107 and D112 |
 | `account.settings` | Account | owner, Free (D098) |
 | `auth.session` | Auth | all tiers (D098) |
 | `profile.own` | Profile | owner. Free can manage their own profile, including `updateCreatorProfile` and `setPublicProfileEnabled` |

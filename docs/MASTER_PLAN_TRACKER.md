@@ -756,10 +756,21 @@ pipeline card shows the unlocked email to that caller only. `0061` is not
 edited.
 
 **F02 pitch templates** (canon v1.1, not the agency F02 row in the table
-above) is PR #72. Migration `0064_pitch_templates.sql`. D110. A draft is
-filled from facts the creator already has. Copy and a mailto draft are not a
-sent pitch. D03 and D04 stay open: no model vendor and no send. `0060`,
-`0061`, and `0062` are not edited. `0063` is not this file. Do not merge.
+above) is merged as PR #72, merge
+`087419826bbac1c241f852d4ff32b868728a8b48`. Migration
+`0064_pitch_templates.sql`. D110. A draft is filled from facts the creator
+already has. Copy and a mailto draft are not a sent pitch. D03 and D04 stay
+open: no model vendor and no send. `0060`, `0061`, and `0062` are not edited.
+`0063` is not this file.
+
+**F04 home next actions** (canon v1.1, not the agency F04 row) is merged as
+PR #73, merge `0a69413beb338c7910d8b9473693a3db7136a6aa`. It composes the
+signed-in creator's pipeline, due follow-ups, due deliverables, credit
+balance, and pending Gmail suggestions (D112). Migration
+`0066_home_next_actions.sql` is a read function only. The cap of 100 keeps
+human reply, then pitch sent, then collaboration, then id. Free Gmail reads
+stay paused and return no suggestion ids (D107). There is no ranking and no
+model. Agency F04 stays planned. `0061`, `0062`, and `0064` are not edited.
 
 **G01 contract templates** (canon v1.1, not the Phase G Coverage Engine row)
 is merged as PR #74, merge
@@ -767,7 +778,7 @@ is merged as PR #74, merge
 `0068_collaboration_contract_templates.sql`. D114. A won deal can generate a
 private draft from a hotel-stay, paid, or usage-rights template. Missing
 facts stay marked to be filled in. No e-sign, no send, and no external model.
-Phase G Coverage Engine stays gated. This PR does not edit `0068`.
+Phase G Coverage Engine stays gated. This PR does not edit `0068`. `0066` is not that file.
 
 **G02 deliverable deadlines** (canon v1.1, not the agency G02 row in the
 table above) is PR #75. Migration `0069_deliverable_deadlines.sql`. D115.
