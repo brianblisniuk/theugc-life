@@ -4308,6 +4308,62 @@ templates or drafts. A draft cannot cite User B's trip or template.
 - No credit debit. A draft does not unlock a contact.
 - No change to migrations `0060`–`0063`.
 
+## D112 — Home next actions are a read of owned rows
+
+Status: **Accepted** for this block. Canon v1.1 F04. Migration
+`0066_home_next_actions.sql` adds one read function and no table. `0061`,
+`0062`, and `0064` are not edited. D100–D108 stay as they are. D110 stays
+as it is. Agency F04 stays planned.
+
+Home lists what the signed-in creator can already see. The order is fixed.
+It is not a score, not a hotel ranking, and not a model.
+
+1. Open pipeline cycles whose `next_followup_at` is at or before the page
+   clock, earliest first. A later date is not due. A closed cycle is not
+   due. A missing date is not due.
+2. Deliverables in `pending` or `rejected` whose `due_on` is at or before
+   the UTC date of that clock, earliest first. `submitted` and `approved`
+   are not due. A missing `due_on` is not due.
+3. Pending Gmail suggestions when
+   `list_own_pending_gmail_collaboration_suggestions` returns `ok`.
+   Order: human reply, pitch sent, collaboration, then id. The function
+   returns at most 100 of those rows, and that cap keeps this order. The
+   function uses the D107 paid predicate: active Pro, or an active
+   Destination Pass. A Free
+   read returns `paused` and an empty array. Suggestion ids are not in
+   that payload. Stored rows are not deleted. The function takes no id
+   argument. Confirm, dismiss, and refresh are not called from Home.
+4. Other open pipeline cycles, by status: negotiating, replied, follow-up,
+   pitched, won, planned, saved. Inside one status, the oldest
+   `last_activity_at` is first. A null activity is after a dated one. A
+   cycle already listed as a due follow-up is not listed again.
+5. The credit balance, always outside that cap. A balance below the
+   configured unlock cost uses the D105 out-of-credits sentence and links
+   nowhere. A failed balance read is an error, not zero.
+
+The page shows at most eight of the first four kinds. The follow-up count
+is the number due in the rows that were read. A read that hits the limit
+says so. It does not claim that count is the whole table. A failed read of
+one source is a notice for that source. It is not an empty day, and the
+other sources still render when they succeeded.
+
+Catalog hotels under the next trip, or under the onboarding destination
+when there is no upcoming trip, stay a published-catalog sample. They are
+not a ranking. F03 and H01 are not this block.
+
+A row whose creator is not the signed-in profile is dropped. A malformed
+own row makes that source an error and removes its actions, including
+names. Home does not send mail and does not call an AI vendor.
+
+### What this decision does not do
+
+- It does not add a table, a send scope, or a classifier.
+- It does not confirm or dismiss a suggestion.
+- It does not change credit amounts (D101) or the D107 paid predicate.
+- It does not rank hotels.
+- It does not show User B's pipeline, deliverable, balance, or suggestion
+  id on User A's home.
+
 ## D114 — A won deal can become a private agreement draft
 
 Status: **Accepted** for this block. Canon v1.1 G01 asks for contract templates

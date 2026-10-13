@@ -493,15 +493,19 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "home.dashboard",
     module: "Home",
     summary:
-      "Home is the signed-in creator's operating page. PRD §7.1 does not assign a plan. It shows that creator's own trips and pipeline.",
+      "Home is the signed-in creator's operating page. PRD §7.1 does not assign a plan. Next actions are that creator's pipeline, due follow-ups, due deliverables, credit balance, and pending Gmail suggestions. Free Gmail reads stay paused and return no suggestion ids (D107, D112).",
     routes: ["/app"],
-    sourceFiles: ["src/app/(app)/app/page.tsx"],
+    sourceFiles: [
+      "src/app/(app)/app/page.tsx",
+      "src/lib/home/next-actions.ts",
+      "src/lib/home/queries.ts",
+    ],
     serverActions: [],
-    rpcs: [],
+    rpcs: ["list_own_pending_gmail_collaboration_suggestions"],
     rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "kept_current" },
-    sources: ["PRD §6", "PRD §7.1", "D081", "D098"],
+    sources: ["PRD §6", "PRD §7.1", "D081", "D098", "D107", "D112"],
   },
   {
     id: "account.settings",

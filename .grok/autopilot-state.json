@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 087419826bbac1c241f852d4ff32b868728a8b48 (merge of PR #72, F02 pitch templates, D110, migration 0064). G01 contract templates is PR #74. Migration 0068. D114. D03 and D04 stay open. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f4f0bb7ebafa72ac46bfe78b29267016e6d85235 (PR #74, G01 contract templates, D114, migration 0068). F04 home next actions is on cursor/f04-home-next-actions-39db. D112. Migration 0066 is a read function and adds no table. The Gmail cap keeps human reply, then pitch sent, then collaboration, then id. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
-  "state": "AWAITING_CI",
-  "last_recorded_main": "087419826bbac1c241f852d4ff32b868728a8b48",
-  "active_block": "G01 contract templates",
-  "branch": "cursor/g01-contract-templates-312c",
-  "pr": 74,
+  "state": "AWAITING_AUDIT",
+  "last_recorded_main": "f4f0bb7ebafa72ac46bfe78b29267016e6d85235",
+  "active_block": "F04 home next actions",
+  "branch": "cursor/f04-home-next-actions-39db",
+  "pr": 73,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "087419826bbac1c241f852d4ff32b868728a8b48",
+    "ref": "f4f0bb7ebafa72ac46bfe78b29267016e6d85235",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "G01 contract templates is PR #74 on cursor/g01-contract-templates-312c. Migration 0068. D114. A won deal can become a private agreement draft. No e-sign and no model vendor. D03 and D04 stay open. F02 is merged (PR #72, migration 0064, D110). Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "PR #73 is F04 home next actions on cursor/f04-home-next-actions-39db. AWAITING_AUDIT. D112. Migration 0066 lists the caller's pending Gmail suggestions. The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. Free returns paused and no ids. No new table. G01 is merged (PR #74, migration 0068, D114). F02 is merged (PR #72, migration 0064, D110). expected_head stays null. Do not merge."
 }

@@ -297,6 +297,8 @@ Migration `0062` (D108) makes a revealed unlock call `save_hotel_to_pipeline` in
 
 Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. Migration `0061` stores Gmail collaboration suggestions on a thread the creator already linked. Refresh writes those rows only. A deletion purge removes them with the mailbox's other Gmail-derived rows. Disconnect does not.
 
+Migration `0066` (D112) adds `list_own_pending_gmail_collaboration_suggestions()`. It reads pending suggestion ids for `auth.uid()` when `private.gmail_collab_is_paid` is true, and returns `paused` with an empty array otherwise. The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. It writes nothing. `0061` and `0064` are not edited.
+
 ## 5a. Property-content source infrastructure (migration 0027)
 
 Provider-sourced property data enters the controlled pipeline through these six
@@ -3010,5 +3012,9 @@ At minimum:
     and a mailto draft are delivery marks. Neither sends mail and neither
     writes the outreach ledger. `0060`, `0061`, and `0062` are not edited.
     `0063` is not this file.
+34. Home next actions (0066, D112) — one read of the caller's pending Gmail
+    collaboration suggestions. The cap of 100 keeps human reply, then pitch
+    sent, then collaboration, then id. Free returns paused and no ids. No new
+    table. `0061`, `0062`, and `0064` are not edited.
 
 Every migration must be reproducible from an empty database.
