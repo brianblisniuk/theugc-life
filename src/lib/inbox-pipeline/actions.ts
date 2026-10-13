@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
+import { refreshCollaborationByProviderThread } from "@/lib/gmail/collaboration/queries";
 import { answerGmailNetworkReading } from "@/lib/network-intelligence/queries";
 
 // Load-time binding. A "use server" module may export only async functions.
@@ -46,6 +47,15 @@ export async function bindInboxThreadAction(formData: FormData): Promise<InboxWr
     result.result === "stale" ||
     result.result === "already_bound"
   ) {
+    try {
+      await refreshCollaborationByProviderThread(
+        resolution.session.userId,
+        mailAccountId,
+        providerThreadId,
+      );
+    } catch (error) {
+      console.error("[gmail] collaboration detection failed after linking a thread", error);
+    }
     revalidate(readField(formData, "hotelId"));
   }
   return result;

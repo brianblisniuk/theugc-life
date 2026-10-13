@@ -262,7 +262,7 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 
 `unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
 
-Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here.
+Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. Migration `0061` stores Gmail collaboration suggestions on a thread the creator already linked. Refresh writes those rows only. A deletion purge removes them with the mailbox's other Gmail-derived rows. Disconnect does not.
 
 ## 5a. Property-content source infrastructure (migration 0027)
 
@@ -2956,5 +2956,9 @@ At minimum:
     one revocable link per creator, SHA-256 digest only, and a security-definer
     public read of opted-in fields. Anon has no new table privilege. `0051`
     is on main from E04 (PR #62) and is not edited. `0052` is not edited.
+31. Gmail collaboration detection (0061, D107) — suggestion rows for a pitch,
+    a human reply, and a collaboration on an inbox link the creator already
+    made. Free stays paused. Confirming a collaboration writes no outreach
+    event and no hotel fact. `0060` is not edited.
 
 Every migration must be reproducible from an empty database.

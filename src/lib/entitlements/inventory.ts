@@ -406,7 +406,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "gmail.sync",
     module: "Gmail",
     summary:
-      "Historical import and incremental sync run for a mailbox the creator owns. No accepted decision assigns a tier. This block does not add a plan check.",
+      "Historical import stays on a mailbox the creator owns. Login sync and the scheduled due list pause unless the owner has active Pro or an active Destination Pass (D102). Stored mail is not deleted.",
     routes: [],
     sourceFiles: ["src/lib/gmail/sync/worker.server.ts", "src/lib/gmail/sync/on-login.server.ts"],
     serverActions: [],
@@ -414,7 +414,29 @@ export const INVENTORY: readonly InventoryEntry[] = [
     rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["mail_accounts"] },
-    sources: ["D068", "D076", "D067", "D098"],
+    sources: ["D068", "D076", "D067", "D098", "D102"],
+  },
+  {
+    id: "gmail.collaboration_detection",
+    module: "Gmail",
+    summary:
+      "A linked Gmail thread can suggest a pitch, a human reply, or a collaboration. Free refresh and confirm stay paused (D102, D107). Confirming a pitch or a human reply records the creator's own event. Confirming a collaboration does not create one and does not publish a hotel fact. The classifier is the heuristic adapter.",
+    routes: ["/app/hotels/[id]"],
+    sourceFiles: [
+      "src/app/(app)/app/hotels/[id]/page.tsx",
+      "src/lib/gmail/collaboration/actions.ts",
+      "src/components/pipeline/collaboration-suggestions.tsx",
+    ],
+    serverActions: ["confirmCollaborationSuggestionAction", "dismissCollaborationSuggestionAction"],
+    rpcs: [
+      "refresh_gmail_collaboration_suggestions",
+      "confirm_gmail_collaboration_suggestion",
+      "dismiss_gmail_collaboration_suggestion",
+    ],
+    rule: { kind: "owner_private" },
+    anon: "deny",
+    enforcement: { kind: "owner_rows", tables: ["gmail_collaboration_suggestions"] },
+    sources: ["D102", "D107", "D076", "D080"],
   },
   {
     id: "onboarding.activation",
