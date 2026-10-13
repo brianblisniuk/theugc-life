@@ -172,8 +172,10 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.getByRole("button", { name: "Add to trip" }).click();
   await expect(ada.getByText("Added to this trip.")).toBeVisible();
   await ada.getByRole("button", { name: "Save to Pipeline" }).click();
-  await expect(ada.getByText("Saved to your pipeline.")).toBeVisible();
-  await ada.reload();
+  // The flash is client state. Revalidation replaces it with the stored heading.
+  await expectStoredHeading(ada, "Saved", "Saved to your pipeline.");
+  await expect(ada.getByText("This hotel is in your pipeline.")).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Save to Pipeline" })).toHaveCount(0);
 
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
   await ada.getByRole("button", { name: "Link thread" }).click();
