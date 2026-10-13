@@ -23,6 +23,10 @@ import { AddToTrip } from "@/components/hotels/add-to-trip";
 import { ContactCard } from "@/components/hotels/contact-card";
 import { HotelMap } from "@/components/hotels/hotel-map";
 import {
+  NetworkIntelligencePanel,
+  PersonalFacts,
+} from "@/components/intelligence/network-panel";
+import {
   IntelligencePanel,
   PremiumIntelligencePanel,
 } from "@/components/hotels/intelligence-panel";
@@ -46,6 +50,15 @@ import {
   getHotelPremiumIntelligence,
   loadSessionCreatorBadges,
 } from "@/lib/hotels/queries";
+import {
+  getDestinationRank,
+  getGmailNetworkPrompt,
+  getNetworkHotel,
+  getOwnNetworkFacts,
+  getOwnNetworkPriority,
+  recordNetworkView,
+} from "@/lib/network-intelligence/queries";
+import { networkPanelState } from "@/lib/network-intelligence/display";
 import { getPastCollaborations } from "@/lib/profile/queries";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
@@ -149,6 +162,20 @@ export default async function HotelDetailPage({
       ? await getInboxUnity(relationship.relationship.pipelineItemId)
       : undefined;
   const mailboxes = relationship.status === "open" ? await listConnectedMailboxes() : undefined;
+  const gmailPrompt =
+    relationship.status === "open"
+      ? await getGmailNetworkPrompt(relationship.relationship.pipelineItemId)
+      : undefined;
+  const [network, ownFacts] = await Promise.all([
+    getNetworkHotel(hotel.id),
+    getOwnNetworkFacts(hotel.id),
+  ]);
+  const destinationId = hotel.destination?.id ?? null;
+  const rank = destinationId ? await getDestinationRank(destinationId) : { status: "ok" as const, hotels: [] };
+  const prioritized = await getOwnNetworkPriority(hotel.id);
+  if (network.status === "ok" && networkPanelState(network) !== "error") {
+    await recordNetworkView(hotel.id);
+  }
 
   const [session, trips, pastCollaborations] = await Promise.all([
     resolveSession(),
@@ -239,6 +266,13 @@ export default async function HotelDetailPage({
         <div className="space-y-4">
           <IntelligencePanel result={intelligence} />
           <PremiumIntelligencePanel state={premiumState} result={premium} />
+          <NetworkIntelligencePanel
+            hotelId={hotel.id}
+            network={network}
+            rank={rank}
+            prioritized={prioritized}
+          />
+          <PersonalFacts load={ownFacts} />
         </div>
       </Section>
 
@@ -299,6 +333,7 @@ export default async function HotelDetailPage({
           workspace={workspace}
           inbox={inbox}
           mailboxes={mailboxes}
+          gmailPrompt={gmailPrompt}
           pipelineHref={pipelineReturnHref(origin)}
         />
         <div id="trip" className="scroll-mt-24">

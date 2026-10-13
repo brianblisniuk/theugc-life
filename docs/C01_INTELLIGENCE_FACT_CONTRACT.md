@@ -1,9 +1,9 @@
 # C01 — Normalized intelligence event/fact contract
 
-**Status:** PROPOSED. Requires owner acceptance. This document is not an accepted decision, and accepting the pull request that adds it does not by itself accept the product rule.
-**Decision:** D077 — proposed, not accepted. D076 is not this decision. On 2026-10-12, `main` `4062170212beb8b978a248ef219eb91ddbfb080b` ends at D075, and open PR #53 already uses D076 for B08.
-**Base:** `main` `4062170212beb8b978a248ef219eb91ddbfb080b` (merge of PR #52).
-**Implementation round:** none. No schema, no migration, no application code, no UI. No migration number is reserved. D074 still applies: a later implementation takes the next free number at the time the migration is written.
+**Status:** D077 is **Accepted (Brian, 13 Oct 2026)**. The three questions in §12 are closed by D099. The proposal text below is unchanged. D099 authorizes migration `0056` and the C02–C05 implementation. Accepting the original docs pull request did not, by itself, authorize schema.
+**Decision:** D077 — Accepted (Brian, 13 Oct 2026), with the answers recorded in D099. D076 is not this decision. On 2026-10-12, `main` `4062170212beb8b978a248ef219eb91ddbfb080b` ends at D075, and the then-open PR #53 already used D076 for B08.
+**Base:** `main` `4062170212beb8b978a248ef219eb91ddbfb080b` (merge of PR #52). The C02–C05 implementation starts from `main` `502ae69ecb192dc3678a27619a557bb1012ff0e5`.
+**Implementation round:** D099, migration `0056_network_intelligence_facts.sql`. The original docs PR reserved no migration number. D074 still applied: the implementation took the next free number, which was `0056`.
 **Depends on, and does not amend:** D009, D010, D012, D014, D043, D045, D050, D057, D058, D067, D070, D071, D072, and the D01 trip reading already merged in PR #52.
 
 ---
@@ -311,9 +311,9 @@ Thresholds for any new aggregate are owner question 1. This contract does not co
 
 ---
 
-## 12. Open owner questions
+## 12. Owner questions
 
-This proposal does not answer these. An implementation block must not answer them either.
+Closed by D099 on 13 Oct 2026. The text below is the question as it stood while D077 was Proposed. The answers are in D099, not in a rewrite of this section.
 
 ### 1. Aggregation thresholds
 

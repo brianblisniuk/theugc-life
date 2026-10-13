@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 9a449239df1ebd859d4876c35e83e35007cf41af (PR #65, UX01). DATA01 is PR #66 on cursor/data01-hotel-catalog-import-5dcd. No new decision. No migration. D095–D098 stay Accepted. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 502ae69ecb192dc3678a27619a557bb1012ff0e5 (PR #66). C02–C05 is branch cursor/c02-c05-network-intelligence-a035. D099. Migration 0056. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "9a449239df1ebd859d4876c35e83e35007cf41af",
-  "active_block": "DATA01 hotel catalog importer",
-  "branch": "cursor/data01-hotel-catalog-import-5dcd",
-  "pr": 66,
+  "last_recorded_main": "502ae69ecb192dc3678a27619a557bb1012ff0e5",
+  "active_block": "C02–C05 network intelligence",
+  "branch": "cursor/c02-c05-network-intelligence-a035",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "9a449239df1ebd859d4876c35e83e35007cf41af",
+    "ref": "502ae69ecb192dc3678a27619a557bb1012ff0e5",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "DATA01 hotel catalog importer is PR #66 on cursor/data01-hotel-catalog-import-5dcd. UX01 is merged (PR #65, 9a44923). No migration. Wait for verify on the exact head of both the push and pull_request runs. Do not merge."
+  "next_dependency": "C02–C05 network intelligence on cursor/c02-c05-network-intelligence-a035. D077 Accepted. D099. Migration 0056. Wait for verify on the exact head of both the push and pull_request runs. Do not merge."
 }

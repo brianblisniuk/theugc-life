@@ -95,6 +95,9 @@ const CONTRACT: Record<string, Expected> = {
   hotel_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
   destination_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
   hotel_public_intelligence: { anon: "S", authenticated: "S", serviceRole: "S" },
+  // C03 (0056, D099). Anonymous aggregate. Same select-only shape as the
+  // public intelligence projection. Counts and provenance are not columns.
+  network_hotel_public: { anon: "S", authenticated: "S", serviceRole: "S" },
   // Premium projection (0026). anon holds NOTHING: it could never be entitled,
   // so the privilege should not exist at all — the in-view entitlement gate is
   // the second layer, not the only one.

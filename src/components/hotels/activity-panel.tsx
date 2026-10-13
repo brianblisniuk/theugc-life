@@ -20,6 +20,7 @@ import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { WorkspaceLoad } from "@/lib/collaboration/queries";
 import type { InboxLoad, MailboxLoad } from "@/lib/inbox-pipeline/contract";
+import type { GmailPromptLoad } from "@/lib/network-intelligence/contract";
 import type { CollaborationLoad, OpenRelationshipResult } from "@/lib/pipeline/queries";
 import { SHELL_NOTES } from "@/lib/shell/navigation";
 import {
@@ -50,6 +51,7 @@ export function ActivityPanel({
   workspace,
   inbox,
   mailboxes,
+  gmailPrompt,
   pipelineHref,
 }: {
   hotelId: string;
@@ -61,6 +63,7 @@ export function ActivityPanel({
   /** Inbox link for an open cycle. Omitted when there is no cycle to attach it to. */
   inbox?: InboxLoad;
   mailboxes?: MailboxLoad;
+  gmailPrompt?: GmailPromptLoad;
   /** Where "View in Pipeline" returns. Defaults to the full pipeline list. */
   pipelineHref?: string;
 }) {
@@ -170,6 +173,7 @@ export function ActivityPanel({
               hotelId={hotelId}
               inbox={inbox}
               mailboxes={mailboxes}
+              gmailPrompt={gmailPrompt}
             />
           </div>
         ) : (

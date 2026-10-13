@@ -326,11 +326,11 @@ contract, and D076 (open PR #53) does not define it either.
 
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
-| C01 | **MERGED, STILL PROPOSED** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. Docs only. D077 is Proposed and is not Accepted. No migration, no runtime. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
-| C02 | GATED | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
-| C03 | GATED | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
-| C04 | GATED | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
-| C05 | GATED | intelligence APIs + destination/property decision UI experiment | creators demonstrably change/prioritize decisions or save meaningful time |
+| C01 | **MERGED, ACCEPTED** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. Docs only. D077 is Accepted (Brian, 13 Oct 2026) by D099. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
+| C02 | **IN THIS PR** with C03–C05. Migration `0056`. D099. D012 bands. Unknown is not zero. | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
+| C03 | **IN THIS PR** with C02, C04, and C05. Anonymous row only at 3 distinct creators. | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
+| C04 | **IN THIS PR**. Baseline order only. Prior is not applied (`no_proven_lift`). | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
+| C05 | **IN THIS PR**. Pipeline Sí/No, personal versus Gmail history, admin-only pilot measures. Do not merge. | intelligence APIs + destination/property decision UI experiment | creators demonstrably change/prioritize decisions or save meaningful time |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 17
@@ -712,6 +712,13 @@ catalog destination and a saved hotel. The social profile is off until the
 creator turns it on. Features without a written tier are Free. D056 quotas
 and premium hotel data stay. D089–D091 are unchanged. `0051`–`0054` are
 not edited. Do not merge.
+
+**C02–C05 are this PR** on `cursor/c02-c05-network-intelligence-a035`,
+from `main` `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66).
+Migration `0056_network_intelligence_facts.sql`. D077 is Accepted. D099
+records the answers. The public aggregate is anonymous. Gmail enters only
+after Sí. Provenance and the pilot measures are admin-only. `0055` is not
+edited. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

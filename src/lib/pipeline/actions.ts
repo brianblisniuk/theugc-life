@@ -25,6 +25,7 @@ bindServerActions([
 ]);
 
 import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
+import { recordNetworkPriority } from "@/lib/network-intelligence/queries";
 
 import { parseCollaborationForm, parseDealForm, parseWorkflowForm } from "./input";
 import {
@@ -196,4 +197,13 @@ export async function updatePipelineNotesAction(
     revalidatePath("/app/pipeline");
   }
   return result;
+}
+
+export async function recordNetworkPriorityAction(formData: FormData): Promise<void> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return;
+  const hotelId = readField(formData, "hotelId");
+  if (!hotelId) return;
+  const result = await recordNetworkPriority(hotelId);
+  if (result.result === "ok") revalidatePath(`/app/hotels/${hotelId}`);
 }

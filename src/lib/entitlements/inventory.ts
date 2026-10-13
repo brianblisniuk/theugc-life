@@ -241,12 +241,12 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/lib/pipeline/actions.ts",
       "src/lib/pipeline/queries.ts",
     ],
-    serverActions: ["updatePipelineNotesAction"],
+    serverActions: ["updatePipelineNotesAction", "recordNetworkPriorityAction"],
     rpcs: ["update_pipeline_private_notes"],
     rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["pipeline_items"] },
-    sources: ["D014", "D056", "PERMISSIONS.md §6", "PERMISSIONS.md §8"],
+    sources: ["D014", "D056", "D099", "PERMISSIONS.md §6", "PERMISSIONS.md §8"],
   },
   {
     id: "trips.active",
@@ -301,6 +301,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "unbindInboxThreadAction",
       "dismissInboxSuggestionAction",
       "acceptInboxSuggestionAction",
+      "answerGmailReadingAction",
     ],
     rpcs: [
       "bind_pipeline_inbox_thread",
@@ -311,7 +312,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     rule: { kind: "owner_private" },
     anon: "deny",
     enforcement: { kind: "owner_rows", tables: ["pipeline_inbox_bindings"] },
-    sources: ["D080", "D081", "D014", "PRD §5.3.1"],
+    sources: ["D080", "D081", "D014", "D099", "PRD §5.3.1"],
   },
   {
     id: "collaborations.lifecycle",
