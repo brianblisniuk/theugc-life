@@ -31,6 +31,20 @@ export function unlockContactLabel(cost: number = CREDITS_CONFIG.unlockCost): st
 
 export const ALREADY_UNLOCKED_LABEL = "Already unlocked";
 
+/** Shown only when this unlock inserted the pipeline row (D108). */
+export const ADDED_TO_PIPELINE_TOAST = "Added to Pipeline";
+
+export function addedToPipelineToast(
+  input: {
+    status: string;
+    pipelineAdded?: boolean;
+  } | null,
+): string | null {
+  if (!input?.pipelineAdded) return null;
+  if (input.status !== "unlocked" && input.status !== "already_unlocked") return null;
+  return ADDED_TO_PIPELINE_TOAST;
+}
+
 export const OUT_OF_CREDITS_COPY =
   "You're out of credits. Packs are not for sale in this pilot. An admin can grant credits.";
 

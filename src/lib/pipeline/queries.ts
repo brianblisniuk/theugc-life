@@ -52,6 +52,8 @@ export interface PipelineListItem {
   savedAt: string | null;
   lastActivityAt: string | null;
   nextFollowupAt: string | null;
+  /** Unlocked contact for this caller. Absent until the pipeline page attaches it. */
+  contactEmail?: string | null;
   hotel: {
     id: string;
     name: string;

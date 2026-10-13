@@ -6,9 +6,25 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Starting local Supabase. Migrations apply on this image. pgcrypto stays in extensions."
-npx supabase start \
-  --exclude studio,imgproxy,edge-runtime,logflare,vector,mailpit,storage-api,postgres-meta,supavisor \
-  --yes
+# A parallel verify job can hit Docker Hub's pull limit. The CLI then stops
+# containers and retries the database while 54322 is still bound. Stop leftovers
+# and try again after that race.
+start_local_supabase() {
+  local attempt
+  for attempt in 1 2 3; do
+    if npx supabase start \
+      --exclude studio,imgproxy,edge-runtime,logflare,vector,mailpit,storage-api,postgres-meta,supavisor \
+      --yes; then
+      return 0
+    fi
+    echo "supabase start failed on attempt ${attempt}. Stopping leftovers before a retry."
+    npx supabase stop --no-backup || true
+    sleep $((attempt * 5))
+  done
+  echo "supabase start failed after 3 attempts"
+  return 1
+}
+start_local_supabase
 
 status_file="$(mktemp)"
 npx supabase status -o env >"$status_file"

@@ -33,8 +33,7 @@ export function PipelineBoard({
     <div className="flex gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-4 md:overflow-visible xl:grid-cols-8">
       {COLUMNS.map((column) => {
         const rows = items.filter((item) => item.status === column.status);
-        const border =
-          column.tone === "won" ? "border-[#0b6b4b]" : "border-[#111]";
+        const border = column.tone === "won" ? "border-[#0b6b4b]" : "border-[#111]";
         return (
           <section key={column.status} className="w-44 shrink-0 md:w-auto md:min-w-0 md:shrink">
             <h3
@@ -67,6 +66,14 @@ export function PipelineBoard({
                     {whenLabel(item) ? (
                       <span className="mt-2 block text-xs font-semibold text-[#555]">
                         {whenLabel(item)}
+                      </span>
+                    ) : null}
+                    {item.contactEmail ? (
+                      <span
+                        className="mt-1 block break-all text-xs text-[#111]"
+                        data-testid="pipeline-contact"
+                      >
+                        {item.contactEmail}
                       </span>
                     ) : null}
                   </>

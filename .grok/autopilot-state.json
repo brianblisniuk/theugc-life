@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 85186fdc18f65db9233c5df9155a65674740e551 (PR #68, F05 contact credits, D100–D105, migrations 0057, 0058, and 0060). F01 Gmail collaboration detection is PR #71. D107. Migration 0061. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 12630bb9d616fdb63ad97d2e61fe5668723eac67 (PR #71, F01 Gmail collaboration detection, D107, migration 0061). F05b saves an unlocked hotel on the caller pipeline as PR #70 on cursor/f05b-unlock-adds-pipeline-45a2. D108. Migration 0062. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "85186fdc18f65db9233c5df9155a65674740e551",
-  "active_block": "F01 Gmail collaboration detection",
-  "branch": "cursor/f01-gmail-collaboration-detection-e7ba",
-  "pr": 71,
+  "last_recorded_main": "12630bb9d616fdb63ad97d2e61fe5668723eac67",
+  "active_block": "F05b unlock saves pipeline",
+  "branch": "cursor/f05b-unlock-adds-pipeline-45a2",
+  "pr": 70,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "85186fdc18f65db9233c5df9155a65674740e551",
+    "ref": "12630bb9d616fdb63ad97d2e61fe5668723eac67",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "F01 Gmail collaboration detection is PR #71 on cursor/f01-gmail-collaboration-detection-e7ba. D107. Migration 0061. Base is main 85186fd (PR #68). Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "PR #70 merges F05b onto main 12630bb (PR #71). D108. Migration 0062. 0061 is F01 and stays merged. A revealed unlock saves the hotel in the same transaction. A refused unlock or a full Free allowance does not. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }

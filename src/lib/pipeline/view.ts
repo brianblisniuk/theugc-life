@@ -46,6 +46,19 @@ export function freeLimitExplanation(limit: number): string {
   return `You can keep up to ${limit} open hotel relationships on Free.`;
 }
 
+/**
+ * Attach an unlocked email to a pipeline card. Hotels absent from the map
+ * stay blank. The map is already limited to the caller's own unlocks.
+ */
+export function pipelineContactEmail(
+  hotelId: string | null | undefined,
+  emails: ReadonlyMap<string, string>,
+): string | null {
+  if (!hotelId) return null;
+  const email = emails.get(hotelId);
+  return email && email.length > 0 ? email : null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Hotel Detail — "Your Activity"                                      */
 /* ------------------------------------------------------------------ */
