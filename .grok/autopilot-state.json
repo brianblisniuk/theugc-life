@@ -6,7 +6,7 @@
   "last_recorded_main": "b8752e31ee4e51971390ebbf260062186f689a92",
   "active_block": "F04 home next actions",
   "branch": "cursor/f04-home-next-actions-39db",
-  "pr": null,
+  "pr": 73,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "F04 home next actions on cursor/f04-home-next-actions-39db. D112. Migration 0066 lists the caller's pending Gmail suggestions. Free returns paused and no ids. No new table. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "PR #73 is F04 home next actions on cursor/f04-home-next-actions-39db. D112. Migration 0066 lists the caller's pending Gmail suggestions. Free returns paused and no ids. No new table. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }

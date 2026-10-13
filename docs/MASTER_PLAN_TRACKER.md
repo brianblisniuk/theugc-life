@@ -753,12 +753,13 @@ Migration `0062_unlock_saves_pipeline.sql`. A full Free allowance refuses
 the unlock and does not debit. A refused unlock does not add the hotel.
 The pipeline card shows the unlocked email to that caller only.
 
-**F04 home next actions** (canon v1.1, not the agency F04 row) composes the
-signed-in creator's pipeline, due follow-ups, due deliverables, credit
-balance, and pending Gmail suggestions (D112). Migration
-`0066_home_next_actions.sql` is a read function only. Free Gmail reads stay
-paused and return no suggestion ids (D107). There is no ranking and no
-model. Agency F04 stays planned. `0061` and `0062` are not edited.
+**F04 home next actions** (canon v1.1, not the agency F04 row) is PR #73
+on `cursor/f04-home-next-actions-39db`. It composes the signed-in creator's
+pipeline, due follow-ups, due deliverables, credit balance, and pending
+Gmail suggestions (D112). Migration `0066_home_next_actions.sql` is a read
+function only. Free Gmail reads stay paused and return no suggestion ids
+(D107). There is no ranking and no model. Agency F04 stays planned.
+`0061` and `0062` are not edited. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

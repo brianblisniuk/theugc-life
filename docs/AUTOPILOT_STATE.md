@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `b8752e31ee4e51971390ebbf260062186f689a92` (merge of PR #70, F05b unlock saves pipeline, 2026-10-13)  
-**State:** AWAITING_CI. F04 home next actions. Branch `cursor/f04-home-next-actions-39db`. D112. Migration `0066` is a read function and adds no table. `0062` is F05b (merged). `0061` is F01 (merged). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. F04 home next actions. PR #73. Branch `cursor/f04-home-next-actions-39db`. D112. Migration `0066` is a read function and adds no table. `0062` is F05b (merged). `0061` is F01 (merged). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** F04. F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D112 is Accepted for this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -50,7 +50,7 @@
 - PR #70 — F05b unlock saves pipeline, D108, migration `0062` — `b8752e31ee4e51971390ebbf260062186f689a92`
 
 ## Next action
-- F04 home next actions on `cursor/f04-home-next-actions-39db`. D112. Migration `0066` lists the caller's pending Gmail suggestions. Free returns paused and no ids. No new table. No send and no model. `expected_head` stays null. Do not merge from automation.
+- PR #73 is F04 home next actions on `cursor/f04-home-next-actions-39db`. D112. Migration `0066` lists the caller's pending Gmail suggestions. Free returns paused and no ids. No new table. No send and no model. `expected_head` stays null. Do not merge from automation.
 - F01 is merged (PR #71, `12630bb`). Migration `0061`. D107. Free detection stays paused. Disconnect does not delete suggestions.
 - F05 is merged (PR #68, `85186fd`). Migrations `0057`, `0058`, and `0060`. Migration `0059` stays HB01. Open amounts stay pending config.
 - HB01 is merged (PR #69, `28656f4`, migration `0059`). This PR does not edit that file.
