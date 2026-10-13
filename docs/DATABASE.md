@@ -191,9 +191,16 @@ Hierarchy rule: an entitlement for a destination may cover descendants. Implemen
 - `instagram_url text`
 - `hotel_type text`
 - `star_rating numeric NULL` — **hospitality star classification**, never a
-  guest-review score (D060). V1 publishable inventory is exactly 4 or 5, and the
-  value requires provenance to be publishable (D062). The column is unchanged by
-  this contract; no migration was added.
+  guest-review score (D060). V1 publishable inventory is exactly 4 or 5.
+- `star_rating_source text NULL` — `owner` or `hotelbeds` (D106, migration
+  `0059`). Check-constrained.
+- `star_rating_confidence text NULL` — `confirmed` pairs with `owner`;
+  `provisional` pairs with `hotelbeds`.
+- `needs_category_review boolean NOT NULL DEFAULT false` — cheap Hotelbeds
+  outlier flag for an apartment, residence, or villa complex. Not a publication
+  gate.
+- `hotelbeds_code text NULL` — idempotency key for the Hotelbeds import. Unique
+  when present. Not the canonical primary key (D063).
 - `description_short text`
 - `active_status text NOT NULL DEFAULT 'unknown'`
 - `editorial_verified_at timestamptz NULL`
@@ -255,7 +262,7 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 
 `unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
 
-Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0059` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows.
+Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here.
 
 ## 5a. Property-content source infrastructure (migration 0027)
 

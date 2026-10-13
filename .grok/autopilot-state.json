@@ -1,9 +1,9 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 9a747b217a8c560f08c87bed1b2542f4521ac25e (PR #67). F05 contact credits merges as PR #68 on cursor/f05-credits-foundation-8e1e. D100–D105. Migrations 0057, 0058, and 0059. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 28656f46dd71f9887e6305cf2e0349099e8f2a9e (PR #69, HB01, D106, migration 0059). F05 contact credits merges as PR #68 on cursor/f05-credits-foundation-8e1e. D100–D105. Migrations 0057, 0058, and 0060. The Gmail pause is 0060 because 0059 is HB01. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "9a747b217a8c560f08c87bed1b2542f4521ac25e",
+  "last_recorded_main": "28656f46dd71f9887e6305cf2e0349099e8f2a9e",
   "active_block": "F05 contact credits",
   "branch": "cursor/f05-credits-foundation-8e1e",
   "pr": 68,
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "9a747b217a8c560f08c87bed1b2542f4521ac25e",
+    "ref": "28656f46dd71f9887e6305cf2e0349099e8f2a9e",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "PR #68 merges F05 contact credits. D100–D105. Migrations 0057, 0058, and 0059. Open amounts stay pending config. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "PR #68 merges F05 contact credits onto main 28656f4 (PR #69). D100–D105. Migrations 0057, 0058, and 0060. Migration 0059 stays the HB01 star provenance file. Open amounts stay pending config. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }

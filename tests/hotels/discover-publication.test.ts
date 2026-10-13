@@ -19,6 +19,7 @@ const THREE_STAR = "e1000000-0000-0000-0000-0000000000b2";
 const FRACTIONAL = "e1000000-0000-0000-0000-0000000000b3";
 const NO_COORDS = "e1000000-0000-0000-0000-0000000000b4";
 const BAD_LAT = "e1000000-0000-0000-0000-0000000000b5";
+const HOTELBEDS = "e1000000-0000-0000-0000-0000000000a4";
 const TRIP = "e1000000-0000-0000-0000-0000000000c1";
 
 beforeAll(async () => {
@@ -51,6 +52,14 @@ beforeAll(async () => {
       [id, slug, slug, DEST, stars, lat, lon, status],
     );
   }
+  await adminQuery(
+    `insert into public.hotels
+       (id, name, slug, destination_id, country_code, hotel_type, star_rating,
+        latitude, longitude, active_status, star_rating_source, star_rating_confidence)
+     values ($1, 'e01-hotelbeds', 'e01-hotelbeds', $2, 'AE', 'hotel', 5, 25.2, 55.2,
+             'unknown', 'hotelbeds', 'provisional')`,
+    [HOTELBEDS, DEST],
+  );
 
   await adminQuery(
     `insert into public.pipeline_items (creator_id, hotel_id, status) values
@@ -85,6 +94,7 @@ d("discover publication predicate", () => {
     );
     expect(res.error).toBeNull();
     expect(res.rows.map((row) => row.name)).toEqual([
+      "e01-hotelbeds",
       "e01-published",
       "e01-temporary",
       "e01-unknown-closure",
@@ -102,6 +112,7 @@ d("discover publication predicate", () => {
     );
     expect(res.error).toBeNull();
     expect(res.rows.map((row) => row.name)).toEqual([
+      "e01-hotelbeds",
       "e01-published",
       "e01-temporary",
       "e01-unknown-closure",

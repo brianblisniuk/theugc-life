@@ -32,6 +32,7 @@
     "import:review-template": "tsx scripts/import/review-template.ts",
     "import:review-apply": "tsx scripts/import/review-apply.ts",
     "import:promote": "tsx scripts/import/promote.ts",
+    "import:hotelbeds": "tsx scripts/import-hotelbeds/cli.ts",
     "destination:list": "tsx scripts/import/destination/list.ts",
     "destination:upsert": "tsx scripts/import/destination/upsert.ts",
     "destination:alias": "tsx scripts/import/destination/alias.ts",

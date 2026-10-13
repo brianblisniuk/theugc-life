@@ -1,4 +1,5 @@
--- 0059_pause_free_gmail_sync.sql
+-- 0060_pause_free_gmail_sync.sql
+-- Renumbered from 0059 after HB01 took that version on main (PR #69).
 -- Free Gmail sync is paused (D102). Login and the scheduled due list skip a
 -- user who has neither an active Pro entitlement nor an active Destination
 -- Pass. Stored mailboxes, credentials, cursors, and messages stay. Claim and

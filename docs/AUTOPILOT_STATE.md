@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `9a747b217a8c560f08c87bed1b2542f4521ac25e` (merge of PR #67, C02–C05, 2026-10-13)  
-**State:** AWAITING_CI. F05 contact credits. PR #68. Branch `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057`, `0058`, and `0059`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** F05 contact credits. C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
+**Last verified main:** `28656f46dd71f9887e6305cf2e0349099e8f2a9e` (merge of PR #69, HB01, 2026-10-13)  
+**State:** AWAITING_CI. F05 contact credits. PR #68. Branch `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057`, `0058`, and `0060`. Migration `0059` is HB01 and stays on main. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** F05 contact credits. HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D106 stays Accepted. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -44,9 +44,11 @@
 - PR #65 — UX01 Sunlit Creator OS, D095–D098 Accepted, migration `0055` — `9a449239df1ebd859d4876c35e83e35007cf41af`
 - PR #66 — DATA01 hotel catalog importer — `502ae69ecb192dc3678a27619a557bb1012ff0e5`
 - PR #67 — C02–C05 network intelligence, D099, migration `0056` — `9a747b217a8c560f08c87bed1b2542f4521ac25e`
+- PR #69 — HB01 Hotelbeds provisional star rating, D106, migration `0059` — `28656f46dd71f9887e6305cf2e0349099e8f2a9e`
 
 ## Next action
-- PR #68 merges F05 contact credits on `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057`, `0058`, and `0059`. Open amounts stay pending config. `expected_head` stays null. Do not merge from automation.
+- PR #68 merges F05 contact credits on `cursor/f05-credits-foundation-8e1e` onto main `28656f4`. D100–D105. Migrations `0057`, `0058`, and `0060`. Migration `0059` stays HB01. Open amounts stay pending config. `expected_head` stays null. Do not merge from automation.
+- HB01 is merged (PR #69, `28656f4`, migration `0059`). This PR does not edit that file.
 - C02–C05 is merged (PR #67, `9a747b2`). DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055` or `0056`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.
@@ -55,7 +57,7 @@
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). D095 supersedes the checklist.
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 is Accepted (Brian, 13 Oct 2026). D099 closes the three C01 questions and is the C02–C05 implementation. Model-backed B07 inference stays out of this PR.
-- D092–D094 stay Proposed.
+- D092–D094 stay Proposed. D106 stays Accepted.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state-only PRs).
 - Owner interaction happens only via human-frontier labels.

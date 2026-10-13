@@ -721,10 +721,15 @@ stay. D100 later changes contact access. D089–D091 are unchanged.
 answers. The public aggregate is anonymous. Gmail enters only after Sí.
 Provenance and the pilot measures are admin-only. `0055` is not edited.
 
+**HB01 is merged** as PR #69, merge
+`28656f46dd71f9887e6305cf2e0349099e8f2a9e`. Migration
+`0059_star_rating_provenance.sql`. D106. F05 does not edit that file.
+
 **F05 contact credits** (canon v1.1, not the agency F01–F04 rows below)
 merges as PR #68. Migrations `0057_contact_credits.sql`,
 `0058_contact_cache_seed_and_free_grant.sql`, and
-`0059_pause_free_gmail_sync.sql`. D100–D105. Contacts follow an unlock.
+`0060_pause_free_gmail_sync.sql`. The Gmail pause was renamed from `0059`
+so it does not share a version with HB01. D100–D105. Contacts follow an unlock.
 Users who could already see a contact keep that unlock. Free Gmail sync
 pauses without deleting mail. A stored address past the TTL is still a
 cache hit. An accepted bounce stays invalid. Open amounts stay pending

@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseDiscoverQuery } from "@/lib/hotels/filters";
+import { PUBLISHABLE_STAR_PROVENANCE_OR } from "@/lib/hotels/publication";
 import { searchHotels, type HotelQueryClient } from "@/lib/hotels/queries";
 
 type Call = { table: string; method: string; args: unknown[] };
@@ -95,6 +96,11 @@ describe("searchHotels publication filter", () => {
       method: "in",
       args: ["active_status", ["active", "temporarily_closed", "unknown"]],
     });
+    expect(hotelCalls).toContainEqual({
+      table: "hotels",
+      method: "or",
+      args: [PUBLISHABLE_STAR_PROVENANCE_OR],
+    });
     const serialized = JSON.stringify(hotelCalls);
     expect(serialized).not.toContain("reply_rate");
     expect(serialized).not.toContain("email");
@@ -118,5 +124,30 @@ describe("searchHotels publication filter", () => {
     ]);
     expect(JSON.stringify(result.hotels)).not.toContain("Closed Hotel");
     expect(JSON.stringify(result.hotels)).not.toContain("Unlocated Hotel");
+  });
+
+  it("renders a Hotelbeds provisional row and drops a disallowed provenance pair", async () => {
+    const hotelbeds = {
+      ...published,
+      id: "4a000000-0000-0000-0000-0000000000dd",
+      name: "Hotelbeds Provisional",
+      star_rating_source: "hotelbeds",
+      star_rating_confidence: "provisional",
+    };
+    const disallowed = {
+      ...published,
+      id: "4a000000-0000-0000-0000-0000000000ee",
+      name: "Disallowed Provenance",
+      star_rating_source: "hotelbeds",
+      star_rating_confidence: "confirmed",
+    };
+    const result = await searchHotels(
+      parseDiscoverQuery({}),
+      client([published, hotelbeds, disallowed], []),
+    );
+    expect(result.hotels.map((hotel) => hotel.name).sort()).toEqual([
+      "Hotelbeds Provisional",
+      "Kept Hotel",
+    ]);
   });
 });
