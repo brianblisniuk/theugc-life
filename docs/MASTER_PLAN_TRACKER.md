@@ -726,15 +726,15 @@ Provenance and the pilot measures are admin-only. `0055` is not edited.
 `0059_star_rating_provenance.sql`. D106. F05 does not edit that file.
 
 **F05 contact credits** (canon v1.1, not the agency F01–F04 rows below)
-is merged as PR #68, merge
-`85186fdc18f65db9233c5df9155a65674740e551`. Migrations
-`0057_contact_credits.sql`, `0058_contact_cache_seed_and_free_grant.sql`,
-and `0060_pause_free_gmail_sync.sql`. The Gmail pause was renamed from
-`0059` so it does not share a version with HB01. D100–D105. Contacts follow
-an unlock. Users who could already see a contact keep that unlock. Free
-Gmail sync pauses without deleting mail. A stored address past the TTL is
-still a cache hit. An accepted bounce stays invalid. Open amounts stay
-pending config (D101). Agency F01–F04 stay planned.
+is merged as PR #68, merge `85186fdc18f65db9233c5df9155a65674740e551`.
+Migrations `0057_contact_credits.sql`,
+`0058_contact_cache_seed_and_free_grant.sql`, and
+`0060_pause_free_gmail_sync.sql`. The Gmail pause was renamed from `0059`
+so it does not share a version with HB01. D100–D105. Contacts follow an unlock.
+Users who could already see a contact keep that unlock. Free Gmail sync
+pauses without deleting mail. A stored address past the TTL is still a
+cache hit. An accepted bounce stays invalid. Open amounts stay pending
+config (D101). Agency F01–F04 stay planned.
 
 **F01 Gmail collaboration detection** (canon v1.1, not the agency F01 row)
 is merged as PR #71, merge
@@ -747,11 +747,19 @@ transition. Confirmation of a collaboration writes no CRM row and no hotel
 fact. Deletion purge removes the suggestions. Disconnect does not. `0060`
 is not edited.
 
+**F05b** is merged as PR #70, merge
+`b8752e31ee4e51971390ebbf260062186f689a92`. It saves a hotel on the caller's
+pipeline in the same transaction as a revealed contact unlock (D108).
+Migration `0062_unlock_saves_pipeline.sql`. A full Free allowance refuses
+the unlock and does not debit. A refused unlock does not add the hotel. The
+pipeline card shows the unlocked email to that caller only. `0061` is not
+edited.
+
 **F02 pitch templates** (canon v1.1, not the agency F02 row in the table
 above) is PR #72. Migration `0064_pitch_templates.sql`. D110. A draft is
 filled from facts the creator already has. Copy and a mailto draft are not a
-sent pitch. D03 and D04 stay open: no model vendor and no send. `0060` and
-`0061` are not edited. `0062` and `0063` are not this file. Do not merge.
+sent pitch. D03 and D04 stay open: no model vendor and no send. `0060`,
+`0061`, and `0062` are not edited. `0063` is not this file. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

@@ -4,8 +4,8 @@
  * The list is paginated server-side: the page states how many relationships the
  * creator actually has (an exact database count) and how many of them are on
  * screen, so a large pipeline is never silently truncated. Rows are
- * creator-owned by RLS (`pipeline_items_all`), and contacts are deliberately
- * never queried here.
+ * creator-owned by RLS (`pipeline_items_all`). An unlocked contact email is
+ * read for this caller only and shown on the card (D108).
  */
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -17,12 +17,14 @@ import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filt
 import { PageHeader } from "@/components/shell/page-header";
 import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
 import { PrivateNotesEditor } from "@/components/pipeline/private-notes-editor";
+import { readUnlockedContactEmails } from "@/lib/credits/queries";
 import {
   listPipelineItems,
   normalizePageParam,
   type PipelineListItem,
   type PipelinePage,
 } from "@/lib/pipeline/queries";
+import { pipelineContactEmail } from "@/lib/pipeline/view";
 import { pipelineStatusLabel } from "@/lib/pipeline/types";
 import { PIPELINE_COPY, normalizeStatusFilter, pipelineListState } from "@/lib/pipeline/view";
 import {
@@ -72,6 +74,15 @@ function Row({
           </span>
           {saved ? <span>Saved {saved}</span> : null}
           {followUp ? <span>Follow-up due {followUp}</span> : null}
+          {item.contactEmail ? (
+            <a
+              className="text-text underline"
+              href={`mailto:${item.contactEmail}`}
+              data-testid="pipeline-contact"
+            >
+              {item.contactEmail}
+            </a>
+          ) : null}
         </div>
         <PrivateNotesEditor pipelineItemId={item.id} />
       </div>
@@ -123,12 +134,22 @@ export default async function PipelinePage({
   }
 
   const state = pipelineListState({ failed, page: loaded, status, surface });
-  const items: PipelineListItem[] = loaded?.items ?? [];
+  const loadedItems: PipelineListItem[] = loaded?.items ?? [];
+  const contactEmails =
+    loadedItems.length > 0
+      ? await readUnlockedContactEmails(
+          loadedItems.flatMap((item) => (item.hotel?.id ? [item.hotel.id] : [])),
+        )
+      : new Map<string, string>();
+  const items: PipelineListItem[] = loadedItems.map((item) => ({
+    ...item,
+    contactEmail: pipelineContactEmail(item.hotel?.id, contactEmails),
+  }));
 
   return (
     <div className="space-y-6">
       <PageHeader
-          title={heading.title}
+        title={heading.title}
         description={
           surface === "inbox" ? (
             <>

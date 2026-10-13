@@ -4,11 +4,19 @@ export type UnlockActionResult =
       status: "unlocked" | "already_unlocked";
       email: string | null;
       balance: number | null;
+      /** True only when this call inserted the pipeline row. */
+      pipelineAdded: boolean;
     }
   | {
       status: "insufficient_credits" | "not_found";
       email: null;
       balance: number | null;
+    }
+  | {
+      status: "pipeline_limit";
+      email: null;
+      balance: number | null;
+      limit: number | null;
     }
   | { status: "unauthenticated" | "error" | "hotel_missing"; email: null };
 

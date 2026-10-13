@@ -34,6 +34,8 @@ interface UnlockPayload {
   status?: string;
   email?: unknown;
   balance?: unknown;
+  pipeline_added?: unknown;
+  limit?: unknown;
 }
 
 function asPayload(data: unknown): UnlockPayload | null {
@@ -55,7 +57,18 @@ function refreshCreditSurfaces(hotelId: string): void {
   revalidatePath("/app", "layout");
   revalidatePath(`/app/hotels/${hotelId}`);
   revalidatePath("/app/onboarding/hotels");
+  revalidatePath("/app/pipeline");
   revalidatePath("/admin");
+}
+
+function pipelineAddedOf(payload: UnlockPayload | null): boolean {
+  return payload?.pipeline_added === true;
+}
+
+function limitOf(payload: UnlockPayload | null): number | null {
+  return typeof payload?.limit === "number" && Number.isInteger(payload.limit)
+    ? payload.limit
+    : null;
 }
 
 export async function unlockHotelContactAction(formData: FormData): Promise<UnlockActionResult> {
@@ -113,6 +126,14 @@ export async function unlockHotelContactAction(formData: FormData): Promise<Unlo
   if (payload.status === "not_found") {
     return { status: "not_found", email: null, balance: balanceOf(payload) };
   }
+  if (payload.status === "pipeline_limit") {
+    return {
+      status: "pipeline_limit",
+      email: null,
+      balance: balanceOf(payload),
+      limit: limitOf(payload),
+    };
+  }
   if (payload.status === "hotel_missing") return { status: "hotel_missing", email: null };
   if (payload.status === "unlocked" || payload.status === "already_unlocked") {
     refreshCreditSurfaces(hotelId);
@@ -120,6 +141,7 @@ export async function unlockHotelContactAction(formData: FormData): Promise<Unlo
       status: payload.status,
       email: ownedEmail(payload),
       balance: balanceOf(payload),
+      pipelineAdded: pipelineAddedOf(payload),
     };
   }
   return { status: "error", email: null };

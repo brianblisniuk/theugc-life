@@ -8,6 +8,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { FREE_LIMITS } from "@/lib/config";
 import { CREDITS_CONFIG } from "@/lib/credits/config";
 import {
   adminQuery,
@@ -41,7 +42,13 @@ const HOTEL = {
 const IMPORTED_EMAIL = "imported-owner@hotel.test";
 
 interface UnlockRow {
-  result: { status: string; email: string | null; balance?: number };
+  result: {
+    status: string;
+    email: string | null;
+    balance?: number;
+    pipeline_added?: boolean;
+    limit?: number;
+  };
 }
 
 async function makeUser(id: string, role: "creator" | "admin" | "editor" = "creator") {
@@ -177,6 +184,7 @@ d("contact credit ledger", () => {
   it("charges nothing to open the same hotel again, including the same idempotency key", async () => {
     const first = await unlock(A, HOTEL.fresh, "unlock-fresh");
     expect(first.rows[0]!.result.status).toBe("unlocked");
+    expect(first.rows[0]!.result.pipeline_added).toBe(true);
     const before = await balanceOf(A);
     const again = await unlock(A, HOTEL.fresh, "unlock-fresh-other");
     expect(again.rows[0]!.result).toMatchObject({
@@ -185,8 +193,17 @@ d("contact credit ledger", () => {
     });
     const sameKey = await unlock(A, HOTEL.fresh, "unlock-fresh");
     expect(sameKey.rows[0]!.result.status).toBe("already_unlocked");
+    expect(sameKey.rows[0]!.result.pipeline_added).toBe(false);
     expect(await unlockDeltas(A, HOTEL.fresh)).toEqual([-CREDITS_CONFIG.unlockCost]);
     expect(await balanceOf(A)).toBe(before);
+    const saved = await adminQuery<{ n: string; status: string; trip_id: string | null }>(
+      `select count(*)::text as n, min(pi.status) as status, min(pi.trip_id::text) as trip_id
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2`,
+      [A, HOTEL.fresh],
+    );
+    expect(saved[0]).toEqual({ n: "1", status: "saved", trip_id: null });
   });
 
   it("spends one row when the same user repeats an idempotency key on another hotel", async () => {
@@ -194,7 +211,19 @@ d("contact credit ledger", () => {
     expect(first.rows[0]!.result.status).toBe("unlocked");
     expect(first.rows[0]!.result.email).toBe("second@hotel.test");
     const replay = await unlock(A, HOTEL.costly, "shared-key");
-    expect(replay.rows[0]!.result).toMatchObject({ status: "idempotent_replay", email: null });
+    expect(replay.rows[0]!.result).toMatchObject({
+      status: "idempotent_replay",
+      email: null,
+      pipeline_added: false,
+    });
+    const replaySaved = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2`,
+      [A, HOTEL.costly],
+    );
+    expect(replaySaved[0]!.n).toBe("0");
     const keys = await adminQuery<{ n: string }>(
       "select count(*)::text as n from public.credit_ledger where user_id = $1 and idempotency_key = 'shared-key'",
       [A],
@@ -218,6 +247,14 @@ d("contact credit ledger", () => {
       balance: 0,
     });
     expect(await unlockDeltas(B, HOTEL.fresh)).toEqual([]);
+    const saved = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2`,
+      [B, HOTEL.fresh],
+    );
+    expect(saved[0]!.n).toBe("0");
     const contacts = await queryAs(
       { role: "authenticated", sub: B },
       "select email from public.hotel_contacts where hotel_id = $1",
@@ -232,6 +269,14 @@ d("contact credit ledger", () => {
     expect(opened.rows[0]!.result).toMatchObject({ status: "not_found", email: null });
     expect(await unlockDeltas(A, HOTEL.missing)).toEqual([]);
     expect(await balanceOf(A)).toBe(before);
+    const saved = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2`,
+      [A, HOTEL.missing],
+    );
+    expect(saved[0]!.n).toBe("0");
   });
 
   it("debits the configured cost when the not-found policy is on, then restores it", async () => {
@@ -245,8 +290,17 @@ d("contact credit ledger", () => {
       const before = await balanceOf(payer);
       const opened = await unlock(payer, HOTEL.missing, "unlock-charge-miss");
       expect(opened.rows[0]!.result).toMatchObject({ status: "not_found", email: null });
+      expect(opened.rows[0]!.result.pipeline_added).toBe(false);
       expect(await unlockDeltas(payer, HOTEL.missing)).toEqual([-CREDITS_CONFIG.unlockCost]);
       expect(await balanceOf(payer)).toBe(before - CREDITS_CONFIG.unlockCost);
+      const saved = await adminQuery<{ n: string }>(
+        `select count(*)::text as n
+           from public.pipeline_items pi
+           join public.creator_profiles cp on cp.id = pi.creator_id
+          where cp.user_id = $1 and pi.hotel_id = $2`,
+        [payer, HOTEL.missing],
+      );
+      expect(saved[0]!.n).toBe("0");
     } finally {
       await adminQuery("update public.credit_config set charge_on_not_found = $1", [prior!.charge]);
     }
@@ -320,6 +374,14 @@ d("contact credit ledger", () => {
     const absent = await unlock(A, HOTEL.empty, "unlock-empty");
     expect(absent.rows[0]!.result.status).toBe("needs_provider");
     expect(await balanceOf(A)).toBe(before);
+    const saved = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2`,
+      [A, HOTEL.empty],
+    );
+    expect(saved[0]!.n).toBe("0");
   });
 
   it("commits exactly one debit when two unlocks race", async () => {
@@ -347,6 +409,18 @@ d("contact credit ledger", () => {
       [payer, HOTEL.race],
     );
     expect(owned[0]!.n).toBe("1");
+    const rows = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2 and pi.status <> 'closed'`,
+      [payer, HOTEL.race],
+    );
+    expect(rows[0]!.n).toBe("1");
+    const added = [left, right]
+      .filter((result) => result.error === null)
+      .filter((result) => result.rows[0]!.result.pipeline_added === true);
+    expect(added).toHaveLength(1);
   });
 
   it("hides user A's unlock, ledger, report, and contact from user B and from anon", async () => {
@@ -725,5 +799,228 @@ d("contact credit ledger", () => {
     );
     expect(ledgerAfter[0]!.n).toBe(ledgerRows[0]!.n);
     expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeCredits);
+  });
+
+  it("saves a revealed contact once, refuses a full pipeline, and hides the other creator", async () => {
+    const cap = "c05b0000-0000-4000-8000-0000000000e1";
+    const room = "c05b0000-0000-4000-8000-0000000000e2";
+    const pro = "c05b0000-0000-4000-8000-0000000000e3";
+    const pitchedUser = "c05b0000-0000-4000-8000-0000000000e4";
+    const closedUser = "c05b0000-0000-4000-8000-0000000000e5";
+    const reopenUser = "c05b0000-0000-4000-8000-0000000000e6";
+    const fillers = Array.from(
+      { length: FREE_LIMITS.savedHotels },
+      (_, i) => `c05f1000-0000-4000-8000-${i.toString().padStart(12, "0")}`,
+    );
+    const target = "c05f1000-0000-4000-8000-0000000000aa";
+    const pitchedHotel = "c05f1000-0000-4000-8000-0000000000bb";
+    const closedHotel = "c05f1000-0000-4000-8000-0000000000cc";
+    const reopenHotel = "c05f1000-0000-4000-8000-0000000000dd";
+
+    async function creatorId(userId: string): Promise<string> {
+      const [row] = await adminQuery<{ id: string }>(
+        "select id from public.creator_profiles where user_id = $1",
+        [userId],
+      );
+      return row!.id;
+    }
+
+    async function openCount(userId: string): Promise<number> {
+      const [row] = await adminQuery<{ n: string }>(
+        `select count(*)::text as n
+           from public.pipeline_items pi
+           join public.creator_profiles cp on cp.id = pi.creator_id
+          where cp.user_id = $1 and pi.status <> 'closed'`,
+        [userId],
+      );
+      return Number(row!.n);
+    }
+
+    for (const id of [cap, room, pro, pitchedUser, closedUser, reopenUser]) await makeUser(id);
+    for (const [index, id] of fillers.entries()) await makeHotel(id, `Cap filler ${index}`);
+    await makeHotel(target, "Pipeline target");
+    await makeHotel(pitchedHotel, "Already pitched");
+    await makeHotel(closedHotel, "Closed cycle");
+    await makeHotel(reopenHotel, "Closed then unlock");
+    await cacheFound(target, "target@hotel.test");
+    await cacheFound(pitchedHotel, "pitched@hotel.test");
+    await cacheFound(closedHotel, "closed@hotel.test");
+    await cacheFound(reopenHotel, "reopen@hotel.test");
+
+    for (const userId of [cap, pro]) {
+      const creator = await creatorId(userId);
+      for (const hotelId of fillers) {
+        await adminQuery(
+          `insert into public.pipeline_items (creator_id, hotel_id, status, cycle_number)
+           values ($1, $2, 'saved', 1)`,
+          [creator, hotelId],
+        );
+      }
+    }
+    const roomCreator = await creatorId(room);
+    for (const hotelId of fillers.slice(0, FREE_LIMITS.savedHotels - 1)) {
+      await adminQuery(
+        `insert into public.pipeline_items (creator_id, hotel_id, status, cycle_number)
+         values ($1, $2, 'saved', 1)`,
+        [roomCreator, hotelId],
+      );
+    }
+
+    const capBefore = await balanceOf(cap);
+    const blocked = await unlock(cap, target, "unlock-cap");
+    expect(blocked.rows[0]!.result).toMatchObject({
+      status: "pipeline_limit",
+      email: null,
+      pipeline_added: false,
+      limit: FREE_LIMITS.savedHotels,
+    });
+    expect(JSON.stringify(blocked.rows[0]!.result)).not.toContain("target@hotel.test");
+    const blockedMiss = await unlock(cap, HOTEL.missing, "unlock-cap-miss");
+    expect(blockedMiss.rows[0]!.result.status).toBe("pipeline_limit");
+    expect(blocked.rows[0]!.result.status).toBe(blockedMiss.rows[0]!.result.status);
+    expect(await balanceOf(cap)).toBe(capBefore);
+    expect(await unlockDeltas(cap, target)).toEqual([]);
+    expect(await openCount(cap)).toBe(FREE_LIMITS.savedHotels);
+
+    const tripsBefore = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.trips t
+         join public.creator_profiles cp on cp.id = t.creator_id
+        where cp.user_id = $1`,
+      [room],
+    );
+    const opened = await unlock(room, target, "unlock-room");
+    expect(opened.rows[0]!.result).toMatchObject({
+      status: "unlocked",
+      email: "target@hotel.test",
+      pipeline_added: true,
+    });
+    expect(await openCount(room)).toBe(FREE_LIMITS.savedHotels);
+    const roomRow = await adminQuery<{ status: string; trip_id: string | null; events: string }>(
+      `select pi.status, pi.trip_id::text as trip_id, count(oe.id)::text as events
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+         left join public.outreach_events oe
+           on oe.pipeline_item_id = pi.id and oe.event_type = 'hotel_saved'
+        where cp.user_id = $1 and pi.hotel_id = $2
+        group by pi.status, pi.trip_id`,
+      [room, target],
+    );
+    expect(roomRow).toEqual([{ status: "saved", trip_id: null, events: "1" }]);
+    const tripsAfter = await adminQuery<{ n: string }>(
+      `select count(*)::text as n
+         from public.trips t
+         join public.creator_profiles cp on cp.id = t.creator_id
+        where cp.user_id = $1`,
+      [room],
+    );
+    expect(tripsAfter[0]!.n).toBe(tripsBefore[0]!.n);
+    const again = await unlock(room, target, "unlock-room-again");
+    expect(again.rows[0]!.result).toMatchObject({
+      status: "already_unlocked",
+      email: "target@hotel.test",
+      pipeline_added: false,
+    });
+    expect(await openCount(room)).toBe(FREE_LIMITS.savedHotels);
+    expect(await unlockDeltas(room, target)).toEqual([-CREDITS_CONFIG.unlockCost]);
+
+    await adminQuery(
+      `insert into public.access_entitlements
+         (user_id, access_type, status, starts_at, source, source_reference)
+       values ($1, 'pro', 'active', now(), 'test', 'f05b-pro')`,
+      [pro],
+    );
+    const proOpen = await unlock(pro, target, "unlock-pro");
+    expect(proOpen.rows[0]!.result.status).toBe("unlocked");
+    expect(proOpen.rows[0]!.result.pipeline_added).toBe(true);
+    expect(await openCount(pro)).toBe(FREE_LIMITS.savedHotels + 1);
+
+    const pitchedCreator = await creatorId(pitchedUser);
+    await adminQuery(
+      `insert into public.pipeline_items (creator_id, hotel_id, status, cycle_number)
+       values ($1, $2, 'pitched', 1)`,
+      [pitchedCreator, pitchedHotel],
+    );
+    const kept = await unlock(pitchedUser, pitchedHotel, "unlock-pitched");
+    expect(kept.rows[0]!.result).toMatchObject({
+      status: "unlocked",
+      email: "pitched@hotel.test",
+      pipeline_added: false,
+    });
+    const pitchedRows = await adminQuery<{ status: string; n: string }>(
+      `select pi.status, count(*)::text as n
+         from public.pipeline_items pi
+        where pi.creator_id = $1 and pi.hotel_id = $2
+        group by pi.status`,
+      [pitchedCreator, pitchedHotel],
+    );
+    expect(pitchedRows).toEqual([{ status: "pitched", n: "1" }]);
+
+    const closedOpen = await unlock(closedUser, closedHotel, "unlock-closed-first");
+    expect(closedOpen.rows[0]!.result.pipeline_added).toBe(true);
+    await adminQuery(
+      `update public.pipeline_items pi
+          set status = 'closed'
+         from public.creator_profiles cp
+        where pi.creator_id = cp.id and cp.user_id = $1 and pi.hotel_id = $2`,
+      [closedUser, closedHotel],
+    );
+    const closedAgain = await unlock(closedUser, closedHotel, "unlock-closed-again");
+    expect(closedAgain.rows[0]!.result).toMatchObject({
+      status: "already_unlocked",
+      pipeline_added: false,
+    });
+    const closedRows = await adminQuery<{ n: string; status: string }>(
+      `select count(*)::text as n, min(pi.status) as status
+         from public.pipeline_items pi
+         join public.creator_profiles cp on cp.id = pi.creator_id
+        where cp.user_id = $1 and pi.hotel_id = $2`,
+      [closedUser, closedHotel],
+    );
+    expect(closedRows[0]).toEqual({ n: "1", status: "closed" });
+
+    const reopenCreator = await creatorId(reopenUser);
+    await adminQuery(
+      `insert into public.pipeline_items (creator_id, hotel_id, status, cycle_number)
+       values ($1, $2, 'closed', 1)`,
+      [reopenCreator, reopenHotel],
+    );
+    const reopened = await unlock(reopenUser, reopenHotel, "unlock-reopen");
+    expect(reopened.rows[0]!.result).toMatchObject({
+      status: "unlocked",
+      pipeline_added: true,
+    });
+    const cycles = await adminQuery<{ status: string }>(
+      `select status from public.pipeline_items
+        where creator_id = $1 and hotel_id = $2
+        order by cycle_number`,
+      [reopenCreator, reopenHotel],
+    );
+    expect(cycles.map((row) => row.status)).toEqual(["closed", "saved"]);
+
+    const hidden = await queryAs<{ hotel_id: string }>(
+      { role: "authenticated", sub: B },
+      "select hotel_id from public.pipeline_items",
+    );
+    expect(hidden.rows.map((row) => row.hotel_id)).not.toContain(target);
+    const stranger = await queryAs<{ result: unknown }>(
+      { role: "authenticated", sub: B },
+      "select public.read_own_unlocked_contacts($1::uuid[]) as result",
+      [[target, pitchedHotel]],
+    );
+    expect(JSON.stringify(stranger)).not.toContain("target@hotel.test");
+    expect(JSON.stringify(stranger)).not.toContain("pitched@hotel.test");
+    const own = await queryAs<{ result: { hotel_id: string; email: string }[] }>(
+      { role: "authenticated", sub: room },
+      "select public.read_own_unlocked_contacts($1::uuid[]) as result",
+      [[target, pitchedHotel]],
+    );
+    expect(own.rows[0]!.result).toEqual([{ hotel_id: target, email: "target@hotel.test" }]);
+    const anon = await queryAs(
+      { role: "anon", sub: null },
+      "select public.read_own_unlocked_contacts($1::uuid[])",
+      [[target]],
+    );
+    expect(anon.error?.message ?? "").toMatch(/permission denied/i);
   });
 });
