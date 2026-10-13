@@ -31,6 +31,7 @@ import {
   valuationLabel,
 } from "@/lib/collaboration/display";
 import type { CollaborationWorkspace } from "@/lib/collaboration/contract";
+import { DEADLINE_COPY, workspaceDeadlines } from "@/lib/collaboration/deadlines";
 
 const fieldClass =
   "w-full rounded-[var(--radius-app)] border border-border bg-background px-3 py-2 text-sm text-text";
@@ -70,10 +71,13 @@ export function CollaborationWorkspace({
   pipelineItemId,
   hotelId,
   initial,
+  asOf,
 }: {
   pipelineItemId: string;
   hotelId: string;
   initial: CollaborationWorkspace;
+  /** UTC instant of this page. Deadline states compare due dates to its UTC day. */
+  asOf: string;
 }) {
   const saved = initial.compensation;
   const [structure, setStructure] = useState<CompensationStructure>(saved?.structure ?? "unknown");
@@ -89,6 +93,14 @@ export function CollaborationWorkspace({
   const payments = paymentStatusesFor(structure);
   const showCash = structure === "paid" || structure === "hybrid";
   const showKind = structure === "in_kind" || structure === "hybrid";
+  const deadlines = workspaceDeadlines(
+    initial.deliverables.map((row) => ({
+      id: row.id,
+      status: row.status,
+      dueOn: row.due_on,
+    })),
+    asOf,
+  );
 
   function onStructure(next: CompensationStructure) {
     setStructure(next);
@@ -308,6 +320,23 @@ export function CollaborationWorkspace({
 
       <div className="space-y-3">
         <h5 className="text-sm font-semibold text-text">Deliverables</h5>
+        {deadlines.kind === "invalid" ? (
+          <p className="text-sm text-muted" role="status">
+            {DEADLINE_COPY.hotelNotice}
+          </p>
+        ) : deadlines.reminders.length > 0 ? (
+          <div className="space-y-2" aria-label={DEADLINE_COPY.title}>
+            <p className="text-xs font-medium text-muted">{DEADLINE_COPY.title}</p>
+            <ul className="space-y-1">
+              {deadlines.reminders.map((reminder) => (
+                <li key={reminder.id} className="text-sm text-text">
+                  <span data-testid="hotel-reminder">{reminder.label}</span>
+                  <span className="text-muted"> · due {reminder.dueOn}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {initial.deliverables.length === 0 ? (
           <p className="text-sm text-muted">No deliverables yet.</p>
         ) : (
@@ -327,6 +356,11 @@ export function CollaborationWorkspace({
                 <p className="text-xs text-muted">
                   {deliverableStatusLabel(row.status)}
                   {row.due_on ? ` · due ${row.due_on}` : ""}
+                  {deadlines.kind === "ok" && deadlines.byId[row.id] ? (
+                    <span className="ml-2 font-medium text-text" data-testid="deliverable-deadline">
+                      {DEADLINE_COPY[deadlines.byId[row.id]!]}
+                    </span>
+                  ) : null}
                   {row.attributed_value.kind === "derived"
                     ? " · derived value"
                     : " · value unknown"}

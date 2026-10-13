@@ -2756,6 +2756,13 @@ read `private_value_*`, does not send a message, and does not record a
 signature. Composite foreign keys keep the template, collaboration, pipeline
 item, and trip on the same creator.
 
+D115 (migration `0069`) adds `list_own_deliverable_deadlines`. It also runs
+as the caller and takes no user id. It returns the owner's `pending` and
+`rejected` deliverables that have a `due_on`, earliest first, at most 80.
+A missing profile is `not_found`. A deliverable whose hotel cannot be read
+is `error`, not an empty list. The function does not send a message and
+does not store a dismiss. `0070` is not this migration. `0068` is not edited.
+
 D080 (migration `0049`, Accepted — Brian, 13 Oct 2026) links one pipeline cycle to one stored
 Gmail thread the creator names.
 
@@ -3016,5 +3023,13 @@ At minimum:
     collaboration suggestions. The cap of 100 keeps human reply, then pitch
     sent, then collaboration, then id. Free returns paused and no ids. No new
     table. `0061`, `0062`, and `0064` are not edited.
+35. Agreement drafts (0068, D114) — private templates and one draft for a won
+    deal. Missing facts stay marked to be filled in. No signature and no
+    message. `0064` is not edited.
+36. Deliverable deadlines (0069, D115) — a security-invoker read of the
+    caller's pending and rejected deliverables that have a due date. The
+    app classifies overdue, due soon, and upcoming against the UTC day.
+    No new table. No message is sent. `0070` is reserved and unused.
+    `0050` is not edited.
 
 Every migration must be reproducible from an empty database.
