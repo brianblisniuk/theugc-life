@@ -87,6 +87,23 @@ async function signUp(page: Page, input: { email: string; name: string; username
   await page.waitForURL((url) => url.pathname === "/app");
 }
 
+/**
+ * A status flash is cleared when the write refreshes the page. The heading is
+ * the stored status. Either may appear first; the heading must survive reload.
+ */
+async function expectStoredHeading(page: Page, label: string, flash: string): Promise<void> {
+  await expect
+    .poll(async () => {
+      if ((await page.getByRole("heading", { name: label, exact: true }).count()) > 0) return "ok";
+      const body = (await page.locator("body").innerText()).replace(/\s+/g, " ").trim();
+      if (body.includes(flash)) return "ok";
+      return body.slice(0, 500);
+    })
+    .toBe("ok");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+}
+
 async function openContext(browser: { newContext: () => Promise<BrowserContext> }) {
   const context = await browser.newContext();
   await blockExternalNetwork(context, externalHosts);
@@ -169,28 +186,23 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#pitch-channel").selectOption("email");
   await ada.locator("#pitch-date").fill(day(-1));
   await ada.getByRole("button", { name: "Mark as pitched" }).click();
-  await expect(ada.getByText("Updated to Pitched.")).toBeVisible();
-  await ada.reload();
+  await expectStoredHeading(ada, "Pitched", "Updated to Pitched.");
 
   await ada.getByRole("button", { name: "Mark replied" }).click();
   await ada.locator("#reply-date").fill(day(0));
   await ada.locator("#reply-sentiment").selectOption("positive");
   await ada.getByRole("button", { name: "Mark replied" }).click();
-  await expect(ada.getByText("Updated to Replied.")).toBeVisible();
-  await ada.reload();
+  await expectStoredHeading(ada, "Replied", "Updated to Replied.");
 
   await ada.getByRole("button", { name: "Start negotiation" }).click();
   await ada.getByRole("button", { name: "Start negotiation" }).click();
-  await expect(ada.getByText("Updated to Negotiating.")).toBeVisible();
-  await ada.reload();
+  await expectStoredHeading(ada, "Negotiating", "Updated to Negotiating.");
 
   await ada.getByRole("button", { name: "Mark as won" }).click();
   await ada.locator("#won-type").selectOption("stay");
   await ada.locator("#won-date").fill(day(0));
   await ada.getByRole("button", { name: "Mark as won" }).click();
-  await expect(ada.getByText("Collaboration agreed.")).toBeVisible();
-  await ada.reload();
-  await expect(ada.getByRole("heading", { name: "Collaboration agreed" })).toBeVisible();
+  await expectStoredHeading(ada, "Collaboration agreed", "Collaboration agreed.");
 
   await ada.locator("#compensation-structure").selectOption("in_kind");
   await ada.locator("#in-kind-description").fill("E2E stay");
