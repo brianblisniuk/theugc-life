@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 9a449239df1ebd859d4876c35e83e35007cf41af (PR #65, UX01). DATA01 is the hotel catalog importer on cursor/data01-hotel-catalog-import-5dcd. No new decision. No migration. D095–D098 stay Accepted. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 9a449239df1ebd859d4876c35e83e35007cf41af (PR #65, UX01). DATA01 is PR #66 on cursor/data01-hotel-catalog-import-5dcd. No new decision. No migration. D095–D098 stay Accepted. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
   "last_recorded_main": "9a449239df1ebd859d4876c35e83e35007cf41af",
   "active_block": "DATA01 hotel catalog importer",
   "branch": "cursor/data01-hotel-catalog-import-5dcd",
-  "pr": null,
+  "pr": 66,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "DATA01 hotel catalog importer on cursor/data01-hotel-catalog-import-5dcd. UX01 is merged (PR #65, 9a44923). No migration. Wait for verify on the exact head. Do not merge."
+  "next_dependency": "DATA01 hotel catalog importer is PR #66 on cursor/data01-hotel-catalog-import-5dcd. UX01 is merged (PR #65, 9a44923). No migration. Wait for verify on the exact head of both the push and pull_request runs. Do not merge."
 }

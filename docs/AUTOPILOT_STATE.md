@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `9a449239df1ebd859d4876c35e83e35007cf41af` (merge of PR #65, UX01, 2026-10-13)  
-**State:** AWAITING_CI. DATA01 hotel catalog importer. Branch `cursor/data01-hotel-catalog-import-5dcd`. No new decision (D099 is unused). No migration (`0056` is unused). Contacts stay non-public. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. DATA01 hotel catalog importer. PR #66. Branch `cursor/data01-hotel-catalog-import-5dcd`. No new decision (D099 is unused). No migration (`0056` is unused). Contacts stay non-public. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** DATA01. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -44,7 +44,7 @@
 - PR #65 — UX01 Sunlit Creator OS, D095–D098 Accepted, migration `0055` — `9a449239df1ebd859d4876c35e83e35007cf41af`
 
 ## Next action
-- DATA01 hotel catalog importer is branch `cursor/data01-hotel-catalog-import-5dcd`. State is AWAITING_CI. Do not merge from automation.
+- DATA01 hotel catalog importer is PR #66 on branch `cursor/data01-hotel-catalog-import-5dcd`. State is AWAITING_CI. Do not merge from automation.
 - UX01 is merged (PR #65, `9a44923`, migration `0055`). D095–D098 stay Accepted. This PR does not edit `0055`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.
