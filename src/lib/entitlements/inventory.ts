@@ -405,6 +405,28 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["D114", "D098", "D078", "D014"],
   },
   {
+    id: "collaborations.deliverable_reminders",
+    module: "Collaborations",
+    summary:
+      "Deliverable deadlines and in-app reminders are the owning creator's rows, at every tier. They do not send a message. Another creator's Pro row does not reveal them.",
+    routes: ["/app/pipeline", "/app/collaborations", "/app/hotels/[id]"],
+    sourceFiles: [
+      "src/app/(app)/app/pipeline/page.tsx",
+      "src/app/(app)/app/collaborations/page.tsx",
+      "src/app/(app)/app/hotels/[id]/page.tsx",
+      "src/lib/collaboration/deadlines.ts",
+      "src/lib/collaboration/deadline-queries.ts",
+      "src/components/collaboration/deliverable-reminders.tsx",
+      "src/components/pipeline/collaboration-workspace.tsx",
+    ],
+    serverActions: [],
+    rpcs: ["list_own_deliverable_deadlines"],
+    rule: { kind: "owner_private" },
+    anon: "deny",
+    enforcement: { kind: "owner_rows", tables: ["collaboration_deliverables"] },
+    sources: ["D078", "D098", "D115", "canon v1.1 G02"],
+  },
+  {
     id: "gmail.connect",
     module: "Gmail",
     summary:

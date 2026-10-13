@@ -68,6 +68,14 @@ export function PipelineBoard({
                         {whenLabel(item)}
                       </span>
                     ) : null}
+                    {item.deadlineLabel ? (
+                      <span
+                        className="mt-1 block text-xs font-semibold text-[#111]"
+                        data-testid="pipeline-deadline"
+                      >
+                        {item.deadlineLabel}
+                      </span>
+                    ) : null}
                     {item.contactEmail ? (
                       <span
                         className="mt-1 block break-all text-xs text-[#111]"

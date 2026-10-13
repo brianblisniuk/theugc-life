@@ -762,10 +762,19 @@ sent pitch. D03 and D04 stay open: no model vendor and no send. `0060`,
 `0061`, and `0062` are not edited. `0063` is not this file. Do not merge.
 
 **G01 contract templates** (canon v1.1, not the Phase G Coverage Engine row)
-is PR #74. Migration `0068_collaboration_contract_templates.sql`. D114. A won
-deal can generate a private draft from a hotel-stay, paid, or usage-rights
-template. Missing facts stay marked to be filled in. No e-sign, no send, and
-no external model. Phase G Coverage Engine stays gated. Do not merge.
+is merged as PR #74, merge
+`f4f0bb7ebafa72ac46bfe78b29267016e6d85235`. Migration
+`0068_collaboration_contract_templates.sql`. D114. A won deal can generate a
+private draft from a hotel-stay, paid, or usage-rights template. Missing
+facts stay marked to be filled in. No e-sign, no send, and no external model.
+Phase G Coverage Engine stays gated. This PR does not edit `0068`.
+
+**G02 deliverable deadlines** (canon v1.1, not the agency G02 row in the
+table above) is this PR. Migration `0069_deliverable_deadlines.sql`. D115.
+D116 is not used. `0070` is reserved and unused. In-app reminders only. The
+UTC day follows the D112 deliverable comparison. No N-day lead and no
+dismiss row, because neither is stated in the decisions. `0050` and `0068`
+are not edited. F04 home files are not edited. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

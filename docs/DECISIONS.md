@@ -4354,3 +4354,71 @@ for the owner (D098) because no written tier assigns it to Pass or Pro.
 - It does not choose a legal jurisdiction or invent terms for a missing fact.
 - It does not read or write pitch templates, Gmail detection, or contact unlocks.
 
+## D115 — Deliverable deadlines are an in-app read of the owner's due date (G02)
+
+Status: **Accepted for this block.** Derived from D078 and from the UTC-day
+comparison D112 records for deliverables. This entry does not edit D078 or
+D112. D116 is not used.
+
+A deliverable deadline is `collaboration_deliverables.due_on`, a calendar
+date the creator already records. The read clock is an instant. Its UTC
+calendar day is `YYYY-MM-DD` from that instant, the same day D112 compares
+with `due_on`. A date-only value is not interpreted in the creator's local
+timezone.
+
+Only `pending` and `rejected` rows with a real `due_on` have a deadline
+state. `submitted` and `approved` are not due. A missing `due_on` is not
+due. A value that is not a real calendar day fails the read. It is not
+treated as "not due".
+
+| state | means |
+|---|---|
+| `overdue` | `due_on` is strictly before the UTC day. |
+| `due_soon` | `due_on` is that UTC day. |
+| `upcoming` | `due_on` is strictly after that UTC day. |
+
+No accepted decision, PRD section, or canon row states a number of days
+before `due_on` on which a reminder should start. This block does not pick
+one. Due soon is the UTC day D112 already counts as due. It is not a
+multi-day warning.
+
+An in-app reminder is a row in `overdue` or `due_soon`. That is the D112
+due set. Upcoming rows stay on the deadline list so the creator can see and
+edit the date. They are not reminders. The list is earliest `due_on` first,
+then `id`. The creator changes a date or a status with the existing
+deliverable form. This block adds no second write path.
+
+The read returns at most 80 rows. A longer table is marked truncated. The
+page says the list is not the whole table. It does not say that nothing
+else is due. A failed read is a notice. It is not an empty list and it is
+not zero. A successful read with no overdue or due-soon row says so in a
+sentence.
+
+Lifecycle status does not remove a reminder. D078 does not freeze
+deliverables when a collaboration is completed or cancelled, and this read
+does not add that freeze.
+
+There is no dismiss and no snooze. No accepted decision defines whether a
+hidden reminder stays hidden, returns the next UTC day, or returns when
+`due_on` changes. A reminder leaves the list when the deliverable leaves
+the D112 due set: the status changes, the date moves, the date is cleared,
+or the row is deleted.
+
+Rows stay owner-private at every tier (D098, D078). The function takes no
+user id. It runs as the caller, so RLS is the row boundary. User A cannot
+read, insert, update, or delete User B's deliverable, which is the reminder
+state. Anon has no table privilege and cannot execute the read.
+
+### What this decision does not do
+
+- No email, push, SMS, or other external message. PRD §27 says transactional
+  reminders may be sent later. This block does not send them.
+- No model call and no vendor HTTP.
+- No stored dismiss or snooze. D116 is unused. Migration `0070` is unused.
+- No N-day lead before the due date.
+- No change to derived compensation value, and no write to outreach events
+  or public intelligence.
+- No edit of migration `0050`, of F04 home files, or of G01 contract files.
+  Home already lists D112-due deliverables. Sharing this classifier with
+  Home is a follow-up after F04 merges.
+

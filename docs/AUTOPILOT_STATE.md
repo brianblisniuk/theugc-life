@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `087419826bbac1c241f852d4ff32b868728a8b48` (merge of PR #72, F02 pitch templates, 2026-10-13)  
-**State:** AWAITING_CI. G01 contract templates (canon v1.1, not the Phase G Coverage Engine row). PR #74. Branch `cursor/g01-contract-templates-312c`. Migration `0068`. D114. D03 and D04 stay open. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** G01 contract templates. F02 is merged (PR #72, `087419826bbac1c241f852d4ff32b868728a8b48`). F05b is merged (PR #70, `b8752e31ee4e51971390ebbf260062186f689a92`). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is the pitch-draft rule. D114 is the agreement-draft rule. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
+**Last verified main:** `f4f0bb7ebafa72ac46bfe78b29267016e6d85235` (merge of PR #74, G01 contract templates, 2026-10-13)  
+**State:** AWAITING_AUDIT. G02 deliverable deadlines (canon v1.1, not agency G02). Branch `cursor/g02-deliverables-reminders-65ab`. Migration `0069`. D115. D116 is unused. `0070` is unused. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** G02 deliverable deadlines. G01 is merged (PR #74, `f4f0bb7ebafa72ac46bfe78b29267016e6d85235`). F02 is merged (PR #72, `087419826bbac1c241f852d4ff32b868728a8b48`). F05b is merged (PR #70, `b8752e31ee4e51971390ebbf260062186f689a92`). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is the pitch-draft rule. D114 is the agreement-draft rule. D115 is the in-app deadline rule. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -49,10 +49,12 @@
 - PR #71 — F01 Gmail collaboration detection, D107, migration `0061` — `12630bb9d616fdb63ad97d2e61fe5668723eac67`
 - PR #70 — F05b unlock saves pipeline, D108, migration `0062` — `b8752e31ee4e51971390ebbf260062186f689a92`
 - PR #72 — F02 pitch templates, D110, migration `0064` — `087419826bbac1c241f852d4ff32b868728a8b48`
+- PR #74 — G01 contract templates, D114, migration `0068` — `f4f0bb7ebafa72ac46bfe78b29267016e6d85235`
 
 ## Next action
-- PR #74 is G01 contract templates on `cursor/g01-contract-templates-312c`. Migration `0068`. D114. A won deal can become a private agreement draft. No e-sign and no model vendor. `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
-- F02 pitch templates is merged (PR #72, `087419826bbac1c241f852d4ff32b868728a8b48`). D110. Migration `0064`. Copy or a mailto draft only. This PR does not edit that file.
+- G02 deliverable deadlines is on `cursor/g02-deliverables-reminders-65ab`. Migration `0069`. D115. In-app reminders only. No dismiss row and no N-day lead. D116 and migration `0070` are unused. `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
+- G01 is merged (PR #74, `f4f0bb7ebafa72ac46bfe78b29267016e6d85235`). D114. Migration `0068`. This PR does not edit that file.
+- F02 is merged (PR #72, `087419826bbac1c241f852d4ff32b868728a8b48`). D110. Migration `0064`. Copy or a mailto draft only. This PR does not edit that file.
 - F05b is merged (PR #70, `b8752e31ee4e51971390ebbf260062186f689a92`). D108. Migration `0062`. A revealed unlock saves the hotel in the same transaction. A refused unlock or a full Free allowance does not. This PR does not edit that file.
 - F01 Gmail collaboration detection is merged (PR #71, `12630bb9d616fdb63ad97d2e61fe5668723eac67`). D107. Migration `0061`. This PR does not edit that file.
 - F05 contact credits is merged (PR #68, `85186fdc18f65db9233c5df9155a65674740e551`). D100–D105. Migrations `0057`, `0058`, and `0060`. Migration `0059` stays HB01. Open amounts stay pending config.

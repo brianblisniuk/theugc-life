@@ -10,6 +10,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { DeliverableReminders } from "@/components/collaboration/deliverable-reminders";
 import { EmptyState } from "@/components/empty-state";
 import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
 import { PipelineBoard } from "@/components/pipeline/pipeline-board";
@@ -17,6 +18,9 @@ import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filt
 import { PageHeader } from "@/components/shell/page-header";
 import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
 import { PrivateNotesEditor } from "@/components/pipeline/private-notes-editor";
+import { requireUser } from "@/lib/auth/guards";
+import { DEADLINE_COPY } from "@/lib/collaboration/deadlines";
+import { loadDeliverableDeadlineBoard } from "@/lib/collaboration/deadline-queries";
 import { readUnlockedContactEmails } from "@/lib/credits/queries";
 import {
   listPipelineItems,
@@ -74,6 +78,11 @@ function Row({
           </span>
           {saved ? <span>Saved {saved}</span> : null}
           {followUp ? <span>Follow-up due {followUp}</span> : null}
+          {item.deadlineLabel ? (
+            <span className="font-medium text-text" data-testid="pipeline-deadline">
+              {item.deadlineLabel}
+            </span>
+          ) : null}
           {item.contactEmail ? (
             <a
               className="text-text underline"
@@ -112,6 +121,8 @@ export default async function PipelinePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const raw = await searchParams;
+  const session = await requireUser("/app/pipeline");
+  const deadlines = await loadDeliverableDeadlineBoard(session.userId, new Date().toISOString());
   const surface = normalizePipelineSurface(raw.surface);
   const status = pipelineQueryStatus(surface, normalizeStatusFilter(raw.status));
   const requestedPage = normalizePageParam(raw.page);
@@ -144,6 +155,10 @@ export default async function PipelinePage({
   const items: PipelineListItem[] = loadedItems.map((item) => ({
     ...item,
     contactEmail: pipelineContactEmail(item.hotel?.id, contactEmails),
+    deadlineLabel:
+      deadlines.kind === "ok" && deadlines.indicators[item.id]
+        ? DEADLINE_COPY[deadlines.indicators[item.id]!]
+        : null,
   }));
 
   return (
@@ -168,6 +183,8 @@ export default async function PipelinePage({
       />
 
       <PipelineSurfaceNav surface={surface} />
+
+      <DeliverableReminders board={deadlines} />
 
       {surface === "collaborations" ? null : (
         <PipelineStatusFilter status={status} surface={surface} />

@@ -152,6 +152,7 @@ export function ActivityPanel({
                 pipelineItemId={relationship.relationship.pipelineItemId}
                 hotelId={hotelId}
                 initial={workspace.workspace}
+                asOf={new Date().toISOString()}
               />
             ) : relationship.status === "open" && workspace.status === "error" ? (
               <p className="text-sm text-muted">
