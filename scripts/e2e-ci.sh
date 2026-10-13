@@ -112,7 +112,7 @@ export GOOGLE_OAUTH_REDIRECT_URI="http://127.0.0.1:3000/auth/callback"
 export GMAIL_TOKEN_ENCRYPTION_KEY_V1="$enc_key"
 unset enc_key
 
-npm run start -- --hostname 127.0.0.1 --port 3000 >/tmp/e2e-next.log 2>&1 &
+stdbuf -oL -eL npm run start -- --hostname 127.0.0.1 --port 3000 >/tmp/e2e-next.log 2>&1 &
 next_pid=$!
 cleanup() {
   kill "$next_pid" >/dev/null 2>&1 || true
@@ -141,7 +141,7 @@ set -e
 if [[ "$playwright_status" -ne 0 ]]; then
   if [[ -f /tmp/e2e-next.log ]]; then
     echo "---- next log (filtered) ----"
-    grep -E "route_error|signup failed|signup rejected|Error|digest|ECONNREFUSED|fetch failed" /tmp/e2e-next.log \
+    grep -E "route_error|signup failed|signup rejected|deliverable_write|Error|digest|ECONNREFUSED|fetch failed" /tmp/e2e-next.log \
       | grep -v -E "eyJ|service_role" \
       | tail -n 40 || true
   fi

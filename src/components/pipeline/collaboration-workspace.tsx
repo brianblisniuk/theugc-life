@@ -379,6 +379,10 @@ function DeliverableForm({
   return (
     <form
       className="space-y-2"
+      aria-label={deliverableId ? "Update deliverable" : "Add deliverable"}
+      // The server parser is the authority. A native date or number tooltip
+      // would swallow the submit and never reach that parser.
+      noValidate
       action={async (formData) => {
         const outcome = await saveDeliverableAction(formData);
         setMessage(outcomeText(outcome.result));

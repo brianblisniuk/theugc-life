@@ -196,14 +196,32 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#in-kind-description").fill("E2E stay");
   await ada.getByRole("button", { name: "Save compensation" }).click();
   await expect(ada.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ })).toBeVisible();
-  const deliverableForm = ada.locator("form").filter({
-    has: ada.getByRole("button", { name: "Add deliverable" }),
-  });
+  const deliverableForm = ada.getByRole("form", { name: "Add deliverable" });
   await deliverableForm.getByLabel("Platform").fill(PLATFORM);
+  const write = ada.waitForResponse(
+    (response) => {
+      const request = response.request();
+      return request.method() === "POST" && request.headers()["next-action"] !== undefined;
+    },
+    { timeout: 20_000 },
+  );
   await deliverableForm.getByRole("button", { name: "Add deliverable" }).click();
-  await expect(
-    deliverableForm.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ }),
-  ).toBeVisible();
+  const writeResponse = await write;
+  expect(writeResponse.ok(), `deliverable action status ${writeResponse.status()}`).toBe(true);
+  // The stored row is the proof. A flash can be cleared when the page refreshes
+  // after the write, and the button label is "Saving…" while the action runs.
+  await expect
+    .poll(
+      async () => {
+        if ((await ada.getByText(`· ${PLATFORM}`).count()) > 0) return "stored";
+        return (await ada.locator("#collaboration").innerText())
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 500);
+      },
+      { timeout: 20_000 },
+    )
+    .toBe("stored");
   await ada.reload();
   await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
   await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
