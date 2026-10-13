@@ -77,6 +77,12 @@ export function CollaborationWorkspace({
   const saved = initial.compensation;
   const [structure, setStructure] = useState<CompensationStructure>(saved?.structure ?? "unknown");
   const [payment, setPayment] = useState<PaymentStatus>(saved?.payment_status ?? "not_applicable");
+  const [estimate, setEstimate] = useState(
+    minorToMajorInput(
+      saved?.in_kind_estimate_minor ?? null,
+      saved?.in_kind_estimate_currency ?? null,
+    ),
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [prefillMessage, setPrefillMessage] = useState<string | null>(null);
   const payments = paymentStatusesFor(structure);
@@ -212,10 +218,8 @@ export function CollaborationWorkspace({
                   id="in-kind-estimate"
                   name="inKindEstimate"
                   inputMode="decimal"
-                  defaultValue={minorToMajorInput(
-                    saved?.in_kind_estimate_minor ?? null,
-                    saved?.in_kind_estimate_currency ?? null,
-                  )}
+                  value={estimate}
+                  onChange={(event) => setEstimate(event.target.value)}
                   className={fieldClass}
                 />
               </div>
@@ -223,9 +227,11 @@ export function CollaborationWorkspace({
                 <label className={labelClass} htmlFor="in-kind-currency">
                   Estimate currency
                 </label>
+                {/* An empty estimate is optional. Posting the default currency
+                    alone makes the parser require an amount. */}
                 <select
                   id="in-kind-currency"
-                  name="inKindEstimateCurrency"
+                  name={estimate.trim() === "" ? undefined : "inKindEstimateCurrency"}
                   className={fieldClass}
                   defaultValue={saved?.in_kind_estimate_currency ?? "USD"}
                 >

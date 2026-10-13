@@ -193,11 +193,13 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.getByRole("heading", { name: "Collaboration agreed" })).toBeVisible();
 
   await ada.locator("#compensation-structure").selectOption("in_kind");
+  await ada.locator("#in-kind-description").fill("E2E stay");
   await ada.getByRole("button", { name: "Save compensation" }).click();
   await expect(ada.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ })).toBeVisible();
   await ada.getByLabel("Platform").fill(PLATFORM);
   await ada.getByRole("button", { name: "Add deliverable" }).click();
   await ada.reload();
+  await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
   await expect(ada.getByText(PLATFORM)).toBeVisible();
 
   await ada.getByRole("link", { name: "Profile" }).click();
