@@ -1288,5 +1288,135 @@
     "authenticated": false,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "private",
+    "name": "apply_intelligence_fact_change",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "private",
+    "name": "purge_network_gmail_for_mailbox",
+    "args": "p_mail_account_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "private",
+    "name": "purge_network_gmail_when_mailbox_deleted",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "answer_gmail_network_reading",
+    "args": "p_pipeline_item_id uuid, p_decision text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_fact_provenance",
+    "args": "p_fact_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_pilot_kpis",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_prior_experiment",
+    "args": "p_destination_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_gmail_network_prompt",
+    "args": "p_pipeline_item_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_network_destination_rank",
+    "args": "p_destination_id uuid",
+    "searchPath": "\"\"",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_network_facts",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_network_priority",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "record_network_intelligence_view",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "record_network_priority",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
   }
 ]

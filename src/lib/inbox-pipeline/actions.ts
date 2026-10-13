@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
+import { answerGmailNetworkReading } from "@/lib/network-intelligence/queries";
 
 // Load-time binding. A "use server" module may export only async functions.
 bindServerActions(["inbox.own"]);
@@ -109,6 +110,26 @@ export async function acceptInboxSuggestionAction(formData: FormData): Promise<I
     result.result === "applied" ||
     result.result === "already_applied" ||
     result.result === "acknowledged"
+  ) {
+    revalidate(readField(formData, "hotelId"));
+  }
+  return result;
+}
+
+export async function answerGmailReadingAction(formData: FormData): Promise<{ result: string }> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const pipelineItemId = readField(formData, "pipelineItemId");
+  const decision = readField(formData, "decision");
+  if (!pipelineItemId || (decision !== "confirmed" && decision !== "dismissed")) {
+    return { result: "invalid_input" };
+  }
+  const result = await answerGmailNetworkReading(pipelineItemId, decision);
+  if (
+    result.result === "confirmed_admitted" ||
+    result.result === "confirmed_not_admitted" ||
+    result.result === "dismissed" ||
+    result.result === "already_answered"
   ) {
     revalidate(readField(formData, "hotelId"));
   }

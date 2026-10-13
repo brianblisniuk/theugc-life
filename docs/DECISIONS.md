@@ -3060,9 +3060,10 @@ D077 below is Proposed and stays Proposed. D078 is Accepted and merged as PR #56
 
 ## D077 — Normalized intelligence facts trace to a canonical target and private evidence (C01)
 
-Status: **Proposed (requires owner acceptance)** — not Accepted. This entry
-does not authorize schema, migration, application code, aggregates, ranking,
-or UI.
+Status: **Accepted (Brian, 13 Oct 2026).** The three owner questions below
+are closed by D099. The proposal text stays the historical contract. When
+this entry was Proposed it did not authorize schema; D099 authorizes
+migration `0056` and the C02–C05 implementation.
 
 Numbering: D076 is not used here. On 2026-10-12, `main`
 `4062170212beb8b978a248ef219eb91ddbfb080b` ends at D075. Open PR #53
@@ -3130,15 +3131,18 @@ own rows, and may read creator-confirmed facts for a network aggregate only
 where network eligibility is already decided. Thresholds for any new aggregate
 are not decided. D012 and D058 continue to govern only the current projections.
 
-### Open owner questions (unanswered)
+### Owner questions (closed by D099)
+
+These were unanswered while D077 was Proposed. Brian accepted the answers
+on 13 Oct 2026. D099 records them. They are not open.
 
 1. Aggregation thresholds for any new aggregate over these facts.
 2. Network eligibility of creator-confirmed Gmail-derived facts, including
    whether a canonical organization can be a network-level target.
 3. B08 pilot KPIs. Which quality and data-density measures the pilot must
    observe, and what result would pause or justify a larger intelligence
-   product, are not decided. D076 does not define them. The Milestone B list
-   in the tracker is a planning hypothesis, not an accepted KPI contract.
+   product. D076 does not define them. The Milestone B list in the tracker
+   was a planning hypothesis. D099 names the pilot measures that are observed.
 
 Full proposal: `docs/C01_INTELLIGENCE_FACT_CONTRACT.md`.
 
@@ -3895,4 +3899,123 @@ documented premium gate or raises a Free quota.
 - No price change and no Rebill change.
 - No edit of migration `0051`.
 - No grant of premium contacts or premium intelligence to Free.
+
+## D099 — Network intelligence from confirmed facts (C02–C05)
+
+Status: **Accepted (Brian, 13 Oct 2026)** as the implementation of the
+answers attached to D077. Migration `0056_network_intelligence_facts.sql`.
+D057 and D058 are not rewritten. `recompute_hotel_intelligence`,
+`hotel_public_intelligence`, and `hotel_premium_intelligence` stay as they
+are. The new fact plane sits beside them.
+
+### What enters the network
+
+Creator-confirmed hotel facts can feed one anonymous aggregate. A
+`manual_creator` ledger event of a closed fact type is network-eligible.
+A trip shortlist membership is stored and is never network-eligible.
+`outreach_events.source` other than `manual_creator` stays unclassified:
+a `gmail` source event does not become a fact.
+
+A Gmail reading enters only after the owning creator taps Sí on
+"¿Esto pasó así?" in the Pipeline, on the linked thread. No dismisses it.
+A dismissed confirmation never becomes a network fact, and a later Sí on
+the same reading is `already_answered`. Machine facts, when the B07 attempt
+row exists, cite that attempt and stay network-ineligible. Creator-confirmed
+Gmail facts cite the confirmation id. They stay in source family `gmail`,
+separate from `manual`.
+
+Sí admits facts only when exactly one current B05 hotel link is the
+pipeline item's hotel and there is no organization link. Anything else,
+including a B05 hotel that is not the pipeline hotel, admits nothing and
+does not name the other hotel. A canonical organization is not a network
+target.
+
+A Gmail confirmation and every Gmail fact, machine or creator-confirmed,
+is bound to that mailbox. Deleting the mailbox row cascades them. That
+row is not deleted when the mailbox is only marked `deleted`, so the
+binding is not enough on its own. Every existing Gmail deletion purge
+(`gmail_historical_import_purge_for_deletion`,
+`gmail_normalize_purge_for_deletion`,
+`gmail_outreach_purge_for_deletion`, `gmail_reply_purge_for_deletion`,
+`gmail_commercial_purge_for_deletion`, and
+`gmail_incremental_sync_purge_for_deletion`) deletes those confirmations
+and Gmail facts in the same transaction, after its own deletion guards.
+The transition of that mailbox to `deleted` deletes them again. The
+public aggregate is read from the facts that remain, so a purged mailbox
+stops moving confidence, recency, freshness, destination order, and the
+admin response-time band. Manual facts are not bound to a mailbox and
+stay. A disconnect that does not run a deletion purge and does not mark
+the mailbox `deleted` is not a purge (D077).
+
+Compensation amounts are not copied. `unknown` is not unpaid and is not
+zero. Null `would_work_again` stays null. A censored window is not zero
+replies and is not ghosted. Redirect is not rejection. `agreement_observed`
+is not `deal_won`. No ghosted machine facts.
+
+### What anyone can see
+
+The public row exists only when at least three distinct creators own
+sample facts for that hotel (D058). Confidence follows D012 on the sample
+count, not on every attribute fact: 0–4 insufficient, 5–14 emerging,
+15–49 moderate, 50 or more strong. Latency does not count as a sample.
+One primary Gmail fact per confirmation counts: the thread state when it
+is present, otherwise the human reply.
+
+Below three creators there is no row. Insufficient is a row with null
+metrics. `has_observed_collaboration` is true only when at least three
+distinct creators have `collaboration_completed` or
+`collaboration_type_observed`; otherwise it is null, not false. Activity
+labels are emerging, medium, and high. Recency and freshness appear only
+at moderate or strong, and only when that band has at least three distinct
+creators inside its own window. `past_month` requires three creators with
+a sample event in the last 30 days. `past_quarter` requires three creators
+with a sample event in the last 90 days, and is used when the 30-day
+window is below three. `older` requires three creators with a sample event
+older than 90 days. Otherwise the band is null. The band is not the
+latest `event_at`. One creator's recent fact cannot publish a recent band.
+
+A confirmed Gmail fact stores the original email time: the qualifying
+human reply when the thread summary has one, otherwise the creator's sent
+time. It does not store the time the creator tapped Sí. When neither
+email time exists, `event_at` is null and cannot move a window.
+
+The row has no creator id, evidence id, count, or source split.
+
+### Ranking and the prior
+
+Baseline order is the anonymous recency band, then confidence, then hotel
+id, among hotels that already have a published signal. Those are the only
+sort keys. The order does not use a raw timestamp, so one creator's
+confirmation cannot reorder the list. Hotels below the floor are omitted.
+The app drops an unpublished hotel from the name list. There is no score
+column. The hierarchical prior is computed for admin comparison
+only and is not applied: `prior_rank` equals `baseline_rank`,
+`prior_applied` is false, and the reason is `no_proven_lift`.
+
+### Admin-only pilot measures
+
+Only a user whose role is exactly `admin` can read provenance or the
+pilot measures. An editor, a creator, and an anonymous caller get the
+same `not_found` as a missing fact. The measures are: confirmed facts per
+creator, split manual versus Gmail; the whole-number percent of Gmail
+confirmations that were Sí versus No, null when the decision count is 0;
+hotel response time as a D058 band only when at least three distinct
+creators and at least five latency observations exist, with no millisecond
+value in the JSON; the number of hotels at emerging or above; and
+retention of creators who saw a public network row, with return rate null
+when viewers are 0 or below 5. There is no pause or justify threshold.
+The measures are observed, not a stop rule.
+
+"Priorizar este hotel" is available only when a real signal is visible.
+It appends a decision and does not change the aggregate.
+
+### What this decision does not do
+
+- No composite Creator Friendly Score.
+- No numeric reply time on a creator or public surface.
+- No weakening of RLS. The new private tables revoke `anon`,
+  `authenticated`, and `service_role`. Writes go through security-definer
+  functions with an empty search path. The service-role key stays off the
+  client.
+- No change to D056 premium contacts or to migration `0055`.
 

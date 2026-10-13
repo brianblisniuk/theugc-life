@@ -10,12 +10,14 @@ import {
   unbindInboxThreadAction,
 } from "@/lib/inbox-pipeline/actions";
 import { REPLY_SENTIMENTS, type InboxLoad, type MailboxLoad } from "@/lib/inbox-pipeline/contract";
+import { GmailConfirmation } from "@/components/intelligence/gmail-confirmation";
 import {
   INBOX_COPY,
   inboxPanelModel,
   inboxWriteMessage,
   suggestionKindLabel,
 } from "@/lib/inbox-pipeline/display";
+import type { GmailPromptLoad } from "@/lib/network-intelligence/contract";
 
 const fieldClass =
   "w-full rounded-[var(--radius-app)] border border-border bg-background px-3 py-2 text-sm text-text";
@@ -39,11 +41,13 @@ export function InboxLink({
   hotelId,
   inbox,
   mailboxes,
+  gmailPrompt,
 }: {
   pipelineItemId: string;
   hotelId: string;
   inbox: InboxLoad;
   mailboxes: MailboxLoad;
+  gmailPrompt?: GmailPromptLoad;
 }) {
   const [message, setMessage] = useState<string | null>(null);
 
@@ -131,6 +135,14 @@ export function InboxLink({
           </div>
         </form>
       )}
+
+      {binding && gmailPrompt ? (
+        <GmailConfirmation
+          pipelineItemId={pipelineItemId}
+          hotelId={hotelId}
+          prompt={gmailPrompt}
+        />
+      ) : null}
 
       {inbox.unity.suggestions.map((suggestion) => (
         <div key={suggestion.id} className="space-y-2 border-t border-border pt-3">

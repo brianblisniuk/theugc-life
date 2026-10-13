@@ -206,12 +206,22 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
   await commitAction(ada, () => ada.getByRole("button", { name: "Link thread" }).click());
   await expect(ada.getByText(`Linked thread ${FIXTURE_THREAD_ID}`)).toBeVisible();
+  await expect(ada.getByText("¿Esto pasó así?")).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Priorizar este hotel" })).toHaveCount(0);
+  await commitAction(ada, () => ada.getByRole("button", { name: "Sí", exact: true }).click());
+  await expect(ada.getByTestId("gmail-confirmation-stored")).toContainText(
+    "Confirmaste que sí. No entró a la red: no hay un hotel canónico único para este correo.",
+  );
 
   await ada.getByRole("button", { name: "Mark as pitched" }).click();
   await ada.locator("#pitch-channel").selectOption("email");
   await ada.locator("#pitch-date").fill(day(-1));
   await commitAction(ada, () => ada.getByRole("button", { name: "Mark as pitched" }).click());
   await expect(ada.getByRole("heading", { name: "Pitched", exact: true })).toBeVisible();
+  const personal = ada.getByTestId("personal-intelligence");
+  await expect(personal.getByText("Registrado a mano", { exact: true })).toBeVisible();
+  await expect(personal.getByText("Pitch enviado", { exact: true })).toBeVisible();
+  await expect(personal.getByText("Desde Gmail", { exact: true })).toHaveCount(0);
 
   await ada.getByRole("button", { name: "Mark replied" }).click();
   await ada.locator("#reply-date").fill(day(0));
@@ -330,6 +340,11 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByRole("heading", { name: "Trip not found" })).toBeVisible();
   await bea.goto(HOTEL_PATH);
   await expect(bea.getByRole("button", { name: "Save to Pipeline" })).toBeVisible();
+  await expect(bea.getByText("Todavía no hay un dato de red")).toBeVisible();
+  await expect(bea.getByText("Confirmaste que sí.")).toHaveCount(0);
+  await expect(bea.getByText("¿Esto pasó así?")).toHaveCount(0);
+  await expect(bea.getByText("Registrado a mano", { exact: true })).toHaveCount(0);
+  await expect(bea.getByRole("button", { name: "Priorizar este hotel" })).toHaveCount(0);
   await expect(bea.getByText(FIXTURE_THREAD_ID)).toHaveCount(0);
   await expect(bea.getByText("Collaboration agreed")).toHaveCount(0);
   await expect(bea.getByText(BIO)).toHaveCount(0);
