@@ -713,7 +713,7 @@ creator turns it on. Features without a written tier are Free. D056 quotas
 and premium hotel data stay. D089–D091 are unchanged. `0051`–`0054` are
 not edited. Do not merge.
 
-**C02–C05 are this PR** on `cursor/c02-c05-network-intelligence-a035`,
+**C02–C05 are PR #67** on `cursor/c02-c05-network-intelligence-a035`,
 from `main` `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66).
 Migration `0056_network_intelligence_facts.sql`. D077 is Accepted. D099
 records the answers. The public aggregate is anonymous. Gmail enters only

@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66, DATA01, 2026-10-13)  
-**State:** AWAITING_CI. C02–C05 network intelligence. Branch `cursor/c02-c05-network-intelligence-a035`. D077 is Accepted. D099. Migration `0056`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. C02–C05 network intelligence. PR #67. Branch `cursor/c02-c05-network-intelligence-a035`. D077 is Accepted. D099. Migration `0056`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** C02–C05. DATA01 is merged. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -45,7 +45,7 @@
 - PR #66 — DATA01 hotel catalog importer — `502ae69ecb192dc3678a27619a557bb1012ff0e5`
 
 ## Next action
-- C02–C05 network intelligence is on branch `cursor/c02-c05-network-intelligence-a035`. State is AWAITING_CI. D077 is Accepted. D099. Migration `0056`. Do not merge from automation.
+- C02–C05 network intelligence is PR #67 on branch `cursor/c02-c05-network-intelligence-a035`. State is AWAITING_CI. D077 is Accepted. D099. Migration `0056`. Do not merge from automation.
 - DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.

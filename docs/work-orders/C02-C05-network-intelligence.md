@@ -3,7 +3,7 @@
 **Status:** Binding work order for this PR. Awaiting CI. Do not merge.
 **Base:** `main` `502ae69ecb192dc3678a27619a557bb1012ff0e5` (merge of PR #66).
 **Branch:** `cursor/c02-c05-network-intelligence-a035`.
-**PR:** recorded after this commit is pushed. Do not merge.
+**PR:** #67. Do not merge.
 **Migration:** `0056_network_intelligence_facts.sql`. `0055` is not edited.
 
 One PR for C02, C03, C04, and C05. The owner asked for that scope.
