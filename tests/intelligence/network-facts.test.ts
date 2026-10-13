@@ -631,4 +631,192 @@ d("network intelligence facts", () => {
     expect(await bands()).toEqual(beforeBands);
     expect(await rank()).toEqual(beforeRank);
   });
+
+  async function hotelWithEmergingManualFacts(hotelId: string, slug: string) {
+    await adminQuery(
+      "insert into public.hotels (id, name, slug, destination_id) values ($1, $2, $3, $4)",
+      [hotelId, slug, slug, DEST],
+    );
+    const counts: [string, number][] = [
+      [A, 5],
+      [B, 5],
+      [C, 4],
+    ];
+    for (const [userId, count] of counts) {
+      const itemId = await pipeline(userId, hotelId);
+      for (let i = 0; i < count; i += 1) await pitch(userId, itemId, hotelId, "old");
+    }
+  }
+
+  async function confirmGmailSample(hotelId: string, subject: string, thread: string) {
+    const creatorId = await profile(A);
+    const [item] = await adminQuery<{ id: string }>(
+      "select id from public.pipeline_items where creator_id = $1 and hotel_id = $2",
+      [creatorId, hotelId],
+    );
+    const seeded = await seedReading({
+      userId: A,
+      creatorId,
+      itemId: item!.id,
+      subject,
+      thread,
+      state: "engaged",
+      human: true,
+    });
+    const [observation] = await adminQuery<{ id: string }>(
+      `insert into private.gmail_outreach_target_observations
+         (user_id, mail_account_id, normalized_thread_id, observation_fingerprint, source_provider_message_ids)
+       values ($1, $2, $3, $4, array['m-purge']) returning id`,
+      [A, seeded.accountId, seeded.threadRowId, HEX],
+    );
+    await adminQuery(
+      `insert into private.gmail_outreach_target_canonical_links
+         (target_observation_id, target_kind, target_hotel_id, name_evidence, domain_evidence,
+          address_evidence, contact_evidence, rank)
+       values ($1, 'hotel', $2, 'unavailable', 'unavailable', 'unavailable', 'unavailable', 0)`,
+      [observation!.id, hotelId],
+    );
+    await adminQuery(
+      `insert into private.gmail_reply_thread_summaries (
+         user_id, mail_account_id, normalized_thread_id, eligibility, observation_state,
+         first_creator_sent_provider_message_id, first_creator_sent_at,
+         first_qualifying_human_reply_provider_message_id, first_qualifying_human_reply_at,
+         latency_from_first_creator_sent_ms, evidence_digest, evidence_message_count,
+         routing_context_digest, relation_rule_version, classification_rule_version, text_transform_version
+       ) values (
+         $1, $2, $3, 'eligible_confirmed', 'qualifying_human_reply_observed',
+         'sent-purge', now() - interval '2 days', 'reply-purge', now() - interval '1 day',
+         86400000, $4, 2, $4, 'rules_v1', 'rules_v1', 'text_v1'
+       )`,
+      [A, seeded.accountId, seeded.threadRowId, HEX],
+    );
+    const admitted = await call(A, "public.answer_gmail_network_reading", "$2, $3", [item!.id, "confirmed"]);
+    expect(admitted[0]!.body.result).toBe("confirmed_admitted");
+    return seeded.accountId;
+  }
+
+  async function confidenceOf(hotelId: string): Promise<string> {
+    const row = await queryAs(
+      { role: "anon" },
+      "select confidence_level from public.network_hotel_public where hotel_id = $1",
+      [hotelId],
+    );
+    return String(row.rows[0]?.confidence_level ?? "");
+  }
+
+  async function countsFor(hotelId: string, mailAccountId: string) {
+    const [gmail] = await adminQuery<{ n: string }>(
+      `select count(*)::text as n from private.intelligence_facts
+        where canonical_hotel_id = $1 and source_family = 'gmail' and counts_as_sample`,
+      [hotelId],
+    );
+    const [manual] = await adminQuery<{ n: string }>(
+      `select count(*)::text as n from private.intelligence_facts
+        where canonical_hotel_id = $1 and owner_user_id = $2 and source_family = 'manual'`,
+      [hotelId, A],
+    );
+    const [confirmations] = await adminQuery<{ n: string }>(
+      `select count(*)::text as n from private.intelligence_gmail_confirmations c
+         join public.pipeline_inbox_bindings b on b.id = c.binding_id
+        where b.mail_account_id = $1`,
+      [mailAccountId],
+    );
+    return { gmail: gmail!.n, manual: manual!.n, confirmations: confirmations!.n };
+  }
+
+  async function openDeletion(mailAccountId: string, scope: "gmail_derived_data" | "account_and_gmail_derived_data") {
+    const [request] = await adminQuery<{ id: string }>(
+      `insert into public.mail_account_deletion_requests
+         (mail_account_id, user_id, scope, requested_by_user_id, requested_at, status)
+       values ($1, $2, $3, $2, now(), 'in_progress') returning id`,
+      [mailAccountId, A, scope],
+    );
+    await adminQuery(
+      `update public.mail_accounts
+          set connection_state = 'deletion_pending',
+              current_deletion_request_id = $2,
+              disconnected_at = now(),
+              granted_scopes = '{}'
+        where id = $1`,
+      [mailAccountId, request!.id],
+    );
+    return request!.id;
+  }
+
+  it("drops a confirmed Gmail fact from the aggregate when that mailbox is purged", async () => {
+    const hotelId = "c2000000-0000-4000-8000-000000000030";
+    await hotelWithEmergingManualFacts(hotelId, "c02-purge");
+    expect(await confidenceOf(hotelId)).toBe("emerging");
+    const mailAccountId = await confirmGmailSample(hotelId, "c02-purge-subject", "c02-purge-thread");
+    expect(await confidenceOf(hotelId)).toBe("moderate");
+    const before = await countsFor(hotelId, mailAccountId);
+    expect(before.gmail).toBe("1");
+    expect(before.manual).toBe("5");
+    expect(before.confirmations).toBe("1");
+
+    const requestId = await openDeletion(mailAccountId, "gmail_derived_data");
+    const [purged] = await adminQuery<{ body: { result: string } }>(
+      "select public.gmail_reply_purge_for_deletion($1, $2, $3) as body",
+      [A, mailAccountId, requestId],
+    );
+    expect(purged!.body.result).toBe("ok");
+    const [state] = await adminQuery<{ connection_state: string }>(
+      "select connection_state from public.mail_accounts where id = $1",
+      [mailAccountId],
+    );
+    expect(state!.connection_state).toBe("deletion_pending");
+
+    const after = await countsFor(hotelId, mailAccountId);
+    expect(after.gmail).toBe("0");
+    expect(after.confirmations).toBe("0");
+    expect(after.manual).toBe("5");
+    expect(await confidenceOf(hotelId)).toBe("emerging");
+  });
+
+  it("drops a confirmed Gmail fact when the mailbox becomes deleted", async () => {
+    const hotelId = "c2000000-0000-4000-8000-000000000031";
+    await hotelWithEmergingManualFacts(hotelId, "c02-deleted");
+    const mailAccountId = await confirmGmailSample(hotelId, "c02-deleted-subject", "c02-deleted-thread");
+    expect(await confidenceOf(hotelId)).toBe("moderate");
+    expect((await countsFor(hotelId, mailAccountId)).gmail).toBe("1");
+
+    const requestId = await openDeletion(mailAccountId, "account_and_gmail_derived_data");
+    await adminQuery(
+      `delete from private.gmail_outreach_target_canonical_links
+        where target_observation_id in (
+          select id from private.gmail_outreach_target_observations where mail_account_id = $1
+        )`,
+      [mailAccountId],
+    );
+    await adminQuery("delete from private.gmail_outreach_target_observations where mail_account_id = $1", [
+      mailAccountId,
+    ]);
+    await adminQuery(
+      `with cfg as (select set_config('b07.purge', 'on', true))
+       delete from private.gmail_commercial_thread_attempts a
+        using cfg
+       where a.mail_account_id = $1`,
+      [mailAccountId],
+    );
+    await adminQuery("delete from private.gmail_reply_thread_summaries where mail_account_id = $1", [mailAccountId]);
+    await adminQuery("delete from private.gmail_normalized_threads where mail_account_id = $1", [mailAccountId]);
+    await adminQuery(
+      `with done as (
+         update public.mail_account_deletion_requests
+            set status = 'completed', completed_at = now()
+          where id = $1
+         returning id
+       )
+       update public.mail_accounts
+          set connection_state = 'deleted'
+        where id = $2`,
+      [requestId, mailAccountId],
+    );
+
+    const after = await countsFor(hotelId, mailAccountId);
+    expect(after.gmail).toBe("0");
+    expect(after.confirmations).toBe("0");
+    expect(after.manual).toBe("5");
+    expect(await confidenceOf(hotelId)).toBe("emerging");
+  });
 });

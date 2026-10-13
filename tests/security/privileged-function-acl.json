@@ -1300,6 +1300,26 @@
     "public": false
   },
   {
+    "schema": "private",
+    "name": "purge_network_gmail_for_mailbox",
+    "args": "p_mail_account_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "private",
+    "name": "purge_network_gmail_when_mailbox_deleted",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
     "schema": "public",
     "name": "answer_gmail_network_reading",
     "args": "p_pipeline_item_id uuid, p_decision text",

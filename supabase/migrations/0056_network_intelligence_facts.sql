@@ -42,6 +42,7 @@ create table private.intelligence_facts (
   evidence_id uuid not null,
   value jsonb not null default '{}'::jsonb,
   event_at timestamptz,
+  mail_account_id uuid references public.mail_accounts(id) on delete cascade,
   network_eligible boolean not null default false,
   counts_as_sample boolean not null default false,
   dismissed boolean not null default false,
@@ -67,6 +68,9 @@ create table private.intelligence_facts (
   ),
   constraint intelligence_facts_sample_shape check (
     counts_as_sample = false or network_eligible
+  ),
+  constraint intelligence_facts_gmail_mailbox check (
+    (source_family = 'gmail') = (mail_account_id is not null)
   ),
   constraint intelligence_facts_family_shape check (
     (
@@ -121,11 +125,16 @@ create index intelligence_facts_network_idx
   on private.intelligence_facts (canonical_hotel_id)
   where network_eligible;
 
+create index intelligence_facts_mail_account_idx
+  on private.intelligence_facts (mail_account_id)
+  where mail_account_id is not null;
+
 create table private.intelligence_gmail_confirmations (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.users(id) on delete cascade,
   pipeline_item_id uuid not null references public.pipeline_items(id) on delete cascade,
   binding_id uuid not null references public.pipeline_inbox_bindings(id) on delete cascade,
+  mail_account_id uuid not null references public.mail_accounts(id) on delete cascade,
   source_attempt_id uuid,
   decision text not null check (decision in ('confirmed', 'dismissed')),
   decided_at timestamptz not null default now(),
@@ -137,8 +146,11 @@ create unique index intelligence_gmail_confirmations_null_attempt_uidx
   on private.intelligence_gmail_confirmations (binding_id)
   where source_attempt_id is null;
 
+create index intelligence_gmail_confirmations_mail_account_idx
+  on private.intelligence_gmail_confirmations (mail_account_id);
+
 comment on table private.intelligence_gmail_confirmations is
-  'Immutable Sí/No for one linked Gmail reading. Dismissed never becomes a network fact. A later machine attempt is a different row and needs its own answer.';
+  'Immutable Sí/No for one linked Gmail reading, bound to that mailbox. Dismissed never becomes a network fact. A mailbox purge or deleted state removes the confirmation and the Gmail facts that cite it. A later machine attempt is a different row and needs its own answer.';
 
 create table private.network_intelligence_views (
   id uuid primary key default gen_random_uuid(),
@@ -542,9 +554,9 @@ begin
   end if;
 
   insert into private.intelligence_gmail_confirmations (
-    owner_user_id, pipeline_item_id, binding_id, source_attempt_id, decision
+    owner_user_id, pipeline_item_id, binding_id, mail_account_id, source_attempt_id, decision
   ) values (
-    v_user, p_pipeline_item_id, v_binding, v_attempt, p_decision
+    v_user, p_pipeline_item_id, v_binding, v_mail, v_attempt, p_decision
   )
   returning id into v_confirmation;
 
@@ -623,13 +635,13 @@ begin
   ) then
     insert into private.intelligence_facts (
       owner_user_id, fact_type, provenance_class, source_family,
-      canonical_hotel_id, evidence_kind, evidence_id, value, event_at,
+      canonical_hotel_id, evidence_kind, evidence_id, value, event_at, mail_account_id,
       network_eligible, counts_as_sample, pipeline_item_id
     ) values (
       v_user, 'gmail_thread_commercial_state', 'machine', 'gmail',
       v_target, 'gmail_thread_attempt', v_attempt,
       case when v_state is null then '{}'::jsonb else jsonb_build_object('state', v_state) end,
-      v_event_at, false, false, p_pipeline_item_id
+      v_event_at, v_mail, false, false, p_pipeline_item_id
     )
     on conflict (evidence_kind, evidence_id, fact_type, provenance_class) do nothing;
   end if;
@@ -638,12 +650,12 @@ begin
   if v_primary then
     insert into private.intelligence_facts (
       owner_user_id, fact_type, provenance_class, source_family,
-      canonical_hotel_id, evidence_kind, evidence_id, value, event_at,
+      canonical_hotel_id, evidence_kind, evidence_id, value, event_at, mail_account_id,
       network_eligible, counts_as_sample, pipeline_item_id
     ) values (
       v_user, 'gmail_thread_commercial_state', 'creator_confirmed', 'gmail',
       v_target, 'gmail_confirmation', v_confirmation,
-      jsonb_build_object('state', v_state), v_event_at, true, true, p_pipeline_item_id
+      jsonb_build_object('state', v_state), v_event_at, v_mail, true, true, p_pipeline_item_id
     );
     v_admitted := v_admitted + 1;
   end if;
@@ -651,13 +663,13 @@ begin
   if coalesce(v_human, false) then
     insert into private.intelligence_facts (
       owner_user_id, fact_type, provenance_class, source_family,
-      canonical_hotel_id, evidence_kind, evidence_id, value, event_at,
+      canonical_hotel_id, evidence_kind, evidence_id, value, event_at, mail_account_id,
       network_eligible, counts_as_sample, pipeline_item_id
     ) values (
       v_user, 'gmail_human_reply_observed', 'creator_confirmed', 'gmail',
       v_target, 'gmail_confirmation', v_confirmation,
       jsonb_build_object('response_class', 'qualifying_human_reply'),
-      v_event_at, true, not v_primary, p_pipeline_item_id
+      v_event_at, v_mail, true, not v_primary, p_pipeline_item_id
     );
     v_admitted := v_admitted + 1;
   end if;
@@ -669,12 +681,12 @@ begin
     end if;
     insert into private.intelligence_facts (
       owner_user_id, fact_type, provenance_class, source_family,
-      canonical_hotel_id, evidence_kind, evidence_id, value, event_at,
+      canonical_hotel_id, evidence_kind, evidence_id, value, event_at, mail_account_id,
       network_eligible, counts_as_sample, pipeline_item_id
     ) values (
       v_user, 'gmail_reply_latency', 'creator_confirmed', 'gmail',
       v_target, 'gmail_confirmation', v_confirmation,
-      v_latency, v_event_at, true, false, p_pipeline_item_id
+      v_latency, v_event_at, v_mail, true, false, p_pipeline_item_id
     );
     v_admitted := v_admitted + 1;
   end if;
@@ -1184,3 +1196,490 @@ $$;
 
 revoke all on function public.read_own_network_priority(uuid) from public, anon, authenticated;
 grant execute on function public.read_own_network_priority(uuid) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- A mailbox purge removes the Gmail facts copied out of that mailbox.
+-- The mail_accounts row itself is not deleted when the state becomes
+-- `deleted`, so ON DELETE CASCADE is not enough on its own. Every existing
+-- Gmail purge function calls this after its deletion guards, and the
+-- transition to `deleted` calls it again. Manual facts have no mailbox.
+-- ---------------------------------------------------------------------------
+create or replace function private.purge_network_gmail_for_mailbox(p_mail_account_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if p_mail_account_id is null then
+    return;
+  end if;
+  delete from private.intelligence_facts
+   where mail_account_id = p_mail_account_id
+     and source_family = 'gmail';
+  delete from private.intelligence_gmail_confirmations
+   where mail_account_id = p_mail_account_id;
+end;
+$$;
+
+revoke all on function private.purge_network_gmail_for_mailbox(uuid) from public, anon, authenticated, service_role;
+
+comment on function private.purge_network_gmail_for_mailbox(uuid) is
+  'Deletes Gmail network facts and confirmations bound to one mailbox. Manual facts are not bound to a mailbox. Called by every Gmail deletion purge and by the mailbox deleted transition.';
+
+create or replace function private.purge_network_gmail_when_mailbox_deleted()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.connection_state = 'deleted' and old.connection_state is distinct from 'deleted' then
+    perform private.purge_network_gmail_for_mailbox(new.id);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.purge_network_gmail_when_mailbox_deleted() from public, anon, authenticated, service_role;
+
+create trigger mail_accounts_purge_network_gmail
+  after update of connection_state on public.mail_accounts
+  for each row execute function private.purge_network_gmail_when_mailbox_deleted();
+
+create or replace function public.gmail_historical_import_purge_for_deletion(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_deletion_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+  v_request public.mail_account_deletion_requests%rowtype;
+  v_messages integer;
+  v_threads integer;
+  v_runs integer;
+begin
+  select m.* into v_account
+    from public.mail_accounts m
+   where m.id = p_mail_account_id and m.user_id = p_user_id
+   for no key update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  -- ONLY WHILE A DELETION IS ACTUALLY RUNNING. Purging Gmail content is not a
+  -- maintenance operation and must not be reachable as one.
+  if v_account.connection_state <> 'deletion_pending' then
+    return jsonb_build_object('result', 'not_deleting',
+                              'connection_state', v_account.connection_state);
+  end if;
+
+  -- AND ONLY FOR THE REQUEST THE MAILBOX IS ACTUALLY WAITING ON. A caller
+  -- naming some other request — an older one, one belonging to another mailbox
+  -- — is not carrying out this deletion.
+  if v_account.current_deletion_request_id is distinct from p_deletion_request_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  select r.* into v_request
+    from public.mail_account_deletion_requests r
+   where r.id = p_deletion_request_id;
+
+  if not found
+     or v_request.mail_account_id <> p_mail_account_id
+     or v_request.user_id <> p_user_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  if v_request.status not in ('requested', 'in_progress') then
+    return jsonb_build_object('result', 'request_not_running', 'status', v_request.status);
+  end if;
+
+  if v_request.scope not in ('gmail_derived_data', 'account_and_gmail_derived_data') then
+    return jsonb_build_object('result', 'scope_excludes_gmail_data', 'scope', v_request.scope);
+  end if;
+
+  perform private.purge_network_gmail_for_mailbox(p_mail_account_id);
+
+  with removed as (
+    delete from private.gmail_raw_messages r
+     where r.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_messages from removed;
+
+  with removed as (
+    delete from private.gmail_historical_import_threads t
+     where t.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_threads from removed;
+
+  with removed as (
+    delete from private.gmail_historical_import_runs x
+     where x.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_runs from removed;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'raw_messages_removed', v_messages,
+    'thread_work_removed', v_threads,
+    'runs_removed', v_runs
+  );
+end;
+$$;
+
+create or replace function public.gmail_normalize_purge_for_deletion(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_deletion_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+  v_request public.mail_account_deletion_requests%rowtype;
+  v_threads integer;
+begin
+  select m.* into v_account
+    from public.mail_accounts m
+   where m.id = p_mail_account_id and m.user_id = p_user_id
+   for no key update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  if v_account.connection_state <> 'deletion_pending' then
+    return jsonb_build_object('result', 'not_deleting', 'connection_state', v_account.connection_state);
+  end if;
+
+  if v_account.current_deletion_request_id is distinct from p_deletion_request_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  select r.* into v_request
+    from public.mail_account_deletion_requests r
+   where r.id = p_deletion_request_id;
+
+  if not found
+     or v_request.mail_account_id <> p_mail_account_id
+     or v_request.user_id <> p_user_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  if v_request.status not in ('requested', 'in_progress') then
+    return jsonb_build_object('result', 'request_not_running', 'status', v_request.status);
+  end if;
+
+  if v_request.scope not in ('gmail_derived_data', 'account_and_gmail_derived_data') then
+    return jsonb_build_object('result', 'scope_excludes_gmail_data', 'scope', v_request.scope);
+  end if;
+
+  perform private.purge_network_gmail_for_mailbox(p_mail_account_id);
+
+  with removed as (
+    delete from private.gmail_normalized_threads t
+     where t.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_threads from removed;
+
+  return jsonb_build_object('result', 'ok', 'normalized_threads_removed', v_threads);
+end;
+$$;
+
+create or replace function public.gmail_outreach_purge_for_deletion(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_deletion_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+  v_request public.mail_account_deletion_requests%rowtype;
+  v_signals integer;
+  v_decisions integer;
+  v_observations integer;
+  v_recipients integer;
+begin
+  select m.* into v_account from public.mail_accounts m
+   where m.id = p_mail_account_id and m.user_id = p_user_id
+   for no key update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  if v_account.connection_state <> 'deletion_pending' then
+    return jsonb_build_object('result', 'not_deleting', 'connection_state', v_account.connection_state);
+  end if;
+
+  if v_account.current_deletion_request_id is distinct from p_deletion_request_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  select r.* into v_request from public.mail_account_deletion_requests r where r.id = p_deletion_request_id;
+
+  if not found or v_request.mail_account_id <> p_mail_account_id or v_request.user_id <> p_user_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  if v_request.status not in ('requested', 'in_progress') then
+    return jsonb_build_object('result', 'request_not_running', 'status', v_request.status);
+  end if;
+
+  if v_request.scope not in ('gmail_derived_data', 'account_and_gmail_derived_data') then
+    return jsonb_build_object('result', 'scope_excludes_gmail_data', 'scope', v_request.scope);
+  end if;
+
+  perform private.purge_network_gmail_for_mailbox(p_mail_account_id);
+
+  -- HUMAN layer first (its FKs point into the machine layer's identity rows).
+  with removed as (
+    delete from private.gmail_outreach_creator_decisions where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_decisions from removed;
+
+  delete from private.gmail_outreach_target_confirmations where mail_account_id = p_mail_account_id;
+  delete from private.gmail_outreach_target_contact_confirmed_members where mail_account_id = p_mail_account_id;
+  delete from private.gmail_outreach_creator_decision_events where mail_account_id = p_mail_account_id;
+
+  -- MACHINE layer.
+  with removed as (
+    delete from private.gmail_outreach_thread_signals where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_signals from removed;
+
+  with removed as (
+    delete from private.gmail_outreach_target_observations where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_observations from removed;
+
+  with removed as (
+    delete from private.gmail_outreach_observed_recipients where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_recipients from removed;
+
+  delete from private.gmail_outreach_target_contact_signals where mail_account_id = p_mail_account_id;
+
+  -- Standalone thread-level row (no FK into any other B05 table), so it has
+  -- no cascade to rely on — must be purged explicitly.
+  delete from private.gmail_outreach_target_scope_signals where mail_account_id = p_mail_account_id;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'thread_signals_removed', v_signals,
+    'creator_decisions_removed', v_decisions,
+    'target_observations_removed', v_observations,
+    'observed_recipients_removed', v_recipients
+  );
+end;
+$$;
+
+create or replace function public.gmail_reply_purge_for_deletion(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_deletion_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+  v_request public.mail_account_deletion_requests%rowtype;
+  v_observations integer;
+  v_summaries integer;
+begin
+  select m.* into v_account from public.mail_accounts m
+   where m.id = p_mail_account_id and m.user_id = p_user_id
+   for no key update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  if v_account.connection_state <> 'deletion_pending' then
+    return jsonb_build_object('result', 'not_deleting', 'connection_state', v_account.connection_state);
+  end if;
+
+  if v_account.current_deletion_request_id is distinct from p_deletion_request_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  select r.* into v_request from public.mail_account_deletion_requests r where r.id = p_deletion_request_id;
+
+  if not found or v_request.mail_account_id <> p_mail_account_id or v_request.user_id <> p_user_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  if v_request.status not in ('requested', 'in_progress') then
+    return jsonb_build_object('result', 'request_not_running', 'status', v_request.status);
+  end if;
+
+  if v_request.scope not in ('gmail_derived_data', 'account_and_gmail_derived_data') then
+    return jsonb_build_object('result', 'scope_excludes_gmail_data', 'scope', v_request.scope);
+  end if;
+
+  perform private.purge_network_gmail_for_mailbox(p_mail_account_id);
+
+  with removed as (
+    delete from private.gmail_reply_message_observations where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_observations from removed;
+
+  with removed as (
+    delete from private.gmail_reply_thread_summaries where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_summaries from removed;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'message_observations_removed', v_observations,
+    'thread_summaries_removed', v_summaries
+  );
+end;
+$$;
+
+create or replace function public.gmail_commercial_purge_for_deletion(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_deletion_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+  v_request public.mail_account_deletion_requests%rowtype;
+  v_attempts integer;
+  v_events integer;
+begin
+  select m.* into v_account from public.mail_accounts m
+   where m.id = p_mail_account_id and m.user_id = p_user_id
+   for no key update;
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+  if v_account.connection_state <> 'deletion_pending' then
+    return jsonb_build_object('result', 'not_deleting', 'connection_state', v_account.connection_state);
+  end if;
+  if v_account.current_deletion_request_id is distinct from p_deletion_request_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  select r.* into v_request from public.mail_account_deletion_requests r where r.id = p_deletion_request_id;
+  if not found or v_request.mail_account_id <> p_mail_account_id or v_request.user_id <> p_user_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+  if v_request.status not in ('requested', 'in_progress') then
+    return jsonb_build_object('result', 'request_not_running', 'status', v_request.status);
+  end if;
+  if v_request.scope not in ('gmail_derived_data', 'account_and_gmail_derived_data') then
+    return jsonb_build_object('result', 'scope_excludes_gmail_data', 'scope', v_request.scope);
+  end if;
+
+  perform private.purge_network_gmail_for_mailbox(p_mail_account_id);
+
+  perform set_config('b07.purge', 'on', true);
+
+  delete from private.gmail_commercial_message_decisions where mail_account_id = p_mail_account_id;
+  delete from private.gmail_commercial_thread_decisions where mail_account_id = p_mail_account_id;
+  with removed as (
+    delete from private.gmail_commercial_creator_decision_events
+     where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_events from removed;
+  delete from private.gmail_commercial_message_current where mail_account_id = p_mail_account_id;
+  delete from private.gmail_commercial_thread_current where mail_account_id = p_mail_account_id;
+  with removed as (
+    delete from private.gmail_commercial_message_attempts
+     where mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_attempts from removed;
+  delete from private.gmail_commercial_thread_attempts where mail_account_id = p_mail_account_id;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'message_attempts_removed', v_attempts,
+    'human_events_removed', v_events
+  );
+end;
+$$;
+
+create or replace function public.gmail_incremental_sync_purge_for_deletion(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_deletion_request_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_account public.mail_accounts%rowtype;
+  v_request public.mail_account_deletion_requests%rowtype;
+  v_cursors integer;
+  v_runs integer;
+  v_threads integer;
+  v_coverage integer;
+begin
+  select m.* into v_account
+    from public.mail_accounts m
+   where m.id = p_mail_account_id and m.user_id = p_user_id
+   for update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+  if v_account.connection_state <> 'deletion_pending' then
+    return jsonb_build_object('result', 'not_deleting', 'connection_state', v_account.connection_state);
+  end if;
+  if v_account.current_deletion_request_id is distinct from p_deletion_request_id then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  select r.* into v_request
+    from public.mail_account_deletion_requests r
+   where r.id = p_deletion_request_id;
+
+  if not found
+     or v_request.mail_account_id <> p_mail_account_id
+     or v_request.user_id <> p_user_id
+     or v_request.status not in ('requested', 'in_progress')
+     or v_request.scope not in ('gmail_derived_data', 'account_and_gmail_derived_data') then
+    return jsonb_build_object('result', 'stale_deletion_request');
+  end if;
+
+  perform private.purge_network_gmail_for_mailbox(p_mail_account_id);
+
+  with removed as (
+    delete from private.gmail_sync_thread_coverage c
+     where c.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_coverage from removed;
+  with removed as (
+    delete from private.gmail_sync_threads t
+     where t.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_threads from removed;
+  with removed as (
+    delete from private.gmail_sync_runs r
+     where r.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_runs from removed;
+  with removed as (
+    delete from private.gmail_sync_cursors c
+     where c.mail_account_id = p_mail_account_id returning 1
+  ) select count(*)::int into v_cursors from removed;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'cursors_removed', v_cursors,
+    'runs_removed', v_runs,
+    'threads_removed', v_threads,
+    'coverage_removed', v_coverage
+  );
+end;
+$$;

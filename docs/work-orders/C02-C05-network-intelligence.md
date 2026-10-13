@@ -40,4 +40,5 @@ Rewriting `recompute_hotel_intelligence` or the D058 projections. A composite sc
 - The service-role key is not in client code.
 - A missing network row is not zero. Insufficient is not a precise metric.
 - A recency or freshness band is null unless three distinct creators have a sample event inside that band's window. A Gmail confirmation stores the email time, not the tap time. Destination order sorts only those anonymous fields.
+- A Gmail deletion purge, and the mailbox `deleted` state, remove that mailbox's Gmail confirmations and Gmail facts in the same transaction. Manual facts stay.
 - `unknown` is not unpaid. Redirect is not rejection. A shortlist is not network-eligible.

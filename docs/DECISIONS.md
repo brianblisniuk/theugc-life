@@ -3930,6 +3930,23 @@ including a B05 hotel that is not the pipeline hotel, admits nothing and
 does not name the other hotel. A canonical organization is not a network
 target.
 
+A Gmail confirmation and every Gmail fact, machine or creator-confirmed,
+is bound to that mailbox. Deleting the mailbox row cascades them. That
+row is not deleted when the mailbox is only marked `deleted`, so the
+binding is not enough on its own. Every existing Gmail deletion purge
+(`gmail_historical_import_purge_for_deletion`,
+`gmail_normalize_purge_for_deletion`,
+`gmail_outreach_purge_for_deletion`, `gmail_reply_purge_for_deletion`,
+`gmail_commercial_purge_for_deletion`, and
+`gmail_incremental_sync_purge_for_deletion`) deletes those confirmations
+and Gmail facts in the same transaction, after its own deletion guards.
+The transition of that mailbox to `deleted` deletes them again. The
+public aggregate is read from the facts that remain, so a purged mailbox
+stops moving confidence, recency, freshness, destination order, and the
+admin response-time band. Manual facts are not bound to a mailbox and
+stay. A disconnect that does not run a deletion purge and does not mark
+the mailbox `deleted` is not a purge (D077).
+
 Compensation amounts are not copied. `unknown` is not unpaid and is not
 zero. Null `would_work_again` stays null. A censored window is not zero
 replies and is not ghosted. Redirect is not rejection. `agreement_observed`
