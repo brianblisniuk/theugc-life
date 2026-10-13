@@ -8,8 +8,10 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { DeliverableReminders } from "@/components/collaboration/deliverable-reminders";
 import { EmptyState } from "@/components/empty-state";
 import { requireUser } from "@/lib/auth/guards";
+import { loadDeliverableDeadlineBoard } from "@/lib/collaboration/deadline-queries";
 import { loadCollaborationList } from "@/lib/surfaces/queries";
 
 export const metadata: Metadata = { title: "Collaborations" };
@@ -19,7 +21,10 @@ const ctaClass =
 
 export default async function CollaborationsPage() {
   const session = await requireUser("/app/collaborations");
-  const state = await loadCollaborationList(session.userId);
+  const [state, deadlines] = await Promise.all([
+    loadCollaborationList(session.userId),
+    loadDeliverableDeadlineBoard(session.userId, new Date().toISOString()),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -29,6 +34,8 @@ export default async function CollaborationsPage() {
           Stays and deals you have marked won. Only you can see this.
         </p>
       </header>
+
+      <DeliverableReminders board={deadlines} />
 
       {state.kind === "error" ? (
         <EmptyState title={state.title} description={state.body}>

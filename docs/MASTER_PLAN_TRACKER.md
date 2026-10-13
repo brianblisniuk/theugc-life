@@ -778,7 +778,16 @@ is merged as PR #74, merge
 `0068_collaboration_contract_templates.sql`. D114. A won deal can generate a
 private draft from a hotel-stay, paid, or usage-rights template. Missing
 facts stay marked to be filled in. No e-sign, no send, and no external model.
-Phase G Coverage Engine stays gated. `0066` is not that file.
+Phase G Coverage Engine stays gated. This PR does not edit `0068`. `0066` is not that file.
+
+**G02 deliverable deadlines** (canon v1.1, not the agency G02 row in the
+table above) is merged as PR #75, merge
+`6c77347ce5cbc9e57c4d675f0a5bc636474a0c16`. Migration
+`0069_deliverable_deadlines.sql`. D115. D116 is not used. `0070` is reserved
+and unused. In-app reminders only. The UTC day follows the D112 deliverable
+comparison. No N-day lead and no dismiss row, because neither is stated in
+the decisions. `0050` and `0068` are not edited. F04 home files are not
+edited. This PR does not edit `0069`.
 
 **H01 metric rankings and hotel signals** (canon v1.1 Sprint 5, not the
 second-vertical H01 row) is PR #77 on `cursor/h01-metric-rankings-367c`,
@@ -787,8 +796,8 @@ AWAITING_AUDIT. Migrations `0071_hotel_metric_signals.sql` and
 confirmed network facts: response rate, reply-time band, and creator
 activity. Below a floor the value is not enough data, never zero. A locked
 reply ranking omits hotels. Discover and Pipeline order are unchanged (F03).
-`src/lib/home` is not edited. `0069` and `0070` are not these files. Do not
-merge.
+`src/lib/home` is not edited. `0069` is G02 and is not edited. `0070` is
+unused. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

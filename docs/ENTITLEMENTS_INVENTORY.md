@@ -49,6 +49,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `collaborations.lifecycle` | Collaborations | owner, on a relationship they already have |
 | `collaborations.compensation` | Collaborations | owner. Not a charge |
 | `collaborations.contracts` | Collaborations | owner, Free (D114, D098). A private draft, not a message and not legal advice |
+| `collaborations.deliverable_reminders` | Collaborations | owner, every tier (D115). In-app only |
 | `gmail.connect` | Gmail | owner, Free (D098) |
 | `gmail.sync` | Gmail | owner. Login and scheduled sync pause on Free (D102). Stored mail stays |
 | `gmail.collaboration_detection` | Gmail | owner. Detection pauses on Free (D102, D107). Suggestions until the creator confirms |

@@ -54,6 +54,8 @@ export interface PipelineListItem {
   nextFollowupAt: string | null;
   /** Unlocked contact for this caller. Absent until the pipeline page attaches it. */
   contactEmail?: string | null;
+  /** Most urgent deliverable deadline on this cycle. Absent when the read failed or none apply. */
+  deadlineLabel?: string | null;
   hotel: {
     id: string;
     name: string;

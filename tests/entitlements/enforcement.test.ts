@@ -74,6 +74,7 @@ let otherMail = "";
 let otherBinding = "";
 let otherCollaboration = "";
 let otherCompensation = "";
+let otherDeliverable = "";
 let otherPortfolio = "";
 let otherPitchTemplate = "";
 let otherPitchDraft = "";
@@ -241,6 +242,14 @@ d("E04 entitlement inventory enforcement", () => {
       [creators.other, otherCollaboration, otherPipeline],
     );
     otherCompensation = comp[0]!.id;
+    const deliverable = await adminQuery<{ id: string }>(
+      `insert into public.collaboration_deliverables
+         (creator_id, collaboration_id, pipeline_item_id, deliverable_type, quantity, due_on, status, notes)
+       values ($1, $2, $3, 'reel', 1, '2026-10-01', 'pending', $4)
+       returning id`,
+      [creators.other, otherCollaboration, otherPipeline, SECRET],
+    );
+    otherDeliverable = deliverable[0]!.id;
 
     const portfolio = await adminQuery<{ id: string }>(
       `insert into public.portfolio_assets (creator_id, type, external_url, is_public, title)
@@ -619,6 +628,11 @@ d("E04 entitlement inventory enforcement", () => {
           sql: "select id from public.collaboration_agreed_compensations where id = $1",
           params: [otherCompensation],
           marker: otherCompensation,
+        },
+        collaboration_deliverables: {
+          sql: "select notes from public.collaboration_deliverables where id = $1",
+          params: [otherDeliverable],
+          marker: SECRET,
         },
         pipeline_inbox_bindings: {
           sql: "select id from public.pipeline_inbox_bindings where id = $1",

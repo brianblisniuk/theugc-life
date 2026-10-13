@@ -133,7 +133,7 @@ export function pipelineSurfaceHeading(surface: PipelineSurface): {
     return {
       title: "Collaborations",
       description:
-        "Won deals. Deliverables and the agreed compensation for each piece open on the hotel.",
+        "Won deals. Deliverable deadlines and in-app reminders are listed here. Compensation for each piece opens on the hotel.",
     };
   }
   return {
