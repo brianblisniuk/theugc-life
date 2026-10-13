@@ -27,6 +27,7 @@ import {
   IntelligencePanel,
   PremiumIntelligencePanel,
 } from "@/components/hotels/intelligence-panel";
+import { MetricSignals } from "@/components/hotels/metric-signals";
 import { NoPhoto } from "@/components/hotels/no-photo";
 import { StarRating } from "@/components/hotels/star-rating";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
@@ -58,6 +59,8 @@ import {
   recordNetworkView,
 } from "@/lib/network-intelligence/queries";
 import { networkPanelState } from "@/lib/network-intelligence/display";
+import { METRIC_READ_NOTICE, type MetricId, type RankingLoad } from "@/lib/metrics/contract";
+import { getDestinationMetricRankings, getHotelMetricSignals } from "@/lib/metrics/queries";
 import { getPastCollaborations } from "@/lib/profile/queries";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
@@ -187,6 +190,14 @@ export default async function HotelDetailPage({
   const rank = destinationId
     ? await getDestinationRank(destinationId)
     : { status: "ok" as const, hotels: [] };
+  const metricSignals = await getHotelMetricSignals(hotel.id);
+  const metricRankings: Record<MetricId, RankingLoad> = destinationId
+    ? await getDestinationMetricRankings(destinationId)
+    : {
+        response_rate: { status: "error", notice: METRIC_READ_NOTICE },
+        response_time: { status: "error", notice: METRIC_READ_NOTICE },
+        creator_activity: { status: "error", notice: METRIC_READ_NOTICE },
+      };
   const prioritized = await getOwnNetworkPriority(hotel.id);
   if (network.status === "ok" && networkPanelState(network) !== "error") {
     await recordNetworkView(hotel.id);
@@ -291,6 +302,11 @@ export default async function HotelDetailPage({
             prioritized={prioritized}
           />
           <PersonalFacts load={ownFacts} />
+          <MetricSignals
+            destinationName={hotel.destination?.name ?? null}
+            signals={metricSignals}
+            rankings={metricRankings}
+          />
         </div>
       </Section>
 

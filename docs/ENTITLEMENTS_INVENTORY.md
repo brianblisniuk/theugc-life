@@ -16,6 +16,8 @@ Migration `0051_outside_free_allowance.sql` corrects the outside Free counters (
 |---|---|---|---|
 | Worldwide discovery, hotel basics, map, public intelligence | Yes | Yes | Yes |
 | Premium intelligence | No | Entitled destination, including descendants | Worldwide |
+| Metric activity ranking | Yes, including anonymous | Yes | Yes |
+| Metric response rankings | No | Entitled destination, including descendants | Worldwide |
 | Hotel contact email | No, until this user unlocks that hotel | A Pass does not reveal it | A Pro row does not reveal it |
 | Open relationships | 10 | Unlimited inside the destination; outside, only outside-coverage rows count toward 10 | Unlimited |
 | Engaged pipeline | 5 | Same exemption; in-destination rows do not consume the outside allowance | Unlimited |
@@ -34,6 +36,8 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `hotel.map` | Map | all tiers |
 | `hotel.public_intelligence` | Intelligence | all tiers, including anonymous |
 | `hotel.premium_intelligence` | Intelligence | Pass inside destination, Pro worldwide |
+| `hotel.metric_activity` | Intelligence | all tiers, including anonymous (D120) |
+| `hotel.metric_response` | Intelligence | Pass inside destination, Pro worldwide (D120) |
 | `hotel.premium_contacts` | Hotel Detail | credit unlock for this user, or staff (D100) |
 | `credits.pending_numbers` | Credits | undecided until the owner sets the amounts (D101) |
 | `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; outside counts only outside-coverage rows; Pro exempt |

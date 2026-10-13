@@ -2820,6 +2820,26 @@ It MUST contain no:
 
 Public pages query only safe projections.
 
+### Per-metric signals (migrations 0071 and 0072, D120)
+
+`private.hotel_metric_basis` computes three rows per hotel that has a
+confirmed network fact: response rate, response time, and creator activity.
+It reads `private.intelligence_facts` only. Select is revoked from `public`,
+`anon`, `authenticated`, and `service_role`. Counts, hours, and creator ids
+are not columns of the public views.
+
+`hotel_metric_signal_public` is creator activity for a published hotel that
+cleared the floor. `anon` may select it. `hotel_metric_signal_premium` is
+reply rate and the reply-time band, and only when
+`has_premium_hotel_access(hotel_id)` is true. `anon` has no privilege on it.
+Hotels below a floor are absent from both views.
+
+`read_hotel_metric_signals(p_hotel_id)` and
+`read_destination_metric_ranking(p_destination_id, p_metric)` are
+`SECURITY DEFINER` with an empty `search_path`. A locked ranking omits
+`hotels`. `0069` and `0070` are not these files. `0068` is G01 and is not
+edited.
+
 ## 10. Growth entities
 
 ### hotel_claims
@@ -3016,5 +3036,13 @@ At minimum:
     collaboration suggestions. The cap of 100 keeps human reply, then pitch
     sent, then collaboration, then id. Free returns paused and no ids. No new
     table. `0061`, `0062`, and `0064` are not edited.
+35. Per-metric hotel signals (0071, D120) — a private basis over confirmed
+    network facts and two public views. Activity is public. Reply rate and
+    the reply-time band are premium. No new table. `hotel_intelligence` is
+    not read. `0069` and `0070` are not this file.
+36. Metric ranking reads (0072, D120) — `read_hotel_metric_signals` and
+    `read_destination_metric_ranking`. One metric, destination plus
+    descendants, tie-break hotel id. A locked reply ranking has no hotels
+    key. `0071` is the basis these functions read.
 
 Every migration must be reproducible from an empty database.

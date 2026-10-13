@@ -763,15 +763,14 @@ already has. Copy and a mailto draft are not a sent pitch. D03 and D04 stay
 open: no model vendor and no send. `0060`, `0061`, and `0062` are not edited.
 `0063` is not this file.
 
-**F04 home next actions** (canon v1.1, not the agency F04 row) is PR #73
-on `cursor/f04-home-next-actions-39db`, AWAITING_AUDIT. It composes the
+**F04 home next actions** (canon v1.1, not the agency F04 row) is merged as
+PR #73, merge `0a69413beb338c7910d8b9473693a3db7136a6aa`. It composes the
 signed-in creator's pipeline, due follow-ups, due deliverables, credit
 balance, and pending Gmail suggestions (D112). Migration
 `0066_home_next_actions.sql` is a read function only. The cap of 100 keeps
 human reply, then pitch sent, then collaboration, then id. Free Gmail reads
 stay paused and return no suggestion ids (D107). There is no ranking and no
 model. Agency F04 stays planned. `0061`, `0062`, and `0064` are not edited.
-Do not merge.
 
 **G01 contract templates** (canon v1.1, not the Phase G Coverage Engine row)
 is merged as PR #74, merge
@@ -780,6 +779,16 @@ is merged as PR #74, merge
 private draft from a hotel-stay, paid, or usage-rights template. Missing
 facts stay marked to be filled in. No e-sign, no send, and no external model.
 Phase G Coverage Engine stays gated. `0066` is not that file.
+
+**H01 metric rankings and hotel signals** (canon v1.1 Sprint 5, not the
+second-vertical H01 row) is PR-open on `cursor/h01-metric-rankings-367c`,
+AWAITING_AUDIT. Migrations `0071_hotel_metric_signals.sql` and
+`0072_hotel_metric_ranking_reads.sql`. D120. Three separate metrics from
+confirmed network facts: response rate, reply-time band, and creator
+activity. Below a floor the value is not enough data, never zero. A locked
+reply ranking omits hotels. Discover and Pipeline order are unchanged (F03).
+`src/lib/home` is not edited. `0069` and `0070` are not these files. Do not
+merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
