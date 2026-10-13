@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `621bc557762a70242b08a02afca94bca6c08f08d` (merge of PR #64, E05, 2026-10-13)  
-**State:** AWAITING_CI. UX01 Sunlit Creator OS shell, D095 onboarding, D096–D097 public profile, D098 Free for undocumented gates. PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055`. The public-profile toggle follows the stored flag (the saved result does not invert the refreshed prop). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** UX01. E05 is merged. D095–D098 are Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
+**Last verified main:** `9a449239df1ebd859d4876c35e83e35007cf41af` (merge of PR #65, UX01, 2026-10-13)  
+**State:** AWAITING_CI. DATA01 hotel catalog importer. Branch `cursor/data01-hotel-catalog-import-5dcd`. No new decision (D099 is unused). No migration (`0056` is unused). Contacts stay non-public. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** DATA01. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -41,9 +41,11 @@
 - PR #62 — E04 Pass/Pro entitlement inventory, migration `0051` — `dc5979eed799d1724eb36482eb0067d3e9f0fe55`
 - PR #63 — D09 creator profile share link, D089–D091 Accepted, migration `0053` — `1fc15658fc69acaa799860f8340736e15e1f5728`
 - PR #64 — E05 E2E, observability, launch checklist, migration `0054` — `621bc557762a70242b08a02afca94bca6c08f08d`
+- PR #65 — UX01 Sunlit Creator OS, D095–D098 Accepted, migration `0055` — `9a449239df1ebd859d4876c35e83e35007cf41af`
 
 ## Next action
-- UX01 is PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. State is AWAITING_CI. Do not merge from automation.
+- DATA01 hotel catalog importer is branch `cursor/data01-hotel-catalog-import-5dcd`. State is AWAITING_CI. Do not merge from automation.
+- UX01 is merged (PR #65, `9a44923`, migration `0055`). D095–D098 stay Accepted. This PR does not edit `0055`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.
 - E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.

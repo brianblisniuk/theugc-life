@@ -10,6 +10,7 @@ import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  assertApplyTarget,
   assertPersistentApplyTarget,
   categorizePreflightError,
   classifyDatabaseUrl,
@@ -116,6 +117,37 @@ describe("assertPersistentApplyTarget — real --apply guard", () => {
     const { classification } = assertPersistentApplyTarget(env);
     expect(classification.isRemote).toBe(true);
     expect(classification.hostClass).toBe("remote");
+  });
+
+  it("allows a loopback target only when --allow-local is set", () => {
+    const env = {
+      DATABASE_URL: "postgresql://postgres:secret@127.0.0.1:55432/ugc_local",
+      TEST_DATABASE_URL: "postgresql://postgres:secret@127.0.0.1:5432/postgres",
+    };
+    expect(() => assertApplyTarget(env, { allowLocal: false })).toThrow(/non-remote target/i);
+    const local = assertApplyTarget(env, { allowLocal: true });
+    expect(local.classification.hostClass).toBe("loopback");
+    expect(local.url).toBe(env.DATABASE_URL);
+    expect(local.classification.redactedTarget).not.toContain("secret");
+  });
+
+  it("refuses --allow-local without DATABASE_URL and does not read TEST_DATABASE_URL", () => {
+    const env = { TEST_DATABASE_URL: "postgresql://postgres:secret@127.0.0.1:55432/ugc_local" };
+    expect(() => assertApplyTarget(env, { allowLocal: true })).toThrow(/DATABASE_URL is required/i);
+  });
+
+  it("refuses --allow-local against a remote or private-network host", () => {
+    const remote = {
+      DATABASE_URL: "postgresql://postgres:secret@db.invented-ref.supabase.co:5432/postgres",
+    };
+    expect(() => assertApplyTarget(remote, { allowLocal: true })).toThrow(/non-local target/i);
+    const privateNet = { DATABASE_URL: "postgresql://postgres:secret@10.0.0.5:5432/postgres" };
+    expect(() => assertApplyTarget(privateNet, { allowLocal: true })).toThrow(/non-local target/i);
+    try {
+      assertApplyTarget(remote, { allowLocal: true });
+    } catch (err) {
+      expect((err as Error).message).not.toContain("secret");
+    }
   });
 
   it("never leaks a secret in the refusal error message", () => {

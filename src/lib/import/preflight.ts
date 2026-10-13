@@ -163,6 +163,38 @@ export function assertPersistentApplyTarget(env: Record<string, string | undefin
   return { url, classification };
 }
 
+const LOCAL_APPLY_CLASSES = new Set<HostClass>(["loopback", "localhost", "local-supabase"]);
+
+/**
+ * Choose the apply target.
+ *
+ * `--apply` alone still requires a remote persistent database and never reads
+ * `TEST_DATABASE_URL`. `--apply --allow-local` is the documented local/dev
+ * command: `DATABASE_URL` must name loopback, localhost, or local Supabase.
+ * A remote, private-network, or container-bridge host is refused in that mode,
+ * so the flag cannot be pointed at a hosted database.
+ */
+export function assertApplyTarget(
+  env: Record<string, string | undefined>,
+  opts: { allowLocal: boolean },
+): { url: string; classification: TargetClassification } {
+  if (!opts.allowLocal) return assertPersistentApplyTarget(env);
+  const url = env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new PersistentTargetError(
+      "DATABASE_URL is required for --apply --allow-local. Refusing to fall back to TEST_DATABASE_URL.",
+    );
+  }
+  const classification = classifyDatabaseUrl(url);
+  if (!LOCAL_APPLY_CLASSES.has(classification.hostClass)) {
+    throw new PersistentTargetError(
+      `Refusing --apply --allow-local against a non-local target (${classification.redactedTarget}). ` +
+        "Loopback, localhost, or local Supabase is required.",
+    );
+  }
+  return { url, classification };
+}
+
 /**
  * The repository's migration version identifiers — the numeric prefix of each
  * `supabase/migrations/NNNN_*.sql` file (e.g. "0001" … "0017"). These are what

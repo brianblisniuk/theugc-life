@@ -208,6 +208,8 @@ Required:
 
 Re-running the same input must not duplicate canonical hotels/contacts.
 
+A repeat of the same file hash and parser version does not silently reuse the existing batch. The command fails and names the batch id. `--force` reuses that batch and warns that the file was not re-parsed. An incomplete batch left in `parsing` is marked failed and staged again when `--force` is set.
+
 ## 12. Security
 
 - import tooling is server/admin only;
@@ -231,6 +233,9 @@ Provide CLI commands equivalent to:
 - `npm run import:stage -- --file ...`
 - `npm run import:dry-run -- --file ...`
 - `npm run import:report -- --batch ...`
+- `npm run import:promote -- --batch <uuid> --apply --allow-local`
+
+`--apply` without `--allow-local` still requires an explicit remote `DATABASE_URL` and never falls back to `TEST_DATABASE_URL`. `--apply --allow-local` is the local/dev promotion command. It also requires `DATABASE_URL`, and the target must be loopback, localhost, or local Supabase. A remote, private-network, or container-bridge host is refused, so the flag cannot be aimed at a hosted database. Preview (`import:promote` without `--apply`) stays read-only.
 
 Legacy inputs additionally select a legacy adapter.
 

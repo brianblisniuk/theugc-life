@@ -4,6 +4,10 @@
  *
  *   npm run import:stage -- --file <path> [--contacts <csv>] [--evidence <csv>]
  *   npm run import:stage -- --file <path> --adapter <legacy-key> [--force]
+ *
+ * Reusing an existing batch for the same file and parser version fails unless
+ * `--force` is set. `--force` warns and reuses that batch without re-parsing.
+ * An incomplete batch left in `parsing` is marked failed and staged again.
  */
 import { stageFile } from "../../src/lib/import/pipeline";
 import { fail, getClient, parseArgs, requireString } from "./_shared";
@@ -25,8 +29,13 @@ async function main() {
       adapter,
       force: args.force === true,
     });
+    if (result.forcedReuse) {
+      console.warn(
+        `\n[import:stage] WARNING: reusing existing batch ${result.batchId} because --force was set. The file was not re-parsed.`,
+      );
+    }
     console.info(
-      `\n[import:stage] batch ${result.batchId} ${result.reused ? "(reused existing)" : "(new)"}`,
+      `\n[import:stage] batch ${result.batchId} ${result.forcedReuse ? "(reused existing; --force)" : "(new)"}`,
     );
     console.info(
       `  rows: total=${result.counters.total} valid=${result.counters.valid} ` +

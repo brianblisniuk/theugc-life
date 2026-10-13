@@ -80,6 +80,7 @@ function contactRecord(o: Record<string, unknown> & { key: string }) {
     linkedinUrl: o.linkedinUrl ?? null,
     contactScope: o.contactScope ?? null,
     organizationName: o.organizationName ?? null,
+    organizationType: o.organizationType ?? null,
     verificationStatus: o.verificationStatus ?? "unverified",
     sourceUrl: o.sourceUrl ?? null,
     verifiedAt: o.verifiedAt ?? null,
@@ -400,6 +401,56 @@ d("promotion — contacts, dedup, fields", () => {
     expect(c.rows[0]!.first_name).toBeNull();
     expect(c.rows[0]!.last_name).toBeNull();
     expect(c.rows[0]!.organization_name).toBe("Acme PR");
+    const org = await client.query<{ org_type: string }>(
+      "select org_type from public.organizations where name = 'Acme PR'",
+    );
+    expect(org.rows[0]!.org_type).toBe("pr_agency");
+    const link = await client.query<{ relationship: string }>(
+      `select ho.relationship
+         from public.hotel_organizations ho
+         join public.organizations o on o.id = ho.organization_id
+        where o.name = 'Acme PR'`,
+    );
+    expect(link.rows[0]!.relationship).toBe("represented_by");
+  });
+
+  it("links a management_company column as managed_by and keeps the contact private to the hotel", async () => {
+    const b = await mkBatch("orgmgmt");
+    await addRow(b, "property", "mg1", propRecord({ key: "mg1", propertyName: "Managed Hotel" }));
+    await addRow(
+      b,
+      "contact",
+      "mg1",
+      contactRecord({
+        key: "mg1",
+        email: "gm@managed.example",
+        contactScope: "property",
+        organizationName: "Northwind Management",
+        organizationType: "management_company",
+        verificationStatus: "probable",
+      }),
+    );
+    await review(b, "mg1", "approve_create", { destinationId: DEST_ID });
+    await promoteBatch(client, b, { apply: true });
+    await promoteBatch(client, b, { apply: true });
+
+    const contact = await client.query<{ organization_name: string }>(
+      "select organization_name from public.hotel_contacts where email = 'gm@managed.example'",
+    );
+    expect(contact.rows).toHaveLength(1);
+    expect(contact.rows[0]!.organization_name).toBe("Northwind Management");
+    const orgs = await client.query<{ n: string }>(
+      "select count(*)::text n from public.organizations where normalized_name = 'northwind management'",
+    );
+    expect(Number(orgs.rows[0]!.n)).toBe(1);
+    const link = await client.query<{ relationship: string }>(
+      `select ho.relationship
+         from public.hotel_organizations ho
+         join public.organizations o on o.id = ho.organization_id
+        where o.normalized_name = 'northwind management'`,
+    );
+    expect(link.rows).toHaveLength(1);
+    expect(link.rows[0]!.relationship).toBe("managed_by");
   });
 
   it("approve_match fills a NULL hotel field but never overwrites a conflicting non-null one", async () => {

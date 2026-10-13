@@ -6,6 +6,7 @@
  */
 import type { Client } from "pg";
 
+import { isOrgType } from "./aliases";
 import { nameMatchKey, normalizeUrl } from "./normalize";
 import type { ExistingData, ExistingDestination, ExistingHotel, ResolutionResult } from "./resolve";
 import type { ReportBatchMeta, ReportInput } from "./report";
@@ -429,12 +430,17 @@ export async function getBatchReportInput(client: Client, batchId: string): Prom
       // normalized organizationName — never from review_note, contact person,
       // email, or property key (review F5). Type is derived from scope.
       const scope = String(c.match_method).replace("org_scope:", "");
-      const normalized = (srcRow.normalized_data ?? {}) as { organizationName?: string | null };
+      const normalized = (srcRow.normalized_data ?? {}) as {
+        organizationName?: string | null;
+        organizationType?: string | null;
+      };
       const orgName = normalized.organizationName ?? null;
       if (orgName) {
         orgCandidates.push({
           name: orgName,
-          inferredType: ORG_SCOPE_TO_TYPE[scope] ?? "other",
+          inferredType: isOrgType(normalized.organizationType)
+            ? normalized.organizationType
+            : (ORG_SCOPE_TO_TYPE[scope] ?? "other"),
           scope,
           sourcePropertyKey: srcRow.source_property_key ?? "",
           sheetName: srcRow.sheet_name,

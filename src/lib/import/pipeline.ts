@@ -26,7 +26,28 @@ import { buildReport, type BuiltReport } from "./report";
 import { resolveEntities } from "./resolve";
 import { stageRawSheets, type StagedRow } from "./stage";
 
-export const STANDARD_PARSER = { name: "canonical-standard", version: "1.0.0" } as const;
+/**
+ * Parser identity is part of the batch key. 1.1.0 maps reported→probable,
+ * department/scope/claim aliases, and organization column aliases. A file
+ * already staged with 1.0.0 is a different identity and is parsed again.
+ */
+export const STANDARD_PARSER = { name: "canonical-standard", version: "1.1.0" } as const;
+
+export class BatchReuseError extends Error {
+  readonly batchId: string;
+  readonly batchStatus: string;
+
+  constructor(batchId: string, batchStatus: string) {
+    super(
+      `Refusing to reuse import batch ${batchId} (status=${batchStatus}). ` +
+        "The same file and parser version already has a batch. Re-run with --force to reuse it explicitly. " +
+        "A forced reuse does not re-parse the file.",
+    );
+    this.name = "BatchReuseError";
+    this.batchId = batchId;
+    this.batchStatus = batchStatus;
+  }
+}
 export const REPORTS_DIR = path.resolve(process.cwd(), "data", "imports", "reports");
 
 function counters(rows: StagedRow[]): RowCounters {
@@ -57,6 +78,8 @@ export interface StageOptions {
 export interface StageResult {
   batchId: string;
   reused: boolean;
+  /** True only when reuse happened because `--force` was passed. */
+  forcedReuse: boolean;
   counters: RowCounters;
 }
 
@@ -75,12 +98,26 @@ export async function stageFile(client: Client, opts: StageOptions): Promise<Sta
     fileSha256,
   };
 
-  if (!opts.force) {
-    const reusable = await findReusableBatch(client, meta);
-    if (reusable && reusable.status !== "failed") {
-      // Repeat import detected — do not duplicate (IMPORT_SPEC §11).
-      const existing = await getBatchReportInput(client, reusable.id);
-      return { batchId: reusable.id, reused: true, counters: counters(existing.rows) };
+  const existingBatch = await findReusableBatch(client, meta);
+  if (existingBatch && existingBatch.status !== "failed") {
+    if (!opts.force) {
+      throw new BatchReuseError(existingBatch.id, existingBatch.status);
+    }
+    // An unfinished `parsing` batch is a partial load. Reusing it would hide
+    // the rows that never inserted. Force retires it and stages again.
+    if (existingBatch.status === "parsing") {
+      await client.query(
+        "update public.import_batches set status = 'failed' where id = $1 and status = 'parsing'",
+        [existingBatch.id],
+      );
+    } else {
+      const existing = await getBatchReportInput(client, existingBatch.id);
+      return {
+        batchId: existingBatch.id,
+        reused: true,
+        forcedReuse: true,
+        counters: counters(existing.rows),
+      };
     }
   }
 
@@ -95,31 +132,40 @@ export async function stageFile(client: Client, opts: StageOptions): Promise<Sta
   const staged = stageRawSheets(rawSheets).rows;
   const c = counters(staged);
 
+  await client.query("begin");
   let batchId: string;
   try {
     batchId = await createBatch(client, meta);
+    const rowIdMap = await insertStagedRows(client, batchId, staged);
+    await updateBatchCounters(client, batchId, c, statusFor(c));
+
+    // Resolution is computed + persisted here so a subsequent dry-run/report is a
+    // pure read. (Resolution touches only import_match_candidates.)
+    const existing = await loadExistingData(client);
+    const resolution = resolveEntities(staged, existing);
+    await persistResolution(client, resolution, rowIdMap);
+    await client.query("commit");
   } catch (err) {
+    await client.query("rollback");
     // DB idempotency backstop (review F3): a concurrent process already staged
-    // this file+parser as a non-failed batch. Treat as reused, not an error.
+    // this file+parser as a non-failed batch. Reuse only when explicitly forced.
     if ((err as { code?: string }).code === "23505") {
       const raced = await findReusableBatch(client, meta);
       if (raced && raced.status !== "failed") {
+        if (!opts.force) throw new BatchReuseError(raced.id, raced.status);
         const existing = await getBatchReportInput(client, raced.id);
-        return { batchId: raced.id, reused: true, counters: counters(existing.rows) };
+        return {
+          batchId: raced.id,
+          reused: true,
+          forcedReuse: true,
+          counters: counters(existing.rows),
+        };
       }
     }
     throw err;
   }
-  const rowIdMap = await insertStagedRows(client, batchId, staged);
-  await updateBatchCounters(client, batchId, c, statusFor(c));
 
-  // Resolution is computed + persisted here so a subsequent dry-run/report is a
-  // pure read. (Resolution touches only import_match_candidates.)
-  const existing = await loadExistingData(client);
-  const resolution = resolveEntities(staged, existing);
-  await persistResolution(client, resolution, rowIdMap);
-
-  return { batchId, reused: false, counters: c };
+  return { batchId, reused: false, forcedReuse: false, counters: c };
 }
 
 async function writeReportFiles(
@@ -137,6 +183,7 @@ async function writeReportFiles(
 export interface DryRunResult {
   batchId: string;
   reused: boolean;
+  forcedReuse: boolean;
   report: BuiltReport;
   paths: { json: string; md: string };
 }
@@ -147,7 +194,13 @@ export async function dryRunFile(client: Client, opts: StageOptions): Promise<Dr
   const input = await getBatchReportInput(client, staged.batchId);
   const report = buildReport(input);
   const paths = await writeReportFiles(staged.batchId, report);
-  return { batchId: staged.batchId, reused: staged.reused, report, paths };
+  return {
+    batchId: staged.batchId,
+    reused: staged.reused,
+    forcedReuse: staged.forcedReuse,
+    report,
+    paths,
+  };
 }
 
 /** Regenerate reports for an already-staged batch (import:report). */
