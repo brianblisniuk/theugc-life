@@ -19,6 +19,7 @@ import * as inboxActions from "@/lib/inbox-pipeline/actions";
 import * as onboardingActions from "@/lib/onboarding/actions";
 import * as pipelineActions from "@/lib/pipeline/actions";
 import * as profileActions from "@/lib/profile/actions";
+import * as portfolioActions from "@/lib/profile/portfolio-actions";
 import * as shareActions from "@/lib/profile/share-actions";
 import * as tripActions from "@/lib/trips/actions";
 import { FREE_LIMITS } from "@/lib/config";
@@ -103,6 +104,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(onboardingActions),
       ...exportedFunctions(pipelineActions),
       ...exportedFunctions(profileActions),
+      ...exportedFunctions(portfolioActions),
       ...exportedFunctions(shareActions),
       ...exportedFunctions(tripActions),
       ...exportedFunctions(creditActions),

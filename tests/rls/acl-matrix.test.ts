@@ -61,6 +61,10 @@ const CONTRACT: Record<string, Expected> = {
   creator_collaboration_share_marks: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   creator_deliverable_share_marks: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   portfolio_assets: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
+  // G03 (0073, D125). Owner-only layout and approvals. Anon has no privilege.
+  // Authenticated may select. Writes go through functions that use auth.uid().
+  creator_portfolio_settings: { anon: "", authenticated: "S", serviceRole: "all" },
+  creator_portfolio_entries: { anon: "", authenticated: "S", serviceRole: "all" },
   // F02 (0064, D110). Creator-owned templates and drafts. Anon has no privilege.
   // Copy and mailto_opened are columns, not a send.
   pitch_templates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
