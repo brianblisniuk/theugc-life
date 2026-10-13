@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 import { FIXTURE_THREAD_ID, seedMailbox } from "./support/mailbox";
 import { blockExternalNetwork } from "./support/network";
@@ -87,21 +87,25 @@ async function signUp(page: Page, input: { email: string; name: string; username
   await page.waitForURL((url) => url.pathname === "/app");
 }
 
-/**
- * A status flash is cleared when the write refreshes the page. The heading is
- * the stored status. Either may appear first; the heading must survive reload.
- */
-async function expectStoredHeading(page: Page, label: string, flash: string): Promise<void> {
-  await expect
-    .poll(async () => {
-      if ((await page.getByRole("heading", { name: label, exact: true }).count()) > 0) return "ok";
-      const body = (await page.locator("body").innerText()).replace(/\s+/g, " ").trim();
-      if (body.includes(flash)) return "ok";
-      return body.slice(0, 500);
-    })
-    .toBe("ok");
+/** The next server-action POST. A flash is not proof the write was stored. */
+async function postAction(page: Page, act: () => Promise<void>) {
+  const pending = page.waitForResponse(
+    (response) => {
+      const request = response.request();
+      return request.method() === "POST" && request.headers()["next-action"] !== undefined;
+    },
+    { timeout: 20_000 },
+  );
+  await act();
+  const response = await pending;
+  expect(response.ok(), `action status ${response.status()}`).toBe(true);
+  return response;
+}
+
+/** Wait for the action response, then reload so the assertion sees stored rows. */
+async function commitAction(page: Page, act: () => Promise<void>): Promise<void> {
+  await postAction(page, act);
   await page.reload();
-  await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
 }
 
 async function openContext(browser: { newContext: () => Promise<BrowserContext> }) {
@@ -169,85 +173,85 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.locator('aside[aria-label="Map"]')).toHaveCount(0);
   await expect(ada.locator('script[src*="maps.googleapis.com"]')).toHaveCount(0);
 
-  await ada.getByRole("button", { name: "Add to trip" }).click();
-  await expect(ada.getByText("Added to this trip.")).toBeVisible();
-  await ada.getByRole("button", { name: "Save to Pipeline" }).click();
-  // The flash is client state. Revalidation replaces it with the stored heading.
-  await expectStoredHeading(ada, "Saved", "Saved to your pipeline.");
+  await commitAction(ada, () => ada.getByRole("button", { name: "Add to trip" }).click());
+  await expect(ada.locator("#add-to-trip option:checked")).toContainText("already on this trip");
+  await commitAction(ada, () => ada.getByRole("button", { name: "Save to Pipeline" }).click());
+  await expect(ada.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
   await expect(ada.getByText("This hotel is in your pipeline.")).toBeVisible();
   await expect(ada.getByRole("button", { name: "Save to Pipeline" })).toHaveCount(0);
 
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
-  await ada.getByRole("button", { name: "Link thread" }).click();
-  // The pipeline status heading is also "Saved". The write result is its own paragraph.
-  await expect(ada.locator("#inbox p").filter({ hasText: /^Saved$/ })).toBeVisible();
-  await ada.reload();
+  await commitAction(ada, () => ada.getByRole("button", { name: "Link thread" }).click());
   await expect(ada.getByText(`Linked thread ${FIXTURE_THREAD_ID}`)).toBeVisible();
 
   await ada.getByRole("button", { name: "Mark as pitched" }).click();
   await ada.locator("#pitch-channel").selectOption("email");
   await ada.locator("#pitch-date").fill(day(-1));
-  await ada.getByRole("button", { name: "Mark as pitched" }).click();
-  await expectStoredHeading(ada, "Pitched", "Updated to Pitched.");
+  await commitAction(ada, () => ada.getByRole("button", { name: "Mark as pitched" }).click());
+  await expect(ada.getByRole("heading", { name: "Pitched", exact: true })).toBeVisible();
 
   await ada.getByRole("button", { name: "Mark replied" }).click();
   await ada.locator("#reply-date").fill(day(0));
   await ada.locator("#reply-sentiment").selectOption("positive");
-  await ada.getByRole("button", { name: "Mark replied" }).click();
-  await expectStoredHeading(ada, "Replied", "Updated to Replied.");
+  await commitAction(ada, () => ada.getByRole("button", { name: "Mark replied" }).click());
+  await expect(ada.getByRole("heading", { name: "Replied", exact: true })).toBeVisible();
 
   await ada.getByRole("button", { name: "Start negotiation" }).click();
-  await ada.getByRole("button", { name: "Start negotiation" }).click();
-  await expectStoredHeading(ada, "Negotiating", "Updated to Negotiating.");
+  await commitAction(ada, () => ada.getByRole("button", { name: "Start negotiation" }).click());
+  await expect(ada.getByRole("heading", { name: "Negotiating", exact: true })).toBeVisible();
 
   await ada.getByRole("button", { name: "Mark as won" }).click();
   await ada.locator("#won-type").selectOption("stay");
   await ada.locator("#won-date").fill(day(0));
-  await ada.getByRole("button", { name: "Mark as won" }).click();
-  await expectStoredHeading(ada, "Collaboration agreed", "Collaboration agreed.");
+  await commitAction(ada, () => ada.getByRole("button", { name: "Mark as won" }).click());
+  await expect(ada.getByRole("heading", { name: "Won", exact: true })).toBeVisible();
+  await expect(ada.getByRole("heading", { name: "Collaboration agreed", exact: true })).toBeVisible();
 
   await ada.locator("#compensation-structure").selectOption("in_kind");
   await ada.locator("#in-kind-description").fill("E2E stay");
-  await ada.getByRole("button", { name: "Save compensation" }).click();
-  await expect(ada.locator("span.text-xs.text-muted").filter({ hasText: /^Saved$/ })).toBeVisible();
+  await commitAction(ada, () => ada.getByRole("button", { name: "Save compensation" }).click());
+  await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
   const deliverableForm = ada.getByRole("form", { name: "Add deliverable" });
   await deliverableForm.getByLabel("Platform").fill(PLATFORM);
-  const write = ada.waitForResponse(
-    (response) => {
-      const request = response.request();
-      return request.method() === "POST" && request.headers()["next-action"] !== undefined;
-    },
-    { timeout: 20_000 },
+  await commitAction(ada, () =>
+    deliverableForm.getByRole("button", { name: "Add deliverable" }).click(),
   );
-  await deliverableForm.getByRole("button", { name: "Add deliverable" }).click();
-  const writeResponse = await write;
-  expect(writeResponse.ok(), `deliverable action status ${writeResponse.status()}`).toBe(true);
-  // The action response can still be showing the pre-write list. Reload after
-  // the POST has finished, then require the stored row.
-  await ada.reload();
   await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
-  await expect
-    .poll(async () => {
-      if ((await ada.getByText(`· ${PLATFORM}`).count()) > 0) return "stored";
-      const text = (await ada.locator("#collaboration").innerText()).replace(/\s+/g, " ");
-      const at = text.indexOf("Deliverables");
-      return at >= 0 ? text.slice(at, at + 500) : text.slice(-500);
-    })
-    .toBe("stored");
+  await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
   await ada.getByRole("link", { name: "Profile" }).click();
   await ada.waitForURL("**/app/profile");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
-  await ada.getByRole("button", { name: "Save profile" }).click();
-  await expect(ada.getByText("Saved.", { exact: true })).toBeVisible();
+  await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
+  await expect(ada.getByRole("textbox", { name: "Bio" })).toHaveValue(BIO);
   await ada.getByRole("checkbox", { name: "Bio" }).check();
-  await ada.getByRole("button", { name: "Save sharing choices" }).click();
-  await expect(ada.getByText("Saved. A field you turned off is gone from the link.")).toBeVisible();
+  await commitAction(ada, () => ada.getByRole("button", { name: "Save sharing choices" }).click());
+  await expect(ada.getByRole("checkbox", { name: "Bio" })).toBeChecked();
+  // The raw token is only in the action response. Unrouting while that POST is
+  // intercepted marks the route handled and drops the body.
+  let token = "";
+  const captureCreate = async (route: Route) => {
+    const request = route.request();
+    if (token || request.method() !== "POST" || request.headers()["next-action"] === undefined) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const text = await response.text();
+    const found = text.match(/"token":"([0-9a-f]{64})"/)?.[1] ?? "";
+    await route.fulfill({ response, body: text });
+    if (found) token = found;
+  };
+  await ada.route("**/*", captureCreate);
   await ada.getByRole("button", { name: "Create link" }).click();
-  await expect(ada.getByText("Copy this link now. It will not be shown again.")).toBeVisible();
-  const shareUrl = (await ada.locator("p.font-mono").innerText()).trim();
-  expect(shareUrl).toMatch(/\/p\/[a-f0-9]{64}$/);
+  await expect.poll(() => token, { timeout: 20_000 }).toMatch(/^[0-9a-f]{64}$/);
+  await ada.unroute("**/*", captureCreate);
+  await ada.reload();
+  await expect(ada.getByText("A link is active")).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Revoke link" })).toBeVisible();
+  await expect(ada.getByText("Copy this link now. It will not be shown again.")).toHaveCount(0);
+  const shareUrl = `/p/${token}`;
 
   const anonContext = await openContext(browser);
   const anon = await anonContext.newPage();
@@ -260,8 +264,9 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(anon.getByText("Audience")).toHaveCount(0);
 
   await ada.reload();
-  await ada.getByRole("button", { name: "Revoke link" }).click();
-  await expect(ada.getByText("Revoked. That address no longer works.")).toBeVisible();
+  await commitAction(ada, () => ada.getByRole("button", { name: "Revoke link" }).click());
+  await expect(ada.getByText("The last link is revoked.")).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Revoke link" })).toHaveCount(0);
   await anon.reload();
   await expect(anon.getByText("This link is not available")).toBeVisible();
   await expect(anon.getByText(BIO)).toHaveCount(0);
