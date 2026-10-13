@@ -1,10 +1,10 @@
 # F04 — Home next actions
 
-**Status:** Binding work order for this PR. Awaiting CI. Do not merge.
-**Base:** `main` `b8752e31ee4e51971390ebbf260062186f689a92` (merge of PR #70).
+**Status:** Binding work order for this PR. Awaiting audit. Do not merge.
+**Base:** `main` `087419826bbac1c241f852d4ff32b868728a8b48` (merge of PR #72).
 **Branch:** `cursor/f04-home-next-actions-39db`.
 **PR:** #73. Do not merge.
-**Migration:** `0066_home_next_actions.sql`. No new table. `0063`–`0065` are not this file. `0061` and `0062` are not edited.
+**Migration:** `0066_home_next_actions.sql`. No new table. `0063` and `0065` are not this file. `0061`, `0062`, and `0064` are not edited.
 **Decision:** D112.
 
 One PR for canon v1.1 F04. Agency F04 stays planned and is a different block.

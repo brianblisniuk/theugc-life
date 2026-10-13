@@ -3,7 +3,9 @@
 -- signed-in owner. No new table. Free returns paused and an empty array:
 -- suggestion ids are not in that payload. A Destination Pass uses the same
 -- paid predicate as 0061. This function does not write, send, or call a model.
--- 0061 and 0062 are not edited. 0063–0065 are not this migration.
+-- The cap of 100 keeps human reply, then pitch sent, then collaboration,
+-- then id. Kind text order is alphabetical and is not this order.
+-- 0061, 0062, and 0064 are not edited. 0063 and 0065 are not this migration.
 
 create or replace function public.list_own_pending_gmail_collaboration_suggestions()
 returns jsonb
@@ -49,10 +51,16 @@ begin
            'pipeline_item_id', listed.pipeline_item_id,
            'hotel_id', listed.hotel_id,
            'hotel_name', listed.hotel_name
-         ) order by listed.kind, listed.id), '[]'::jsonb)
+         ) order by listed.kind_rank, listed.id), '[]'::jsonb)
     into v_rows
     from (
-      select s.id, s.kind, s.pipeline_item_id, pi.hotel_id, btrim(h.name) as hotel_name
+      select s.id, s.kind, s.pipeline_item_id, pi.hotel_id, btrim(h.name) as hotel_name,
+             case s.kind
+               when 'human_reply' then 1
+               when 'pitch_sent' then 2
+               when 'collaboration' then 3
+               else 4
+             end as kind_rank
         from public.gmail_collaboration_suggestions s
         join public.pipeline_items pi
           on pi.id = s.pipeline_item_id
@@ -62,7 +70,13 @@ begin
        where s.creator_id = v_creator
          and s.status = 'pending'
          and char_length(btrim(h.name)) > 0
-       order by s.kind, s.id
+       order by case s.kind
+                  when 'human_reply' then 1
+                  when 'pitch_sent' then 2
+                  when 'collaboration' then 3
+                  else 4
+                end,
+                s.id
        limit 100
     ) listed;
 
@@ -75,7 +89,7 @@ end;
 $$;
 
 comment on function public.list_own_pending_gmail_collaboration_suggestions() is
-  'D112 pending Gmail suggestions for the signed-in owner. Free returns paused and no ids. Another creator has no argument to pass. Pending only. SECURITY DEFINER. search_path is pinned empty.';
+  'D112 pending Gmail suggestions for the signed-in owner. Free returns paused and no ids. The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. Another creator has no argument to pass. Pending only. SECURITY DEFINER. search_path is pinned empty.';
 
 revoke all on function public.list_own_pending_gmail_collaboration_suggestions()
   from public, anon;
