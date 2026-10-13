@@ -781,7 +781,7 @@ facts stay marked to be filled in. No e-sign, no send, and no external model.
 Phase G Coverage Engine stays gated. `0066` is not that file.
 
 **H01 metric rankings and hotel signals** (canon v1.1 Sprint 5, not the
-second-vertical H01 row) is PR-open on `cursor/h01-metric-rankings-367c`,
+second-vertical H01 row) is PR #77 on `cursor/h01-metric-rankings-367c`,
 AWAITING_AUDIT. Migrations `0071_hotel_metric_signals.sql` and
 `0072_hotel_metric_ranking_reads.sql`. D120. Three separate metrics from
 confirmed network facts: response rate, reply-time band, and creator

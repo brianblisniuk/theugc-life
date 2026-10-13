@@ -3,7 +3,7 @@
 **Status:** Binding work order for this PR. Awaiting audit. Do not merge.
 **Base:** `main` `0a69413beb338c7910d8b9473693a3db7136a6aa` (merge of PR #73).
 **Branch:** `cursor/h01-metric-rankings-367c`.
-**PR:** not opened yet. Do not merge.
+**PR:** #77. Do not merge.
 **Migrations:** `0071_hotel_metric_signals.sql`, `0072_hotel_metric_ranking_reads.sql`. No new table. `0069` and `0070` are not these files. `0068` is not edited.
 **Decision:** D120. D121–D124 are unused.
 

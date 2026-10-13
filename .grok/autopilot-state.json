@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 0a69413beb338c7910d8b9473693a3db7136a6aa (PR #73, F04 home next actions, D112, migration 0066). H01 metric rankings is on cursor/h01-metric-rankings-367c. D120. Migrations 0071 and 0072 add no table. 0069 and 0070 are not this block. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 0a69413beb338c7910d8b9473693a3db7136a6aa (PR #73, F04 home next actions, D112, migration 0066). H01 metric rankings is PR #77 on cursor/h01-metric-rankings-367c. D120. Migrations 0071 and 0072 add no table. 0069 and 0070 are not this block. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "0a69413beb338c7910d8b9473693a3db7136a6aa",
   "active_block": "H01 metric rankings",
   "branch": "cursor/h01-metric-rankings-367c",
-  "pr": null,
+  "pr": 77,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "H01 metric rankings is on cursor/h01-metric-rankings-367c. AWAITING_AUDIT. D120. Migrations 0071 and 0072. Three separate metrics from confirmed network facts. Below a floor the value is not enough data. A locked reply ranking omits hotels. Discover and Pipeline order are unchanged. F04 is merged (PR #73). expected_head stays null. Do not merge."
+  "next_dependency": "PR #77 is H01 metric rankings on cursor/h01-metric-rankings-367c. AWAITING_AUDIT. D120. Migrations 0071 and 0072. Three separate metrics from confirmed network facts. Below a floor the value is not enough data. A locked reply ranking omits hotels. Discover and Pipeline order are unchanged. F04 is merged (PR #73). expected_head stays null. Do not merge."
 }
