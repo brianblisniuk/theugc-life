@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `9a747b217a8c560f08c87bed1b2542f4521ac25e` (merge of PR #67, C02–C05, 2026-10-13)  
-**State:** AWAITING_CI. F05 contact credits. Branch `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057` and `0058`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. F05 contact credits. PR #68. Branch `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057` and `0058`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** F05 contact credits. C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -46,7 +46,7 @@
 - PR #67 — C02–C05 network intelligence, D099, migration `0056` — `9a747b217a8c560f08c87bed1b2542f4521ac25e`
 
 ## Next action
-- F05 contact credits is the open block on `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057` and `0058`. Open amounts stay pending config. `expected_head` stays null. Do not merge from automation.
+- PR #68 merges F05 contact credits on `cursor/f05-credits-foundation-8e1e`. D100–D105. Migrations `0057` and `0058`. Open amounts stay pending config. `expected_head` stays null. Do not merge from automation.
 - C02–C05 is merged (PR #67, `9a747b2`). DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055` or `0056`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.

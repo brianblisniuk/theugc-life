@@ -721,11 +721,11 @@ stay. D100 later changes contact access. D089–D091 are unchanged.
 answers. The public aggregate is anonymous. Gmail enters only after Sí.
 Provenance and the pilot measures are admin-only. `0055` is not edited.
 
-**F05 contact credits** (canon v1.1, not the agency F01–F04 rows below) is
-this block. Migrations `0057_contact_credits.sql` and
+**F05 contact credits** (canon v1.1, not the agency F01–F04 rows below)
+merges as PR #68. Migrations `0057_contact_credits.sql` and
 `0058_contact_cache_seed_and_free_grant.sql`. D100–D105. Contacts follow
 an unlock. Open amounts stay pending config (D101). Agency F01–F04 stay
-planned. Do not merge.
+planned. The merge SHA is recorded by the next block. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
