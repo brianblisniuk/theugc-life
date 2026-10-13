@@ -75,6 +75,8 @@ let otherBinding = "";
 let otherCollaboration = "";
 let otherCompensation = "";
 let otherPortfolio = "";
+let otherPitchTemplate = "";
+let otherPitchDraft = "";
 
 function nothing<T>(result: AsResult<T>): boolean {
   return result.error !== null || result.rows.length === 0;
@@ -282,6 +284,19 @@ d("E04 entitlement inventory enforcement", () => {
        values ($1, 'content_examples', false)`,
       [creators.other],
     );
+
+    const pitchTemplate = await adminQuery<{ id: string }>(
+      `insert into public.pitch_templates (creator_id, name, subject, body)
+       values ($1, 'Secret template', 'Secret subject', $2) returning id`,
+      [creators.other, SECRET],
+    );
+    otherPitchTemplate = pitchTemplate[0]!.id;
+    const pitchDraft = await adminQuery<{ id: string }>(
+      `insert into public.pitch_drafts (creator_id, hotel_id, subject, body, variables_used)
+       values ($1, $2, 'Secret draft', $3, '[]'::jsonb) returning id`,
+      [creators.other, baliHotels[0], SECRET],
+    );
+    otherPitchDraft = pitchDraft[0]!.id;
   });
 
   afterAll(async () => {
@@ -610,6 +625,16 @@ d("E04 entitlement inventory enforcement", () => {
           sql: "select field_key from public.creator_profile_field_opt_ins where creator_id = $1",
           params: [creators.other],
           marker: "content_examples",
+        },
+        pitch_templates: {
+          sql: "select body from public.pitch_templates where id = $1",
+          params: [otherPitchTemplate],
+          marker: SECRET,
+        },
+        pitch_drafts: {
+          sql: "select body from public.pitch_drafts where id = $1",
+          params: [otherPitchDraft],
+          marker: SECRET,
         },
       };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { HOTEL_SECTIONS, isHotelSection } from "@/lib/shell/navigation";
 
@@ -9,7 +10,11 @@ import { HOTEL_SECTIONS, isHotelSection } from "@/lib/shell/navigation";
  * An unknown hash leaves Overview active and does not navigate away.
  */
 export function HotelSectionNav() {
+  const pathname = usePathname() ?? "";
   const [hash, setHash] = useState("");
+  const pitchHref = pathname.startsWith("/app/hotels/")
+    ? `${pathname.replace(/\/pitch$/, "").replace(/\/$/, "")}/pitch`
+    : null;
 
   useEffect(() => {
     const read = () => setHash(window.location.hash.replace(/^#/, ""));
@@ -41,6 +46,14 @@ export function HotelSectionNav() {
           </a>
         );
       })}
+      {pitchHref ? (
+        <a
+          href={pitchHref}
+          className="inline-flex min-h-11 shrink-0 items-center rounded-[var(--radius-app)] px-3 text-sm text-muted hover:text-text"
+        >
+          Pitch
+        </a>
+      ) : null}
     </nav>
   );
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 
 import { AudienceFields } from "@/components/profile/audience-fields";
@@ -10,7 +11,12 @@ import { ShareLinkPanel } from "@/components/profile/share-link-panel";
 import { ShareOptIns } from "@/components/profile/share-opt-ins";
 import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
-import { getOwnProfile, getPastCollaborations, getPersonalCounts, getProfileVisibility } from "@/lib/profile/queries";
+import {
+  getOwnProfile,
+  getPastCollaborations,
+  getPersonalCounts,
+  getProfileVisibility,
+} from "@/lib/profile/queries";
 import { getShareSettings } from "@/lib/profile/share-queries";
 import { listCrumbs } from "@/lib/shell/navigation";
 import { PROFILE_LIST_COPY } from "@/lib/surfaces/list-outcome";
@@ -63,6 +69,17 @@ export default async function ProfilePage() {
       ) : (
         <p className="max-w-prose text-sm text-muted">{PROFILE_LIST_COPY.shareError}</p>
       )}
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold text-text">Pitch templates</h2>
+        <p className="max-w-prose text-sm text-muted">
+          Templates you write are only yours. A pitch for a hotel is a draft you copy or open in
+          your mail app.
+        </p>
+        <Link href="/app/profile/pitches" className="text-sm text-text underline">
+          Edit templates
+        </Link>
+      </section>
 
       <PersonalCounts load={counts} />
       <p className="max-w-prose text-sm text-muted">

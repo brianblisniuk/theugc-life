@@ -737,21 +737,29 @@ cache hit. An accepted bounce stays invalid. Open amounts stay pending
 config (D101). Agency F01–F04 stay planned.
 
 **F01 Gmail collaboration detection** (canon v1.1, not the agency F01 row)
-is merged as PR #71, merge `12630bb9d616fdb63ad97d2e61fe5668723eac67`.
-Migration `0061_gmail_collaboration_detection.sql`. D107.
-A linked thread can suggest a pitch, a human reply, or a collaboration.
-Free detection stays paused under the same gate as `0060`. The classifier
-is the heuristic adapter. Confirmation of a pitch or a human reply uses the
-existing manual transition. Confirmation of a collaboration writes no CRM
-row and no hotel fact. Deletion purge removes the suggestions. Disconnect
-does not. `0060` is not edited.
+is merged as PR #71, merge
+`12630bb9d616fdb63ad97d2e61fe5668723eac67`. Migration
+`0061_gmail_collaboration_detection.sql`. D107. A linked thread can suggest
+a pitch, a human reply, or a collaboration. Free detection stays paused
+under the same gate as `0060`. The classifier is the heuristic adapter.
+Confirmation of a pitch or a human reply uses the existing manual
+transition. Confirmation of a collaboration writes no CRM row and no hotel
+fact. Deletion purge removes the suggestions. Disconnect does not. `0060`
+is not edited.
 
-**F05b** is PR #70 on `cursor/f05b-unlock-adds-pipeline-45a2`. It saves a
-hotel on the caller's pipeline in the same transaction as a revealed contact
-unlock (D108). Migration `0062_unlock_saves_pipeline.sql`. Base is main
-`12630bb` (PR #71). A full Free allowance refuses the unlock and does not
-debit. A refused unlock does not add the hotel. The pipeline card shows the
-unlocked email to that caller only. Do not merge.
+**F05b** is merged as PR #70, merge
+`b8752e31ee4e51971390ebbf260062186f689a92`. It saves a hotel on the caller's
+pipeline in the same transaction as a revealed contact unlock (D108).
+Migration `0062_unlock_saves_pipeline.sql`. A full Free allowance refuses
+the unlock and does not debit. A refused unlock does not add the hotel. The
+pipeline card shows the unlocked email to that caller only. `0061` is not
+edited.
+
+**F02 pitch templates** (canon v1.1, not the agency F02 row in the table
+above) is PR #72. Migration `0064_pitch_templates.sql`. D110. A draft is
+filled from facts the creator already has. Copy and a mailto draft are not a
+sent pitch. D03 and D04 stay open: no model vendor and no send. `0060`,
+`0061`, and `0062` are not edited. `0063` is not this file. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

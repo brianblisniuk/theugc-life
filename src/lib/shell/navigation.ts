@@ -203,6 +203,16 @@ export function tripHotelHref(tripId: string, hotelId: string): string | null {
   return hotelHref(hotelId, { kind: "trip", tripId });
 }
 
+/** Pitch draft for one hotel. An optional trip must be a UUID. It does not authorize the read. */
+export function pitchHref(hotelId: string, tripId?: string | null): string | null {
+  if (!isUuid(hotelId)) return null;
+  if (tripId && !isUuid(tripId)) return null;
+  const params = new URLSearchParams();
+  if (tripId) params.set("trip", tripId);
+  const query = params.toString();
+  return `/app/hotels/${hotelId}/pitch${query ? `?${query}` : ""}`;
+}
+
 export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
   const home: Crumb = { label: "Inicio", href: "/app" };
   const current: Crumb = { label: hotelName.trim() || "Hotel" };

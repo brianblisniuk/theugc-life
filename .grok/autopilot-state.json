@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 12630bb9d616fdb63ad97d2e61fe5668723eac67 (PR #71, F01 Gmail collaboration detection, D107, migration 0061). F05b saves an unlocked hotel on the caller pipeline as PR #70 on cursor/f05b-unlock-adds-pipeline-45a2. D108. Migration 0062. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is b8752e31ee4e51971390ebbf260062186f689a92 (PR #70, F05b unlock saves pipeline, D108, migration 0062). F02 pitch templates is PR #72. Migration 0064. D110. D03 and D04 stay open. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "12630bb9d616fdb63ad97d2e61fe5668723eac67",
-  "active_block": "F05b unlock saves pipeline",
-  "branch": "cursor/f05b-unlock-adds-pipeline-45a2",
-  "pr": 70,
+  "last_recorded_main": "b8752e31ee4e51971390ebbf260062186f689a92",
+  "active_block": "F02 pitch templates",
+  "branch": "cursor/f02-pitch-templates-ad1c",
+  "pr": 72,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "12630bb9d616fdb63ad97d2e61fe5668723eac67",
+    "ref": "b8752e31ee4e51971390ebbf260062186f689a92",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "PR #70 merges F05b onto main 12630bb (PR #71). D108. Migration 0062. 0061 is F01 and stays merged. A revealed unlock saves the hotel in the same transaction. A refused unlock or a full Free allowance does not. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "F02 pitch templates is PR #72 on cursor/f02-pitch-templates-ad1c. Migration 0064. D110. Copy or mailto only. No model vendor. D03 and D04 stay open. F05b is merged (PR #70, migration 0062, D108). Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }
