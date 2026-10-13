@@ -45,7 +45,7 @@
 - PR #66 — DATA01 hotel catalog importer — `502ae69ecb192dc3678a27619a557bb1012ff0e5`
 
 ## Next action
-- C02–C05 network intelligence is PR #67 on branch `cursor/c02-c05-network-intelligence-a035`. State is AWAITING_CI. D077 is Accepted. D099. Migration `0056`. Do not merge from automation.
+- C02–C05 network intelligence is PR #67 on branch `cursor/c02-c05-network-intelligence-a035`. State is AWAITING_CI. D077 is Accepted. D099. Migration `0056`. The recency audit correction is on this branch: each band needs three creators inside its window, and a Gmail Sí stores the email time. `expected_head` stays null. Do not merge from automation.
 - DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.
 - D09 is merged (PR #63, `1fc1565`, migration `0053`). D089–D091 are unchanged.

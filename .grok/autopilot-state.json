@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "C02–C05 network intelligence is PR #67 on cursor/c02-c05-network-intelligence-a035. D077 Accepted. D099. Migration 0056. Wait for verify on the exact head of both the push and pull_request runs. Do not merge."
+  "next_dependency": "C02–C05 network intelligence is PR #67 on cursor/c02-c05-network-intelligence-a035. D077 Accepted. D099. Migration 0056. Audit correction: recency bands are per-window k-anonymous and a Gmail Sí stores the email time. Wait for verify on the exact new head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }

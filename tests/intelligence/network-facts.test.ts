@@ -75,12 +75,19 @@ d("network intelligence facts", () => {
     return row!.id;
   }
 
-  async function pitch(userId: string, itemId: string, hotelId = HOTEL) {
+  async function pitch(
+    userId: string,
+    itemId: string,
+    hotelId = HOTEL,
+    age: "now" | "quarter" | "old" = "now",
+  ) {
     const creatorId = await profile(userId);
+    const eventAt =
+      age === "old" ? "now() - interval '200 days'" : age === "quarter" ? "now() - interval '60 days'" : "now()";
     await adminQuery(
       `insert into public.outreach_events
          (creator_id, hotel_id, pipeline_item_id, event_type, event_at, source)
-       values ($1, $2, $3, 'pitch_sent', now(), 'manual_creator')`,
+       values ($1, $2, $3, 'pitch_sent', ${eventAt}, 'manual_creator')`,
       [creatorId, hotelId, itemId],
     );
   }
@@ -410,6 +417,18 @@ d("network intelligence facts", () => {
     expect(latency!.counts_as_sample).toBe(false);
     expect(latency!.value.first_send_to_human_reply_ms).toBe(3600000);
     expect(JSON.stringify(latency!.value)).not.toContain("rejection");
+    const [timing] = await adminQuery<{ matches: boolean; before_decision: boolean }>(
+      `select bool_and(f.event_at = s.first_qualifying_human_reply_at) as matches,
+              bool_and(f.event_at < c.decided_at) as before_decision
+         from private.intelligence_facts f
+         join private.gmail_reply_thread_summaries s on s.user_id = f.owner_user_id
+         left join private.intelligence_gmail_confirmations c
+           on c.id = f.evidence_id and f.evidence_kind = 'gmail_confirmation'
+        where f.owner_user_id = $1 and f.source_family = 'gmail'`,
+      [B],
+    );
+    expect(timing!.matches).toBe(true);
+    expect(timing!.before_decision).toBe(true);
 
     const own = await call(A, "public.read_own_network_facts", "$2", [HOTEL]);
     const gmail = own[0]!.body.gmail as unknown[];
@@ -466,5 +485,150 @@ d("network intelligence facts", () => {
     expect(after).toEqual(before);
     const own = await call(B, "public.read_own_network_priority", "$2", [HOTEL]);
     expect(own[0]!.body.prioritized).toBe(false);
+  });
+
+  it("nulls a recency band when fewer than three creators fall inside its window", async () => {
+    const thin = "c2000000-0000-4000-8000-000000000020";
+    const spread = "c2000000-0000-4000-8000-000000000023";
+    await adminQuery(
+      `insert into public.hotels (id, name, slug, destination_id) values
+         ($1, 'C02 Thin', 'c02-thin', $3),
+         ($2, 'C02 Spread', 'c02-spread', $3)`,
+      [thin, spread, DEST],
+    );
+
+    const thinA = await pipeline(A, thin);
+    const thinB = await pipeline(B, thin);
+    const thinC = await pipeline(C, thin);
+    for (let i = 0; i < 7; i += 1) {
+      await pitch(A, thinA, thin, "now");
+      await pitch(B, thinB, thin, "now");
+    }
+    await pitch(C, thinC, thin, "old");
+
+    const thinRow = await queryAs(
+      { role: "anon" },
+      "select confidence_level, recency_band, freshness_band from public.network_hotel_public where hotel_id = $1",
+      [thin],
+    );
+    expect(thinRow.rows[0]).toMatchObject({
+      confidence_level: "moderate",
+      recency_band: null,
+      freshness_band: null,
+    });
+
+    for (const userId of [A, B]) {
+      const itemId = await pipeline(userId, spread);
+      for (let i = 0; i < 5; i += 1) await pitch(userId, itemId, spread, "now");
+    }
+    const spreadC = await pipeline(C, spread);
+    for (let i = 0; i < 5; i += 1) await pitch(C, spreadC, spread, "quarter");
+
+    const spreadRow = await queryAs(
+      { role: "anon" },
+      "select recency_band, freshness_band from public.network_hotel_public where hotel_id = $1",
+      [spread],
+    );
+    expect(spreadRow.rows[0]).toMatchObject({
+      recency_band: "past_quarter",
+      freshness_band: "past_quarter",
+    });
+  });
+
+  it("does not let one Gmail confirmation move a recency band or the destination rank", async () => {
+    const earlier = "c2000000-0000-4000-8000-000000000021";
+    const later = "c2000000-0000-4000-8000-000000000022";
+    await adminQuery(
+      `insert into public.hotels (id, name, slug, destination_id) values
+         ($1, 'C02 Earlier', 'c02-earlier', $3),
+         ($2, 'C02 Later', 'c02-later', $3)`,
+      [earlier, later, DEST],
+    );
+    let laterItemA = "";
+    for (const hotelId of [earlier, later]) {
+      for (const userId of [A, B, C]) {
+        const itemId = await pipeline(userId, hotelId);
+        if (hotelId === later && userId === A) laterItemA = itemId;
+        for (let i = 0; i < 5; i += 1) await pitch(userId, itemId, hotelId, "old");
+      }
+    }
+
+    const bands = () =>
+      adminQuery<{ hotel_id: string; recency_band: string | null; freshness_band: string | null }>(
+        `select hotel_id, recency_band, freshness_band
+           from public.network_hotel_public
+          where hotel_id = any($1::uuid[])
+          order by hotel_id`,
+        [[earlier, later]],
+      );
+    const rank = async () => {
+      const body = (await call(A, "public.read_network_destination_rank", "$2", [DEST]))[0]!.body;
+      return body.hotels;
+    };
+    const beforeBands = await bands();
+    expect(beforeBands).toEqual([
+      { hotel_id: earlier, recency_band: "older", freshness_band: "older" },
+      { hotel_id: later, recency_band: "older", freshness_band: "older" },
+    ]);
+    const beforeRank = await rank();
+
+    const creatorId = await profile(A);
+    const itemId = laterItemA;
+    const seeded = await seedReading({
+      userId: A,
+      creatorId,
+      itemId,
+      subject: "c02-rank",
+      thread: "c02-thread-rank",
+      state: "engaged",
+      human: true,
+    });
+    const [observation] = await adminQuery<{ id: string }>(
+      `insert into private.gmail_outreach_target_observations
+         (user_id, mail_account_id, normalized_thread_id, observation_fingerprint, source_provider_message_ids)
+       values ($1, $2, $3, $4, array['m-rank']) returning id`,
+      [A, seeded.accountId, seeded.threadRowId, HEX],
+    );
+    await adminQuery(
+      `insert into private.gmail_outreach_target_canonical_links
+         (target_observation_id, target_kind, target_hotel_id, name_evidence, domain_evidence,
+          address_evidence, contact_evidence, rank)
+       values ($1, 'hotel', $2, 'unavailable', 'unavailable', 'unavailable', 'unavailable', 0)`,
+      [observation!.id, later],
+    );
+    await adminQuery(
+      `insert into private.gmail_reply_thread_summaries (
+         user_id, mail_account_id, normalized_thread_id, eligibility, observation_state,
+         first_creator_sent_provider_message_id, first_creator_sent_at,
+         first_qualifying_human_reply_provider_message_id, first_qualifying_human_reply_at,
+         latency_from_first_creator_sent_ms, evidence_digest, evidence_message_count,
+         routing_context_digest, relation_rule_version, classification_rule_version, text_transform_version
+       ) values (
+         $1, $2, $3, 'eligible_confirmed', 'qualifying_human_reply_observed',
+         'sent-rank', now() - interval '2 days', 'reply-rank', now() - interval '1 day',
+         86400000, $4, 2, $4, 'rules_v1', 'rules_v1', 'text_v1'
+       )`,
+      [A, seeded.accountId, seeded.threadRowId, HEX],
+    );
+
+    const admitted = await call(A, "public.answer_gmail_network_reading", "$2, $3", [itemId, "confirmed"]);
+    expect(admitted[0]!.body.result).toBe("confirmed_admitted");
+    const [stored] = await adminQuery<{ matches: boolean; before_decision: boolean }>(
+      `select bool_and(f.event_at = s.first_qualifying_human_reply_at) as matches,
+              bool_and(f.event_at < c.decided_at) as before_decision
+         from private.intelligence_facts f
+         join private.gmail_reply_thread_summaries s
+           on s.mail_account_id = $2 and s.user_id = f.owner_user_id
+         join private.intelligence_gmail_confirmations c on c.pipeline_item_id = $3
+        where f.owner_user_id = $1
+          and f.canonical_hotel_id = $4
+          and f.evidence_kind = 'gmail_confirmation'
+          and f.provenance_class = 'creator_confirmed'`,
+      [A, seeded.accountId, itemId, later],
+    );
+    expect(stored!.matches).toBe(true);
+    expect(stored!.before_decision).toBe(true);
+    expect(await bands()).toEqual(beforeBands);
+    expect(await rank()).toEqual(beforeRank);
   });
 });

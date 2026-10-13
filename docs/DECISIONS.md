@@ -3949,15 +3949,29 @@ metrics. `has_observed_collaboration` is true only when at least three
 distinct creators have `collaboration_completed` or
 `collaboration_type_observed`; otherwise it is null, not false. Activity
 labels are emerging, medium, and high. Recency and freshness appear only
-at moderate or strong. The row has no creator id, evidence id, count, or
-source split.
+at moderate or strong, and only when that band has at least three distinct
+creators inside its own window. `past_month` requires three creators with
+a sample event in the last 30 days. `past_quarter` requires three creators
+with a sample event in the last 90 days, and is used when the 30-day
+window is below three. `older` requires three creators with a sample event
+older than 90 days. Otherwise the band is null. The band is not the
+latest `event_at`. One creator's recent fact cannot publish a recent band.
+
+A confirmed Gmail fact stores the original email time: the qualifying
+human reply when the thread summary has one, otherwise the creator's sent
+time. It does not store the time the creator tapped Sí. When neither
+email time exists, `event_at` is null and cannot move a window.
+
+The row has no creator id, evidence id, count, or source split.
 
 ### Ranking and the prior
 
-Baseline order is recency band, then confidence, then hotel id, among
-hotels that already have a published signal. Hotels below the floor are
-omitted. The app drops an unpublished hotel from the name list. There is
-no score column. The hierarchical prior is computed for admin comparison
+Baseline order is the anonymous recency band, then confidence, then hotel
+id, among hotels that already have a published signal. Those are the only
+sort keys. The order does not use a raw timestamp, so one creator's
+confirmation cannot reorder the list. Hotels below the floor are omitted.
+The app drops an unpublished hotel from the name list. There is no score
+column. The hierarchical prior is computed for admin comparison
 only and is not applied: `prior_rank` equals `baseline_rank`,
 `prior_applied` is false, and the reason is `no_proven_lift`.
 

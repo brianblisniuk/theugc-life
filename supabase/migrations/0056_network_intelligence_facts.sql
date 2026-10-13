@@ -421,10 +421,10 @@ from (
     end as confidence_level,
     collab_creators,
     case
-      when latest_event_at is null then null
-      when latest_event_at >= now() - interval '30 days' then 'past_month'
-      when latest_event_at >= now() - interval '90 days' then 'past_quarter'
-      else 'older'
+      when creators_30d >= 3 then 'past_month'
+      when creators_90d >= 3 then 'past_quarter'
+      when creators_older >= 3 then 'older'
+      else null
     end as recency_band
   from (
     select
@@ -434,7 +434,15 @@ from (
       count(distinct f.owner_user_id) filter (
         where f.fact_type in ('collaboration_completed', 'collaboration_type_observed')
       )::integer as collab_creators,
-      max(f.event_at) filter (where f.counts_as_sample) as latest_event_at
+      count(distinct f.owner_user_id) filter (
+        where f.counts_as_sample and f.event_at >= now() - interval '30 days'
+      )::integer as creators_30d,
+      count(distinct f.owner_user_id) filter (
+        where f.counts_as_sample and f.event_at >= now() - interval '90 days'
+      )::integer as creators_90d,
+      count(distinct f.owner_user_id) filter (
+        where f.counts_as_sample and f.event_at < now() - interval '90 days'
+      )::integer as creators_older
     from private.intelligence_facts f
     where f.network_eligible
       and f.provenance_class = 'creator_confirmed'
@@ -447,7 +455,7 @@ from (
 ) gated;
 
 comment on view public.network_hotel_public is
-  'Anonymous C03 projection. Shown only at 3 or more distinct creators (D058) with D012 confidence. No creator id, evidence id, raw count, reply time, or source split. Insufficient suppresses metrics. NULL collaboration is not false.';
+  'Anonymous C03 projection. Shown only at 3 or more distinct creators (D058) with D012 confidence. Each recency and freshness band needs 3 distinct creators inside that window, otherwise null. No creator id, evidence id, raw count, reply time, or source split. Insufficient suppresses metrics. NULL collaboration is not false.';
 
 revoke all on table public.network_hotel_public from public, anon, authenticated, service_role;
 grant select on table public.network_hotel_public to anon, authenticated, service_role;
@@ -486,6 +494,10 @@ declare
   v_first_ms bigint;
   v_latest_ms bigint;
   v_latest_known boolean;
+  v_reply_at timestamptz;
+  v_sent_at timestamptz;
+  v_event_at timestamptz;
+  v_latency_ready boolean := false;
   v_latency jsonb;
 begin
   if v_user is null or p_decision not in ('confirmed', 'dismissed') then
@@ -575,6 +587,32 @@ begin
     return jsonb_build_object('result', 'confirmed_not_admitted');
   end if;
 
+  select s.id,
+         s.latency_from_first_creator_sent_ms,
+         s.latency_from_latest_creator_sent_ms,
+         (
+           s.latest_creator_sent_before_reply_provider_message_id is not null
+           and s.latency_from_latest_creator_sent_ms is not null
+         ),
+         s.first_qualifying_human_reply_at,
+         s.first_creator_sent_at,
+         (
+           s.observation_state = 'qualifying_human_reply_observed'
+           and s.reply_chronology_conflict = false
+           and s.first_qualifying_human_reply_provider_message_id is not null
+           and s.first_creator_sent_provider_message_id is not null
+           and s.latency_from_first_creator_sent_ms is not null
+         )
+    into v_summary_id, v_first_ms, v_latest_ms, v_latest_known, v_reply_at, v_sent_at, v_latency_ready
+    from private.gmail_reply_thread_summaries s
+    join private.gmail_normalized_threads t
+      on t.id = s.normalized_thread_id
+     and t.mail_account_id = s.mail_account_id
+   where s.mail_account_id = v_mail
+     and s.user_id = v_user
+     and t.provider_thread_id = v_thread;
+  v_event_at := coalesce(v_reply_at, v_sent_at);
+
   if v_attempt is not null and exists (
     select 1
       from private.gmail_commercial_thread_attempts a
@@ -591,7 +629,7 @@ begin
       v_user, 'gmail_thread_commercial_state', 'machine', 'gmail',
       v_target, 'gmail_thread_attempt', v_attempt,
       case when v_state is null then '{}'::jsonb else jsonb_build_object('state', v_state) end,
-      now(), false, false, p_pipeline_item_id
+      v_event_at, false, false, p_pipeline_item_id
     )
     on conflict (evidence_kind, evidence_id, fact_type, provenance_class) do nothing;
   end if;
@@ -605,7 +643,7 @@ begin
     ) values (
       v_user, 'gmail_thread_commercial_state', 'creator_confirmed', 'gmail',
       v_target, 'gmail_confirmation', v_confirmation,
-      jsonb_build_object('state', v_state), now(), true, true, p_pipeline_item_id
+      jsonb_build_object('state', v_state), v_event_at, true, true, p_pipeline_item_id
     );
     v_admitted := v_admitted + 1;
   end if;
@@ -619,33 +657,12 @@ begin
       v_user, 'gmail_human_reply_observed', 'creator_confirmed', 'gmail',
       v_target, 'gmail_confirmation', v_confirmation,
       jsonb_build_object('response_class', 'qualifying_human_reply'),
-      now(), true, not v_primary, p_pipeline_item_id
+      v_event_at, true, not v_primary, p_pipeline_item_id
     );
     v_admitted := v_admitted + 1;
   end if;
 
-  select s.id,
-         s.latency_from_first_creator_sent_ms,
-         s.latency_from_latest_creator_sent_ms,
-         (
-           s.latest_creator_sent_before_reply_provider_message_id is not null
-           and s.latency_from_latest_creator_sent_ms is not null
-         )
-    into v_summary_id, v_first_ms, v_latest_ms, v_latest_known
-    from private.gmail_reply_thread_summaries s
-    join private.gmail_normalized_threads t
-      on t.id = s.normalized_thread_id
-     and t.mail_account_id = s.mail_account_id
-   where s.mail_account_id = v_mail
-     and s.user_id = v_user
-     and t.provider_thread_id = v_thread
-     and s.observation_state = 'qualifying_human_reply_observed'
-     and s.reply_chronology_conflict = false
-     and s.first_qualifying_human_reply_provider_message_id is not null
-     and s.first_creator_sent_provider_message_id is not null
-     and s.latency_from_first_creator_sent_ms is not null;
-
-  if v_summary_id is not null then
+  if v_summary_id is not null and v_latency_ready then
     v_latency := jsonb_build_object('first_send_to_human_reply_ms', v_first_ms);
     if v_latest_known then
       v_latency := v_latency || jsonb_build_object('latest_touch_to_human_reply_ms', v_latest_ms);
@@ -657,7 +674,7 @@ begin
     ) values (
       v_user, 'gmail_reply_latency', 'creator_confirmed', 'gmail',
       v_target, 'gmail_confirmation', v_confirmation,
-      v_latency, now(), true, false, p_pipeline_item_id
+      v_latency, v_event_at, true, false, p_pipeline_item_id
     );
     v_admitted := v_admitted + 1;
   end if;
@@ -673,7 +690,7 @@ end;
 $$;
 
 comment on function public.answer_gmail_network_reading(uuid, text) is
-  'Records Sí or No for the caller''s linked reading. Dismissed stores no network fact. Sí admits Gmail facts only when exactly one current B05 hotel link is the pipeline hotel. SECURITY DEFINER. search_path is pinned empty.';
+  'Records Sí or No for the caller''s linked reading. Dismissed stores no network fact. Sí admits Gmail facts only when exactly one current B05 hotel link is the pipeline hotel. Confirmed facts store the email time, not the confirmation time. SECURITY DEFINER. search_path is pinned empty.';
 
 revoke all on function public.answer_gmail_network_reading(uuid, text) from public, anon, authenticated;
 grant execute on function public.answer_gmail_network_reading(uuid, text) to authenticated, service_role;
@@ -911,7 +928,7 @@ as $$
 $$;
 
 comment on function public.read_network_destination_rank(uuid) is
-  'Baseline order of hotels with a published anonymous signal. No score, no count, no creator id. Hotels below the floor are omitted, not ranked last.';
+  'Baseline order of hotels with a published anonymous signal. Sorts only the k-anonymous recency band, confidence, and hotel id. No score, no count, no creator id, no raw timestamp. Hotels below the floor are omitted, not ranked last.';
 
 revoke all on function public.read_network_destination_rank(uuid) from public, anon, authenticated;
 grant execute on function public.read_network_destination_rank(uuid) to anon, authenticated, service_role;
