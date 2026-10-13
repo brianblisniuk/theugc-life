@@ -110,6 +110,26 @@ async function commitAction(page: Page, act: () => Promise<void>): Promise<void>
   await page.reload();
 }
 
+/**
+ * The public toggle without a reload. The button and the link must match the
+ * flag that was stored. A private profile is not found at the public URL.
+ */
+async function expectPublicProfile(page: Page, username: string, on: boolean): Promise<void> {
+  const href = `/creators/${username}`;
+  const buttonName = on ? "Make private" : "Make public";
+  const button = page.getByRole("button", { name: buttonName, exact: true });
+  try {
+    await expect(button).toBeVisible();
+  } catch (error) {
+    const text = (await page.locator("body").innerText()).replace(/\s+/g, " ").trim().slice(0, 500);
+    throw new Error(`public toggle wanted ${buttonName}; page: ${text}`, { cause: error });
+  }
+  if (on) await expect(page.getByRole("link", { name: href })).toBeVisible();
+  else await expect(page.getByRole("link", { name: href })).toHaveCount(0);
+  const response = await page.request.get(href);
+  expect(response.status()).toBe(on ? 200 : 404);
+}
+
 async function openContext(browser: { newContext: () => Promise<BrowserContext> }) {
   const context = await browser.newContext();
   await blockExternalNetwork(context, externalHosts);
@@ -151,7 +171,8 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
 
   const adaContext = await openContext(browser);
   const ada = await adaContext.newPage();
-  await signUp(ada, { email: adaEmail, name: ADA_NAME, username: username("e2eada") });
+  const adaUsername = username("e2eada");
+  await signUp(ada, { email: adaEmail, name: ADA_NAME, username: adaUsername });
   await seedMailbox({
     loginEmail: adaEmail,
     mailboxEmail: ADA_MAILBOX,
@@ -227,6 +248,15 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
   await expect(ada.getByRole("textbox", { name: "Bio" })).toHaveValue(BIO);
+  await expectPublicProfile(ada, adaUsername, false);
+  await postAction(ada, () => ada.getByRole("button", { name: "Make public" }).click());
+  await expectPublicProfile(ada, adaUsername, true);
+  await postAction(ada, () => ada.getByRole("button", { name: "Make private" }).click());
+  await expectPublicProfile(ada, adaUsername, false);
+  await postAction(ada, () => ada.getByRole("button", { name: "Make public" }).click());
+  await expectPublicProfile(ada, adaUsername, true);
+  await ada.reload();
+  await expectPublicProfile(ada, adaUsername, true);
   await ada.getByRole("checkbox", { name: "Bio" }).check();
   await commitAction(ada, () => ada.getByRole("button", { name: "Save sharing choices" }).click());
   await expect(ada.getByRole("checkbox", { name: "Bio" })).toBeChecked();

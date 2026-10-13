@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `621bc557762a70242b08a02afca94bca6c08f08d` (merge of PR #64, E05, 2026-10-13)  
-**State:** AWAITING_CI. UX01 Sunlit Creator OS shell, D095 onboarding, D096–D097 public profile, D098 Free for undocumented gates. PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. UX01 Sunlit Creator OS shell, D095 onboarding, D096–D097 public profile, D098 Free for undocumented gates. PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055`. The public-profile toggle follows the stored flag (the saved result does not invert the refreshed prop). `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** UX01. E05 is merged. D095–D098 are Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)

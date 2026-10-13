@@ -14,6 +14,7 @@ import { bindServerActions } from "@/lib/entitlements/inventory";
 import { createClient } from "@/lib/supabase/server";
 
 import { parseProfileForm } from "./contract";
+import type { PublicProfileToggleState } from "./public-toggle";
 
 // Load-time binding. A "use server" module may export only async functions.
 bindServerActions([
@@ -100,21 +101,26 @@ export async function updateCreatorProfile(formData: FormData): Promise<ProfileS
  * portfolio_visibility, field opt-ins, or the hotel share link.
  */
 export async function setPublicProfileEnabled(
+  _prev: PublicProfileToggleState,
   formData: FormData,
-): Promise<{ result: "saved" } | { result: "error" }> {
+): Promise<{ result: "saved"; enabled: boolean } | { result: "error" }> {
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const enabled = formData.get("enabled") === "true";
+  let stored = enabled;
   try {
     const supabase = await createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("creator_profiles")
       .update({ public_profile_enabled: enabled })
-      .eq("user_id", resolution.session.userId);
-    if (error) return { result: "error" };
+      .eq("user_id", resolution.session.userId)
+      .select("public_profile_enabled");
+    if (error || !data || data.length !== 1) return { result: "error" };
+    const row = data[0] as { public_profile_enabled?: unknown };
+    stored = row.public_profile_enabled === true;
   } catch {
     return { result: "error" };
   }
   revalidatePath("/app/profile");
-  return { result: "saved" };
+  return { result: "saved", enabled: stored };
 }

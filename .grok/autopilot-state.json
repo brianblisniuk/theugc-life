@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 621bc557762a70242b08a02afca94bca6c08f08d (PR #64, E05). UX01 is PR #65 on cursor/ux01-sunlit-creator-os-79af. Migration 0055. D095–D098 are Accepted. D089–D091 are unchanged. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 621bc557762a70242b08a02afca94bca6c08f08d (PR #64, E05). UX01 is PR #65 on cursor/ux01-sunlit-creator-os-79af. Migration 0055. D095–D098 are Accepted. D089–D091 are unchanged. The public-profile toggle follows the stored flag. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
