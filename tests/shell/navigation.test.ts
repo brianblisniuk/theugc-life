@@ -23,6 +23,7 @@ import {
   pipelineReturnHref,
   pipelineRowLinks,
   pipelineSurfaceHeading,
+  pitchHref,
   tripHotelHref,
 } from "@/lib/shell/navigation";
 
@@ -67,6 +68,7 @@ describe("primary navigation stays the approved five", () => {
     expect(activePrimaryHref("/app/discover", null)).toBe("/app/discover");
     expect(activePrimaryHref("/app/discover-extra", null)).toBeNull();
     expect(activePrimaryHref("/app/profile/portfolio", null)).toBe("/app/profile");
+    expect(activePrimaryHref("/app/profile/pitches", null)).toBe("/app/profile");
     expect(activePrimaryHref("/app/account", null)).toBeNull();
     expect(activeUtilityHref("/app/account")).toBe("/app/account");
     expect(activeUtilityHref("/app/billing")).toBe("/app/billing");
@@ -83,6 +85,8 @@ describe("primary navigation stays the approved five", () => {
     expect(activePrimaryHref(`/app/hotels/${HOTEL}`, { kind: "trip", tripId: TRIP })).toBe(
       "/app/trips",
     );
+    expect(activePrimaryHref(`/app/hotels/${HOTEL}/pitch`, null)).toBe("/app/discover");
+    expect(PRIMARY_NAV.map((item) => item.href)).not.toContain("/app/hotels");
   });
 });
 
@@ -240,5 +244,18 @@ describe("pipeline surfaces", () => {
         expect(item.href.startsWith("/app/pipeline?surface=")).toBe(true);
       }
     }
+  });
+});
+
+describe("pitch href", () => {
+  it("stays on the hotel pitch route and drops a bad trip id", () => {
+    expect(pitchHref(HOTEL)).toBe(`/app/hotels/${HOTEL}/pitch`);
+    expect(pitchHref(HOTEL, TRIP)).toBe(`/app/hotels/${HOTEL}/pitch?trip=${TRIP}`);
+    expect(pitchHref(HOTEL, "not-a-trip")).toBeNull();
+    expect(pitchHref("not-a-hotel", TRIP)).toBeNull();
+    expect(pitchHref(`${HOTEL}/admin`)).toBeNull();
+    const href = pitchHref(HOTEL, TRIP);
+    expect(href).not.toBeNull();
+    assertAppPath(href!);
   });
 });

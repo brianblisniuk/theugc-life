@@ -147,6 +147,37 @@ still requires an https `proof_url`.
 Constraint: exactly one usable asset source (`storage_path` or `external_url`) where required.
 Types: `video`, `image`, `link`, `case_study`.
 
+### pitch_templates
+Creator-owned reusable subject and body (0064, D110). Anon has no privilege.
+Archiving sets `archived_at`. The row stays the owner's.
+
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `name text` — 1–80 characters, trimmed
+- `subject text` — 1–200 characters
+- `body text` — 1–8000 characters
+- `archived_at timestamptz NULL`
+- timestamps
+
+### pitch_drafts
+Creator-owned draft for one hotel (0064, D110). `delivery` is `unsent`,
+`copied`, or `mailto_opened`. None of those is a sent pitch. `variables_used`
+is a JSON array of fact keys, not fact values, and not an address. A trip or
+a saved template on the draft must belong to the same creator.
+
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `hotel_id uuid FK hotels(id) ON DELETE CASCADE`
+- `trip_id uuid NULL FK trips(id) ON DELETE SET NULL`
+- `template_id uuid NULL FK pitch_templates(id) ON DELETE SET NULL`
+- `system_template_key text NULL` — `introduction`, `stay`, `follow_up`, `return_visit`
+- `subject text`, `body text`
+- `variables_used jsonb`
+- `delivery text`
+- timestamps
+
+`template_id` and `system_template_key` are not both set. Both may be null.
+
 ## 5. Geography and inventory
 
 ### destinations
@@ -266,7 +297,7 @@ Migration `0062` (D108) makes a revealed unlock call `save_hotel_to_pipeline` in
 
 Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. Migration `0061` stores Gmail collaboration suggestions on a thread the creator already linked. Refresh writes those rows only. A deletion purge removes them with the mailbox's other Gmail-derived rows. Disconnect does not.
 
-Migration `0066` (D112) adds `list_own_pending_gmail_collaboration_suggestions()`. It reads pending suggestion ids for `auth.uid()` when `private.gmail_collab_is_paid` is true, and returns `paused` with an empty array otherwise. It writes nothing. `0061` is not edited.
+Migration `0066` (D112) adds `list_own_pending_gmail_collaboration_suggestions()`. It reads pending suggestion ids for `auth.uid()` when `private.gmail_collab_is_paid` is true, and returns `paused` with an empty array otherwise. The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. It writes nothing. `0061` and `0064` are not edited.
 
 ## 5a. Property-content source infrastructure (migration 0027)
 
@@ -2967,8 +2998,14 @@ At minimum:
 32. Unlock saves the hotel (0062, D108) — a revealed unlock calls
     `save_hotel_to_pipeline` in the same transaction. A full Free allowance
     returns `pipeline_limit` and debits nothing. `0061` is not edited.
-33. Home next actions (0066, D112) — one read of the caller's pending Gmail
-    collaboration suggestions. Free returns paused and no ids. No new table.
-    `0061` and `0062` are not edited.
+33. Pitch templates and drafts (0064, D110) — creator-owned templates and one
+    draft per save for one hotel. Personalization is template variables. Copy
+    and a mailto draft are delivery marks. Neither sends mail and neither
+    writes the outreach ledger. `0060`, `0061`, and `0062` are not edited.
+    `0063` is not this file.
+34. Home next actions (0066, D112) — one read of the caller's pending Gmail
+    collaboration suggestions. The cap of 100 keeps human reply, then pitch
+    sent, then collaboration, then id. Free returns paused and no ids. No new
+    table. `0061`, `0062`, and `0064` are not edited.
 
 Every migration must be reproducible from an empty database.

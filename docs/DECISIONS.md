@@ -4272,12 +4272,48 @@ cycle is closed starts a new `saved` cycle, which is the existing save rule
 - It does not exempt an unlock from the Free saved-hotel allowance.
 - It does not reveal User A's email or pipeline row to User B.
 
+## D110 — Pitch drafts are templates the creator copies (F02)
+
+Status: **Accepted for this block.** D03 and D04 stay open. This block does
+not choose an AI vendor and does not send mail.
+
+A pitch template is a subject and a body the creator saves. A pitch draft is
+a subject and a body for one hotel, optionally one of that creator's trips.
+The only personalizer wired here is `template`. `PITCH_PERSONALIZER` unset or
+`template` fills variables from facts already on the creator's account and
+from the published hotel. Any other value is refused and does not call that
+provider. A missing fact is left out. A hotel name cannot expand another
+fact. The draft does not invent a stay, a reply rate, a score, or an audience
+number.
+
+`variables_used` stores the fact keys that were available at save. It does
+not store the values. An email address is not a key. The address is used only
+as the mailto recipient, and only when this user may already see that
+contact. It is not written on the draft.
+
+`delivery` is `unsent`, `copied`, or `mailto_opened`. Copy puts the text on
+the clipboard. Mailto opens the creator's own mail client. Neither is a sent
+pitch, and neither writes the outreach ledger or pipeline status. Marking a
+hotel as pitched stays the existing pipeline action.
+
+Rows are owner-private at every tier (D098). The canon plan withholds Gmail
+detection and assisted sending from Free. This block does neither, so it does
+not add a plan gate. User A cannot read, list, update, or delete User B's
+templates or drafts. A draft cannot cite User B's trip or template.
+
+### What this decision does not do
+
+- No model call and no vendor SDK (D03 stays open).
+- No send, no Gmail write, and no `pitch_sent` from copy or mailto (D04 stays open).
+- No credit debit. A draft does not unlock a contact.
+- No change to migrations `0060`–`0063`.
+
 ## D112 — Home next actions are a read of owned rows
 
 Status: **Accepted** for this block. Canon v1.1 F04. Migration
-`0066_home_next_actions.sql` adds one read function and no table. `0061`
-and `0062` are not edited. D100–D108 stay as they are. Agency F04 stays
-planned.
+`0066_home_next_actions.sql` adds one read function and no table. `0061`,
+`0062`, and `0064` are not edited. D100–D108 stay as they are. D110 stays
+as it is. Agency F04 stays planned.
 
 Home lists what the signed-in creator can already see. The order is fixed.
 It is not a score, not a hotel ranking, and not a model.
@@ -4290,8 +4326,10 @@ It is not a score, not a hotel ranking, and not a model.
    are not due. A missing `due_on` is not due.
 3. Pending Gmail suggestions when
    `list_own_pending_gmail_collaboration_suggestions` returns `ok`.
-   Order: human reply, pitch sent, collaboration. The function uses the
-   D107 paid predicate: active Pro, or an active Destination Pass. A Free
+   Order: human reply, pitch sent, collaboration, then id. The function
+   returns at most 100 of those rows, and that cap keeps this order. The
+   function uses the D107 paid predicate: active Pro, or an active
+   Destination Pass. A Free
    read returns `paused` and an empty array. Suggestion ids are not in
    that payload. Stored rows are not deleted. The function takes no id
    argument. Confirm, dismiss, and refresh are not called from Home.

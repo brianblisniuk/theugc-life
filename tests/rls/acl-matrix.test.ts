@@ -61,6 +61,10 @@ const CONTRACT: Record<string, Expected> = {
   creator_collaboration_share_marks: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   creator_deliverable_share_marks: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   portfolio_assets: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
+  // F02 (0064, D110). Creator-owned templates and drafts. Anon has no privilege.
+  // Copy and mailto_opened are columns, not a send.
+  pitch_templates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  pitch_drafts: { anon: "", authenticated: "SIUD", serviceRole: "all" },
 
   // Public catalogue. Writes exist as a capability; RLS restricts them to staff.
   brands: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
