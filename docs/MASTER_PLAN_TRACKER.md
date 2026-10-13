@@ -746,12 +746,19 @@ existing manual transition. Confirmation of a collaboration writes no CRM
 row and no hotel fact. Deletion purge removes the suggestions. Disconnect
 does not. `0060` is not edited.
 
-**F05b** is PR #70 on `cursor/f05b-unlock-adds-pipeline-45a2`. It saves a
-hotel on the caller's pipeline in the same transaction as a revealed contact
-unlock (D108). Migration `0062_unlock_saves_pipeline.sql`. Base is main
-`12630bb` (PR #71). A full Free allowance refuses the unlock and does not
-debit. A refused unlock does not add the hotel. The pipeline card shows the
-unlocked email to that caller only. Do not merge.
+**F05b** is merged as PR #70, merge
+`b8752e31ee4e51971390ebbf260062186f689a92`. It saves a hotel on the caller's
+pipeline in the same transaction as a revealed contact unlock (D108).
+Migration `0062_unlock_saves_pipeline.sql`. A full Free allowance refuses
+the unlock and does not debit. A refused unlock does not add the hotel.
+The pipeline card shows the unlocked email to that caller only.
+
+**F04 home next actions** (canon v1.1, not the agency F04 row) composes the
+signed-in creator's pipeline, due follow-ups, due deliverables, credit
+balance, and pending Gmail suggestions (D112). Migration
+`0066_home_next_actions.sql` is a read function only. Free Gmail reads stay
+paused and return no suggestion ids (D107). There is no ranking and no
+model. Agency F04 stays planned. `0061` and `0062` are not edited.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
