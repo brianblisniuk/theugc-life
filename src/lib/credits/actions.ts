@@ -193,38 +193,6 @@ export async function reviewContactReportAction(formData: FormData): Promise<Rev
   if (payload?.status === "not_found") return { status: "not_found" };
   if (payload?.status !== "accepted" && payload?.status !== "rejected") return { status: "error" };
 
-  if (payload.status === "accepted") {
-    const hotelId =
-      data &&
-      typeof data === "object" &&
-      typeof (data as { hotel_id?: unknown }).hotel_id === "string"
-        ? (data as { hotel_id: string }).hotel_id
-        : null;
-    if (hotelId && isUuid(hotelId)) {
-      const hotel = await supabase
-        .from("hotels")
-        .select("name, website_url")
-        .eq("id", hotelId)
-        .maybeSingle();
-      if (!hotel.error && hotel.data) {
-        const row = hotel.data as { name?: string | null; website_url?: string | null };
-        const provider = getContactProvider();
-        const found = await provider.findHotelEmail({
-          hotelId,
-          name: row.name ?? "",
-          domain: domainFromWebsite(row.website_url),
-        });
-        const admin = createAdminClient();
-        await admin.rpc("upsert_contact_cache", {
-          p_hotel_id: hotelId,
-          p_email: found.email,
-          p_status: found.status,
-          p_raw: found.raw,
-        });
-      }
-    }
-  }
-
   revalidatePath("/admin");
   return { status: payload.status };
 }

@@ -1501,6 +1501,16 @@
   },
   {
     "schema": "public",
+    "name": "grandfather_visible_contact_unlocks",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "seed_imported_contact_cache",
     "args": "",
     "searchPath": "\"\"",

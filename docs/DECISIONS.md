@@ -4031,14 +4031,20 @@ they conflict, including the contact half of D056, D098, and PERMISSIONS.md
 One credit unlocks the email contact of one hotel for one user. Another
 user's Pass, Pro, or unlock does not reveal it. Opening a hotel this user
 already unlocked costs nothing. A cache hit still costs this user the
-configured unlock cost. The provider runs only on a cache miss. Access is
+configured unlock cost, including a found email older than the TTL. The
+provider runs only when that hotel has no cache row. Access is
 the ledger and the unlock row. A payment, a subscription, or a webhook body
 is not an unlock (D007).
 
 The provider sits behind `ContactProvider`. Only the fake provider is
 wired. `CONTACT_PROVIDER` unset or `fake` starts. Any other value refuses
 to start. This block performs no real provider call, no real charge, and
-no payment integration.
+no payment integration. The provider runs only when the hotel has no cache
+row. A stored found email stays a cache hit after the configured TTL. A
+provider write does not replace an address already stored. An accepted
+bounce leaves that cache invalid and unreadable, including to a user who
+already unlocked it, until a later verified address exists. The review
+action does not call the provider.
 
 The ledger is append-only and idempotent per `(user_id, idempotency_key)`.
 Unlock takes a per-user transaction lock. No role may update or delete a
@@ -4066,20 +4072,29 @@ Both `credit_config` and `CREDITS_CONFIG` carry these values. A test fails
 if they diverge. The unlock function reads the table. A monthly grant job
 and pack checkout are not in this block.
 
-## D102 — Pass and Gmail gates stay
+## D102 — Pass stays; Free Gmail sync pauses
 
 Status: **Accepted** for this block. D051, D056, and D098 still govern
-Destination Pass, Creator Pro, and Gmail. Gmail stays available on Free
-until a later block. This block does not remove Pass. Premium intelligence
-still uses `has_premium_hotel_access`.
+Destination Pass and Creator Pro. This block does not remove Pass.
+Premium intelligence still uses `has_premium_hotel_access`.
 
-## D103 — Imported contacts are cache rows
+Gmail data stays on Free. Login sync and the scheduled due list do not
+run for a user who has neither an active Pro entitlement nor an active
+Destination Pass. Mailboxes, credentials, cursors, and messages are not
+deleted. An active Pro or Destination Pass resumes those two entry
+points. Claim of a run already started is unchanged.
+
+## D103 — Imported contacts stay visible to who could already see them
 
 Status: **Accepted.** Existing `hotel_contacts` emails are seeded into
-`contact_cache` as `owner_import`. Unlocking one costs the configured
-unlock cost and does not call the provider. Prior Pass or Pro visibility
-is not grandfathered. A creator who could see a contact because of a plan
-cannot see it until they unlock it.
+`contact_cache` as `owner_import`. A creator who did not already have
+visibility pays the configured unlock cost and does not call the provider.
+Migration `0058` inserts `contact_unlocks` for every hotel each existing
+user could already see: active Pro, an active Destination Pass that covers
+the hotel, and admin or editor. Each of those unlocks is a net-zero ledger
+pair (`plan_grant` of the live unlock cost, then an `unlock` debit) so the
+Free grant is not consumed. A second run inserts nothing. Users created
+after the migration are not included.
 
 ## D104 — Onboarding does not spend credits
 

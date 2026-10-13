@@ -341,7 +341,8 @@ comment on function public.grant_free_credits(uuid) is
 
 -- ---------------------------------------------------------------------------
 -- Unlock. Lock the user, then ownership, balance, and cache.
--- needs_provider means the server may call the fake adapter and retry.
+-- needs_provider means there is no stored address yet. A found email is a hit
+-- at any age. The TTL does not send a stored address back to the provider.
 -- ---------------------------------------------------------------------------
 
 create or replace function public.unlock_hotel_contact(
@@ -360,7 +361,8 @@ declare
   v_ttl integer;
   v_balance integer;
   v_cache public.contact_cache%rowtype;
-  v_fresh boolean;
+  v_has_cache boolean;
+  v_servable boolean;
   v_ledger_id uuid;
   v_email text;
 begin
@@ -392,27 +394,22 @@ begin
     raise exception 'credit config missing' using errcode = '55000';
   end if;
 
+  -- cache_ttl_days stays required config. It does not expire a stored address.
   select * into v_cache from public.contact_cache where hotel_id = p_hotel_id;
-  v_fresh := found
-    and v_cache.status <> 'invalid'
-    and v_cache.last_verified_at is not null
-    and v_cache.last_verified_at > pg_catalog.now() - pg_catalog.make_interval(days => v_ttl);
+  v_has_cache := found;
+  v_servable := v_has_cache
+    and v_cache.status = 'found'
+    and not v_cache.reported_invalid
+    and nullif(btrim(coalesce(v_cache.email, '')), '') is not null;
 
   if exists (
     select 1 from public.contact_unlocks u
     where u.user_id = v_uid and u.hotel_id = p_hotel_id
   ) then
-    if v_fresh and v_cache.status = 'found' then
+    if v_servable then
       return jsonb_build_object(
         'status', 'already_unlocked',
         'email', v_cache.email,
-        'balance', public.credit_balance(v_uid)
-      );
-    end if;
-    if not v_fresh then
-      return jsonb_build_object(
-        'status', 'needs_provider',
-        'email', null,
         'balance', public.credit_balance(v_uid)
       );
     end if;
@@ -430,9 +427,17 @@ begin
     return jsonb_build_object('status', 'idempotent_replay', 'email', null);
   end if;
 
-  if not v_fresh then
+  if not v_has_cache then
     return jsonb_build_object(
       'status', 'needs_provider',
+      'email', null,
+      'balance', public.credit_balance(v_uid)
+    );
+  end if;
+
+  if v_cache.status = 'invalid' or v_cache.reported_invalid then
+    return jsonb_build_object(
+      'status', 'not_found',
       'email', null,
       'balance', public.credit_balance(v_uid)
     );
@@ -446,7 +451,7 @@ begin
     );
   end if;
 
-  if v_cache.status = 'found' and (v_cache.email is null or char_length(btrim(v_cache.email)) = 0) then
+  if v_cache.status = 'found' and not v_servable then
     return jsonb_build_object('status', 'needs_provider', 'email', null);
   end if;
 
@@ -478,7 +483,7 @@ end;
 $$;
 
 comment on function public.unlock_hotel_contact(uuid, text) is
-  'Atomic per-user unlock. Already owned costs nothing. A cache hit still debits credit_config.unlock_cost. A miss returns needs_provider and does not debit. Insufficient balance returns no email and writes no row.';
+  'Atomic per-user unlock. Already owned costs nothing. A stored found email is a hit at any age and still debits credit_config.unlock_cost. A missing cache row returns needs_provider and does not debit. An invalid cache returns no email and does not debit a new user.';
 
 create or replace function public.upsert_contact_cache(
   p_hotel_id uuid,
@@ -516,18 +521,12 @@ begin
   values (
     p_hotel_id, v_email, 'provider', v_status, pg_catalog.now(), p_raw
   )
-  on conflict (hotel_id) do update
-    set email = excluded.email,
-        source = 'provider',
-        status = excluded.status,
-        last_verified_at = pg_catalog.now(),
-        raw_provider_response = excluded.raw_provider_response,
-        reported_invalid = false;
+  on conflict (hotel_id) do nothing;
 end;
 $$;
 
 comment on function public.upsert_contact_cache(uuid, text, text, jsonb) is
-  'Service-role cache write after the fake provider returns. Source becomes provider. Not granted to authenticated.';
+  'Service-role insert when the hotel has no cache row. An existing email, source, status, and reported_invalid flag are left unchanged. Not granted to authenticated.';
 
 create or replace function public.admin_grant_credits(
   p_user_id uuid,
@@ -632,6 +631,12 @@ begin
          bounce_count = bounce_count + 1
    where hotel_id = v_report.hotel_id;
 
+  update public.hotel_contacts
+     set status = 'invalid',
+         email = null
+   where hotel_id = v_report.hotel_id
+     and status is distinct from 'replaced';
+
   update public.contact_reports
      set status = 'accepted',
          reviewed_by = auth.uid(),
@@ -643,7 +648,7 @@ end;
 $$;
 
 comment on function public.review_contact_report(uuid, text) is
-  'Admin accept grants credit_config.unlock_cost as courtesy and marks the cache invalid. Reject grants nothing.';
+  'Admin accept grants credit_config.unlock_cost as courtesy, marks the cache invalid, and clears hotel contact emails so previous unlockers cannot read the address. It does not replace that address. Reject grants nothing.';
 
 -- ---------------------------------------------------------------------------
 -- RLS. Contacts follow unlock ownership, or admin/editor. Pass stays for

@@ -181,7 +181,7 @@ answered elsewhere; a hotel with no contact is still public inventory whose
 contact section is simply empty or locked.
 
 ### Contacts
-A contact email is visible when this user owns a `contact_unlocks` row for that hotel, or when the caller is admin or editor (D100). A Destination Pass, Creator Pro, or a payment is not an unlock. `has_premium_hotel_access` still gates premium intelligence. It does not gate `hotel_contacts`.
+A contact email is visible when this user owns a `contact_unlocks` row for that hotel, or when the caller is admin or editor (D100). Migration `0058` writes those unlock rows for contacts each existing user could already see. A Destination Pass or Creator Pro granted after that migration is not an unlock, and a payment is not an unlock. `has_premium_hotel_access` still gates premium intelligence. It does not gate `hotel_contacts`.
 
 - Anonymous: deny
 - Signed-in creator, any plan: deny until that user unlocks that hotel

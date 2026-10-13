@@ -253,7 +253,9 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 - `contact_unlocks` — unique `(user_id, hotel_id)`. Owner select. Admin select.
 - `contact_reports` — owner insert and select. Admin update. One pending report per user and hotel.
 
-`unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel, returns `needs_provider` without a debit when the cache is missing or stale, returns `insufficient_credits` with no email and no row when the balance is short, and otherwise debits `credit_config.unlock_cost`. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
+`unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
+
+Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0059` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows.
 
 ## 5a. Property-content source infrastructure (migration 0027)
 

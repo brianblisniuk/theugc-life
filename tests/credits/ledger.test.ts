@@ -268,10 +268,55 @@ d("contact credit ledger", () => {
     }
   });
 
-  it("asks for a provider and does not debit when the cache is stale or absent", async () => {
+  it("serves a found email older than the TTL and does not let a re-check replace it", async () => {
     const before = await balanceOf(A);
     const stale = await unlock(A, HOTEL.stale, "unlock-stale");
-    expect(stale.rows[0]!.result).toMatchObject({ status: "needs_provider", email: null });
+    expect(stale.rows[0]!.result).toMatchObject({
+      status: "unlocked",
+      email: "stale@hotel.test",
+    });
+    expect(await unlockDeltas(A, HOTEL.stale)).toEqual([-CREDITS_CONFIG.unlockCost]);
+    expect(await balanceOf(A)).toBe(before - CREDITS_CONFIG.unlockCost);
+    await adminQuery(
+      "select public.upsert_contact_cache($1, 'found-replaced@fake-provider.test', 'found', '{}'::jsonb)",
+      [HOTEL.stale],
+    );
+    const kept = await adminQuery<{ email: string; source: string; status: string }>(
+      `select email, source::text as source, status::text as status
+         from public.contact_cache where hotel_id = $1`,
+      [HOTEL.stale],
+    );
+    expect(kept[0]).toEqual({
+      email: "stale@hotel.test",
+      source: "provider",
+      status: "found",
+    });
+    const again = await unlock(A, HOTEL.stale, "unlock-stale-again");
+    expect(again.rows[0]!.result).toMatchObject({
+      status: "already_unlocked",
+      email: "stale@hotel.test",
+    });
+    expect(await unlockDeltas(A, HOTEL.stale)).toEqual([-CREDITS_CONFIG.unlockCost]);
+
+    await adminQuery(
+      "update public.contact_cache set last_verified_at = now() - interval '400 days' where hotel_id = $1",
+      [HOTEL.missing],
+    );
+    const agedMiss = await unlock(A, HOTEL.missing, "unlock-aged-miss");
+    expect(agedMiss.rows[0]!.result).toMatchObject({ status: "not_found", email: null });
+    await adminQuery(
+      "select public.upsert_contact_cache($1, 'found-aged@fake-provider.test', 'found', '{}'::jsonb)",
+      [HOTEL.missing],
+    );
+    const miss = await adminQuery<{ email: string | null; status: string }>(
+      "select email, status::text as status from public.contact_cache where hotel_id = $1",
+      [HOTEL.missing],
+    );
+    expect(miss[0]).toEqual({ email: null, status: "not_found" });
+  });
+
+  it("asks for a provider and does not debit when the cache row is absent", async () => {
+    const before = await balanceOf(A);
     const absent = await unlock(A, HOTEL.empty, "unlock-empty");
     expect(absent.rows[0]!.result.status).toBe("needs_provider");
     expect(await balanceOf(A)).toBe(before);
@@ -476,11 +521,209 @@ d("contact credit ledger", () => {
       [HOTEL.report],
     );
     expect(cache[0]).toEqual({ status: "invalid", reported: true });
+    const stored = await adminQuery<{ email: string; bounces: number }>(
+      "select email, bounce_count as bounces from public.contact_cache where hotel_id = $1",
+      [HOTEL.report],
+    );
+    expect(stored[0]).toEqual({ email: "report@hotel.test", bounces: 1 });
+    await adminQuery(
+      "select public.upsert_contact_cache($1, 'found-bounce@fake-provider.test', 'found', '{}'::jsonb)",
+      [HOTEL.report],
+    );
+    const stillInvalid = await adminQuery<{
+      email: string;
+      status: string;
+      reported: boolean;
+    }>(
+      `select email, status::text as status, reported_invalid as reported
+         from public.contact_cache where hotel_id = $1`,
+      [HOTEL.report],
+    );
+    expect(stillInvalid[0]).toEqual({
+      email: "report@hotel.test",
+      status: "invalid",
+      reported: true,
+    });
+
+    const ownerRows = await queryAs<{ email: string | null }>(
+      { role: "authenticated", sub: A },
+      "select email from public.hotel_contacts where hotel_id = $1",
+      [HOTEL.report],
+    );
+    expect(ownerRows.error).toBeNull();
+    expect(JSON.stringify(ownerRows)).not.toContain("report@hotel.test");
+    expect(ownerRows.rows.every((row) => row.email == null)).toBe(true);
+    const staffRows = await queryAs<{ email: string | null }>(
+      { role: "authenticated", sub: EDITOR },
+      "select email from public.hotel_contacts where hotel_id = $1",
+      [HOTEL.report],
+    );
+    expect(JSON.stringify(staffRows)).not.toContain("report@hotel.test");
+
+    const reread = await queryAs<{ result: { email: string | null } }>(
+      { role: "authenticated", sub: A },
+      "select public.read_own_unlocked_contact($1) as result",
+      [HOTEL.report],
+    );
+    expect(reread.rows[0]!.result.email).toBeNull();
+    const balanceAfter = await balanceOf(A);
+    const reopened = await unlock(A, HOTEL.report, "unlock-report-after-bounce");
+    expect(reopened.rows[0]!.result).toMatchObject({
+      status: "already_unlocked",
+      email: null,
+    });
+    expect(await balanceOf(A)).toBe(balanceAfter);
+    expect(await unlockDeltas(A, HOTEL.report)).toEqual([-CREDITS_CONFIG.unlockCost]);
+
+    const strangerUnlock = await unlock(B, HOTEL.report, "unlock-invalid-stranger");
+    expect(strangerUnlock.rows[0]!.result).toMatchObject({ status: "not_found", email: null });
+    expect(await unlockDeltas(B, HOTEL.report)).toEqual([]);
+    expect(JSON.stringify(strangerUnlock)).not.toContain("report@hotel.test");
+
     const stranger = await queryAs(
       { role: "authenticated", sub: B },
       "select public.review_contact_report($1, 'reject')",
       [report!.id],
     );
     expect(stranger.error?.message ?? "").toMatch(/admin required/);
+  });
+
+  it("keeps a contact visible for a user who could already see it, without spending the Free grant", async () => {
+    const pass = "c05a0000-0000-4000-8000-0000000000d1";
+    const pro = "c05a0000-0000-4000-8000-0000000000d2";
+    const free = "c05a0000-0000-4000-8000-0000000000d3";
+    const expired = "c05a0000-0000-4000-8000-0000000000d4";
+    const ibizaDest = "c05d0000-0000-4000-8000-0000000000a9";
+    const bali = "c05f0000-0000-4000-8000-0000000000a1";
+    const ibiza = "c05f0000-0000-4000-8000-0000000000a2";
+    const phoneOnly = "c05f0000-0000-4000-8000-0000000000a3";
+
+    await adminQuery(
+      "insert into public.destinations (id, name, slug, type) values ($1, 'Credit Ibiza', 'credit-ibiza', 'city')",
+      [ibizaDest],
+    );
+    await makeUser(pass);
+    await makeUser(pro);
+    await makeUser(free);
+    await makeUser(expired);
+    await makeHotel(bali, "Grandfather Bali");
+    await makeHotel(phoneOnly, "Grandfather Phone");
+    await adminQuery(
+      "insert into public.hotels (id, name, slug, destination_id) values ($1, 'Grandfather Ibiza', 'c05-grandfather-ibiza', $2)",
+      [ibiza, ibizaDest],
+    );
+    await adminQuery(
+      `insert into public.hotel_contacts (hotel_id, first_name, email, status, source_type)
+       values ($1, 'Bali', 'bali-kept@hotel.test', 'active', 'editorial'),
+              ($2, 'Ibiza', 'ibiza-kept@hotel.test', 'active', 'editorial')`,
+      [bali, ibiza],
+    );
+    await adminQuery(
+      `insert into public.hotel_contacts (hotel_id, first_name, phone, status, source_type)
+       values ($1, 'Phone', '+15550001111', 'active', 'editorial')`,
+      [phoneOnly],
+    );
+    await adminQuery(
+      `insert into public.access_entitlements
+         (user_id, access_type, destination_id, status, starts_at, source, source_reference)
+       values
+         ($1, 'destination', $2, 'active', now(), 'test', 'gf-pass'),
+         ($3, 'pro', null, 'active', now(), 'test', 'gf-pro'),
+         ($4, 'destination', $2, 'expired', now() - interval '30 days', 'test', 'gf-expired')`,
+      [pass, DEST, pro, expired],
+    );
+
+    const editorBefore = await balanceOf(EDITOR);
+    const inserted = await adminQuery<{ n: number }>(
+      "select public.grandfather_visible_contact_unlocks() as n",
+    );
+    expect(inserted[0]!.n).toBeGreaterThan(0);
+    expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeCredits);
+    expect(await balanceOf(pro)).toBe(CREDITS_CONFIG.freeCredits);
+    expect(await balanceOf(free)).toBe(CREDITS_CONFIG.freeCredits);
+    expect(await balanceOf(expired)).toBe(CREDITS_CONFIG.freeCredits);
+    expect(await balanceOf(EDITOR)).toBe(editorBefore);
+
+    const passRows = await queryAs<{
+      hotel_id: string;
+      email: string | null;
+      phone: string | null;
+    }>(
+      { role: "authenticated", sub: pass },
+      "select hotel_id, email, phone from public.hotel_contacts where hotel_id = any($1::uuid[])",
+      [[bali, ibiza, phoneOnly]],
+    );
+    expect(passRows.error).toBeNull();
+    expect(
+      passRows.rows
+        .map((row) => row.email)
+        .filter(Boolean)
+        .sort(),
+    ).toEqual(["bali-kept@hotel.test"]);
+    expect(passRows.rows.some((row) => row.phone === "+15550001111")).toBe(true);
+    expect(JSON.stringify(passRows)).not.toContain("ibiza-kept@hotel.test");
+
+    const proRows = await queryAs<{ email: string | null }>(
+      { role: "authenticated", sub: pro },
+      "select email from public.hotel_contacts where hotel_id = any($1::uuid[])",
+      [[bali, ibiza]],
+    );
+    expect(proRows.rows.map((row) => row.email).sort()).toEqual([
+      "bali-kept@hotel.test",
+      "ibiza-kept@hotel.test",
+    ]);
+
+    for (const userId of [free, expired]) {
+      const hidden = await queryAs(
+        { role: "authenticated", sub: userId },
+        "select email, phone from public.hotel_contacts where hotel_id = any($1::uuid[])",
+        [[bali, ibiza, phoneOnly]],
+      );
+      expect(hidden.rows).toEqual([]);
+      const owned = await adminQuery<{ n: string }>(
+        "select count(*)::text as n from public.contact_unlocks where user_id = $1",
+        [userId],
+      );
+      expect(owned[0]!.n).toBe("0");
+    }
+
+    const passNet = await adminQuery<{ n: number }>(
+      `select coalesce(sum(delta), 0)::int as n
+         from public.credit_ledger
+        where user_id = $1 and idempotency_key like 'grandfather%'`,
+      [pass],
+    );
+    expect(passNet[0]!.n).toBe(0);
+    const passUnlocks = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.contact_unlocks where user_id = $1",
+      [pass],
+    );
+    expect(Number(passUnlocks[0]!.n)).toBeGreaterThanOrEqual(2);
+    const staffKept = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.contact_unlocks where user_id = $1 and hotel_id = $2",
+      [EDITOR, bali],
+    );
+    expect(staffKept[0]!.n).toBe("1");
+    const untouched = await adminQuery<{ n: string }>(
+      `select count(*)::text as n from public.credit_ledger
+        where user_id = $1 and idempotency_key like 'grandfather%'`,
+      [A],
+    );
+    expect(untouched[0]!.n).toBe("0");
+
+    const ledgerRows = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.credit_ledger where user_id = $1",
+      [pass],
+    );
+    const second = await adminQuery<{ n: number }>(
+      "select public.grandfather_visible_contact_unlocks() as n",
+    );
+    expect(second[0]!.n).toBe(0);
+    const ledgerAfter = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.credit_ledger where user_id = $1",
+      [pass],
+    );
+    expect(ledgerAfter[0]!.n).toBe(ledgerRows[0]!.n);
+    expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeCredits);
   });
 });

@@ -32,6 +32,15 @@ describe("credit config placeholders", () => {
     expect(sql).toContain(String(CREDITS_CONFIG.cacheTtlDays));
     expect(sql).toContain("false");
     for (const size of CREDITS_CONFIG.packSizes) expect(sql).toContain(String(size));
+    expect(sql).toContain("grandfather_visible_contact_unlocks");
+    expect(sql).toContain("insert into public.contact_unlocks");
+  });
+
+  it("does not refresh a stored address from the bounce review action", () => {
+    const source = readFileSync(path.join(ROOT, "src/lib/credits/actions.ts"), "utf8");
+    const review = source.slice(source.indexOf("export async function reviewContactReportAction"));
+    expect(review).not.toContain("getContactProvider");
+    expect(review).not.toContain("upsert_contact_cache");
   });
 
   it("debits the configured cost, not a literal -1", () => {
