@@ -407,7 +407,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E03 | **DONE** — PR #60, merge `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`. No migration. D082 is Proposed. The first flow is derived from a connected mailbox, a trip, and a pipeline item, inside the E02 shell. Empty and error stay distinct. | onboarding + activation + empty/error/recovery states | new qualified creator reaches useful first workflow quickly |
 | E04 | **DONE** — PR #62, merge `dc5979eed799d1724eb36482eb0067d3e9f0fe55`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
 | E05 | **DONE** — PR #64, merge `621bc557762a70242b08a02afca94bca6c08f08d`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 stay Proposed. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
-| UX01 | **IN PR** — branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. Direction A shell on Inicio, Descubrir, and Pipeline. Do not merge. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
+| UX01 | **IN PR** — PR #65, branch `cursor/ux01-sunlit-creator-os-79af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. Direction A shell on Inicio, Descubrir, and Pipeline. Do not merge. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -705,7 +705,7 @@ are not edited.
 `621bc557762a70242b08a02afca94bca6c08f08d`. Migration
 `0054_grant_handle_new_user_to_auth_admin.sql`. D092–D094 stay Proposed.
 
-**UX01 is in progress** on `cursor/ux01-sunlit-creator-os-79af`. Migration
+**UX01 is PR #65** on `cursor/ux01-sunlit-creator-os-79af`. Migration
 `0055_onboarding_and_public_profile.sql`. D095–D098 are Accepted (Brian,
 13 Oct 2026). Direction A is the shell. The first useful minute is a
 catalog destination and a saved hotel. The social profile is off until the
