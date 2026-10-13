@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -375,6 +376,7 @@ function DeliverableForm({
   proofUrl?: string | null;
   notes?: string | null;
 }) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   return (
     <form
@@ -386,6 +388,7 @@ function DeliverableForm({
       action={async (formData) => {
         const outcome = await saveDeliverableAction(formData);
         setMessage(outcomeText(outcome.result));
+        if (outcome.result === "saved") router.refresh();
       }}
     >
       <input type="hidden" name="pipelineItemId" value={pipelineItemId} />

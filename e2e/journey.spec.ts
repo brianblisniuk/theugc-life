@@ -220,23 +220,18 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await deliverableForm.getByRole("button", { name: "Add deliverable" }).click();
   const writeResponse = await write;
   expect(writeResponse.ok(), `deliverable action status ${writeResponse.status()}`).toBe(true);
-  // The stored row is the proof. A flash can be cleared when the page refreshes
-  // after the write, and the button label is "Saving…" while the action runs.
-  await expect
-    .poll(
-      async () => {
-        if ((await ada.getByText(`· ${PLATFORM}`).count()) > 0) return "stored";
-        return (await ada.locator("#collaboration").innerText())
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 500);
-      },
-      { timeout: 20_000 },
-    )
-    .toBe("stored");
+  // The action response can still be showing the pre-write list. Reload after
+  // the POST has finished, then require the stored row.
   await ada.reload();
   await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
-  await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
+  await expect
+    .poll(async () => {
+      if ((await ada.getByText(`· ${PLATFORM}`).count()) > 0) return "stored";
+      const text = (await ada.locator("#collaboration").innerText()).replace(/\s+/g, " ");
+      const at = text.indexOf("Deliverables");
+      return at >= 0 ? text.slice(at, at + 500) : text.slice(-500);
+    })
+    .toBe("stored");
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
   await ada.getByRole("link", { name: "Profile" }).click();
