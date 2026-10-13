@@ -3,6 +3,7 @@
 **Status:** Binding work order for this PR. Awaiting CI. Do not merge.
 **Base:** `main` `85186fdc18f65db9233c5df9155a65674740e551` (merge of PR #68).
 **Branch:** `cursor/f01-gmail-collaboration-detection-e7ba`.
+**PR:** #71. Do not merge.
 **Migration:** `0061_gmail_collaboration_detection.sql`. `0060` is not edited.
 **Decision:** D107.
 

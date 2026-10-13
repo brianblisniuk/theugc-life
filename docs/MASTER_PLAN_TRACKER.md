@@ -737,7 +737,7 @@ still a cache hit. An accepted bounce stays invalid. Open amounts stay
 pending config (D101). Agency F01–F04 stay planned.
 
 **F01 Gmail collaboration detection** (canon v1.1, not the agency F01 row)
-is this block. Migration `0061_gmail_collaboration_detection.sql`. D107.
+is PR #71. Migration `0061_gmail_collaboration_detection.sql`. D107.
 A linked thread can suggest a pitch, a human reply, or a collaboration.
 Free detection stays paused under the same gate as `0060`. The classifier
 is the heuristic adapter. Confirmation of a pitch or a human reply uses the

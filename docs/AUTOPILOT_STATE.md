@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `85186fdc18f65db9233c5df9155a65674740e551` (merge of PR #68, F05 contact credits, 2026-10-13)  
-**State:** AWAITING_CI. F01 Gmail collaboration detection. Branch `cursor/f01-gmail-collaboration-detection-e7ba`. D107. Migration `0061`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. F01 Gmail collaboration detection. PR #71. Branch `cursor/f01-gmail-collaboration-detection-e7ba`. D107. Migration `0061`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** F01 Gmail collaboration detection. F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -48,7 +48,7 @@
 - PR #68 — F05 contact credits, D100–D105, migrations `0057`, `0058`, and `0060` — `85186fdc18f65db9233c5df9155a65674740e551`
 
 ## Next action
-- F01 Gmail collaboration detection on `cursor/f01-gmail-collaboration-detection-e7ba`. D107. Migration `0061`. Base is main `85186fd` (PR #68). `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
+- PR #71 is F01 Gmail collaboration detection on `cursor/f01-gmail-collaboration-detection-e7ba`. D107. Migration `0061`. Base is main `85186fd` (PR #68). `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
 - HB01 is merged (PR #69, `28656f4`, migration `0059`). This PR does not edit that file.
 - C02–C05 is merged (PR #67, `9a747b2`). DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`). This PR does not edit `0055` or `0056`.
 - E05 is merged (PR #64, `621bc55`). This PR does not edit `0054`.

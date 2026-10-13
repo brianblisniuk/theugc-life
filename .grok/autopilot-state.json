@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 85186fdc18f65db9233c5df9155a65674740e551 (PR #68, F05 contact credits, D100–D105, migrations 0057, 0058, and 0060). F01 Gmail collaboration detection is this branch. D107. Migration 0061. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 85186fdc18f65db9233c5df9155a65674740e551 (PR #68, F05 contact credits, D100–D105, migrations 0057, 0058, and 0060). F01 Gmail collaboration detection is PR #71. D107. Migration 0061. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
   "last_recorded_main": "85186fdc18f65db9233c5df9155a65674740e551",
   "active_block": "F01 Gmail collaboration detection",
   "branch": "cursor/f01-gmail-collaboration-detection-e7ba",
-  "pr": null,
+  "pr": 71,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "F01 Gmail collaboration detection on cursor/f01-gmail-collaboration-detection-e7ba. D107. Migration 0061. Base is main 85186fd (PR #68). Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "F01 Gmail collaboration detection is PR #71 on cursor/f01-gmail-collaboration-detection-e7ba. D107. Migration 0061. Base is main 85186fd (PR #68). Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }
