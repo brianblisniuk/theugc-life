@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f4f0bb7ebafa72ac46bfe78b29267016e6d85235 (merge of PR #74, G01 contract templates, D114, migration 0068). G02 deliverable deadlines is this branch. Migration 0069. D115. D116 is unused. 0070 is unused. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f4f0bb7ebafa72ac46bfe78b29267016e6d85235 (merge of PR #74, G01 contract templates, D114, migration 0068). G02 deliverable deadlines is PR #75. Migration 0069. D115. D116 is unused. 0070 is unused. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "f4f0bb7ebafa72ac46bfe78b29267016e6d85235",
   "active_block": "G02 deliverable deadlines",
   "branch": "cursor/g02-deliverables-reminders-65ab",
-  "pr": null,
+  "pr": 75,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "G02 deliverable deadlines is on cursor/g02-deliverables-reminders-65ab. Migration 0069. D115. In-app reminders only. No dismiss row and no N-day lead. D116 and migration 0070 are unused. G01 is merged (PR #74, migration 0068, D114). This PR does not edit 0068. expected_head stays null. Do not merge."
+  "next_dependency": "G02 deliverable deadlines is PR #75 on cursor/g02-deliverables-reminders-65ab. Migration 0069. D115. In-app reminders only. No dismiss row and no N-day lead. D116 and migration 0070 are unused. G01 is merged (PR #74, migration 0068, D114). This PR does not edit 0068. Wait for verify on the exact head of both the push and pull_request runs. expected_head stays null. Do not merge."
 }

@@ -1,6 +1,6 @@
 # G02 — Deliverable tracking and in-app reminders
 
-**Status:** Binding work order for this PR. Awaiting independent audit. Do not merge.  
+**Status:** Binding work order for PR #75. Awaiting independent audit. Do not merge.  
 **Base:** `main` `f4f0bb7ebafa72ac46bfe78b29267016e6d85235` (merge of PR #74, G01, migration `0068`, D114). F02 is PR #72, migration `0064`, D110.  
 **Branch:** `cursor/g02-deliverables-reminders-65ab`  
 **Decision:** D115. D116 is not used.  

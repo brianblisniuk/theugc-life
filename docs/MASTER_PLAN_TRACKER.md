@@ -770,7 +770,7 @@ facts stay marked to be filled in. No e-sign, no send, and no external model.
 Phase G Coverage Engine stays gated. This PR does not edit `0068`.
 
 **G02 deliverable deadlines** (canon v1.1, not the agency G02 row in the
-table above) is this PR. Migration `0069_deliverable_deadlines.sql`. D115.
+table above) is PR #75. Migration `0069_deliverable_deadlines.sql`. D115.
 D116 is not used. `0070` is reserved and unused. In-app reminders only. The
 UTC day follows the D112 deliverable comparison. No N-day lead and no
 dismiss row, because neither is stated in the decisions. `0050` and `0068`

@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `f4f0bb7ebafa72ac46bfe78b29267016e6d85235` (merge of PR #74, G01 contract templates, 2026-10-13)  
-**State:** AWAITING_AUDIT. G02 deliverable deadlines (canon v1.1, not agency G02). Branch `cursor/g02-deliverables-reminders-65ab`. Migration `0069`. D115. D116 is unused. `0070` is unused. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_AUDIT. G02 deliverable deadlines (canon v1.1, not agency G02). PR #75. Branch `cursor/g02-deliverables-reminders-65ab`. Migration `0069`. D115. D116 is unused. `0070` is unused. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** G02 deliverable deadlines. G01 is merged (PR #74, `f4f0bb7ebafa72ac46bfe78b29267016e6d85235`). F02 is merged (PR #72, `087419826bbac1c241f852d4ff32b868728a8b48`). F05b is merged (PR #70, `b8752e31ee4e51971390ebbf260062186f689a92`). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is the pitch-draft rule. D114 is the agreement-draft rule. D115 is the in-app deadline rule. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
@@ -52,7 +52,7 @@
 - PR #74 — G01 contract templates, D114, migration `0068` — `f4f0bb7ebafa72ac46bfe78b29267016e6d85235`
 
 ## Next action
-- G02 deliverable deadlines is on `cursor/g02-deliverables-reminders-65ab`. Migration `0069`. D115. In-app reminders only. No dismiss row and no N-day lead. D116 and migration `0070` are unused. `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
+- PR #75 is G02 deliverable deadlines on `cursor/g02-deliverables-reminders-65ab`. Migration `0069`. D115. In-app reminders only. No dismiss row and no N-day lead. D116 and migration `0070` are unused. `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
 - G01 is merged (PR #74, `f4f0bb7ebafa72ac46bfe78b29267016e6d85235`). D114. Migration `0068`. This PR does not edit that file.
 - F02 is merged (PR #72, `087419826bbac1c241f852d4ff32b868728a8b48`). D110. Migration `0064`. Copy or a mailto draft only. This PR does not edit that file.
 - F05b is merged (PR #70, `b8752e31ee4e51971390ebbf260062186f689a92`). D108. Migration `0062`. A revealed unlock saves the hotel in the same transaction. A refused unlock or a full Free allowance does not. This PR does not edit that file.
