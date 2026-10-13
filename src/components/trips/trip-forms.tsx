@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
 
 import {
   addTripHotelAction,
@@ -59,10 +60,15 @@ function writeMessage(result: TripWriteResult): string | null {
 }
 
 export function TripCreateForm({ destinations }: { destinations: { id: string; name: string }[] }) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
 
   async function onSubmit(formData: FormData) {
     const result = await createTripAction(formData);
+    if (result.result === "created") {
+      router.push(`/app/trips/${result.tripId}`);
+      return;
+    }
     setMessage(writeMessage(result));
   }
 

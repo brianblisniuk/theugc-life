@@ -15,7 +15,8 @@ import { createClient } from "@/lib/supabase/server";
 
 import { parseProfileForm } from "./contract";
 
-export const PROFILE_ENTITLEMENTS = bindServerActions([
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions([
   "profile.own",
   "profile.personal_analytics",
   "profile.past_collaborations",

@@ -27,9 +27,17 @@ port = 54323
 
 [auth]
 enabled = true
-# The deployed site URL; overridden per environment.
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+# Local Supabase only. scripts/e2e-ci.sh sets NEXT_PUBLIC_SITE_URL to
+# http://127.0.0.1:3000, and signup sends that origin as emailRedirectTo.
+# Production redirect URLs are an owner step.
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = [
+  "http://127.0.0.1:3000/auth/callback",
+  "http://127.0.0.1:3000/auth/callback?next=/onboarding",
+  "http://127.0.0.1:3000/**",
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/**",
+]
 jwt_expiry = 3600
 enable_signup = true
 

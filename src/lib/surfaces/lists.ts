@@ -4,8 +4,10 @@
  * A failed read is not an empty list. Another creator's row is not rendered.
  * Compensation amounts and message bodies are not part of these models.
  */
+import { gmailListSurface } from "@/lib/gmail/sync-surface";
 import { isUuid } from "@/lib/hotels/ids";
 import { collaborationStatusLabel, collaborationTypeLabel } from "@/lib/pipeline/types";
+import { REVOKED_INBOX_COPY, SYNC_ERROR_INBOX_COPY } from "@/lib/surfaces/list-outcome";
 
 export const LIST_CAP = 50;
 
@@ -52,7 +54,8 @@ export const SURFACE_ERROR = {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export type MailboxFact = "connected" | "absent" | "error" | "unconfigured";
+export type MailboxFact =
+  "connected" | "absent" | "error" | "unconfigured" | "revoked" | "sync_error";
 
 export type CollaborationItem = {
   id: string;
@@ -283,6 +286,17 @@ export function inboxListState(input: {
   authUserId: string;
   mailbox: MailboxFact;
 }): OwnedListState<InboxItem> {
+  const surface = gmailListSurface({
+    mailbox: input.mailbox,
+    linkCount: input.total ?? 0,
+    readFailed: input.failed || input.identityFailed,
+  });
+  if (surface.kind === "error" && surface.reason === "revoked" && input.total === 0) {
+    return { kind: "error", ...REVOKED_INBOX_COPY };
+  }
+  if (surface.kind === "error" && surface.reason === "sync" && input.total === 0) {
+    return { kind: "error", ...SYNC_ERROR_INBOX_COPY };
+  }
   if (
     input.mailbox === "error" &&
     input.rawRows.length === 0 &&

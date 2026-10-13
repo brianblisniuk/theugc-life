@@ -1,71 +1,21 @@
 import "server-only";
 
+import { redact, redactString } from "@/lib/log/redact";
+
 /**
  * Minimal server-safe structured logger.
  *
- * Design goals (PRD §25.7, PERMISSIONS.md §6, §16):
+ * Design goals (PRD §25.7, PERMISSIONS.md §6, §16, E05):
  *  - JSON output, one line per event, suitable for platform log ingestion.
- *  - Never leak secrets or sensitive creator data. Keys matching the redaction
- *    list are replaced with "[redacted]" recursively before serialization.
+ *  - Never leak secrets or sensitive creator data. Emails, tokens, message
+ *    bodies, and share tokens are redacted before serialization.
  *  - No heavy dependency and no Node-only APIs, so it is safe on the Edge runtime
  *    (middleware) as well as the Node runtime.
  *
- * This is intentionally small. If structured-logging needs grow (sampling,
- * transports), revisit with an approved dependency rather than expanding this.
+ * This is intentionally small. Observability does not add a vendor.
  */
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
-
-/**
- * Keys whose values must never be logged. Matching is case-insensitive and by
- * substring so that e.g. `private_notes`, `creatorPrivateNotes`, `authToken`
- * are all caught.
- */
-const REDACT_KEY_PATTERNS = [
-  "private_notes",
-  "privatenotes",
-  "note", // negotiation/private notes
-  "password",
-  "token",
-  "secret",
-  "service_role",
-  "authorization",
-  "cookie",
-  "email",
-  "phone",
-  "linkedin",
-  "value_amount", // private collaboration monetary value
-  "apikey",
-  "api_key",
-  "access_token",
-  "refresh_token",
-  "jwt",
-] as const;
-
-const REDACTED = "[redacted]";
-const MAX_DEPTH = 6;
-
-function shouldRedactKey(key: string): boolean {
-  const k = key.toLowerCase();
-  return REDACT_KEY_PATTERNS.some((p) => k.includes(p));
-}
-
-function redact(value: unknown, depth = 0): unknown {
-  if (depth > MAX_DEPTH) return "[truncated]";
-  if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
-  if (value instanceof Error) {
-    return { name: value.name, message: value.message, stack: value.stack };
-  }
-  if (typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = shouldRedactKey(k) ? REDACTED : redact(v, depth + 1);
-    }
-    return out;
-  }
-  return value;
-}
 
 export type LogContext = Record<string, unknown>;
 
@@ -73,7 +23,7 @@ function write(level: LogLevel, message: string, context?: LogContext): void {
   const entry = {
     level,
     time: new Date().toISOString(),
-    message,
+    message: redactString(message),
     ...(context ? { context: redact(context) } : {}),
   };
   const line = JSON.stringify(entry);

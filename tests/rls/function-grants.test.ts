@@ -14,6 +14,10 @@
  * Privileges are asserted via `has_function_privilege`, which is exactly what
  * PostgREST/RPC exposure depends on.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { adminQuery, hasTestDb, queryAs, setupDatabase } from "../db/harness";
@@ -99,6 +103,51 @@ d("0018 — handle_new_user() is trigger-only, never an RPC", () => {
         where n.nspname = 'public' and p.proname = 'handle_new_user'`,
     );
     expect(rows[0]!.public_exec).toBe(false);
+  });
+});
+
+d("0054 — signup trigger is executable by the auth admin only", () => {
+  it("grants execute to supabase_auth_admin and leaves client roles denied", async () => {
+    await setupDatabase();
+    await adminQuery(`
+      do $$
+      begin
+        if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+          create role supabase_auth_admin nologin noinherit;
+        end if;
+      end
+      $$;
+    `);
+    try {
+      const sql = readFileSync(
+        path.join(
+          path.dirname(fileURLToPath(import.meta.url)),
+          "../../supabase/migrations/0054_grant_handle_new_user_to_auth_admin.sql",
+        ),
+        "utf8",
+      );
+      await adminQuery(sql);
+      expect(await canExecute("supabase_auth_admin", "public.handle_new_user()")).toBe(true);
+      expect(await canExecute("anon", "public.handle_new_user()")).toBe(false);
+      expect(await canExecute("authenticated", "public.handle_new_user()")).toBe(false);
+
+      const rows = await adminQuery<{ public_exec: boolean }>(
+        `select aclcontains(
+                  coalesce(p.proacl, acldefault('f', p.proowner)),
+                  makeaclitem(0::oid, p.proowner, 'EXECUTE', false)
+                ) as public_exec
+           from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'handle_new_user'`,
+      );
+      expect(rows[0]!.public_exec).toBe(false);
+    } finally {
+      await adminQuery(`
+        revoke execute on function public.handle_new_user() from supabase_auth_admin;
+        revoke usage on schema public from supabase_auth_admin;
+        drop role if exists supabase_auth_admin;
+      `);
+    }
   });
 });
 

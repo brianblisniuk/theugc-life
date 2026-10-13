@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `dc5979eed799d1724eb36482eb0067d3e9f0fe55` (merge of PR #62, E04, 2026-10-12)  
-**State:** AWAITING_CI. D09 creator profile share link, PR #63, branch `cursor/d09-creator-share-link-6270`. Migration `0053`. D089–D091 are Accepted (Brian, 13 Oct 2026). The share page, owner actions, and public read are UNDECIDED in the E04 inventory. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
-**Current frontier:** D09. A creator shares a profile with a hotel through one revocable link. The public page shows only opted-in fields. E04 is merged. D086–D088 stay Proposed. D077 stays Proposed. `0051` and `0052` are not edited.
+**Last verified main:** `1fc15658fc69acaa799860f8340736e15e1f5728` (merge of PR #63, D09, 2026-10-12)  
+**State:** AWAITING_AUDIT. E05 E2E, observability, security/privacy QA, and launch checklist. PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. Migration `0054` grants the signup trigger to `supabase_auth_admin`. `0039` installs `public.digest` and `public.gen_random_bytes` only when pgcrypto is not already in `public`. `0053` calls `public.digest`. D092–D094 are Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**Current frontier:** E05. Failure, retry, and admin paths are tested. The launch-candidate gate names the owner steps that are not done. D09 is merged. D086–D088 stay Proposed. D077 stays Proposed.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -39,14 +39,17 @@
 - PR #60 — E03 onboarding and empty/error states, D082 Proposed, no migration — `fc2dfbd32bf1063dec17d4db16ad84b6311f400c`
 - PR #61 — D08 private profile and personal analytics, D086–D088 Proposed, migration `0052` — `d030cd0329c8b1e30afcdd14a72485174edcd9f5`
 - PR #62 — E04 Pass/Pro entitlement inventory, migration `0051` — `dc5979eed799d1724eb36482eb0067d3e9f0fe55`
+- PR #63 — D09 creator profile share link, D089–D091 Accepted, migration `0053` — `1fc15658fc69acaa799860f8340736e15e1f5728`
 
 ## Next action
-- D09 creator profile share link is PR #63, branch `cursor/d09-creator-share-link-6270` (D089–D091 Accepted, migration `0053`). State is AWAITING_CI. Do not merge from automation.
+- E05 is PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. State is AWAITING_AUDIT. Do not merge from automation.
+- D09 is merged (PR #63, `1fc1565`, migration `0053`). This PR points `0053` at `public.digest` so an empty search path still resolves on the hosted layout.
 - E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.
 - D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
-- E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). This PR does not change that flow.
+- E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). Empty and error stay distinct.
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 stays Proposed. Pilot KPIs and model-backed B07 inference stay gated.
+- D092–D094 stay Proposed.
 - Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state-only PRs).
 - Owner interaction happens only via human-frontier labels.

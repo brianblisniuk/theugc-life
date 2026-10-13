@@ -479,6 +479,10 @@ revoke all on function private.gmail_reply_observed_through_at(uuid, text) from 
 -- identically everywhere they are compared. An explicit, distinct sentinel
 -- byte for NULL email ensures "no routing address" can never collide with
 -- any real (however short) normalized address string.
+-- Unqualified digest() below, and in the pinned callers in this file, resolves
+-- in public. 0039 installs public.digest only when pgcrypto is not already
+-- there (hosted Supabase keeps it in extensions). This function does not pin
+-- search_path, so its own create uses the migration session path.
 create or replace function private.gmail_reply_routing_context_digest(
   p_mail_account_id uuid
 )

@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
+import { logger } from "@/lib/logger";
 
-export const COLLABORATION_ENTITLEMENTS = bindServerActions(["collaborations.compensation"]);
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions(["collaborations.compensation"]);
 
 import { parseCompensationForm, parseDeliverableForm, parsePrefillForm } from "./contract";
 import {
@@ -73,6 +75,8 @@ export async function saveDeliverableAction(formData: FormData): Promise<Deliver
     pipelineItemId,
     parsed.value,
   );
+  // Result code only. Platform, notes, and proof URLs stay out of the log.
+  logger.info("deliverable_write", { result: result.result });
   if (result.result === "saved") revalidate(readField(formData, "hotelId"));
   return result;
 }

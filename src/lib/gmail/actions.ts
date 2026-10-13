@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 
-export const GMAIL_ENTITLEMENTS = bindServerActions(["gmail.connect"]);
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions(["gmail.connect"]);
 import {
   disconnectGmailAccount,
   grantPrivateProcessingConsent,

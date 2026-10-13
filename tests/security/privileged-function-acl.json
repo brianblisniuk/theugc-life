@@ -1,0 +1,1282 @@
+[
+  {
+    "schema": "private",
+    "name": "bump_gmail_outreach_catalog_epoch",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "private",
+    "name": "gmail_commercial_mark_source_rebuilt",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_destination_is_descendant",
+    "args": "child_id uuid, ancestor_id uuid",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_has_active_destination_access",
+    "args": "uid uuid, dest_id uuid",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_has_active_pro",
+    "args": "uid uuid",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_has_premium_hotel_access",
+    "args": "uid uuid, hotel_id uuid",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_is_admin_or_editor",
+    "args": "uid uuid",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "_pipeline_inbox_sync_suggestions",
+    "args": "p_binding_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "accept_pipeline_inbox_suggestion",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_suggestion_id uuid, p_sentiment text, p_event_at timestamp with time zone",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "add_trip_hotel",
+    "args": "p_user_id uuid, p_trip_id uuid, p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assert_gmail_commercial_data_absent_when_deleted",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assert_gmail_import_data_absent_when_deleted",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assert_gmail_normalized_data_absent_when_deleted",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assert_gmail_outreach_data_absent_when_deleted",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assert_gmail_reply_data_absent_when_deleted",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assert_gmail_sync_data_absent_when_deleted",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "bind_pipeline_inbox_thread",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_mail_account_id uuid, p_provider_thread_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "create_creator_share_link",
+    "args": "p_expires_at timestamp with time zone",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "create_trip",
+    "args": "p_user_id uuid, p_destination_id uuid, p_name text, p_start_date date, p_end_date date, p_status text, p_free_active_trip_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "current_creator_id",
+    "args": "",
+    "searchPath": "public, pg_temp",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": true
+  },
+  {
+    "schema": "public",
+    "name": "current_user_role",
+    "args": "",
+    "searchPath": "public, pg_temp",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": true
+  },
+  {
+    "schema": "public",
+    "name": "delete_collaboration_deliverable",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_deliverable_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "delete_trip",
+    "args": "p_user_id uuid, p_trip_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "dismiss_pipeline_inbox_suggestion",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_suggestion_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_collaboration_children_same_owner",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_collaboration_record_same_creator",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_pipeline_inbox_item_owner",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_pipeline_inbox_same_creator",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_pipeline_inbox_writer",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_pipeline_item_trip_same_creator",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_trip_creator_matches_pipeline",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_commit_interpretation",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid, p_schema_version text, p_transform_version text, p_rule_version text, p_expected_input_digest text, p_messages jsonb, p_thread jsonb",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_get_thread_evidence",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid, p_schema_version text, p_transform_version text, p_rule_version text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_list_threads",
+    "args": "p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_read_thread",
+    "args": "p_mail_account_id uuid, p_provider_thread_id text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_record_creator_decision",
+    "args": "p_mail_account_id uuid, p_axis text, p_action text, p_provider_message_id text, p_provider_thread_id text, p_reply_nature text, p_disposition text, p_signals text[], p_business_outcome text, p_lost_reason text, p_compensation_structure text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_commercial_status",
+    "args": "p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_connection_persist",
+    "args": "p_user_id uuid, p_provider_account_subject text, p_email_address text, p_granted_scopes text[], p_refresh_ciphertext text, p_refresh_iv text, p_refresh_auth_tag text, p_key_version text, p_provider_refresh_expires_at timestamp with time zone, p_expected_mail_account_id uuid, p_expected_target_revision bigint, p_consent_policy_version text, p_oauth_intent_seq bigint",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_connection_status",
+    "args": "p_user_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_credential_currentness",
+    "args": "p_mail_account_id uuid, p_expected_generation bigint",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_credential_load",
+    "args": "p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_credential_load_for_owner",
+    "args": "p_user_id uuid, p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_credential_replace",
+    "args": "p_mail_account_id uuid, p_expected_generation bigint, p_refresh_ciphertext text, p_refresh_iv text, p_refresh_auth_tag text, p_key_version text, p_provider_refresh_expires_at timestamp with time zone",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_disconnect_finalize",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_expected_disconnect_intent_seq bigint, p_expected_credential_generation bigint",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_disconnect_prepare",
+    "args": "p_user_id uuid, p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_grant_private_processing_consent",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_policy_version text, p_consent_text_digest text, p_receipt_digest text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_cancel_connection_stopped",
+    "args": "p_user_id uuid, p_run_id uuid, p_connection_state text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_claim_step",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_seconds integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_commit_completion",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_commit_page",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_page_token_used text, p_next_page_token text, p_thread_ids text[], p_sent_messages_seen integer, p_quota_units integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_commit_thread",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_provider_thread_id text, p_messages jsonb, p_quota_units integer, p_text_parts_omitted_external integer, p_attachment_or_nontext_parts_omitted integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_pause",
+    "args": "p_user_id uuid, p_run_id uuid, p_reason text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_record_retry",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_provider_thread_id text, p_error_code text, p_retry_after_seconds integer, p_quota_units integer, p_max_attempts integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_record_thread_gone",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_provider_thread_id text, p_quota_units integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_resume",
+    "args": "p_user_id uuid, p_run_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_start",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_window_start_at timestamp with time zone",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_status",
+    "args": "p_user_id uuid, p_run_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_historical_import_validate_claim",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_expected_step text, p_expected_provider_thread_id text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_cancel_connection_stopped",
+    "args": "p_user_id uuid, p_run_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_claim_step",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_lease_seconds integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_commit_completion",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_commit_enqueue_known",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_commit_history_page",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_page_token_used text, p_next_page_token text, p_history_id text, p_threads jsonb, p_quota_units integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_commit_profile_history",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_history_id text, p_quota_units integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_commit_sent_page",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_page_token_used text, p_next_page_token text, p_candidates jsonb, p_quota_units integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_commit_thread",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_provider_thread_id text, p_messages jsonb, p_quota_units integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_fail_run",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_expected_step text, p_provider_thread_id text, p_error_code text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_history_expired",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_list_due",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_list_pipeline_threads",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_mark_pipeline_done",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_lease_token uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_pause",
+    "args": "p_user_id uuid, p_run_id uuid, p_reason text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_record_retry",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_expected_step text, p_provider_thread_id text, p_error_code text, p_delay_seconds integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_record_thread_gone",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_provider_thread_id text, p_quota_units integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_release_claim",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_release_pipeline",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_lease_token uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_renew_pipeline",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_lease_token uuid, p_lease_seconds integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_request_login",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_status",
+    "args": "p_user_id uuid, p_mail_account_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_incremental_sync_validate_claim",
+    "args": "p_user_id uuid, p_run_id uuid, p_lease_token uuid, p_expected_authorization_revision bigint, p_expected_step text, p_expected_provider_thread_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_mark_reauth_required",
+    "args": "p_mail_account_id uuid, p_expected_generation bigint",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_normalize_commit_message",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_provider_message_id text, p_expected_source_payload_sha256 text, p_normalizer_version text, p_headers jsonb, p_participants jsonb, p_reference_tokens jsonb, p_text_parts jsonb",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_normalize_list_candidates",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalizer_version text, p_limit integer, p_provider_message_id text, p_exclude_provider_message_ids text[]",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_normalize_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_normalize_status",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalizer_version text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_oauth_begin",
+    "args": "p_user_id uuid, p_state_digest text, p_nonce_digest text, p_verifier_ciphertext text, p_verifier_iv text, p_verifier_auth_tag text, p_key_version text, p_purpose text, p_target_mail_account_id uuid, p_requested_scopes text[], p_return_path text, p_ttl_seconds integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_oauth_consume_transaction",
+    "args": "p_user_id uuid, p_state_digest text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_catalog_snapshot",
+    "args": "p_addresses text[], p_domains text[], p_candidate_names text[]",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_commit_interpretation",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid, p_detector_version text, p_matcher_version text, p_expected_evidence_digest text, p_outreach_status text, p_reason_codes text[], p_recipient_participant_ids uuid[], p_target_contact_match_quality text, p_target_contact_candidate_set_fingerprint text, p_target_contact_candidates jsonb, p_target_observations jsonb, p_target_canonical_links jsonb, p_machine_target_scope text, p_target_scope_reason_codes text[], p_catalog_epoch bigint",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_current_catalog_epoch",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_get_thread_evidence",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_list_candidates",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_detector_version text, p_matcher_version text, p_current_catalog_epoch bigint, p_limit integer, p_exclude_normalized_thread_ids uuid[]",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_record_creator_decision",
+    "args": "p_mail_account_id uuid, p_normalized_thread_id uuid, p_axis text, p_outreach_decision text, p_target_scope_decision text, p_target_action text, p_target_observation_id uuid, p_observed_recipient_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_outreach_status",
+    "args": "p_user_id uuid, p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_record_superseded_disconnect_credential",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_provider_account_subject text, p_oauth_intent_seq bigint, p_refresh_ciphertext text, p_refresh_iv text, p_refresh_auth_tag text, p_key_version text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_reply_commit_interpretation",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid, p_relation_version text, p_classification_version text, p_text_transform_version text, p_expected_evidence_digest text, p_expected_routing_context_digest text, p_message_observations jsonb",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_reply_get_thread_evidence",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid, p_relation_version text, p_classification_version text, p_text_transform_version text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_reply_list_candidates",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_relation_version text, p_classification_version text, p_text_transform_version text, p_limit integer, p_exclude_normalized_thread_ids uuid[]",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_reply_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_reply_status",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_relation_version text, p_classification_version text, p_text_transform_version text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "grant_access_entitlement",
+    "args": "p_user_id uuid, p_access_type text, p_destination_id uuid, p_source text, p_source_reference text, p_starts_at timestamp with time zone, p_expires_at timestamp with time zone",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "handle_new_user",
+    "args": "",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "has_active_destination_access",
+    "args": "dest_id uuid",
+    "searchPath": "public, pg_temp",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": true
+  },
+  {
+    "schema": "public",
+    "name": "has_active_pro",
+    "args": "",
+    "searchPath": "public, pg_temp",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": true
+  },
+  {
+    "schema": "public",
+    "name": "has_premium_hotel_access",
+    "args": "hotel_id uuid",
+    "searchPath": "public, pg_temp",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": true
+  },
+  {
+    "schema": "public",
+    "name": "is_admin_or_editor",
+    "args": "",
+    "searchPath": "public, pg_temp",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": true
+  },
+  {
+    "schema": "public",
+    "name": "link_pipeline_item_to_trip",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_trip_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "prefill_collaboration_compensation_suggestion",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_mail_account_id uuid, p_provider_thread_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_creator_share_profile",
+    "args": "p_token text",
+    "searchPath": "\"\"",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_creator_share_link",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "refresh_pipeline_inbox_suggestions",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "remove_trip_hotel",
+    "args": "p_user_id uuid, p_trip_id uuid, p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "revoke_creator_share_link",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "rotate_creator_share_link",
+    "args": "p_expires_at timestamp with time zone",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "save_hotel_to_pipeline",
+    "args": "p_user_id uuid, p_hotel_id uuid, p_free_saved_limit integer",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_collaboration_share_mark",
+    "args": "p_collaboration_id uuid, p_shareable boolean",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_creator_profile_field_opt_ins",
+    "args": "p_opted_in jsonb",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_creator_self_reported_audience",
+    "args": "p_follower_count bigint, p_engagement text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_deliverable_share_mark",
+    "args": "p_deliverable_id uuid, p_shareable boolean",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "unbind_pipeline_inbox_thread",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "update_pipeline_private_notes",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_notes text",
+    "searchPath": "public, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "update_trip",
+    "args": "p_user_id uuid, p_trip_id uuid, p_destination_id uuid, p_name text, p_start_date date, p_end_date date, p_status text, p_free_active_trip_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "upsert_collaboration_compensation",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_structure text, p_cash_amount_minor bigint, p_cash_currency text, p_in_kind_description text, p_in_kind_estimate_minor bigint, p_in_kind_estimate_currency text, p_payment_status text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "upsert_collaboration_deliverable",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_deliverable_id uuid, p_deliverable_type text, p_quantity integer, p_platform text, p_due_on date, p_status text, p_proof_url text, p_notes text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  }
+]

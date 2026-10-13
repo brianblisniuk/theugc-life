@@ -1,8 +1,9 @@
 import "server-only";
 
+import { isUuid } from "@/lib/hotels/ids";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { isUuid } from "@/lib/hotels/ids";
 
 import {
   parseWorkspacePayload,
@@ -103,9 +104,20 @@ export async function saveCollaborationDeliverable(
     p_proof_url: input.proofUrl,
     p_notes: input.notes,
   });
-  if (!data?.result) return { result: "error" };
-  if (data.result === "saved" && typeof data.deliverable_id === "string") {
-    return { result: "saved", deliverableId: data.deliverable_id };
+  if (!data?.result) {
+    logger.warn("deliverable_rpc", { result: "empty" });
+    return { result: "error" };
+  }
+  // The row is stored when SQL says saved. The id is only echoed back; a
+  // missing id must not be reported as a failed write.
+  if (data.result === "saved") {
+    if (typeof data.deliverable_id !== "string") {
+      logger.warn("deliverable_rpc", { result: "saved", idType: typeof data.deliverable_id });
+    }
+    return {
+      result: "saved",
+      deliverableId: typeof data.deliverable_id === "string" ? data.deliverable_id : "",
+    };
   }
   if (data.result === "not_found") return { result: "not_found" };
   if (data.result === "collaboration_not_found") return { result: "collaboration_not_found" };

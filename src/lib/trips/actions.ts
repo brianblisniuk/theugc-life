@@ -13,7 +13,8 @@ import { redirect } from "next/navigation";
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 
-export const TRIP_ENTITLEMENTS = bindServerActions(["trips.active", "trips.own"]);
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions(["trips.active", "trips.own"]);
 
 import { parseTripForm, parseTripId } from "./input";
 import {
@@ -47,7 +48,6 @@ export async function createTripAction(formData: FormData): Promise<TripWriteRes
   const result = await createTrip(resolution.session.userId, parsed.value);
   if (result.result === "created") {
     revalidatePath("/app/trips");
-    redirect(`/app/trips/${result.tripId}`);
   }
   return result;
 }

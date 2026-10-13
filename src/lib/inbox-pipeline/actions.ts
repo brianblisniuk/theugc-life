@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 
-export const INBOX_ENTITLEMENTS = bindServerActions(["inbox.own"]);
+// Load-time binding. A "use server" module may export only async functions.
+bindServerActions(["inbox.own"]);
 
 import { REPLY_SENTIMENTS, type InboxWriteResult } from "./contract";
 import {

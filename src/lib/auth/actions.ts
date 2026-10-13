@@ -1,19 +1,31 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { getClientEnv } from "@/env";
 import { bindServerActions } from "@/lib/entitlements/inventory";
+import { redactString } from "@/lib/log/redact";
 import { logger } from "@/lib/logger";
 import { POST_ONBOARDING_PATH } from "@/lib/onboarding/activation";
 import { createClient } from "@/lib/supabase/server";
 
-export const AUTH_ENTITLEMENTS = bindServerActions(["auth.session", "profile.own"]);
+// Load-time binding. A "use server" module may export only async functions,
+// so this array is not exported.
+bindServerActions(["auth.session", "profile.own"]);
 
 export interface AuthActionState {
   error?: string;
   message?: string;
+  /** Same-origin path. The client navigates; `redirect()` is not used here. */
+  redirectTo?: string;
+}
+
+/** Form-safe failure text. Emails and tokens are stripped. */
+function shownAuthError(error: unknown, fallback: string): string {
+  const message = error instanceof Error && error.message ? error.message : fallback;
+  const redacted = redactString(message).replace(/\s+/g, " ").trim();
+  return (redacted || fallback).slice(0, 180);
 }
 
 const credentials = z.object({
@@ -68,26 +80,40 @@ export async function signUp(_prev: AuthActionState, formData: FormData): Promis
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  const env = getClientEnv();
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    ...parsed.data,
-    options: {
-      emailRedirectTo: `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/onboarding`,
-    },
-  });
+  try {
+    const env = getClientEnv();
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.signUp({
+      ...parsed.data,
+      options: {
+        emailRedirectTo: `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/onboarding`,
+      },
+    });
 
-  if (error) {
-    return { error: error.message };
-  }
+    if (error) {
+      logger.warn("signup rejected", {
+        code: String(error.code || error.name || error.status || "signup_rejected"),
+      });
+      return { error: shownAuthError(error, "Could not create the account.") };
+    }
 
-  // With email confirmations enabled the user must confirm first; otherwise a
-  // session is created immediately. The public.users + creator_profiles rows are
-  // provisioned by the handle_new_user DB trigger (role forced to 'creator').
-  if (data.session) {
-    redirect("/onboarding");
+    // With email confirmations enabled the user must confirm first; otherwise a
+    // session is created immediately. The public.users + creator_profiles rows are
+    // provisioned by the handle_new_user DB trigger (role forced to 'creator').
+    // The browser navigates after this response so the session cookie is already
+    // stored. `redirect()` renders /onboarding inside this action, before that
+    // cookie is on the request, and requireUser then throws.
+    if (data.session) {
+      return { redirectTo: "/onboarding" };
+    }
+    return { message: "Check your email to confirm your account." };
+  } catch (error) {
+    unstable_rethrow(error);
+    logger.error("signup failed", {
+      code: error instanceof Error ? error.name : "signup_failed",
+    });
+    return { error: shownAuthError(error, "Could not create the account.") };
   }
-  return { message: "Check your email to confirm your account." };
 }
 
 export async function signOut(): Promise<void> {
@@ -167,7 +193,7 @@ export async function completeOnboarding(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect("/login");
+    return { redirectTo: "/login" };
   }
 
   // Ownership is enforced by RLS: the update only matches the caller's own
@@ -186,5 +212,5 @@ export async function completeOnboarding(
     }
     return { error: "Could not save your profile. Try again." };
   }
-  redirect(POST_ONBOARDING_PATH);
+  return { redirectTo: POST_ONBOARDING_PATH };
 }

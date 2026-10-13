@@ -49,6 +49,12 @@ yarn-error.log*
 # vitest / tooling
 *.tsbuildinfo
 
+# playwright
+/playwright-report/
+/test-results/
+/blob-report/
+/e2e/.auth/
+
 # provider evaluation artifacts (raw provider responses + derived extracts)
 /.data/
 

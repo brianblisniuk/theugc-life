@@ -39,6 +39,19 @@ export class SessionUnavailableError extends Error {
 const ROLES: readonly AppRole[] = ["creator", "editor", "admin"];
 
 /**
+ * supabase-js `getUser()` returns `AuthSessionMissingError` when the request
+ * has no session cookie. That is anonymous, not an auth-service failure.
+ * Treating it as `error` makes `requireUser` throw and the route error
+ * boundary replaces the page.
+ */
+function isAbsentSession(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error && typeof error.name === "string" ? error.name : "";
+  const message = "message" in error && typeof error.message === "string" ? error.message : "";
+  return name === "AuthSessionMissingError" || message === "Auth session missing!";
+}
+
+/**
  * Resolve the authenticated user and their database-backed role.
  *
  * The role comes from `public.users` read under the caller's own RLS
@@ -74,7 +87,10 @@ export async function resolveSession(): Promise<SessionResolution> {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError) return { status: "error" };
+  if (authError) {
+    if (isAbsentSession(authError)) return { status: "anonymous" };
+    return { status: "error" };
+  }
   if (!user) return { status: "anonymous" };
 
   const { data: row, error } = await supabase

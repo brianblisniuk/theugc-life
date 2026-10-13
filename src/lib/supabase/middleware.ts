@@ -2,7 +2,9 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getClientEnv } from "@/env";
+import { securityHeaders } from "@/lib/http/security-headers";
 import { isProtectedPath } from "@/lib/auth/routes";
+import { normalizeRequestId, writeRequestLog } from "@/lib/log/request";
 import { consumeShareLinkRequest, shareLinkClientKey } from "@/lib/profile/share-rate-limit";
 
 /**
@@ -13,27 +15,49 @@ import { consumeShareLinkRequest, shareLinkClientKey } from "@/lib/profile/share
  * object must carry the refreshed cookies, so we mutate `supabaseResponse`
  * rather than creating a new one after `getUser()`.
  */
+function decorate(response: NextResponse, requestId: string, supabaseUrl: string): NextResponse {
+  for (const [name, value] of Object.entries(securityHeaders(supabaseUrl))) {
+    response.headers.set(name, value);
+  }
+  response.headers.set("x-request-id", requestId);
+  return response;
+}
+
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
+  const requestId = normalizeRequestId(request.headers.get("x-request-id"));
+  const env = getClientEnv();
+  writeRequestLog({ requestId, method: request.method, path: pathname });
+
+  if (pathname === "/api/health") {
+    return decorate(NextResponse.next(), requestId, env.NEXT_PUBLIC_SUPABASE_URL);
+  }
+
   if (pathname.startsWith("/p/")) {
     const limit = consumeShareLinkRequest(
       shareLinkClientKey(request.headers.get("x-forwarded-for"), request.headers.get("x-real-ip")),
     );
     if (!limit.allowed) {
-      return new NextResponse("Too many requests.", {
-        status: 429,
-        headers: {
-          "Cache-Control": "private, no-store",
-          "Retry-After": String(limit.retryAfterSeconds),
-          "X-Robots-Tag": "noindex, nofollow",
-        },
-      });
+      return decorate(
+        new NextResponse("Too many requests.", {
+          status: 429,
+          headers: {
+            "Cache-Control": "private, no-store",
+            "Retry-After": String(limit.retryAfterSeconds),
+            "X-Robots-Tag": "noindex, nofollow",
+          },
+        }),
+        requestId,
+        env.NEXT_PUBLIC_SUPABASE_URL,
+      );
     }
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
 
-  const env = getClientEnv();
+  let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
+
   const supabase = createServerClient(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -44,7 +68,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
         },
         setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );
@@ -65,7 +89,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // Preserve intended destination so we can return the user after auth
     // (ROUTES.md §7: return users to the intent that triggered the flow).
     redirectUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(redirectUrl);
+    return decorate(NextResponse.redirect(redirectUrl), requestId, env.NEXT_PUBLIC_SUPABASE_URL);
   }
 
   if (pathname.startsWith("/p/")) {
@@ -74,5 +98,5 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     supabaseResponse.headers.set("Referrer-Policy", "no-referrer");
   }
 
-  return supabaseResponse;
+  return decorate(supabaseResponse, requestId, env.NEXT_PUBLIC_SUPABASE_URL);
 }

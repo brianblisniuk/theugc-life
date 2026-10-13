@@ -7,13 +7,15 @@
  */
 import "server-only";
 
+import { mailboxFromProbe } from "@/lib/gmail/sync-surface";
 import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
 import { resolveOwnProfile } from "@/lib/onboarding/activation";
-import { loadHomeProgress, type OwnedQueryClient } from "@/lib/onboarding/queries";
+import { type OwnedQueryClient } from "@/lib/onboarding/queries";
 import { createClient } from "@/lib/supabase/server";
 
 import {
   COLLABORATION_LIST_COLUMNS,
+  GMAIL_PROBE_COLUMNS,
   INBOX_LIST_COLUMNS,
   LIST_CAP,
   PROFILE_COLUMNS,
@@ -124,17 +126,15 @@ export async function loadInboxList(
       .eq("user_id", authUserId)
       .maybeSingle();
     const profile = resolveOwnProfile(profileResult.data, profileResult.error !== null, authUserId);
-    const progress = await loadHomeProgress(authUserId, {
-      client: supabase,
-      gmailConfigured,
+    const probe: QueryResult | null = gmailConfigured
+      ? await supabase.from("mail_accounts").select(GMAIL_PROBE_COLUMNS).eq("user_id", authUserId)
+      : null;
+    const mailbox: MailboxFact = mailboxFromProbe({
+      configured: gmailConfigured,
+      authUserId,
+      failed: probe ? probe.error !== null : false,
+      data: probe ? probe.data : null,
     });
-    const mailbox: MailboxFact = !gmailConfigured
-      ? "unconfigured"
-      : progress.facts.gmail === "error"
-        ? "error"
-        : progress.facts.gmail === "yes"
-          ? "connected"
-          : "absent";
 
     if (profile.status !== "ok") {
       return inboxListState({

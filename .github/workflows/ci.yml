@@ -57,3 +57,9 @@ jobs:
 
       - name: Test (unit + RLS)
         run: npm test
+
+      - name: Scan client bundle
+        run: npm run security:client-bundle
+
+      - name: End-to-end
+        run: bash scripts/e2e-ci.sh

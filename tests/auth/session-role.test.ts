@@ -27,7 +27,7 @@ const U = {
 /** Shared state the module mocks read. Hoisted so the factories can see it. */
 const state = vi.hoisted(() => ({
   user: null as { id: string; email: string | null; user_metadata?: unknown } | null,
-  authError: null as { message: string } | null,
+  authError: null as { message: string; name?: string } | null,
   /** Executes the `public.users` read. Defaults to the real database read. */
   read: null as null | ((userId: string) => Promise<{ data: unknown; error: unknown }>),
   redirects: [] as string[],
@@ -231,6 +231,14 @@ d("session role resolution", () => {
 
   it("reports no session when there is no Supabase user", async () => {
     state.user = null;
+    expect(await resolveSession()).toEqual({ status: "anonymous" });
+  });
+
+  it("treats AuthSessionMissingError as anonymous, not an unresolvable session", async () => {
+    // supabase-js returns this error when getUser() has no cookie. That is
+    // "not signed in", which requireUser must send to /login.
+    state.user = null;
+    state.authError = { message: "Auth session missing!", name: "AuthSessionMissingError" };
     expect(await resolveSession()).toEqual({ status: "anonymous" });
   });
 
