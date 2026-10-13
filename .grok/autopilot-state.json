@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16 (merge of PR #75, G02 deliverable deadlines, D115, migration 0069). G03 portfolio is on cursor/g03-portfolio-9c32. Migrations 0073 and 0074. D125. D116 and migration 0070 stay unused. 0071 and 0072 stay with H01. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16 (merge of PR #75, G02 deliverable deadlines, D115, migration 0069). G03 portfolio is PR #76 on cursor/g03-portfolio-9c32. Migrations 0073 and 0074. D125. D116 and migration 0070 stay unused. 0071 and 0072 stay with H01. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "6c77347ce5cbc9e57c4d675f0a5bc636474a0c16",
   "active_block": "G03 portfolio",
   "branch": "cursor/g03-portfolio-9c32",
-  "pr": null,
+  "pr": 76,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "G03 portfolio is on cursor/g03-portfolio-9c32. AWAITING_AUDIT. Migrations 0073 and 0074. D125. A creator picks a travel layout and approves confirmed collaborations before they appear on the hotel share link. Gmail detections are not suggestions. The social profile stays free of hotel names. G02 is merged (PR #75, 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16, migration 0069, D115). D116 and migration 0070 are unused. This PR does not edit 0066, 0068, or 0069. PR number is recorded when the draft PR exists. expected_head stays null. Do not merge."
+  "next_dependency": "G03 portfolio is PR #76 on cursor/g03-portfolio-9c32. AWAITING_AUDIT. Migrations 0073 and 0074. D125. A creator picks a travel layout and approves confirmed collaborations before they appear on the hotel share link. Gmail detections are not suggestions. The social profile stays free of hotel names. G02 is merged (PR #75, 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16, migration 0069, D115). D116 and migration 0070 are unused. This PR does not edit 0066, 0068, or 0069. expected_head stays null. Do not merge."
 }

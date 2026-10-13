@@ -3,6 +3,7 @@
 **Status:** Binding work order. D125 is Accepted for this block. Do not merge.  
 **Base:** `main` `6c77347ce5cbc9e57c4d675f0a5bc636474a0c16` (merge of PR #75, G02). F04 is `0a69413beb338c7910d8b9473693a3db7136a6aa`.  
 **Branch:** `cursor/g03-portfolio-9c32`  
+**PR:** #76 (draft). Do not merge.  
 **Decisions:** D125. D126–D129 were not needed. D115–D116 stay with G02. D120–D124 stay with H01.  
 **Migrations:** `0073_creator_portfolio.sql` and `0074_creator_portfolio_share.sql`.
 

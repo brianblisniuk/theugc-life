@@ -773,8 +773,8 @@ stay paused and return no suggestion ids (D107). There is no ranking and no
 model. Agency F04 stays planned. `0061`, `0062`, and `0064` are not edited.
 This portfolio PR does not edit `0066` or `src/lib/home`.
 
-**G03 portfolio** (canon v1.1, not the Phase G Coverage Engine row) is on
-`cursor/g03-portfolio-9c32`. Migrations `0073` and `0074`. D125. A creator
+**G03 portfolio** (canon v1.1, not the Phase G Coverage Engine row) is PR #76
+on `cursor/g03-portfolio-9c32`. Migrations `0073` and `0074`. D125. A creator
 picks a travel layout and approves confirmed collaborations before they
 appear on the existing hotel share link. Gmail detections are not
 suggestions. The social profile stays free of hotel names. `0066`, `0068`,
