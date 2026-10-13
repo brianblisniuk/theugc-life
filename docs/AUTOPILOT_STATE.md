@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `12630bb9d616fdb63ad97d2e61fe5668723eac67` (merge of PR #71, F01 Gmail collaboration detection, 2026-10-13)  
-**State:** BUILDING. F02 pitch templates (canon v1.1, not agency F02). Branch `cursor/f02-pitch-templates-ad1c`. Migration `0064`. D110. D03 and D04 stay open. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. F02 pitch templates (canon v1.1, not agency F02). PR #72. Branch `cursor/f02-pitch-templates-ad1c`. Migration `0064`. D110. D03 and D04 stay open. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** F02 pitch templates. F01 is merged (PR #71, `12630bb9d616fdb63ad97d2e61fe5668723eac67`). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D110 is the pitch-draft rule. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
@@ -49,7 +49,7 @@
 - PR #71 — F01 Gmail collaboration detection, D107, migration `0061` — `12630bb9d616fdb63ad97d2e61fe5668723eac67`
 
 ## Next action
-- F02 pitch templates is on `cursor/f02-pitch-templates-ad1c`. Migration `0064`. D110. Copy or a mailto draft only. No model vendor. `expected_head` stays null. Do not merge from automation.
+- PR #72 is F02 pitch templates on `cursor/f02-pitch-templates-ad1c`. Migration `0064`. D110. Copy or a mailto draft only. No model vendor. `expected_head` stays null. Wait for verify on the exact head of both the push and pull_request runs. Do not merge from automation.
 - F01 Gmail collaboration detection is merged (PR #71, `12630bb9d616fdb63ad97d2e61fe5668723eac67`). D107. Migration `0061`. This PR does not edit that file.
 - F05 contact credits is merged (PR #68, `85186fdc18f65db9233c5df9155a65674740e551`). D100–D105. Migrations `0057`, `0058`, and `0060`. Migration `0059` stays HB01. Open amounts stay pending config.
 - HB01 is merged (PR #69, `28656f4`, migration `0059`). This PR does not edit that file.

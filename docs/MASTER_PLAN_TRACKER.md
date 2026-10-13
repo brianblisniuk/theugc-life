@@ -748,7 +748,7 @@ fact. Deletion purge removes the suggestions. Disconnect does not. `0060`
 is not edited.
 
 **F02 pitch templates** (canon v1.1, not the agency F02 row in the table
-above) is this block. Migration `0064_pitch_templates.sql`. D110. A draft is
+above) is PR #72. Migration `0064_pitch_templates.sql`. D110. A draft is
 filled from facts the creator already has. Copy and a mailto draft are not a
 sent pitch. D03 and D04 stay open: no model vendor and no send. `0060` and
 `0061` are not edited. `0062` and `0063` are not this file. Do not merge.

@@ -1,5 +1,12 @@
 # F02 — Pitch templates
 
+**Status:** Binding work order for this PR. Awaiting CI. Do not merge.
+**Base:** `main` `12630bb9d616fdb63ad97d2e61fe5668723eac67` (merge of PR #71).
+**Branch:** `cursor/f02-pitch-templates-ad1c`.
+**PR:** #72. Do not merge.
+**Migration:** `0064_pitch_templates.sql`. `0060` and `0061` are not edited.
+**Decision:** D110. D03 and D04 stay open.
+
 Canon v1.1 Outreach Assisted Engine. This is not the agency F02 row in the
 tracker.
 
