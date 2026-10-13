@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `9a747b217a8c560f08c87bed1b2542f4521ac25e` (merge of PR #67, C02–C05, 2026-10-13)  
-**State:** AWAITING_CI. HB01 Hotelbeds provisional star rating. Branch `cursor/hb01-hotelbeds-provisional-stars-a926`. D106. Migration `0059`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_CI. HB01 Hotelbeds provisional star rating. PR #69. Branch `cursor/hb01-hotelbeds-provisional-stars-a926`. D106. Migration `0059`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** HB01. C02–C05 is merged. DATA01 is merged. UX01 is merged. D095–D098 stay Accepted. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -46,7 +46,7 @@
 - PR #67 — C02–C05 network intelligence, D099, migration `0056` — `9a747b217a8c560f08c87bed1b2542f4521ac25e`
 
 ## Next action
-- HB01 Hotelbeds provisional star rating is on branch `cursor/hb01-hotelbeds-provisional-stars-a926`. D106. Migration `0059`. State is AWAITING_CI. `expected_head` stays null. Do not merge from automation.
+- HB01 Hotelbeds provisional star rating is PR #69 on branch `cursor/hb01-hotelbeds-provisional-stars-a926`. D106. Migration `0059`. State is AWAITING_CI. `expected_head` stays null. Do not merge from automation.
 - C02–C05 is merged (PR #67, `9a747b2`). D099 stays Accepted. Migration `0056` stays as merged. This block does not edit `0056`.
 - DATA01 is merged (PR #66, `502ae69`). UX01 is merged (PR #65, `9a44923`, migration `0055`).
 - D092–D094 stay Proposed. D082 and D086–D088 stay Proposed where D095–D097 do not supersede them.
