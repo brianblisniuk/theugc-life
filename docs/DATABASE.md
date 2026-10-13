@@ -191,9 +191,16 @@ Hierarchy rule: an entitlement for a destination may cover descendants. Implemen
 - `instagram_url text`
 - `hotel_type text`
 - `star_rating numeric NULL` — **hospitality star classification**, never a
-  guest-review score (D060). V1 publishable inventory is exactly 4 or 5, and the
-  value requires provenance to be publishable (D062). The column is unchanged by
-  this contract; no migration was added.
+  guest-review score (D060). V1 publishable inventory is exactly 4 or 5.
+- `star_rating_source text NULL` — `owner` or `hotelbeds` (D106, migration
+  `0059`). Check-constrained.
+- `star_rating_confidence text NULL` — `confirmed` pairs with `owner`;
+  `provisional` pairs with `hotelbeds`.
+- `needs_category_review boolean NOT NULL DEFAULT false` — cheap Hotelbeds
+  outlier flag for an apartment, residence, or villa complex. Not a publication
+  gate.
+- `hotelbeds_code text NULL` — idempotency key for the Hotelbeds import. Unique
+  when present. Not the canonical primary key (D063).
 - `description_short text`
 - `active_status text NOT NULL DEFAULT 'unknown'`
 - `editorial_verified_at timestamptz NULL`

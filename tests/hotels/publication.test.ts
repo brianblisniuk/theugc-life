@@ -9,9 +9,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   hospitalityClassificationLabel,
+  isPublishableStarProvenance,
   isPublishedCanonicalHotel,
   PUBLISHED_ACTIVE_STATUSES,
   PUBLISHED_CANONICAL_HOTEL_WHERE,
+  PUBLISHABLE_STAR_PROVENANCE_OR,
   PUBLISHED_STAR_RATINGS,
   type PublicationFacts,
 } from "@/lib/hotels/publication";
@@ -65,6 +67,64 @@ describe("isPublishedCanonicalHotel", () => {
       expect(PUBLISHED_CANONICAL_HOTEL_WHERE).toContain(`'${status}'`);
     }
     expect(PUBLISHED_CANONICAL_HOTEL_WHERE).not.toContain("'closed'");
+    expect(PUBLISHED_CANONICAL_HOTEL_WHERE).toContain("star_rating_source = 'hotelbeds'");
+    expect(PUBLISHED_CANONICAL_HOTEL_WHERE).toContain("star_rating_confidence = 'provisional'");
+    expect(PUBLISHED_CANONICAL_HOTEL_WHERE).toContain("star_rating_source = 'owner'");
+    expect(PUBLISHABLE_STAR_PROVENANCE_OR).toContain("hotelbeds");
+    expect(PUBLISHABLE_STAR_PROVENANCE_OR).toContain("provisional");
+  });
+
+  it("publishes Hotelbeds provisional 4 and 5, and owner confirmed", () => {
+    expect(
+      isPublishedCanonicalHotel({
+        ...published,
+        starRatingSource: "hotelbeds",
+        starRatingConfidence: "provisional",
+      }),
+    ).toBe(true);
+    expect(
+      isPublishedCanonicalHotel({
+        ...published,
+        starRating: 4,
+        starRatingSource: "hotelbeds",
+        starRatingConfidence: "provisional",
+      }),
+    ).toBe(true);
+    expect(
+      isPublishedCanonicalHotel({
+        ...published,
+        starRatingSource: "owner",
+        starRatingConfidence: "confirmed",
+      }),
+    ).toBe(true);
+    expect(isPublishableStarProvenance(undefined, undefined)).toBe(true);
+    expect(isPublishableStarProvenance(null, null)).toBe(true);
+  });
+
+  it("does not publish a provenance pair D106 did not allow", () => {
+    expect(
+      isPublishedCanonicalHotel({
+        ...published,
+        starRatingSource: "hotelbeds",
+        starRatingConfidence: "confirmed",
+      }),
+    ).toBe(false);
+    expect(
+      isPublishedCanonicalHotel({
+        ...published,
+        starRatingSource: "owner",
+        starRatingConfidence: "provisional",
+      }),
+    ).toBe(false);
+    expect(
+      isPublishedCanonicalHotel({
+        ...published,
+        starRatingSource: "booking",
+        starRatingConfidence: "confirmed",
+      }),
+    ).toBe(false);
+    expect(isPublishableStarProvenance("hotelbeds", null)).toBe(false);
+    expect(isPublishableStarProvenance(null, "provisional")).toBe(false);
   });
 });
 

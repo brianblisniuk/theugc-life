@@ -4019,3 +4019,63 @@ It appends a decision and does not change the aggregate.
   client.
 - No change to D056 premium contacts or to migration `0055`.
 
+## D106 — Hotelbeds category is a provisional, publishable star rating
+
+Status: **Accepted — PRODUCT DECISION (Brian, 2026-10-13).** Overrides D060 for
+Hotelbeds only. D100–D105 belong to the contact-credits block.
+
+D060 still requires an exact hospitality classification of 4 or 5. It still
+refuses guest-review scores, averages, and a fabricated classification. For
+Hotelbeds, the reviewed category codes that already mean exactly 4 or exactly
+5 (`4EST`, `4LUX`, `5EST`, `5LUX` in the D066 policy) may be stored on
+`hotels.star_rating` and published.
+
+The stored provenance is:
+
+- `star_rating_source = 'hotelbeds'`
+- `star_rating_confidence = 'provisional'`
+
+Rows that already have a `star_rating` are backfilled as
+`star_rating_source = 'owner'` and `star_rating_confidence = 'confirmed'`.
+The backfill does not change the number. A row whose provenance columns are
+still null stays publishable, so a writer that predates the columns is not
+removed from Discover. Any other stored pair does not publish, and the
+database check refuses to store it.
+
+Owner coordinates always win. The import fills `latitude` and `longitude`
+only when both are null. It does not replace a stored coordinate, and it does
+not complete one stored coordinate with the Hotelbeds value for the other.
+
+A new Hotelbeds accommodation type `H` hotel with one of those four category
+codes and usable coordinates is inserted visible (`active_status` stays
+`unknown`, which Discover already renders). The Hotelbeds `web` value is
+stored on `website_url` when it is present and the canonical website is null.
+The same Hotelbeds code updates that row on a later run. It does not insert
+a second hotel. `hotelbeds_code` is the nullable idempotency key. It is not
+`hotels.id` (D063).
+
+A Hotelbeds hotel that matches an existing canonical hotel is not merged.
+A match is a Dice name similarity of at least 0.82 (the catalog importer's
+existing review bar) and a coordinate distance of at most 1 km. Those pairs
+are written to a review CSV. The canonical row is left as it is.
+
+`needs_category_review` defaults to false. It is set when the name or the
+accommodation type suggests an apartment, a residence, or a villa complex.
+The flag does not by itself unpublish the row.
+
+The import reads JSON pages already saved from the Hotelbeds Content API
+`/hotels` operation. It does not call the API and it does not read API
+credentials. `--apply` refuses a remote database. A new row is inserted only
+when exactly one canonical destination has an active `destination_aliases`
+row with `source = 'hotelbeds'` whose folded alias is that `destinationCode`.
+Otherwise the hotel is not inserted. No destination is invented.
+
+### What this decision does not do
+
+- It does not treat `simpleCode`, a half-star code, a key code, or a
+  non-hotel accommodation type as a star rating.
+- It does not merge a Hotelbeds property into an existing hotel.
+- It does not change RLS on `hotels`.
+- It does not change production data from this block. The migration is the
+  schema change; running it against production is a later, separate action.
+

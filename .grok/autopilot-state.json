@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 502ae69ecb192dc3678a27619a557bb1012ff0e5 (PR #66). C02–C05 is PR #67 on cursor/c02-c05-network-intelligence-a035. D099. Migration 0056. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Main is 9a747b217a8c560f08c87bed1b2542f4521ac25e (PR #67). HB01 is on cursor/hb01-hotelbeds-provisional-stars-a926. D106. Migration 0059. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_CI",
-  "last_recorded_main": "502ae69ecb192dc3678a27619a557bb1012ff0e5",
-  "active_block": "C02–C05 network intelligence",
-  "branch": "cursor/c02-c05-network-intelligence-a035",
-  "pr": 67,
+  "last_recorded_main": "9a747b217a8c560f08c87bed1b2542f4521ac25e",
+  "active_block": "HB01 Hotelbeds provisional star rating",
+  "branch": "cursor/hb01-hotelbeds-provisional-stars-a926",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "502ae69ecb192dc3678a27619a557bb1012ff0e5",
+    "ref": "9a747b217a8c560f08c87bed1b2542f4521ac25e",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "C02–C05 network intelligence is PR #67 on cursor/c02-c05-network-intelligence-a035. D077 Accepted. D099. Migration 0056. Audit correction: a Gmail deletion purge and the mailbox deleted state remove that mailbox's Gmail facts and confirmations. Wait for verify on the exact new head of both the push and pull_request runs. expected_head stays null. Do not merge."
+  "next_dependency": "HB01 Hotelbeds provisional star rating. D106. Migration 0059. Wait for verify on the exact head. expected_head stays null. Do not merge."
 }
