@@ -16,10 +16,12 @@ import Link from "next/link";
 import { CollaborationLifecycle } from "@/components/pipeline/collaboration-lifecycle";
 import { CollaborationSuggestions } from "@/components/pipeline/collaboration-suggestions";
 import { CollaborationWorkspace } from "@/components/pipeline/collaboration-workspace";
+import { ContractDrafts } from "@/components/pipeline/contract-drafts";
 import { InboxLink } from "@/components/pipeline/inbox-link";
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { WorkflowActions } from "@/components/pipeline/workflow-actions";
 import type { WorkspaceLoad } from "@/lib/collaboration/queries";
+import type { ContractListLoad } from "@/lib/contracts/queries";
 import type { CollaborationSuggestionLoad } from "@/lib/gmail/collaboration/contract";
 import type { InboxLoad, MailboxLoad } from "@/lib/inbox-pipeline/contract";
 import type { GmailPromptLoad } from "@/lib/network-intelligence/contract";
@@ -51,6 +53,7 @@ export function ActivityPanel({
   relationship,
   collaboration,
   workspace,
+  contracts,
   inbox,
   mailboxes,
   gmailPrompt,
@@ -63,6 +66,8 @@ export function ActivityPanel({
   collaboration: CollaborationLoad;
   /** Deliverables and agreed compensation for that collaboration. */
   workspace: WorkspaceLoad;
+  /** Agreement drafts for a won deal. Omitted when there is no collaboration. */
+  contracts?: ContractListLoad;
   /** Inbox link for an open cycle. Omitted when there is no cycle to attach it to. */
   inbox?: InboxLoad;
   mailboxes?: MailboxLoad;
@@ -152,6 +157,17 @@ export function ActivityPanel({
               <p className="text-sm text-muted">
                 Compensation and deliverables couldn&rsquo;t be loaded. Reload the page to try
                 again.
+              </p>
+            ) : null}
+            {relationship.status === "open" && contracts?.status === "ok" ? (
+              <ContractDrafts
+                pipelineItemId={relationship.relationship.pipelineItemId}
+                hotelId={hotelId}
+                drafts={contracts.drafts}
+              />
+            ) : contracts?.status === "error" ? (
+              <p className="text-sm text-muted">
+                Agreement drafts couldn&rsquo;t be loaded. Reload the page to try again.
               </p>
             ) : null}
           </div>

@@ -35,6 +35,7 @@ import { HotelSectionNav } from "@/components/shell/hotel-section-nav";
 import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
+import { listCollaborationContracts } from "@/lib/contracts/queries";
 import { getCollaborationSuggestions } from "@/lib/gmail/collaboration/queries";
 import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/queries";
 import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
@@ -159,6 +160,12 @@ export default async function HotelDetailPage({
     collaboration.status === "found"
       ? await getCollaborationWorkspace(relationship.relationship.pipelineItemId)
       : ({ status: "not_found" } as const);
+  const contracts =
+    relationship.status === "open" &&
+    relationship.relationship.status === "won" &&
+    collaboration.status === "found"
+      ? await listCollaborationContracts(relationship.relationship.pipelineItemId)
+      : ({ status: "hidden" } as const);
   const inbox =
     relationship.status === "open"
       ? await getInboxUnity(relationship.relationship.pipelineItemId)
@@ -368,6 +375,7 @@ export default async function HotelDetailPage({
           relationship={relationship}
           collaboration={collaboration}
           workspace={workspace}
+          contracts={contracts}
           inbox={inbox}
           mailboxes={mailboxes}
           gmailPrompt={gmailPrompt}

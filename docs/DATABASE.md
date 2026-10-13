@@ -2745,6 +2745,15 @@ deliverables beside the collaboration. It does not write
 total across quantity by largest remainder and labels the share derived.
 Unknown stays JSON null.
 
+D114 (migration `0068`) stores a private agreement draft for a won deal.
+`contract_templates` is one starter per creator and kind (hotel stay / barter,
+paid, usage rights). `collaboration_contracts` is the draft. Status is
+`draft` only. `facts_snapshot` is what was stored at generation; a null field
+was not recorded and the text uses "[to be filled in]". The draft does not
+read `private_value_*`, does not send a message, and does not record a
+signature. Composite foreign keys keep the template, collaboration, pipeline
+item, and trip on the same creator.
+
 D080 (migration `0049`, Accepted — Brian, 13 Oct 2026) links one pipeline cycle to one stored
 Gmail thread the creator names.
 

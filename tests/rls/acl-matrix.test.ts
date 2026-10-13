@@ -96,6 +96,11 @@ const CONTRACT: Record<string, Expected> = {
   collaboration_agreed_compensations: { anon: "", authenticated: "S", serviceRole: "all" },
   collaboration_compensation_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
   collaboration_deliverables: { anon: "", authenticated: "S", serviceRole: "all" },
+  // G01 (0068, D114). Templates and drafts are owner-private. The owner may
+  // write their own rows; RLS hides everyone else's. The scope trigger still
+  // refuses a draft that points at another creator or a deal that is not won.
+  contract_templates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  collaboration_contracts: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   // D06 (0049, D080). The creator link and its Gmail suggestions are private.
   // The browser can read its own rows; writes go through service-role RPCs.
   pipeline_inbox_bindings: { anon: "", authenticated: "S", serviceRole: "all" },
