@@ -264,7 +264,7 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 
 Migration `0062` (D108) makes a revealed unlock call `save_hotel_to_pipeline` in that same transaction. A new row is `saved`. An open cycle is not duplicated and its status is not reset. The Free allowance is `FREE_LIMITS.savedHotels`, not a client argument. `pipeline_limit` debits nothing and returns no email. `read_own_unlocked_contacts(uuid[])` returns cache emails for hotels this caller unlocked, or for admin/editor. A pipeline item still does not require a trip.
 
-Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. `0061` is not used.
+Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. Migration `0061` stores Gmail collaboration suggestions on a thread the creator already linked. Refresh writes those rows only. A deletion purge removes them with the mailbox's other Gmail-derived rows. Disconnect does not.
 
 ## 5a. Property-content source infrastructure (migration 0027)
 
@@ -2958,5 +2958,12 @@ At minimum:
     one revocable link per creator, SHA-256 digest only, and a security-definer
     public read of opted-in fields. Anon has no new table privilege. `0051`
     is on main from E04 (PR #62) and is not edited. `0052` is not edited.
+31. Gmail collaboration detection (0061, D107) — suggestion rows for a pitch,
+    a human reply, and a collaboration on an inbox link the creator already
+    made. Free stays paused. Confirming a collaboration writes no outreach
+    event and no hotel fact. `0060` is not edited.
+32. Unlock saves the hotel (0062, D108) — a revealed unlock calls
+    `save_hotel_to_pipeline` in the same transaction. A full Free allowance
+    returns `pipeline_limit` and debits nothing. `0061` is not edited.
 
 Every migration must be reproducible from an empty database.

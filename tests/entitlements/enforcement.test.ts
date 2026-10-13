@@ -265,6 +265,17 @@ d("E04 entitlement inventory enforcement", () => {
       [creators.other, otherPipeline, otherMail],
     );
     otherBinding = binding[0]!.id;
+    await adminQuery(
+      `with cfg as (select set_config('gmail_collab.writer', 'refresh', true))
+       insert into public.gmail_collaboration_suggestions (
+         creator_id, pipeline_item_id, binding_id, mail_account_id, provider_thread_id,
+         kind, status, classifier, evidence_key, pitch_at, pitch_message_id
+       )
+       select $1, $2, $3, $4, 'e04-thread',
+              'pitch_sent', 'pending', 'heuristic', 'e04-pitch', now(), 'e04-pitch'
+         from cfg`,
+      [creators.other, otherPipeline, otherBinding, otherMail],
+    );
 
     await adminQuery(
       `insert into public.creator_profile_field_opt_ins (creator_id, field_key, opted_in)
@@ -357,7 +368,10 @@ d("E04 entitlement inventory enforcement", () => {
         "select email from public.hotel_contacts where hotel_id = $1",
         [bali],
       );
-      expect(visible.rows.map((row) => row.email), id).toEqual([CONTACT]);
+      expect(
+        visible.rows.map((row) => row.email),
+        id,
+      ).toEqual([CONTACT]);
       const stillHidden = await queryAs<{ email: string }>(
         { role: "authenticated", sub: U.pro },
         "select email from public.hotel_contacts where hotel_id = $1",
@@ -564,6 +578,11 @@ d("E04 entitlement inventory enforcement", () => {
         },
         pipeline_inbox_bindings: {
           sql: "select id from public.pipeline_inbox_bindings where id = $1",
+          params: [otherBinding],
+          marker: otherBinding,
+        },
+        gmail_collaboration_suggestions: {
+          sql: "select binding_id from public.gmail_collaboration_suggestions where binding_id = $1",
           params: [otherBinding],
           marker: otherBinding,
         },

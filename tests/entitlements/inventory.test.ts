@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import * as creditActions from "@/lib/credits/actions";
 import * as authActions from "@/lib/auth/actions";
 import * as collaborationActions from "@/lib/collaboration/actions";
+import * as collaborationDetectionActions from "@/lib/gmail/collaboration/actions";
 import * as gmailActions from "@/lib/gmail/actions";
 import * as inboxActions from "@/lib/inbox-pipeline/actions";
 import * as onboardingActions from "@/lib/onboarding/actions";
@@ -94,6 +95,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(authActions),
       ...exportedFunctions(collaborationActions),
       ...exportedFunctions(gmailActions),
+      ...exportedFunctions(collaborationDetectionActions),
       ...exportedFunctions(inboxActions),
       ...exportedFunctions(onboardingActions),
       ...exportedFunctions(pipelineActions),

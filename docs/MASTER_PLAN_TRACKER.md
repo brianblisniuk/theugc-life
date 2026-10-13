@@ -736,12 +736,22 @@ pauses without deleting mail. A stored address past the TTL is still a
 cache hit. An accepted bounce stays invalid. Open amounts stay pending
 config (D101). Agency F01–F04 stay planned.
 
+**F01 Gmail collaboration detection** (canon v1.1, not the agency F01 row)
+is merged as PR #71, merge `12630bb9d616fdb63ad97d2e61fe5668723eac67`.
+Migration `0061_gmail_collaboration_detection.sql`. D107.
+A linked thread can suggest a pitch, a human reply, or a collaboration.
+Free detection stays paused under the same gate as `0060`. The classifier
+is the heuristic adapter. Confirmation of a pitch or a human reply uses the
+existing manual transition. Confirmation of a collaboration writes no CRM
+row and no hotel fact. Deletion purge removes the suggestions. Disconnect
+does not. `0060` is not edited.
+
 **F05b** is PR #70 on `cursor/f05b-unlock-adds-pipeline-45a2`. It saves a
 hotel on the caller's pipeline in the same transaction as a revealed contact
-unlock (D108). Migration `0062_unlock_saves_pipeline.sql`. `0061` is unused.
-A full Free allowance refuses the unlock and does not debit. A refused unlock
-does not add the hotel. The pipeline card shows the unlocked email to that
-caller only. Do not merge.
+unlock (D108). Migration `0062_unlock_saves_pipeline.sql`. Base is main
+`12630bb` (PR #71). A full Free allowance refuses the unlock and does not
+debit. A refused unlock does not add the hotel. The pipeline card shows the
+unlocked email to that caller only. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

@@ -4169,10 +4169,67 @@ Otherwise the hotel is not inserted. No destination is invented.
 - It does not change production data from this block. The migration is the
   schema change; running it against production is a later, separate action.
 
+## D107 — Gmail collaboration detection is a confirmed suggestion
+
+Status: **Accepted** for this block. The owner asked for F01: detect a pitch
+the creator sent and a human reply, exclude auto-responders, and map the
+result onto events. Manual stays the source of truth. D102 stays in force:
+Free Gmail sync stays paused, and an active Destination Pass still syncs.
+This block uses that same paid predicate. It does not remove Pass, and it
+does not add a send scope or an AI vendor.
+
+Detection runs only for a user who can already sync: active Pro, or any
+active Destination Pass (`private.gmail_collab_is_paid`, the 0060 predicate).
+A Free refresh or confirm returns `paused` and writes nothing. Stored
+suggestions are not deleted when the plan lapses. A Free read returns
+`paused` and no suggestion ids.
+
+A suggestion exists only on a thread the creator already linked to one
+pipeline item. There is no inferred hotel match.
+
+The classifier is the heuristic adapter. `GMAIL_COLLAB_CLASSIFIER` unset,
+blank, or `heuristic` is the only accepted value. Any other value throws
+before a detection call. The SQL column accepts only `heuristic`. The rules
+are the existing stored readings:
+
+- A pitch is `qualified_outreach` plus the earliest creator-sent message.
+- A human reply is a B06 `qualifying_human_reply_observed` that is not tied,
+  and only on a pitch. A current non-stale B07 axis of `automated`,
+  `delivery`, or `not_reply` suppresses it. An out-of-office or other
+  automatic reply is not a human reply.
+- A collaboration suggestion requires that pitch, that human reply, and a
+  non-stale `agreement_observed` reading. A redirect is not a collaboration.
+
+Refresh writes suggestion rows only. It does not insert `outreach_events`,
+`collaborations`, or intelligence facts, and it does not change pipeline
+status. Confirming a pitch calls `transition_pipeline_item` `mark_pitched`.
+Confirming a human reply requires the creator's own sentiment
+(`positive`, `negative`, or `unclear`) and calls `mark_replied`. Both pass
+the written Free engaged limit of 5. Pro, and a Pass that covers the hotel,
+stay exempt inside that transition. A Pass that does not cover the hotel
+can still detect, because 0060 is any active Pass. Mapping the pitch onto
+the ledger still goes through the outside Free engaged limit.
+
+An existing `manual_creator` pitch or reply is not copied. The suggestion
+becomes `manual_overrides`. `already_applied` does the same. A dismissed or
+confirmed row is not reopened. Pending evidence that no longer matches is
+`superseded`. Confirming a collaboration changes only that suggestion. It
+does not create a collaboration, an outreach event, a pipeline change, or a
+hotel fact. A `source = 'gmail'` outreach event is refused.
+
+A Gmail deletion purge, and the mailbox `deleted` state, remove that
+mailbox's suggestion rows in the same transaction, because both already
+call `private.purge_network_gmail_for_mailbox`. Manual events and manual
+facts stay. Disconnect keeps history (D077). It does not delete suggestions.
+
+The read is the signed-in owner. Another creator gets `not_found` and no
+ids. RLS selects `creator_id = current_creator_id()`. Writes go through the
+detection functions. The requested Gmail scope stays `gmail.readonly`.
+
 ## D108 — A successful contact unlock is saved on the pipeline
 
 Status: **Accepted** for this block (Brian, 13 Oct 2026). Migration
-`0062_unlock_saves_pipeline.sql`. `0061` stays unused so F01 can take it.
+`0062_unlock_saves_pipeline.sql`. `0061` is F01 (D107).
 D100–D105 are unchanged. D042 and D095 still apply.
 
 Unlocking a contact and having that hotel in the pipeline are one action.

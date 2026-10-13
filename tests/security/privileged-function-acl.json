@@ -1548,5 +1548,75 @@
     "authenticated": false,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "private",
+    "name": "gmail_collab_is_paid",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "confirm_gmail_collaboration_suggestion",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_suggestion_id uuid, p_sentiment text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "dismiss_gmail_collaboration_suggestion",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_suggestion_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_gmail_collaboration_writer",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_gmail_collaboration_suggestions",
+    "args": "p_pipeline_item_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "refresh_gmail_collaboration_by_provider_thread",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_provider_thread_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "refresh_gmail_collaboration_suggestions",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_normalized_thread_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
   }
 ]

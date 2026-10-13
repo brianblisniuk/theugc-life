@@ -97,6 +97,8 @@ const CONTRACT: Record<string, Expected> = {
   pipeline_inbox_bindings: { anon: "", authenticated: "S", serviceRole: "all" },
   pipeline_inbox_readings: { anon: "", authenticated: "S", serviceRole: "all" },
   pipeline_inbox_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
+  // F01 (0061, D107). Suggestions are private. Writes go through service-role RPCs.
+  gmail_collaboration_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
 
   // Intelligence. Base aggregates are unreachable by any client role.
   hotel_intelligence: { anon: "", authenticated: "", serviceRole: "all" },
