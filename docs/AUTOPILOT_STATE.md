@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `1fc15658fc69acaa799860f8340736e15e1f5728` (merge of PR #63, D09, 2026-10-12)  
-**State:** AWAITING_AUDIT. E05 E2E, observability, security/privacy QA, and launch checklist. PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. Migration `0054` grants the signup trigger to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 are Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
+**State:** AWAITING_AUDIT. E05 E2E, observability, security/privacy QA, and launch checklist. PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. Migration `0054` grants the signup trigger to `supabase_auth_admin`. `0039` installs `public.digest` and `public.gen_random_bytes` only when pgcrypto is not already in `public`. `0053` calls `public.digest`. D092–D094 are Proposed. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to verify. Do not merge.  
 **Current frontier:** E05. Failure, retry, and admin paths are tested. The launch-candidate gate names the owner steps that are not done. D09 is merged. D086–D088 stay Proposed. D077 stays Proposed.
 
 ## Main history note (not rewritten)
@@ -43,7 +43,7 @@
 
 ## Next action
 - E05 is PR #64, branch `cursor/e05-e2e-observability-launch-f88c`. State is AWAITING_AUDIT. Do not merge from automation.
-- D09 is merged (PR #63, `1fc1565`, migration `0053`). This PR does not edit `0053`.
+- D09 is merged (PR #63, `1fc1565`, migration `0053`). This PR points `0053` at `public.digest` so an empty search path still resolves on the hosted layout.
 - E04 is merged (PR #62, `dc5979e`, migration `0051`). This PR does not edit `0051`.
 - D08 is merged (PR #61, `d030cd0`, migration `0052`). This PR does not edit `0052`.
 - E03 is merged (PR #60, `fc2dfbd`, D082 Proposed). Empty and error stay distinct.

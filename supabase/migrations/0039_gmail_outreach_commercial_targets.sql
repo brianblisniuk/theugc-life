@@ -48,16 +48,19 @@
 -- pgcrypto-public-shim:begin
 -- Hosted Supabase installs pgcrypto in extensions. The test harness installs
 -- it in public. Later functions call unqualified digest() with a search_path
--- that starts at public. When those signatures already exist in public, this
--- block does nothing. When they exist only in extensions, the wrappers below
--- keep that search_path working. They are not security definer.
+-- that starts at public, or they call public.digest / public.gen_random_bytes
+-- with an empty search_path. When those signatures already exist in public,
+-- this block does nothing. When they exist only in extensions, the wrappers
+-- below keep both forms working. They are not security definer.
 do $pgcrypto_public_shim$
 declare
   v_text text;
   v_bytea text;
+  v_random text;
 begin
   if to_regprocedure('public.digest(text, text)') is not null
-     and to_regprocedure('public.digest(bytea, text)') is not null then
+     and to_regprocedure('public.digest(bytea, text)') is not null
+     and to_regprocedure('public.gen_random_bytes(integer)') is not null then
     return;
   end if;
 
@@ -79,8 +82,17 @@ begin
    order by case n.nspname when 'public' then 0 else 1 end
    limit 1;
 
-  if v_text is null or v_bytea is null then
-    raise exception 'pgcrypto digest(text, text) and digest(bytea, text) are required';
+  select n.nspname into v_random
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'gen_random_bytes'
+     and pg_get_function_identity_arguments(p.oid) = 'integer'
+     and n.nspname in ('extensions', 'public')
+   order by case n.nspname when 'public' then 0 else 1 end
+   limit 1;
+
+  if v_text is null or v_bytea is null or v_random is null then
+    raise exception 'pgcrypto digest(text, text), digest(bytea, text), and gen_random_bytes(integer) are required';
   end if;
 
   if to_regprocedure('public.digest(text, text)') is null then
@@ -94,6 +106,8 @@ begin
       set search_path = ''
       as $body$ select %I.digest(data, type) $body$
     $fn$, v_text);
+    revoke all on function public.digest(text, text) from public, anon, authenticated;
+    grant execute on function public.digest(text, text) to service_role;
   end if;
 
   if to_regprocedure('public.digest(bytea, text)') is null then
@@ -107,12 +121,24 @@ begin
       set search_path = ''
       as $body$ select %I.digest(data, type) $body$
     $fn$, v_bytea);
+    revoke all on function public.digest(bytea, text) from public, anon, authenticated;
+    grant execute on function public.digest(bytea, text) to service_role;
   end if;
 
-  revoke all on function public.digest(text, text), public.digest(bytea, text)
-    from public, anon, authenticated;
-  grant execute on function public.digest(text, text), public.digest(bytea, text)
-    to service_role;
+  if to_regprocedure('public.gen_random_bytes(integer)') is null then
+    execute format($fn$
+      create function public.gen_random_bytes(count integer)
+      returns bytea
+      language sql
+      volatile
+      strict
+      security invoker
+      set search_path = ''
+      as $body$ select %I.gen_random_bytes(count) $body$
+    $fn$, v_random);
+    revoke all on function public.gen_random_bytes(integer) from public, anon, authenticated;
+    grant execute on function public.gen_random_bytes(integer) to service_role;
+  end if;
 end
 $pgcrypto_public_shim$;
 -- pgcrypto-public-shim:end

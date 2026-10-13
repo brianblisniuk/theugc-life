@@ -17,63 +17,29 @@
 
 -- ---------------------------------------------------------------------------
 -- pgcrypto lives in extensions on hosted Supabase and in public in the test
--- harness. Pin a schema-qualified wrapper so the share functions can keep
--- search_path empty.
+-- harness. 0039 installs public.digest and public.gen_random_bytes when those
+-- signatures are missing from public. These functions call that public name
+-- and keep search_path empty. They do not call unqualified digest().
 -- ---------------------------------------------------------------------------
-do $share_crypto$
-declare
-  v_digest text;
-  v_random text;
-begin
-  select n.nspname || '.digest'
-    into v_digest
-    from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-   where p.proname = 'digest'
-     and pg_get_function_identity_arguments(p.oid) = 'bytea, text'
-     and n.nspname in ('extensions', 'public')
-   order by case n.nspname when 'extensions' then 0 else 1 end
-   limit 1;
+create or replace function public.creator_share_token_hash(p_token text)
+returns bytea
+language sql
+immutable
+security invoker
+set search_path = ''
+as $$
+  select public.digest(convert_to(coalesce(p_token, ''), 'UTF8'), 'sha256');
+$$;
 
-  select n.nspname || '.gen_random_bytes'
-    into v_random
-    from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-   where p.proname = 'gen_random_bytes'
-     and pg_get_function_identity_arguments(p.oid) = 'integer'
-     and n.nspname in ('extensions', 'public')
-   order by case n.nspname when 'extensions' then 0 else 1 end
-   limit 1;
-
-  if v_digest is null or v_random is null then
-    raise exception 'pgcrypto digest(bytea, text) and gen_random_bytes(integer) are required';
-  end if;
-
-  execute format($fn$
-    create or replace function public.creator_share_token_hash(p_token text)
-    returns bytea
-    language sql
-    immutable
-    security invoker
-    set search_path = ''
-    as $body$
-      select %s(convert_to(coalesce(p_token, ''), 'UTF8'), 'sha256');
-    $body$
-  $fn$, v_digest);
-
-  execute format($fn$
-    create or replace function public.creator_share_random_token()
-    returns text
-    language sql
-    volatile
-    security invoker
-    set search_path = ''
-    as $body$
-      select encode(%s(32), 'hex');
-    $body$
-  $fn$, v_random);
-end
-$share_crypto$;
+create or replace function public.creator_share_random_token()
+returns text
+language sql
+volatile
+security invoker
+set search_path = ''
+as $$
+  select encode(public.gen_random_bytes(32), 'hex');
+$$;
 
 comment on function public.creator_share_token_hash(text) is
   'D089. SHA-256 of a share token. Not granted to anon or authenticated. The raw token is not stored.';

@@ -4,7 +4,7 @@
  * calls unqualified digest(). 0039 installs public wrappers only for the
  * hosted layout. Removing that shim makes the hosted-layout create fail.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -102,22 +102,144 @@ d("pgcrypto layout", () => {
       );
       expect(hashed.rows[0]!.hex).toMatch(/^[0-9a-f]{64}$/);
 
-      const privileges = await client.query<{ anon: boolean; service_role: boolean }>(
+      const privileges = await client.query<{
+        anon: boolean;
+        service_role: boolean;
+        random_anon: boolean;
+        random_service_role: boolean;
+      }>(
         `select has_function_privilege('anon', 'public.digest(text, text)', 'EXECUTE') as anon,
-                has_function_privilege('service_role', 'public.digest(text, text)', 'EXECUTE') as service_role`,
+                has_function_privilege('service_role', 'public.digest(text, text)', 'EXECUTE') as service_role,
+                has_function_privilege('anon', 'public.gen_random_bytes(integer)', 'EXECUTE') as random_anon,
+                has_function_privilege('service_role', 'public.gen_random_bytes(integer)', 'EXECUTE') as random_service_role`,
       );
       expect(privileges.rows[0]!.anon).toBe(false);
       expect(privileges.rows[0]!.service_role).toBe(true);
+      expect(privileges.rows[0]!.random_anon).toBe(false);
+      expect(privileges.rows[0]!.random_service_role).toBe(true);
+
+      const share = migration("0053_creator_share_link.sql");
+      const hashSql = share.match(
+        /create or replace function public\.creator_share_token_hash\(p_token text\)[\s\S]*?\$\$;/,
+      );
+      const randomSql = share.match(
+        /create or replace function public\.creator_share_random_token\(\)[\s\S]*?\$\$;/,
+      );
+      if (!hashSql?.[0] || !randomSql?.[0]) {
+        throw new Error("0053 is missing the public.digest share functions");
+      }
+      await client.query(hashSql[0]);
+      await client.query(randomSql[0]);
+      const hashedToken = await client.query<{ hash: Buffer }>(
+        "select public.creator_share_token_hash('abc') as hash",
+      );
+      expect(hashedToken.rows[0]!.hash).toHaveLength(32);
+      const token = await client.query<{ token: string }>(
+        "select public.creator_share_random_token() as token",
+      );
+      expect(token.rows[0]!.token).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       await client.query("rollback");
       await client.end();
     }
   });
 
-  it("0053 schema-qualifies digest and gen_random_bytes for both schemas", () => {
-    const source = migration("0053_creator_share_link.sql");
-    expect(source).toContain("n.nspname in ('extensions', 'public')");
-    expect(source).toContain("gen_random_bytes");
-    expect(source).toMatch(/when 'extensions' then 0 else 1/);
+});
+
+/**
+ * Unqualified digest() is resolved when the function is created. A pinned
+ * search_path that omits public cannot see pgcrypto in extensions, and it
+ * cannot see the public wrapper 0039 installs. A runtime `schema || '.digest'`
+ * binding is the same hole: the source never names public.digest, and an
+ * empty search_path will not fall back to the wrapper.
+ */
+function digestCallViolations(migrationsDir: string): string[] {
+  const violations: string[] = [];
+  const files = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  for (const file of files) {
+    const source = readFileSync(path.join(migrationsDir, file), "utf8");
+    if (/nspname\s*\|\|\s*'\.digest'/.test(source)) {
+      violations.push(`${file}: digest() schema is chosen at runtime`);
+    }
+    const masked = maskSql(source);
+    const call = /digest\s*\(/gi;
+    for (const match of masked.matchAll(call)) {
+      const index = match.index ?? 0;
+      const previous = index === 0 ? "" : masked[index - 1]!;
+      if (/[.\w]/.test(previous)) continue;
+      const searchPath = searchPathBefore(masked, index);
+      if (searchPath === "includes-public" || searchPath === "unpinned") continue;
+      const line = masked.slice(0, index).split("\n").length;
+      violations.push(`${file}:${line} unqualified digest() with search_path ${searchPath}`);
+    }
+  }
+  return violations;
+}
+
+function searchPathBefore(masked: string, index: number): "includes-public" | "unpinned" | string {
+  const head = masked.slice(0, index);
+  const creates = [...head.matchAll(/create\s+(?:or\s+replace\s+)?function\b/gi)];
+  const start = creates.at(-1)?.index;
+  if (start === undefined) return "unpinned";
+  const between = masked.slice(start, index);
+  const pathMatch = between.match(/set\s+search_path\s*(?:=|to)[ \t]*([^\n;]*)/i);
+  if (!pathMatch) return "unpinned";
+  const items = pathMatch[1]!.split(",").map((item) =>
+    item
+      .trim()
+      .replace(/^"+|"+$/g, "")
+      .replace(/^'+|'+$/g, ""),
+  );
+  if (items.includes("public")) return "includes-public";
+  return items.filter(Boolean).join(", ") || "empty";
+}
+
+function maskSql(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    if (source.startsWith("--", i)) {
+      const end = source.indexOf("\n", i);
+      const stop = end === -1 ? source.length : end;
+      out += " ".repeat(stop - i);
+      i = stop;
+      continue;
+    }
+    if (source.startsWith("/*", i)) {
+      const end = source.indexOf("*/", i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += source.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop;
+      continue;
+    }
+    if (source[i] === "'") {
+      let j = i + 1;
+      while (j < source.length) {
+        if (source[j] === "'" && source[j + 1] === "'") {
+          j += 2;
+          continue;
+        }
+        if (source[j] === "'") {
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      out += source.slice(i, j).replace(/[^\n]/g, " ");
+      i = j;
+      continue;
+    }
+    out += source[i];
+    i += 1;
+  }
+  return out;
+}
+
+describe("digest() across migrations", () => {
+  it("rejects unqualified digest() unless search_path includes public", () => {
+    const migrationsDir = path.join(root, "supabase/migrations");
+    expect(digestCallViolations(migrationsDir)).toEqual([]);
   });
 });

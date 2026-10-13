@@ -3749,19 +3749,20 @@ creates it in `public`. `0044` defines
 `search_path = public, private, pg_temp` and calls unqualified `digest()`.
 That create fails on the hosted layout. `0039` and `0040` call the same
 unqualified `digest()` from functions whose pinned path also omits
-`extensions`. `0053` already schema-qualifies `digest` and
-`gen_random_bytes` for whichever of those two schemas holds them, and is
-not edited.
+`extensions`. `0053` calls literal `public.digest` and
+`public.gen_random_bytes` with `search_path = ''`. It does not call
+unqualified `digest()` and it does not pick a schema at runtime.
 
-`0039` now installs `public.digest(text, text)` and
-`public.digest(bytea, text)` only when those functions are not already in
-`public`. The wrappers are security invoker, `search_path = ''`, and call
-`extensions.digest`. Execute is revoked from public, anon, and
-authenticated, and granted to `service_role`. Editing `0039`, and the
-comments in `0040` and `0044`, is safe because no hosted database has
-applied these files. This block does not run them against production. The
-end-to-end job applies the chain with the local Supabase image and leaves
-pgcrypto in `extensions`.
+`0039` now installs `public.digest(text, text)`,
+`public.digest(bytea, text)`, and `public.gen_random_bytes(integer)` only
+when those functions are not already in `public`. The wrappers are
+security invoker, `search_path = ''`, and call the same function in
+`extensions`. Execute is revoked from public, anon, and authenticated,
+and granted to `service_role`. Editing `0039`, the comments in `0040` and
+`0044`, and the share-token functions in `0053` is safe because no hosted
+database has applied these files. This block does not run them against
+production. The end-to-end job applies the chain with the local Supabase
+image and leaves pgcrypto in `extensions`.
 
 ### What this decision does not do
 

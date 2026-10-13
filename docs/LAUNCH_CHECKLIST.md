@@ -23,7 +23,7 @@ These stay undone until Brian approves each one. Automation must not perform the
 | Step | State | Approval |
 |---|---|---|
 | Production Netlify site and environment variables | **NOT done** | Brian |
-| Supabase production migrations | **NOT done.** The hosted project has never had these files applied. `0044` failed on that layout while `digest()` could not see pgcrypto in `extensions`. The source now resolves `digest()` for both `extensions` and `public`. Applying the chain to production still needs Brian’s approval. | Brian |
+| Supabase production migrations | **NOT done.** The hosted project has never had these files applied. `0044` failed on that layout while `digest()` could not see pgcrypto in `extensions`. The source now resolves `digest()` for both `extensions` and `public`, and `0053` calls `public.digest`. Applying the chain to production still needs Brian’s approval. | Brian |
 | Google OAuth verification and authorized domain | **NOT done** | Brian |
 | Maps key restricted to the production domain | **NOT done** | Brian |
 | Rebill | **NOT done** | Brian |

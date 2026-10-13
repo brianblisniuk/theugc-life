@@ -704,11 +704,12 @@ are not edited.
 `cursor/e05-e2e-observability-launch-f88c`. Migration
 `0054_grant_handle_new_user_to_auth_admin.sql` grants execute on the
 signup trigger to `supabase_auth_admin` when that role exists. `0039`
-installs `public.digest` only when hosted pgcrypto is not already in
-`public`, so `0040` and `0044` resolve `digest()` on both layouts. Those
-files have never been applied to the hosted project. D092–D094 are
-Proposed. The launch checklist names the owner steps that are not done.
-`0053` is not edited.
+installs `public.digest` and `public.gen_random_bytes` only when hosted
+pgcrypto is not already in `public`, so `0040` and `0044` resolve
+`digest()` on both layouts and `0053` calls `public.digest` with an empty
+search path. Those files have never been applied to the hosted project.
+D092–D094 are Proposed. The launch checklist names the owner steps that
+are not done.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration
