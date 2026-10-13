@@ -235,7 +235,7 @@ Provide CLI commands equivalent to:
 - `npm run import:report -- --batch ...`
 - `npm run import:promote -- --batch <uuid> --apply --allow-local`
 
-`--apply` without `--allow-local` still requires an explicit remote `DATABASE_URL` and never falls back to `TEST_DATABASE_URL`. `--apply --allow-local` is the local/dev promotion command. It also requires `DATABASE_URL`, and the target must be loopback, localhost, or local Supabase. A remote, private-network, or container-bridge host is refused, so the flag cannot be aimed at a hosted database. Preview (`import:promote` without `--apply`) stays read-only.
+`--apply` without `--allow-local` still requires an explicit remote `DATABASE_URL` and never falls back to `TEST_DATABASE_URL`. `--apply --allow-local` is the local/dev promotion command. It also requires `DATABASE_URL`, and the target must be loopback, localhost, or local Supabase. A remote, private-network, or container-bridge host is refused, so the flag cannot be aimed at a hosted database. The command parses the URL with `pg-connection-string` (the parser `pg` uses) and connects with that config object. A query `host` or `hostaddr`, more than one host, a unix socket outside the local Postgres socket directories, or a `PGHOST` / `PGHOSTADDR` value that does not match the classified host is refused. Preview (`import:promote` without `--apply`) stays read-only.
 
 Legacy inputs additionally select a legacy adapter.
 

@@ -54,8 +54,9 @@ async function main() {
 
   // Enforce the same guard the real apply uses (explicit + remote-only). Its
   // message contains only redactedTarget (class/db/ssl) — never a secret.
+  let guarded: ReturnType<typeof assertPersistentApplyTarget>;
   try {
-    assertPersistentApplyTarget(process.env);
+    guarded = assertPersistentApplyTarget(process.env);
   } catch (err) {
     if (err instanceof PersistentTargetError) {
       console.info(`\n  decision: BLOCKED_NON_PERSISTENT_TARGET`);
@@ -69,7 +70,7 @@ async function main() {
   const expectedVersions = await readRepoMigrationVersions(MIGRATIONS_DIR);
   const head = expectedVersions[expectedVersions.length - 1] ?? "(none)";
 
-  const client = new Client({ connectionString: raw });
+  const client = new Client(guarded.config);
   await client.connect();
   try {
     const result = await runPreflight(client, expectedVersions);

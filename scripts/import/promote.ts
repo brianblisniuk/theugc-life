@@ -32,11 +32,11 @@ async function main() {
   // ordinary client (local/test DBs are fine for a zero-mutation preview).
   let client: Client;
   if (apply) {
-    const { url, classification } = assertApplyTarget(process.env, { allowLocal });
+    const { config, classification } = assertApplyTarget(process.env, { allowLocal });
     console.info(
       `\n[import:promote] --apply${allowLocal ? " --allow-local" : ""} target: ${classification.redactedTarget}`,
     );
-    client = new Client({ connectionString: url });
+    client = new Client(config);
     await client.connect();
   } else {
     client = await getClient();

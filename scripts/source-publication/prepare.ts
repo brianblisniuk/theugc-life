@@ -61,7 +61,7 @@ export function parsePrepareArgs(argv: readonly string[]): PrepareArgs {
 async function main(): Promise<void> {
   const args = parsePrepareArgs(process.argv.slice(2));
   const target = resolvePublicationTarget(process.env, { apply: false });
-  const client = new Client({ connectionString: target.url });
+  const client = new Client(target.config);
   await client.connect();
   try {
     const pack = await buildPublicationPack(client, {

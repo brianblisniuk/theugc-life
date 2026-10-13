@@ -16,8 +16,10 @@
  * Nothing here logs secrets or raw contact data.
  */
 import { readdir } from "node:fs/promises";
+import path from "node:path";
 
-import type { Client } from "pg";
+import type { Client, ClientConfig } from "pg";
+import { parse as parseConnectionString } from "pg-connection-string";
 
 export type HostClass =
   | "loopback"
@@ -55,7 +57,25 @@ export interface TargetClassification {
 
 export class PersistentTargetError extends Error {}
 
+/** What an apply command may pass to `pg.Client`. Never a raw connection string. */
+export interface ValidatedConnection {
+  config: ClientConfig;
+  classification: TargetClassification;
+}
+
 const LOCAL_SUPABASE_PORT = "54322";
+
+/**
+ * Filesystem roots whose unix sockets are this machine's Postgres, not a proxy
+ * to a hosted database (for example a Cloud SQL socket).
+ */
+const LOCAL_SOCKET_ROOTS = [
+  "/tmp",
+  "/private/tmp",
+  "/var/run/postgresql",
+  "/run/postgresql",
+  "/usr/local/var/postgres",
+];
 
 function classifyHost(host: string, port: string | null): HostClass {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "");
@@ -78,41 +98,292 @@ function classifyHost(host: string, port: string | null): HostClass {
   return "remote";
 }
 
-/** Parse host/port/db/ssl from a URL- or libpq-DSN-style connection string. */
-function parseConnection(raw: string): {
-  host: string | null;
+function normalizeComparableHost(host: string): string {
+  const trimmed = host.trim();
+  if (trimmed.startsWith("/")) return path.posix.normalize(trimmed);
+  return trimmed.toLowerCase().replace(/^\[|\]$/g, "");
+}
+
+function hostsEqual(left: string, right: string): boolean {
+  return normalizeComparableHost(left) === normalizeComparableHost(right);
+}
+
+function splitTcpHosts(host: string): string[] {
+  if (host.startsWith("/")) return [host];
+  return host
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function isApprovedLocalSocket(host: string): boolean {
+  if (!host.startsWith("/")) return false;
+  const normalized = path.posix.normalize(host);
+  return LOCAL_SOCKET_ROOTS.some(
+    (root) => normalized === root || normalized.startsWith(`${root}/`),
+  );
+}
+
+function safeDatabaseName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  // A mis-parse can stuff the whole DSN, password included, into the db name.
+  if (/[\s"'\\]|password=|sslmode=/i.test(name)) return null;
+  return name;
+}
+
+interface InspectedConnection {
+  config: ClientConfig;
+  classification: TargetClassification;
+  rejection: string | null;
+}
+
+function classificationFor(
+  host: string | null,
+  port: string | null,
+  db: string | null,
+  ssl: string | null,
+): TargetClassification {
+  let hostClass: HostClass = "unknown";
+  if (host && host.startsWith("/"))
+    hostClass = isApprovedLocalSocket(host) ? "localhost" : "unknown";
+  else if (host) hostClass = classifyHost(host, port);
+  const databaseName = safeDatabaseName(db);
+  return {
+    present: true,
+    isRemote: hostClass === "remote",
+    hostClass,
+    databaseName,
+    sslMode: ssl,
+    redactedTarget: `class=${hostClass} db=${databaseName ?? "?"} ssl=${ssl ?? "unset"}`,
+  };
+}
+
+function rejected(
+  message: string,
+  host: string | null,
+  port: string | null,
+  db: string | null,
+  ssl: string | null,
+): InspectedConnection {
+  return {
+    config: {},
+    classification: classificationFor(host, port, db, ssl),
+    rejection: message,
+  };
+}
+
+function portNumber(port: string | null): number | "invalid" | null {
+  if (!port) return null;
+  if (!/^\d+$/.test(port)) return "invalid";
+  const value = Number(port);
+  if (!Number.isInteger(value) || value < 1 || value > 65535) return "invalid";
+  return value;
+}
+
+function buildConfig(parts: {
+  host: string;
   port: string | null;
-  db: string | null;
-  ssl: string | null;
-} {
-  const trimmed = raw.trim();
-  // URL form: postgres(ql)://user:pass@host:port/db?sslmode=...
-  if (/^postgres(ql)?:\/\//i.test(trimmed)) {
+  user?: string | null;
+  password?: string | null;
+  database?: string | null;
+  ssl?: ClientConfig["ssl"];
+}): ClientConfig | string {
+  const port = portNumber(parts.port);
+  if (port === "invalid") return "Refusing a connection string with an invalid port.";
+  const config: ClientConfig = {
+    host: parts.host,
+    // Set explicitly so PGPORT cannot replace the port we classified.
+    port: port ?? 5432,
+  };
+  if (parts.user) config.user = parts.user;
+  if (parts.password) config.password = parts.password;
+  const database = safeDatabaseName(parts.database);
+  if (database) config.database = database;
+  if (parts.ssl !== undefined) config.ssl = parts.ssl;
+  return config;
+}
+
+function sslConfig(parsedSsl: unknown, sslMode: string | null): ClientConfig["ssl"] | undefined {
+  if (typeof parsedSsl === "boolean") return parsedSsl;
+  if (parsedSsl && typeof parsedSsl === "object") return parsedSsl as ClientConfig["ssl"];
+  if (sslMode === "disable") return false;
+  if (sslMode === "no-verify") return { rejectUnauthorized: false };
+  if (sslMode) return true;
+  return undefined;
+}
+
+const HOST_OVERRIDE = "Refusing a host override in the connection string.";
+const HOSTADDR = "Refusing a connection string that sets hostaddr.";
+const MULTIPLE_HOSTS = "Refusing a connection string with multiple hosts.";
+const UNIX_SOCKET = "Refusing a unix socket that is not a local Postgres socket.";
+const UNPARSEABLE =
+  "Refusing a connection string that is not a single postgres URL or keyword DSN.";
+
+function finishHost(
+  host: string,
+  port: string | null,
+  db: string | null,
+  ssl: string | null,
+  extra: {
+    user?: string | null;
+    password?: string | null;
+    sslConfig?: ClientConfig["ssl"];
+  },
+): InspectedConnection {
+  const hosts = splitTcpHosts(host);
+  if (hosts.length !== 1) return rejected(MULTIPLE_HOSTS, null, port, db, ssl);
+  const only = hosts[0]!;
+  if (only.startsWith("/") && !isApprovedLocalSocket(only)) {
+    return rejected(UNIX_SOCKET, null, port, db, ssl);
+  }
+  const config = buildConfig({
+    host: only,
+    port,
+    user: extra.user,
+    password: extra.password,
+    database: db,
+    ssl: extra.sslConfig,
+  });
+  if (typeof config === "string") return rejected(config, only, port, db, ssl);
+  return {
+    config,
+    classification: classificationFor(only, port, db, ssl),
+    rejection: null,
+  };
+}
+
+function inspectUrl(raw: string): InspectedConnection {
+  let parsed: ReturnType<typeof parseConnectionString>;
+  try {
+    parsed = parseConnectionString(raw);
+  } catch {
+    return rejected(UNPARSEABLE, null, null, null, null);
+  }
+  let authority = "";
+  let queryHosts: string[] = [];
+  let queryHostaddrs: string[] = [];
+  let sslMode: string | null = null;
+  let portFromUrl: string | null = null;
+  // pg-connection-string retries an empty authority (`@/db`) with a dummy host.
+  // Match that so a socket URL is not rejected as unparseable.
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
     try {
-      const u = new URL(trimmed);
-      const db = decodeURIComponent(u.pathname.replace(/^\//, "")) || null;
-      const ssl = u.searchParams.get("sslmode") ?? u.searchParams.get("ssl");
-      return { host: u.hostname || null, port: u.port || null, db, ssl };
+      url = new URL(raw.replace("@/", "@___DUMMY___/"));
     } catch {
-      // Fall through to token parsing (e.g. password with unescaped chars).
+      return rejected(UNPARSEABLE, null, null, null, null);
     }
   }
-  // libpq DSN form: host=... port=... dbname=... sslmode=...
-  const pick = (key: string): string | null => {
-    const m = trimmed.match(new RegExp(`(?:^|\\s)${key}=([^\\s]+)`, "i"));
-    return m ? m[1]! : null;
-  };
-  return {
-    host: pick("host"),
-    port: pick("port"),
-    db: pick("dbname") ?? pick("database"),
-    ssl: pick("sslmode"),
-  };
+  authority = url.hostname.toLowerCase() === "___dummy___" ? "" : url.hostname;
+  queryHosts = url.searchParams.getAll("host");
+  queryHostaddrs = url.searchParams.getAll("hostaddr");
+  sslMode = url.searchParams.get("sslmode") ?? url.searchParams.get("ssl");
+  portFromUrl = url.port || null;
+  const parsedHost = typeof parsed.host === "string" ? parsed.host : "";
+  const parsedPort =
+    typeof parsed.port === "string" && parsed.port.length > 0 ? parsed.port : portFromUrl;
+  const database = typeof parsed.database === "string" ? parsed.database : null;
+  const hostaddr =
+    queryHostaddrs[0] ?? (typeof parsed.hostaddr === "string" ? parsed.hostaddr : "");
+  if (queryHostaddrs.length > 0 || hostaddr) {
+    return rejected(HOSTADDR, hostaddr || null, parsedPort, database, sslMode);
+  }
+  const commaSeparated =
+    queryHosts.some((value) => splitTcpHosts(value).length > 1) ||
+    splitTcpHosts(parsedHost).length > 1;
+  if (commaSeparated) return rejected(MULTIPLE_HOSTS, null, parsedPort, database, sslMode);
+  if (authority) {
+    const disagreed = queryHosts.some((value) => !hostsEqual(value, authority));
+    if (disagreed)
+      return rejected(HOST_OVERRIDE, parsedHost || null, parsedPort, database, sslMode);
+  } else if (new Set(queryHosts.map((value) => normalizeComparableHost(value))).size > 1) {
+    return rejected(HOST_OVERRIDE, parsedHost || null, parsedPort, database, sslMode);
+  }
+  const effective = parsedHost || "localhost";
+  return finishHost(effective, parsedPort, database, sslMode, {
+    user: parsed.user,
+    password: typeof parsed.password === "string" ? parsed.password : null,
+    sslConfig: sslConfig(parsed.ssl, sslMode),
+  });
+}
+
+function keywordValue(raw: string, key: string): string | null {
+  const match = raw.match(new RegExp(`(?:^|\\s)${key}=([^\\s]+)`, "i"));
+  return match?.[1] ? match[1] : null;
+}
+
+function inspectKeyword(raw: string): InspectedConnection {
+  // A string with no libpq keywords is not a DSN. Do not invent localhost for it.
+  if (!/(?:^|\s)[a-z_]+=\S/i.test(raw)) {
+    return rejected(UNPARSEABLE, null, null, null, null);
+  }
+  if (keywordValue(raw, "hostaddr")) {
+    return rejected(HOSTADDR, keywordValue(raw, "hostaddr"), keywordValue(raw, "port"), null, null);
+  }
+  const host = keywordValue(raw, "host") ?? "localhost";
+  const port = keywordValue(raw, "port");
+  const database = keywordValue(raw, "dbname") ?? keywordValue(raw, "database");
+  const ssl = keywordValue(raw, "sslmode");
+  return finishHost(host, port, database, ssl, {
+    user: keywordValue(raw, "user"),
+    password: keywordValue(raw, "password"),
+    sslConfig: sslConfig(undefined, ssl),
+  });
+}
+
+function inspectSocket(raw: string): InspectedConnection {
+  let parsed: ReturnType<typeof parseConnectionString>;
+  try {
+    parsed = parseConnectionString(raw);
+  } catch {
+    return rejected(UNPARSEABLE, null, null, null, null);
+  }
+  const host = typeof parsed.host === "string" ? parsed.host : "";
+  const database = typeof parsed.database === "string" ? parsed.database : null;
+  if (!host.startsWith("/")) return rejected(UNPARSEABLE, null, null, database, null);
+  return finishHost(host, null, database, null, {});
+}
+
+/**
+ * Parse with the same parser `pg` uses for URL connection strings, and with an
+ * explicit keyword parser where that parser would otherwise connect to the
+ * dummy host `base`. The returned config is the object `pg.Client` must
+ * receive — never the raw string.
+ */
+function inspectConnection(raw: string): InspectedConnection {
+  const trimmed = raw.trim();
+  if (/^postgres(ql)?:\/\//i.test(trimmed) || /^socket:/i.test(trimmed)) return inspectUrl(trimmed);
+  if (trimmed.startsWith("/")) return inspectSocket(trimmed);
+  return inspectKeyword(trimmed);
+}
+
+function enforceProcessEnv(
+  env: Record<string, string | undefined>,
+  inspected: InspectedConnection,
+): void {
+  if (inspected.rejection) throw new PersistentTargetError(inspected.rejection);
+  const host = typeof inspected.config.host === "string" ? inspected.config.host : "";
+  const pgHost = env.PGHOST?.trim();
+  if (pgHost) {
+    const parts = splitTcpHosts(pgHost);
+    if (parts.length !== 1 || !parts[0] || !hostsEqual(parts[0], host)) {
+      throw new PersistentTargetError(
+        "Refusing a PGHOST value that does not match the connection host.",
+      );
+    }
+  }
+  if (env.PGHOSTADDR?.trim()) {
+    throw new PersistentTargetError("Refusing a PGHOSTADDR override.");
+  }
 }
 
 /**
  * Classify a connection string WITHOUT exposing any secret. Returns
- * `present:false` for an empty/undefined string.
+ * `present:false` for an empty/undefined string. The host class is the host
+ * `pg` would dial (query `host` wins over the URL authority), not the
+ * authority alone.
  */
 export function classifyDatabaseUrl(rawUrl: string | undefined | null): TargetClassification {
   if (!rawUrl || rawUrl.trim().length === 0) {
@@ -125,42 +396,46 @@ export function classifyDatabaseUrl(rawUrl: string | undefined | null): TargetCl
       redactedTarget: "(absent)",
     };
   }
-  const { host, port, db, ssl } = parseConnection(rawUrl);
-  const hostClass: HostClass = host ? classifyHost(host, port) : "unknown";
-  const isRemote = hostClass === "remote";
-  const redactedTarget = `class=${hostClass} db=${db ?? "?"} ssl=${ssl ?? "unset"}`;
-  return {
-    present: true,
-    isRemote,
-    hostClass,
-    databaseName: db,
-    sslMode: ssl,
-    redactedTarget,
-  };
+  return inspectConnection(rawUrl).classification;
+}
+
+/**
+ * Parse and validate a connection string into the config `pg.Client` will use.
+ * Query host overrides, `hostaddr`, multiple hosts, non-local unix sockets, and
+ * a disagreeing `PGHOST` / `PGHOSTADDR` are refused. The config has no
+ * `connectionString`, so `pg` cannot apply those overrides again.
+ */
+export function validatedConnection(
+  rawUrl: string,
+  env: Record<string, string | undefined>,
+): ValidatedConnection {
+  const inspected = inspectConnection(rawUrl);
+  enforceProcessEnv(env, inspected);
+  return { config: inspected.config, classification: inspected.classification };
 }
 
 /**
  * Guard for the real-apply CLI path. Requires an explicit `DATABASE_URL` and a
  * genuine remote target. NEVER reads or falls back to `TEST_DATABASE_URL`.
+ * Returns the parsed config, not the raw string.
  */
-export function assertPersistentApplyTarget(env: Record<string, string | undefined>): {
-  url: string;
-  classification: TargetClassification;
-} {
+export function assertPersistentApplyTarget(
+  env: Record<string, string | undefined>,
+): ValidatedConnection {
   const url = env.DATABASE_URL?.trim();
   if (!url) {
     throw new PersistentTargetError(
       "DATABASE_URL is required for a real --apply. Refusing to fall back to TEST_DATABASE_URL.",
     );
   }
-  const classification = classifyDatabaseUrl(url);
-  if (!classification.isRemote) {
+  const connection = validatedConnection(url, env);
+  if (!connection.classification.isRemote) {
     throw new PersistentTargetError(
-      `Refusing real --apply against a non-remote target (${classification.redactedTarget}). ` +
+      `Refusing real --apply against a non-remote target (${connection.classification.redactedTarget}). ` +
         "An approved remote persistent database is required.",
     );
   }
-  return { url, classification };
+  return connection;
 }
 
 const LOCAL_APPLY_CLASSES = new Set<HostClass>(["loopback", "localhost", "local-supabase"]);
@@ -171,13 +446,14 @@ const LOCAL_APPLY_CLASSES = new Set<HostClass>(["loopback", "localhost", "local-
  * `--apply` alone still requires a remote persistent database and never reads
  * `TEST_DATABASE_URL`. `--apply --allow-local` is the documented local/dev
  * command: `DATABASE_URL` must name loopback, localhost, or local Supabase.
- * A remote, private-network, or container-bridge host is refused in that mode,
- * so the flag cannot be pointed at a hosted database.
+ * A remote, private-network, or container-bridge host is refused in that mode.
+ * The returned config is what `pg.Client` receives, so a query `host`,
+ * `hostaddr`, extra host, unix-socket proxy, or `PGHOST` cannot retarget it.
  */
 export function assertApplyTarget(
   env: Record<string, string | undefined>,
   opts: { allowLocal: boolean },
-): { url: string; classification: TargetClassification } {
+): ValidatedConnection {
   if (!opts.allowLocal) return assertPersistentApplyTarget(env);
   const url = env.DATABASE_URL?.trim();
   if (!url) {
@@ -185,14 +461,14 @@ export function assertApplyTarget(
       "DATABASE_URL is required for --apply --allow-local. Refusing to fall back to TEST_DATABASE_URL.",
     );
   }
-  const classification = classifyDatabaseUrl(url);
-  if (!LOCAL_APPLY_CLASSES.has(classification.hostClass)) {
+  const connection = validatedConnection(url, env);
+  if (!LOCAL_APPLY_CLASSES.has(connection.classification.hostClass)) {
     throw new PersistentTargetError(
-      `Refusing --apply --allow-local against a non-local target (${classification.redactedTarget}). ` +
+      `Refusing --apply --allow-local against a non-local target (${connection.classification.redactedTarget}). ` +
         "Loopback, localhost, or local Supabase is required.",
     );
   }
-  return { url, classification };
+  return connection;
 }
 
 /**

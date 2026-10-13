@@ -29,9 +29,11 @@
  * `source_property_publication_receipts_production_only` — none of which is
  * relaxed because a test database happens to be local.
  */
+import type { ClientConfig } from "pg";
+
 import {
   assertPersistentApplyTarget,
-  classifyDatabaseUrl,
+  validatedConnection,
   type TargetClassification,
 } from "../../src/lib/import/preflight";
 
@@ -43,7 +45,7 @@ export class PublicationTargetError extends Error {
 }
 
 export interface PublicationTarget {
-  url: string;
+  config: ClientConfig;
   classification: TargetClassification;
 }
 
@@ -75,10 +77,17 @@ export function resolvePublicationTarget(
     throw new PublicationTargetError(
       "No publication database configured; set DATABASE_URL (or TEST_DATABASE_URL for a dry-run against a disposable database).",
     );
-  const classification = classifyDatabaseUrl(url);
-  if (classification.hostClass === "unknown" && !/(^|[?&])host=\//.test(url))
+  try {
+    const connection = validatedConnection(url, env);
+    if (connection.classification.hostClass === "unknown")
+      throw new PublicationTargetError(
+        `Cannot classify the publication database (${connection.classification.redactedTarget}). A target we cannot classify is not a target we may read a publication decision out of either.`,
+      );
+    return connection;
+  } catch (error) {
+    if (error instanceof PublicationTargetError) throw error;
     throw new PublicationTargetError(
-      `Cannot classify the publication database (${classification.redactedTarget}). A target we cannot classify is not a target we may read a publication decision out of either.`,
+      `${error instanceof Error ? error.message : String(error)} A05 publishes canonical inventory; there is deliberately no flag to force one into a disposable database.`,
     );
-  return { url, classification };
+  }
 }

@@ -6,6 +6,10 @@
  * apply-time refusal rules; the read-only `runPreflight` inspection is exercised
  * by the DB-gated import suites.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -127,8 +131,14 @@ describe("assertPersistentApplyTarget — real --apply guard", () => {
     expect(() => assertApplyTarget(env, { allowLocal: false })).toThrow(/non-remote target/i);
     const local = assertApplyTarget(env, { allowLocal: true });
     expect(local.classification.hostClass).toBe("loopback");
-    expect(local.url).toBe(env.DATABASE_URL);
+    expect(local.config.host).toBe("127.0.0.1");
+    expect(local.config.port).toBe(55432);
+    expect(local.config.database).toBe("ugc_local");
+    expect(local.config).not.toHaveProperty("connectionString");
+    expect(local.config).not.toHaveProperty("hostaddr");
     expect(local.classification.redactedTarget).not.toContain("secret");
+    const connected = new Client(local.config);
+    expect(connected.host).toBe("127.0.0.1");
   });
 
   it("refuses --allow-local without DATABASE_URL and does not read TEST_DATABASE_URL", () => {
@@ -148,6 +158,162 @@ describe("assertPersistentApplyTarget — real --apply guard", () => {
     } catch (err) {
       expect((err as Error).message).not.toContain("secret");
     }
+  });
+
+  it("refuses a query host that pg would dial instead of the authority", () => {
+    const env = {
+      DATABASE_URL:
+        "postgresql://postgres:secret@127.0.0.1:5432/ugc_local?host=db.invented-ref.supabase.co",
+    };
+    expect(classifyDatabaseUrl(env.DATABASE_URL).hostClass).toBe("remote");
+    expect(classifyDatabaseUrl(env.DATABASE_URL).isRemote).toBe(true);
+    expect(() => assertApplyTarget(env, { allowLocal: true })).toThrow(PersistentTargetError);
+    expect(() => assertApplyTarget(env, { allowLocal: true })).toThrow(/host override/i);
+    expect(() => assertPersistentApplyTarget(env)).toThrow(/host override/i);
+    try {
+      assertApplyTarget(env, { allowLocal: true });
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).not.toContain("secret");
+      expect(message).not.toContain("supabase");
+      expect(message).not.toContain("127.0.0.1");
+    }
+  });
+
+  it("refuses ?hostaddr= even when node-pg would ignore it", () => {
+    const env = {
+      DATABASE_URL: "postgresql://postgres:secret@127.0.0.1:5432/ugc_local?hostaddr=203.0.113.10",
+    };
+    expect(classifyDatabaseUrl(env.DATABASE_URL).hostClass).not.toBe("loopback");
+    expect(() => assertApplyTarget(env, { allowLocal: true })).toThrow(/hostaddr/i);
+    expect(() => assertPersistentApplyTarget(env)).toThrow(/hostaddr/i);
+    try {
+      assertApplyTarget(env, { allowLocal: true });
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).not.toContain("secret");
+      expect(message).not.toContain("203.0.113.10");
+    }
+  });
+
+  it("refuses a loopback hostaddr as well, because the parameter is an override channel", () => {
+    const env = {
+      DATABASE_URL: "postgresql://postgres:secret@127.0.0.1:5432/ugc_local?hostaddr=127.0.0.1",
+    };
+    expect(() => assertApplyTarget(env, { allowLocal: true })).toThrow(/hostaddr/i);
+  });
+
+  it("refuses multiple hosts in one connection string", () => {
+    const query = {
+      DATABASE_URL:
+        "postgresql://postgres:secret@127.0.0.1:5432/ugc_local?host=127.0.0.1,db.invented-ref.supabase.co",
+    };
+    expect(() => assertApplyTarget(query, { allowLocal: true })).toThrow(/multiple host/i);
+    const keyword = {
+      DATABASE_URL: "host=127.0.0.1,db.invented-ref.supabase.co port=5432 dbname=ugc_local",
+    };
+    expect(() => assertApplyTarget(keyword, { allowLocal: true })).toThrow(/multiple host/i);
+    const duplicated = {
+      DATABASE_URL:
+        "postgresql://postgres:secret@127.0.0.1:5432/ugc_local?host=127.0.0.1&host=db.invented-ref.supabase.co",
+    };
+    expect(() => assertApplyTarget(duplicated, { allowLocal: true })).toThrow(/host override/i);
+    try {
+      assertApplyTarget(query, { allowLocal: true });
+    } catch (err) {
+      expect((err as Error).message).not.toContain("secret");
+      expect((err as Error).message).not.toContain("supabase");
+    }
+  });
+
+  it("refuses a PGHOST or PGHOSTADDR value that disagrees with the URL host", () => {
+    const base = "postgresql://postgres:secret@127.0.0.1:5432/ugc_local";
+    expect(() =>
+      assertApplyTarget(
+        { DATABASE_URL: base, PGHOST: "db.invented-ref.supabase.co" },
+        { allowLocal: true },
+      ),
+    ).toThrow(/PGHOST/i);
+    expect(() =>
+      assertApplyTarget({ DATABASE_URL: base, PGHOSTADDR: "203.0.113.10" }, { allowLocal: true }),
+    ).toThrow(/PGHOSTADDR/i);
+    expect(() =>
+      assertPersistentApplyTarget({
+        DATABASE_URL: "postgresql://postgres:secret@db.invented-ref.supabase.co:5432/postgres",
+        PGHOST: "127.0.0.1",
+      }),
+    ).toThrow(/PGHOST/i);
+    try {
+      assertApplyTarget(
+        { DATABASE_URL: base, PGHOST: "db.invented-ref.supabase.co" },
+        { allowLocal: true },
+      );
+    } catch (err) {
+      expect((err as Error).message).not.toContain("secret");
+      expect((err as Error).message).not.toContain("supabase");
+    }
+  });
+
+  it("accepts a matching PGHOST and returns only the validated config", () => {
+    const env = {
+      DATABASE_URL: "postgresql://postgres:secret@127.0.0.1:5432/ugc_local",
+      PGHOST: "127.0.0.1",
+    };
+    const { config } = assertApplyTarget(env, { allowLocal: true });
+    expect(config.host).toBe("127.0.0.1");
+    expect(config.port).toBe(5432);
+    expect(config.database).toBe("ugc_local");
+    expect(config.user).toBe("postgres");
+    expect(config).not.toHaveProperty("connectionString");
+    expect(config).not.toHaveProperty("hostaddr");
+    expect(new Client(config).host).toBe("127.0.0.1");
+  });
+
+  it("refuses a unix socket that is not a local Postgres socket", () => {
+    const cloudSql = {
+      DATABASE_URL: "postgresql://postgres:secret@/ugc_local?host=/cloudsql/proj:region:inst",
+    };
+    expect(classifyDatabaseUrl(cloudSql.DATABASE_URL).hostClass).toBe("unknown");
+    expect(() => assertApplyTarget(cloudSql, { allowLocal: true })).toThrow(/unix socket/i);
+    const keyword = { DATABASE_URL: "host=/cloudsql/proj:region:inst dbname=ugc_local" };
+    expect(() => assertApplyTarget(keyword, { allowLocal: true })).toThrow(/unix socket/i);
+    try {
+      assertApplyTarget(cloudSql, { allowLocal: true });
+    } catch (err) {
+      expect((err as Error).message).not.toContain("secret");
+      expect((err as Error).message).not.toContain("cloudsql");
+    }
+  });
+
+  it("accepts an approved local socket as the only host and connects with that config", () => {
+    const env = {
+      DATABASE_URL: "postgresql://postgres:secret@/ugc_local?host=/var/run/postgresql",
+    };
+    const { config, classification } = assertApplyTarget(env, { allowLocal: true });
+    expect(classification.hostClass).toBe("localhost");
+    expect(config.host).toBe("/var/run/postgresql");
+    expect(config).not.toHaveProperty("connectionString");
+    expect(new Client(config).host).toBe("/var/run/postgresql");
+  });
+
+  it("import:promote connects with the validated config, not the raw string", () => {
+    const src = readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/import/promote.ts"),
+      "utf8",
+    );
+    expect(src).toContain("new Client(config)");
+    expect(src).not.toContain("connectionString");
+  });
+
+  it("builds a keyword DSN into a config instead of the host pg would misread", () => {
+    const env = {
+      DATABASE_URL: "host=127.0.0.1 port=5432 dbname=ugc_local user=postgres password=secret",
+    };
+    const { config } = assertApplyTarget(env, { allowLocal: true });
+    expect(config.host).toBe("127.0.0.1");
+    expect(config.database).toBe("ugc_local");
+    expect(new Client(config).host).toBe("127.0.0.1");
+    expect(new Client({ connectionString: env.DATABASE_URL }).host).toBe("base");
   });
 
   it("never leaks a secret in the refusal error message", () => {
