@@ -69,6 +69,9 @@ const CONTRACT: Record<string, Expected> = {
   // Copy and mailto_opened are columns, not a send.
   pitch_templates: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   pitch_drafts: { anon: "", authenticated: "SIUD", serviceRole: "all" },
+  // D03 (0082). Token counts only. Owner select. Service role inserts.
+  // No update or delete grant, and a trigger rejects both.
+  ai_usage: { anon: "", authenticated: "S", serviceRole: "SI" },
 
   // Public catalogue. Writes exist as a capability; RLS restricts them to staff.
   brands: { anon: "S", authenticated: "SIUD", serviceRole: "all" },

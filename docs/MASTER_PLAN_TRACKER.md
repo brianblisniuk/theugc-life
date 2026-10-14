@@ -362,7 +362,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
-| D03 | PLANNED | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
+| D03 | **IN THIS PR.** Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Max is more context on that model. Drafts are not sent. Do not merge. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | PLANNED | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
@@ -840,11 +840,18 @@ slice. An annual refund ends the plan. A pack refund reverses unused
 credits only. A chargeback still revokes the subscription. Attaching a
 payment link is service-role only.
 
-**P03b refund ledger fix** is draft PR #82 on `cursor/p03b-refund-ledger-fix`.
-Migration `0081_refund_ledger_fix.sql`. A reversal reduces the grant it
-names, so a refunded pack does not return on the next period. A chargeback
-after a refund still revokes the subscription. `expected_head` stays null.
-Do not merge.
+**P03b refund ledger fix** is merged as PR #82, merge
+`4c8eecde65cc537e71131914343751207d2d7f6d`. Migration
+`0081_refund_ledger_fix.sql`. A reversal reduces the grant it names, so a
+refunded pack does not return on the next period. A chargeback after a
+refund still revokes the subscription.
+
+**D03 AI assistant and email composer** is in this PR on
+`cursor/d03-ai-composer-1361`. Migrations `0082_ai_assistant.sql` and
+`0083_ai_draft_credit.sql`. D141–D145. Pro and Max both use Claude Sonnet.
+Max is more context and a fuller draft on that model. Free and a Destination
+Pass keep the template. One credit on a successful draft. The draft is not
+sent. D04 stays open. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

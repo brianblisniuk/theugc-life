@@ -67,6 +67,7 @@ export type PitchContextLoad =
       intelligenceUnavailable: boolean;
       relationshipStatus: string | null;
       selectedTripId: string | null;
+      primaryLanguage: string | null;
     }
   | { status: "error" };
 
@@ -319,6 +320,7 @@ export async function loadPitchContext(input: {
       intelligenceUnavailable,
       relationshipStatus,
       selectedTripId: selected?.id ?? null,
+      primaryLanguage: profile.profile.primaryLanguage,
     };
   } catch {
     return { status: "error" };

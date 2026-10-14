@@ -9,6 +9,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { draftPitchWithAssistantAction } from "@/lib/ai/actions";
+import { CREDITS_CONFIG } from "@/lib/credits/config";
 import {
   recordPitchDeliveryAction,
   savePitchDraftAction,
@@ -39,6 +41,7 @@ export function PitchComposer({
   body,
   recipientEmail,
   suggestionHref,
+  assistant,
 }: {
   hotelId: string;
   hotelName: string;
@@ -51,6 +54,9 @@ export function PitchComposer({
   body: string;
   recipientEmail: string | null;
   suggestionHref: string;
+  assistant:
+    | { status: "on"; priority: boolean; mail: readonly { id: string; subject: string }[] }
+    | { status: "off"; reason: "free" | "unknown" };
 }) {
   const router = useRouter();
   const [subjectValue, setSubjectValue] = useState(subject);
@@ -58,6 +64,7 @@ export function PitchComposer({
   const [savedId, setSavedId] = useState(draftId);
   const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [selectedMail, setSelectedMail] = useState<string[]>([]);
 
   function formData(): FormData {
     const data = new FormData();
@@ -122,8 +129,89 @@ export function PitchComposer({
     body: bodyValue,
   });
 
+  async function onAssist() {
+    setPending(true);
+    const data = new FormData();
+    data.set("hotelId", hotelId);
+    data.set("tripId", tripId ?? "");
+    for (const id of selectedMail) data.append("messageId", id);
+    const result = await draftPitchWithAssistantAction(data);
+    if (result.result === "drafted") {
+      setSubjectValue(result.subject);
+      setBodyValue(result.body);
+      if (result.draftId) setSavedId(result.draftId);
+      setNote("AI draft saved. It was not sent, and the hotel is not marked as pitched.");
+      router.refresh();
+    } else if (result.result === "templates_only") {
+      setNote("AI drafts are included with Pro. This page still fills your template.");
+    } else if (result.result === "out_of_credits") {
+      setNote("You're out of credits, so this draft wasn't created.");
+    } else if (result.result === "daily_limit") {
+      setNote("You've reached today's AI draft limit.");
+    } else if (result.result === "rate_limited") {
+      setNote("Wait a moment before another AI draft.");
+    } else if (result.result === "paused") {
+      setNote("AI drafts are paused right now. Your template is still here.");
+    } else if (result.result === "invalid_input") {
+      setNote(result.message);
+    } else {
+      setNote("The draft couldn't be created. You were not charged.");
+    }
+    setPending(false);
+  }
+
+  const creditLabel =
+    CREDITS_CONFIG.aiDraftCost === 1 ? "1 credit" : `${CREDITS_CONFIG.aiDraftCost} credits`;
+
   return (
     <div className="space-y-4">
+      {assistant.status === "on" ? (
+        <div className="space-y-3 rounded-[var(--radius-app)] border border-border p-3">
+          <p className="max-w-prose text-sm text-text">
+            Draft with AI from your profile, this hotel, and your pipeline.
+            {assistant.priority ? " Priority AI uses a fuller note." : ""} This uses {creditLabel}{" "}
+            and does not send the email.
+          </p>
+          {assistant.mail.length > 0 ? (
+            <fieldset className="space-y-1">
+              <legend className="text-xs font-medium text-muted">
+                Include a message you choose. Unchecked mail stays out of the draft.
+              </legend>
+              {assistant.mail.map((message) => (
+                <label key={message.id} className="flex items-start gap-2 text-sm text-text">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={selectedMail.includes(message.id)}
+                    onChange={(event) => {
+                      setSelectedMail((current) =>
+                        event.target.checked
+                          ? [...current, message.id].slice(0, 3)
+                          : current.filter((id) => id !== message.id),
+                      );
+                    }}
+                  />
+                  <span>{message.subject}</span>
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void onAssist()}
+            className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+          >
+            Draft with AI
+          </button>
+        </div>
+      ) : (
+        <p className="max-w-prose text-sm text-muted">
+          {assistant.reason === "free"
+            ? "AI drafts are included with Pro. You can still fill a template, copy it, or open it in your mail app."
+            : "We couldn't check your plan, so an AI draft isn't offered on this load. Your template is still here."}
+        </p>
+      )}
       <div className="flex flex-wrap gap-3">
         <label className="block min-w-48 flex-1 space-y-1 text-xs font-medium text-muted">
           Trip
