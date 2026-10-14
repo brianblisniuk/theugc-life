@@ -1791,6 +1791,66 @@
   },
   {
     "schema": "public",
+    "name": "read_hotel_metric_confidence",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_personal_aggregate",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_network_aggregate",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_creator_fit",
+    "args": "p_destination_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "record_creator_fit_decision",
+    "args": "p_hotel_id uuid, p_decision text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_fit_decision",
+    "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "create_own_rebill_checkout",
     "args": "p_product_code text",
     "searchPath": "\"\"",
