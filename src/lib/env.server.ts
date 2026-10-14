@@ -14,8 +14,7 @@ const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  // STUB ONLY (src/app/api/billing/webhook/route.ts). MUST NEVER be set in
-  // production until Rebill signature verification replaces the stub.
+  // Retired. The Rebill webhook verifies x-rebill-signature and ignores this.
   BILLING_WEBHOOK_SECRET: z.string().min(1).optional(),
 });
 

@@ -20,7 +20,7 @@ export const BILLING_COPY = {
   // premium object (D049). What a plan unlocks is Premium Intelligence and
   // actionable contacts.
   freeBody:
-    "Every hotel is already discoverable. Premium Intelligence is not included on Free. Pro and Max add it worldwide. This page does not charge a card.",
+    "Every hotel is already discoverable. Premium Intelligence is not included on Free. Pro and Max add it worldwide. A payment is not access until a verified webhook writes an entitlement.",
 } as const;
 
 export type BillingAccessState =

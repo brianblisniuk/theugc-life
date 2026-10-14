@@ -80,7 +80,9 @@ export default function PricingPage() {
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-sm text-muted">Pack purchases are not open yet.</p>
+      <p className="mt-2 text-sm text-muted">
+        Signed-in creators buy packs from the billing page.
+      </p>
 
       <p className="mt-6 text-sm text-muted">
         Creator Destination Pass remains ${PRICING.destinationPass.priceUsd} for{" "}

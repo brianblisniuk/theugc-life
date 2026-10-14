@@ -815,16 +815,24 @@ is not enough data, and those hotels are left out of the metric order. The
 name order and the recent-activity order stay when no metric is requested.
 Agency F03 stays planned. This PR does not edit `0071` or `0072`.
 
-**P01 plans and pricing** (canon v1.1 credits, Brian 14 Oct 2026) is draft
-PR #79 on `cursor/p01-plans-pricing-de4c`. D131–D134. Migrations
-`0075_plan_tier_and_pricing.sql` and `0076_credit_grant_periods.sql`. Free
-is 5 credits per rolling week from account creation and does not stack past
-5. Pro is $20/mo billed annually or $30/mo monthly, with 150 credits a
-month. Max replaces Pro+ at $50/mo billed annually or $60/mo monthly, with
-500 credits a month. Packs are 50 credits for $10, 150 for $20, and 500 for
-$40. Prices are config. Checkout is not wired. Existing ledger rows are not
-reduced. `0073` and `0074` are G03 and are not edited. F03 order files are
-not edited.
+**P01 plans and pricing** (canon v1.1 credits, Brian 14 Oct 2026) is merged
+as PR #79, merge `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7`. D131–D134.
+Migrations `0075_plan_tier_and_pricing.sql` and
+`0076_credit_grant_periods.sql`. Free is 5 credits per rolling week from
+account creation and does not stack past 5. Pro is $20/mo billed annually or
+$30/mo monthly, with 150 credits a month. Max replaces Pro+ at $50/mo billed
+annually or $60/mo monthly, with 500 credits a month. Packs are 50 credits
+for $10, 150 for $20, and 500 for $40. Prices are config. Existing ledger
+rows are not reduced. `0073` and `0074` are G03 and are not edited. F03
+order files are not edited.
+
+**P02 Rebill billing integration** is draft PR #80 on
+`cursor/p02-rebill-billing-9f5b`. D135–D139. Migrations
+`0077_rebill_checkout.sql`, `0078_rebill_apply_event.sql`, and
+`0079_plan_credit_periods.sql`. Hosted checkout only. The webhook verifies
+the Rebill signature and confirms the payment before writing an entitlement.
+Live charges stay off unless `REBILL_LIVE=true`. `expected_head` stays null.
+Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

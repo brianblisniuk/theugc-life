@@ -1788,5 +1788,45 @@
     "authenticated": true,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "create_own_rebill_checkout",
+    "args": "p_product_code text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "attach_own_rebill_checkout_link",
+    "args": "p_checkout_id uuid, p_link_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "record_rebill_plan_id",
+    "args": "p_product_code text, p_plan_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "apply_rebill_event",
+    "args": "p_event jsonb",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
   }
 ]

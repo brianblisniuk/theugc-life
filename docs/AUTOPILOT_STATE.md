@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `257123db9d830d146fc601a68bb2ccf250ecd49f` (merge of PR #78, F03 hotel ranking rules, D130, no migration, 2026-10-14)  
-**State:** AWAITING_AUDIT. P01 plans and pricing. Draft PR #79 on `cursor/p01-plans-pricing-de4c`. D131–D134. Migrations `0075` and `0076`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
-**Current frontier:** P01. F03 is merged (PR #78). H01 is merged (PR #77). G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 amounts are superseded by D131. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is merged with H01. D121–D124 are unused. D125 is merged with G03. D130 is merged with F03. D131–D134 are Accepted for this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
+**Last verified main:** `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7` (merge of PR #79, P01 plans and pricing, D131–D134, migrations `0075` and `0076`, 2026-10-14)  
+**State:** AWAITING_AUDIT. P02 Rebill billing integration. Draft PR #80 on `cursor/p02-rebill-billing-9f5b`. D135–D139. Migrations `0077`, `0078`, and `0079`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
+**Current frontier:** P02. P01 is merged (PR #79). F03 is merged (PR #78). H01 is merged (PR #77). G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 amounts are superseded by D131. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is merged with H01. D121–D124 are unused. D125 is merged with G03. D130 is merged with F03. D131–D134 are merged with P01. D135–D139 are Accepted for this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -55,9 +55,11 @@
 - PR #76 — G03 portfolio, D125, migrations `0073` and `0074` — `2cb8b2d660b93963e9ad8ec319b843bcd4189832`
 - PR #77 — H01 metric rankings, D120, migrations `0071` and `0072` — `b541343c7f7e87e3402d377d88bc5b23d67cbe5a`
 - PR #78 — F03 hotel ranking rules, D130, no migration — `257123db9d830d146fc601a68bb2ccf250ecd49f`
+- PR #79 — P01 plans and pricing, D131–D134, migrations `0075` and `0076` — `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7`
 
 ## Next action
-- PR #79 is P01 plans and pricing on `cursor/p01-plans-pricing-de4c`. AWAITING_AUDIT. D131–D134. Migrations `0075` and `0076`. Free is 5 credits per rolling week and does not stack. Pro is $20/mo billed annually or $30 monthly, 150 credits. Max replaces Pro+ at $50/mo billed annually or $60 monthly, 500 credits. Packs are 50/$10, 150/$20, and 500/$40. No charge. Existing ledger rows stay. `expected_head` stays null. Do not merge.
+- PR #80 is P02 Rebill billing integration on `cursor/p02-rebill-billing-9f5b`. AWAITING_AUDIT. D135–D139. Migrations `0077`, `0078`, and `0079`. Hosted checkout. Webhook path `/api/billing/webhook`. Live charges off unless `REBILL_LIVE=true`. `expected_head` stays null. Do not merge.
+- P01 is merged (PR #79, `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7`). D131–D134. Migrations `0075` and `0076`. This PR does not edit those files.
 - F03 is merged (PR #78, `257123db9d830d146fc601a68bb2ccf250ecd49f`). D130. No migration. This PR does not edit the F03 order files.
 - H01 is merged (PR #77, `b541343c7f7e87e3402d377d88bc5b23d67cbe5a`). D120. Migrations `0071` and `0072`. This PR does not edit those files.
 - G03 is merged (PR #76, `2cb8b2d660b93963e9ad8ec319b843bcd4189832`). D125. Migrations `0073` and `0074`. This PR does not edit those files.
@@ -78,7 +80,7 @@
 - E02 is merged (PR #59, `edc326d`, D081 Accepted). Profile stays a primary item.
 - D077 is Accepted (Brian, 13 Oct 2026). D099 closes the three C01 questions and is the C02–C05 implementation. Model-backed B07 inference stays out of this PR.
 - D092–D094 stay Proposed. D106 stays Accepted.
-- Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 and BASE-N9 remain outside this PR.
+- Non-blocking residuals are listed in `.grok/autopilot-state.json` → `unresolved_findings`. BASE-N5 is closed: the webhook no longer trusts a body user id. BASE-N9 remains outside this PR.
 - **State updates ride in each block's closing PR** (no standalone state-only PRs).
 - Owner interaction happens only via human-frontier labels.
 

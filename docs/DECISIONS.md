@@ -2924,8 +2924,8 @@ The payment provider decision was already accepted in
 (`rebill.com`) as its payment provider. That decision was not indexed in this
 file, so this entry is added for traceability. It changes no prior entry, price,
 or scope. Payments remain separate from entitlements (D007). Integration
-details remain to be implemented; the PR #43 shared-secret webhook stub is not
-the final Rebill integration.
+details were not in D073. D137 and D138 replace the PR #43 shared-secret
+webhook stub. The stub is not the integration.
 
 Authoritative text: `docs/PAYMENT_PROVIDER.md`.
 
@@ -4718,7 +4718,9 @@ cache miss.
 
 ## D132 — Free weekly credits do not stack
 
-Status: **Accepted.** The week is 7 days from `users.created_at`, not a
+Status: **Accepted.** D135 supersedes the calendar-month Pro/Max key and the
+sentence below that unused Pro or Max credits are not expired. The Free
+week is unchanged. The week is 7 days from `users.created_at`, not a
 calendar week. Period index is the whole number of weeks since that
 timestamp. The grant key is `free_weekly:{period}`. A second call in the
 same period inserts nothing.
@@ -4779,3 +4781,123 @@ User B's flags, balance, or CRM cap.
 
 Existing ledger rows are not updated or deleted. Accounts that already
 hold `free_grant:v1` keep that amount.
+
+## D135 — Plan credits last 30 days and renew on a successful payment
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).** Supersedes the
+D132 calendar-month plan period and the D132 sentence that unused Pro or Max
+credits are not expired. It does not change Free weekly credits, pack prices,
+or D131 prices.
+
+Pro and Max credits last 30 days. A period is
+`floor((now - entitlement.starts_at) / 30 days)`. The grant key is
+`plan_monthly:{entitlement}:{starts_epoch}:{period}`. The tier is not in the
+key. Missed periods are not backfilled.
+
+Monthly plans (`pro_monthly`, `max_monthly`): a successful Rebill payment
+extends `expires_at` by 30 days when the entitlement is still active, and
+opens a new window from `now()` when it has lapsed or been revoked. The
+webhook then calls `ensure_credit_grants`. A new 30-day bucket is written
+only when that key is missing and the entitlement is still active. A second
+successful payment inside the same bucket extends access and does not add a
+second grant for that bucket. A failed or missing payment does not move
+`expires_at`. When `expires_at` is in the past, the next grant run expires
+the Rebill entitlement and does not write another plan grant.
+
+Annual plans (`pro_annual`, `max_annual`): one successful payment sets
+`expires_at` to 12 months. Credits renew every 30 days during that window
+when the billing or credits page calls `ensure_own_credit_grants`. No
+monthly payment is required inside the year. After the 12 months, access
+ends unless another payment succeeds.
+
+Unused plan credits are reversed when the next bucket opens and when the
+plan is no longer active. Spends reduce plan credits first, then weekly
+credits, then durable credits (`pack_purchase`, `admin_grant`, `courtesy`,
+`free_grant:v1`). A manual entitlement whose source is not `rebill`, or
+whose `expires_at` is null, is not expired by this function.
+
+## D136 — Credit packs are one grant per successful payment
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
+
+Packs stay 50 credits for $10, 150 for $20, and 500 for $40 (D131). A
+successful payment grants that pack once. The ledger key is `pack:{payment
+id}`. A pack is not a plan and does not write an entitlement. Replaying the
+same payment id does not grant again. A refund or chargeback reverses the
+full pack grant. The balance may go negative if those credits were already
+spent. Spent hotel unlocks are not undone (D014).
+
+## D137 — Sandbox checkout; live charges stay off
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
+
+Checkout is a hosted Rebill payment link. The API base is
+`https://api.rebill.com/v3`. The payment link base is
+`https://pay.rebill.com/theugc-life`. This server does not call
+`POST /v3/checkout`. A direct card charge is refused even when live mode is
+on.
+
+`REBILL_SECRET_KEY` and `REBILL_WEBHOOK_SIGNING_SECRET` are server-only.
+`REBILL_PUBLIC_KEY` may be read by server code that does not import the
+secret. None of the values are committed. A sandbox organization may open a
+hosted link when the secret is set. A productive organization may open one
+only when `REBILL_LIVE` is exactly `true`. The default is off.
+
+Prices charged are `credit_config`: monthly prices as stored, annual prices
+times 12. The browser sends a product code. It does not send an account id
+or an amount.
+
+## D138 — Verified webhook, then an entitlement
+
+Status: **Accepted.** Implements D007 for Rebill. Supersedes the PR #43
+shared-secret stub.
+
+`POST /api/billing/webhook` checks `x-rebill-signature`, the hex HMAC-SHA256
+of the raw body, using `REBILL_WEBHOOK_SIGNING_SECRET`. There is no timestamp.
+The same delivery is ignored by `webhook.logId`. The same payment id is
+applied once.
+
+Payment status, amount, and currency are read from `GET /v3/payments/:id`
+after the signature check. A subscription plan change is read from
+`GET /v3/subscriptions/:id` and `GET /v3/plans/:id`. The account is the
+`rebill_checkouts` row or the stored `subscriptions` row. A user id in the
+body is ignored. If the checkout and the subscription name different
+accounts, the result is `user_conflict` and nothing is granted.
+
+`apply_rebill_event` is `service_role` only. It writes the entitlement.
+A `purchases` row, a `subscriptions` row, a checkout row, or a webhook row
+is not access. `BILLING_WEBHOOK_SECRET` does not authorize this route.
+
+`authenticated` may create and attach only its own checkout. It cannot
+execute `apply_rebill_event` or `record_rebill_plan_id`. It cannot read
+another account's checkout, and it cannot read webhook events.
+
+## D139 — Plan state, refunds, and Pro ↔ Max
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
+
+`subscriptions.status` is `active`, `past_due`, `canceled`, or `expired`.
+The column `cancelled_at` keeps its existing spelling. The status is
+commercial state. Access is the entitlement.
+
+Rebill `active` maps to `active`. `paused` with `statusDetail` `defaulted`
+maps to `past_due` and does not extend the window. Other `paused` values,
+and `cancelled` or `canceled`, map to `canceled`. Access continues until
+`expires_at`. `finished` or `expired` maps the subscription to `expired`.
+The entitlement still follows its own `expires_at`. A rejected or cancelled
+payment marks an active subscription `past_due` and does not extend it.
+
+A refund, a partial refund, or a chargeback sets the entitlement to
+`revoked` immediately, sets the subscription to `canceled`, and reverses
+unused plan credits. A pack reversal reverses the full grant for that
+payment. A refund that arrives before the grant is recorded so a later
+approval of that payment id does not grant. A voluntary cancel does not
+revoke before `expires_at`.
+
+Upgrade or downgrade between Pro and Max, from `subscription.updated` with
+`planUpdated`, switches `access_type` for the rest of the paid window. It
+does not change `expires_at` and does not add credits for the current
+bucket. The next 30-day bucket uses the new tier amount. The subscription
+interval is updated so the next successful payment uses the new window. The
+current window stays. A refund of one payment on a shared entitlement
+revokes that entitlement and reverses the unused plan credits then outstanding.

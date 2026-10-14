@@ -102,7 +102,7 @@ D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written 
 
 ## D131 — plan amounts
 
-`credits.plan_config` is the live amounts. Free is 5 credits per rolling week and does not stack past 5. Pro is 150 credits a month at $20/mo billed annually or $30/mo monthly. Max replaces Pro+ at 500 credits a month, $50/mo billed annually or $60/mo monthly. Packs are 50 for $10, 150 for $20, and 500 for $40. Cache TTL stays 365 days. A miss is still not charged. Unlock cost stays 1. The numbers are config. Checkout is not open.
+`credits.plan_config` is the live amounts. Free is 5 credits per rolling week and does not stack past 5. Pro is 150 credits a month at $20/mo billed annually or $30/mo monthly. Max replaces Pro+ at 500 credits a month, $50/mo billed annually or $60/mo monthly. Packs are 50 for $10, 150 for $20, and 500 for $40. Cache TTL stays 365 days. A miss is still not charged. Unlock cost stays 1. The numbers are config. Checkout is a hosted Rebill link (D137). A payment is not access until `apply_rebill_event` writes an entitlement (D138).
 
 Free CRM stays 10 saved hotels, 5 active pipeline items, and 1 active trip. Pro and Max are exempt worldwide. A Destination Pass is unchanged.
 

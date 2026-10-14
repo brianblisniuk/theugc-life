@@ -87,6 +87,13 @@ const CONTRACT: Record<string, Expected> = {
   access_entitlements: { anon: "", authenticated: "S", serviceRole: "all" },
   purchases: { anon: "", authenticated: "S", serviceRole: "all" },
   subscriptions: { anon: "", authenticated: "S", serviceRole: "all" },
+  // P02 (0077, D138). The owner may see their own checkout. The link is not
+  // access. Webhook rows, payment effects, and the plan catalog are not
+  // client tables.
+  rebill_checkouts: { anon: "", authenticated: "S", serviceRole: "all" },
+  rebill_webhook_events: { anon: "", authenticated: "", serviceRole: "all" },
+  rebill_payment_effects: { anon: "", authenticated: "", serviceRole: "all" },
+  rebill_catalog: { anon: "", authenticated: "", serviceRole: "all" },
 
   // Creator workspace. Trip writes are service-role RPCs (0046) so the Free
   // active-trip allowance cannot be skipped. The CRM was already read-only.

@@ -1,21 +1,15 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 257123db9d830d146fc601a68bb2ccf250ecd49f (PR #78, F03 hotel ranking rules, D130, no migration). P01 plans and pricing is draft PR #79 on cursor/p01-plans-pricing-de4c. D131-D134. Migrations 0075 and 0076. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 7d9e9815e33a25792f684d1e4f372f4cd36a8ed7 (PR #79, P01 plans and pricing, D131-D134, migrations 0075 and 0076). P02 Rebill billing is draft PR #80 on cursor/p02-rebill-billing-9f5b. D135-D139. Migrations 0077, 0078, and 0079. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "257123db9d830d146fc601a68bb2ccf250ecd49f",
-  "active_block": "P01 plans and pricing",
-  "branch": "cursor/p01-plans-pricing-de4c",
-  "pr": 79,
+  "last_recorded_main": "7d9e9815e33a25792f684d1e4f372f4cd36a8ed7",
+  "active_block": "P02 Rebill billing integration",
+  "branch": "cursor/p02-rebill-billing-9f5b",
+  "pr": 80,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
-    {
-      "id": "BASE-N5",
-      "severity": "NON-BLOCKING",
-      "summary": "Billing webhook stub trusts body user_id; safe only while BILLING_WEBHOOK_SECRET is unset in production (doc-only guard)",
-      "ref": "src/app/api/billing/webhook/route.ts"
-    },
     {
       "id": "BASE-N9",
       "severity": "NON-BLOCKING",
@@ -24,9 +18,9 @@
     }
   ],
   "ci_status": {
-    "ref": "257123db9d830d146fc601a68bb2ccf250ecd49f",
+    "ref": "7d9e9815e33a25792f684d1e4f372f4cd36a8ed7",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "PR #79 is P01 plans and pricing on cursor/p01-plans-pricing-de4c. AWAITING_AUDIT. D131-D134. Migrations 0075 and 0076. Free is 5 credits per rolling week and does not stack. Pro is 150 credits at $20/mo billed annually or $30 monthly. Max replaces Pro+ at 500 credits, $50/mo billed annually or $60 monthly. Packs are 50/$10, 150/$20, 500/$40. No charge. Existing credits stay. F03 is merged (PR #78). expected_head stays null. Do not merge."
+  "next_dependency": "PR #80 is P02 Rebill billing integration on cursor/p02-rebill-billing-9f5b. AWAITING_AUDIT. D135-D139. Migrations 0077, 0078, and 0079. Hosted checkout. Webhook /api/billing/webhook. Live charges off unless REBILL_LIVE=true. P01 is merged (PR #79). expected_head stays null. Do not merge."
 }

@@ -26,6 +26,6 @@ These stay undone until Brian approves each one. Automation must not perform the
 | Supabase production migrations | **NOT done.** The hosted project has never had these files applied. `0044` failed on that layout while `digest()` could not see pgcrypto in `extensions`. The source now resolves `digest()` for both `extensions` and `public`, and `0053` calls `public.digest`. Applying the chain to production still needs Brian’s approval. | Brian |
 | Google OAuth verification and authorized domain | **NOT done** | Brian |
 | Maps key restricted to the production domain | **NOT done** | Brian |
-| Rebill | **NOT done** | Brian |
+| Rebill | **Sandbox code only. Live charges off unless `REBILL_LIVE=true`. Production keys and webhook registration are not done.** | Brian |
 
 No production site is configured by this block. No production migration has been applied by this block. The end-to-end job applies the same files on local Supabase and does not move pgcrypto out of `extensions`. No Google verification, no Maps key restriction, and no Rebill account are part of this block.
