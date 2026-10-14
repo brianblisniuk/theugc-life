@@ -49,6 +49,9 @@ export const METRIC_READ_NOTICE =
 export const RANKING_EMPTY_COPY =
   "No hotel in this destination has enough confirmed data for this metric yet.";
 
+export const ORDER_BELOW_FLOOR_COPY =
+  "Not enough data. Hotels that have not cleared the floor for this metric are left out of the order.";
+
 export const LOCKED_METRIC_COPY = {
   title: "Premium metric",
   description:

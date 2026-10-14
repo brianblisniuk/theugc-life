@@ -139,12 +139,9 @@ describe("metric ranking contract", () => {
     ).toBe("error");
   });
 
-  it("does not change Discover, Pipeline, or Home ordering", () => {
+  it("leaves Home and the default catalog query off the metric order", () => {
     const files = [
       "src/lib/hotels/queries.ts",
-      "src/lib/pipeline/queries.ts",
-      "src/app/(app)/app/discover/page.tsx",
-      "src/app/(app)/app/pipeline/page.tsx",
       "src/lib/home/next-actions.ts",
       "src/lib/home/queries.ts",
     ];
@@ -153,6 +150,18 @@ describe("metric ranking contract", () => {
       expect(text, file).not.toContain("read_destination_metric_ranking");
       expect(text, file).not.toContain("hotel_metric_signal");
       expect(text, file).not.toContain("@/lib/metrics");
+    }
+  });
+
+  it("keeps the signal views out of the Discover and Pipeline pages", () => {
+    const files = [
+      "src/app/(app)/app/discover/page.tsx",
+      "src/app/(app)/app/pipeline/page.tsx",
+    ];
+    for (const file of files) {
+      const text = readFileSync(path.join(ROOT, file), "utf8");
+      expect(text, file).not.toContain("read_destination_metric_ranking");
+      expect(text, file).not.toContain("hotel_metric_signal");
     }
   });
 });

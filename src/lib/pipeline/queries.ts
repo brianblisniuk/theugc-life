@@ -15,10 +15,14 @@
  */
 import "server-only";
 
+import { resolveSession, type SessionResolution } from "@/lib/auth/guards";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/hotels/ids";
 import { workspaceLimit } from "@/lib/entitlements/inventory";
+import type { BillingAccessResult } from "@/lib/billing/queries";
+import { rankOwnedHotels } from "@/lib/metrics/pipeline-rank";
+import type { MetricId } from "@/lib/metrics/contract";
 
 import {
   DEAL_ACTIONS,
@@ -62,6 +66,10 @@ export interface PipelineListItem {
     destinationName: string | null;
     countryCode: string | null;
   } | null;
+  /** Set only on a one-metric order. Absent on the activity order. */
+  metricRank?: number;
+  metricValue?: string;
+  metricSample?: string | null;
 }
 
 /**
@@ -123,7 +131,22 @@ export interface PipelinePage {
  * Tri-state for the same reason every other read here is: a failed count or a
  * failed page read must never be rendered as "you have no hotels".
  */
-export type PipelineListResult = { status: "ok"; page: PipelinePage } | { status: "error" };
+export type PipelineListResult =
+  | { status: "ok"; page: PipelinePage }
+  | { status: "locked"; metric: MetricId }
+  | { status: "not_enough_data"; metric: MetricId }
+  | { status: "error" };
+
+/** Above this, a metric order fails closed instead of ranking a truncated CRM. */
+export const PIPELINE_RANK_CAP = 2000;
+
+export interface PipelineRankAuth {
+  session: SessionResolution;
+  billing?: BillingAccessResult;
+}
+
+const RANK_SELECT =
+  "id, status, saved_at, last_activity_at, next_followup_at, hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
 
 const SELECT_COLUMNS =
   "id, status, saved_at, last_activity_at, next_followup_at, hotel:hotels(id, name, country_code, destination:destinations(name))";
@@ -143,6 +166,124 @@ export function normalizePageParam(raw: string | string[] | undefined | null): n
   return parsed;
 }
 
+function mapRankRow(raw: unknown): PipelineListItem & { destinationId: string | null } {
+  const row = raw as Record<string, unknown>;
+  const hotelRaw = row.hotel as Record<string, unknown> | Record<string, unknown>[] | null;
+  const hotel = Array.isArray(hotelRaw) ? hotelRaw[0] : hotelRaw;
+  const destRaw = hotel?.destination as
+    Record<string, unknown> | Record<string, unknown>[] | null | undefined;
+  const dest = Array.isArray(destRaw) ? destRaw[0] : destRaw;
+  const destinationId =
+    typeof hotel?.destination_id === "string"
+      ? hotel.destination_id
+      : typeof dest?.id === "string"
+        ? dest.id
+        : null;
+  return {
+    id: String(row.id),
+    status: row.status as PipelineStatus,
+    savedAt: (row.saved_at as string | null) ?? null,
+    lastActivityAt: (row.last_activity_at as string | null) ?? null,
+    nextFollowupAt: (row.next_followup_at as string | null) ?? null,
+    destinationId,
+    hotel: hotel
+      ? {
+          id: String(hotel.id),
+          name: String(hotel.name),
+          destinationName: (dest?.name as string | null) ?? null,
+          countryCode: (hotel.country_code as string | null) ?? null,
+        }
+      : null,
+  };
+}
+
+async function listRankedPipelineItems(
+  supabase: PipelineQueryClient,
+  status: string | null | undefined,
+  requestedPage: number,
+  rank: MetricId,
+  rankAuth: PipelineRankAuth | undefined,
+): Promise<PipelineListResult> {
+  const pageSize = PIPELINE_PAGE_SIZE;
+  let countBuilder = supabase.from("pipeline_items").select("id", { count: "exact", head: true });
+  if (status) countBuilder = countBuilder.eq("status", status);
+  const { count, error: countError } = await countBuilder;
+  if (countError || count === null || count === undefined) return { status: "error" };
+  if (count === 0) {
+    return {
+      status: "ok",
+      page: {
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize,
+        totalPages: 1,
+        hasPrevious: false,
+        hasNext: false,
+      },
+    };
+  }
+  if (count > PIPELINE_RANK_CAP) return { status: "error" };
+
+  let builder = supabase.from("pipeline_items").select(RANK_SELECT);
+  if (status) builder = builder.eq("status", status);
+  const { data, error } = await builder.order("id", { ascending: true }).range(0, count - 1);
+  if (error) return { status: "error" };
+
+  const mapped = (data ?? []).map((raw) => mapRankRow(raw));
+  const auth = rankAuth ?? { session: await resolveSession() };
+  const ranked = await rankOwnedHotels(
+    supabase as never,
+    rank,
+    mapped.flatMap((item) =>
+      item.hotel ? [{ hotelId: item.hotel.id, destinationId: item.destinationId }] : [],
+    ),
+    auth,
+  );
+  if (ranked.status === "locked") return { status: "locked", metric: rank };
+  if (ranked.status === "not_enough_data") return { status: "not_enough_data", metric: rank };
+  if (ranked.status !== "ok") return { status: "error" };
+
+  const byHotel = new Map(ranked.hotels.map((hotel) => [hotel.hotelId, hotel]));
+  const ordered = mapped
+    .filter((item) => item.hotel && byHotel.has(item.hotel.id))
+    .sort((a, b) => {
+      const left = byHotel.get(a.hotel!.id)!;
+      const right = byHotel.get(b.hotel!.id)!;
+      if (left.rank !== right.rank) return left.rank - right.rank;
+      if (a.hotel!.id !== b.hotel!.id) return a.hotel!.id < b.hotel!.id ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .map((item) => {
+      const signal = byHotel.get(item.hotel!.id)!;
+      const { destinationId: _destinationId, ...rest } = item;
+      return {
+        ...rest,
+        metricRank: signal.rank,
+        metricValue: signal.valueLabel,
+        metricSample: signal.sampleBasis,
+      };
+    });
+
+  const total = ordered.length;
+  if (total === 0) return { status: "not_enough_data", metric: rank };
+  const totalPages = Math.ceil(total / pageSize);
+  const page = Math.min(Math.max(1, Math.trunc(requestedPage) || 1), totalPages);
+  const from = (page - 1) * pageSize;
+  return {
+    status: "ok",
+    page: {
+      items: ordered.slice(from, from + pageSize),
+      total,
+      page,
+      pageSize,
+      totalPages,
+      hasPrevious: page > 1,
+      hasNext: page < totalPages,
+    },
+  };
+}
+
 /**
  * One page of the creator's relationships, most recent activity first.
  *
@@ -160,9 +301,14 @@ export async function listPipelineItems(
   requestedPage = 1,
   /** Injectable for tests; production always uses the cookie-bound client. */
   injectedClient?: PipelineQueryClient,
+  rank: MetricId | null = null,
+  rankAuth?: PipelineRankAuth,
 ): Promise<PipelineListResult> {
   const supabase = injectedClient ?? (await createClient());
   const pageSize = PIPELINE_PAGE_SIZE;
+  if (rank) {
+    return listRankedPipelineItems(supabase, status, requestedPage, rank, rankAuth);
+  }
 
   // Exact count first, so an out-of-range page can be resolved deterministically
   // instead of being guessed from an empty result set.

@@ -63,6 +63,11 @@ export function PipelineBoard({
                   <>
                     <b>{item.hotel?.name ?? "Hotel"}</b>
                     <small className="block text-[#555]">{item.hotel?.destinationName ?? ""}</small>
+                    {item.metricValue ? (
+                      <span className="mt-2 block text-xs font-semibold text-[#111]">
+                        {item.metricRank}. {item.metricValue}
+                      </span>
+                    ) : null}
                     {whenLabel(item) ? (
                       <span className="mt-2 block text-xs font-semibold text-[#555]">
                         {whenLabel(item)}

@@ -799,14 +799,21 @@ the decisions. `0050` and `0068` are not edited. F04 home files are not
 edited. This PR does not edit `0069`.
 
 **H01 metric rankings and hotel signals** (canon v1.1 Sprint 5, not the
-second-vertical H01 row) is PR #77 on `cursor/h01-metric-rankings-367c`,
-AWAITING_AUDIT. Migrations `0071_hotel_metric_signals.sql` and
-`0072_hotel_metric_ranking_reads.sql`. D120. Three separate metrics from
-confirmed network facts: response rate, reply-time band, and creator
-activity. Below a floor the value is not enough data, never zero. A locked
-reply ranking omits hotels. Discover and Pipeline order are unchanged (F03).
-`src/lib/home` is not edited. `0069` is G02 and is not edited. `0070` is
-unused. `0073` and `0074` are G03 and are not edited. Do not merge.
+second-vertical H01 row) is merged as PR #77, merge
+`b541343c7f7e87e3402d377d88bc5b23d67cbe5a`. Migrations
+`0071_hotel_metric_signals.sql` and `0072_hotel_metric_ranking_reads.sql`.
+D120. Three separate metrics from confirmed network facts. Below a floor the
+value is not enough data, never zero. A locked reply ranking omits hotels.
+`0070` is unused. `0073` and `0074` are G03 and are not edited.
+
+**F03 hotel ranking rules** (canon v1.1, not the agency F03 row in the table
+above) is draft PR #78. It orders Discover and Pipeline by one H01 metric (D130). No migration.
+`0075` and `0076` are unused. D131–D134 are unused. The order is `rank_key`
+descending, then hotel id. A locked reply-rate order has no hotel list.
+Below the floor is not enough data, and those hotels are left out of the
+metric order. The name order and the recent-activity order stay when no
+metric is requested. Agency F03 stays planned. This PR does not edit `0071`
+or `0072`.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

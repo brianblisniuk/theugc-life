@@ -8,6 +8,7 @@
  * (PRD §22: "Do not load every hotel/contact record into browser memory").
  */
 import { HOTEL_TYPES } from "@/lib/import/contract";
+import { parseMetricRank, type MetricId } from "@/lib/metrics/order";
 
 /** Canonical hotel-type vocabulary the importer writes (HOTEL_DATA_CONTRACT §3). */
 export const HOTEL_TYPE_FILTERS = HOTEL_TYPES;
@@ -66,6 +67,11 @@ export interface DiscoverQuery {
   activity: ActivityFilter | null;
   /** Public observed-collaboration presence, or null. */
   collaboration: CollaborationFilter | null;
+  /**
+   * One H01 metric (D130). Null keeps the catalog order (name, then id).
+   * A second metric or an unknown value is dropped.
+   */
+  rank: MetricId | null;
   /** 1-based page number. */
   page: number;
   /** Bounded page size. */
@@ -186,6 +192,8 @@ export function parseDiscoverQuery(params: RawSearchParams = {}): DiscoverQuery 
       ? (rawCollaboration as CollaborationFilter)
       : null;
 
+  const rank = parseMetricRank(first(params.rank));
+
   const rawPage = Number(first(params.page));
   const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
 
@@ -204,9 +212,26 @@ export function parseDiscoverQuery(params: RawSearchParams = {}): DiscoverQuery 
     destination,
     activity,
     collaboration,
+    rank,
     page,
     pageSize,
   };
+}
+
+/**
+ * Catalog narrowing other than destination and metric order. Destination scope
+ * is the ranking RPC. A metric order is not itself a column filter.
+ */
+export function hasDiscoverNarrowing(query: DiscoverQuery): boolean {
+  return Boolean(
+    query.q ||
+    query.type ||
+    query.minStars !== null ||
+    query.verification ||
+    query.country ||
+    query.activity ||
+    query.collaboration,
+  );
 }
 
 /** True when any user-controlled narrowing is active (drives the reset CTA). */
@@ -219,7 +244,8 @@ export function hasActiveFilters(query: DiscoverQuery): boolean {
     query.country ||
     query.destination ||
     query.activity ||
-    query.collaboration,
+    query.collaboration ||
+    query.rank,
   );
 }
 
@@ -234,6 +260,7 @@ export function buildDiscoverHref(query: Partial<DiscoverQuery>): string {
   if (query.destination) sp.set("destination", query.destination);
   if (query.activity) sp.set("activity", query.activity);
   if (query.collaboration) sp.set("collaboration", query.collaboration);
+  if (query.rank) sp.set("rank", query.rank);
   if (query.page && query.page > 1) sp.set("page", String(query.page));
   // Preserve a non-default page size, otherwise paging would silently change
   // the window and skip or repeat rows.
