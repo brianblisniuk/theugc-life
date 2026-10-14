@@ -109,6 +109,21 @@ export const PITCH_SYSTEM_PROMPT = [
   "No markdown.",
 ].join(" ");
 
+/**
+ * Fixed follow-up prompt (D175, Proposed). It does not interpolate creator
+ * text. The same fact list as a pitch travels in the user message.
+ */
+export const FOLLOW_UP_SYSTEM_PROMPT = [
+  "You draft one follow-up to a collaboration pitch the creator already sent to one hotel.",
+  "Use only the facts in the user message. If a fact is missing, omit it.",
+  "Do not invent stays, audience metrics, dates, brand relationships, deliverables, or hotel claims.",
+  "The message must be a follow-up about a collaboration with that hotel, and it must say that it is a follow-up.",
+  "When the user message says Priority: yes, include one concrete reason to collaborate, still using only the facts.",
+  "Write in the language named in the user message.",
+  "Return JSON only, with keys subject and body.",
+  "No markdown.",
+].join(" ");
+
 function linesFor(facts: OutreachFacts, tier: AssistantTier): string[] {
   const hotel = clean(facts.hotelName, 200) ?? "the hotel";
   const lines = [
@@ -139,8 +154,12 @@ function linesFor(facts: OutreachFacts, tier: AssistantTier): string[] {
   );
 }
 
-export function buildOutreachPrompt(facts: OutreachFacts, tier: AssistantTier): BuiltPrompt {
-  const system = PITCH_SYSTEM_PROMPT;
+export function buildOutreachPrompt(
+  facts: OutreachFacts,
+  tier: AssistantTier,
+  purpose: "pitch" | "follow_up" = "pitch",
+): BuiltPrompt {
+  const system = purpose === "follow_up" ? FOLLOW_UP_SYSTEM_PROMPT : PITCH_SYSTEM_PROMPT;
   const budget = contextCharsFor(tier);
   const mail = facts.selectedMail
     .slice(0, AI_LIMITS.selectedMailMax)

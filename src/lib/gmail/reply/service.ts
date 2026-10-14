@@ -418,6 +418,21 @@ export async function interpretOneThread(
         throw new Error(`gmail_send_record_thread_bounces failed: ${bounced.error.message}`);
       }
     }
+    if (
+      interpretation.messageObservations.some(
+        (row) =>
+          row.responseClass === "qualifying_human_reply" ||
+          row.responseClass === "ambiguous_inbound",
+      )
+    ) {
+      const stopped = await deps.db.rpc("gmail_followup_settle", {
+        p_now: new Date().toISOString(),
+        p_user_id: input.userId,
+      });
+      if (stopped.error) {
+        throw new Error(`gmail_followup_settle failed: ${stopped.error.message}`);
+      }
+    }
     return { result: "ok", committed: commitResult.committed };
   }
   return { result: commitResult.result };

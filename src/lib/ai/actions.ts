@@ -100,6 +100,19 @@ async function selectedMail(ids: readonly string[]): Promise<SelectedMail[] | nu
 export async function draftPitchWithAssistantAction(
   formData: FormData,
 ): Promise<AssistantActionResult> {
+  return draftAssistant(formData, "pitch");
+}
+
+export async function draftFollowUpWithAssistantAction(
+  formData: FormData,
+): Promise<AssistantActionResult> {
+  return draftAssistant(formData, "follow_up");
+}
+
+async function draftAssistant(
+  formData: FormData,
+  purpose: "pitch" | "follow_up",
+): Promise<AssistantActionResult> {
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const userId = resolution.session.userId;
@@ -170,6 +183,7 @@ export async function draftPitchWithAssistantAction(
   if (balance.error || typeof balance.data !== "number") return { result: "error" };
 
   const deps: ComposeDeps = {
+    purpose,
     fullAi: flags.full_ai_email === true,
     priority: flags.priority_ai === true,
     balance: balance.data,
@@ -209,7 +223,8 @@ export async function draftPitchWithAssistantAction(
       if (prepared.error || !prepared.data || typeof prepared.data !== "object") return "error";
       const row = prepared.data as { status?: unknown; warning?: unknown; weight?: unknown };
       const status = row.status;
-      const weight = typeof row.weight === "number" && Number.isInteger(row.weight) ? row.weight : 1;
+      const weight =
+        typeof row.weight === "number" && Number.isInteger(row.weight) ? row.weight : 1;
       if (status === "reserved" || status === "already_reserved") {
         return {
           status,
@@ -273,6 +288,17 @@ export async function draftPitchWithAssistantAction(
       return { result: "invalid_input", message: "Choose a tone, a language, and key points." };
     }
     return { result: "error" };
+  }
+
+  if (purpose === "follow_up") {
+    revalidatePath(`/app/hotels/${hotelId}/pitch`);
+    return {
+      result: "drafted",
+      warning: outcome.warning,
+      draftId: null,
+      subject: outcome.subject,
+      body: outcome.body,
+    };
   }
 
   const { data, error } = await supabase

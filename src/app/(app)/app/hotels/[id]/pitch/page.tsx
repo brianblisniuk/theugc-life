@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 import { loadAssistantChrome, loadOwnAiBudget } from "@/lib/ai/queries";
 import { EmptyState } from "@/components/empty-state";
 import { PitchComposer } from "@/components/pitch/composer";
+import { FollowUpPanel } from "@/components/pitch/follow-up-panel";
 import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
 import { hasSendScope } from "@/lib/gmail/contract";
@@ -21,6 +22,7 @@ import { isUuid } from "@/lib/hotels/ids";
 import { isSystemTemplateKey, omissionNote } from "@/lib/pitch/contract";
 import { createPitchPersonalizer } from "@/lib/pitch/personalizer";
 import { loadPitchContext } from "@/lib/pitch/queries";
+import { loadHotelFollowUps } from "@/lib/gmail/followup/queries";
 import { hotelCrumbs, hotelHref, parseHotelOrigin } from "@/lib/shell/navigation";
 
 export const metadata: Metadata = { title: "Pitch" };
@@ -67,7 +69,8 @@ export default async function HotelPitchPage({
       : { paused: false, sendsPaused: false, warning: false };
   const mailboxes = await listGmailAccounts(session.userId);
   const connected = mailboxes.filter((account) => account.connectionState === "connected");
-  const sender = connected.find((account) => hasSendScope(account.grantedScopes)) ?? connected[0] ?? null;
+  const sender =
+    connected.find((account) => hasSendScope(account.grantedScopes)) ?? connected[0] ?? null;
   const context = await loadPitchContext({
     userId: session.userId,
     hotelId: hotel.id,
@@ -211,6 +214,62 @@ export default async function HotelPitchPage({
           hasSendScope={sender ? hasSendScope(sender.grantedScopes) : false}
         />
       )}
+      <FollowUps
+        userId={session.userId}
+        hotelId={hotel.id}
+        hotelName={hotel.name}
+        assistantOn={assistant.status === "on"}
+        canSchedule={assistant.status === "on" && !budget.paused}
+      />
+    </div>
+  );
+}
+
+async function FollowUps({
+  userId,
+  hotelId,
+  hotelName,
+  assistantOn,
+  canSchedule,
+}: {
+  userId: string;
+  hotelId: string;
+  hotelName: string;
+  assistantOn: boolean;
+  canSchedule: boolean;
+}) {
+  const loaded = await loadHotelFollowUps(userId, hotelId);
+  if (loaded.status === "error") {
+    return (
+      <p className="text-sm text-muted">
+        Follow-ups couldn’t be read. Reload the page to try again. Nothing was sent.
+      </p>
+    );
+  }
+  if (loaded.threads.length === 0) {
+    return (
+      <p className="text-sm text-muted">
+        A follow-up can be scheduled after you send a pitch from your Gmail. Nothing is scheduled.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {loaded.threads.map((thread) => (
+        <FollowUpPanel
+          key={thread.eventId}
+          hotelId={hotelId}
+          hotelName={hotelName}
+          eventId={thread.eventId}
+          originalSubject={thread.originalSubject}
+          recipient={thread.recipient}
+          next={thread.next}
+          history={thread.followups}
+          timeZone={loaded.timeZone}
+          assistantOn={assistantOn}
+          canSchedule={canSchedule}
+        />
+      ))}
     </div>
   );
 }
