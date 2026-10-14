@@ -53,6 +53,12 @@ function hold(value: unknown): FollowUpHold | null {
     : null;
 }
 
+function delayDays(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null;
+  if (value < 1 || value > 30) return null;
+  return value;
+}
+
 function sequence(value: unknown): 1 | 2 | null {
   if (value === 1 || value === 2) return value;
   return null;
@@ -71,6 +77,7 @@ function parseNext(value: unknown, recipient: string): FollowUpNext | null {
     subject: text(row.subject),
     body: typeof row.body === "string" && row.body.length > 0 ? row.body : null,
     earliestSendAt: text(row.earliest_send_at),
+    delayDays: delayDays(row.delay_days),
     stopReason: stopReason(row.stop_reason),
     hold: hold(row.hold),
   };
@@ -103,6 +110,7 @@ function parseThread(value: unknown): FollowUpThread | null {
         body,
         recipient: text(record.recipient) ?? recipient,
         earliestSendAt: text(record.earliest_send_at),
+        delayDays: delayDays(record.delay_days),
       });
     }
   }

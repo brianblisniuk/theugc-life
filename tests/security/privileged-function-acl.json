@@ -2202,7 +2202,7 @@
   {
     "schema": "public",
     "name": "gmail_followup_earliest",
-    "args": "p_from timestamp with time zone, p_zone text, p_days integer",
+    "args": "p_from timestamp with time zone, p_days integer",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,
@@ -2212,7 +2212,7 @@
   {
     "schema": "public",
     "name": "gmail_followup_schedule",
-    "args": "p_user_id uuid, p_event_id uuid, p_subject text, p_body text",
+    "args": "p_user_id uuid, p_event_id uuid, p_subject text, p_body text, p_delay_days integer",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,

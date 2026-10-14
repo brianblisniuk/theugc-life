@@ -8,7 +8,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import type { GoogleOAuthAdapter } from "@/lib/gmail/google.server";
-import { describeFollowUp, type FollowUpNext } from "@/lib/gmail/followup/next-action";
+import {
+  describeFollowUp,
+  followUpDelayPreview,
+  parseFollowUpDelayDays,
+  type FollowUpNext,
+} from "@/lib/gmail/followup/next-action";
 import { dispatchDueGmailSends } from "@/lib/gmail/send/dispatch";
 import type { SendDeps } from "@/lib/gmail/send/service.server";
 
@@ -22,7 +27,8 @@ function next(overrides: Partial<FollowUpNext> = {}): FollowUpNext {
     recipient: "desk@hotel.example",
     subject: null,
     body: null,
-    earliestSendAt: "2026-10-16T09:00:00.000Z",
+    earliestSendAt: "2026-10-16T15:00:00.000Z",
+    delayDays: 3,
     stopReason: null,
     hold: null,
     ...overrides,
@@ -31,11 +37,38 @@ function next(overrides: Partial<FollowUpNext> = {}): FollowUpNext {
 
 describe("follow-up next action", () => {
   it("says nothing sends until the creator schedules the text", () => {
-    const copy = describeFollowUp(next(), "Oct 16, 2026, 9:00 AM");
+    const copy = describeFollowUp(next(), "Oct 16, 2026, 3:00 PM");
     expect(copy.heading).toBe("Follow-up 1 is not scheduled.");
     expect(copy.detail).toContain("Nothing sends until you schedule that text");
     expect(copy.detail).toContain("desk@hotel.example");
-    expect(copy.detail).toContain("Oct 16, 2026, 9:00 AM");
+    expect(copy.detail).toContain("Oct 16, 2026, 3:00 PM");
+    expect(copy.detail).toContain("3 days after the original pitch");
+    expect(copy.detail).toContain("1 to 30");
+  });
+
+  it("previews a custom delay as whole days and rejects anything outside 1 to 30", () => {
+    expect(parseFollowUpDelayDays("")).toBeNull();
+    expect(parseFollowUpDelayDays(" 7 ")).toBe(7);
+    expect(parseFollowUpDelayDays("1")).toBe(1);
+    expect(parseFollowUpDelayDays("30")).toBe(30);
+    expect(parseFollowUpDelayDays("0")).toBe("invalid");
+    expect(parseFollowUpDelayDays("31")).toBe("invalid");
+    expect(parseFollowUpDelayDays("1.5")).toBe("invalid");
+    expect(parseFollowUpDelayDays("03")).toBe("invalid");
+    expect(parseFollowUpDelayDays("-1")).toBe("invalid");
+    expect(parseFollowUpDelayDays("1e1")).toBe("invalid");
+
+    const anchor = "2026-10-13T15:00:00.000Z";
+    expect(followUpDelayPreview(anchor, 1, 3)).toBe(anchor);
+    expect(followUpDelayPreview(anchor, 1, 7)).toBe("2026-10-17T15:00:00.000Z");
+    expect(followUpDelayPreview(anchor, 2, 5)).toBe(anchor);
+    expect(followUpDelayPreview(anchor, 2, 1)).toBe("2026-10-09T15:00:00.000Z");
+    expect(followUpDelayPreview(anchor, 1, 0)).toBeNull();
+    expect(followUpDelayPreview(anchor, 1, 31)).toBeNull();
+    expect(followUpDelayPreview("not-a-date", 1, 3)).toBeNull();
+
+    const second = describeFollowUp(next({ sequence: 2, delayDays: 5 }), "later");
+    expect(second.detail).toContain("5 days after follow-up 1 was sent");
   });
 
   it("shows the approved text's send time while it is scheduled and queued", () => {
@@ -141,5 +174,7 @@ describe("follow-up action source", () => {
   it("does not import Gmail or Claude", () => {
     const source = readFileSync(path.join(ROOT, "src/lib/gmail/followup/actions.ts"), "utf8");
     expect(source).not.toMatch(/google\.server|completeClaude|sendGmailMessage|sendMessage/);
+    expect(source).toContain("p_delay_days");
+    expect(source).toContain("parseFollowUpDelayDays");
   });
 });

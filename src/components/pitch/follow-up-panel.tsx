@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * What the next follow-up will do (D176, Proposed).
+ * What the next follow-up will do (D176, Accepted).
  *
- * Scheduling stores the text in the boxes. Drafting fills the boxes and
- * does not schedule. Nothing here calls Gmail.
+ * Scheduling stores the text in the boxes and the delay the creator chose.
+ * Drafting fills the boxes and does not schedule. Nothing here calls Gmail.
  */
 
 import { useState } from "react";
@@ -13,7 +13,12 @@ import { draftFollowUpWithAssistantAction } from "@/lib/ai/actions";
 import { PITCH_LANGUAGES, PITCH_TONES } from "@/lib/ai/structured";
 import { cancelFollowUpAction, scheduleFollowUpAction } from "@/lib/gmail/followup/actions";
 import {
+  defaultFollowUpDelayDays,
   describeFollowUp,
+  FOLLOW_UP_DELAY_MAX_DAYS,
+  FOLLOW_UP_DELAY_MIN_DAYS,
+  followUpDelayPreview,
+  parseFollowUpDelayDays,
   type FollowUpItem,
   type FollowUpNext,
 } from "@/lib/gmail/followup/next-action";
@@ -71,7 +76,17 @@ export function FollowUpPanel({
   assistantOn: boolean;
   canSchedule: boolean;
 }) {
-  const copy = describeFollowUp(next, whenLabel(next.earliestSendAt, timeZone));
+  const fallbackDelay = next.delayDays ?? defaultFollowUpDelayDays(next.sequence);
+  const [delay, setDelay] = useState(String(fallbackDelay));
+  const parsedDelay = parseFollowUpDelayDays(delay);
+  const chosenDelay =
+    parsedDelay === "invalid" || parsedDelay === null ? fallbackDelay : parsedDelay;
+  const editing = next.state === "needs_opt_in";
+  const previewIso =
+    editing && parsedDelay !== "invalid"
+      ? followUpDelayPreview(next.earliestSendAt, next.sequence, chosenDelay)
+      : next.earliestSendAt;
+  const copy = describeFollowUp(next, whenLabel(previewIso, timeZone));
   const visible = history.find((item) => item.id === next.followupId) ?? null;
   const shownSubject = next.subject ?? visible?.subject ?? null;
   const shownBody = next.body ?? visible?.body ?? null;
@@ -122,6 +137,8 @@ export function FollowUpPanel({
     data.set("eventId", eventId);
     data.set("subject", subject);
     data.set("body", body);
+    if (parsedDelay !== null && parsedDelay !== "invalid")
+      data.set("delayDays", String(parsedDelay));
     const result = await scheduleFollowUpAction(data);
     setNote(result.message);
     setPending(false);
@@ -197,6 +214,23 @@ export function FollowUpPanel({
             </div>
           ) : null}
           <label className="block text-sm text-muted">
+            {next.sequence === 2
+              ? "Days after follow-up 1 was sent"
+              : "Days after the original pitch"}
+            <input
+              className={FIELD}
+              inputMode="numeric"
+              min={FOLLOW_UP_DELAY_MIN_DAYS}
+              max={FOLLOW_UP_DELAY_MAX_DAYS}
+              step={1}
+              value={delay}
+              onChange={(event) => setDelay(event.target.value)}
+            />
+          </label>
+          {parsedDelay === "invalid" ? (
+            <p className="text-sm text-muted">Choose a whole number of days from 1 to 30.</p>
+          ) : null}
+          <label className="block text-sm text-muted">
             Subject
             <input
               className={FIELD}
@@ -215,7 +249,12 @@ export function FollowUpPanel({
           <button
             type="button"
             className="rounded-[var(--radius-app)] border border-border px-3 py-2 text-sm text-text"
-            disabled={pending || body.trim().length === 0 || subject.trim().length === 0}
+            disabled={
+              pending ||
+              parsedDelay === "invalid" ||
+              body.trim().length === 0 ||
+              subject.trim().length === 0
+            }
             onClick={() => void onSchedule()}
           >
             Schedule this text

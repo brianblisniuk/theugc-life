@@ -163,11 +163,27 @@ async function schedule(
   userId: string,
   eventId: string,
   body = "Following up on the collaboration.\nSecond line.",
+  delayDays?: number | null,
 ) {
+  if (delayDays === undefined) {
+    return asService<{ r: Record<string, unknown> }>(
+      "select public.gmail_followup_schedule($1::uuid, $2::uuid, $3, $4) as r",
+      [userId, eventId, "Re: Hello hotel", body],
+    );
+  }
   return asService<{ r: Record<string, unknown> }>(
-    "select public.gmail_followup_schedule($1::uuid, $2::uuid, $3, $4) as r",
-    [userId, eventId, "Re: Hello hotel", body],
+    "select public.gmail_followup_schedule($1::uuid, $2::uuid, $3, $4, $5::integer) as r",
+    [userId, eventId, "Re: Hello hotel", body, delayDays],
   );
+}
+
+async function creditSnapshot(userId: string): Promise<{ n: number; balance: number }> {
+  const rows = await adminQuery<{ n: number; balance: number }>(
+    `select count(*)::int as n, coalesce(sum(delta), 0)::int as balance
+       from public.credit_ledger where user_id = $1`,
+    [userId],
+  );
+  return rows[0]!;
 }
 
 async function noteReply(userId: string, threadId: string, responseClass: string): Promise<void> {
@@ -301,13 +317,25 @@ d("D05 follow-ups", () => {
     );
   });
 
-  it("counts three business days to Friday 09:00 and skips the weekend", async () => {
-    const rows = await asService<{ friday: string; wednesday: string }>(
-      `select public.gmail_followup_earliest('2026-10-13 15:00:00+00', 'UTC', 3) as friday,
-              public.gmail_followup_earliest('2026-10-16 17:00:00+00', 'UTC', 3) as wednesday`,
+  it("adds whole days and rejects a delay outside 1 to 30", async () => {
+    const rows = await asService<{
+      three: string;
+      saturday: string;
+      thirty: string;
+      zero: string | null;
+      too_many: string | null;
+    }>(
+      `select public.gmail_followup_earliest('2026-10-13 15:00:00+00', 3) as three,
+              public.gmail_followup_earliest('2026-10-16 17:00:00+00', 1) as saturday,
+              public.gmail_followup_earliest('2026-10-16 17:00:00+00', 30) as thirty,
+              public.gmail_followup_earliest('2026-10-16 17:00:00+00', 0) as zero,
+              public.gmail_followup_earliest('2026-10-16 17:00:00+00', 31) as too_many`,
     );
-    expect(new Date(rows[0]!.friday).toISOString()).toBe("2026-10-16T09:00:00.000Z");
-    expect(new Date(rows[0]!.wednesday).toISOString()).toBe("2026-10-21T09:00:00.000Z");
+    expect(new Date(rows[0]!.three).toISOString()).toBe("2026-10-16T15:00:00.000Z");
+    expect(new Date(rows[0]!.saturday).toISOString()).toBe("2026-10-17T17:00:00.000Z");
+    expect(new Date(rows[0]!.thirty).toISOString()).toBe("2026-11-15T17:00:00.000Z");
+    expect(rows[0]!.zero).toBeNull();
+    expect(rows[0]!.too_many).toBeNull();
   });
 
   it("stores the creator's text for the original recipient and refuses everyone else", async () => {
@@ -322,8 +350,9 @@ d("D05 follow-ups", () => {
       const scheduled = await schedule(PRO, sent.eventId, body);
       expect(scheduled[0]!.r.result).toBe("scheduled");
       expect(scheduled[0]!.r.recipient).toBe(RECIPIENT);
+      expect(scheduled[0]!.r.delay_days).toBe(3);
       expect(new Date(String(scheduled[0]!.r.earliest_send_at)).toISOString()).toBe(
-        "2026-10-16T09:00:00.000Z",
+        "2026-10-16T15:00:00.000Z",
       );
       const stored = await adminQuery<{
         subject: string;
@@ -391,6 +420,115 @@ d("D05 follow-ups", () => {
         businessTimezone(),
       ]);
     }
+  });
+
+  it("stores a chosen delay, defaults the second follow-up to five days, and spends no credits", async () => {
+    const sent = await sendPitch(PRO);
+    await adminQuery("update public.users set timezone = $2 where id = $1", [
+      PRO,
+      businessTimezone(),
+    ]);
+    await adminQuery(
+      "update private.gmail_sent_events set sent_at = '2026-10-13 15:00:00+00' where id = $1",
+      [sent.eventId],
+    );
+    const body = "A custom wait on the collaboration.";
+    const before = await creditSnapshot(PRO);
+    const scheduled = await schedule(PRO, sent.eventId, body, 7);
+    expect(scheduled[0]!.r).toMatchObject({ result: "scheduled", sequence: 1, delay_days: 7 });
+    expect(new Date(String(scheduled[0]!.r.earliest_send_at)).toISOString()).toBe(
+      "2026-10-20T15:00:00.000Z",
+    );
+    expect(await creditSnapshot(PRO)).toEqual(before);
+
+    const same = await schedule(PRO, sent.eventId, body, 7);
+    expect(same[0]!.r.result).toBe("already_scheduled");
+    const moved = await schedule(PRO, sent.eventId, body, 9);
+    expect(moved[0]!.r.result).toBe("text_conflict");
+    const kept = await adminQuery<{ delay_days: number }>(
+      "select delay_days from private.gmail_followups where id = $1",
+      [scheduled[0]!.r.followup_id],
+    );
+    expect(kept[0]!.delay_days).toBe(7);
+
+    const low = await schedule(PRO, sent.eventId, "Another delay on the collaboration.", 0);
+    const high = await schedule(PRO, sent.eventId, "Another delay on the collaboration.", 31);
+    expect(low[0]!.r.result).toBe("invalid_input");
+    expect(high[0]!.r.result).toBe("invalid_input");
+    await expect(
+      asService(
+        "select public.gmail_followup_schedule($1::uuid, $2::uuid, 'Re: Hello hotel', $3, 1.5) as r",
+        [PRO, sent.eventId, body],
+      ),
+    ).rejects.toThrow();
+    const rows = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from private.gmail_followups where provider_thread_id = $1",
+      [sent.threadId],
+    );
+    expect(rows[0]!.n).toBe(1);
+    await expect(
+      adminQuery("update private.gmail_followups set delay_days = 0 where id = $1", [
+        scheduled[0]!.r.followup_id,
+      ]),
+    ).rejects.toThrow(/gmail_followups_delay_check/);
+    await expect(
+      adminQuery("update private.gmail_followups set delay_days = 31 where id = $1", [
+        scheduled[0]!.r.followup_id,
+      ]),
+    ).rejects.toThrow(/gmail_followups_delay_check/);
+
+    await adminQuery(
+      "update private.gmail_followups set earliest_send_at = clock_timestamp() - interval '1 minute' where id = $1",
+      [scheduled[0]!.r.followup_id],
+    );
+    await clearQueue(PRO);
+    const settled = await asService<{ r: { enqueued: number } }>(
+      "select public.gmail_followup_settle(clock_timestamp(), $1::uuid) as r",
+      [PRO],
+    );
+    expect(settled[0]!.r.enqueued).toBe(1);
+    const claimed = await claimDue();
+    const attempt = claimed.claims.find((row) => row.provider_thread_id === sent.threadId);
+    expect(attempt?.attempt_id).toBeTruthy();
+    const marked = await asService<{ r: { result: string } }>(
+      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 120, 300) as r",
+      [PRO, attempt!.attempt_id],
+    );
+    expect(marked[0]!.r.result).toBe("ok");
+    const committed = await asService<{ r: { result: string } }>(
+      "select public.gmail_send_commit($1::uuid, $2::uuid, $3, $4) as r",
+      [PRO, attempt!.attempt_id, `msg-fu2-${sent.threadId}`, sent.threadId],
+    );
+    expect(committed[0]!.r.result).toBe("sent");
+    await adminQuery(
+      "update private.gmail_sent_events set sent_at = '2026-10-20 15:00:00+00' where attempt_id = $1",
+      [attempt!.attempt_id],
+    );
+    await clearQueue(PRO);
+
+    const secondBody = "The second follow-up on the collaboration.";
+    const second = await schedule(PRO, sent.eventId, secondBody);
+    expect(second[0]!.r).toMatchObject({ result: "scheduled", sequence: 2, delay_days: 5 });
+    expect(new Date(String(second[0]!.r.earliest_send_at)).toISOString()).toBe(
+      "2026-10-25T15:00:00.000Z",
+    );
+    const cancelled = await asService<{ r: { result: string } }>(
+      "select public.gmail_followup_cancel($1::uuid, $2::uuid) as r",
+      [PRO, second[0]!.r.followup_id],
+    );
+    expect(cancelled[0]!.r.result).toBe("cancelled");
+    const custom = await schedule(PRO, sent.eventId, secondBody, 12);
+    expect(custom[0]!.r).toMatchObject({ result: "scheduled", sequence: 2, delay_days: 12 });
+    expect(new Date(String(custom[0]!.r.earliest_send_at)).toISOString()).toBe(
+      "2026-11-01T15:00:00.000Z",
+    );
+    const edge = await schedule(PRO, sent.eventId, "A one-day follow-up on the collaboration.", 1);
+    expect(edge[0]!.r.result).toBe("text_conflict");
+    await adminQuery(
+      "update private.gmail_followups set earliest_send_at = '2099-01-04 09:00:00+00' where id = $1",
+      [custom[0]!.r.followup_id],
+    );
+    expect(await creditSnapshot(PRO)).toEqual(before);
   });
 
   it("refuses Free and an invalid contact, and does not write a row", async () => {

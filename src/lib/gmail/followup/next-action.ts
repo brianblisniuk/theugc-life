@@ -1,9 +1,61 @@
 /**
- * The sentence a creator reads before a follow-up can send (D176, Proposed).
+ * The sentence a creator reads before a follow-up can send (D176, Accepted).
  *
- * The database decides the state. This module only turns that state into
- * the words on the page. It does not schedule or send.
+ * The database decides the state and the delay. This module only turns that
+ * state into the words on the page. It does not schedule or send.
  */
+
+/** Follow-up 1 waits this many days after the pitch unless the creator chooses another. */
+export const FOLLOW_UP_DEFAULT_DELAY_DAYS = { 1: 3, 2: 5 } as const;
+export const FOLLOW_UP_DELAY_MIN_DAYS = 1;
+export const FOLLOW_UP_DELAY_MAX_DAYS = 30;
+
+export function defaultFollowUpDelayDays(sequence: 1 | 2 | null): number {
+  return sequence === 2 ? FOLLOW_UP_DEFAULT_DELAY_DAYS[2] : FOLLOW_UP_DEFAULT_DELAY_DAYS[1];
+}
+
+/**
+ * Blank means the database default for that follow-up. Any other value must
+ * be a whole number of days from 1 to 30. The database checks the same bounds.
+ */
+export function parseFollowUpDelayDays(raw: string): number | null | "invalid" {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  if (!/^[1-9]\d?$/.test(trimmed)) return "invalid";
+  const days = Number(trimmed);
+  if (
+    !Number.isInteger(days) ||
+    days < FOLLOW_UP_DELAY_MIN_DAYS ||
+    days > FOLLOW_UP_DELAY_MAX_DAYS
+  ) {
+    return "invalid";
+  }
+  return days;
+}
+
+/**
+ * Shifts the server's default earliest time by the difference between the
+ * chosen delay and the default for that follow-up. Both sides add whole
+ * days of 24 hours, so the preview matches `gmail_followup_earliest`.
+ */
+export function followUpDelayPreview(
+  defaultEarliestIso: string | null,
+  sequence: 1 | 2 | null,
+  days: number,
+): string | null {
+  if (!defaultEarliestIso) return null;
+  if (
+    !Number.isInteger(days) ||
+    days < FOLLOW_UP_DELAY_MIN_DAYS ||
+    days > FOLLOW_UP_DELAY_MAX_DAYS
+  ) {
+    return null;
+  }
+  const base = Date.parse(defaultEarliestIso);
+  if (!Number.isFinite(base)) return null;
+  const shifted = base + (days - defaultFollowUpDelayDays(sequence)) * 86_400_000;
+  return new Date(shifted).toISOString();
+}
 
 export const FOLLOW_UP_STOP_REASONS = [
   "hotel_replied",
@@ -34,6 +86,7 @@ export interface FollowUpNext {
   subject: string | null;
   body: string | null;
   earliestSendAt: string | null;
+  delayDays: number | null;
   stopReason: FollowUpStopReason | null;
   hold: FollowUpHold | null;
 }
@@ -52,6 +105,7 @@ export interface FollowUpItem {
   body: string;
   recipient: string;
   earliestSendAt: string | null;
+  delayDays: number | null;
 }
 
 function sequenceLabel(sequence: 1 | 2 | null): string {
@@ -120,8 +174,10 @@ export function describeFollowUp(next: FollowUpNext, whenLabel: string): FollowU
     };
   }
 
+  const wait = defaultFollowUpDelayDays(next.sequence);
+  const after = next.sequence === 2 ? "follow-up 1 was sent" : "the original pitch";
   return {
     heading: `${name} is not scheduled.`,
-    detail: `If you schedule the text in the box, it goes ${who} and will not send before ${when}. Nothing sends until you schedule that text.`,
+    detail: `If you schedule the text in the box, it goes ${who} and will not send before ${when}. The default wait is ${wait} days after ${after}. You can choose 1 to 30 days. Nothing sends until you schedule that text.`,
   };
 }

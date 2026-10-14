@@ -538,7 +538,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "gmail.send",
     module: "Gmail",
     summary:
-      "Sending a pitch, a reply, or an opted-in follow-up from the creator's own connected Gmail is Pro or Max. Free and a Destination Pass cannot. The send is an explicit action. A draft is not sent. A follow-up uses the send queue and stops when the hotel replies, a message bounces, the deal is won or closed, or the creator cancels.",
+      "Sending a pitch, a reply, or an opted-in follow-up from the creator's own connected Gmail is Pro or Max. Free and a Destination Pass cannot schedule a follow-up. The send is an explicit action. A draft is not sent. A follow-up uses the send queue, waits 1 to 30 days (defaults 3, then 5), spends no credits, and stops when the hotel replies, a message bounces, the deal is won or closed, or the creator cancels.",
     routes: [
       "/app/hotels/[id]/pitch",
       "/api/integrations/gmail/oauth/start",

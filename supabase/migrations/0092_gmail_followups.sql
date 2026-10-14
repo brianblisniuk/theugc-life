@@ -1,8 +1,10 @@
 -- ===========================================================================
--- 0092 — FOLLOW-UP SCHEDULE (D171–D177, Proposed)
+-- 0092 — FOLLOW-UP SCHEDULE (D171–D177, Accepted)
 -- ===========================================================================
 -- A creator opts in per sent pitch thread. At most two follow-ups. The
--- text stored here is the text they submitted. The existing send queue
+-- text stored here is the text they submitted. Each follow-up waits a
+-- whole number of days, from 1 to 30. The defaults are 3 days after the
+-- pitch, then 5 days after follow-up 1 was sent. The existing send queue
 -- (D168, D169) is what calls Gmail. 0089, 0090, and 0091 are not edited.
 
 alter table private.gmail_send_attempts
@@ -40,6 +42,7 @@ create table private.gmail_followups (
   source_event_id uuid not null references private.gmail_sent_events (id) on delete cascade,
   provider_thread_id text not null,
   sequence smallint not null,
+  delay_days smallint not null,
   recipient text not null,
   subject text not null,
   body text not null,
@@ -67,6 +70,7 @@ create table private.gmail_followups (
   constraint gmail_followups_trip_fk
     foreign key (trip_id) references public.trips (id) on delete set null,
   constraint gmail_followups_sequence_check check (sequence in (1, 2)),
+  constraint gmail_followups_delay_check check (delay_days between 1 and 30),
   constraint gmail_followups_thread_check check (
     char_length(btrim(provider_thread_id)) between 1 and 256
   ),
@@ -98,7 +102,7 @@ create index gmail_followups_open_idx
   where status in ('scheduled', 'queued');
 
 comment on table private.gmail_followups is
-  'D171–D177 Proposed. One opted-in follow-up on a pitch the creator already sent. Deleted with the user and with the source sent event.';
+  'D171–D177 Accepted. One opted-in follow-up on a pitch the creator already sent. delay_days is 1 to 30. Deleted with the user and with the source sent event.';
 
 alter table private.gmail_followups enable row level security;
 
@@ -239,7 +243,6 @@ revoke all on function private.gmail_followup_hold(uuid, uuid)
 
 create function public.gmail_followup_earliest(
   p_from timestamptz,
-  p_zone text,
   p_days integer
 )
 returns timestamptz
@@ -248,38 +251,20 @@ stable
 security definer
 set search_path = ''
 as $$
-declare
-  v_zone text;
-  v_date date;
-  v_left integer;
-  v_guard integer := 0;
 begin
-  if p_from is null or p_days is null or p_days < 1 or p_days > 10 then
+  if p_from is null or p_days is null or p_days < 1 or p_days > 30 then
     return null;
   end if;
-  v_zone := public.ai_zone_name(p_zone);
-  v_date := (p_from at time zone v_zone)::date;
-  v_left := p_days;
-  while v_left > 0 loop
-    v_guard := v_guard + 1;
-    if v_guard > 40 then
-      return null;
-    end if;
-    v_date := v_date + 1;
-    if extract(isodow from v_date) < 6 then
-      v_left := v_left - 1;
-    end if;
-  end loop;
-  return (v_date + time '09:00') at time zone v_zone;
+  return p_from + make_interval(days => p_days);
 end;
 $$;
 
-comment on function public.gmail_followup_earliest(timestamptz, text, integer) is
-  'D172 Proposed. Weekdays after p_from, at 09:00 in the creator zone. Saturday and Sunday are not business days. Blank zones are UTC.';
+comment on function public.gmail_followup_earliest(timestamptz, integer) is
+  'D172 Accepted. p_days whole days of 24 hours after p_from. Bounds are 1 to 30. Weekends are not skipped. The send queue still waits for local 09:00–18:00.';
 
-revoke all on function public.gmail_followup_earliest(timestamptz, text, integer)
+revoke all on function public.gmail_followup_earliest(timestamptz, integer)
   from public, anon, authenticated, service_role;
-grant execute on function public.gmail_followup_earliest(timestamptz, text, integer)
+grant execute on function public.gmail_followup_earliest(timestamptz, integer)
   to service_role;
 
 create or replace function public.gmail_send_fail(
@@ -358,7 +343,8 @@ create function public.gmail_followup_schedule(
   p_user_id uuid,
   p_event_id uuid,
   p_subject text,
-  p_body text
+  p_body text,
+  p_delay_days integer default null
 )
 returns jsonb
 language plpgsql
@@ -370,7 +356,6 @@ declare
   v_open private.gmail_followups%rowtype;
   v_slot private.gmail_followups%rowtype;
   v_subject text;
-  v_zone text;
   v_stop text;
   v_next smallint;
   v_days integer;
@@ -389,6 +374,7 @@ begin
      or p_body is null
      or char_length(btrim(p_body)) < 1
      or char_length(p_body) > 8000
+     or (p_delay_days is not null and (p_delay_days < 1 or p_delay_days > 30))
   then
     return jsonb_build_object('result', 'invalid_input');
   end if;
@@ -448,11 +434,13 @@ begin
    limit 1
    for update;
   if found then
-    if v_open.subject = v_subject and v_open.body = p_body then
+    v_days := coalesce(p_delay_days, case when v_open.sequence = 2 then 5 else 3 end);
+    if v_open.subject = v_subject and v_open.body = p_body and v_open.delay_days = v_days then
       return jsonb_build_object(
         'result', 'already_scheduled',
         'followup_id', v_open.id,
         'sequence', v_open.sequence,
+        'delay_days', v_open.delay_days,
         'earliest_send_at', v_open.earliest_send_at,
         'recipient', v_open.recipient,
         'status', v_open.status
@@ -478,7 +466,7 @@ begin
       return jsonb_build_object('result', 'limit_reached');
     end if;
     v_next := 2;
-    v_days := 4;
+    v_days := coalesce(p_delay_days, 5);
     select e.sent_at into v_anchor
       from private.gmail_followups f
       join private.gmail_sent_events e on e.attempt_id = f.send_attempt_id
@@ -491,13 +479,11 @@ begin
     end if;
   else
     v_next := 1;
-    v_days := 3;
+    v_days := coalesce(p_delay_days, 3);
     v_anchor := v_event.sent_at;
   end if;
 
-  select public.ai_zone_name(u.timezone) into v_zone
-    from public.users u where u.id = p_user_id;
-  v_earliest := public.gmail_followup_earliest(v_anchor, v_zone, v_days);
+  v_earliest := public.gmail_followup_earliest(v_anchor, v_days);
   if v_earliest is null then
     return jsonb_build_object('result', 'invalid_input');
   end if;
@@ -522,6 +508,7 @@ begin
            recipient = v_event.recipient,
            subject = v_subject,
            body = p_body,
+           delay_days = v_days,
            hotel_id = v_event.hotel_id,
            pipeline_item_id = v_event.pipeline_item_id,
            trip_id = v_event.trip_id,
@@ -536,11 +523,11 @@ begin
     returning * into v_slot;
   else
     insert into private.gmail_followups (
-      user_id, mail_account_id, source_event_id, provider_thread_id, sequence,
+      user_id, mail_account_id, source_event_id, provider_thread_id, sequence, delay_days,
       recipient, subject, body, hotel_id, pipeline_item_id, trip_id,
       status, earliest_send_at, approved_at
     ) values (
-      p_user_id, v_event.mail_account_id, v_event.id, v_event.provider_thread_id, v_next,
+      p_user_id, v_event.mail_account_id, v_event.id, v_event.provider_thread_id, v_next, v_days,
       v_event.recipient, v_subject, p_body, v_event.hotel_id, v_event.pipeline_item_id,
       v_event.trip_id, 'scheduled', v_earliest, pg_catalog.now()
     )
@@ -551,6 +538,7 @@ begin
     'result', 'scheduled',
     'followup_id', v_slot.id,
     'sequence', v_slot.sequence,
+    'delay_days', v_slot.delay_days,
     'earliest_send_at', v_slot.earliest_send_at,
     'recipient', v_slot.recipient,
     'subject', v_slot.subject,
@@ -559,12 +547,12 @@ begin
 end;
 $$;
 
-comment on function public.gmail_followup_schedule(uuid, uuid, text, text) is
-  'D171–D174 Proposed. Service role only. Stores the submitted text on the creator''s own pitch thread. The recipient is copied from that send. No Gmail call.';
+comment on function public.gmail_followup_schedule(uuid, uuid, text, text, integer) is
+  'D171–D174 Accepted. Service role only. Stores the submitted text and a delay of 1 to 30 days. Null delay is 3 days for follow-up 1 and 5 days for follow-up 2. The recipient is copied from that send. No Gmail call and no credits.';
 
-revoke all on function public.gmail_followup_schedule(uuid, uuid, text, text)
+revoke all on function public.gmail_followup_schedule(uuid, uuid, text, text, integer)
   from public, anon, authenticated, service_role;
-grant execute on function public.gmail_followup_schedule(uuid, uuid, text, text)
+grant execute on function public.gmail_followup_schedule(uuid, uuid, text, text, integer)
   to service_role;
 
 create function public.gmail_followup_cancel(p_user_id uuid, p_followup_id uuid)
@@ -641,7 +629,7 @@ end;
 $$;
 
 comment on function public.gmail_followup_cancel(uuid, uuid) is
-  'D173 Proposed. Service role only. Cancels a follow-up that has not reached the provider. A queued attempt is not claimed.';
+  'D173 Accepted. Service role only. Cancels a follow-up that has not reached the provider. A queued attempt is not claimed.';
 
 revoke all on function public.gmail_followup_cancel(uuid, uuid)
   from public, anon, authenticated, service_role;
@@ -763,7 +751,7 @@ end;
 $$;
 
 comment on function public.gmail_followup_settle(timestamptz, uuid) is
-  'D172–D173 Proposed. Service role only. Stops follow-ups that must not send, and enqueues a due follow-up into the Gmail send queue. Does not call Gmail. A null user settles every open row.';
+  'D172–D173 Accepted. Service role only. Stops follow-ups that must not send, and enqueues a due follow-up into the Gmail send queue. Does not call Gmail. A null user settles every open row.';
 
 revoke all on function public.gmail_followup_settle(timestamptz, uuid)
   from public, anon, authenticated, service_role;
@@ -841,7 +829,7 @@ end;
 $$;
 
 comment on function public.gmail_followup_block_send(uuid, uuid) is
-  'D173 Proposed. Service role only. Called immediately before a follow-up provider call. A pitch or a reply is left alone. Does not call Gmail.';
+  'D173 Accepted. Service role only. Called immediately before a follow-up provider call. A pitch or a reply is left alone. Does not call Gmail.';
 
 revoke all on function public.gmail_followup_block_send(uuid, uuid)
   from public, anon, authenticated, service_role;
@@ -871,6 +859,7 @@ declare
   v_open_sequence smallint;
   v_open_subject text;
   v_open_body text;
+  v_open_delay smallint;
   v_open_earliest timestamptz;
 begin
   if p_user_id is null or p_hotel_id is null then
@@ -900,6 +889,7 @@ begin
     v_open_sequence := null;
     v_open_subject := null;
     v_open_body := null;
+    v_open_delay := null;
     v_open_earliest := null;
     v_pipeline := null;
 
@@ -926,6 +916,7 @@ begin
         'stop_reason', v_followup.stop_reason,
         'subject', v_followup.subject,
         'body', v_followup.body,
+        'delay_days', v_followup.delay_days,
         'recipient', v_followup.recipient,
         'earliest_send_at', v_followup.earliest_send_at,
         'stopped_at', v_followup.stopped_at
@@ -938,6 +929,7 @@ begin
         v_open_sequence := v_followup.sequence;
         v_open_subject := v_followup.subject;
         v_open_body := v_followup.body;
+        v_open_delay := v_followup.delay_days;
         v_open_earliest := v_followup.earliest_send_at;
       end if;
     end loop;
@@ -964,6 +956,7 @@ begin
         'recipient', v_event.recipient,
         'subject', v_open_subject,
         'body', v_open_body,
+        'delay_days', v_open_delay,
         'earliest_send_at', v_open_earliest,
         'stop_reason', v_stop,
         'hold', null
@@ -982,6 +975,7 @@ begin
         'recipient', v_event.recipient,
         'subject', v_open_subject,
         'body', v_open_body,
+        'delay_days', v_open_delay,
         'earliest_send_at', v_open_earliest,
         'stop_reason', null,
         'hold', v_hold
@@ -994,6 +988,7 @@ begin
         'recipient', v_event.recipient,
         'subject', null,
         'body', null,
+        'delay_days', null,
         'earliest_send_at', null,
         'stop_reason', null,
         'hold', null
@@ -1007,9 +1002,9 @@ begin
            and f.provider_thread_id = v_event.provider_thread_id
            and f.sequence = 1
            and f.status = 'sent';
-        v_earliest := public.gmail_followup_earliest(v_anchor, v_zone, 4);
+        v_earliest := public.gmail_followup_earliest(v_anchor, 5);
       else
-        v_earliest := public.gmail_followup_earliest(v_event.sent_at, v_zone, 3);
+        v_earliest := public.gmail_followup_earliest(v_event.sent_at, 3);
       end if;
       v_next := jsonb_build_object(
         'state', 'needs_opt_in',
@@ -1018,6 +1013,7 @@ begin
         'recipient', v_event.recipient,
         'subject', null,
         'body', null,
+        'delay_days', case when v_sent = 1 then 5 else 3 end,
         'earliest_send_at', v_earliest,
         'stop_reason', null,
         'hold', null
@@ -1041,7 +1037,7 @@ end;
 $$;
 
 comment on function public.gmail_followup_list_for_hotel(uuid, uuid) is
-  'D176 Proposed. Service role only. One creator, one hotel. Applies stops, then returns what will send, when, or why it stopped. No other creator''s rows.';
+  'D176 Accepted. Service role only. One creator, one hotel. Applies stops, then returns what will send, when, or why it stopped. No other creator''s rows.';
 
 revoke all on function public.gmail_followup_list_for_hotel(uuid, uuid)
   from public, anon, authenticated, service_role;

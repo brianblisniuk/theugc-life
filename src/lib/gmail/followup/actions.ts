@@ -4,8 +4,9 @@
  * Schedule or cancel one follow-up on a pitch this creator already sent.
  *
  * The form does not post a user id. The recipient is not posted: the
- * database copies it from the sent pitch. Drafting text does not schedule
- * it. This action does not call Gmail.
+ * database copies it from the sent pitch. The delay is a whole number of
+ * days from 1 to 30; a blank delay uses 3 days, then 5. Drafting text does
+ * not schedule it. This action does not call Gmail and does not spend credits.
  */
 
 import { revalidatePath } from "next/cache";
@@ -13,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 import { isUuid } from "@/lib/hotels/ids";
+import { parseFollowUpDelayDays } from "@/lib/gmail/followup/next-action";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 bindServerActions(["gmail.send"]);
@@ -49,8 +51,12 @@ export async function scheduleFollowUpAction(formData: FormData): Promise<Follow
   const eventId = readRaw(formData, "eventId").trim();
   const subject = readRaw(formData, "subject").trim();
   const body = readRaw(formData, "body");
+  const delayDays = parseFollowUpDelayDays(readRaw(formData, "delayDays"));
   if (!isUuid(hotelId) || !isUuid(eventId)) {
     return { result: "invalid_input", message: "Choose a pitch you already sent." };
+  }
+  if (delayDays === "invalid") {
+    return { result: "invalid_input", message: "Choose a delay from 1 to 30 days." };
   }
 
   const admin = createAdminClient();
@@ -59,6 +65,7 @@ export async function scheduleFollowUpAction(formData: FormData): Promise<Follow
     p_event_id: eventId,
     p_subject: subject,
     p_body: body,
+    p_delay_days: delayDays,
   });
   if (error || !data || typeof data !== "object") {
     return { result: "error", message: "The follow-up could not be scheduled." };
@@ -87,7 +94,7 @@ export async function scheduleFollowUpAction(formData: FormData): Promise<Follow
   if (result === "text_conflict") {
     return {
       result: "text_conflict",
-      message: "A follow-up is already scheduled. Cancel it before scheduling different text.",
+      message: "A follow-up is already scheduled. Cancel it before changing the text or the delay.",
     };
   }
   if (result === "stopped") {
@@ -97,7 +104,10 @@ export async function scheduleFollowUpAction(formData: FormData): Promise<Follow
     };
   }
   if (result === "invalid_input") {
-    return { result: "invalid_input", message: "Check the subject and the message." };
+    return {
+      result: "invalid_input",
+      message: "Check the subject, the message, and the delay. The delay is 1 to 30 days.",
+    };
   }
   if (result === "not_found" || result === "not_ready") {
     return { result: "not_found", message: "That sent pitch isn't available for a follow-up." };
