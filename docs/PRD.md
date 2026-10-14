@@ -1474,13 +1474,13 @@ Grace periods only if reliably supported by payment workflow.
 
 ## 11.13 Account Deletion
 
-Architecture must support:
+D151 (Brian, 2026-10-14) is the product rule for a creator account:
 
-- deletion/anonymization of PII/private user data according to legal requirements
-- anonymization of creator identifiers in retained historical domain events where legally appropriate
-- retention of genuinely anonymous safe aggregates where lawful
+- personal data is deleted within 30 days of the request
+- aggregated statistics that the product already stores without a person attached may remain
+- nothing that remains may be traced back to that person
 
-Exact legal retention policy requires jurisdiction/privacy review before launch.
+Jurisdiction review of any further legal retention is still outside this rule.
 
 ---
 

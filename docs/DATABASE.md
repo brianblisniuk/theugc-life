@@ -48,6 +48,8 @@ Supabase `auth.users.id` is the canonical authentication identity.
 - `timezone text NULL`
 - `locale text NULL`
 - `last_active_at timestamptz NULL`
+- `deletion_requested_at timestamptz NULL` — D151. Set with `delete_after`, or both null.
+- `delete_after timestamptz NULL` — D152. Hard-delete deadline, at most 30 days after the request.
 - timestamps
 
 Allowed roles: `creator`, `editor`, `admin`; `moderator`, `brand` reserved.

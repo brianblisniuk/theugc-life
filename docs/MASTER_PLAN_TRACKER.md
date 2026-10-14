@@ -726,7 +726,14 @@ Per-metric freshness, caller-only personal counts, a k-anonymous network
 read, creator fit ordered by public activity, and pursue/skip. Max
 `advanced_signals` adds rank, confidence, and freshness on the fit list.
 Discover and Pipeline order are not edited. `0056`, `0071`, and `0072` are
-not edited.
+not edited. That extension is merged as PR #83, merge
+`4b9f70aaa2d15d955e6633581eae8a2c5833f33a`.
+
+**DEC-DEL** is account deletion, D151–D155, migration
+`0088_account_deletion.sql`. A creator confirms with `DELETE`. Personal data
+is removed by `delete_after`, which is 30 days after
+`deletion_requested_at`. Stored identifier-free counters are not rewritten.
+`0080`–`0087` are not edited. Awaiting audit. Do not merge.
 
 **HB01 is merged** as PR #69, merge
 `28656f46dd71f9887e6305cf2e0349099e8f2a9e`. Migration
