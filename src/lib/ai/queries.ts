@@ -1,7 +1,14 @@
 import "server-only";
 
 import { isUuid } from "@/lib/hotels/ids";
+import { budgetWarning, userBudgetMicros, type AssistantTier } from "@/lib/ai/limits";
 import { createClient } from "@/lib/supabase/server";
+
+export interface OwnAiBudget {
+  paused: boolean;
+  sendsPaused: boolean;
+  warning: boolean;
+}
 
 export interface MailSubjectChoice {
   id: string;
@@ -15,6 +22,26 @@ export type AssistantChrome =
 
 function flag(value: unknown): boolean {
   return value === true;
+}
+
+/** The caller's own pause and 80% warning. A failed read is not a warning. */
+export async function loadOwnAiBudget(tier: AssistantTier): Promise<OwnAiBudget> {
+  const empty = { paused: false, sendsPaused: false, warning: false };
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("read_own_ai_budget");
+    if (error || !data || typeof data !== "object") return empty;
+    const row = data as { result?: unknown; paused?: unknown; sends_paused?: unknown; spent_micros?: unknown };
+    if (row.result !== "ok") return empty;
+    const spent = typeof row.spent_micros === "number" ? row.spent_micros : 0;
+    return {
+      paused: row.paused === true,
+      sendsPaused: row.sends_paused === true,
+      warning: budgetWarning(spent, userBudgetMicros(tier)),
+    };
+  } catch {
+    return empty;
+  }
 }
 
 /** Plan flags for the pitch page. A failed read is unknown, not Free. */

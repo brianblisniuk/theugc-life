@@ -3,7 +3,12 @@ import "server-only";
 import type { GmailDeps } from "@/lib/gmail/connection.server";
 import { getFreshGmailAccessToken, type AccessTokenOutcome } from "@/lib/gmail/connection.server";
 import { GoogleAdapterError, type GoogleOAuthAdapter } from "@/lib/gmail/google.server";
-import { assessSendGuard, dailyCapFromEnv, type SendGuardEnv } from "@/lib/gmail/send/guard";
+import {
+  assessSendGuard,
+  planCapsFromEnv,
+  type PlanSendCaps,
+  type SendGuardEnv,
+} from "@/lib/gmail/send/guard";
 import { MimeRejected, buildPlainMessage, encodeRawMessage } from "@/lib/gmail/send/mime";
 
 export interface GmailSendInput {
@@ -32,6 +37,9 @@ export type GmailSendOutcome =
     }
   | { result: "unknown"; attemptId: string | null }
   | { result: "failed"; attemptId: string | null; failureCode: string }
+  | { result: "queued"; attemptId: string | null }
+  | { result: "paused"; attemptId: string | null; pause: "account" | "sends" }
+  | { result: "deferred"; attemptId: string | null }
   | { result: "in_progress"; attemptId: string | null }
   | { result: "idempotency_conflict" }
   | { result: "invalid_input" }
@@ -40,7 +48,7 @@ export type GmailSendOutcome =
 export interface SendDeps {
   db: GmailDeps["db"];
   google: GoogleOAuthAdapter;
-  env: SendGuardEnv & { dailyLimit?: string | null };
+  env: SendGuardEnv & { proDailyCap?: string | null; maxDailyCap?: string | null };
   getAccessToken?: (mailAccountId: string) => Promise<AccessTokenOutcome>;
 }
 
@@ -81,6 +89,15 @@ function storedOutcome(row: RpcRow): GmailSendOutcome {
     };
   }
   if (result === "unknown") return { result: "unknown", attemptId };
+  if (result === "queued") return { result: "queued", attemptId };
+  if (result === "deferred") return { result: "deferred", attemptId };
+  if (result === "paused") {
+    return {
+      result: "paused",
+      attemptId,
+      pause: str(row, "reason") === "sends" ? "sends" : "account",
+    };
+  }
   if (result === "in_progress") return { result: "in_progress", attemptId };
   if (result === "idempotency_conflict") return { result: "idempotency_conflict" };
   if (result === "invalid_input") return { result: "invalid_input" };
@@ -139,12 +156,26 @@ export async function sendGmailMessage(
 
   if (reserved.call_provider !== true) return storedOutcome(reserved);
 
+  return deliverReservedSend(reserved, input.userId, deps);
+}
+
+/**
+ * The provider call for one already-reserved attempt. The queue claim is the
+ * only path that sets call_provider. A repeated idempotency key never reaches
+ * this function.
+ */
+export async function deliverReservedSend(
+  reserved: RpcRow,
+  userId: string,
+  deps: SendDeps,
+  caps: PlanSendCaps = planCapsFromEnv(deps.env),
+): Promise<GmailSendOutcome> {
   const attemptId = str(reserved, "attempt_id");
   if (!attemptId) return { result: "unknown", attemptId: null };
 
-  const guard = assessSendGuard(deps.env, str(reserved, "recipient") ?? input.recipient);
+  const guard = assessSendGuard(deps.env, str(reserved, "recipient") ?? "");
   if (!guard.ok) {
-    return failAttempt(deps, input.userId, attemptId, guard.code);
+    return failAttempt(deps, userId, attemptId, guard.code);
   }
 
   const from = str(reserved, "from_email");
@@ -152,36 +183,38 @@ export async function sendGmailMessage(
   const subject = str(reserved, "subject");
   const body = str(reserved, "body");
   if (!from || !recipient || !subject || !body) {
-    return failAttempt(deps, input.userId, attemptId, "mailbox_unusable");
+    return failAttempt(deps, userId, attemptId, "mailbox_unusable");
   }
 
   let raw: string;
   try {
     raw = encodeRawMessage(buildPlainMessage({ from, to: recipient, subject, body }));
   } catch {
-    return failAttempt(deps, input.userId, attemptId, "provider_error");
+    return failAttempt(deps, userId, attemptId, "provider_error");
   }
 
   let marked: RpcRow;
   try {
     marked = await callRpc(deps.db, "gmail_send_mark_provider", {
-      p_user_id: input.userId,
+      p_user_id: userId,
       p_attempt_id: attemptId,
-      p_daily_cap: dailyCapFromEnv(deps.env.dailyLimit),
+      p_pro_cap: caps.pro,
+      p_max_cap: caps.max,
     });
   } catch {
     return { result: "unknown", attemptId };
   }
   if (marked.call_provider !== true) return storedOutcome(marked);
 
+  const mailAccountId = str(reserved, "mail_account_id") ?? "";
   const token = deps.getAccessToken
-    ? await deps.getAccessToken(str(reserved, "mail_account_id") ?? input.mailAccountId)
+    ? await deps.getAccessToken(mailAccountId)
     : await getFreshGmailAccessToken(
-        { mailAccountId: str(reserved, "mail_account_id") ?? input.mailAccountId },
+        { mailAccountId },
         { db: deps.db, google: deps.google },
       );
   if (token.result !== "ok") {
-    return failAttempt(deps, input.userId, attemptId, tokenFailure(token));
+    return failAttempt(deps, userId, attemptId, tokenFailure(token));
   }
 
   let sent: { id: string; threadId: string };
@@ -193,25 +226,25 @@ export async function sendGmailMessage(
     });
   } catch (error) {
     const code = providerFailure(error);
-    if (code === "unknown") return failAttempt(deps, input.userId, attemptId, "unknown");
-    return failAttempt(deps, input.userId, attemptId, code);
+    if (code === "unknown") return failAttempt(deps, userId, attemptId, "unknown");
+    return failAttempt(deps, userId, attemptId, code);
   }
 
   if (!sent.id || !sent.threadId) {
-    return failAttempt(deps, input.userId, attemptId, "unknown");
+    return failAttempt(deps, userId, attemptId, "unknown");
   }
 
   try {
     const committed = await callRpc(deps.db, "gmail_send_commit", {
-      p_user_id: input.userId,
+      p_user_id: userId,
       p_attempt_id: attemptId,
       p_provider_message_id: sent.id,
       p_provider_thread_id: sent.threadId,
     });
     if (committed.result === "sent") return storedOutcome(committed);
-    return failAttempt(deps, input.userId, attemptId, "unknown");
+    return failAttempt(deps, userId, attemptId, "unknown");
   } catch {
-    return failAttempt(deps, input.userId, attemptId, "unknown");
+    return failAttempt(deps, userId, attemptId, "unknown");
   }
 }
 

@@ -7,6 +7,7 @@
  */
 
 import { AI_LIMITS, contextCharsFor, type AssistantTier } from "./limits";
+import type { PitchBrief } from "./structured";
 
 export interface SelectedMail {
   id: string;
@@ -15,6 +16,7 @@ export interface SelectedMail {
 
 export interface OutreachFacts {
   language: string | null;
+  brief?: PitchBrief | null;
   creatorName: string | null;
   niche: string | null;
   instagramHandle: string | null;
@@ -92,10 +94,20 @@ export function onlyOwnedSelected(
   return kept;
 }
 
-function languageName(value: string | null): string {
-  const language = clean(value, 40);
-  return language ?? "English";
-}
+/**
+ * Fixed server prompt (D166). It does not interpolate creator text.
+ * Language, tone, and key points travel in the user message.
+ */
+export const PITCH_SYSTEM_PROMPT = [
+  "You draft one collaboration pitch from a travel creator to one hotel.",
+  "Use only the facts in the user message. If a fact is missing, omit it.",
+  "Do not invent stays, audience metrics, dates, brand relationships, deliverables, or hotel claims.",
+  "The message must be a collaboration pitch to that hotel.",
+  "When the user message says Priority: yes, include one concrete reason to collaborate, still using only the facts.",
+  "Write in the language named in the user message.",
+  "Return JSON only, with keys subject and body.",
+  "No markdown.",
+].join(" ");
 
 function linesFor(facts: OutreachFacts, tier: AssistantTier): string[] {
   const hotel = clean(facts.hotelName, 200) ?? "the hotel";
@@ -128,30 +140,23 @@ function linesFor(facts: OutreachFacts, tier: AssistantTier): string[] {
 }
 
 export function buildOutreachPrompt(facts: OutreachFacts, tier: AssistantTier): BuiltPrompt {
-  const language = languageName(facts.language);
-  const richer =
-    tier === "max"
-      ? " Write one concrete reason to collaborate, still using only the facts below."
-      : "";
-  const system = [
-    "You draft one outreach email from a travel creator to a hotel.",
-    "Use only the facts in the user message. If a fact is missing, omit it.",
-    "Do not invent stays, audience metrics, dates, brand relationships, deliverables, or hotel claims.",
-    `Write in ${language}.`,
-    "Return JSON only, with keys subject and body.",
-    "No markdown.",
-    richer.trim(),
-  ]
-    .filter((part) => part.length > 0)
-    .join(" ");
-
+  const system = PITCH_SYSTEM_PROMPT;
   const budget = contextCharsFor(tier);
   const mail = facts.selectedMail
     .slice(0, AI_LIMITS.selectedMailMax)
     .map((item) => item.text.replace(/\s+/g, " ").trim().slice(0, AI_LIMITS.selectedMailChars))
     .filter((text) => text.length > 0);
 
-  const parts = [...linesFor(facts, tier)];
+  const brief = facts.brief;
+  const hotelLine = `Hotel: ${clean(facts.hotelName, 200) ?? "the hotel"}`;
+  const parts = [
+    hotelLine,
+    `Language: ${brief?.language ?? "English"}`,
+    `Tone: ${brief?.tone ?? "professional"}`,
+    tier === "max" ? "Priority: yes" : "Priority: no",
+    brief && brief.keyPoints.length > 0 ? `Key points: ${brief.keyPoints.join("; ")}` : null,
+    ...linesFor(facts, tier).filter((line) => !line.startsWith("Hotel:")),
+  ].filter((part): part is string => typeof part === "string" && part.length > 0);
   if (mail.length > 0) {
     parts.push(`Selected mail the creator chose to include: ${mail.join(" | ")}`);
   }
@@ -166,8 +171,7 @@ export function buildOutreachPrompt(facts: OutreachFacts, tier: AssistantTier): 
     user = next;
   }
   if (!user.startsWith("Hotel:")) {
-    const hotel = clean(facts.hotelName, 200) ?? "the hotel";
-    user = `Hotel: ${hotel}`.slice(0, budget);
+    user = hotelLine.slice(0, budget);
   }
 
   return { system, user, tier };

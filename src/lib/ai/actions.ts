@@ -21,16 +21,25 @@ import { createClient } from "@/lib/supabase/server";
 import { composePitch, type ComposeDeps } from "./compose.server";
 import { readAnthropicApiKey } from "./env.server";
 import type { OutreachFacts, SelectedMail } from "./prompt";
+import { parsePitchBrief } from "./structured";
 
 bindServerActions(["plans.full_ai_email"]);
 
 export type AssistantActionResult =
-  | { result: "drafted"; draftId: string | null; subject: string; body: string }
+  | {
+      result: "drafted";
+      draftId: string | null;
+      subject: string;
+      body: string;
+      warning?: "budget_80";
+    }
   | { result: "templates_only" }
   | { result: "out_of_credits" }
-  | { result: "daily_limit" }
+  | { result: "monthly_limit" }
+  | { result: "pool_exhausted" }
   | { result: "rate_limited" }
   | { result: "paused" }
+  | { result: "off_topic" }
   | { result: "invalid_input"; message: string }
   | { result: "not_found" }
   | { result: "error" };
@@ -120,6 +129,15 @@ export async function draftPitchWithAssistantAction(
     return { result: "invalid_input", message: "Choose one of your trips." };
   }
 
+  const brief = parsePitchBrief({
+    tone: readField(formData, "tone"),
+    language: readField(formData, "language"),
+    keyPoints: formData
+      .getAll("keyPoint")
+      .filter((value): value is string => typeof value === "string"),
+  });
+  if (!brief.ok) return { result: "invalid_input", message: brief.message };
+
   const mail = await selectedMail(messageIds);
   if (!mail) return { result: "error" };
 
@@ -156,6 +174,8 @@ export async function draftPitchWithAssistantAction(
     priority: flags.priority_ai === true,
     balance: balance.data,
     apiKey: readAnthropicApiKey(),
+    hotelId,
+    brief: brief.brief,
     facts,
     charge: async (idempotencyKey) => {
       const charged = await supabase.rpc("charge_own_ai_draft", {
@@ -179,22 +199,30 @@ export async function draftPitchWithAssistantAction(
         p_user_id: userId,
         p_request_id: input.requestId,
         p_model: input.model,
+        p_hotel_id: input.hotelId,
         p_estimate_micros: input.estimateMicros,
-        p_budget_micros: input.budgetMicros,
-        p_daily_call_cap: input.dailyCalls,
-        p_daily_token_cap: input.dailyTokens,
-        p_estimate_input_tokens: input.estimateInputTokens,
-        p_estimate_output_tokens: input.estimateOutputTokens,
+        p_user_budget_micros: input.userBudgetMicros,
+        p_regen_weight: input.regenWeight,
+        p_pool_floor_micros: input.poolFloorMicros,
+        p_pool_percent_bps: input.poolPercentBps,
       });
       if (prepared.error || !prepared.data || typeof prepared.data !== "object") return "error";
-      const status = (prepared.data as { status?: unknown }).status;
+      const row = prepared.data as { status?: unknown; warning?: unknown; weight?: unknown };
+      const status = row.status;
+      const weight = typeof row.weight === "number" && Number.isInteger(row.weight) ? row.weight : 1;
+      if (status === "reserved" || status === "already_reserved") {
+        return {
+          status,
+          weight,
+          ...(row.warning === "budget_80" ? { warning: "budget_80" as const } : {}),
+        };
+      }
       if (
-        status === "reserved" ||
-        status === "already_reserved" ||
         status === "budget" ||
-        status === "daily_calls" ||
-        status === "daily_tokens" ||
-        status === "rate_limited"
+        status === "pool" ||
+        status === "rate_limited" ||
+        status === "paused" ||
+        status === "not_unlocked"
       ) {
         return status;
       }
@@ -210,6 +238,8 @@ export async function draftPitchWithAssistantAction(
         p_output_tokens: input.outputTokens,
         p_cost_micros: input.costMicros,
         p_status: input.status,
+        p_pool_floor_micros: input.poolFloorMicros,
+        p_pool_percent_bps: input.poolPercentBps,
       });
       if (finished.error) throw new Error("ai usage was not recorded");
     },
@@ -221,12 +251,27 @@ export async function draftPitchWithAssistantAction(
   } catch {
     return { result: "error" };
   }
+  if (outcome.status === "injection") {
+    const admin = createAdminClient();
+    await admin.rpc("record_abuse_flag", {
+      p_user_id: userId,
+      p_hotel_id: hotelId,
+      p_signal: "injection_attempt",
+    });
+    return { result: "invalid_input", message: "That draft couldn't be created." };
+  }
   if (outcome.status !== "drafted" || !outcome.subject || !outcome.body) {
     if (outcome.status === "templates_only") return { result: "templates_only" };
     if (outcome.status === "out_of_credits") return { result: "out_of_credits" };
-    if (outcome.status === "daily_limit") return { result: "daily_limit" };
+    if (outcome.status === "monthly_limit") return { result: "monthly_limit" };
+    if (outcome.status === "pool_exhausted") return { result: "pool_exhausted" };
     if (outcome.status === "rate_limited") return { result: "rate_limited" };
     if (outcome.status === "paused") return { result: "paused" };
+    if (outcome.status === "off_topic") return { result: "off_topic" };
+    if (outcome.status === "not_unlocked") return { result: "not_found" };
+    if (outcome.status === "invalid_input") {
+      return { result: "invalid_input", message: "Choose a tone, a language, and key points." };
+    }
     return { result: "error" };
   }
 
@@ -248,6 +293,7 @@ export async function draftPitchWithAssistantAction(
   revalidatePath(`/app/hotels/${hotelId}/pitch`);
   return {
     result: "drafted",
+    warning: outcome.warning,
     draftId: error || typeof data?.id !== "string" ? null : data.id,
     subject: outcome.subject,
     body: outcome.body,

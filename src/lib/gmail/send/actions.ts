@@ -12,6 +12,8 @@ import { bindServerActions } from "@/lib/entitlements/inventory";
 import { googleOAuthAdapter } from "@/lib/gmail/google.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { SUPPORT_EMAIL } from "@/lib/support";
+
 import { sendGuardFromProcess } from "./guard";
 import { sendGmailMessage, type GmailSendOutcome } from "./service.server";
 
@@ -25,6 +27,8 @@ export type SendPitchResult =
     }
   | { result: "unknown"; message: string; retry: false }
   | { result: "failed"; failureCode: string; message: string; retry: boolean }
+  | { result: "queued"; message: string; retry: false }
+  | { result: "paused"; message: string; retry: false }
   | { result: "in_progress"; message: string; retry: false }
   | { result: "idempotency_conflict"; message: string; retry: false }
   | { result: "invalid_input"; message: string; retry: true }
@@ -59,6 +63,32 @@ function messageFor(outcome: GmailSendOutcome): SendPitchResult {
       result: "unknown",
       retry: false,
       message: "Gmail may have received the message. It will not be sent again from this button.",
+    };
+  }
+  if (outcome.result === "queued") {
+    return {
+      result: "queued",
+      retry: false,
+      message:
+        "Queued. It will send during your business hours, a few minutes apart. The hotel is not marked as pitched.",
+    };
+  }
+  if (outcome.result === "paused") {
+    const reason =
+      outcome.pause === "sends"
+        ? "Sending is paused because too many recent messages bounced."
+        : "AI and sending are paused on this account.";
+    return {
+      result: "paused",
+      retry: false,
+      message: `${reason} Email ${SUPPORT_EMAIL} and we'll review it.`,
+    };
+  }
+  if (outcome.result === "deferred") {
+    return {
+      result: "queued",
+      retry: false,
+      message: "Queued for the next business day. The hotel is not marked as pitched.",
     };
   }
   if (outcome.result === "in_progress") {
