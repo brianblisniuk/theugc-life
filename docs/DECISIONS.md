@@ -806,7 +806,9 @@ every surface that renders it follows. Entitlement expiry semantics are
 unchanged in the database — only the granted duration differs.
 
 ## D052 — Creator Pro V1: USD 199/year, worldwide
-Status: Accepted — confirms the launch price in D005 as the V1 decision
+Status: Accepted — confirms the launch price in D005 as the V1 decision.
+D131 (Brian, 14 Oct 2026) supersedes this price for the live creator plans.
+The 199 figure stays as the historical V1 number.
 
 Creator Pro is the full creator operating system. **V1 launch price: USD 199 per
 year. Scope: worldwide.**
@@ -4055,8 +4057,8 @@ for contributing data (D001 is unchanged).
 
 ## D101 — Credit numbers are pending config
 
-Status: **Proposed.** The owner has not set the amounts. The running values
-are placeholders so the pilot can exercise the ledger. They are not a price.
+Status: **Superseded for amounts by D131** (Brian, 14 Oct 2026). The table
+below is the historical placeholder. It is not the live config.
 
 | Setting | Placeholder |
 |---|---|
@@ -4686,3 +4688,94 @@ stays an empty pipeline. It is not described as not enough data.
   metric is requested.
 - It does not let a hotel payment, a sponsored flag, or a plan row move a
   rank.
+
+## D131 — Creator plan prices and credit amounts
+
+Status: **Accepted — PRODUCT DECISION (Brian, 2026-10-14).** Supersedes the
+D101 placeholder amounts (Free 15 total, Pro 50, Pro+ 150, packs 10/25/50)
+and the live Pro price in D052. It does not supersede D051, D007, D073, D100,
+the cache TTL, the unlock cost, or the not-found charge.
+
+| Setting | Value |
+|---|---|
+| Free credits | 5 per rolling week |
+| Pro price | $20/mo billed annually, or $30/mo monthly |
+| Pro credits | 150 per month |
+| Max price | $50/mo billed annually, or $60/mo monthly |
+| Max credits | 500 per month |
+| Packs | 50 credits $10, 150 credits $20, 500 credits $40 |
+| Cache TTL | 365 days |
+| Charge when the provider finds nothing | no |
+| Unlock cost | 1 |
+
+Max replaces Pro+. `pro_plus_monthly_credits` is not read. Prices live in
+`credit_config` and in `PLAN_PRICES` / `CREDITS_CONFIG`. A test fails if they
+diverge. A price is not an entitlement and not a charge.
+
+The rest of canon v1.1 stays: one credit unlocks one hotel contact for one
+user, a cache hit still costs that user, and the provider runs only on a
+cache miss.
+
+## D132 — Free weekly credits do not stack
+
+Status: **Accepted.** The week is 7 days from `users.created_at`, not a
+calendar week. Period index is the whole number of weeks since that
+timestamp. The grant key is `free_weekly:{period}`. A second call in the
+same period inserts nothing.
+
+Unused weekly credits do not accumulate past 5. At the start of the next
+period the leftover weekly amount is reversed (`free_weekly_expire:{period}`)
+and a new grant of 5 is written. Spends reduce weekly credits before durable
+credits. Missed periods are not backfilled.
+
+Durable credits are not reversed: `free_grant:v1`, `plan_grant`,
+`pack_purchase`, `admin_grant`, and `courtesy`. An existing balance is not
+reduced by the migration. Migration `0076` itself writes no ledger row.
+
+An active Pro or Max entitlement pauses new weekly grants. Credits already
+granted stay. A Destination Pass does not pause the weekly grant and does
+not receive the Pro monthly amount. Paying for a Pass stays additive.
+
+Pro and Max monthly grants are idempotent per entitlement period, counted
+from that row's `starts_at`. The key is
+`plan_monthly:{tier}:{entitlement}:{period}`. When both are active, only Max
+is granted. Unused Pro or Max credits are not expired by this block.
+
+## D133 — Max is a plan tier; Free CRM limits stay
+
+Status: **Accepted.** `access_type` `max` has the same shape as `pro`: no
+destination. `_has_active_pro` treats an active Max row as worldwide paid,
+so Premium Intelligence, Outreach Assisted, and the CRM exemption follow
+Pro. Admin stays in that helper. A Max row is not a staff role.
+
+Free CRM limits stay 10 saved hotels, 5 active pipeline items, and 1 active
+trip. Pro and Max are exempt worldwide. A Destination Pass is unchanged.
+
+Free keeps manual pitch templates. Full AI email generation is a flag on Pro
+and Max (`own_plan_features().full_ai_email`). It does not call a model.
+D03 and D04 stay open. A Destination Pass does not gain that flag. Outreach
+Assisted stays the existing paid Gmail predicate: Pro, Max, or an active
+Destination Pass. Free stays paused.
+
+Max-only flags are `priority_ai`, `advanced_signals`, `priority_support`,
+and `future_premium`. They are flags. They do not change Discover order,
+Pipeline order, or support mail.
+
+Canon still lets Free hold pack credits. Pack prices are config. Checkout
+is not wired, so nobody can buy one from this block.
+
+## D134 — No charge, and existing credits stay
+
+Status: **Accepted.** This block stores prices and grants credits from an
+entitlement row or from the Free week. It does not call Rebill. D073 still
+names Rebill and is not an integration. The billing webhook is unchanged.
+A `subscriptions` row or a `purchases` row does not grant a plan and does
+not grant credits.
+
+`authenticated` cannot execute `ensure_credit_grants(uuid)` and cannot
+update `credit_config`. `ensure_own_credit_grants()` and
+`own_plan_features()` take no user id. User A's Max row does not change
+User B's flags, balance, or CRM cap.
+
+Existing ledger rows are not updated or deleted. Accounts that already
+hold `free_grant:v1` keep that amount.

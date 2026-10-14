@@ -6,6 +6,16 @@ import { listCrumbs } from "@/lib/shell/navigation";
 import { requireUser } from "@/lib/auth/guards";
 import { loadBillingAccess } from "@/lib/billing/queries";
 import { billingAccessState } from "@/lib/billing/view";
+import { FREE_LIMITS } from "@/lib/config";
+import { CREDITS_CONFIG, PLAN_PRICES } from "@/lib/credits/config";
+
+function planLabel(accessType: string): string {
+  if (accessType === "pro") return "Pro";
+  if (accessType === "max") return "Max";
+  if (accessType === "destination") return "Destination Pass";
+  if (accessType === "admin") return "Admin";
+  return accessType;
+}
 
 export const metadata: Metadata = { title: "Billing" };
 
@@ -32,6 +42,29 @@ export default async function BillingPage() {
     <div className="space-y-6">
       <PageHeader title="Billing & access" crumbs={listCrumbs("Billing")} />
 
+      <div className="rounded-[var(--radius-app)] border border-border bg-surface p-5 text-sm text-muted">
+        <p className="font-semibold text-text">Plans</p>
+        <ul className="mt-2 space-y-1">
+          <li>
+            Free · {CREDITS_CONFIG.freeWeeklyCredits} credits every{" "}
+            {CREDITS_CONFIG.freeWeeklyPeriodDays} days · {FREE_LIMITS.savedHotels} saved hotels,{" "}
+            {FREE_LIMITS.activePipelineItems} active pipeline items, {FREE_LIMITS.activeTrips}{" "}
+            active trip
+          </li>
+          <li>
+            Pro · ${PLAN_PRICES.pro.annualPerMonthUsd}/mo billed annually or $
+            {PLAN_PRICES.pro.monthlyUsd}/mo · {CREDITS_CONFIG.planMonthlyCredits.pro} credits a
+            month
+          </li>
+          <li>
+            Max · ${PLAN_PRICES.max.annualPerMonthUsd}/mo billed annually or $
+            {PLAN_PRICES.max.monthlyUsd}/mo · {CREDITS_CONFIG.planMonthlyCredits.max} credits a
+            month
+          </li>
+        </ul>
+        <p className="mt-2">These prices are config. This page does not charge a card.</p>
+      </div>
+
       {state.kind === "error" ? (
         <EmptyState title={state.title} description={state.body} />
       ) : state.kind === "free" ? (
@@ -40,7 +73,7 @@ export default async function BillingPage() {
         <ul className="divide-y divide-border rounded-[var(--radius-app)] border border-border bg-surface text-sm">
           {state.entitlements.map((entitlement, i) => (
             <li key={i} className="flex items-center justify-between px-5 py-3">
-              <span className="capitalize text-text">{entitlement.accessType}</span>
+              <span className="text-text">{planLabel(entitlement.accessType)}</span>
               <span className="text-muted">
                 {entitlement.expiresAt
                   ? `Until ${new Date(entitlement.expiresAt).toLocaleDateString()}`

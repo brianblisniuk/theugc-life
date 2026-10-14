@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AnalyticsPageView } from "@/components/analytics-page-view";
+import { CREDITS_CONFIG, PLAN_PRICES } from "@/lib/credits/config";
 
 export default function LandingPage() {
   return (
@@ -11,7 +12,9 @@ export default function LandingPage() {
       </h1>
       <p className="mt-4 text-base text-muted">
         Discover creator-friendly hotels, manage your outreach, and track what happens after you
-        press send. This is the Sprint 0 foundation — product surfaces arrive in later sprints.
+        press send. Free includes {CREDITS_CONFIG.freeWeeklyCredits} credits every{" "}
+        {CREDITS_CONFIG.freeWeeklyPeriodDays} days. Pro is ${PLAN_PRICES.pro.annualPerMonthUsd}/mo
+        billed annually. Max is ${PLAN_PRICES.max.annualPerMonthUsd}/mo billed annually.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Link

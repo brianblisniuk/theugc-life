@@ -9,12 +9,11 @@
  * is not access (D007). A missing, expired, revoked, pending, or not-yet-started
  * row is Free. It is never Pro.
  *
- * A feature with no written tier is Free (D098), except `credits.pending_numbers`,
- * which stays undecided until the owner sets the amounts (D101). Plans limit
- * the written D056 quotas. Premium intelligence stays on has_premium_hotel_access.
+ * A feature with no written tier is Free (D098). Credit amounts and plan prices
+ * are D131. Max is worldwide paid alongside Pro (D133). Plans limit the written
+ * D056 quotas. Premium intelligence stays on has_premium_hotel_access.
  * Contacts are a per-user credit unlock (D100). Plans do not limit profile,
- * analytics, or the share link.
- * The question for Brian is on the entry. This module does not invent a tier.
+ * analytics, or the share link. A price is not an entitlement (D134).
  */
 import { FREE_LIMITS } from "@/lib/config";
 
@@ -40,6 +39,8 @@ export type LimitKey = keyof typeof FREE_LIMITS;
  *   the access. A creator plan does not call this, and a purchase alone is not.
  * `credit_unlock` — this user owns a contact_unlocks row for the hotel, or is
  *   staff. A Pass or Pro row does not unlock a contact (D100).
+ * `paid_worldwide` — active Pro or Max. A Destination Pass does not qualify.
+ * `max_only` — active Max. Pro does not qualify.
  * `undecided` — no written tier. Current behavior stays.
  */
 export type TierRule =
@@ -51,6 +52,8 @@ export type TierRule =
   | { kind: "public_page" }
   | { kind: "system_grant" }
   | { kind: "credit_unlock" }
+  | { kind: "paid_worldwide" }
+  | { kind: "max_only" }
   | { kind: "undecided" };
 
 export type AnonAccess = "allow" | "deny";
@@ -65,6 +68,7 @@ export type Enforcement =
   | { kind: "contact_unlock" }
   | { kind: "premium_intelligence" }
   | { kind: "pending_config" }
+  | { kind: "plan_flag"; flag: "full_ai_email" | "priority_ai" }
   | { kind: "save_limit" }
   | { kind: "engage_limit" }
   | { kind: "trip_limit" }
@@ -252,26 +256,52 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["D100", "D103", "D104", "PERMISSIONS.md §7"],
   },
   {
-    id: "credits.pending_numbers",
+    id: "credits.plan_config",
     module: "Credits",
     summary:
-      "Free credits, Pro and Pro+ monthly credits, pack sizes, cache TTL, and the not-found charge are pending owner config. Placeholders live in CREDITS_CONFIG and credit_config.",
+      "Free is 5 credits per rolling week and does not stack past 5. Pro is 150 a month. Max is 500 a month. Packs are 50, 150, and 500. The numbers live in CREDITS_CONFIG and credit_config. A price is not a grant.",
     routes: [],
     sourceFiles: ["src/lib/credits/config.ts"],
     serverActions: [],
-    rpcs: [],
-    rule: { kind: "undecided" },
+    rpcs: ["ensure_own_credit_grants"],
+    rule: { kind: "system_grant" },
     anon: "deny",
     enforcement: { kind: "pending_config" },
-    question:
-      "What are the Free credit total, Pro and Pro+ monthly credits, pack sizes, cache TTL, and the not-found charge? The running values are placeholders, not a price.",
-    sources: ["D101"],
+    sources: ["D131", "D132", "D101"],
+  },
+  {
+    id: "plans.full_ai_email",
+    module: "Plans",
+    summary:
+      "Full AI email generation is a Pro and Max flag. Free keeps manual templates. The flag does not call a model.",
+    routes: ["/pricing", "/app/billing"],
+    sourceFiles: ["src/lib/credits/config.ts", "src/app/(public)/pricing/page.tsx"],
+    serverActions: [],
+    rpcs: ["own_plan_features"],
+    rule: { kind: "paid_worldwide" },
+    anon: "deny",
+    enforcement: { kind: "plan_flag", flag: "full_ai_email" },
+    sources: ["D133", "D03", "D04", "D110"],
+  },
+  {
+    id: "plans.max_flags",
+    module: "Plans",
+    summary:
+      "Max adds priority AI, advanced signals, priority support, and a future-premium placeholder. The flags do not change today's ranking or send mail.",
+    routes: ["/pricing", "/app/billing"],
+    sourceFiles: ["src/lib/credits/config.ts", "src/app/(app)/app/billing/page.tsx"],
+    serverActions: [],
+    rpcs: ["own_plan_features", "has_active_max"],
+    rule: { kind: "max_only" },
+    anon: "deny",
+    enforcement: { kind: "plan_flag", flag: "priority_ai" },
+    sources: ["D133", "D131"],
   },
   {
     id: "pipeline.save",
     module: "Pipeline",
     summary:
-      "Free may hold 10 open hotel relationships. A Pass is exempt inside the entitled destination, and those rows do not consume the outside Free allowance. Pro is exempt worldwide. Closed cycles do not count.",
+      "Free may hold 10 open hotel relationships. A Pass is exempt inside the entitled destination, and those rows do not consume the outside Free allowance. Pro and Max are exempt worldwide. Closed cycles do not count.",
     routes: ["/app/pipeline", "/app/hotels/[id]"],
     sourceFiles: ["src/lib/pipeline/actions.ts", "src/lib/pipeline/queries.ts"],
     serverActions: ["saveHotelAction"],
@@ -285,7 +315,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "pipeline.engage",
     module: "Pipeline",
     summary:
-      "Free may advance 5 relationships past saved. In-destination Pass rows do not consume the outside Free allowance. Pro is exempt worldwide. Saved does not consume this allowance.",
+      "Free may advance 5 relationships past saved. In-destination Pass rows do not consume the outside Free allowance. Pro and Max are exempt worldwide. Saved does not consume this allowance.",
     routes: ["/app/pipeline", "/app/hotels/[id]"],
     sourceFiles: ["src/lib/pipeline/actions.ts", "src/lib/pipeline/queries.ts"],
     serverActions: ["transitionPipelineItemAction", "progressPipelineDealAction"],
@@ -317,7 +347,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "trips.active",
     module: "Trips",
     summary:
-      "Free may keep 1 active trip. A Pass is exempt when the trip's destination is covered, and covered trips do not consume the outside Free allowance. Pro is exempt worldwide.",
+      "Free may keep 1 active trip. A Pass is exempt when the trip's destination is covered, and covered trips do not consume the outside Free allowance. Pro and Max are exempt worldwide.",
     routes: ["/app/trips", "/app/trips/[id]"],
     sourceFiles: ["src/lib/trips/actions.ts", "src/lib/trips/queries.ts"],
     serverActions: ["createTripAction", "updateTripAction"],
@@ -806,7 +836,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "commerce.grant",
     module: "Billing",
     summary:
-      "The billing webhook may write an entitlement row. The row is the access. A purchase without that row grants nothing. This block does not change prices or Rebill.",
+      "The billing webhook may write an entitlement row. The row is the access. A purchase without that row grants nothing. Prices are config. This block does not charge and does not call Rebill.",
     routes: ["/api/billing/webhook", "/pricing"],
     sourceFiles: [
       "src/app/api/billing/webhook/route.ts",
@@ -851,7 +881,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "pitch.drafts",
     module: "Pitch",
     summary:
-      "Pitch templates and drafts are the creator's, at every tier. Copy and a mailto draft are not a sent pitch. Another creator's Pro row does not reveal them.",
+      "Pitch templates and drafts are the creator's, at every tier, including Free manual copy. Copy and a mailto draft are not a sent pitch and not full AI email. Another creator's Pro or Max row does not reveal them.",
     routes: ["/app/hotels/[id]/pitch", "/app/profile/pitches"],
     sourceFiles: [
       "src/app/(app)/app/hotels/[id]/pitch/page.tsx",
@@ -932,8 +962,13 @@ export function workspaceLimit(
 }
 
 export interface AccessContext {
-  /** Active Pro entitlement row for this caller. Not a purchase. */
+  /**
+   * Active Pro or Max entitlement. Not a purchase.
+   * `coverageFromEntitlementRows` sets this for both `pro` and `max`.
+   */
   pro: boolean;
+  /** Active Max entitlement. Pro does not set this. */
+  max: boolean;
   /** Active destination entitlement covers this resource's destination, including descendants. */
   destinationCovers: boolean;
   /** Caller is still under the Free count. Ignored when the feature is not limited. */
@@ -972,6 +1007,10 @@ export function decideAccess(entry: InventoryEntry, ctx: AccessContext): AccessD
       return "deny";
     case "credit_unlock":
       return ctx.creditUnlocked || ctx.staff ? "allow" : "deny";
+    case "paid_worldwide":
+      return ctx.pro || ctx.max ? "allow" : "deny";
+    case "max_only":
+      return ctx.max ? "allow" : "deny";
     case "undecided":
       return "undecided";
     default: {
@@ -1011,15 +1050,18 @@ export function isActiveEntitlementFact(row: EntitlementFact, now: Date = new Da
 }
 
 export interface Coverage {
+  /** Pro or Max. Max includes Pro's worldwide capabilities. */
   pro: boolean;
+  max: boolean;
   destinationCovers: boolean;
 }
 
 /**
  * Coverage from entitlement rows only.
- * `access_type` `pro` is Pro. `destination` is a Pass, and only where
- * `destinationCovers` says the hierarchy includes the resource.
- * A `free` row, an unknown type, and a purchase are not Pro.
+ * `access_type` `pro` is Pro. `max` is Max and also counts as worldwide paid.
+ * `destination` is a Pass, and only where `destinationCovers` says the
+ * hierarchy includes the resource. A `free` row, an unknown type, and a
+ * purchase are not Pro and not Max.
  */
 export function coverageFromEntitlementRows(
   rows: readonly EntitlementFact[],
@@ -1027,10 +1069,12 @@ export function coverageFromEntitlementRows(
   destinationCovers: (destinationId: string) => boolean,
 ): Coverage {
   let pro = false;
+  let max = false;
   let covers = false;
   for (const row of rows) {
     if (!isActiveEntitlementFact(row, now)) continue;
-    if (row.accessType === "pro") pro = true;
+    if (row.accessType === "pro" || row.accessType === "max") pro = true;
+    if (row.accessType === "max") max = true;
     if (
       row.accessType === "destination" &&
       row.destinationId &&
@@ -1039,7 +1083,7 @@ export function coverageFromEntitlementRows(
       covers = true;
     }
   }
-  return { pro, destinationCovers: covers };
+  return { pro, max, destinationCovers: covers };
 }
 
 export function questionsForBrian(): readonly { id: string; question: string }[] {

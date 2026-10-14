@@ -110,6 +110,11 @@ d("contact credit ledger", () => {
       [DEST],
     );
     await makeUser(A);
+    await adminQuery(
+      `insert into public.credit_ledger (user_id, delta, reason, idempotency_key)
+       values ($1, 20, 'admin_grant', 'ledger-fixture')`,
+      [A],
+    );
     await makeUser(B);
     await makeUser(ADMIN, "admin");
     await makeUser(EDITOR, "editor");
@@ -143,15 +148,16 @@ d("contact credit ledger", () => {
     await teardownDatabase();
   });
 
-  it("grants the configured Free amount once", async () => {
-    const rows = await adminQuery<{ delta: number; n: string }>(
-      `select delta, count(*)::text as n
+  it("grants the current Free week once", async () => {
+    const rows = await adminQuery<{ delta: number; idempotency_key: string }>(
+      `select delta, idempotency_key
          from public.credit_ledger
-        where user_id = $1 and reason = 'free_grant' and idempotency_key = 'free_grant:v1'
-        group by delta`,
+        where user_id = $1 and reason = 'free_grant'`,
       [A],
     );
-    expect(rows).toEqual([{ delta: CREDITS_CONFIG.freeCredits, n: "1" }]);
+    expect(rows).toEqual([
+      { delta: CREDITS_CONFIG.freeWeeklyCredits, idempotency_key: "free_weekly:0" },
+    ]);
     await adminQuery("select public.grant_free_credits($1)", [A]);
     const after = await adminQuery<{ n: string }>(
       "select count(*)::text as n from public.credit_ledger where user_id = $1 and reason = 'free_grant'",
@@ -235,8 +241,13 @@ d("contact credit ledger", () => {
   it("returns no email and writes no row when the balance cannot cover the cost", async () => {
     await adminQuery(
       `insert into public.credit_ledger (user_id, delta, reason, idempotency_key)
-       select $1, -free_credits, 'reversal', 'drain-b'
-         from public.credit_config`,
+       select $1, -bal.n, 'reversal', 'drain-b'
+         from (
+           select coalesce(sum(delta), 0)::int as n
+             from public.credit_ledger
+            where user_id = $1
+         ) bal
+        where bal.n <> 0`,
       [B],
     );
     expect(await balanceOf(B)).toBe(0);
@@ -712,10 +723,10 @@ d("contact credit ledger", () => {
       "select public.grandfather_visible_contact_unlocks() as n",
     );
     expect(inserted[0]!.n).toBeGreaterThan(0);
-    expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeCredits);
-    expect(await balanceOf(pro)).toBe(CREDITS_CONFIG.freeCredits);
-    expect(await balanceOf(free)).toBe(CREDITS_CONFIG.freeCredits);
-    expect(await balanceOf(expired)).toBe(CREDITS_CONFIG.freeCredits);
+    expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    expect(await balanceOf(pro)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    expect(await balanceOf(free)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    expect(await balanceOf(expired)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
     expect(await balanceOf(EDITOR)).toBe(editorBefore);
 
     const passRows = await queryAs<{
@@ -798,7 +809,7 @@ d("contact credit ledger", () => {
       [pass],
     );
     expect(ledgerAfter[0]!.n).toBe(ledgerRows[0]!.n);
-    expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeCredits);
+    expect(await balanceOf(pass)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
   });
 
   it("saves a revealed contact once, refuses a full pipeline, and hides the other creator", async () => {

@@ -41,6 +41,16 @@
   },
   {
     "schema": "public",
+    "name": "_has_active_max",
+    "args": "uid uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "_has_active_pro",
     "args": "uid uuid",
     "searchPath": "public, pg_temp",
@@ -1071,6 +1081,16 @@
   },
   {
     "schema": "public",
+    "name": "has_active_max",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": true,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "has_active_pro",
     "args": "",
     "searchPath": "public, pg_temp",
@@ -1451,6 +1471,26 @@
   },
   {
     "schema": "public",
+    "name": "ensure_credit_grants",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "ensure_own_credit_grants",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "grant_free_credits",
     "args": "p_user_id uuid",
     "searchPath": "\"\"",
@@ -1463,6 +1503,16 @@
     "schema": "public",
     "name": "has_unlocked_hotel_contact",
     "args": "p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "own_plan_features",
+    "args": "",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": true,

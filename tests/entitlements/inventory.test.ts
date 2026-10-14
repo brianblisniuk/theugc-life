@@ -58,6 +58,7 @@ function exportedFunctions(mod: object): string[] {
 function ctx(overrides: Partial<AccessContext> = {}): AccessContext {
   return {
     pro: false,
+    max: false,
     destinationCovers: false,
     withinFreeLimit: true,
     owner: true,
@@ -121,15 +122,10 @@ describe("entitlement inventory", () => {
     expect(doc).toContain("0051_outside_free_allowance.sql");
     expect(doc).toContain("outside-coverage rows");
     for (const entry of INVENTORY) expect(doc).toContain(entry.id);
-    expect(questionsForBrian()).toEqual([
-      {
-        id: "credits.pending_numbers",
-        question: featureById("credits.pending_numbers").question,
-      },
-    ]);
+    expect(questionsForBrian()).toEqual([]);
     expect(
       INVENTORY.filter((entry) => entry.rule.kind === "undecided").map((entry) => entry.id),
-    ).toEqual(["credits.pending_numbers"]);
+    ).toEqual([]);
   });
 
   it("reads workspace limits from FREE_LIMITS and nowhere else", () => {
@@ -154,13 +150,19 @@ describe("entitlement inventory", () => {
     ];
     for (const item of cases) {
       const coverage = coverageFromEntitlementRows(item.rows, NOW, () => true);
-      expect(coverage, item.name).toEqual({ pro: false, destinationCovers: false });
+      expect(coverage, item.name).toEqual({ pro: false, max: false, destinationCovers: false });
     }
 
     const active = fact();
     expect(isActiveEntitlementFact(active, NOW)).toBe(true);
     expect(coverageFromEntitlementRows([active], NOW, () => false)).toEqual({
       pro: true,
+      max: false,
+      destinationCovers: false,
+    });
+    expect(coverageFromEntitlementRows([fact({ accessType: "max" })], NOW, () => false)).toEqual({
+      pro: true,
+      max: true,
       destinationCovers: false,
     });
     expect(
@@ -169,14 +171,14 @@ describe("entitlement inventory", () => {
         NOW,
         (id) => id === "bali",
       ),
-    ).toEqual({ pro: false, destinationCovers: true });
+    ).toEqual({ pro: false, max: false, destinationCovers: true });
     expect(
       coverageFromEntitlementRows(
         [fact({ accessType: "destination", destinationId: "bali" })],
         NOW,
         () => false,
       ),
-    ).toEqual({ pro: false, destinationCovers: false });
+    ).toEqual({ pro: false, max: false, destinationCovers: false });
   });
 
   it("decides every written rule, including Free for features that had no tier", () => {
@@ -238,6 +240,19 @@ describe("entitlement inventory", () => {
         table.push({ id: entry.id, ctx: ctx({ staff: true, pro: false }), decision: "allow" });
         continue;
       }
+      if (entry.rule.kind === "paid_worldwide") {
+        table.push({ id: entry.id, ctx: ctx(), decision: "deny" });
+        table.push({ id: entry.id, ctx: ctx({ destinationCovers: true }), decision: "deny" });
+        table.push({ id: entry.id, ctx: ctx({ pro: true, max: false }), decision: "allow" });
+        table.push({ id: entry.id, ctx: ctx({ pro: false, max: true }), decision: "allow" });
+        continue;
+      }
+      if (entry.rule.kind === "max_only") {
+        table.push({ id: entry.id, ctx: ctx(), decision: "deny" });
+        table.push({ id: entry.id, ctx: ctx({ pro: true, max: false }), decision: "deny" });
+        table.push({ id: entry.id, ctx: ctx({ max: true, pro: true }), decision: "allow" });
+        continue;
+      }
       if (entry.rule.kind === "credit_unlock") {
         table.push({ id: entry.id, ctx: ctx(), decision: "deny" });
         table.push({
@@ -268,7 +283,7 @@ describe("entitlement inventory", () => {
 
   it("has no undecided feature left for a Pro context to skip", () => {
     const undecided = INVENTORY.filter((entry) => entry.rule.kind === "undecided");
-    expect(undecided.map((entry) => entry.id)).toEqual(["credits.pending_numbers"]);
+    expect(undecided.map((entry) => entry.id)).toEqual([]);
     expect(
       decideAccess(featureById("profile.personal_analytics"), ctx({ owner: true, pro: false })),
     ).toBe("allow");

@@ -200,7 +200,7 @@ On expiry:
 Important: “CDP” may be used internally, but public marketing should prefer the full name because CDP commonly means Customer Data Platform.
 
 ### 5.3 Creator Pro
-**V1 launch price: USD 199/year, worldwide (D052).**
+**V1 launch price was USD 199/year, worldwide (D052).** D131 (Brian, 14 Oct 2026) is the live creator price: Pro is $20/mo billed annually or $30/mo monthly, and Max is $50/mo billed annually or $60/mo monthly. The historical 199 figure stays in `PRICING.pro.launchPriceUsd`.
 
 The USD 299 reference and USD 249 later prices remain future pricing
 hypotheses, not commitments. Pricing must be editable without code deployment.

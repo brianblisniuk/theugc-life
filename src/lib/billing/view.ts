@@ -20,7 +20,7 @@ export const BILLING_COPY = {
   // premium object (D049). What a plan unlocks is Premium Intelligence and
   // actionable contacts.
   freeBody:
-    "Every hotel is already discoverable. A Destination Pass or Creator Pro unlocks Premium Intelligence and verified contacts.",
+    "Every hotel is already discoverable. Premium Intelligence is not included on Free. Pro and Max add it worldwide. This page does not charge a card.",
 } as const;
 
 export type BillingAccessState =
