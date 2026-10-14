@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cuenta · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-body">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <div class="shell">
+    <nav class="sidebar" aria-label="Principal">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <div class="sidebar-links">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </div>
+      <div class="sidebar-links sidebar-sub">
+        <p class="nav-label">Seguimiento</p>
+        <a href="inbox.html">Inbox</a>
+        <a class="is-active" href="account.html" aria-current="page">Cuenta</a>
+        <a href="billing.html">Facturación</a>
+        <a href="../index.html">v1 / v2</a>
+      </div>
+      <div class="credit-dock">
+        <a class="credit-line" href="billing.html">
+          <b data-balance-num>142</b>
+          <span class="micro">créditos · Pro</span>
+        </a>
+        <p class="micro">118 del plan · 24 de packs</p>
+        <div class="meter">
+          <div class="meter-track" role="img" aria-label="Presupuesto de IA al 80 por ciento">
+            <div class="meter-fill"></div>
+            <i class="meter-tick"></i>
+          </div>
+          <span class="micro">IA USD 4 de 5 · aviso al 80%</span>
+        </div>
+        <a class="btn btn-sun btn-tiny" href="pricing.html">Upgrade</a>
+      </div>
+    </nav>
+    <div class="workspace">
+      <header class="topbar">
+        <a class="wordmark only-m" href="inicio.html">theugc<span>.life</span></a>
+        <p class="crumb only-d">Cuenta · <strong>Lucía</strong></p>
+        <div class="topbar-actions">
+          <a class="credit-inline" href="billing.html"><b data-balance-num>142</b> <span class="only-d">créditos</span></a>
+          <a class="btn btn-sun btn-tiny btn-upgrade only-m" href="pricing.html">Upgrade</a>
+          <a class="avatar only-d" href="perfil.html" aria-label="Perfil de Lucía Ferrer">LF</a>
+          <details class="more only-m">
+            <summary class="avatar" aria-label="Más">LF</summary>
+            <div class="more-menu">
+              <a href="inbox.html">Inbox</a>
+              <a href="account.html">Cuenta</a>
+              <a href="billing.html">Facturación</a>
+              <a href="pricing.html">Upgrade</a>
+              <a href="../index.html">v1 / v2</a>
+            </div>
+          </details>
+          <a class="btn btn-sun btn-pitch" href="pitch.html">Generar pitch</a>
+        </div>
+      </header>
+      <main id="contenido" class="stage">
+
+        <div>
+          <p class="eyebrow">Cuenta</p>
+          <h1 class="h1">Cuenta</h1>
+          <p class="meta">La casilla y la baja viven en esta página.</p>
+        </div>
+        <div class="cols-2">
+          <div class="stack">
+            <section class="white-card">
+              <div class="defs">
+                <div><dt>Correo</dt><dd>lucia@correo.example</dd></div>
+                <div><dt>Rol</dt><dd>Creadora</dd></div>
+                <div><dt>Plan</dt><dd><a href="billing.html">Pro anual</a></dd></div>
+              </div>
+            </section>
+            <section class="white-card">
+              <h2 class="h3">Gmail</h2>
+              <p><b>lucia.ferrer@gmail.com</b></p>
+              <p class="micro">Conectada con OAuth. No pedimos la contraseña del mail. El permiso de envío es aparte y ya está concedido.</p>
+              <div class="cluster">
+                <span class="badge badge-live">Envío permitido</span>
+                <button class="btn btn-line btn-small" type="button">Desconectar</button>
+              </div>
+              <p class="micro">En Free la sincronización y la detección se pausan. La casilla no se borra. Volver a Pro las retoma.</p>
+            </section>
+            <section class="white-card">
+              <h2 class="h3">Contraseña</h2>
+              <p class="micro">Para cambiarla, te mandamos un enlace. Este prototipo no envía ese correo.</p>
+              <a class="btn btn-line" href="signup.html">Restablecer contraseña</a>
+            </section>
+          </div>
+          <section class="white-card">
+            <h2 class="h3">Eliminar cuenta</h2>
+            <p>Tu nombre, correo, casilla, contactos, perfil, borradores y el resto de los datos personales se borran dentro de los 30 días. Las estadísticas agregadas que no se pueden rastrear hasta vos pueden quedar.</p>
+            <button class="btn btn-danger" type="button" data-delete-open data-delete-ask>Eliminar cuenta</button>
+            <form class="stack" data-delete-form hidden>
+              <label class="field" for="delete-confirmation">
+                <span>Escribí DELETE para confirmar</span>
+                <input class="control" id="delete-confirmation" name="confirmation" autocomplete="off" spellcheck="false">
+              </label>
+              <div class="cluster">
+                <button class="btn btn-danger" id="delete-submit" type="submit" disabled>Eliminar mi cuenta</button>
+                <button class="btn btn-line" type="button" onclick="this.form.hidden=true;document.querySelector('[data-delete-open]').hidden=false">Cancelar</button>
+              </div>
+            </form>
+            <p class="note" data-delete-scheduled hidden>La baja quedó programada. Los datos personales se eliminan el 13 de noviembre de 2026 (UTC).</p>
+          </section>
+        </div>
+
+        <p class="footer-note"><a href="../index.html">Comparar con v1</a> · UX01 v2 · solo mockup</p>
+      </main>
+    </div>
+  </div>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

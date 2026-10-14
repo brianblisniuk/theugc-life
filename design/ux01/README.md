@@ -2,7 +2,7 @@
 
 Static, clickable HTML for owner approval. No app code, no build.
 
-Open `index.html`. It is the design system and the index of every screen.
+Open `index.html`. It is the design system and the index of every screen. The **v1 / v2** switch on that page loads the same 15 screens from `v2/`. v2 is a second visual pass: desktop-first grids, the hotel as the hero, decision signals on every card, and Sun only on Generar pitch, Desbloquear, Upgrade, badges and highlights. Prices, states and Spanish copy stay with v1.
 
 ## Screens
 

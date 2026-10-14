@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-body">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <div class="shell">
+    <nav class="sidebar" aria-label="Principal">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <div class="sidebar-links">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a class="is-active" href="perfil.html" aria-current="page">Perfil</a>
+      </div>
+      <div class="sidebar-links sidebar-sub">
+        <p class="nav-label">Seguimiento</p>
+        <a href="inbox.html">Inbox</a>
+        <a href="account.html">Cuenta</a>
+        <a href="billing.html">Facturación</a>
+        <a href="../index.html">v1 / v2</a>
+      </div>
+      <div class="credit-dock">
+        <a class="credit-line" href="billing.html">
+          <b data-balance-num>142</b>
+          <span class="micro">créditos · Pro</span>
+        </a>
+        <p class="micro">118 del plan · 24 de packs</p>
+        <div class="meter">
+          <div class="meter-track" role="img" aria-label="Presupuesto de IA al 80 por ciento">
+            <div class="meter-fill"></div>
+            <i class="meter-tick"></i>
+          </div>
+          <span class="micro">IA USD 4 de 5 · aviso al 80%</span>
+        </div>
+        <a class="btn btn-sun btn-tiny" href="pricing.html">Upgrade</a>
+      </div>
+    </nav>
+    <div class="workspace">
+      <header class="topbar">
+        <a class="wordmark only-m" href="inicio.html">theugc<span>.life</span></a>
+        <p class="crumb only-d"><a href="perfil.html">Perfil</a> · <strong>Portfolio</strong></p>
+        <div class="topbar-actions">
+          <a class="credit-inline" href="billing.html"><b data-balance-num>142</b> <span class="only-d">créditos</span></a>
+          <a class="btn btn-sun btn-tiny btn-upgrade only-m" href="pricing.html">Upgrade</a>
+          <a class="avatar only-d" href="perfil.html" aria-label="Perfil de Lucía Ferrer">LF</a>
+          <details class="more only-m">
+            <summary class="avatar" aria-label="Más">LF</summary>
+            <div class="more-menu">
+              <a href="inbox.html">Inbox</a>
+              <a href="account.html">Cuenta</a>
+              <a href="billing.html">Facturación</a>
+              <a href="pricing.html">Upgrade</a>
+              <a href="../index.html">v1 / v2</a>
+            </div>
+          </details>
+          <a class="btn btn-sun btn-pitch" href="pitch.html">Generar pitch</a>
+        </div>
+      </header>
+      <main id="contenido" class="stage">
+
+        <div>
+          <p class="eyebrow">Perfil</p>
+          <h1 class="h1">Portfolio</h1>
+          <p class="meta">Un layout y cada colaboración aprobada sola. Publicar una ficha no enciende el perfil público. No hay compensación, mail ni notas.</p>
+        </div>
+        <div class="cluster" role="group" aria-label="Layout">
+          <button class="btn btn-line btn-small is-on" type="button" data-template="journey" aria-pressed="true">Recorrido</button>
+          <button class="btn btn-line btn-small" type="button" data-template="destinations" aria-pressed="false">Destinos</button>
+          <button class="btn btn-line btn-small" type="button" data-template="highlights" aria-pressed="false">Destacados</button>
+        </div>
+        <div class="studio">
+          <section class="stack">
+            <h2 class="eyebrow">Para decidir</h2>
+            <article class="white-card">
+              <div class="folio-row">
+                <span class="photo" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=75')"></span>
+                <div>
+                  <h3 class="h3">Six Senses Ibiza</h3>
+                  <p class="micro">Ibiza · estancia + pago · acordada · jun 2026</p>
+                </div>
+              </div>
+              <div class="cluster">
+                <button class="btn btn-ink btn-small" type="button">Aprobar</button>
+                <button class="btn btn-line btn-small" type="button">Dejar afuera</button>
+              </div>
+            </article>
+            <h2 class="eyebrow">Publicadas</h2>
+            <div class="white-card">
+              <p><b>Hotel Esencia</b> · Riviera Maya · estancia · mar 2026</p>
+              <p><b>Capella Ubud</b> · Bali · estancia · ago 2025</p>
+              <p class="micro">Amanera quedó afuera. Sigue en la lista privada del perfil.</p>
+            </div>
+          </section>
+          <section class="stack">
+            <h2 class="eyebrow">Vista para el hotel</h2>
+            <div class="folio" id="folio" data-template="journey">
+              <div class="folio-journey folio-pad">
+                <p class="micro">Lucía Ferrer</p>
+                <div class="folio-row"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=1200&q=75')"></span><p><b>Capella Ubud</b><br><span class="micro">Bali · agosto 2025</span></p></div>
+                <div class="folio-row"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=75')"></span><p><b>Hotel Esencia</b><br><span class="micro">Riviera Maya · marzo 2026</span></p></div>
+              </div>
+              <div class="folio-dest folio-pad">
+                <p><b>Bali</b><br><span class="micro">Capella Ubud</span></p>
+                <p><b>México</b><br><span class="micro">Hotel Esencia</span></p>
+              </div>
+              <div class="folio-high">
+                <div class="highlight-hero" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=75')">
+                  <div>
+                    <span class="badge badge-sun">Top</span>
+                    <p class="h2" style="color:#fff;margin-top:6px">Hotel Esencia</p>
+                  </div>
+                </div>
+                <div class="folio-pad"><p class="micro">Capella Ubud · Bali</p></div>
+              </div>
+            </div>
+            <p class="micro">El enlace muestra solo lo aprobado. No muestra lo que estás negociando.</p>
+          </section>
+        </div>
+
+        <p class="footer-note"><a href="../index.html">Comparar con v1</a> · UX01 v2 · solo mockup</p>
+      </main>
+    </div>
+  </div>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a class="is-active" href="perfil.html" aria-current="page">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

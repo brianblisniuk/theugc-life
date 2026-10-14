@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inbox · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-body">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <div class="shell">
+    <nav class="sidebar" aria-label="Principal">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <div class="sidebar-links">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a class="is-active" href="pipeline.html" aria-current="page">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </div>
+      <div class="sidebar-links sidebar-sub">
+        <p class="nav-label">Seguimiento</p>
+        <a class="is-active" href="inbox.html" aria-current="page">Inbox</a>
+        <a href="account.html">Cuenta</a>
+        <a href="billing.html">Facturación</a>
+        <a href="../index.html">v1 / v2</a>
+      </div>
+      <div class="credit-dock">
+        <a class="credit-line" href="billing.html">
+          <b data-balance-num>142</b>
+          <span class="micro">créditos · Pro</span>
+        </a>
+        <p class="micro">118 del plan · 24 de packs</p>
+        <div class="meter">
+          <div class="meter-track" role="img" aria-label="Presupuesto de IA al 80 por ciento">
+            <div class="meter-fill"></div>
+            <i class="meter-tick"></i>
+          </div>
+          <span class="micro">IA USD 4 de 5 · aviso al 80%</span>
+        </div>
+        <a class="btn btn-sun btn-tiny" href="pricing.html">Upgrade</a>
+      </div>
+    </nav>
+    <div class="workspace">
+      <header class="topbar">
+        <a class="wordmark only-m" href="inicio.html">theugc<span>.life</span></a>
+        <p class="crumb only-d">Seguimiento · <strong>Inbox</strong></p>
+        <div class="topbar-actions">
+          <a class="credit-inline" href="billing.html"><b data-balance-num>142</b> <span class="only-d">créditos</span></a>
+          <a class="btn btn-sun btn-tiny btn-upgrade only-m" href="pricing.html">Upgrade</a>
+          <a class="avatar only-d" href="perfil.html" aria-label="Perfil de Lucía Ferrer">LF</a>
+          <details class="more only-m">
+            <summary class="avatar" aria-label="Más">LF</summary>
+            <div class="more-menu">
+              <a href="inbox.html">Inbox</a>
+              <a href="account.html">Cuenta</a>
+              <a href="billing.html">Facturación</a>
+              <a href="pricing.html">Upgrade</a>
+              <a href="../index.html">v1 / v2</a>
+            </div>
+          </details>
+          <a class="btn btn-sun btn-pitch" href="pitch.html">Generar pitch</a>
+        </div>
+      </header>
+      <main id="contenido" class="stage">
+
+        <div>
+          <p class="eyebrow">Seguimiento</p>
+          <h1 class="h1">Inbox</h1>
+          <p class="meta">Un hilo de Gmail al lado de cada ciclo abierto. La lectura es una sugerencia. Abrir esta página no sincroniza y nada de acá envía.</p>
+        </div>
+        <div class="inbox">
+          <div>
+            <article class="thread is-open">
+              <div class="spread"><b>Hotel Santa Clara</b><span class="badge badge-live">Respondió</span></div>
+              <p class="micro">Re: colaboración en noviembre · hace 2 días</p>
+            </article>
+            <article class="thread">
+              <div class="spread"><b>Nobu Los Cabos</b><span class="badge badge-follow">Seguimiento</span></div>
+              <p class="micro">Sin respuesta humana · 16 oct</p>
+            </article>
+            <article class="thread">
+              <div class="spread"><b>Alila Villas Uluwatu</b><span class="badge">Negociando</span></div>
+              <p class="micro">Borrador listo · sin respuesta</p>
+            </article>
+          </div>
+          <article class="letter">
+            <p class="eyebrow">Respuesta humana · no es un autoresponder</p>
+            <h2 class="h2">Re: colaboración en noviembre</h2>
+            <p class="micro">De partnerships@santaclara.example · para lucia.ferrer@gmail.com</p>
+            <p>Hola Lucía,</p>
+            <p>Gracias por la propuesta. Noviembre nos queda justo, pero podemos mirar una estancia de tres noches si el Reel queda para usar en el hotel.</p>
+            <p>¿Nos mandás dos ejemplos de estadías anteriores?</p>
+            <p>Marina · Hotel Santa Clara</p>
+            <p class="micro">El pipeline sigue en Respondió porque así lo dejaste. La sugerencia no cambia el estado. Amanera, ya cerrado, no aparece acá.</p>
+            <div class="cluster">
+              <a class="btn btn-line btn-small" href="hotel.html">Abrir hotel</a>
+              <a class="btn btn-ink btn-small" href="pitch.html">Responder en el estudio</a>
+            </div>
+          </article>
+        </div>
+        <p class="micro">Free pausa la sincronización y la detección. Los mails ya guardados se quedan. Conectar Gmail está en Cuenta.</p>
+
+        <p class="footer-note"><a href="../index.html">Comparar con v1</a> · UX01 v2 · solo mockup</p>
+      </main>
+    </div>
+  </div>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a class="is-active" href="pipeline.html" aria-current="page">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

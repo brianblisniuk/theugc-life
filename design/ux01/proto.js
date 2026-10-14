@@ -297,16 +297,48 @@
   if (stage) {
     const frame = $("#screen-frame");
     const caption = $("#preview-caption");
-    const buttons = $$("[data-viewport]");
+    const buttons = $$("button[data-viewport]");
     const previews = $$(".screen-preview");
+    const versionButtons = $$("[data-version]");
+    let version = "v1";
     const copy = {
-      desktop:
-        "Escritorio · 1280 px. Barra a la izquierda, columnas, mapa junto a la lista y panel en la ficha.",
-      mobile:
-        "Celular · 390 px. Barra abajo, Descubrir en lista y el mapa en su propia pantalla.",
+      v1: {
+        desktop:
+          "v1 · Escritorio · 1280 px. Barra a la izquierda, columnas, mapa junto a la lista y panel en la ficha.",
+        mobile:
+          "v1 · Celular · 390 px. Barra abajo, Descubrir en lista y el mapa en su propia pantalla.",
+      },
+      v2: {
+        desktop:
+          "v2 · Escritorio · 1280 px. Grilla de hoteles, Generar pitch siempre visible, sol solo en la acción.",
+        mobile:
+          "v2 · Celular · 390 px. Una columna, créditos y pitch en la barra, mapa en su pantalla.",
+      },
     };
+    const notes = {
+      v1: "v1 · filas sobre papel. v2 deja el hotel, la respuesta y el contacto adelante.",
+      v2: 'v2 · el hotel es la interfaz. Sun en Generar pitch, Desbloquear, Upgrade y las chapas. <a href="v2/index.html">Sistema v2</a>',
+    };
+    const note = $("#version-note");
     const deskW = 1280;
     const deskH = 800;
+
+    function screenFile(src) {
+      return (src || "").replace(/^v2\//, "");
+    }
+
+    function screenUrl(file) {
+      return version === "v2" ? "v2/" + file : file;
+    }
+
+    function applyChrome() {
+      const mode = stage.dataset.viewport || "desktop";
+      if (caption) caption.textContent = (copy[version] && copy[version][mode]) || "";
+      if (note) note.innerHTML = notes[version] || "";
+      $$("[data-screen]").forEach((link) => {
+        link.setAttribute("href", screenUrl(link.dataset.screen));
+      });
+    }
 
     function fit() {
       const mode = stage.dataset.viewport;
@@ -330,7 +362,7 @@
       button.addEventListener("click", () => {
         const mode = button.dataset.viewport;
         stage.dataset.viewport = mode;
-        if (caption) caption.textContent = copy[mode] || "";
+        applyChrome();
         buttons.forEach((item) => {
           const on = item === button;
           item.classList.toggle("is-on", on);
@@ -351,7 +383,22 @@
       });
     });
 
+    versionButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        version = button.dataset.version;
+        versionButtons.forEach((item) => {
+          const on = item === button;
+          item.classList.toggle("is-on", on);
+          item.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        const file = screenFile(frame.getAttribute("src"));
+        applyChrome();
+        frame.src = screenUrl(file);
+      });
+    });
+
     window.addEventListener("resize", fit);
+    applyChrome();
     fit();
   }
 })();
