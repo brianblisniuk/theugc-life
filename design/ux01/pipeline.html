@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pipeline · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a class="is-active" href="pipeline.html" aria-current="page">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html">142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link" href="billing.html">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap-l stack">
+      <div class="spread">
+        <div>
+          <p class="eyebrow">Inicio / Pipeline</p>
+          <h1 class="h1">Pipeline</h1>
+          <p class="meta">Cada hotel que estás siguiendo, lo más reciente primero. Solo vos lo ves.</p>
+        </div>
+        <button class="btn btn-line" type="button" data-board-toggle aria-pressed="false">Ver tablero</button>
+      </div>
+      <nav class="surface-nav" aria-label="Vistas del pipeline">
+        <a class="is-active" href="pipeline.html" aria-current="page">Todos los ciclos</a>
+        <a href="inbox.html">Inbox · con mails</a>
+        <a href="pipeline.html#ganados">Colaboraciones · ganados</a>
+      </nav>
+
+      <div data-pipeline-list>
+        <article class="cycle">
+          <div class="spread"><b><a href="hotel.html">Alila Villas Uluwatu</a></b><span class="badge">Negociando</span></div>
+          <p class="meta">Bali · guardado 2 oct · contacto desbloqueado</p>
+          <a class="meta" href="pitch.html">Abrir pitch</a>
+        </article>
+        <article class="cycle">
+          <div class="spread"><b><a href="inbox.html">Hotel Santa Clara</a></b><span class="badge">Respondió</span></div>
+          <p class="meta">Cartagena · respuesta humana hace 2 días</p>
+        </article>
+        <article class="cycle">
+          <div class="spread"><b>Nobu Hotel Los Cabos</b><span class="badge badge-follow">Seguimiento</span></div>
+          <p class="meta">Los Cabos · seguimiento 16 oct</p>
+        </article>
+        <article class="cycle">
+          <div class="spread"><b>Memmo Alfama</b><span class="badge">Enviado</span></div>
+          <p class="meta">Lisboa · en cola para mañana 9:00 · el estado lo marcaste vos</p>
+        </article>
+        <article class="cycle">
+          <div class="spread"><b>Six Senses Ibiza</b><span class="badge">Planeado</span></div>
+          <p class="meta">Ibiza · contacto bloqueado</p>
+        </article>
+        <article class="cycle">
+          <div class="spread"><b>Four Seasons Ciudad de México</b><span class="badge">Guardado</span></div>
+          <p class="meta">Ciudad de México · sin señal pública todavía</p>
+        </article>
+        <article class="cycle" id="ganados">
+          <div class="spread"><b><a href="portfolio.html">Hotel Esencia</a></b><span class="badge badge-live">Ganado</span></div>
+          <p class="meta">Riviera Maya · entrega 28 oct · estancia</p>
+        </article>
+        <article class="cycle">
+          <div class="spread"><b>Amanera</b><span class="badge">Cerrado</span></div>
+          <p class="meta">Río San Juan · ciclo cerrado · sin inbox</p>
+        </article>
+      </div>
+
+      <div class="board" data-board hidden>
+        <section class="col"><h3>Guardado <em>1</em></h3><a class="deal" href="discover.html"><b>Four Seasons CDMX</b><span class="meta">Ciudad de México</span></a></section>
+        <section class="col"><h3>Planeado <em>1</em></h3><a class="deal" href="trips.html"><b>Six Senses Ibiza</b><span class="meta">Ibiza</span></a></section>
+        <section class="col"><h3>Enviado <em>1</em></h3><a class="deal" href="pitch.html"><b>Memmo Alfama</b><span class="meta">en cola · mañana</span></a></section>
+        <section class="col tone-follow"><h3>Seguimiento <em>1</em></h3><a class="deal tone-follow" href="inbox.html"><b>Nobu Los Cabos</b><span class="meta">16 oct</span></a></section>
+        <section class="col"><h3>Respondió <em>1</em></h3><a class="deal" href="inbox.html"><b>Hotel Santa Clara</b><span class="meta">Cartagena</span></a></section>
+        <section class="col"><h3>Negociando <em>1</em></h3><a class="deal" href="hotel.html"><b>Alila Villas Uluwatu</b><span class="meta">Bali</span></a></section>
+        <section class="col tone-won"><h3>Ganado <em>1</em></h3><a class="deal tone-won" href="portfolio.html"><b>Hotel Esencia</b><span class="meta">entrega 28 oct</span></a></section>
+        <section class="col"><h3>Cerrado <em>1</em></h3><div class="deal"><b>Amanera</b><span class="meta">Río San Juan</span></div></section>
+      </div>
+      <p class="meta">En el celular la lista es la vista. El tablero se desplaza de costado. Ganado sigue abierto hasta que lo cerrás. Cerrar libera el par para un ciclo nuevo.</p>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a class="is-active" href="pipeline.html" aria-current="page">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

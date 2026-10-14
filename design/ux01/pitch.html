@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pitch · Alila · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a href="inicio.html">Inicio</a>
+        <a class="is-active" href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html" data-balance>142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link" href="billing.html">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap-l stack">
+      <p class="meta"><a href="hotel.html">Alila Villas Uluwatu</a> / Pitch</p>
+      <div class="spread">
+        <h1 class="h1">Pitch</h1>
+        <p class="meta">Para partnerships@uluwatu.example</p>
+      </div>
+      <p class="note note-warn">Usaste el 80% del presupuesto de IA de este mes. El borrador sigue disponible. No se envió.</p>
+
+      <div class="split-pitch">
+        <section class="stack" aria-labelledby="brief">
+          <h2 id="brief" class="eyebrow">Pedido a la IA</h2>
+          <p class="meta">Sale de tu perfil, de este hotel y de tu pipeline. No hay un cuadro de instrucciones libres. El primer borrador de este hotel usa 1 crédito. Los tres siguientes de este mes no. Este paso no envía el mail.</p>
+          <div class="field">
+            <span>Tono</span>
+            <div class="cluster" role="group" aria-label="Tono">
+              <button class="btn btn-line btn-small" type="button" data-tone="profesional">Profesional</button>
+              <button class="btn btn-line btn-small is-on" type="button" data-tone="cercano">Cercano</button>
+              <button class="btn btn-line btn-small" type="button" data-tone="directo">Directo</button>
+              <button class="btn btn-line btn-small" type="button" data-tone="conciso">Conciso</button>
+            </div>
+          </div>
+          <label class="field" for="language">
+            <span>Idioma</span>
+            <select class="control" id="language">
+              <option>Español</option>
+              <option>English</option>
+              <option>Português</option>
+              <option>Français</option>
+              <option>Deutsch</option>
+              <option>Italiano</option>
+            </select>
+          </label>
+          <fieldset class="field">
+            <legend class="label">Puntos clave</legend>
+            <input class="control" value="Fechas 12 al 19 de noviembre en la costa sur">
+            <input class="control" value="Reel, tres historias y un carrusel">
+            <input class="control" value="Audiencia que reserva, no solo que mira">
+            <button class="btn btn-line btn-small" type="button">Agregar un punto</button>
+          </fieldset>
+          <div class="meter">
+            <div class="spread">
+              <span class="small">Presupuesto de IA · Pro</span>
+              <span class="small">USD 4,00 de 5,00</span>
+            </div>
+            <div class="meter-track" role="img" aria-label="80 por ciento del presupuesto de IA usado">
+              <div class="meter-fill"></div>
+              <i class="meter-tick"></i>
+            </div>
+            <p class="meta">La barra es tinta. La marca naranja es el 80%, el aviso. Max tiene USD 15 en el mismo medidor. No es el saldo de créditos.</p>
+          </div>
+          <button class="btn btn-line" type="button">Generar con IA · 1 crédito</button>
+          <p class="meta">En este hotel ya usaste el crédito del primer borrador. La próxima regeneración de este mes no cobra.</p>
+        </section>
+
+        <section class="stack" aria-labelledby="letter">
+          <div class="spread">
+            <h2 id="letter" class="eyebrow">Borrador</h2>
+            <p class="meta">Tono: <span data-tone-label>cercano</span></p>
+          </div>
+          <label class="field" for="trip">
+            <span>Viaje</span>
+            <select class="control" id="trip">
+              <option>Costa sur · Bali · 12–19 nov 2026</option>
+              <option>Sin viaje</option>
+            </select>
+          </label>
+          <label class="field" for="subject">
+            <span>Asunto</span>
+            <input class="control" id="subject" value="Estancia de contenido en Uluwatu, 12 al 19 de noviembre">
+          </label>
+          <label class="field" for="body">
+            <span>Mensaje</span>
+            <textarea class="control" id="body">Hola,
+
+Soy Lucía Ferrer. Publico sobre hoteles con luz natural y una historia clara de lugar, desde Buenos Aires, para una audiencia que viaja y reserva.
+
+Voy a estar en la costa sur de Bali del 12 al 19 de noviembre. Les propongo una estancia a cambio de un Reel, tres historias y un carrusel, con uso en las redes del hotel por 6 meses.
+
+Si les interesa, les mando ejemplos de colaboraciones anteriores.
+
+Gracias,
+Lucía Ferrer</textarea>
+          </label>
+          <div class="cluster">
+            <button class="btn btn-line" type="button">Guardar borrador</button>
+            <button class="btn btn-line" type="button">Copiar</button>
+            <button class="btn btn-ink" type="button" data-send>Enviar con Gmail</button>
+            <button class="btn btn-line" type="button" data-queue>Mandar a la cola</button>
+          </div>
+          <p class="note" data-send-status hidden></p>
+          <p class="meta">Gmail conectado: lucia.ferrer@gmail.com, con permiso de envío. Copiar y guardar no envían. Enviar y la cola tampoco marcan el hotel como enviado.</p>
+          <section class="stack" aria-labelledby="cola">
+            <h3 id="cola" class="h3">Cola</h3>
+            <p class="meta">Si el envío cae fuera de tu horario, queda para el próximo día hábil, con minutos de separación entre mensajes.</p>
+            <article class="deal">
+              <b>Memmo Alfama</b>
+              <span class="meta">En cola · mañana 9:00 · no enviado</span>
+            </article>
+          </section>
+        </section>
+      </div>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a class="is-active" href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

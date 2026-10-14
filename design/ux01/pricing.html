@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planes · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="shell-top">
+    <div class="shell-bar public-bar">
+      <a class="wordmark" href="landing.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Público">
+        <a href="landing.html">Producto</a>
+        <a class="is-active" href="pricing.html" aria-current="page">Planes</a>
+        <a href="discover.html">Descubrir</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="pricing.html">Planes</a>
+        <a class="tool-link" href="signup.html">Entrar</a>
+        <a class="btn btn-sun btn-small" href="signup.html">Empezar gratis</a>
+      </div>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap stack-lg">
+      <div class="spread">
+        <div>
+          <p class="eyebrow">Precios en USD</p>
+          <h1 class="h1">Todos los hoteles se descubren. El contacto se desbloquea.</h1>
+          <p class="lede">Un crédito abre el mail de un hotel, para esa cuenta. El plan no lo abre solo. Un pago no enciende el acceso hasta que se confirma.</p>
+        </div>
+        <div class="cluster" data-periods role="group" aria-label="Período">
+          <button class="btn btn-line btn-small is-on" type="button" data-period="annual" aria-pressed="true">Anual</button>
+          <button class="btn btn-line btn-small" type="button" data-period="monthly" aria-pressed="false">Mensual</button>
+        </div>
+      </div>
+
+      <div class="plans">
+        <article class="plan">
+          <p class="eyebrow">Free</p>
+          <p class="price-num">USD 0</p>
+          <ul>
+            <li>5 créditos cada 7 días. No se acumulan más de 5.</li>
+            <li>Plantillas de mail. Sin generación completa con IA.</li>
+            <li>10 hoteles guardados, 5 ítems activos en el pipeline, 1 viaje activo.</li>
+            <li>Inteligencia pública y portfolio básico.</li>
+            <li>Sin envío desde Gmail y sin inteligencia premium.</li>
+          </ul>
+          <a class="btn btn-line" href="signup.html" style="margin-top:16px">Empezar</a>
+        </article>
+        <article class="plan is-featured">
+          <p class="eyebrow">Pro</p>
+          <p class="price-num" data-annual>USD 20<small>/mes</small></p>
+          <p class="price-num" data-monthly hidden>USD 30<small>/mes</small></p>
+          <p class="meta" data-annual>USD 240 al año. 150 créditos cada 30 días.</p>
+          <p class="meta" data-monthly hidden>Se cobra cada mes. 150 créditos cada 30 días.</p>
+          <ul>
+            <li>Borrador completo con IA. Presupuesto de IA: USD 5 al mes.</li>
+            <li>Envío desde Gmail y detección de respuestas.</li>
+            <li>Inteligencia premium en todo el mundo.</li>
+            <li>Pipeline y viajes sin el tope de Free.</li>
+            <li>Podés sumar packs.</li>
+          </ul>
+          <a class="btn btn-sun" href="billing.html" style="margin-top:16px">Elegir Pro</a>
+        </article>
+        <article class="plan">
+          <p class="eyebrow">Max</p>
+          <p class="price-num" data-annual>USD 50<small>/mes</small></p>
+          <p class="price-num" data-monthly hidden>USD 60<small>/mes</small></p>
+          <p class="meta" data-annual>USD 600 al año. 500 créditos cada 30 días.</p>
+          <p class="meta" data-monthly hidden>Se cobra cada mes. 500 créditos cada 30 días.</p>
+          <ul>
+            <li>Todo lo de Pro.</li>
+            <li>IA prioritaria: más contexto, mismo modelo. Presupuesto de IA: USD 15 al mes.</li>
+            <li>Señales avanzadas en el encaje: puesto, confianza y frescura.</li>
+            <li>Soporte prioritario.</li>
+          </ul>
+          <a class="btn btn-line" href="billing.html" style="margin-top:16px">Elegir Max</a>
+        </article>
+      </div>
+
+      <section class="stack">
+        <h2 class="h2">Packs de créditos</h2>
+        <p>Se suman al saldo y no vencen con el mes del plan. No son un plan.</p>
+        <div class="plans">
+          <article class="plan"><p class="price-num">50</p><p>créditos · USD 10</p></article>
+          <article class="plan"><p class="price-num">150</p><p>créditos · USD 20</p></article>
+          <article class="plan"><p class="price-num">500</p><p>créditos · USD 40</p></article>
+        </div>
+        <p class="meta">Free también puede tener packs. Un desbloqueo cuesta 1. Si esta cuenta ya lo abrió, volver a verlo no cuesta. Un mail que ya está en caché igual cuesta la primera vez para esta cuenta. Si no hay mail, no se cobra. El caché dura 365 días.</p>
+      </section>
+
+      <section class="stack">
+        <h2 class="h3">Pase de destino</h2>
+        <p>USD 39 por 30 días, un destino. Suma inteligencia premium y el pipeline de ese destino. No reemplaza a Pro, no trae los 150 créditos y no pausa los 5 semanales de Free. No incluye el borrador completo con IA.</p>
+      </section>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a> · <a href="landing.html">Producto</a></p>
+    </div>
+  </main>
+  <script src="proto.js"></script>
+</body>
+</html>

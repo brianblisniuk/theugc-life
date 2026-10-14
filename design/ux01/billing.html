@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Facturación · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html" data-balance>142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link is-active" href="billing.html" aria-current="page">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap stack-lg" style="max-width:800px">
+      <div>
+        <p class="eyebrow">Inicio / Facturación</p>
+        <h1 class="h1">Facturación y créditos</h1>
+        <p class="meta">El acceso es una fila de entitlement. Un pago, una suscripción o volver del checkout no lo encienden solos.</p>
+      </div>
+
+      <section class="stack">
+        <p class="eyebrow">Plan activo</p>
+        <div class="spread">
+          <h2 class="h2">Pro anual</h2>
+          <span class="badge badge-live">Activo</span>
+        </div>
+        <p>Hasta el 2 oct 2027. Los 150 créditos se renuevan cada 30 días dentro de ese año, sin un cobro mensual.</p>
+        <p class="meta">Este período: 2 oct – 1 nov. Al abrirse el siguiente, lo que sobre del plan se revierte. Los packs no.</p>
+      </section>
+
+      <section class="stack">
+        <h2 class="h3">142 créditos</h2>
+        <dl class="stack">
+          <div class="spread"><dt>Del plan, este período</dt><dd>118</dd></div>
+          <div class="spread"><dt>De packs</dt><dd>24</dd></div>
+          <div class="spread"><dt>Semanales de Free</dt><dd>En pausa</dd></div>
+        </dl>
+        <p class="meta">Con Pro o Max no se otorgan los 5 semanales. Los que ya estaban, se quedan. Se gasta primero el plan, después lo semanal, después lo durable: packs, cortesías y grants.</p>
+        <p class="meta">Presupuesto de IA, aparte: USD 4,00 de 5,00 este mes. No se descuenta de estos créditos, salvo el crédito del primer borrador de un hotel.</p>
+      </section>
+
+      <section class="stack">
+        <h2 class="h3">Movimientos</h2>
+        <table class="ledger">
+          <thead><tr><th>Fecha</th><th>Motivo</th><th>Créditos</th></tr></thead>
+          <tbody>
+            <tr><td>11 oct</td><td>Desbloqueo · Alila</td><td>−1</td></tr>
+            <tr><td>9 oct</td><td>Borrador de IA · Alila</td><td>−1</td></tr>
+            <tr><td>8 oct</td><td>Desbloqueo · Santa Clara</td><td>−1</td></tr>
+            <tr><td>3 oct</td><td>Pack de 50</td><td>+50</td></tr>
+            <tr><td>2 oct</td><td>Grant del plan · Pro</td><td>+150</td></tr>
+          </tbody>
+        </table>
+        <p class="meta">El libro es de muestra. Un contacto que no se encuentra no genera una fila de cobro.</p>
+      </section>
+
+      <section class="stack">
+        <h2 class="h3">Checkout</h2>
+        <p class="meta">Abre en Rebill. Esta pantalla no cobra una tarjeta y no manda un monto.</p>
+        <div class="cluster">
+          <button class="btn btn-line btn-small" type="button" data-checkout="Pro mensual · USD 30">Pro mensual · USD 30</button>
+          <button class="btn btn-line btn-small" type="button" data-checkout="Pro anual · USD 240">Pro anual · USD 240</button>
+          <button class="btn btn-line btn-small" type="button" data-checkout="Max mensual · USD 60">Max mensual · USD 60</button>
+          <button class="btn btn-sun btn-small" type="button" data-checkout="Max anual · USD 600">Max anual · USD 600</button>
+          <button class="btn btn-line btn-small" type="button" data-checkout="50 créditos · USD 10">50 créditos · USD 10</button>
+          <button class="btn btn-line btn-small" type="button" data-checkout="150 créditos · USD 20">150 créditos · USD 20</button>
+          <button class="btn btn-line btn-small" type="button" data-checkout="500 créditos · USD 40">500 créditos · USD 40</button>
+        </div>
+        <p class="note" data-checkout-note hidden></p>
+        <p class="meta"><a href="pricing.html" style="text-decoration:underline">Ver la comparación pública</a>. El Pase de destino, USD 39 / 30 días, no está en esta cuenta.</p>
+      </section>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

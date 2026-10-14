@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crear cuenta · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <div class="auth-split">
+    <main id="contenido" class="page" style="display:flex;align-items:center">
+      <div class="wrap stack" style="width:min(440px,100%)">
+        <a class="wordmark" href="landing.html">theugc<span>.life</span></a>
+        <div class="stack">
+          <p class="eyebrow">Paso 1 de 2</p>
+          <h1 class="h1">Creá tu cuenta</h1>
+          <p class="meta">Con el nombre que vas a usar en el producto. Después elegís un destino y guardás el primer hotel.</p>
+        </div>
+        <form class="stack" id="signup" data-signup novalidate>
+          <label class="field" for="display-name">
+            <span>Nombre</span>
+            <input class="control" id="display-name" name="display-name" autocomplete="name" value="Lucía Ferrer" required>
+          </label>
+          <label class="field" for="email">
+            <span>Correo</span>
+            <input class="control" id="email" name="email" type="email" autocomplete="email" value="lucia@correo.example" required>
+          </label>
+          <label class="field" for="password">
+            <span>Contraseña</span>
+            <input class="control" id="password" name="password" type="password" autocomplete="new-password" value="playa-norte-2026" minlength="8" required>
+          </label>
+          <p class="meta" id="signup-error" data-signup-error hidden>Completá el nombre, un correo válido y una contraseña de al menos 8 caracteres.</p>
+          <button class="btn btn-sun" type="submit">Crear cuenta</button>
+          <p class="meta">Al crear la cuenta empezás en Free: 5 créditos cada 7 días, desde este momento. No se acumulan más de 5. <a href="pricing.html" style="text-decoration:underline">Ver planes</a></p>
+          <p class="meta">¿Ya tenés cuenta? <a href="signup.html" style="text-decoration:underline">Entrá</a></p>
+        </form>
+        <p class="footer-note"><a href="index.html">Sistema de diseño</a> · <a href="onboarding.html">Saltar al onboarding</a></p>
+      </div>
+    </main>
+    <aside class="auth-visual shot" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1400&q=75')" aria-hidden="true"></aside>
+  </div>
+  <script src="proto.js"></script>
+</body>
+</html>
