@@ -1898,5 +1898,55 @@
     "authenticated": false,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "charge_own_ai_draft",
+    "args": "p_idempotency_key text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "prepare_ai_usage",
+    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_estimate_micros bigint, p_budget_micros bigint, p_daily_call_cap integer, p_daily_token_cap integer, p_estimate_input_tokens integer, p_estimate_output_tokens integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "finish_ai_usage",
+    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_input_tokens integer, p_output_tokens integer, p_cost_micros bigint, p_status text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_selected_gmail_plain",
+    "args": "p_message_ids uuid[]",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "list_own_mail_subjects",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
   }
 ]

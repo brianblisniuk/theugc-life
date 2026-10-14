@@ -19,6 +19,8 @@ export const CREDITS_CONFIG = {
     max: 500,
   },
   unlockCost: 1,
+  /** One successful AI pitch draft (D143). The ledger row is reason ai_draft. */
+  aiDraftCost: 1,
   /** A provider miss is stored and is not charged. */
   chargeOnNotFound: false,
   cacheTtlDays: 365,

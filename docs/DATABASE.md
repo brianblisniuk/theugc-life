@@ -191,6 +191,7 @@ a saved template on the draft must belong to the same creator.
 - `subject text`, `body text`
 - `variables_used jsonb`
 - `delivery text`
+- `origin text` — `template` or `assistant` (0082, D142). Neither sends mail.
 - timestamps
 
 `template_id` and `system_template_key` are not both set. Both may be null.
@@ -303,10 +304,17 @@ Select is allowed for a row when `has_unlocked_hotel_contact(hotel_id)` is true 
 The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 
 - `credit_config` — one row. Legacy Free total, weekly Free credits, Pro monthly credits, Max monthly credits, unlock cost, charge-on-not-found, cache TTL days, pack sizes, pack prices, and Pro/Max prices (D131). `pro_plus_monthly_credits` is unread. Clients have no privilege.
-- `credit_ledger` — append-only. `delta <> 0`. Reasons: `free_grant`, `plan_grant`, `pack_purchase`, `admin_grant`, `courtesy`, `unlock`, `reversal`. Unique `(user_id, idempotency_key)`. Owner select. Admin select. No update or delete grant, and a trigger rejects both.
+- `credit_ledger` — append-only. `delta <> 0`. Reasons: `free_grant`, `plan_grant`, `pack_purchase`, `admin_grant`, `courtesy`, `unlock`, `reversal`, `ai_draft`. Unique `(user_id, idempotency_key)`. Owner select. Admin select. No update or delete grant, and a trigger rejects both. `ai_draft` is one successful assistant draft (0083, D143).
 - `contact_cache` — one row per hotel. Source `owner_import`, `provider`, or `admin`. Status `found`, `not_found`, or `invalid`. `raw_provider_response` stays on this table. No client select. Existing `hotel_contacts` emails are seeded as `owner_import` (D103).
 - `contact_unlocks` — unique `(user_id, hotel_id)`. Owner select. Admin select.
 - `contact_reports` — owner insert and select. Admin update. One pending report per user and hotel.
+
+### Assistant usage (migration 0082)
+
+`ai_usage` stores token counts, the model id, a status (`reserved`,
+`completed`, `failed`), and an estimated cost in USD micros. It has no prompt
+and no completion. The owner may select their rows. `service_role` may insert.
+A trigger rejects update and delete. Deleting the user deletes the rows.
 
 `unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
 
@@ -2875,7 +2883,8 @@ views and `read_destination_metric_ranking`. They do not read
 
 Migrations `0084`–`0087` (D146–D150) annotate those metrics. They do not
 rewrite `0071`, `0072`, or `0056`. `0081` is the merged P03b refund ledger
-fix and is not edited here. `0082` and `0083` are reserved for D03.
+fix and is not edited here. `0082` and `0083` are the merged D03 assistant
+and are not edited here.
 
 `private.hotel_metric_freshness` is confidence and a freshness band for an
 H01 metric that is already available. Activity confidence is the H01 label.
@@ -3114,7 +3123,7 @@ At minimum:
 40. Metric freshness, personal and network aggregates, creator fit, and fit
     decisions (`0084`–`0087`, D146–D150). Annotations and reads beside H01.
     `0056`, `0071`, and `0072` are not edited. `0081` is the merged P03b
-    refund ledger fix and is not edited here. `0082` and `0083` are reserved
-    for D03.
+    refund ledger fix and is not edited here. `0082` and `0083` are the merged
+    D03 assistant and are not edited here.
 
 Every migration must be reproducible from an empty database.

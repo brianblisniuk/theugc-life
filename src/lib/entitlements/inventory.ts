@@ -280,21 +280,27 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "plans.full_ai_email",
     module: "Plans",
     summary:
-      "Full AI email generation is a Pro and Max flag. Free keeps manual templates. The flag does not call a model.",
-    routes: ["/pricing", "/app/billing"],
-    sourceFiles: ["src/lib/credits/config.ts", "src/app/(public)/pricing/page.tsx"],
-    serverActions: [],
+      "Full AI email generation is on for Pro and Max. Free keeps manual templates. The flag is what allows the assistant to call Claude. A Destination Pass does not.",
+    routes: ["/pricing", "/app/billing", "/app/hotels/[id]/pitch"],
+    sourceFiles: [
+      "src/lib/credits/config.ts",
+      "src/app/(public)/pricing/page.tsx",
+      "src/lib/ai/actions.ts",
+      "src/lib/ai/compose.server.ts",
+      "src/app/(app)/app/hotels/[id]/pitch/page.tsx",
+    ],
+    serverActions: ["draftPitchWithAssistantAction"],
     rpcs: ["own_plan_features"],
     rule: { kind: "paid_worldwide" },
     anon: "deny",
     enforcement: { kind: "plan_flag", flag: "full_ai_email" },
-    sources: ["D133", "D03", "D04", "D110"],
+    sources: ["D133", "D141", "D142", "D04", "D110"],
   },
   {
     id: "plans.max_flags",
     module: "Plans",
     summary:
-      "Max adds priority AI, advanced signals, priority support, and a future-premium placeholder. Advanced signals add rank, confidence, and freshness on creator fit. The flags do not change Discover order, Pipeline order, or support mail.",
+      "Max adds priority AI, advanced signals, priority support, and a future-premium placeholder. Priority AI is a fuller draft and more context on the same Claude model. Advanced signals add rank, confidence, and freshness on creator fit. The flags do not change Discover order, Pipeline order, or support mail.",
     routes: ["/pricing", "/app/billing"],
     sourceFiles: ["src/lib/credits/config.ts", "src/app/(app)/app/billing/page.tsx"],
     serverActions: [],
@@ -302,7 +308,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     rule: { kind: "max_only" },
     anon: "deny",
     enforcement: { kind: "plan_flag", flag: "priority_ai" },
-    sources: ["D133", "D131"],
+    sources: ["D133", "D131", "D142", "D150"],
   },
   {
     id: "pipeline.save",
@@ -889,7 +895,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "pitch.drafts",
     module: "Pitch",
     summary:
-      "Pitch templates and drafts are the creator's, at every tier, including Free manual copy. Copy and a mailto draft are not a sent pitch and not full AI email. Another creator's Pro or Max row does not reveal them.",
+      "Pitch templates and drafts are the creator's, at every tier, including Free manual copy. An assistant draft is still a draft: copy and a mailto link do not send it. Another creator's Pro or Max row does not reveal them.",
     routes: ["/app/hotels/[id]/pitch", "/app/profile/pitches"],
     sourceFiles: [
       "src/app/(app)/app/hotels/[id]/pitch/page.tsx",

@@ -8,6 +8,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { loadAssistantChrome } from "@/lib/ai/queries";
 import { EmptyState } from "@/components/empty-state";
 import { PitchComposer } from "@/components/pitch/composer";
 import { PageHeader } from "@/components/shell/page-header";
@@ -56,6 +57,7 @@ export default async function HotelPitchPage({
   const fresh = first(raw.fresh) === "1";
   const templateParam = first(raw.template);
 
+  const assistant = await loadAssistantChrome();
   const context = await loadPitchContext({
     userId: session.userId,
     hotelId: hotel.id,
@@ -174,7 +176,7 @@ export default async function HotelPitchPage({
           Templates
         </Link>
       </div>
-      {suggestion.body.trim().length === 0 && !showSaved ? (
+      {suggestion.body.trim().length === 0 && !showSaved && assistant.status !== "on" ? (
         <p className="text-sm text-muted">This template has nothing to fill in yet.</p>
       ) : (
         <PitchComposer
@@ -190,6 +192,7 @@ export default async function HotelPitchPage({
           body={body}
           recipientEmail={context.recipientEmail}
           suggestionHref={`/app/hotels/${hotel.id}/pitch?${suggestionParams.toString()}`}
+          assistant={assistant}
         />
       )}
     </div>

@@ -41,8 +41,8 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `hotel.metric_response` | Intelligence | Pass inside destination, Pro worldwide (D120) |
 | `hotel.premium_contacts` | Hotel Detail | credit unlock for this user, or staff (D100) |
 | `credits.plan_config` | Credits | system grant. Amounts are config (D131). A price is not a grant |
-| `plans.full_ai_email` | Plans | Pro and Max. Free keeps manual templates. Not a model call (D133) |
-| `plans.max_flags` | Plans | Max only. Advanced signals add fit detail. Flags do not change Discover or Pipeline order (D133, D150) |
+| `plans.full_ai_email` | Plans | Pro and Max. Free keeps manual templates. The flag allows the Claude draft (D142) |
+| `plans.max_flags` | Plans | Max only. Priority AI is a fuller draft. Advanced signals add fit detail. Flags do not change Discover or Pipeline order (D133, D142, D150) |
 | `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; outside counts only outside-coverage rows; Pro exempt |
 | `pipeline.engage` | Pipeline | Free limit 5; same outside-coverage count |
 | `pipeline.own` | Pipeline | owner, every tier |
@@ -106,4 +106,4 @@ D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written 
 
 Free CRM stays 10 saved hotels, 5 active pipeline items, and 1 active trip. Pro and Max are exempt worldwide. A Destination Pass is unchanged.
 
-`plans.full_ai_email` is on for Pro and Max and off for Free and for a Destination Pass. `plans.max_flags` is priority AI, advanced signals, priority support, and a future-premium placeholder. Those flags do not call a model and do not change a ranking.
+`plans.full_ai_email` is on for Pro and Max and off for Free and for a Destination Pass. The assistant calls Claude only when that flag is on. `plans.max_flags` is priority AI, advanced signals, priority support, and a future-premium placeholder. Priority AI is more context and a richer draft on the same Sonnet model. Those flags do not change a ranking and do not send mail.
