@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is b541343c7f7e87e3402d377d88bc5b23d67cbe5a (PR #77, H01 metric rankings, D120, migrations 0071 and 0072). F03 hotel ranking rules is on cursor/f03-hotel-rankings-70fa. D130. No migration. 0075 and 0076 are unused. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is b541343c7f7e87e3402d377d88bc5b23d67cbe5a (PR #77, H01 metric rankings, D120, migrations 0071 and 0072). F03 hotel ranking rules is PR #78 on cursor/f03-hotel-rankings-70fa. D130. No migration. 0075 and 0076 are unused. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
-  "state": "BUILDING",
+  "state": "AWAITING_AUDIT",
   "last_recorded_main": "b541343c7f7e87e3402d377d88bc5b23d67cbe5a",
   "active_block": "F03 hotel rankings",
   "branch": "cursor/f03-hotel-rankings-70fa",
-  "pr": null,
+  "pr": 78,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "F03 hotel ranking rules on cursor/f03-hotel-rankings-70fa. D130. No migration. One metric ordered by rank_key desc, hotel_id. A locked reply-rate order has no hotel list. Below the floor is not enough data. H01 is merged (PR #77). expected_head stays null. Do not merge."
+  "next_dependency": "PR #78 is F03 hotel ranking rules on cursor/f03-hotel-rankings-70fa. AWAITING_AUDIT. D130. No migration. One metric ordered by rank_key desc, hotel_id. A locked reply-rate order has no hotel list. Below the floor is not enough data. H01 is merged (PR #77). expected_head stays null. Do not merge."
 }

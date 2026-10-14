@@ -1,6 +1,7 @@
 # F03 — Hotel ranking rules
 
 **Status:** Binding work order for this PR. Awaiting audit. Do not merge.
+**PR:** #78
 **Base:** `main` `b541343c7f7e87e3402d377d88bc5b23d67cbe5a` (merge of PR #77).
 **Branch:** `cursor/f03-hotel-rankings-70fa`.
 **Migrations:** none. `0075` and `0076` are unused. `0071` and `0072` are H01 and are not edited.

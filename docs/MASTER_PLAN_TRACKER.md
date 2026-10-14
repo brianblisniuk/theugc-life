@@ -807,7 +807,7 @@ value is not enough data, never zero. A locked reply ranking omits hotels.
 `0070` is unused. `0073` and `0074` are G03 and are not edited.
 
 **F03 hotel ranking rules** (canon v1.1, not the agency F03 row in the table
-above) orders Discover and Pipeline by one H01 metric (D130). No migration.
+above) is draft PR #78. It orders Discover and Pipeline by one H01 metric (D130). No migration.
 `0075` and `0076` are unused. D131–D134 are unused. The order is `rank_key`
 descending, then hotel id. A locked reply-rate order has no hotel list.
 Below the floor is not enough data, and those hotels are left out of the
