@@ -67,59 +67,59 @@
       </header>
       <main id="contenido" class="stage">
 
-        <p class="note note-warn">Usaste el 80% del presupuesto de IA de este mes. El borrador sigue disponible. No se envió.</p>
-        <div class="studio">
-          <div class="controls" aria-labelledby="brief">
+        <p class="note note-warn">Usaste el 80% del presupuesto de IA de este mes (USD 4 de 5 en Pro). El borrador sigue disponible. No se envió. Avisar al 80% y frenar al 100% es el presupuesto en dólares, aparte de los créditos.</p>
+        <div class="studio-3">
+          <aside class="hotel-col" aria-label="Hotel elegido">
+            <a class="photo" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')" aria-label="Alila Villas Uluwatu"></a>
             <div>
-              <h1 class="h2" id="brief">Estudio</h1>
-              <p class="micro">Sale de tu perfil, de Alila y de tu pipeline. No hay un cuadro de instrucciones libres. El primer borrador de un hotel usa 1 crédito. Los tres siguientes del mes, no.</p>
+              <p class="eyebrow">Hotel</p>
+              <h1 class="h2">Alila Villas Uluwatu</h1>
+              <p class="place">Uluwatu · Bali · Resort · 5★</p>
             </div>
-            <div class="field">
-              <span>Tono</span>
-              <div class="cluster" role="group" aria-label="Tono">
-                <button class="btn btn-line btn-tiny" type="button" data-tone="profesional">Profesional</button>
-                <button class="btn btn-line btn-tiny is-on" type="button" data-tone="cercano" aria-pressed="true">Cercano</button>
-                <button class="btn btn-line btn-tiny" type="button" data-tone="directo">Directo</button>
-                <button class="btn btn-line btn-tiny" type="button" data-tone="conciso">Conciso</button>
-              </div>
+            <div class="cluster">
+              <span class="badge badge-sun">Responde rápido</span>
+              <span class="badge badge-sun">Canje + pago</span>
             </div>
-            <label class="field" for="language"><span>Idioma</span>
-              <select class="control" id="language">
-                <option>Español</option><option>English</option><option>Português</option>
-                <option>Français</option><option>Deutsch</option><option>Italiano</option>
-              </select>
-            </label>
-            <fieldset class="field">
-              <legend class="label">Puntos</legend>
-              <input class="control" value="12 al 19 de noviembre, costa sur">
-              <input class="control" value="Reel, tres historias, un carrusel">
-              <input class="control" value="Audiencia que reserva">
-            </fieldset>
-            <div class="meter">
-              <div class="spread"><span class="micro">IA · Pro</span><span class="micro">USD 4 de 5</span></div>
-              <div class="meter-track" role="img" aria-label="80 por ciento del presupuesto de IA"><div class="meter-fill"></div><i class="meter-tick"></i></div>
-              <p class="micro">La barra es tinta. La marca naranja es el 80%. Max tiene USD 15 en el mismo medidor. No es el saldo de créditos.</p>
-            </div>
-            <button class="btn btn-sun" id="generar" type="button" data-generate>Generar pitch</button>
-            <p class="micro">En Alila el primer borrador ya usó 1 crédito. Regenerar este mes no cobra. Este paso no envía el mail.</p>
-            <p class="note" data-generate-status hidden></p>
-          </div>
+            <dl class="facts">
+              <div><dt>Tiempo</dt><dd>1–3 días</dd></div>
+              <div><dt>Tipo</dt><dd>Estancia + pago</dd></div>
+              <div><dt>Actividad</dt><dd>Actividad fuerte</dd></div>
+              <div><dt>Contacto</dt><dd class="pip-lock" data-contact-state>1 crédito</dd></div>
+            </dl>
+            <p class="micro">Muestra. La banda y el tipo salen de la inteligencia premium cuando la muestra pasa el piso. El asistente solo corre si este hotel ya está desbloqueado.</p>
+            <a class="btn btn-sun btn-small" href="hotel.html">Desbloquear · 1 crédito</a>
+          </aside>
           <div class="sheet-wrap">
             <article class="sheet" aria-labelledby="letter">
-              <div class="sheet-photo" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')" role="img" aria-label="Luz de tarde en el acantilado de Uluwatu."></div>
               <div class="sheet-body">
                 <div class="sheet-kicker">
-                  <span id="letter">Para partnerships@uluwatu.example</span>
+                  <span id="letter">Borrador</span>
                   <span>Tono <span data-tone-label>cercano</span></span>
                 </div>
-                <label class="field" for="trip"><span>Viaje</span>
-                  <select class="control" id="trip">
-                    <option>Costa sur · Bali · 12–19 nov 2026</option>
-                    <option>Sin viaje</option>
+                <div class="field">
+                  <span>Tono</span>
+                  <div class="cluster" role="group" aria-label="Tono">
+                    <button class="btn btn-line btn-tiny" type="button" data-tone="profesional">Profesional</button>
+                    <button class="btn btn-line btn-tiny is-on" type="button" data-tone="cercano" aria-pressed="true">Cercano</button>
+                    <button class="btn btn-line btn-tiny" type="button" data-tone="directo">Directo</button>
+                    <button class="btn btn-line btn-tiny" type="button" data-tone="conciso">Conciso</button>
+                  </div>
+                </div>
+                <label class="field" for="language"><span>Idioma</span>
+                  <select class="control" id="language">
+                    <option>Español</option><option>English</option><option>Português</option>
+                    <option>Français</option><option>Deutsch</option><option>Italiano</option>
                   </select>
                 </label>
+                <fieldset class="field">
+                  <legend class="label">Puntos · hasta 5</legend>
+                  <input class="control" value="12 al 19 de noviembre, costa sur">
+                  <input class="control" value="Reel, tres historias, un carrusel">
+                  <input class="control" value="Audiencia que reserva">
+                </fieldset>
+                <p class="micro">Tono, idioma de la lista y hasta cinco puntos. No hay un cuadro de instrucciones libres. El texto no dice que ya te alojaste: propone una estancia.</p>
                 <label class="field" for="subject"><span>Asunto</span>
-                  <input class="sheet-subject" id="subject" value="Estancia de contenido en Uluwatu, 12 al 19 de noviembre">
+                  <input class="sheet-subject" id="subject" value="Propuesta de estancia en Uluwatu, 12 al 19 de noviembre">
                 </label>
                 <label class="field" for="body"><span>Mensaje</span>
                   <textarea class="sheet-text" id="body">Hola,
@@ -133,16 +133,32 @@ Si les interesa, les mando ejemplos de colaboraciones anteriores.
 Gracias,
 Lucía Ferrer</textarea>
                 </label>
-                <div class="cluster">
-                  <button class="btn btn-line btn-small" type="button">Guardar borrador</button>
-                  <button class="btn btn-line btn-small" type="button">Copiar</button>
-                  <button class="btn btn-ink btn-small" type="button" data-send>Enviar con Gmail</button>
-                  <button class="btn btn-line btn-small" type="button" data-queue>Mandar a la cola</button>
-                </div>
-                <p class="note" data-send-status hidden></p>
-                <p class="micro">Gmail conectado: lucia.ferrer@gmail.com, con permiso de envío. Copiar y guardar no envían. Enviar y la cola tampoco marcan el hotel como enviado.</p>
+                <button class="btn btn-sun" id="generar" type="button" data-generate>Generar pitch</button>
+                <p class="micro">Generar no muestra un precio. La primera generación de este hotel en el mes usa 1 crédito. Las tres siguientes no. Las de después usan 1 crédito. Un peso 0 se niega si el mes ya llegó al presupuesto. Este paso no envía.</p>
+                <p class="note" data-generate-status hidden></p>
               </div>
             </article>
+          </div>
+          <aside class="send-col" aria-label="Envío y seguimientos">
+            <div>
+              <p class="eyebrow">Enviar</p>
+              <h2 class="h2">Gmail</h2>
+              <p class="micro">Para partnerships@uluwatu.example. El destinatario tiene que coincidir con un contacto del hotel. Copiar y guardar no envían.</p>
+            </div>
+            <label class="field" for="trip"><span>Viaje</span>
+              <select class="control" id="trip">
+                <option>Costa sur · Bali · 12–19 nov 2026</option>
+                <option>Sin viaje</option>
+              </select>
+            </label>
+            <button class="btn btn-ink" type="button" data-send>Enviar con Gmail</button>
+            <button class="btn btn-line" type="button" data-queue>Mandar a la cola</button>
+            <div class="cluster">
+              <button class="btn btn-line btn-small" type="button">Guardar borrador</button>
+              <button class="btn btn-line btn-small" type="button">Copiar</button>
+            </div>
+            <p class="note" data-send-status hidden></p>
+            <p class="micro">Enviar no gasta créditos. Encolar tampoco. Ninguno marca el hotel como enviado. Sale entre 09:00 y 18:00 de tu zona, un envío y después entre 180 y 300 segundos. Tope blando de Pro: 120 por día. Se difiere, no falla.</p>
             <div class="queue-card">
               <div>
                 <b>Memmo Alfama</b>
@@ -150,8 +166,18 @@ Lucía Ferrer</textarea>
               </div>
               <span class="badge">Cola</span>
             </div>
-            <p class="micro">Si el envío cae fuera de horario, queda para el próximo día hábil, con minutos entre mensajes.</p>
-          </div>
+            <fieldset class="field" data-followups>
+              <legend class="label">Seguimientos</legend>
+              <p class="micro">Diseño de D05, todavía no construido. Hoy el pipeline guarda una sola fecha. Acá: hasta 2, 3 y 5 días por defecto, o un número de 1 a 30. No gastan créditos.</p>
+              <label class="field" for="follow-1"><span>Seguimiento 1 · días</span>
+                <input class="control" id="follow-1" type="number" min="1" max="30" value="3" data-follow-day>
+              </label>
+              <label class="field" for="follow-2"><span>Seguimiento 2 · días</span>
+                <input class="control" id="follow-2" type="number" min="1" max="30" value="5" data-follow-day>
+              </label>
+              <p class="micro" data-follow-note>Por defecto, 3 y 5 días después del envío.</p>
+            </fieldset>
+          </aside>
         </div>
 
         <p class="footer-note"><a href="../index.html">Comparar con v1</a> · UX01 v2 · solo mockup</p>

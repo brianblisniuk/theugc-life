@@ -71,63 +71,127 @@
           <div>
             <p class="eyebrow">Seguimiento</p>
             <h1 class="h1">Pipeline</h1>
-            <p class="meta">Ocho estados, lo más reciente primero. Solo vos lo ves. No es la pantalla de inicio.</p>
+            <p class="meta">Ocho estados. Solo vos lo ves. No es la pantalla de inicio.</p>
           </div>
-          <button class="btn btn-line btn-small" type="button" data-board-toggle aria-pressed="false">Ver tablero</button>
+          <button class="btn btn-line btn-small" type="button" data-board-toggle aria-pressed="true">Ver lista</button>
         </div>
-        <div data-pipeline-list>
+        <div class="board" data-board>
+          <section class="col">
+            <h3>Guardado <em>1</em></h3>
+            <article class="pcard">
+              <span class="pcard-photo photo-empty" aria-hidden="true">F</span>
+              <b>Four Seasons CDMX</b>
+              <p class="micro">Siguiente: planificar el contacto</p>
+              <p class="micro">Seguimiento: sin fecha</p>
+            </article>
+          </section>
+          <section class="col">
+            <h3>Planeado <em>1</em></h3>
+            <article class="pcard">
+              <a class="pcard-photo" href="trips.html" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=75')" aria-label="Six Senses Ibiza"></a>
+              <b>Six Senses Ibiza</b>
+              <p class="micro">Siguiente: marcar como enviado</p>
+              <p class="micro">Seguimiento: sin fecha</p>
+            </article>
+          </section>
+          <section class="col">
+            <h3>Enviado <em>1</em></h3>
+            <article class="pcard">
+              <span class="pcard-photo photo-empty" aria-hidden="true">M</span>
+              <b>Memmo Alfama</b>
+              <p class="micro">Siguiente: marcar seguimiento enviado</p>
+              <p class="micro">Seguimiento: sin fecha · la cola de mañana 9:00 no es un seguimiento</p>
+            </article>
+          </section>
+          <section class="col tone-follow">
+            <h3>Seguimiento <em>1</em></h3>
+            <article class="pcard">
+              <span class="pcard-photo photo-empty" aria-hidden="true">N</span>
+              <b>Nobu Los Cabos</b>
+              <p class="micro">Siguiente: marcar que respondió</p>
+              <p class="micro">Seguimiento: 16 oct 2026</p>
+            </article>
+          </section>
+          <section class="col">
+            <h3>Respondió <em>1</em></h3>
+            <article class="pcard">
+              <a class="pcard-photo" href="inbox.html" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=75')" aria-label="Hotel Santa Clara"></a>
+              <b>Hotel Santa Clara</b>
+              <p class="micro">Siguiente: empezar negociación</p>
+              <p class="micro">Seguimiento: sin fecha</p>
+            </article>
+          </section>
+          <section class="col">
+            <h3>Negociando <em>1</em></h3>
+            <article class="pcard">
+              <a class="pcard-photo" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')" aria-label="Alila"></a>
+              <b>Alila Villas Uluwatu</b>
+              <p class="micro">Siguiente: marcar ganado</p>
+              <p class="micro">Seguimiento: sin fecha</p>
+            </article>
+          </section>
+          <section class="col tone-won">
+            <h3>Ganado <em>1</em></h3>
+            <article class="pcard">
+              <a class="pcard-photo" href="portfolio.html" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1200&q=75')" aria-label="Casa Marea, dato de ejemplo"></a>
+              <b>Casa Marea</b>
+              <p class="micro">Sin acción de outreach</p>
+              <p class="micro">Seguimiento: sin fecha · dato de ejemplo, no es una marca del catálogo</p>
+            </article>
+          </section>
+          <section class="col">
+            <h3>Cerrado <em>1</em></h3>
+            <article class="pcard">
+              <span class="pcard-photo photo-empty" aria-hidden="true">A</span>
+              <b>Amanera</b>
+              <p class="micro">Sin acción de outreach</p>
+              <p class="micro">Seguimiento: sin fecha · ciclo cerrado, sin acuerdo</p>
+            </article>
+          </section>
+        </div>
+        <div data-pipeline-list hidden>
           <article class="cycle">
-            <a class="thumb" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')" aria-label="Alila"></a>
-            <div><b><a href="hotel.html">Alila Villas Uluwatu</a></b><p class="micro">Bali · negociando · contacto a 1 crédito · estancia + pago</p></div>
-            <a class="btn btn-line btn-tiny row-end" href="pitch.html">Pitch</a>
-          </article>
-          <article class="cycle">
-            <a class="thumb" href="inbox.html" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=75')" aria-label="Santa Clara"></a>
-            <div><b><a href="inbox.html">Hotel Santa Clara</a></b><p class="micro">Cartagena · respuesta humana hace 2 días</p></div>
-            <span class="badge badge-live row-end">Respondió</span>
-          </article>
-          <article class="cycle">
-            <span class="thumb thumb-empty" aria-hidden="true">N</span>
-            <div><b>Nobu Los Cabos</b><p class="micro">Seguimiento 16 oct · sin respuesta humana</p></div>
-            <span class="badge badge-follow row-end">Seguimiento</span>
-          </article>
-          <article class="cycle">
-            <span class="thumb thumb-empty" aria-hidden="true">M</span>
-            <div><b>Memmo Alfama</b><p class="micro">Lisboa · en cola mañana 9:00 · el estado lo marcaste vos</p></div>
-            <span class="badge row-end">Enviado</span>
+            <span class="thumb thumb-empty" aria-hidden="true">F</span>
+            <div><b>Four Seasons CDMX</b><p class="micro">Guardado · siguiente: planificar el contacto · sin fecha</p></div>
+            <span class="badge row-end">Guardado</span>
           </article>
           <article class="cycle">
             <a class="thumb" href="trips.html" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=75')" aria-label="Ibiza"></a>
-            <div><b>Six Senses Ibiza</b><p class="micro">Planeado · contacto sin abrir · 1 crédito</p></div>
+            <div><b>Six Senses Ibiza</b><p class="micro">Planeado · siguiente: marcar como enviado · sin fecha</p></div>
             <span class="badge row-end">Planeado</span>
           </article>
           <article class="cycle">
-            <span class="thumb thumb-empty" aria-hidden="true">F</span>
-            <div><b>Four Seasons CDMX</b><p class="micro">Guardado · todavía no hay datos de creadoras</p></div>
-            <span class="badge row-end">Guardado</span>
+            <span class="thumb thumb-empty" aria-hidden="true">M</span>
+            <div><b>Memmo Alfama</b><p class="micro">Enviado · siguiente: marcar seguimiento enviado · sin fecha</p></div>
+            <span class="badge row-end">Enviado</span>
+          </article>
+          <article class="cycle">
+            <span class="thumb thumb-empty" aria-hidden="true">N</span>
+            <div><b>Nobu Los Cabos</b><p class="micro">Seguimiento · siguiente: marcar que respondió · 16 oct 2026</p></div>
+            <span class="badge badge-follow row-end">Seguimiento</span>
+          </article>
+          <article class="cycle">
+            <a class="thumb" href="inbox.html" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=75')" aria-label="Santa Clara"></a>
+            <div><b>Hotel Santa Clara</b><p class="micro">Respondió · siguiente: empezar negociación · sin fecha</p></div>
+            <span class="badge row-end">Respondió</span>
+          </article>
+          <article class="cycle">
+            <a class="thumb" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')" aria-label="Alila"></a>
+            <div><b>Alila Villas Uluwatu</b><p class="micro">Negociando · siguiente: marcar ganado · sin fecha</p></div>
+            <a class="btn btn-line btn-tiny row-end" href="pitch.html">Pitch</a>
           </article>
           <article class="cycle" id="ganados">
-            <a class="thumb" href="portfolio.html" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=75')" aria-label="Esencia"></a>
-            <div><b><a href="portfolio.html">Hotel Esencia</a></b><p class="micro">Riviera Maya · ganado · entrega 28 oct · estancia</p></div>
+            <span class="thumb" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1200&q=75')" aria-hidden="true"></span>
+            <div><b><a href="portfolio.html">Casa Marea</a></b><p class="micro">Ganado · sin acción de outreach · dato de ejemplo</p></div>
             <span class="badge badge-live row-end">Ganado</span>
           </article>
           <article class="cycle">
             <span class="thumb thumb-empty" aria-hidden="true">A</span>
-            <div><b>Amanera</b><p class="micro">Río San Juan · ciclo cerrado · sin inbox</p></div>
+            <div><b>Amanera</b><p class="micro">Cerrado · sin acción · sin acuerdo</p></div>
             <span class="badge row-end">Cerrado</span>
           </article>
         </div>
-        <div class="board" data-board hidden>
-          <section class="col"><h3>Guardado <em>1</em></h3><a class="deal" href="discover.html"><b>Four Seasons CDMX</b><span class="micro">Sin señal pública</span></a></section>
-          <section class="col"><h3>Planeado <em>1</em></h3><a class="deal" href="trips.html"><b>Six Senses Ibiza</b><span class="micro">1 crédito</span></a></section>
-          <section class="col"><h3>Enviado <em>1</em></h3><a class="deal" href="pitch.html"><b>Memmo Alfama</b><span class="micro">cola · mañana</span></a></section>
-          <section class="col tone-follow"><h3>Seguimiento <em>1</em></h3><a class="deal tone-follow" href="inbox.html"><b>Nobu Los Cabos</b><span class="micro">16 oct</span></a></section>
-          <section class="col"><h3>Respondió <em>1</em></h3><a class="deal" href="inbox.html"><b>Santa Clara</b><span class="micro">hace 2 días</span></a></section>
-          <section class="col"><h3>Negociando <em>1</em></h3><a class="deal" href="hotel.html"><b>Alila</b><span class="micro">1 crédito</span></a></section>
-          <section class="col tone-won"><h3>Ganado <em>1</em></h3><a class="deal tone-won" href="portfolio.html"><b>Esencia</b><span class="micro">entrega 28 oct</span></a></section>
-          <section class="col"><h3>Cerrado <em>1</em></h3><div class="deal"><b>Amanera</b><span class="micro">Río San Juan</span></div></section>
-        </div>
-        <p class="micro">En el celular la lista es la vista. Ganado sigue abierto hasta que lo cerrás. Cerrar libera el par para un ciclo nuevo.</p>
+        <p class="micro">Cada columna es un estado real y muestra su conteo. La acción es la primera que el tablero ofrece desde ese estado; cerrar también está en los estados abiertos, salvo ganado y cerrado. La fecha es next_followup_at. Ganado no se cierra desde este tablero. En el celular podés pasar a la lista.</p>
 
         <p class="footer-note"><a href="../index.html">Comparar con v1</a> · UX01 v2 · solo mockup</p>
       </main>

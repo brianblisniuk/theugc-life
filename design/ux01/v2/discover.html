@@ -107,196 +107,53 @@
           <label class="field" for="collab"><span>Colaboración</span>
             <select class="control" id="collab"><option value="">Cualquiera</option><option value="yes">Observada</option></select>
           </label>
-          <button class="btn btn-ink btn-small" type="submit">Aplicar</button>
+          <div class="more-filters" id="more-filters" hidden>
+          <label class="field" for="country"><span>País</span>
+            <select class="control" id="country" name="country">
+              <option value="">Cualquier país</option>
+              <option value="ID">Indonesia</option>
+              <option value="CO">Colombia</option>
+              <option value="PT">Portugal</option>
+              <option value="MX">México</option>
+              <option value="ES">España</option>
+              <option value="DO">República Dominicana</option>
+            </select>
+          </label>
+          <label class="field" for="hotel-type"><span>Tipo de hotel</span>
+            <select class="control" id="hotel-type" name="hotel_type">
+              <option value="">Cualquiera</option>
+              <option value="hotel">Hotel</option>
+              <option value="resort">Resort</option>
+              <option value="boutique_hotel">Boutique hotel</option>
+              <option value="aparthotel">Aparthotel</option>
+              <option value="hostel">Hostel</option>
+              <option value="villa">Villa</option>
+              <option value="lodge">Lodge</option>
+            </select>
+          </label>
+          <label class="field" for="order"><span>Orden</span>
+            <select class="control" id="order" name="order">
+              <option value="name">Nombre</option>
+              <option value="response_time">Más rápidas en responder</option>
+              <option value="response_rate">Más responsivas</option>
+              <option value="creator_activity">Más activas con creadoras</option>
+            </select>
+          </label>
+        </div>
+<button class="btn btn-ink btn-small" type="submit">Aplicar</button>
           <button class="btn btn-line btn-small" id="clear-filters" type="button">Limpiar</button>
           <p class="meta" id="result-count" role="status">8 hoteles</p>
         </form>
-        <p class="micro" style="margin-bottom:10px">Orden: más activas con creadoras. La respuesta probable es señal de tu plan Pro y no ordena la lista. Sin señal se lee “todavía no hay datos”.</p>
-        <div class="discover">
-          <div class="list-pane">
-            <div class="hgrid">
-          <article class="hcard" data-id="alila" data-name="alila villas uluwatu bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
-            <a class="hcard-shot" href="hotel.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Top</span><span class="badge badge-sun">Responde rápido</span></span></a>
-            <div class="hcard-body">
-              <h3><a href="hotel.html">Alila Villas Uluwatu</a></h3>
-              <p class="place">Uluwatu · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>1–3 días · 64%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia + pago</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="uma" data-name="como uma canggu bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
-            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span></span></div>
-            <div class="hcard-body">
-              <h3>COMO Uma Canggu</h3>
-              <p class="place">Canggu · 5★ · Boutique</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>1–3 días · 58%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="capella" data-name="capella ubud bali" data-destination="bali" data-activity="medium" data-collab="" data-stars="5">
-            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"></span></div>
-            <div class="hcard-body">
-              <h3>Capella Ubud</h3>
-              <p class="place">Ubud · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>4–7 días · 41%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="fourseasons" data-name="four seasons jimbaran bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
-            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Top</span><span class="badge badge-sun">Nuevo</span></span></div>
-            <div class="hcard-body">
-              <h3>Four Seasons Jimbaran</h3>
-              <p class="place">Jimbaran · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>1–2 días · 71%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia + pago</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="ssulu" data-name="six senses uluwatu bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
-            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span></span></div>
-            <div class="hcard-body">
-              <h3>Six Senses Uluwatu</h3>
-              <p class="place">Uluwatu · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>2–4 días · 52%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="raffles" data-name="raffles bali jimbaran" data-destination="bali" data-activity="emerging" data-collab="" data-stars="5">
-            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Nuevo</span></span></div>
-            <div class="hcard-body">
-              <h3>Raffles Bali</h3>
-              <p class="place">Jimbaran · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>Todavía no hay datos</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia + pago</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="amankila" data-name="amankila bali manggis" data-destination="bali" data-activity="medium" data-collab="" data-stars="5">
-            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"></span></div>
-            <div class="hcard-body">
-              <h3>Amankila</h3>
-              <p class="place">Manggis · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>5–8 días · 33%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" data-id="ungasan" data-name="the ungasan bali" data-destination="bali" data-activity="none" data-collab="" data-stars="5">
-            <div class="hcard-shot"><span class="photo photo-empty">T</span><span class="hcard-badges"><span class="badge badge-sun">Gratis</span></span></div>
-            <div class="hcard-body">
-              <h3>The Ungasan</h3>
-              <p class="place">Ungasan · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>Todavía no hay datos</dd></div>
-                <div><dt>Acuerdo</dt><dd>Sin dato</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-none">Sin mail</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="santa" data-name="hotel santa clara cartagena" data-destination="cartagena" data-activity="medium" data-collab="yes" data-stars="5">
-            <a class="hcard-shot" href="inbox.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span></span></a>
-            <div class="hcard-body">
-              <h3><a href="inbox.html">Hotel Santa Clara</a></h3>
-              <p class="place">Cartagena · 5★ · Hotel</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>Respondió · 2 días</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-ready">Listo</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="memmo" data-name="memmo alfama lisboa" data-destination="lisboa" data-activity="emerging" data-collab="" data-stars="4">
-            <div class="hcard-shot"><span class="photo photo-empty">M</span><span class="hcard-badges"></span></div>
-            <div class="hcard-body">
-              <h3>Memmo Alfama</h3>
-              <p class="place">Lisboa · 4★ · Boutique</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>Sin tasa todavía</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="fscdmx" data-name="four seasons ciudad de mexico" data-destination="cdmx" data-activity="none" data-collab="" data-stars="5">
-            <div class="hcard-shot"><span class="photo photo-empty">F</span><span class="hcard-badges"></span></div>
-            <div class="hcard-body">
-              <h3>Four Seasons CDMX</h3>
-              <p class="place">CDMX · 5★ · Hotel</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>Todavía no hay datos</dd></div>
-                <div><dt>Acuerdo</dt><dd>Sin dato</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-none">Sin mail</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="ibiza" data-name="six senses ibiza" data-destination="ibiza" data-activity="high" data-collab="yes" data-stars="5">
-            <a class="hcard-shot" href="trips.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Top</span></span></a>
-            <div class="hcard-body">
-              <h3><a href="trips.html">Six Senses Ibiza</a></h3>
-              <p class="place">Ibiza · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>1–3 días · 61%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia + pago</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="nobu" data-name="nobu los cabos" data-destination="cabos" data-activity="medium" data-collab="" data-stars="5">
-            <a class="hcard-shot" href="pipeline.html"><span class="photo photo-empty">N</span><span class="hcard-badges"></span></a>
-            <div class="hcard-body">
-              <h3><a href="pipeline.html">Nobu Los Cabos</a></h3>
-              <p class="place">Los Cabos · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>4–7 días · 38%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="esencia" data-name="hotel esencia riviera maya" data-destination="maya" data-activity="medium" data-collab="yes" data-stars="5">
-            <a class="hcard-shot" href="portfolio.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Top</span></span></a>
-            <div class="hcard-body">
-              <h3><a href="portfolio.html">Hotel Esencia</a></h3>
-              <p class="place">Riviera Maya · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>4–7 días · 44%</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-ready">Listo</dd></div>
-              </dl>
-            </div>
-          </article>
-          <article class="hcard" hidden data-id="amanera" data-name="amanera rio san juan" data-destination="samana" data-activity="emerging" data-collab="" data-stars="5">
-            <div class="hcard-shot"><span class="photo photo-empty">A</span><span class="hcard-badges"></span></div>
-            <div class="hcard-body">
-              <h3>Amanera</h3>
-              <p class="place">Río San Juan · 5★ · Resort</p>
-              <dl class="facts">
-                <div><dt>Respuesta</dt><dd>Actividad emergente</dd></div>
-                <div><dt>Acuerdo</dt><dd>Estancia</dd></div>
-                <div><dt>Contacto</dt><dd class="pip-none">Sin abrir</dd></div>
-              </dl>
-            </div>
-          </article>
-            </div>
-          </div>
+        <div class="chips" role="group" aria-label="Vista de la grilla">
+          <button class="chip" type="button" data-scene-chip="">Todas</button>
+          <button class="chip" type="button" data-scene-chip="playa">Playa</button>
+          <button class="chip" type="button" data-scene-chip="ciudad">Ciudad</button>
+          <button class="chip" type="button" data-scene-chip="montana">Montaña</button>
+          <button class="chip" type="button" data-scene-chip="historico">Histórico</button>
+          <button class="chip" id="more-filters-toggle" type="button" aria-expanded="false" aria-controls="more-filters">Más filtros</button>
+        </div>
+        <p class="micro" style="margin-bottom:10px">Playa, Ciudad, Montaña e Histórico no son un campo del catálogo: son una vista de ejemplo. El filtro real está en Más filtros (destino, país, tipo de hotel, estrellas, actividad, colaboración observada). Responde rápido es la banda de menos de 24 h o de 1–3 días. Canje es estancia, Pago es pago y Canje + pago es estancia + pago. Esos tipos y las bandas de esta grilla son muestra: en Pro aparecen solo si la muestra pasa el piso. Si no pasa, se lee “todavía no hay datos”.</p>
+<div class="discover">
           <div class="map-pane">
             
           <div class="map" data-scope="bali">
@@ -329,8 +186,143 @@
           </div>
 
           </div>
+          <div class="list-pane">
+            <div class="hgrid">
+          <article class="hcard" data-id="alila" data-name="alila villas uluwatu bali" data-destination="bali" data-activity="high" data-stars="5" data-scene="playa" data-country="ID" data-htype="resort" data-collab="yes">
+            <a class="hcard-shot" href="hotel.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span><span class="badge badge-sun">Canje + pago</span></span></a>
+            <div class="hcard-body">
+              <h3><a href="hotel.html">Alila Villas Uluwatu</a></h3>
+              <p class="place">Uluwatu · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>1–3 días</dd></div><div><dt>Tipo</dt><dd>Estancia + pago</dd></div><div><dt>Actividad</dt><dd>Actividad fuerte</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="uma" data-name="como uma canggu bali" data-destination="bali" data-activity="high" data-stars="5" data-scene="playa" data-country="ID" data-htype="boutique_hotel" data-collab="yes">
+            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span><span class="badge badge-sun">Canje</span></span></div>
+            <div class="hcard-body">
+              <h3>COMO Uma Canggu</h3>
+              <p class="place">Canggu · 5★ · Boutique</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Menos de 24 h</dd></div><div><dt>Tipo</dt><dd>Estancia</dd></div><div><dt>Actividad</dt><dd>Actividad fuerte</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="capella" data-name="capella ubud bali" data-destination="bali" data-activity="medium" data-stars="5" data-scene="montana" data-country="ID" data-htype="resort" data-collab="">
+            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"></span></div>
+            <div class="hcard-body">
+              <h3>Capella Ubud</h3>
+              <p class="place">Ubud · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>3–7 días</dd></div><div><dt>Tipo</dt><dd>Todavía no hay datos</dd></div><div><dt>Actividad</dt><dd>Actividad moderada</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="fourseasons" data-name="four seasons jimbaran bali" data-destination="bali" data-activity="high" data-stars="5" data-scene="playa" data-country="ID" data-htype="resort" data-collab="yes">
+            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Pago</span></span></div>
+            <div class="hcard-body">
+              <h3>Four Seasons Jimbaran</h3>
+              <p class="place">Jimbaran · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>1–2 semanas</dd></div><div><dt>Tipo</dt><dd>Pago</dd></div><div><dt>Actividad</dt><dd>Actividad fuerte</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="ssulu" data-name="six senses uluwatu bali" data-destination="bali" data-activity="high" data-stars="5" data-scene="playa" data-country="ID" data-htype="resort" data-collab="yes">
+            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Canje</span></span></div>
+            <div class="hcard-body">
+              <h3>Six Senses Uluwatu</h3>
+              <p class="place">Uluwatu · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>3–7 días</dd></div><div><dt>Tipo</dt><dd>Estancia</dd></div><div><dt>Actividad</dt><dd>Actividad fuerte</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="raffles" data-name="raffles bali jimbaran" data-destination="bali" data-activity="emerging" data-stars="5" data-scene="playa" data-country="ID" data-htype="resort" data-collab="">
+            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"></span></div>
+            <div class="hcard-body">
+              <h3>Raffles Bali</h3>
+              <p class="place">Jimbaran · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Todavía no hay datos</dd></div><div><dt>Tipo</dt><dd>Todavía no hay datos</dd></div><div><dt>Actividad</dt><dd>Actividad emergente</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="amankila" data-name="amankila bali manggis" data-destination="bali" data-activity="medium" data-stars="5" data-scene="montana" data-country="ID" data-htype="resort" data-collab="yes">
+            <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Pago</span></span></div>
+            <div class="hcard-body">
+              <h3>Amankila</h3>
+              <p class="place">Manggis · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>2 semanas o más</dd></div><div><dt>Tipo</dt><dd>Pago</dd></div><div><dt>Actividad</dt><dd>Actividad moderada</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" data-id="ungasan" data-name="the ungasan bali" data-destination="bali" data-activity="none" data-stars="5" data-scene="playa" data-country="ID" data-htype="resort" data-collab="">
+            <div class="hcard-shot"><span class="photo photo-empty">T</span><span class="hcard-badges"></span></div>
+            <div class="hcard-body">
+              <h3>The Ungasan</h3>
+              <p class="place">Ungasan · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Todavía no hay datos</dd></div><div><dt>Tipo</dt><dd>Todavía no hay datos</dd></div><div><dt>Actividad</dt><dd>Todavía no hay datos</dd></div><div><dt>Contacto</dt><dd class="pip-none">Sin mail</dd></div></dl>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="santa" data-name="hotel santa clara cartagena" data-destination="cartagena" data-activity="medium" data-stars="5" data-scene="historico" data-country="CO" data-htype="hotel" data-collab="yes">
+            <a class="hcard-shot" href="inbox.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span><span class="badge badge-sun">Canje</span></span></a>
+            <div class="hcard-body">
+              <h3><a href="inbox.html">Hotel Santa Clara</a></h3>
+              <p class="place">Cartagena · 5★ · Hotel</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>1–3 días</dd></div><div><dt>Tipo</dt><dd>Estancia</dd></div><div><dt>Actividad</dt><dd>Actividad moderada</dd></div><div><dt>Contacto</dt><dd class="pip-ready">Listo</dd></div></dl>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="memmo" data-name="memmo alfama lisboa" data-destination="lisboa" data-activity="emerging" data-stars="4" data-scene="ciudad" data-country="PT" data-htype="boutique_hotel" data-collab="">
+            <div class="hcard-shot"><span class="photo photo-empty">M</span><span class="hcard-badges"></span></div>
+            <div class="hcard-body">
+              <h3>Memmo Alfama</h3>
+              <p class="place">Lisboa · 4★ · Boutique</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Todavía no hay datos</dd></div><div><dt>Tipo</dt><dd>Todavía no hay datos</dd></div><div><dt>Actividad</dt><dd>Actividad emergente</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="fscdmx" data-name="four seasons ciudad de mexico" data-destination="cdmx" data-activity="none" data-stars="5" data-scene="ciudad" data-country="MX" data-htype="hotel" data-collab="">
+            <div class="hcard-shot"><span class="photo photo-empty">F</span><span class="hcard-badges"></span></div>
+            <div class="hcard-body">
+              <h3>Four Seasons CDMX</h3>
+              <p class="place">CDMX · 5★ · Hotel</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Todavía no hay datos</dd></div><div><dt>Tipo</dt><dd>Todavía no hay datos</dd></div><div><dt>Actividad</dt><dd>Todavía no hay datos</dd></div><div><dt>Contacto</dt><dd class="pip-none">Sin mail</dd></div></dl>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="ibiza" data-name="six senses ibiza" data-destination="ibiza" data-activity="high" data-stars="5" data-scene="playa" data-country="ES" data-htype="resort" data-collab="yes">
+            <a class="hcard-shot" href="trips.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span><span class="badge badge-sun">Canje + pago</span></span></a>
+            <div class="hcard-body">
+              <h3><a href="trips.html">Six Senses Ibiza</a></h3>
+              <p class="place">Ibiza · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Menos de 24 h</dd></div><div><dt>Tipo</dt><dd>Estancia + pago</dd></div><div><dt>Actividad</dt><dd>Actividad fuerte</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="nobu" data-name="nobu los cabos" data-destination="cabos" data-activity="medium" data-stars="5" data-scene="playa" data-country="MX" data-htype="resort" data-collab="yes">
+            <a class="hcard-shot" href="pipeline.html"><span class="photo photo-empty">N</span><span class="hcard-badges"><span class="badge badge-sun">Canje</span></span></a>
+            <div class="hcard-body">
+              <h3><a href="pipeline.html">Nobu Los Cabos</a></h3>
+              <p class="place">Los Cabos · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>3–7 días</dd></div><div><dt>Tipo</dt><dd>Estancia</dd></div><div><dt>Actividad</dt><dd>Actividad moderada</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="esencia" data-name="hotel esencia riviera maya" data-destination="maya" data-activity="medium" data-stars="5" data-scene="playa" data-country="MX" data-htype="resort" data-collab="yes">
+            <a class="hcard-shot" href="discover.html"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Canje</span></span></a>
+            <div class="hcard-body">
+              <h3><a href="discover.html">Hotel Esencia</a></h3>
+              <p class="place">Riviera Maya · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>1–2 semanas</dd></div><div><dt>Tipo</dt><dd>Estancia</dd></div><div><dt>Actividad</dt><dd>Actividad moderada</dd></div><div><dt>Contacto</dt><dd class="pip-ready">Listo</dd></div></dl>
+            </div>
+          </article>
+          <article class="hcard" hidden data-id="amanera" data-name="amanera rio san juan" data-destination="samana" data-activity="emerging" data-stars="5" data-scene="playa" data-country="DO" data-htype="resort" data-collab="">
+            <div class="hcard-shot"><span class="photo photo-empty">A</span><span class="hcard-badges"></span></div>
+            <div class="hcard-body">
+              <h3>Amanera</h3>
+              <p class="place">Río San Juan · 5★ · Resort</p>
+              <dl class="facts"><div><dt>Tiempo</dt><dd>Todavía no hay datos</dd></div><div><dt>Tipo</dt><dd>Todavía no hay datos</dd></div><div><dt>Actividad</dt><dd>Actividad emergente</dd></div><div><dt>Contacto</dt><dd class="pip-lock">1 crédito</dd></div></dl>
+              <a class="btn btn-sun btn-tiny" href="hotel.html">Desbloquear · 1 crédito</a>
+            </div>
+          </article>
+            </div>
+          </div>
         </div>
-        <p class="micro">El mapa de producto es Google Maps. Este es un esquema. Amankila, Raffles y Six Senses Uluwatu están para densificar la grilla de muestra.</p>
+        <p class="micro">El mapa queda a la izquierda. El de producto es Google Maps; este es un esquema. Amankila, Raffles y Six Senses Uluwatu están para densificar la grilla de muestra. El orden de esta maqueta no reordena: en el producto el orden por métrica deja afuera a quien no pasa el piso.</p>
         </div>
 
         <p class="footer-note"><a href="../index.html">Comparar con v1</a> · UX01 v2 · solo mockup</p>

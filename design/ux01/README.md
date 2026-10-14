@@ -13,9 +13,9 @@ Open `index.html`. It is the design system and the index of every screen. The **
 | `onboarding.html` | Destination, then first catalog hotel |
 | `inicio.html` | Signed-in home |
 | `discover.html` | Map, list, filters, intelligence badges |
-| `hotel.html` | Intelligence, confidence, creator fit, unlock, pitch |
-| `pitch.html` | Tone, key points, language, AI budget, send and queue |
-| `pipeline.html` | CRM list and board |
+| `hotel.html` | Public activity, premium time band, collaboration type, unlock |
+| `pitch.html` | Hotel, tone and points, Gmail send, follow-up sketch |
+| `pipeline.html` | Photo board of the eight statuses, plus the list |
 | `inbox.html` | Gmail readings beside open cycles |
 | `trips.html` | Trip list and one open trip |
 | `perfil.html` | Profile, public card, private past work |
@@ -37,7 +37,7 @@ Open `index.html`. It is the design system and the index of every screen. The **
 - The map is a static stand-in. The product map remains Google Maps.
 - Sample contacts use `.example` addresses. A missing public signal is “todavía no hay datos”, not a low score.
 - Prices and credits follow D131–D136 and `CREDITS_CONFIG`: Free 5 per rolling week, capped at 5; Pro USD 20/mo billed annually or USD 30 monthly, 150 credits / 30 days; Max USD 50/mo billed annually or USD 60 monthly, 500 credits / 30 days; packs 50/USD 10, 150/USD 20, 500/USD 40; unlock cost 1; a provider miss is not charged. Destination Pass stays USD 39 / 30 days and does not include full AI email.
-- The AI meter is the monthly dollar budget (Pro USD 5, warning at 80%), separate from credits. The first draft for a hotel costs 1 credit; the next three that month do not.
+- The AI meter is the monthly dollar budget (Pro USD 5, Max USD 15, warning at 80%), separate from credits. D166: the first generation for a hotel in the month uses 1 credit, the next three do not, and later ones use 1 credit. The generate and send buttons do not show a price. A successful send costs no credits (D159). The pitch screen’s two follow-ups (defaults 3 and 5 days, custom 1–30) are the D05 sketch; the product stores one `next_followup_at` and does not schedule them yet.
 - Send and queue do not mark the hotel as pitched. The queue line matches the live Gmail send: business hours, a few minutes apart.
 - Checkout copy says a payment is not access until the verified webhook.
 

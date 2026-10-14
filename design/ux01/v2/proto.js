@@ -31,12 +31,25 @@
       });
     }
 
+    let scene = "";
+
+    function setScene(next) {
+      scene = next || "";
+      $$("[data-scene-chip]", discover).forEach((chip) => {
+        const on = (chip.dataset.sceneChip || "") === scene;
+        chip.classList.toggle("is-on", on);
+        chip.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+
     function apply() {
       const q = ($("#q").value || "").trim().toLowerCase();
       const dest = $("#destination").value;
       const activity = $("#activity").value;
       const collab = $("#collab").value;
       const stars = $("#stars").value;
+      const country = $("#country") ? $("#country").value : "";
+      const hotelType = $("#hotel-type") ? $("#hotel-type").value : "";
       let visible = 0;
       rows().forEach((row) => {
         const ok =
@@ -44,7 +57,10 @@
           (!dest || row.dataset.destination === dest) &&
           (!activity || row.dataset.activity === activity) &&
           (!collab || row.dataset.collab === collab) &&
-          (!stars || Number(row.dataset.stars) >= Number(stars));
+          (!stars || Number(row.dataset.stars) >= Number(stars)) &&
+          (!scene || row.dataset.scene === scene) &&
+          (!country || row.dataset.country === country) &&
+          (!hotelType || row.dataset.htype === hotelType);
         row.hidden = !ok;
         if (ok) visible += 1;
       });
@@ -72,8 +88,33 @@
     form.addEventListener("change", apply);
     $("#clear-filters").addEventListener("click", () => {
       form.reset();
+      setScene("");
+      const more = $("#more-filters");
+      const moreToggle = $("#more-filters-toggle");
+      if (more) more.hidden = true;
+      if (moreToggle) {
+        moreToggle.classList.remove("is-on");
+        moreToggle.setAttribute("aria-expanded", "false");
+      }
       apply();
     });
+    $$("[data-scene-chip]", discover).forEach((chip) => {
+      chip.addEventListener("click", () => {
+        setScene(chip.dataset.sceneChip || "");
+        apply();
+      });
+    });
+    const moreToggle = $("#more-filters-toggle");
+    const more = $("#more-filters");
+    if (moreToggle && more) {
+      moreToggle.addEventListener("click", () => {
+        const open = more.hidden;
+        more.hidden = !open;
+        moreToggle.classList.toggle("is-on", open);
+        moreToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    }
+    setScene("");
     rows().forEach((row) => {
       row.addEventListener("mouseenter", () => select(row.dataset.id));
       row.addEventListener("focusin", () => select(row.dataset.id));
@@ -138,7 +179,7 @@
       if (status) {
         status.hidden = false;
         status.textContent =
-          "En cola. Sale en tu horario hábil, con minutos de separación. Alila no queda marcado como enviado.";
+          "En cola. Sale en tu horario hábil, con minutos de separación. No gasta créditos y Alila no queda marcado como enviado.";
       }
     });
   }
@@ -149,7 +190,7 @@
       if (status) {
         status.hidden = false;
         status.textContent =
-          "Enviado desde tu Gmail. Alila no queda marcado como enviado. El estado del pipeline lo cambiás vos.";
+          "Enviado desde tu Gmail. No gastó créditos. Alila no queda marcado como enviado. El estado del pipeline lo cambiás vos.";
       }
     });
   }
@@ -263,7 +304,7 @@
       boardToggle.textContent = show ? "Ver lista" : "Ver tablero";
       boardToggle.setAttribute("aria-pressed", show ? "true" : "false");
     };
-    setBoard(false);
+    setBoard(true);
     boardToggle.addEventListener("click", () => setBoard(board.hidden));
   }
 
@@ -291,10 +332,28 @@
       if (status) {
         status.hidden = false;
         status.textContent =
-          "Borrador listo. Tono cercano, en español. No se envió y no se marcó el hotel.";
+          "Borrador listo. Tono cercano, en español. Este botón no cobra. No se envió y no se marcó el hotel.";
       }
     });
   }
+
+  $$("[data-follow-day]").forEach((input) => {
+    input.addEventListener("change", () => {
+      let n = Number(input.value);
+      if (!Number.isInteger(n)) n = 3;
+      if (n < 1) n = 1;
+      if (n > 30) n = 30;
+      input.value = String(n);
+      const note = $("[data-follow-note]");
+      const days = $$("[data-follow-day]").map((el) => el.value);
+      if (note) {
+        note.textContent =
+          "Quedaron en " +
+          days.join(" y ") +
+          " días. Hasta 2 seguimientos, entre 1 y 30. D05 todavía no programa esto.";
+      }
+    });
+  });
 
   const tripForm = $("[data-trip-form]");
   if (tripForm) {
