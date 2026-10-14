@@ -4936,3 +4936,106 @@ weekly credits resume.
 The payment link is attached by the server with the service role. A
 signed-in user cannot call that function. Confirmed Rebill ids win over
 the webhook body.
+
+## D146 — Metric freshness and confidence sit beside H01
+
+Status: **Accepted** for this block. Migration
+`0084_metric_freshness_confidence.sql`. D012, D058, D099, and D120 are not
+rewritten. `0071` and `0072` are not edited.
+
+`read_hotel_metric_confidence(hotel)` returns the three H01 metrics. It does
+not return the H01 value, the rank key, or the sample sentence. Activity
+confidence is the H01 label: High is strong, Medium is moderate, Emerging is
+emerging. Reply-rate confidence is strong at 50 or more pitched cycles and
+moderate from the H01 floor of 15. Reply-time confidence is emerging from 10
+observations, moderate from 15, and strong from 50. Those counts use the same
+cycle and observation rules as D120 and are not columns.
+
+Freshness is `past_month`, `past_quarter`, or `older` only when confidence is
+moderate or strong and at least three distinct creators have a qualifying
+event inside that window. Otherwise the band is null. Emerging confidence
+never publishes a band. One recent creator cannot publish `past_month`. A
+null band is not zero and not "older".
+
+A premium metric the caller cannot see is `locked`, with both bands null.
+Below an H01 floor the state is `not_enough_data`, with both bands null. An
+unpublished hotel is `not_found`. The function is `SECURITY DEFINER` with an
+empty `search_path`.
+
+## D147 — Personal counts and a k-anonymous network read
+
+Status: **Accepted** for this block. Migration
+`0085_personal_network_aggregates.sql`. The D099 view and the H01 views are
+read, not recomputed.
+
+`read_own_personal_aggregate(hotel)` counts the caller's own confirmed sample
+facts, split into manual and Gmail, and lists the caller's own collaboration
+types. Zero is an empty personal history. It is not a network zero. No
+evidence id and no other creator. A signed-out caller gets `not_found`.
+
+`read_network_aggregate(hotel)` returns `insufficient` and no other keys when
+`network_hotel_public` has no row. That is the three-creator floor. A missing
+or unpublished hotel is `not_found`, not a zero. The ok payload is the
+anonymous activity, confidence, recency, freshness, and collaboration
+presence already on that view. Reply labels are copied from
+`hotel_metric_signal_premium` only when `has_premium_hotel_access` is true,
+and a missing label is null, not `0%`. No creator id, evidence id, or count
+is returned.
+
+## D148 — Creator fit uses one public metric
+
+Status: **Accepted** for this block. Migration `0086_creator_fit.sql`. F03
+order is not changed. The hierarchical prior stays unapplied:
+`prior_applied` is false and the reason is `no_proven_lift`.
+
+A hotel fits when the caller has a confirmed collaboration type on a hotel
+in the requested destination, its descendants, or an ancestor, and that same
+type has been confirmed by at least three distinct creators on the hotel.
+The type projection has no count column. One creator cannot publish a type.
+Hotels below the public activity floor are absent, not last. The order is
+that activity `rank_key` descending, then hotel id ascending. One matching
+type is shown. Types are not added into a score.
+
+The read is Premium Intelligence: admin or editor, active Pro or Max, or an
+active Pass on the requested destination. A locked result has no `hotels`
+key. A signed-out caller gets `not_found`. An entitled caller with no
+matching type gets an empty list, which is not a lock and not a rank of
+every hotel.
+
+## D149 — Pursue and skip do not move the network
+
+Status: **Accepted** for this block. Migration
+`0087_creator_fit_decisions.sql`.
+
+`private.creator_fit_decisions` stores `pursue` or `skip` for the signed-in
+creator. The table is append-only. RLS is enabled. `anon`, `authenticated`,
+and `service_role` have no table grant. Writes go through
+`record_creator_fit_decision`, which is `SECURITY DEFINER` with an empty
+`search_path` and takes no user id. The hotel must already be on that
+caller's fit list. Anything else is `not_visible` and writes nothing. Any
+other decision word is `invalid_input`.
+
+`read_own_fit_decision` returns the caller's latest choice, or null. Another
+creator's choice is not selected. Recording a choice does not change facts,
+H01 values, the network aggregate, or the fit order.
+
+## D150 — Public, Premium, and Max detail
+
+Status: **Accepted** for this block. This does not supersede the D133
+sentence that Max flags do not change Discover order, Pipeline order, or
+support mail. It gives `advanced_signals` a meaning on creator fit only.
+
+Public activity confidence and the anonymous network aggregate are readable
+by every tier, including anonymous. Reply confidence, reply labels, and
+creator fit require Premium Intelligence: a Pass inside its destination, or
+Pro or Max worldwide. Staff keep the existing premium helper. A Max row is
+not a staff role.
+
+`advanced_signals` is true only for an active Max entitlement. On
+`read_creator_fit` it adds `rank`, `confidence_level`, and `freshness_band`
+to each hotel. Pro, a Pass, and staff without Max do not receive those keys.
+The hotel ids stay in the same order. The k-anonymous floors do not change.
+The flag does not call a model and does not send mail.
+
+User A's Max row does not reveal User B's facts, decisions, or personal
+counts. A payment, a subscription, or a sponsored flag is not a fit input.

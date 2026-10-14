@@ -220,7 +220,7 @@ Worldwide.
 If a Destination Pass expires, do not revoke ownership/read access to creator's own pipeline/trips.
 
 ### Max
-Worldwide, same CRM exemption as Pro (D133). Max flags do not widen another creator's rows.
+Worldwide, same CRM exemption as Pro (D133). Max flags do not widen another creator's rows. `advanced_signals` adds rank, confidence, and freshness on creator fit (D150). It does not change Discover order, Pipeline order, or the k-anonymous floors.
 
 ## 9. Intelligence access
 
@@ -300,6 +300,25 @@ is an error, never a denial; an entitled viewer with insufficient evidence sees
 the building state, never a zero or a negative claim.
 
 No plan bypasses privacy thresholds.
+
+### Confirmed-fact reads (D146–D150, migrations 0084–0087)
+
+These reads sit beside H01. They do not grant `hotel_intelligence` or
+`private.intelligence_facts`. Each function is `SECURITY DEFINER` with an empty
+`search_path`. Identity is `auth.uid()`.
+
+- `read_hotel_metric_confidence` — public activity for every tier. Reply
+  metrics lock, with null bands, unless `has_premium_hotel_access`.
+- `read_network_aggregate` — no row below three distinct creators, and that
+  result has no other keys. Reply labels are copied from the premium H01 view
+  only when the caller is entitled.
+- `read_own_personal_aggregate` and `read_own_fit_decision` — the caller only.
+- `read_creator_fit` — Premium Intelligence. A locked result has no `hotels`
+  key. Max adds detail fields. The order is the public activity rank.
+
+`private.creator_fit_decisions`, `private.hotel_metric_freshness`, and
+`private.hotel_confirmed_types` have no client grant. RLS is enabled on the
+decision table. A pursue or skip does not change a network aggregate.
 
 ## 10. Signals
 

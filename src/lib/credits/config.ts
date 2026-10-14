@@ -40,7 +40,7 @@ export type PaidPlanTier = keyof typeof PLAN_PRICES;
 export const PLAN_TIERS = ["free", "pro", "max"] as const;
 export type PlanTier = (typeof PLAN_TIERS)[number];
 
-/** Flags only an active Max entitlement turns on. They do not change ranking or send mail. */
+/** Flags only an active Max entitlement turns on. They do not change Discover or Pipeline order, and they do not send mail. */
 export const MAX_PLAN_FLAGS = [
   "priority_ai",
   "advanced_signals",
