@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87, D04b, migrations 0090 and 0091, D162-D170). D05 follow-up scheduling is on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Proposed, not Accepted. At most two explicit follow-ups per sent pitch, through the existing send queue, stopped on reply, bounce, won or closed, or cancel. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87, D04b, migrations 0090 and 0091, D162-D170). D05 follow-up scheduling is draft PR #89 on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Proposed, not Accepted. At most two explicit follow-ups per sent pitch, through the existing send queue, stopped on reply, bounce, won or closed, or cancel. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "f892d6e37cd7b606e4b5c663dc002e0503d0145b",
   "active_block": "D05 follow-up scheduling",
   "branch": "cursor/d05-followup-scheduling-dd31",
-  "pr": null,
+  "pr": 89,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -22,5 +22,5 @@
     "verify": "unknown"
   },
   "required_human_action": "PRODUCT DECISION REQUIRED — D171–D177 are Proposed, not Accepted. Confirm at most two follow-ups per thread, three then four business days apart, an explicit opt-in, and no send of text the creator has not submitted. EXTERNAL ACTION APPROVAL REQUIRED remains open from D04: add gmail.send to the Google consent screen, set GMAIL_SEND_ENV=production only on production, and set GMAIL_DISPATCH_SECRET on the send host. Do not do that from the repository.",
-  "next_dependency": "D05 follow-up scheduling is AWAITING_AUDIT on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Proposed. Branched from main f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87). expected_head stays null. Do not merge."
+  "next_dependency": "D05 follow-up scheduling is AWAITING_AUDIT as draft PR #89 on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Proposed. Branched from main f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87). expected_head stays null. Do not merge."
 }

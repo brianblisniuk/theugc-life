@@ -1,8 +1,9 @@
 # D05 — Follow-up scheduling
 
-**Status:** Binding work order for this draft PR. Awaiting audit. Do not merge.
+**Status:** Binding work order for draft PR #89. Awaiting audit. Do not merge.
 **Base:** `main` `f892d6e37cd7b606e4b5c663dc002e0503d0145b` (merge of PR #87, D04b).
 **Branch:** `cursor/d05-followup-scheduling-dd31`.
+**PR:** https://github.com/brianblisniuk/theugc-life/pull/89
 **Migration:** `0092_gmail_followups.sql`. `0088`–`0091` are not edited.
 **Decisions:** D171–D177 are **Proposed**, not Accepted.
 
