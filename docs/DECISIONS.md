@@ -4990,8 +4990,10 @@ order is not changed. The hierarchical prior stays unapplied:
 
 A hotel fits when the caller has a confirmed collaboration type on a hotel
 in the requested destination, its descendants, or an ancestor, and that same
-type has been confirmed by at least three distinct creators on the hotel.
-The type projection has no count column. One creator cannot publish a type.
+type has been confirmed by at least three distinct creators other than the
+caller on the hotel. The caller's own confirmation does not count toward
+those three. Duplicate facts from one owner still count as one creator. The
+type projection has no count column. One creator cannot publish a type.
 Hotels below the public activity floor are absent, not last. The order is
 that activity `rank_key` descending, then hotel id ascending. One matching
 type is shown. Types are not added into a score.

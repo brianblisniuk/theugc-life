@@ -2,8 +2,9 @@
 -- 0086 — C04 creator fit (D148)
 -- ===========================================================================
 -- A hotel fits the caller when the caller has confirmed a collaboration type
--- and at least three other-or-including creators have confirmed that same
--- type on that hotel. The order is the public H01 activity rank key, then
+-- and at least three creators other than the caller have confirmed that same
+-- type on that hotel. The caller's own confirmation does not fill the floor.
+-- The order is the public H01 activity rank key, then
 -- hotel id. Hotels below the activity floor are absent. The hierarchical
 -- prior is not applied. Max advanced_signals adds rank, confidence, and
 -- freshness. It does not change the order, and it does not change Discover
@@ -25,10 +26,12 @@ where f.network_eligible
   and f.fact_type = 'collaboration_type_observed'
   and f.value->>'collaboration_type' in ('stay', 'product', 'paid', 'stay_plus_paid', 'other')
 group by f.canonical_hotel_id, f.value->>'collaboration_type'
-having count(distinct f.owner_user_id) >= 3;
+having count(distinct f.owner_user_id) filter (
+  where f.owner_user_id is distinct from auth.uid()
+) >= 3;
 
 comment on view private.hotel_confirmed_types is
-  'Collaboration types confirmed by at least three distinct creators. No count column and no creator id. A single creator cannot publish a type.';
+  'Collaboration types confirmed by at least three creators other than auth.uid(). The caller does not count toward that floor. No count column and no creator id.';
 
 revoke all on table private.hotel_confirmed_types from public, anon, authenticated, service_role;
 
@@ -101,6 +104,19 @@ begin
         from private.hotel_metric_basis b
         join public.hotels h on h.id = b.hotel_id
         join private.hotel_confirmed_types t on t.hotel_id = b.hotel_id
+        join lateral (
+          select count(distinct others.owner_user_id)::integer as other_creators
+            from private.intelligence_facts others
+           where others.network_eligible
+             and others.provenance_class = 'creator_confirmed'
+             and others.dismissed = false
+             and others.source_family in ('manual', 'gmail')
+             and others.canonical_hotel_id = b.hotel_id
+             and others.canonical_organization_id is null
+             and others.fact_type = 'collaboration_type_observed'
+             and others.value->>'collaboration_type' = t.collaboration_type
+             and others.owner_user_id is distinct from v_user
+        ) others on others.other_creators >= 3
         left join private.hotel_metric_freshness f
           on f.hotel_id = b.hotel_id
          and f.metric = 'creator_activity'
@@ -154,7 +170,7 @@ end;
 $$;
 
 comment on function public.read_creator_fit(uuid) is
-  'D148 creator fit for auth.uid() inside one destination and its descendants. Locked calls omit hotels. Order is activity rank_key desc, hotel id. Max adds rank, confidence, and freshness without changing that order. Prior is not applied. SECURITY DEFINER. search_path is pinned empty.';
+  'D148 creator fit for auth.uid() inside one destination and its descendants. A matched type needs three creators other than the caller. Locked calls omit hotels. Order is activity rank_key desc, hotel id. Max adds rank, confidence, and freshness without changing that order. Prior is not applied. SECURITY DEFINER. search_path is pinned empty.';
 
 revoke all on function public.read_creator_fit(uuid) from public, anon, authenticated;
 grant execute on function public.read_creator_fit(uuid) to authenticated, service_role;

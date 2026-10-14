@@ -34,6 +34,8 @@ const MID = "c2f50000-0000-4000-8000-000000000102";
 const EMERGE = "c2f50000-0000-4000-8000-000000000103";
 const THIN = "c2f50000-0000-4000-8000-000000000104";
 const TWO = "c2f50000-0000-4000-8000-00000000010c";
+const LEAK = "c2f50000-0000-4000-8000-00000000010d";
+const OPEN = "c2f50000-0000-4000-8000-00000000010e";
 const OLDER = "c2f50000-0000-4000-8000-000000000105";
 const SPLIT = "c2f50000-0000-4000-8000-000000000106";
 const PERSONAL = "c2f50000-0000-4000-8000-000000000107";
@@ -145,6 +147,8 @@ d("freshness, aggregates, and creator fit", () => {
     await hotel(EMERGE, "Emerging Fit", CANGGU);
     await hotel(THIN, "Thin Type", CANGGU);
     await hotel(TWO, "Two Creators", CANGGU);
+    await hotel(LEAK, "Caller Counted", CANGGU);
+    await hotel(OPEN, "Three Others", CANGGU);
     await hotel(OLDER, "Older Activity", BALI);
     await hotel(SPLIT, "Split Window", BALI);
     await hotel(PERSONAL, "Personal Hotel", BALI);
@@ -196,6 +200,43 @@ d("freshness, aggregates, and creator fit", () => {
       at: now,
       value: { collaboration_type: "stay" },
     });
+    await samples(LEAK, 2, now, [C1, C2, PRO]);
+    await samples(OPEN, 2, now, [C1, C2, C3]);
+    for (const userId of [C1, C2, PRO]) {
+      await fact({
+        userId,
+        hotelId: LEAK,
+        factType: "collaboration_type_observed",
+        at: now,
+        value: { collaboration_type: "stay" },
+      });
+    }
+    await fact({
+      userId: PRO,
+      hotelId: LEAK,
+      factType: "collaboration_type_observed",
+      at: now,
+      value: { collaboration_type: "stay" },
+    });
+    await fact({
+      userId: C3,
+      hotelId: LEAK,
+      factType: "collaboration_type_observed",
+      at: now,
+      value: { collaboration_type: "stay" },
+      dismissed: true,
+      eligible: false,
+      sample: false,
+    });
+    for (const userId of [C1, C2, C3, PRO]) {
+      await fact({
+        userId,
+        hotelId: OPEN,
+        factType: "collaboration_type_observed",
+        at: now,
+        value: { collaboration_type: "stay" },
+      });
+    }
     await fact({
       userId: PRO,
       hotelId: HOME_PRO,
@@ -402,19 +443,44 @@ d("freshness, aggregates, and creator fit", () => {
     const maxHotels = max!.body.hotels as Array<Record<string, unknown>>;
     expect(pro!.body).toMatchObject({ detailed: false, prior_applied: false, prior_reason: "no_proven_lift" });
     expect(max!.body.detailed).toBe(true);
-    expect(proHotels.map((hotel) => hotel.hotel_id)).toEqual([HIGH, MID, EMERGE]);
-    expect(maxHotels.map((hotel) => hotel.hotel_id)).toEqual([HIGH, MID, EMERGE]);
+    expect(proHotels.map((hotel) => hotel.hotel_id)).toEqual([HIGH, MID, EMERGE, OPEN]);
+    expect(maxHotels.map((hotel) => hotel.hotel_id)).toEqual([HIGH, MID, EMERGE, LEAK, OPEN]);
     expect(proHotels[0]).not.toHaveProperty("rank");
     expect(proHotels[0]).not.toHaveProperty("confidence_level");
-    expect(maxHotels.map((hotel) => hotel.rank)).toEqual([1, 2, 3]);
+    expect(maxHotels.map((hotel) => hotel.rank)).toEqual([1, 2, 3, 4, 5]);
     expect(maxHotels[0]).toMatchObject({ confidence_level: "strong", freshness_band: "past_month" });
     expect(maxHotels[2]).toMatchObject({ confidence_level: "emerging", freshness_band: null });
     expect(JSON.stringify(pro!.body)).not.toContain(C1);
+    expect(JSON.stringify(pro!.body)).not.toContain(PRO);
     expect(proHotels.some((hotel) => hotel.hotel_id === THIN)).toBe(false);
+    expect(proHotels.some((hotel) => hotel.hotel_id === LEAK)).toBe(false);
+    expect(maxHotels.find((hotel) => hotel.hotel_id === LEAK)).toMatchObject({ matched_type: "stay" });
+    expect(proHotels.find((hotel) => hotel.hotel_id === OPEN)).toMatchObject({ matched_type: "stay" });
 
     const [pass] = await call(PASS_BALI, "public.read_creator_fit", [CANGGU]);
     const passHotels = pass!.body.hotels as Array<Record<string, unknown>>;
-    expect(passHotels.map((hotel) => hotel.hotel_id)).toEqual([HIGH, MID, EMERGE]);
+    expect(passHotels.map((hotel) => hotel.hotel_id)).toEqual([HIGH, MID, EMERGE, LEAK, OPEN]);
+  });
+
+  it("does not let the caller complete the three-creator type floor", async () => {
+    const [pro] = await call(PRO, "public.read_creator_fit", [BALI]);
+    const proIds = (pro!.body.hotels as Array<Record<string, unknown>>).map((hotel) => hotel.hotel_id);
+    expect(proIds).not.toContain(LEAK);
+    expect(proIds).toContain(OPEN);
+
+    const [max] = await call(MAX, "public.read_creator_fit", [BALI]);
+    const maxIds = (max!.body.hotels as Array<Record<string, unknown>>).map((hotel) => hotel.hotel_id);
+    expect(maxIds).toContain(LEAK);
+    expect(maxIds.indexOf(HIGH)).toBeLessThan(maxIds.indexOf(LEAK));
+    expect(maxIds.indexOf(LEAK)).toBeLessThan(maxIds.indexOf(OPEN));
+
+    const [hidden] = await call(PRO, "public.record_creator_fit_decision", [LEAK, "pursue"]);
+    expect(hidden!.body).toEqual({ result: "not_visible" });
+    const saved = await adminQuery<{ n: number }>(
+      "select count(*)::integer as n from private.creator_fit_decisions where hotel_id = $1",
+      [LEAK],
+    );
+    expect(saved[0]?.n).toBe(0);
   });
 
   it("stores a fit decision for the caller and leaves the aggregate alone", async () => {

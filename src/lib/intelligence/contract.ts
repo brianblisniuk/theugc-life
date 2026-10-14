@@ -39,7 +39,7 @@ export const FIT_LOCKED_COPY = {
 } as const;
 
 export const FIT_EMPTY_COPY =
-  "No hotel here matches a collaboration type you have confirmed. A type needs three creators before it can match, and hotels below the activity floor stay off the list.";
+  "No hotel here matches a collaboration type you have confirmed. A type needs three other creators before it can match, and hotels below the activity floor stay off the list.";
 
 export const CONFIDENCE_LABELS: Record<ConfidenceLevel, string> = {
   emerging: "Emerging",

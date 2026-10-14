@@ -314,7 +314,8 @@ These reads sit beside H01. They do not grant `hotel_intelligence` or
   only when the caller is entitled.
 - `read_own_personal_aggregate` and `read_own_fit_decision` — the caller only.
 - `read_creator_fit` — Premium Intelligence. A locked result has no `hotels`
-  key. Max adds detail fields. The order is the public activity rank.
+  key. A type matches only after three creators other than the caller confirm
+  it. Max adds detail fields. The order is the public activity rank.
 
 `private.creator_fit_decisions`, `private.hotel_metric_freshness`, and
 `private.hotel_confirmed_types` have no client grant. RLS is enabled on the

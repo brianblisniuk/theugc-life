@@ -124,7 +124,7 @@ function FitBlock({
     <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6" data-testid="creator-fit">
       <h3 className="text-base font-semibold text-text">Fit for you</h3>
       <p className="max-w-prose text-sm text-muted">
-        A hotel fits when you have confirmed that collaboration type and at least three creators confirmed it there.
+        A hotel fits when you have confirmed that collaboration type and at least three other creators confirmed it there.
         The order is creator activity, then hotel id. No prior is applied.
       </p>
       {fit.hotels.length === 0 ? (

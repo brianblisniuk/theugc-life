@@ -4,7 +4,7 @@
 **Base:** `main` `bf756686bf359c22723b5628fa4446bee2af0302` (merge of PR #81).
 **Branch:** `cursor/c02-c05-freshness-fit-dc8e`.
 **PR:** #83. Do not merge.
-**Migrations:** `0084`, `0085`, `0086`, `0087`. `0081`–`0083` are not these files.
+**Migrations:** `0084`, `0085`, `0086`, `0087`. `0081` is not this file. `0082` and `0083` are reserved for D03.
 **Decisions:** D146–D150.
 
 One PR for the extension of C02, C03, C04, and C05. D099, H01, and F03 stay in place.
@@ -22,7 +22,7 @@ Canon v1.1. D012, D050, D058, D099, D120, D130, D133. PRD §12.8. The H01 reads 
 - Confidence and freshness beside an available H01 metric.
 - The caller's own manual and Gmail counts.
 - A network read that is insufficient, with no other keys, below three creators.
-- Creator fit ordered by public activity, then hotel id. Prior not applied.
+- Creator fit ordered by public activity, then hotel id. A type needs three creators other than the caller. Prior not applied.
 - Max detail fields on that list. Pursue and skip for a hotel already on it.
 - RLS, revoked grants, and security-definer functions with an empty search path.
 
