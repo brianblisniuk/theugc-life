@@ -840,7 +840,7 @@ slice. An annual refund ends the plan. A pack refund reverses unused
 credits only. A chargeback still revokes the subscription. Attaching a
 payment link is service-role only.
 
-**P03b refund ledger fix** is a draft on `cursor/p03b-refund-ledger-fix`.
+**P03b refund ledger fix** is draft PR #82 on `cursor/p03b-refund-ledger-fix`.
 Migration `0081_refund_ledger_fix.sql`. A reversal reduces the grant it
 names, so a refunded pack does not return on the next period. A chargeback
 after a refund still revokes the subscription. `expected_head` stays null.

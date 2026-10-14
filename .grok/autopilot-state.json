@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is bf756686bf359c22723b5628fa4446bee2af0302 (PR #81, P03 refund policy, D140, migration 0080). P03b refund ledger fix is a draft on cursor/p03b-refund-ledger-fix. Migration 0081. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is bf756686bf359c22723b5628fa4446bee2af0302 (PR #81, P03 refund policy, D140, migration 0080). P03b refund ledger fix is draft PR #82 on cursor/p03b-refund-ledger-fix. Migration 0081. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "bf756686bf359c22723b5628fa4446bee2af0302",
   "active_block": "P03b refund ledger fix",
   "branch": "cursor/p03b-refund-ledger-fix",
-  "pr": null,
+  "pr": 82,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -22,5 +22,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "P03b refund ledger fix is a draft on cursor/p03b-refund-ledger-fix. AWAITING_AUDIT. Migration 0081. P03 is merged (PR #81). expected_head stays null. Do not merge."
+  "next_dependency": "PR #82 is P03b refund ledger fix on cursor/p03b-refund-ledger-fix. AWAITING_AUDIT. Migration 0081. P03 is merged (PR #81). expected_head stays null. Do not merge."
 }
