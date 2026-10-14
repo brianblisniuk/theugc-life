@@ -840,12 +840,18 @@ order files are not edited.
 the Rebill signature and confirms the payment before writing an entitlement.
 Live charges stay off unless `REBILL_LIVE=true`.
 
-**P03 refund policy and P02 hardening** is draft PR #81 on
-`cursor/p03-refund-policy-9f5b`. D140. Migration `0080_refund_policy.sql`.
-A monthly refund removes that payment's 30-day slice. An annual refund ends
-the plan. A pack refund reverses unused credits only. A chargeback still
-revokes the subscription. Attaching a payment link is service-role only.
-`expected_head` stays null. Do not merge.
+**P03 refund policy and P02 hardening** is merged as PR #81, merge
+`bf756686bf359c22723b5628fa4446bee2af0302`. D140. Migration
+`0080_refund_policy.sql`. A monthly refund removes that payment's 30-day
+slice. An annual refund ends the plan. A pack refund reverses unused
+credits only. A chargeback still revokes the subscription. Attaching a
+payment link is service-role only.
+
+**P03b refund ledger fix** is merged as PR #82, merge
+`4c8eecde65cc537e71131914343751207d2d7f6d`. Migration
+`0081_refund_ledger_fix.sql`. A reversal reduces the grant it names, so a
+refunded pack does not return on the next period. A chargeback after a
+refund still revokes the subscription.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

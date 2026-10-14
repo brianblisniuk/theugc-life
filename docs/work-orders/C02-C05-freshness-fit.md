@@ -1,10 +1,10 @@
 # C02–C05 — Freshness, aggregates, and creator fit
 
 **Status:** Binding work order for this PR. Awaiting CI. Do not merge.
-**Base:** `main` `bf756686bf359c22723b5628fa4446bee2af0302` (merge of PR #81).
+**Base:** `main` `4c8eecde65cc537e71131914343751207d2d7f6d` (merge of PR #82).
 **Branch:** `cursor/c02-c05-freshness-fit-dc8e`.
 **PR:** #83. Do not merge.
-**Migrations:** `0084`, `0085`, `0086`, `0087`. `0081` is not this file. `0082` and `0083` are reserved for D03.
+**Migrations:** `0084`, `0085`, `0086`, `0087`. `0081` is the merged P03b refund ledger fix and is not edited here. `0082` and `0083` are reserved for D03.
 **Decisions:** D146–D150.
 
 One PR for the extension of C02, C03, C04, and C05. D099, H01, and F03 stay in place.

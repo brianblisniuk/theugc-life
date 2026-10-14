@@ -37,6 +37,16 @@ const GAP = "d140b000-0000-4000-8000-000000000002";
 const YEAR = "d140c000-0000-4000-8000-000000000003";
 const PACKCB = "d140d000-0000-4000-8000-000000000004";
 const WEEKLY = "d140e000-0000-4000-8000-000000000005";
+const LEAK = "d141a000-0000-4000-8000-000000000001";
+const LEAKCB = "d141b000-0000-4000-8000-000000000002";
+const PACKS = "d141c000-0000-4000-8000-000000000003";
+const WEEKEX = "d141d000-0000-4000-8000-000000000004";
+const AFTER = "d141e000-0000-4000-8000-000000000005";
+const KEEP = "d141f000-0000-4000-8000-000000000006";
+const RENEW = "d141aa00-0000-4000-8000-000000000007";
+const MID = "d141ab00-0000-4000-8000-000000000008";
+const LEGACY = "d141ac00-0000-4000-8000-000000000009";
+const STAY = "d141ad00-0000-4000-8000-00000000000a";
 
 async function makeUser(id: string) {
   await adminQuery("insert into auth.users (id, email) values ($1, $2)", [id, `${id}@rebill.test`]);
@@ -138,7 +148,10 @@ async function entitlement(userId: string): Promise<Entitlement | undefined> {
 d("rebill apply", () => {
   beforeAll(async () => {
     await setupDatabase();
-    for (const id of [A, B, ANNUAL, PACK, REFUND, UPGRADE, DOWN, LAPSE, SLICE, GAP, YEAR, PACKCB, WEEKLY]) {
+    for (const id of [
+      A, B, ANNUAL, PACK, REFUND, UPGRADE, DOWN, LAPSE, SLICE, GAP, YEAR, PACKCB, WEEKLY,
+      LEAK, LEAKCB, PACKS, WEEKEX, AFTER, KEEP, RENEW, MID, LEGACY, STAY,
+    ]) {
       await makeUser(id);
     }
   }, 120_000);
@@ -910,5 +923,499 @@ d("rebill apply", () => {
       "select status from public.subscriptions where provider_subscription_id = 'sub_weekly'",
     );
     expect(sub[0]?.status).toBe("expired");
+  });
+
+  it("does not restore a refunded pack on the next plan period", async () => {
+    const pro = await checkout(LEAK, "pro_monthly", "pl_leakpro");
+    expect(
+      await apply(
+        payment({
+          logId: "log_leak_pro",
+          paymentId: "pay_leakpro",
+          status: "approved",
+          amount: pro.amount,
+          checkoutId: pro.id,
+          linkId: "pl_leakpro",
+          subscriptionId: "sub_leakpro",
+        }),
+      ),
+    ).toBe("applied");
+    const pack = await checkout(LEAK, "pack_50", "pl_leakpack");
+    expect(
+      await apply(
+        payment({
+          logId: "log_leak_pack",
+          paymentId: "pay_leakpack",
+          status: "approved",
+          amount: 10,
+          checkoutId: pack.id,
+          linkId: "pl_leakpack",
+        }),
+      ),
+    ).toBe("applied");
+    expect(await balanceOf(LEAK)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro + 50,
+    );
+    expect(
+      await apply({
+        logId: "log_leak_refund",
+        event: "payment.updated",
+        payment: { id: "pay_leakpack", status: "refunded", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(LEAK)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro,
+    );
+    const ent = await entitlement(LEAK);
+    await adminQuery(
+      "update public.access_entitlements set starts_at = now() - interval '31 days' where id = $1",
+      [ent!.id],
+    );
+    await adminQuery("select public.ensure_credit_grants($1)", [LEAK]);
+    expect(await balanceOf(LEAK)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro,
+    );
+    expect(await planGrants(LEAK)).toBe(2);
+  });
+
+  it("does not restore a pack chargeback on the next plan period", async () => {
+    const pro = await checkout(LEAKCB, "pro_monthly", "pl_leakcb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_leakcb_pro",
+          paymentId: "pay_leakcb",
+          status: "approved",
+          amount: pro.amount,
+          checkoutId: pro.id,
+          linkId: "pl_leakcb",
+          subscriptionId: "sub_leakcb",
+        }),
+      ),
+    ).toBe("applied");
+    const pack = await checkout(LEAKCB, "pack_50", "pl_leakcbp");
+    expect(
+      await apply(
+        payment({
+          logId: "log_leakcb_pack",
+          paymentId: "pay_leakpk",
+          status: "approved",
+          amount: 10,
+          checkoutId: pack.id,
+          linkId: "pl_leakcbp",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_leakcb_dispute",
+        event: "payment.updated",
+        payment: { id: "pay_leakpk", status: "chargeback", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(LEAKCB)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro,
+    );
+    const ent = await entitlement(LEAKCB);
+    await adminQuery(
+      "update public.access_entitlements set starts_at = now() - interval '31 days' where id = $1",
+      [ent!.id],
+    );
+    await adminQuery("select public.ensure_credit_grants($1)", [LEAKCB]);
+    expect(await balanceOf(LEAKCB)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro,
+    );
+  });
+
+  it("refunds two unused packs down to the weekly balance", async () => {
+    const first = await checkout(PACKS, "pack_50", "pl_twopaka");
+    expect(
+      await apply(
+        payment({
+          logId: "log_twopaka",
+          paymentId: "pay_twopaka",
+          status: "approved",
+          amount: 10,
+          checkoutId: first.id,
+          linkId: "pl_twopaka",
+        }),
+      ),
+    ).toBe("applied");
+    const second = await checkout(PACKS, "pack_50", "pl_twopakb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_twopakb",
+          paymentId: "pay_twopakb",
+          status: "approved",
+          amount: 10,
+          checkoutId: second.id,
+          linkId: "pl_twopakb",
+        }),
+      ),
+    ).toBe("applied");
+    expect(await balanceOf(PACKS)).toBe(CREDITS_CONFIG.freeWeeklyCredits + 100);
+    expect(
+      await apply({
+        logId: "log_twopakb_refund",
+        event: "payment.updated",
+        payment: { id: "pay_twopakb", status: "refunded", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(PACKS)).toBe(CREDITS_CONFIG.freeWeeklyCredits + 50);
+    expect(
+      await apply({
+        logId: "log_twopaka_refund",
+        event: "payment.updated",
+        payment: { id: "pay_twopaka", status: "refunded", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(PACKS)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+  });
+
+  it("expires the full weekly grant after a pack refund", async () => {
+    await adminQuery(
+      "update public.users set created_at = now() - interval '8 days' where id = $1",
+      [WEEKEX],
+    );
+    const pack = await checkout(WEEKEX, "pack_50", "pl_weekex");
+    expect(
+      await apply(
+        payment({
+          logId: "log_weekex",
+          paymentId: "pay_weekex",
+          status: "approved",
+          amount: 10,
+          checkoutId: pack.id,
+          linkId: "pl_weekex",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_weekex_refund",
+        event: "payment.updated",
+        payment: { id: "pay_weekex", status: "refunded", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(WEEKEX)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    await adminQuery("select public.ensure_credit_grants($1)", [WEEKEX]);
+    expect(await balanceOf(WEEKEX)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    const next = await adminQuery<{ n: number }>(
+      `select count(*)::int as n from public.credit_ledger
+        where user_id = $1 and idempotency_key = 'free_weekly:1' and delta > 0`,
+      [WEEKEX],
+    );
+    expect(next[0]?.n).toBe(1);
+  });
+
+  it("revokes the subscription when a chargeback follows a refund", async () => {
+    const row = await checkout(AFTER, "pro_monthly", "pl_after");
+    expect(
+      await apply(
+        payment({
+          logId: "log_after_pay",
+          paymentId: "pay_after1",
+          status: "approved",
+          amount: row.amount,
+          checkoutId: row.id,
+          linkId: "pl_after",
+          subscriptionId: "sub_after",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_after_refund",
+        event: "payment.updated",
+        payment: { id: "pay_after1", status: "refunded", amount: row.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(
+      await apply({
+        logId: "log_after_dispute",
+        event: "payment.updated",
+        payment: { id: "pay_after1", status: "chargeback", amount: row.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const ent = await entitlement(AFTER);
+    expect(ent?.status).toBe("revoked");
+    const active = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [
+      AFTER,
+    ]);
+    expect(active[0]?.v).toBe(false);
+    const sub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_after'",
+    );
+    expect(sub[0]?.status).toBe("canceled");
+  });
+
+  it("does not reopen access a chargeback revoked or a cancel closed", async () => {
+    const first = await checkout(KEEP, "pro_monthly", "pl_keepa");
+    expect(
+      await apply(
+        payment({
+          logId: "log_keep1",
+          paymentId: "pay_keepa",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_keepa",
+          subscriptionId: "sub_keep",
+        }),
+      ),
+    ).toBe("applied");
+    const second = await checkout(KEEP, "pro_monthly", "pl_keepb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_keep2",
+          paymentId: "pay_keepb",
+          status: "approved",
+          amount: second.amount,
+          checkoutId: second.id,
+          linkId: "pl_keepb",
+          subscriptionId: "sub_keep",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_keep_dispute",
+        event: "payment.updated",
+        payment: { id: "pay_keepa", status: "chargeback", amount: first.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(
+      await apply({
+        logId: "log_keep_refund",
+        event: "payment.updated",
+        payment: { id: "pay_keepb", status: "refunded", amount: second.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const kept = await entitlement(KEEP);
+    expect(kept?.status).toBe("revoked");
+    const active = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [
+      KEEP,
+    ]);
+    expect(active[0]?.v).toBe(false);
+    const sub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_keep'",
+    );
+    expect(sub[0]?.status).toBe("canceled");
+
+    const stay1 = await checkout(STAY, "pro_monthly", "pl_staya");
+    expect(
+      await apply(
+        payment({
+          logId: "log_stay1",
+          paymentId: "pay_staya",
+          status: "approved",
+          amount: stay1.amount,
+          checkoutId: stay1.id,
+          linkId: "pl_staya",
+          subscriptionId: "sub_stay",
+        }),
+      ),
+    ).toBe("applied");
+    const stay2 = await checkout(STAY, "pro_monthly", "pl_stayb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_stay2",
+          paymentId: "pay_stayb",
+          status: "approved",
+          amount: stay2.amount,
+          checkoutId: stay2.id,
+          linkId: "pl_stayb",
+          subscriptionId: "sub_stay",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_stay_cancel",
+        event: "subscription.updated",
+        subscription: { id: "sub_stay", status: "cancelled", statusDetail: null },
+      }),
+    ).toBe("subscription_updated");
+    expect(
+      await apply({
+        logId: "log_stay_refund",
+        event: "payment.updated",
+        payment: { id: "pay_stayb", status: "refunded", amount: stay2.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const stayEnt = await entitlement(STAY);
+    expect(stayEnt?.status).toBe("active");
+    const staySpan = stayEnt!.expires_at!.getTime() - stayEnt!.starts_at.getTime();
+    expect(staySpan).toBeGreaterThan(28 * 86400_000);
+    expect(staySpan).toBeLessThan(32 * 86400_000);
+    const staySub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_stay'",
+    );
+    expect(staySub[0]?.status).toBe("canceled");
+  });
+
+  it("links an early renewal to the next period grant", async () => {
+    const first = await checkout(RENEW, "pro_monthly", "pl_renewa");
+    expect(
+      await apply(
+        payment({
+          logId: "log_renew1",
+          paymentId: "pay_renewa",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_renewa",
+          subscriptionId: "sub_renew",
+        }),
+      ),
+    ).toBe("applied");
+    const second = await checkout(RENEW, "pro_monthly", "pl_renewb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_renew2",
+          paymentId: "pay_renewb",
+          status: "approved",
+          amount: second.amount,
+          checkoutId: second.id,
+          linkId: "pl_renewb",
+          subscriptionId: "sub_renew",
+        }),
+      ),
+    ).toBe("applied");
+    const keys = await adminQuery<{ payment_id: string; grant_key: string }>(
+      `select payment_id, grant_key
+         from public.rebill_payment_effects
+        where user_id = $1
+        order by created_at, payment_id`,
+      [RENEW],
+    );
+    expect(keys[0]?.grant_key.endsWith(":0")).toBe(true);
+    expect(keys[1]?.grant_key.endsWith(":1")).toBe(true);
+    expect(keys[0]?.grant_key).not.toBe(keys[1]?.grant_key);
+    await adminQuery(
+      `insert into public.credit_ledger (user_id, delta, reason, idempotency_key)
+       values ($1, $2, 'plan_grant', $3)`,
+      [RENEW, CREDITS_CONFIG.planMonthlyCredits.pro, keys[1]!.grant_key],
+    );
+    expect(await balanceOf(RENEW)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro * 2,
+    );
+    expect(
+      await apply({
+        logId: "log_renew_refund",
+        event: "payment.updated",
+        payment: { id: "pay_renewb", status: "refunded", amount: second.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(RENEW)).toBe(
+      CREDITS_CONFIG.freeWeeklyCredits + CREDITS_CONFIG.planMonthlyCredits.pro,
+    );
+    const kept = await adminQuery<{ effect: string }>(
+      "select effect from public.rebill_payment_effects where payment_id = 'pay_renewa'",
+    );
+    expect(kept[0]?.effect).toBe("granted");
+    const ent = await entitlement(RENEW);
+    const span = ent!.expires_at!.getTime() - ent!.starts_at.getTime();
+    expect(span).toBeGreaterThan(28 * 86400_000);
+    expect(span).toBeLessThan(32 * 86400_000);
+  });
+
+  it("shortens a middle prepaid slice without dropping the later one", async () => {
+    const amounts: number[] = [];
+    for (const [n, link, pay] of [
+      ["1", "pl_mida", "pay_mida"],
+      ["2", "pl_midb", "pay_midb"],
+      ["3", "pl_midc", "pay_midc"],
+    ] as const) {
+      const row = await checkout(MID, "pro_monthly", link);
+      amounts.push(row.amount);
+      expect(
+        await apply(
+          payment({
+            logId: `log_mid${n}`,
+            paymentId: pay,
+            status: "approved",
+            amount: row.amount,
+            checkoutId: row.id,
+            linkId: link,
+            subscriptionId: "sub_mid",
+          }),
+        ),
+      ).toBe("applied");
+    }
+    const before = await entitlement(MID);
+    const beforeSpan = before!.expires_at!.getTime() - before!.starts_at.getTime();
+    expect(beforeSpan).toBeGreaterThan(88 * 86400_000);
+    const paid = await balanceOf(MID);
+    expect(
+      await apply({
+        logId: "log_mid_refund",
+        event: "payment.updated",
+        payment: { id: "pay_midb", status: "partially_refunded", amount: amounts[1], currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const after = await entitlement(MID);
+    expect(after?.status).toBe("active");
+    const afterSpan = after!.expires_at!.getTime() - after!.starts_at.getTime();
+    expect(afterSpan).toBeGreaterThan(58 * 86400_000);
+    expect(afterSpan).toBeLessThan(62 * 86400_000);
+    const pro = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [MID]);
+    expect(pro[0]?.v).toBe(true);
+    expect(await balanceOf(MID)).toBe(paid);
+    const third = await adminQuery<{ effect: string }>(
+      "select effect from public.rebill_payment_effects where payment_id = 'pay_midc'",
+    );
+    expect(third[0]?.effect).toBe("granted");
+  });
+
+  it("ends a pre-slice payment without reopening a canceled subscription", async () => {
+    const row = await checkout(LEGACY, "pro_monthly", "pl_legacy");
+    expect(
+      await apply(
+        payment({
+          logId: "log_legacy_pay",
+          paymentId: "pay_legacy",
+          status: "approved",
+          amount: row.amount,
+          checkoutId: row.id,
+          linkId: "pl_legacy",
+          subscriptionId: "sub_legacy",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_legacy_cancel",
+        event: "subscription.updated",
+        subscription: { id: "sub_legacy", status: "cancelled", statusDetail: null },
+      }),
+    ).toBe("subscription_updated");
+    await adminQuery(
+      `update public.rebill_payment_effects
+          set grant_key = null, slice_start = null, slice_end = null
+        where payment_id = 'pay_legacy'`,
+    );
+    expect(
+      await apply({
+        logId: "log_legacy_refund",
+        event: "payment.updated",
+        payment: { id: "pay_legacy", status: "refunded", amount: row.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const ent = await entitlement(LEGACY);
+    expect(ent?.status).toBe("expired");
+    const active = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [
+      LEGACY,
+    ]);
+    expect(active[0]?.v).toBe(false);
+    expect(await balanceOf(LEGACY)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    const sub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_legacy'",
+    );
+    expect(sub[0]?.status).toBe("canceled");
   });
 });
