@@ -75,7 +75,7 @@ export interface ComposeDeps {
     | "rate_limited"
     | "paused"
     | "not_unlocked"
-    | { status: "reserved"; warning?: "budget_80" }
+    | { status: "reserved" | "already_reserved"; warning?: "budget_80"; weight: number }
     | "error"
   >;
   finish: (input: {
@@ -120,7 +120,6 @@ function tierOf(priority: boolean): AssistantTier {
 export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   if (!deps.fullAi) return { status: "templates_only" };
   if (deps.balance === null) return { status: "error" };
-  if (deps.balance < CREDITS_CONFIG.aiDraftCost) return { status: "out_of_credits" };
 
   if (!deps.apiKey) return { status: "paused" };
   if (!deps.hotelId || !deps.brief) return { status: "invalid_input" };
@@ -146,11 +145,30 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   });
   const preparedStatus = typeof prepared === "string" ? prepared : prepared.status;
   const warning = typeof prepared === "string" ? undefined : prepared.warning;
+  const weight =
+    typeof prepared === "object" && typeof prepared.weight === "number" ? prepared.weight : 1;
   if (preparedStatus === "rate_limited") return { status: "rate_limited" };
   if (preparedStatus === "paused") return { status: "paused" };
   if (preparedStatus === "budget") return { status: "monthly_limit" };
   if (preparedStatus === "not_unlocked") return { status: "not_unlocked" };
   if (preparedStatus === "error") return { status: "error" };
+  if (preparedStatus !== "reserved" && preparedStatus !== "already_reserved") {
+    return { status: "error" };
+  }
+
+  if (weight > 0 && deps.balance < CREDITS_CONFIG.aiDraftCost) {
+    await deps.finish({
+      requestId,
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      costMicros: 0,
+      status: "rejected",
+      poolFloorMicros: poolFloorMicros(),
+      poolPercentBps: poolPercentBps(),
+    });
+    return { status: "out_of_credits", requestId };
+  }
 
   const complete = deps.complete ?? completeClaude;
   let result: ClaudeResult;
@@ -203,6 +221,9 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
 
   if (!result.ok || !draft) return { status: "error", requestId };
   if (!onTopic) return { status: "off_topic", requestId };
+  if (weight === 0) {
+    return { status: "drafted", subject: draft.subject, body: draft.body, requestId, warning };
+  }
 
   const charged = await deps.charge(`ai_draft:${requestId}`);
   if (charged === "out_of_credits") return { status: "out_of_credits", requestId };

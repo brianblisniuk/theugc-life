@@ -560,6 +560,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "gmail_send_fail",
       "gmail_send_claim_due",
       "gmail_send_record_bounce",
+      "gmail_send_record_thread_bounces",
     ],
     rule: { kind: "paid_worldwide" },
     anon: "deny",

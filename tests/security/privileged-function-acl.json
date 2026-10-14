@@ -2161,6 +2161,26 @@
   },
   {
     "schema": "public",
+    "name": "gmail_send_record_thread_bounces",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_provider_thread_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_consumer_domain",
+    "args": "p_domain text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "admin_unpause_sends",
     "args": "p_user_id uuid",
     "searchPath": "\"\"",

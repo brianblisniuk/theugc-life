@@ -253,7 +253,9 @@ export function PitchComposer({
           <p className="max-w-prose text-sm text-text">
             Draft with AI from your profile, this hotel, and your pipeline.
             {assistant.priority ? " Priority AI uses a fuller note." : ""} Choose a tone, a language,
-            and the points to include. This uses {creditLabel} and does not send the email.
+            and the points to include. The first draft for a hotel uses {creditLabel}. The next three
+            drafts for that hotel this month do not. Later drafts use {creditLabel}. This does not send
+            the email.
           </p>
           <label className="block space-y-1 text-xs font-medium text-muted">
             Tone

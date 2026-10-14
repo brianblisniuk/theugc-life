@@ -70,6 +70,39 @@ revoke all on private.gmail_send_schedule from public, anon, authenticated, serv
 revoke all on private.gmail_send_pauses from public, anon, authenticated, service_role;
 revoke all on private.gmail_send_bounces from public, anon, authenticated, service_role;
 
+create function public.gmail_send_consumer_domain(p_domain text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(lower(btrim(p_domain)), '') in (
+      'gmail.com', 'googlemail.com',
+      'icloud.com', 'me.com', 'mac.com',
+      'aol.com', 'aim.com',
+      'proton.me', 'protonmail.com', 'pm.me',
+      'mail.ru', 'inbox.ru', 'bk.ru', 'list.ru',
+      'qq.com', 'foxmail.com', '163.com', '126.com', '188.com', 'yeah.net',
+      'ymail.com', 'rocketmail.com',
+      'msn.com', 'mail.com', 'email.com',
+      'naver.com', 'daum.net', 'hanmail.net'
+    )
+    or coalesce(lower(btrim(p_domain)), '') like 'hotmail.%'
+    or coalesce(lower(btrim(p_domain)), '') like 'outlook.%'
+    or coalesce(lower(btrim(p_domain)), '') like 'live.%'
+    or coalesce(lower(btrim(p_domain)), '') like 'yahoo.%'
+    or coalesce(lower(btrim(p_domain)), '') like 'gmx.%'
+    or coalesce(lower(btrim(p_domain)), '') like 'yandex.%';
+$$;
+
+comment on function public.gmail_send_consumer_domain(text) is
+  'D166. Fixed consumer and free-mail domains. A same-domain pitch recipient is allowed only when the hotel contact is not on this list.';
+
+revoke all on function public.gmail_send_consumer_domain(text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.gmail_send_consumer_domain(text) to service_role;
+
 create or replace function public.gmail_send_reserve(
   p_user_id uuid,
   p_mail_account_id uuid,
@@ -293,7 +326,10 @@ begin
        and position('@' in c.email) > 0
        and (
          lower(btrim(c.email)) = lower(p_recipient)
-         or lower(split_part(btrim(c.email), '@', 2)) = lower(split_part(p_recipient, '@', 2))
+         or (
+           lower(split_part(btrim(c.email), '@', 2)) = lower(split_part(p_recipient, '@', 2))
+           and not public.gmail_send_consumer_domain(lower(split_part(btrim(c.email), '@', 2)))
+         )
        )
        and char_length(split_part(p_recipient, '@', 2)) > 0
   ) then
@@ -374,7 +410,7 @@ $$;
 
 
 comment on function public.gmail_send_reserve(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid, text) is
-  'D157 and D168. Service role only. A new pitch is queued. The same key does not call Gmail. A hotel recipient must match a contact or that contact''s domain.';
+  'D157 and D168. Service role only. A new pitch is queued. The same key does not call Gmail. A hotel recipient must match a contact exactly, or that contact''s domain when the domain is not a consumer mailbox.';
 
 drop function if exists public.gmail_send_mark_provider(uuid, uuid, integer);
 
@@ -609,6 +645,12 @@ begin
   if v_max < 1 then v_max := 300; end if;
   if v_max > 600 then v_max := 600; end if;
 
+  update private.gmail_send_attempts
+     set status = 'unknown',
+         updated_at = p_now
+   where status = 'reserved'
+     and updated_at < p_now - interval '15 minutes';
+
   for v_user in
     select a.user_id
       from private.gmail_send_attempts a
@@ -749,7 +791,7 @@ end;
 $$;
 
 comment on function public.gmail_send_claim_due(timestamptz, integer, integer, integer, integer) is
-  'D168. Service role only. Claims at most one queued send per creator inside local 09:00–18:00. Does not call Gmail.';
+  'D168. Service role only. Claims at most one queued send per creator inside local 09:00–18:00. A reserved attempt older than 15 minutes becomes unknown and is not claimed again. Does not call Gmail.';
 
 revoke all on function public.gmail_send_claim_due(timestamptz, integer, integer, integer, integer)
   from public, anon, authenticated, service_role;
@@ -803,7 +845,7 @@ begin
     into v_total, v_bounced
     from recent;
 
-  if v_total >= 20 and v_bounced * 100 > v_total * 5 then
+  if v_bounced >= 3 or (v_total >= 10 and v_bounced * 100 > v_total * 5) then
     insert into private.gmail_send_pauses (user_id, reason)
     values (p_user_id, 'bounce_rate')
     on conflict (user_id) do update
@@ -820,11 +862,63 @@ end;
 $$;
 
 comment on function public.gmail_send_record_bounce(uuid, uuid) is
-  'D169. Service role only. Records a bounce. More than 5 percent of the last 20 sends in 30 days pauses sends for that creator only.';
+  'D169. Service role only. Records one bounce per attempt. The last 20 sends in 30 days pause that creator when 3 or more bounced, or when 10 or more were sent and more than 5 percent bounced. AI is not paused.';
 
 revoke all on function public.gmail_send_record_bounce(uuid, uuid)
   from public, anon, authenticated, service_role;
 grant execute on function public.gmail_send_record_bounce(uuid, uuid) to service_role;
+
+create function public.gmail_send_record_thread_bounces(
+  p_user_id uuid,
+  p_mail_account_id uuid,
+  p_provider_thread_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_attempt uuid;
+  v_recorded integer := 0;
+  v_result jsonb := jsonb_build_object('result', 'not_found', 'recorded', 0);
+begin
+  if p_user_id is null
+     or p_mail_account_id is null
+     or p_provider_thread_id is null
+     or char_length(btrim(p_provider_thread_id)) = 0 then
+    return v_result;
+  end if;
+
+  for v_attempt in
+    select a.id
+      from private.gmail_sent_events e
+      join private.gmail_send_attempts a on a.id = e.attempt_id
+     where e.user_id = p_user_id
+       and e.mail_account_id = p_mail_account_id
+       and e.provider_thread_id = btrim(p_provider_thread_id)
+       and a.user_id = p_user_id
+       and a.status = 'sent'
+     order by a.provider_started_at, a.id
+  loop
+    v_result := public.gmail_send_record_bounce(p_user_id, v_attempt);
+    v_recorded := v_recorded + 1;
+  end loop;
+
+  if v_recorded = 0 then
+    return jsonb_build_object('result', 'not_found', 'recorded', 0);
+  end if;
+
+  return v_result || jsonb_build_object('recorded', v_recorded);
+end;
+$$;
+
+comment on function public.gmail_send_record_thread_bounces(uuid, uuid, text) is
+  'D169. Service role only. A delivery-status message on a thread that has a sent event records one bounce per sent attempt. A second call does not insert another bounce.';
+
+revoke all on function public.gmail_send_record_thread_bounces(uuid, uuid, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.gmail_send_record_thread_bounces(uuid, uuid, text) to service_role;
 
 create or replace function public.admin_unpause_sends(p_user_id uuid)
 returns jsonb

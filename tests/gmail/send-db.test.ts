@@ -250,12 +250,14 @@ d("D04 Gmail send", () => {
       "gmail_send_bind_pending",
       "gmail_send_claim_due",
       "gmail_send_commit",
+      "gmail_send_consumer_domain",
       "gmail_send_fail",
       "gmail_send_list_own",
       "gmail_send_mark_provider",
       "gmail_send_payload_hash",
       "gmail_send_purge_for_deletion",
       "gmail_send_record_bounce",
+      "gmail_send_record_thread_bounces",
       "gmail_send_reserve",
       "gmail_send_scope_persist",
     ]);
@@ -344,6 +346,36 @@ d("D04 Gmail send", () => {
       [second.attempt_id],
     );
     expect(parked[0]!.status).toBe("queued");
+  });
+
+  it("matches a corporate domain and requires the exact address on a free-mail contact", async () => {
+    await adminQuery(
+      `insert into public.hotel_contacts (hotel_id, email, status, source_type)
+       values ($1, 'owner@gmail.com', 'active', 'editorial')`,
+      [HOTEL],
+    );
+    const exact = await reserve({
+      userId: PRO,
+      key: "pro-gmail-exact-0001",
+      recipient: "owner@gmail.com",
+    });
+    expect(exact.result).toBe("queued");
+    const stranger = await reserve({
+      userId: PRO,
+      key: "pro-gmail-other-0001",
+      recipient: "stranger@gmail.com",
+    });
+    expect(stranger).toMatchObject({
+      result: "failed",
+      failure_code: "invalid_recipient",
+      call_provider: false,
+    });
+    const corporate = await reserve({
+      userId: PRO,
+      key: "pro-corp-domain-0001",
+      recipient: "events@hotel.example",
+    });
+    expect(corporate.result).toBe("queued");
   });
 
   it("accepts the hotel domain and refuses a different domain", async () => {
@@ -533,6 +565,92 @@ d("D04 Gmail send", () => {
       [PRO, "e".repeat(64), "f".repeat(64), mailboxes.get(PRO), SEND_SCOPES],
     );
     expect(ready[0]!.r.result).toBe("ok");
+  });
+
+  it("a delivery-status thread records one bounce per sent attempt and enough bounces pause sends", async () => {
+    await dropQueued(PRO);
+    const hash = "cd".repeat(32);
+    const thread = "bounce-thread-pro-1";
+    await adminQuery(
+      `insert into private.gmail_send_attempts
+         (user_id, mail_account_id, idempotency_key, payload_sha256, kind, status,
+          recipient, subject, body, provider_started_at)
+       select $1, $2, 'thread-bounce-' || lpad(g::text, 8, '0'), $3, 'pitch', 'sent',
+              $4, 'Bounced', 'body', clock_timestamp()
+         from generate_series(1, 3) as g`,
+      [PRO, mailboxes.get(PRO), hash, RECIPIENT],
+    );
+    const ids = await adminQuery<{ id: string }>(
+      `select id from private.gmail_send_attempts
+        where user_id = $1 and idempotency_key like 'thread-bounce-%'
+        order by idempotency_key`,
+      [PRO],
+    );
+    expect(ids).toHaveLength(3);
+    for (const [index, row] of ids.entries()) {
+      await adminQuery(
+        `insert into private.gmail_sent_events
+           (attempt_id, user_id, mail_account_id, kind, recipient, subject,
+            provider_message_id, provider_thread_id, binding_status)
+         values ($1, $2, $3, 'pitch', $4, 'Bounced', $5, $6, 'bound')`,
+        [row.id, PRO, mailboxes.get(PRO), RECIPIENT, `bounce-msg-${index}`, thread],
+      );
+    }
+    const recorded = await asService<{ r: { result: string; recorded: number } }>(
+      "select public.gmail_send_record_thread_bounces($1::uuid, $2::uuid, $3) as r",
+      [PRO, mailboxes.get(PRO), thread],
+    );
+    expect(recorded[0]!.r.result).toBe("paused");
+    expect(recorded[0]!.r.recorded).toBe(3);
+    const again = await asService<{ r: { result: string; recorded: number } }>(
+      "select public.gmail_send_record_thread_bounces($1::uuid, $2::uuid, $3) as r",
+      [PRO, mailboxes.get(PRO), thread],
+    );
+    expect(again[0]!.r.result).toBe("paused");
+    const bounces = await adminQuery<{ n: number }>(
+      `select count(*)::int as n
+         from private.gmail_send_bounces b
+         join private.gmail_send_attempts a on a.id = b.attempt_id
+        where a.idempotency_key like 'thread-bounce-%'`,
+    );
+    expect(bounces[0]!.n).toBe(3);
+    const paused = await reserve({ userId: PRO, key: "pro-thread-pause-001" });
+    expect(paused).toMatchObject({ result: "paused", reason: "sends", call_provider: false });
+    await adminQuery(
+      "update private.gmail_send_pauses set unpaused_at = clock_timestamp() where user_id = $1",
+      [PRO],
+    );
+  });
+
+  it("moves a reserved attempt older than 15 minutes to unknown", async () => {
+    const hash = "ef".repeat(32);
+    const inserted = await adminQuery<{ id: string }>(
+      `insert into private.gmail_send_attempts
+         (user_id, mail_account_id, idempotency_key, payload_sha256, kind, status,
+          recipient, subject, body)
+       values
+         ($1, $2, 'stuck-reserved-00001', $3, 'pitch', 'reserved', $4, 'Old', 'body'),
+         ($1, $2, 'fresh-reserved-0001', $3, 'pitch', 'reserved', $4, 'New', 'body')
+       returning id`,
+      [OTHER, mailboxes.get(OTHER), hash, RECIPIENT],
+    );
+    await adminQuery(
+      `update private.gmail_send_attempts
+          set updated_at = clock_timestamp() - interval '16 minutes'
+        where idempotency_key = 'stuck-reserved-00001'`,
+    );
+    await claimDue();
+    const rows = await adminQuery<{ idempotency_key: string; status: string }>(
+      `select idempotency_key, status
+         from private.gmail_send_attempts
+        where id = any($1::uuid[])
+        order by idempotency_key`,
+      [inserted.map((row) => row.id)],
+    );
+    expect(rows).toEqual([
+      { idempotency_key: "fresh-reserved-0001", status: "reserved" },
+      { idempotency_key: "stuck-reserved-00001", status: "unknown" },
+    ]);
   });
 
   it("pauses sends when more than 5 percent of the recent window bounced", async () => {

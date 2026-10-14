@@ -204,10 +204,15 @@ export async function draftPitchWithAssistantAction(
         p_regen_weight: input.regenWeight,
       });
       if (prepared.error || !prepared.data || typeof prepared.data !== "object") return "error";
-      const row = prepared.data as { status?: unknown; warning?: unknown };
+      const row = prepared.data as { status?: unknown; warning?: unknown; weight?: unknown };
       const status = row.status;
+      const weight = typeof row.weight === "number" && Number.isInteger(row.weight) ? row.weight : 1;
       if (status === "reserved" || status === "already_reserved") {
-        return row.warning === "budget_80" ? { status: "reserved", warning: "budget_80" } : "reserved";
+        return {
+          status,
+          weight,
+          ...(row.warning === "budget_80" ? { warning: "budget_80" as const } : {}),
+        };
       }
       if (
         status === "budget" ||

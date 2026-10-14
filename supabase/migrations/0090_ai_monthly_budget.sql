@@ -6,7 +6,7 @@
 -- inside their own budget. 0082 and 0083 are not edited.
 
 alter table public.ai_usage
-  add column hotel_id uuid references public.hotels (id) on delete set null,
+  add column hotel_id uuid references public.hotels (id) on delete restrict,
   add column budget_micros bigint not null default 0
     check (budget_micros >= 0 and budget_micros <= 1000000000);
 
@@ -36,7 +36,7 @@ comment on column public.ai_usage.budget_micros is
   'D162. Weighted micros charged to this user''s monthly budget. Real token cost stays in estimated_cost_micros. No prompt.';
 
 comment on column public.ai_usage.hotel_id is
-  'D166. The unlocked hotel this generation was for. Null on rows written before this column existed.';
+  'D166. The unlocked hotel this generation was for. Null on rows written before this column existed. ON DELETE RESTRICT: ai_usage is append-only, so a hotel delete cannot null this column.';
 
 -- ---------------------------------------------------------------------------
 -- Pause, flags, pool alerts. No client grants. RLS on, no policies.
@@ -401,7 +401,18 @@ begin
      where u.request_id = p_request_id
        and u.status = 'reserved'
   ) then
-    return jsonb_build_object('status', 'already_reserved');
+    select case
+             when u.budget_micros = 0 then 0
+             when coalesce(u.estimated_cost_micros, 0) = 0 then 1
+             else greatest(1, (u.budget_micros / u.estimated_cost_micros)::integer)
+           end
+      into v_weight
+      from public.ai_usage u
+     where u.request_id = p_request_id
+       and u.status = 'reserved'
+     order by u.created_at desc
+     limit 1;
+    return jsonb_build_object('status', 'already_reserved', 'weight', coalesce(v_weight, 1));
   end if;
 
   if exists (
@@ -477,6 +488,10 @@ begin
          end,
          u.created_at desc
     ) picked;
+
+  if v_weight = 0 and v_spent >= v_budget then
+    return jsonb_build_object('status', 'budget', 'spent_micros', v_spent, 'budget_micros', v_budget, 'weight', 0);
+  end if;
 
   if v_spent + v_charge > v_budget then
     return jsonb_build_object('status', 'budget', 'spent_micros', v_spent, 'budget_micros', v_budget);
@@ -579,6 +594,9 @@ begin
     v_weighted := 0;
   else
     v_weighted := (p_cost_micros * v_reserved_budget) / v_estimate;
+    if v_weighted > v_reserved_budget then
+      v_weighted := v_reserved_budget;
+    end if;
   end if;
 
   insert into public.ai_usage (

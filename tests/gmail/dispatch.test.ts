@@ -116,4 +116,68 @@ describe("dispatch due sends", () => {
     expect(summary.sent).toBe(1);
     expect(sends).toHaveBeenCalledTimes(1);
   });
+
+  it("does not call Gmail when the allowlist is unset outside production", async () => {
+    const codes: string[] = [];
+    const { deps: sendDeps, sends } = deps({
+      gmail_send_claim_due: () => ({
+        result: "ok",
+        claims: [
+          {
+            result: "reserved",
+            call_provider: true,
+            attempt_id: ATTEMPT,
+            user_id: USER,
+            mail_account_id: MAIL,
+            from_email: "creator@example.invalid",
+            recipient: "desk@hotel.example",
+            subject: "Hello",
+            body: "A pitch",
+            provider_thread_id: null,
+          },
+        ],
+      }),
+      gmail_send_fail: (args) => {
+        codes.push(String(args.p_code));
+        return { result: "failed", failure_code: args.p_code, attempt_id: ATTEMPT };
+      },
+    });
+    sendDeps.env = { nodeEnv: "production", sendEnv: null, disabled: null, allowlist: null };
+    const summary = await dispatchDueGmailSends(sendDeps, { random: () => 0 });
+    expect(sends).not.toHaveBeenCalled();
+    expect(codes).toEqual(["allowlist"]);
+    expect(summary).toMatchObject({ sent: 0, failed: 1 });
+  });
+
+  it("does not call Gmail when the kill switch is on", async () => {
+    const codes: string[] = [];
+    const { deps: sendDeps, sends } = deps({
+      gmail_send_claim_due: () => ({
+        result: "ok",
+        claims: [
+          {
+            result: "reserved",
+            call_provider: true,
+            attempt_id: ATTEMPT,
+            user_id: USER,
+            mail_account_id: MAIL,
+            from_email: "creator@example.invalid",
+            recipient: "hello@theugc.life",
+            subject: "Hello",
+            body: "A pitch",
+            provider_thread_id: null,
+          },
+        ],
+      }),
+      gmail_send_fail: (args) => {
+        codes.push(String(args.p_code));
+        return { result: "failed", failure_code: args.p_code, attempt_id: ATTEMPT };
+      },
+    });
+    sendDeps.env = { nodeEnv: "production", sendEnv: "production", disabled: "true", allowlist: null };
+    const summary = await dispatchDueGmailSends(sendDeps, { random: () => 0 });
+    expect(sends).not.toHaveBeenCalled();
+    expect(codes).toEqual(["kill_switch"]);
+    expect(summary).toMatchObject({ sent: 0, failed: 1 });
+  });
 });

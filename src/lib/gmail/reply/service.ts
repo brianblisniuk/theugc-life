@@ -408,6 +408,16 @@ export async function interpretOneThread(
     return { result: "stale_source_retry" };
   }
   if (commitResult.result === "ok") {
+    if (interpretation.messageObservations.some((row) => row.responseClass === "delivery_status")) {
+      const bounced = await deps.db.rpc("gmail_send_record_thread_bounces", {
+        p_user_id: input.userId,
+        p_mail_account_id: input.mailAccountId,
+        p_provider_thread_id: evidence.providerThreadId,
+      });
+      if (bounced.error) {
+        throw new Error(`gmail_send_record_thread_bounces failed: ${bounced.error.message}`);
+      }
+    }
     return { result: "ok", committed: commitResult.committed };
   }
   return { result: commitResult.result };

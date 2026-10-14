@@ -480,4 +480,48 @@ d("AI draft credits and usage", () => {
       await client.end();
     }
   });
+
+  it("caps the weighted finish charge and refuses a free regeneration once the budget is spent", async () => {
+    const userId = "d0300000-0000-4000-8000-0000000000a5";
+    const hotelId = "d0300000-0000-4000-8000-0000000000b3";
+    const requestId = "d0300000-0000-4000-8000-00000000c010";
+    await adminQuery(
+      "insert into auth.users (id, email) values ($1, 'd03-cap@example.invalid')",
+      [userId],
+    );
+    await adminQuery(
+      "insert into public.hotels (id, name, slug, destination_id) values ($1, 'Cap Hotel', 'cap-hotel', $2)",
+      [hotelId, DEST],
+    );
+    const ledger = await adminQuery<{ id: string }>(
+      "select id from public.credit_ledger where user_id = $1 and reason = 'free_grant' limit 1",
+      [userId],
+    );
+    await adminQuery(
+      "insert into public.contact_unlocks (user_id, hotel_id, ledger_id) values ($1, $2, $3)",
+      [userId, hotelId, ledger[0]!.id],
+    );
+
+    const reserved = await prepare(userId, requestId, hotelId, 1000, 1000);
+    expect(reserved).toMatchObject({ status: "reserved", weight: 1 });
+    await adminQuery(
+      "select public.finish_ai_usage($1,$2,'claude-sonnet-5-5',10,5,8000,'completed',0,1500)",
+      [userId, requestId],
+    );
+    const finished = await adminQuery<{ estimated_cost_micros: string; budget_micros: string }>(
+      `select estimated_cost_micros::text, budget_micros::text
+         from public.ai_usage
+        where request_id = $1 and status = 'completed'`,
+      [requestId],
+    );
+    expect(finished[0]).toEqual({ estimated_cost_micros: "8000", budget_micros: "1000" });
+
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    const blocked = await prepare(userId, "d0300000-0000-4000-8000-00000000c011", hotelId, 1000, 1000);
+    expect(blocked.status).toBe("budget");
+
+    await expect(adminQuery("delete from public.hotels where id = $1", [hotelId])).rejects.toThrow(
+      /foreign key|ai_usage/i,
+    );
+  });
 });

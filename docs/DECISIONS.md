@@ -5407,11 +5407,20 @@ Status: **Accepted**.
 The assistant runs only for a hotel that user has unlocked. The creator
 sends a tone, up to five key points, and a language from a fixed list.
 There is no free-form instruction box. The system prompt is fixed on the
-server. A pitch send's recipient must be that hotel's contact or the
-same domain. A heuristic checks that the draft is a collaboration pitch
-for that hotel. It makes no extra model call. The first generation for a
-hotel in the month is charged at weight 1. The next three are free.
-Later ones use `AI_REGEN_WEIGHT`, default 2, clamped from 2 to 5.
+server. A pitch send's recipient must match a hotel contact exactly.
+The same domain is accepted only when that contact's domain is not a
+consumer or free-mail domain. The list is fixed in SQL. A heuristic
+checks that the draft is a collaboration pitch for that hotel. It makes
+no extra model call. The first generation for a hotel in the month is
+weight 1 and uses 1 credit. The next three regenerations are free:
+weight 0, and no credit is debited. The credit decision comes from the
+weight `prepare_ai_usage` returns. Later ones use `AI_REGEN_WEIGHT`,
+default 2, clamped from 2 to 5, and use 1 credit. A weight-0
+regeneration is refused once this month's spend is already at the
+budget. The weighted finish charge is capped at the reserved
+`budget_micros`. The real token cost stays in `estimated_cost_micros`.
+`ai_usage.hotel_id` is `ON DELETE RESTRICT` because the table is
+append-only.
 
 ## D167 — Abuse signals are an admin-visible flag
 
@@ -5435,17 +5444,22 @@ caps are Pro 120 and Max 300. `GMAIL_SEND_PRO_DAILY_CAP` and
 `GMAIL_SEND_MAX_DAILY_CAP` override them. The database clamps Pro to 240
 and Max to 600. A cap defers the send to the next business morning. It
 does not fail the attempt. D160's allowlist and kill switch still apply
-at the moment of the provider call. The schedule is a Netlify function
-that calls `POST /api/internal/gmail-send-dispatch` with
-`GMAIL_DISPATCH_SECRET`.
+at the moment of the provider call. The schedule is declared once, in
+`netlify.toml`. The function calls `POST /api/internal/gmail-send-dispatch`
+with `GMAIL_DISPATCH_SECRET`. A `reserved` attempt older than 15 minutes
+becomes `unknown`. It is not sent again.
 
 ## D169 — A bounce rate above 5 percent pauses sends
 
 Status: **Accepted**.
 
-The window is the last 20 sent messages in 30 days. More than 5 percent
-bounced pauses sends for that creator. AI is not paused. The message
-tells them to email support. `admin_unpause_sends` is admin-only.
+The window is the last 20 sent messages in 30 days. Sends pause for that
+creator when 3 or more of them bounced, or when at least 10 were sent
+and more than 5 percent bounced. A synced `delivery_status` message on
+a thread that has a sent event records one bounce for each sent attempt
+on that thread. A second sync does not record it again. AI is not
+paused. The message tells them to email support. `admin_unpause_sends`
+is admin-only.
 
 ## D170 — New per-user rows die with the account
 

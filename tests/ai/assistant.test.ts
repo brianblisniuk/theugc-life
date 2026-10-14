@@ -424,6 +424,28 @@ describe("compose", () => {
     expect(offTopic.finished[0]?.status).toBe("rejected");
   });
 
+  it("skips the credit debit when prepare returns weight 0 and charges once otherwise", async () => {
+    const free = deps({
+      balance: 0,
+      prepare: async () => ({ status: "reserved", weight: 0 }),
+    });
+    expect((await composePitch(free)).status).toBe("drafted");
+    expect(free.calls.charge).toBe(0);
+    expect(free.calls.complete).toBe(1);
+
+    const once = deps({
+      prepare: async () => ({ status: "reserved", weight: 1 }),
+    });
+    expect((await composePitch(once)).status).toBe("drafted");
+    expect(once.calls.charge).toBe(1);
+
+    const heavy = deps({
+      prepare: async () => ({ status: "already_reserved", weight: 2 }),
+    });
+    expect((await composePitch(heavy)).status).toBe("drafted");
+    expect(heavy.calls.charge).toBe(1);
+  });
+
   it("redacts a prompt if one is ever placed on a log field", () => {
     const redacted = redact({
       prompt: `hotel ${MARKER}`,
