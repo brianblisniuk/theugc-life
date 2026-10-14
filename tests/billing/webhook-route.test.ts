@@ -1,110 +1,186 @@
 /**
- * Billing webhook STUB (PR #43): authentication and event gating.
- * Negative controls: replacing `secretMatches` with `true`, or removing the
- * event allowlist, makes the 401 / unsupported_event tests fail; the grant
- * mocks record any call, so "never grants" is asserted directly.
+ * Rebill webhook (D138). A bad signature never applies. The account is not
+ * read from the body. Payment status comes from the confirm GET, not the body.
+ * The old x-billing-secret header does not authorize.
  */
+import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const env = { BILLING_WEBHOOK_SECRET: undefined as string | undefined };
-const grantDestinationPass = vi.fn();
-const grantPro = vi.fn();
+import { handleRebillWebhook, type WebhookDeps } from "@/lib/billing/rebill-webhook";
+import { rebillSignatureValid } from "@/lib/billing/rebill-signature";
+import { secretMatches } from "@/lib/billing/webhook-auth";
 
-vi.mock("@/lib/env.server", () => ({ serverEnv: () => env }));
-vi.mock("@/lib/billing/grant", () => ({
-  grantDestinationPass: (...a: unknown[]) => grantDestinationPass(...a),
-  grantPro: (...a: unknown[]) => grantPro(...a),
-}));
+const SIGNING = "whsec_test_signing_secret";
 
-const { POST } = await import("@/app/api/billing/webhook/route");
-const { secretMatches } = await import("@/lib/billing/webhook-auth");
+function sign(body: string, secret = SIGNING): string {
+  return createHmac("sha256", secret).update(body).digest("hex");
+}
 
-const USER = "11111111-1111-1111-1111-111111111111";
-const good = {
-  event: "entitlement.grant",
-  user_id: USER,
-  product: "pro",
-  source_reference: "ref-1",
-};
-
-function req(body: unknown, secret?: string) {
+function request(body: string, signature?: string, extra?: Record<string, string>) {
   const headers = new Headers({ "content-type": "application/json" });
-  if (secret !== undefined) headers.set("x-billing-secret", secret);
+  if (signature !== undefined) headers.set("x-rebill-signature", signature);
+  for (const [key, value] of Object.entries(extra ?? {})) headers.set(key, value);
   return new Request("http://localhost/api/billing/webhook", {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body,
   });
 }
 
-beforeEach(() => {
-  env.BILLING_WEBHOOK_SECRET = "s3cret-value";
-  grantDestinationPass.mockReset();
-  grantPro.mockReset().mockResolvedValue({ result: "granted", entitlementId: "e1" });
+const envelope = {
+  webhook: { id: "we_1", event: "payment.created", logId: "log_payment_1" },
+  data: {
+    payment: {
+      id: "pay_body",
+      status: "approved",
+      amount: 1,
+      currency: "EUR",
+      metadata: { checkoutId: "33333333-3333-4333-8333-333333333333", userId: "forged" },
+    },
+    paymentLinkId: "pl_body",
+    subscriptionId: "sub_body",
+    userId: "22222222-2222-4222-8222-222222222222",
+  },
+};
+
+function deps(overrides: Partial<WebhookDeps> = {}): WebhookDeps & { applied: unknown[] } {
+  const applied: unknown[] = [];
+  return {
+    applied,
+    env: { secretKey: "sk_test", signingSecret: SIGNING, live: false },
+    fetchImpl: vi.fn(async () =>
+      Response.json({
+        id: "pay_body",
+        status: "rejected",
+        amount: 30,
+        currency: "USD",
+        subscriptionId: "sub_confirmed",
+        metadata: { checkoutId: "33333333-3333-4333-8333-333333333333" },
+      }),
+    ) as unknown as typeof fetch,
+    apply: async (event) => {
+      applied.push(event);
+      return { result: "applied" };
+    },
+    ...overrides,
+  };
+}
+
+describe("rebill webhook signature", () => {
+  it("rejects a missing, unset, odd, or wrong signature", () => {
+    const raw = new TextEncoder().encode("{}");
+    expect(rebillSignatureValid(raw, null, SIGNING)).toBe(false);
+    expect(rebillSignatureValid(raw, sign("{}"), undefined)).toBe(false);
+    expect(rebillSignatureValid(raw, "abc", SIGNING)).toBe(false);
+    expect(rebillSignatureValid(raw, sign("{}", "other"), SIGNING)).toBe(false);
+    expect(rebillSignatureValid(raw, sign("{}").slice(0, -1) + "0", SIGNING)).toBe(false);
+    expect(rebillSignatureValid(raw, sign("{}"), SIGNING)).toBe(true);
+    expect(rebillSignatureValid(raw, sign("{}").toUpperCase(), SIGNING)).toBe(true);
+  });
+
+  it("does not treat the retired billing secret as a signature", () => {
+    expect(secretMatches("s3cret-value", "s3cret-value")).toBe(true);
+    expect(rebillSignatureValid(new Uint8Array(), "s3cret-value", SIGNING)).toBe(false);
+  });
 });
 
-describe("billing webhook stub — authentication", () => {
-  it("401 when the secret is unset, even if the caller sends an empty or any header", async () => {
-    env.BILLING_WEBHOOK_SECRET = undefined;
-    for (const h of [undefined, "", "anything"]) {
-      expect((await POST(req(good, h))).status).toBe(401);
+describe("rebill webhook handler", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("401 before apply when the signature is missing, wrong, or the secret is unset", async () => {
+    const body = JSON.stringify(envelope);
+    for (const [signature, secret] of [
+      [undefined, SIGNING],
+      ["", SIGNING],
+      [sign(body, "nope"), SIGNING],
+      [sign(body), undefined],
+    ] as const) {
+      const d = deps({
+        env: { secretKey: "sk_test", signingSecret: secret, live: false },
+      });
+      const res = await handleRebillWebhook(request(body, signature), d);
+      expect(res.status).toBe(401);
+      expect(d.applied).toHaveLength(0);
     }
-    expect(grantPro).not.toHaveBeenCalled();
   });
 
-  it("401 when the header is missing", async () => {
-    expect((await POST(req(good))).status).toBe(401);
-    expect(grantPro).not.toHaveBeenCalled();
-  });
-
-  it("401 for a wrong secret, a prefix, and a longer value", async () => {
-    for (const h of ["wrong", "s3cret", "s3cret-value-extra", "S3CRET-VALUE"]) {
-      expect((await POST(req(good, h))).status).toBe(401);
-    }
-    expect(grantPro).not.toHaveBeenCalled();
-  });
-
-  it("200 with the right secret (positive control)", async () => {
-    const res = await POST(req(good, "s3cret-value"));
-    expect(res.status).toBe(200);
-    expect(grantPro).toHaveBeenCalledWith(USER, "ref-1");
-  });
-});
-
-describe("billing webhook stub — event allowlist and input", () => {
-  it("rejects a missing, unknown or non-string event without granting", async () => {
-    for (const event of [undefined, "payment.refunded", "", 1, ["entitlement.grant"]]) {
-      const res = await POST(req({ ...good, event }, "s3cret-value"));
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: "unsupported_event" });
-    }
-    expect(grantPro).not.toHaveBeenCalled();
-  });
-
-  it("rejects non-string ids and unknown products", async () => {
-    expect((await POST(req({ ...good, user_id: 123 }, "s3cret-value"))).status).toBe(400);
-    expect((await POST(req({ ...good, product: "lifetime" }, "s3cret-value"))).status).toBe(400);
-    expect((await POST(req({ ...good, product: "destination_pass" }, "s3cret-value"))).status).toBe(
-      400,
+  it("ignores x-billing-secret and does not pass a body user id", async () => {
+    const body = JSON.stringify(envelope);
+    const d = deps();
+    const res = await handleRebillWebhook(
+      request(body, sign(body), { "x-billing-secret": "s3cret-value" }),
+      d,
     );
-    expect(grantPro).not.toHaveBeenCalled();
-    expect(grantDestinationPass).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(d.applied).toHaveLength(1);
+    const event = d.applied[0] as {
+      payment: Record<string, unknown>;
+      userId?: unknown;
+    };
+    expect(JSON.stringify(event)).not.toMatch(/forged|22222222/);
+    expect(event.userId).toBeUndefined();
+    expect(event.payment).toMatchObject({
+      id: "pay_body",
+      status: "rejected",
+      amount: 30,
+      currency: "USD",
+      checkoutId: "33333333-3333-4333-8333-333333333333",
+      subscriptionId: "sub_confirmed",
+    });
   });
 
-  it("maps a reference conflict to 409 without an entitlement id", async () => {
-    grantPro.mockResolvedValue({ result: "source_reference_conflict" });
-    const res = await POST(req(good, "s3cret-value"));
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ result: "source_reference_conflict" });
+  it("refuses a checkout id that disagrees with the confirmed payment", async () => {
+    const mismatched = {
+      ...envelope,
+      data: {
+        ...envelope.data,
+        payment: {
+          ...envelope.data.payment,
+          metadata: { checkoutId: "11111111-1111-4111-8111-111111111111" },
+        },
+      },
+    };
+    const body = JSON.stringify(mismatched);
+    const mismatch = deps();
+    const bad = await handleRebillWebhook(request(body, sign(body)), mismatch);
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: "checkout_mismatch" });
+    expect(mismatch.applied).toHaveLength(0);
   });
-});
 
-describe("secretMatches", () => {
-  it("is false for unset expected, null provided, or any mismatch (length-safe)", () => {
-    expect(secretMatches("x", undefined)).toBe(false);
-    expect(secretMatches("x", "")).toBe(false);
-    expect(secretMatches(null, "x")).toBe(false);
-    expect(secretMatches("a", "a".repeat(1000))).toBe(false);
-    expect(secretMatches("abc", "abc")).toBe(true);
+  it("does not confirm a payment when the API key is missing, and records ignored events", async () => {
+    const payment = JSON.stringify(envelope);
+    const unpaid = deps({
+      env: { signingSecret: SIGNING, live: false },
+    });
+    const denied = await handleRebillWebhook(request(payment, sign(payment)), unpaid);
+    expect(denied.status).toBe(503);
+    expect(unpaid.applied).toHaveLength(0);
+
+    const ignoredBody = JSON.stringify({
+      webhook: { event: "subscription.renewal_soon", logId: "log_soon" },
+      data: { userId: "forged" },
+    });
+    const ignored = deps({ env: { signingSecret: SIGNING, live: false } });
+    const res = await handleRebillWebhook(request(ignoredBody, sign(ignoredBody)), ignored);
+    expect(res.status).toBe(200);
+    expect(ignored.applied).toEqual([{ logId: "log_soon", event: "subscription.renewal_soon" }]);
+  });
+
+  it("returns 400 when apply says the event is invalid, and 503 when confirm fails", async () => {
+    const body = JSON.stringify(envelope);
+    const invalid = deps({
+      apply: async () => ({ result: "invalid" }),
+    });
+    expect((await handleRebillWebhook(request(body, sign(body)), invalid)).status).toBe(400);
+
+    const down = deps({
+      fetchImpl: vi.fn(async () => new Response("no", { status: 500 })) as unknown as typeof fetch,
+    });
+    const res = await handleRebillWebhook(request(body, sign(body)), down);
+    expect(res.status).toBe(503);
+    expect(down.applied).toHaveLength(0);
   });
 });

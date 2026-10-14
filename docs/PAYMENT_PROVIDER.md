@@ -6,10 +6,18 @@ Status: Accepted
 
 This records the provider decision only. Payment integration details remain to be implemented separately.
 
-## Webhook stub (PR #43) — production rule
+## Integration (D137–D139)
 
-`src/app/api/billing/webhook/route.ts` is a shared-secret **stub**, not the Rebill
-integration. It verifies no payment and trusts the request body.
-**`BILLING_WEBHOOK_SECRET` must never be set in production** until Rebill
-signature verification (and a payment record) replaces it. With the secret
-unset, every request is rejected with 401.
+Checkout is a hosted payment link at `https://pay.rebill.com/theugc-life`.
+The server calls `POST /v3/payment-links` and `POST /v3/plans`. It does not
+call `POST /v3/checkout`.
+
+`POST /api/billing/webhook` verifies `x-rebill-signature` (HMAC-SHA256 of the
+raw body) and confirms the payment with `GET /v3/payments/:id` before
+`apply_rebill_event` writes an entitlement. `BILLING_WEBHOOK_SECRET` does not
+authorize the route. The PR #43 stub is replaced.
+
+Live charges stay off unless `REBILL_LIVE` is exactly `true`. A sandbox key
+may open a hosted link. A productive organization may not, until that flag
+is set. Production keys and the Rebill webhook registration are still an
+owner step. No secret is committed.

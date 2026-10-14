@@ -77,15 +77,18 @@ describe("credit config", () => {
     expect(sql).not.toMatch(/create policy hotel_contacts_select[\s\S]*has_premium_hotel_access/);
   });
 
-  it("shows the live prices on the public pages and does not start checkout", () => {
+  it("shows the live prices on the public pages and starts checkout only on billing", () => {
     const pricing = readFileSync(path.join(ROOT, "src/app/(public)/pricing/page.tsx"), "utf8");
     const landing = readFileSync(path.join(ROOT, "src/app/(public)/page.tsx"), "utf8");
     const billing = readFileSync(path.join(ROOT, "src/app/(app)/app/billing/page.tsx"), "utf8");
-    for (const source of [pricing, landing, billing]) {
+    for (const source of [pricing, landing]) {
       expect(source).toContain("PLAN_PRICES");
       expect(source).not.toMatch(/rebill|stripe|startCheckout|buy now/i);
     }
-    expect(pricing).toContain("Pack purchases are not open yet");
+    expect(billing).toContain("PLAN_PRICES");
+    expect(billing).toContain("startRebillCheckoutAction");
+    expect(billing).toContain("refreshOwnGrants");
+    expect(pricing).toContain("Signed-in creators buy packs from the billing page.");
     expect(pricing).toContain("FREE_LIMITS.savedHotels");
     expect(landing).toContain("PLAN_PRICES.pro.annualPerMonthUsd");
     expect(landing).toContain("PLAN_PRICES.max.annualPerMonthUsd");

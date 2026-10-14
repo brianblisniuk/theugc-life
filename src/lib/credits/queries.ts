@@ -12,9 +12,20 @@ export type CreditBalanceResult = { status: "ok"; balance: number } | { status: 
 /**
  * The signed-in user's balance. A failed read is an error, not zero.
  */
+/** Refreshes this session's grants. A failure is not a zero balance. */
+export async function refreshOwnGrants(): Promise<void> {
+  try {
+    const supabase = await createClient();
+    await supabase.rpc("ensure_own_credit_grants");
+  } catch {
+    // The following balance read still distinguishes an error from zero.
+  }
+}
+
 export async function getOwnCreditBalance(): Promise<CreditBalanceResult> {
   try {
     const supabase = await createClient();
+    await supabase.rpc("ensure_own_credit_grants");
     const { data, error } = await supabase.rpc("own_credit_balance");
     if (error || typeof data !== "number" || !Number.isInteger(data)) {
       return { status: "error" };
