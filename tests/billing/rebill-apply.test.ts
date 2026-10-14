@@ -5,9 +5,10 @@
  * service-role writer. The account comes from the checkout or the stored
  * subscription, never from a payload user id. A second delivery of the same
  * payment does not extend twice. A failed payment does not extend. An annual
- * payment grants the next 30-day bucket without another payment. A refund
- * revokes the entitlement and reverses unused plan credits. A pack refund
- * reverses the full grant.
+ * payment grants the next 30-day bucket without another payment. A monthly
+ * refund removes that payment's slice. An annual refund ends the plan. A
+ * pack refund reverses unused credits only. A chargeback still ends the
+ * subscription (D140).
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -31,6 +32,11 @@ const REFUND = "d135e000-0000-4000-8000-000000000005";
 const UPGRADE = "d135f000-0000-4000-8000-000000000006";
 const DOWN = "d135aa00-0000-4000-8000-000000000007";
 const LAPSE = "d135ab00-0000-4000-8000-000000000008";
+const SLICE = "d140a000-0000-4000-8000-000000000001";
+const GAP = "d140b000-0000-4000-8000-000000000002";
+const YEAR = "d140c000-0000-4000-8000-000000000003";
+const PACKCB = "d140d000-0000-4000-8000-000000000004";
+const WEEKLY = "d140e000-0000-4000-8000-000000000005";
 
 async function makeUser(id: string) {
   await adminQuery("insert into auth.users (id, email) values ($1, $2)", [id, `${id}@rebill.test`]);
@@ -72,13 +78,11 @@ async function checkout(userId: string, product: string, link: string) {
   );
   expect(created.error).toBeNull();
   expect(created.rows[0]?.result).toBe("created");
-  const attached = await commitAs<{ result: string }>(
-    { role: "authenticated", sub: userId },
+  const attached = await adminQuery<{ result: string }>(
     "select public.attach_own_rebill_checkout_link($1::uuid, $2)->>'result' as result",
     [created.rows[0]!.checkout_id, link],
   );
-  expect(attached.error).toBeNull();
-  expect(attached.rows[0]?.result).toBe("attached");
+  expect(attached[0]?.result).toBe("attached");
   return {
     id: created.rows[0]!.checkout_id,
     amount: created.rows[0]!.amount_usd,
@@ -134,7 +138,7 @@ async function entitlement(userId: string): Promise<Entitlement | undefined> {
 d("rebill apply", () => {
   beforeAll(async () => {
     await setupDatabase();
-    for (const id of [A, B, ANNUAL, PACK, REFUND, UPGRADE, DOWN, LAPSE]) {
+    for (const id of [A, B, ANNUAL, PACK, REFUND, UPGRADE, DOWN, LAPSE, SLICE, GAP, YEAR, PACKCB, WEEKLY]) {
       await makeUser(id);
     }
   }, 120_000);
@@ -370,7 +374,7 @@ d("rebill apply", () => {
     expect(await planGrants(ANNUAL)).toBe(2);
   });
 
-  it("grants a pack once and a refund reverses the full grant", async () => {
+  it("grants a pack once and a refund reverses only unused credits", async () => {
     const row = await checkout(PACK, "pack_50", "pl_pack50");
     expect(row.amount).toBe(10);
     expect(
@@ -400,7 +404,7 @@ d("rebill apply", () => {
         payment: { id: "pay_pack50", status: "refunded", amount: 10, currency: "USD" },
       }),
     ).toBe("revoked");
-    expect(await balanceOf(PACK)).toBe(CREDITS_CONFIG.freeWeeklyCredits - 50);
+    expect(await balanceOf(PACK)).toBe(0);
     expect(
       await apply({
         logId: "log_pack_refund_2",
@@ -621,5 +625,290 @@ d("rebill apply", () => {
         }),
       ),
     ).toBe("user_conflict");
+  });
+
+  it("does not let a signed-in user attach a link or read unused credits", async () => {
+    const created = await commitAs<{ checkout_id: string }>(
+      { role: "authenticated", sub: SLICE },
+      `select public.create_own_rebill_checkout('pro_monthly')->>'checkout_id' as checkout_id`,
+    );
+    const checkoutId = created.rows[0]!.checkout_id;
+    for (const role of ["authenticated", "anon"] as const) {
+      const attached = await queryAs(
+        { role, sub: role === "authenticated" ? SLICE : null },
+        "select public.attach_own_rebill_checkout_link($1::uuid, 'pl_denied')",
+        [checkoutId],
+      );
+      expect(attached.error?.message ?? "").toMatch(/permission denied/i);
+      const unused = await queryAs(
+        { role, sub: role === "authenticated" ? SLICE : null },
+        "select public.rebill_unused_credits($1::uuid, null, 'plan')",
+        [SLICE],
+      );
+      expect(unused.error?.message ?? "").toMatch(/permission denied/i);
+    }
+    const server = await adminQuery<{ result: string }>(
+      "select public.attach_own_rebill_checkout_link($1::uuid, 'pl_denied')->>'result' as result",
+      [checkoutId],
+    );
+    expect(server[0]?.result).toBe("attached");
+  });
+
+  it("refunds only the monthly slice that payment bought", async () => {
+    const other = await balanceOf(B);
+    const first = await checkout(SLICE, "pro_monthly", "pl_slicea");
+    expect(
+      await apply(
+        payment({
+          logId: "log_slice1",
+          paymentId: "pay_slice1",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_slicea",
+          subscriptionId: "sub_slicea",
+        }),
+      ),
+    ).toBe("applied");
+    const second = await checkout(SLICE, "pro_monthly", "pl_sliceb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_slice2",
+          paymentId: "pay_slice2",
+          status: "approved",
+          amount: second.amount,
+          checkoutId: second.id,
+          linkId: "pl_sliceb",
+          subscriptionId: "sub_slicea",
+        }),
+      ),
+    ).toBe("applied");
+    const extended = await entitlement(SLICE);
+    const extendedDays =
+      (extended!.expires_at!.getTime() - extended!.starts_at.getTime()) / 86400_000;
+    expect(extendedDays).toBeGreaterThan(58);
+    expect(extendedDays).toBeLessThan(62);
+    expect(await planGrants(SLICE)).toBe(1);
+    const paid = await balanceOf(SLICE);
+
+    expect(
+      await apply({
+        logId: "log_slice2_partial",
+        event: "payment.updated",
+        payment: {
+          id: "pay_slice2",
+          status: "partially_refunded",
+          amount: second.amount,
+          currency: "USD",
+        },
+      }),
+    ).toBe("revoked");
+    const shortened = await entitlement(SLICE);
+    const shortenedDays =
+      (shortened!.expires_at!.getTime() - shortened!.starts_at.getTime()) / 86400_000;
+    expect(shortened?.status).toBe("active");
+    expect(shortenedDays).toBeGreaterThan(28);
+    expect(shortenedDays).toBeLessThan(32);
+    expect(await balanceOf(SLICE)).toBe(paid);
+    expect(await planGrants(SLICE)).toBe(1);
+    const tail = await adminQuery<{ effect: string }>(
+      "select effect from public.rebill_payment_effects where payment_id = 'pay_slice1'",
+    );
+    expect(tail[0]?.effect).toBe("granted");
+
+    const current = await checkout(GAP, "pro_monthly", "pl_gapa");
+    expect(
+      await apply(
+        payment({
+          logId: "log_gap1",
+          paymentId: "pay_gap1",
+          status: "approved",
+          amount: current.amount,
+          checkoutId: current.id,
+          linkId: "pl_gapa",
+          subscriptionId: "sub_gapa",
+        }),
+      ),
+    ).toBe("applied");
+    const later = await checkout(GAP, "pro_monthly", "pl_gapb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_gap2",
+          paymentId: "pay_gap2",
+          status: "approved",
+          amount: later.amount,
+          checkoutId: later.id,
+          linkId: "pl_gapb",
+          subscriptionId: "sub_gapa",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_gap1_refund",
+        event: "payment.updated",
+        payment: { id: "pay_gap1", status: "refunded", amount: current.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const gapped = await entitlement(GAP);
+    expect(gapped?.status).toBe("active");
+    expect(gapped!.starts_at.getTime()).toBeGreaterThan(Date.now() + 20 * 86400_000);
+    const active = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [
+      GAP,
+    ]);
+    expect(active[0]?.v).toBe(false);
+    expect(await balanceOf(GAP)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    const kept = await adminQuery<{ effect: string }>(
+      "select effect from public.rebill_payment_effects where payment_id = 'pay_gap2'",
+    );
+    expect(kept[0]?.effect).toBe("granted");
+    const gapSub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_gapa'",
+    );
+    expect(gapSub[0]?.status).toBe("active");
+    expect(await balanceOf(B)).toBe(other);
+
+    expect(
+      await apply({
+        logId: "log_gap2_dispute",
+        event: "payment.updated",
+        payment: { id: "pay_gap2", status: "chargeback", amount: later.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const disputed = await entitlement(GAP);
+    expect(disputed?.status).toBe("revoked");
+    const afterDispute = await adminQuery<{ v: boolean }>(
+      "select public._has_active_pro($1) as v",
+      [GAP],
+    );
+    expect(afterDispute[0]?.v).toBe(false);
+    const canceled = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_gapa'",
+    );
+    expect(canceled[0]?.status).toBe("canceled");
+    expect(await balanceOf(B)).toBe(other);
+  });
+
+  it("ends an annual plan on refund and reverses every unused plan credit", async () => {
+    const row = await checkout(YEAR, "pro_annual", "pl_yearrefund");
+    expect(
+      await apply(
+        payment({
+          logId: "log_year_refund_pay",
+          paymentId: "pay_yearrefund",
+          status: "approved",
+          amount: row.amount,
+          checkoutId: row.id,
+          linkId: "pl_yearrefund",
+          subscriptionId: "sub_yearrefund",
+        }),
+      ),
+    ).toBe("applied");
+    const ent = await entitlement(YEAR);
+    await adminQuery(
+      "update public.access_entitlements set starts_at = now() - interval '31 days' where id = $1",
+      [ent!.id],
+    );
+    await adminQuery("select public.ensure_credit_grants($1)", [YEAR]);
+    expect(await planGrants(YEAR)).toBe(2);
+    expect(
+      await apply({
+        logId: "log_year_refund",
+        event: "payment.updated",
+        payment: { id: "pay_yearrefund", status: "refunded", amount: row.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const ended = await entitlement(YEAR);
+    expect(ended?.status).toBe("expired");
+    expect(ended!.expires_at!.getTime()).toBeLessThanOrEqual(Date.now() + 2000);
+    const active = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [
+      YEAR,
+    ]);
+    expect(active[0]?.v).toBe(false);
+    expect(await balanceOf(YEAR)).toBe(CREDITS_CONFIG.freeWeeklyCredits);
+    const sub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_yearrefund'",
+    );
+    expect(sub[0]?.status).toBe("canceled");
+  });
+
+  it("lets a pack chargeback reverse the full grant below zero", async () => {
+    const row = await checkout(PACKCB, "pack_50", "pl_packcb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_packcb",
+          paymentId: "pay_packcb",
+          status: "approved",
+          amount: 10,
+          checkoutId: row.id,
+          linkId: "pl_packcb",
+        }),
+      ),
+    ).toBe("applied");
+    await adminQuery(
+      `insert into public.credit_ledger (user_id, delta, reason, idempotency_key)
+       values ($1, -50, 'unlock', 'spend-packcb')`,
+      [PACKCB],
+    );
+    expect(
+      await apply({
+        logId: "log_packcb_dispute",
+        event: "payment.updated",
+        payment: { id: "pay_packcb", status: "chargeback", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(PACKCB)).toBe(CREDITS_CONFIG.freeWeeklyCredits - 50);
+  });
+
+  it("resumes free weekly credits when a paid plan ends", async () => {
+    await adminQuery("update public.users set created_at = now() - interval '8 days' where id = $1", [
+      WEEKLY,
+    ]);
+    const row = await checkout(WEEKLY, "pro_monthly", "pl_weekly");
+    expect(
+      await apply(
+        payment({
+          logId: "log_weekly_pay",
+          paymentId: "pay_weekly",
+          status: "approved",
+          amount: row.amount,
+          checkoutId: row.id,
+          linkId: "pl_weekly",
+          subscriptionId: "sub_weekly",
+        }),
+      ),
+    ).toBe("applied");
+    const during = await adminQuery<{ n: number }>(
+      `select count(*)::int as n from public.credit_ledger
+        where user_id = $1 and idempotency_key = 'free_weekly:1'`,
+      [WEEKLY],
+    );
+    expect(during[0]?.n).toBe(0);
+    expect(
+      await apply({
+        logId: "log_weekly_refund",
+        event: "payment.updated",
+        payment: { id: "pay_weekly", status: "refunded", amount: row.amount, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    const ent = await entitlement(WEEKLY);
+    expect(ent?.status).toBe("expired");
+    const active = await adminQuery<{ v: boolean }>("select public._has_active_pro($1) as v", [
+      WEEKLY,
+    ]);
+    expect(active[0]?.v).toBe(false);
+    const after = await adminQuery<{ n: number }>(
+      `select count(*)::int as n from public.credit_ledger
+        where user_id = $1 and idempotency_key = 'free_weekly:1' and delta > 0`,
+      [WEEKLY],
+    );
+    expect(after[0]?.n).toBe(1);
+    const sub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_weekly'",
+    );
+    expect(sub[0]?.status).toBe("expired");
   });
 });

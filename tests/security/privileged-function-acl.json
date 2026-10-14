@@ -1805,7 +1805,7 @@
     "args": "p_checkout_id uuid, p_link_id text",
     "searchPath": "\"\"",
     "anon": false,
-    "authenticated": true,
+    "authenticated": false,
     "serviceRole": true,
     "public": false
   },
@@ -1823,6 +1823,16 @@
     "schema": "public",
     "name": "apply_rebill_event",
     "args": "p_event jsonb",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "rebill_unused_credits",
+    "args": "p_user_id uuid, p_key text, p_scope text",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,

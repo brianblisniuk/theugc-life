@@ -78,16 +78,14 @@ export async function handleRebillWebhook(request: Request, deps: WebhookDeps): 
     ) {
       return json({ error: "checkout_mismatch" }, 400);
     }
-    const checkoutId = confirmed.checkoutId ?? envelope.checkoutId;
-    const paymentLinkId = confirmed.paymentLinkId ?? envelope.paymentLinkId;
     event.payment = {
       id: confirmed.id,
       status: confirmed.status,
       amount: confirmed.amount,
       currency: confirmed.currency,
-      checkoutId,
-      paymentLinkId,
-      subscriptionId: confirmed.subscriptionId ?? envelope.subscriptionId,
+      checkoutId: confirmed.checkoutId,
+      paymentLinkId: confirmed.paymentLinkId,
+      subscriptionId: confirmed.subscriptionId,
     };
   }
 
