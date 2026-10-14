@@ -25,7 +25,7 @@ import {
   userBudgetMicros,
   type AssistantTier,
 } from "./limits";
-import { collaborationPitchOk } from "./postcheck";
+import { collaborationFollowUpOk, collaborationPitchOk } from "./postcheck";
 import { buildOutreachPrompt, parseDraftText, type OutreachFacts } from "./prompt";
 import type { PitchBrief } from "./structured";
 
@@ -94,6 +94,7 @@ export interface ComposeDeps {
   }) => Promise<void>;
   complete?: (request: ClaudeRequest) => Promise<ClaudeResult>;
   now?: () => Date;
+  purpose?: "pitch" | "follow_up";
 }
 
 export function tokenLog(input: {
@@ -101,15 +102,16 @@ export function tokenLog(input: {
   inputTokens: number;
   outputTokens: number;
   status: string;
+  task?: "compose_pitch" | "compose_follow_up";
 }): {
   model: string;
   inputTokens: number;
   outputTokens: number;
   status: string;
-  task: "compose_pitch";
+  task: "compose_pitch" | "compose_follow_up";
 } {
   return {
-    task: "compose_pitch",
+    task: input.task ?? "compose_pitch",
     model: input.model,
     inputTokens: input.inputTokens,
     outputTokens: input.outputTokens,
@@ -135,7 +137,8 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   if (resolved.provider !== "anthropic") return { status: "error" };
   const model = resolved.model;
   const maxTokens = maxTokensFor(tier);
-  const prompt = buildOutreachPrompt({ ...deps.facts, brief: deps.brief }, tier);
+  const purpose = deps.purpose ?? "pitch";
+  const prompt = buildOutreachPrompt({ ...deps.facts, brief: deps.brief }, tier, purpose);
   if (prompt.user.length > contextCharsFor(tier)) return { status: "error" };
 
   const estimate = estimateCallMicros(prompt.system.length + prompt.user.length, maxTokens);
@@ -201,7 +204,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   const onTopic =
     result.ok &&
     draft !== null &&
-    collaborationPitchOk({
+    (purpose === "follow_up" ? collaborationFollowUpOk : collaborationPitchOk)({
       subject: draft.subject,
       body: draft.body,
       hotelName: deps.facts.hotelName,
@@ -224,6 +227,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
       inputTokens,
       outputTokens,
       status: finishStatus === "completed" ? "completed" : result.ok ? finishStatus : result.status,
+      task: purpose === "follow_up" ? "compose_follow_up" : "compose_pitch",
     }),
   );
 

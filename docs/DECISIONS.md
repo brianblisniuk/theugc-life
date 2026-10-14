@@ -5473,3 +5473,93 @@ reference the user with `on delete cascade`. Pool alerts have no user id
 and stay. Sends still cost no credits (D159). Migrations `0082`, `0083`,
 `0088`, and `0089` are not edited. The new functions are `0090` and
 `0091`.
+
+## D171 — A follow-up is an explicit opt-in on one sent pitch
+
+Status: **Proposed**.
+
+A creator can schedule a follow-up only on a `kind = 'pitch'` sent event
+they own. At most two follow-ups on that Gmail thread. The subject and
+body stored are the text they submitted. The same text submitted again
+is `already_scheduled`. Different text while one is still open is
+`text_conflict`. A double-click cannot create two rows: the user row is
+locked. Nothing is sent because a draft exists.
+
+## D172 — Follow-ups wait several business days, then use the send queue
+
+Status: **Proposed**.
+
+Follow-up 1 is eligible three business days after the original pitch's
+`sent_at`, at 09:00 in the creator's timezone. Follow-up 2 is eligible
+four business days after follow-up 1 was sent, at the same local time.
+Saturday and Sunday are not business days. A blank or invalid timezone
+is UTC, through `ai_zone_name`. A due row becomes one
+`gmail_send_attempts` row with `kind = 'follow_up'` and `status = 'queued'`.
+The existing claim (D168) sends it: one claim per creator, 180 to 300
+seconds apart, 09:00–18:00 local, Pro and Max daily caps, and the bounce
+pause (D169). `gmail_send_reserve` still rejects `kind = 'follow_up'`.
+
+## D173 — A reply, a bounce, a closed deal, or a cancel stops the follow-up
+
+Status: **Proposed**.
+
+The stop order is a hotel reply, then a bounce, then a closed pipeline
+item. A hotel reply is `qualifying_human_reply` or `ambiguous_inbound`
+on that provider thread. `automated_response` does not stop it. A bounce
+is a row in `gmail_send_bounces` for a sent event on that thread. A
+closed deal is pipeline status `won` or `closed`. Cancel sets
+`stop_reason = 'cancelled'` and fails a queued or reserved attempt with
+`followup_stopped`. If Gmail has already been called (`provider_called`),
+cancel returns `in_progress` and does not change the row. A terminal
+stop blocks a later schedule and returns that stop reason.
+
+## D174 — The recipient is the original pitch's recipient
+
+Status: **Proposed**.
+
+The schedule function copies the recipient from the sent pitch. The
+client does not post an address. The address is checked again with the
+D166 contact rule: an exact non-invalid hotel contact email, or the same
+domain only when that contact's domain is not a consumer or free-mail
+domain. An invalid contact at schedule time returns `recipient_rejected`
+and writes no row. A follow-up that is scheduled and not yet due is
+shown as held with `recipient_rejected` if the contact later becomes
+invalid, and it can send if the contact is valid again before it is due.
+Once it is due or queued, settle stops it with `recipient_rejected`.
+That stopped row can be scheduled again, with the same sequence and new
+text, if the contact is valid.
+
+## D175 — An AI follow-up reuses the composer and is not a send
+
+Status: **Proposed**.
+
+`composePitch` with purpose `follow_up` uses a fixed system prompt that
+does not interpolate the hotel name, and `collaborationFollowUpOk`: the
+draft must be a collaboration pitch and must read as a follow-up. The
+same monthly budget, credits, injection check, and unlock rules apply.
+`draftFollowUpWithAssistantAction` does not insert a pitch draft and
+does not schedule anything. Sending the follow-up through Gmail costs
+no credits (D159).
+
+## D176 — The page states the next action
+
+Status: **Proposed**.
+
+`gmail_followup_list_for_hotel` returns that creator's pitch threads for
+one hotel, and one next state: `needs_opt_in`, `scheduled`, `queued`,
+`held`, `stopped`, or `complete`, plus the timezone. A hold is
+`plan_required`, `account_paused`, `sends_paused`, `mailbox`, or
+`recipient_rejected`. The page says what will send, when, and why it
+stopped. Listing settles that user first. It does not call Gmail.
+
+## D177 — Follow-up rows die with the account and with the sent pitch
+
+Status: **Proposed**.
+
+`gmail_followups.user_id` and `source_event_id` are `on delete cascade`.
+`send_attempt_id` is `on delete set null`. Row level security is on.
+There are no policies. `public`, `anon`, `authenticated`, and
+`service_role` have no table privileges. The functions are service role
+only. Migrations `0088` through `0091` are not edited. `0092` replaces
+`gmail_send_claim_due` and `gmail_send_fail` so a due follow-up is
+queued before a claim, and `followup_stopped` is a failure code.

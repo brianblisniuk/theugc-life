@@ -69,7 +69,11 @@ function str(row: RpcRow, key: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-async function callRpc(db: SendDeps["db"], fn: string, args: Record<string, unknown>): Promise<RpcRow> {
+async function callRpc(
+  db: SendDeps["db"],
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<RpcRow> {
   const { data, error } = await db.rpc(fn, args);
   if (error) throw new Error("gmail_send_rpc_failed");
   return (data ?? {}) as RpcRow;
@@ -103,7 +107,11 @@ function storedOutcome(row: RpcRow): GmailSendOutcome {
   if (result === "invalid_input") return { result: "invalid_input" };
   if (result === "not_found") return { result: "not_found" };
   if (result === "failed") {
-    return { result: "failed", attemptId, failureCode: str(row, "failure_code") ?? "provider_error" };
+    return {
+      result: "failed",
+      attemptId,
+      failureCode: str(row, "failure_code") ?? "provider_error",
+    };
   }
   return { result: "unknown", attemptId };
 }
@@ -116,8 +124,10 @@ function tokenFailure(outcome: AccessTokenOutcome): string {
 }
 
 function providerFailure(error: unknown): "unknown" | string {
-  if (error instanceof GoogleAdapterError && error.code === "gmail_send_transport") return "unknown";
-  if (error instanceof GoogleAdapterError && DEFINITE_PROVIDER_CODES.has(error.code)) return error.code;
+  if (error instanceof GoogleAdapterError && error.code === "gmail_send_transport")
+    return "unknown";
+  if (error instanceof GoogleAdapterError && DEFINITE_PROVIDER_CODES.has(error.code))
+    return error.code;
   if (error instanceof GoogleAdapterError && error.code === "gmail_send_blocked_in_test") {
     return "provider_error";
   }
@@ -173,6 +183,12 @@ export async function deliverReservedSend(
   const attemptId = str(reserved, "attempt_id");
   if (!attemptId) return { result: "unknown", attemptId: null };
 
+  const gate = await followUpGate(deps, userId, attemptId);
+  if (gate === "stopped") return failAttempt(deps, userId, attemptId, "followup_stopped");
+  if (gate === "unknown" && str(reserved, "kind") === "follow_up") {
+    return { result: "unknown", attemptId };
+  }
+
   const guard = assessSendGuard(deps.env, str(reserved, "recipient") ?? "");
   if (!guard.ok) {
     return failAttempt(deps, userId, attemptId, guard.code);
@@ -209,12 +225,15 @@ export async function deliverReservedSend(
   const mailAccountId = str(reserved, "mail_account_id") ?? "";
   const token = deps.getAccessToken
     ? await deps.getAccessToken(mailAccountId)
-    : await getFreshGmailAccessToken(
-        { mailAccountId },
-        { db: deps.db, google: deps.google },
-      );
+    : await getFreshGmailAccessToken({ mailAccountId }, { db: deps.db, google: deps.google });
   if (token.result !== "ok") {
     return failAttempt(deps, userId, attemptId, tokenFailure(token));
+  }
+
+  const gateAgain = await followUpGate(deps, userId, attemptId);
+  if (gateAgain === "stopped") return failAttempt(deps, userId, attemptId, "followup_stopped");
+  if (gateAgain === "unknown" && str(reserved, "kind") === "follow_up") {
+    return { result: "unknown", attemptId };
   }
 
   let sent: { id: string; threadId: string };
@@ -245,6 +264,22 @@ export async function deliverReservedSend(
     return failAttempt(deps, userId, attemptId, "unknown");
   } catch {
     return failAttempt(deps, userId, attemptId, "unknown");
+  }
+}
+
+async function followUpGate(
+  deps: SendDeps,
+  userId: string,
+  attemptId: string,
+): Promise<"send" | "stopped" | "unknown"> {
+  try {
+    const blocked = await callRpc(deps.db, "gmail_followup_block_send", {
+      p_user_id: userId,
+      p_attempt_id: attemptId,
+    });
+    return str(blocked, "result") === "stopped" ? "stopped" : "send";
+  } catch {
+    return "unknown";
   }
 }
 

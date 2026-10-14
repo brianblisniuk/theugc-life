@@ -138,12 +138,14 @@ d("B02 credential boundary (0036)", () => {
            and p.proname not like 'gmail\\_commercial\\_%'
            and p.proname not like 'gmail\\_incremental\\_sync\\_%'
            and p.proname not like 'gmail\\_send\\_%'
+           and p.proname not like 'gmail\\_followup\\_%'
       `);
       // B02's own surface. B03 adds definer functions of its own in 0037,
-      // B04 in 0038, B05 in 0039, B06 in 0040, B07 in 0044, and B08 in 0047 —
-      // each asserts the same two properties about its own functions in its
-      // own boundary suite. A count over every `gmail_%` function would stop
-      // being a statement about B02 the moment a later block did its job.
+      // B04 in 0038, B05 in 0039, B06 in 0040, B07 in 0044, B08 in 0047, and
+      // D05 follow-ups in 0092 — each asserts the same two properties about
+      // its own functions in its own boundary suite. A count over every
+      // `gmail_%` function would stop being a statement about B02 the moment
+      // a later block did its job.
       expect(res.rows.length).toBe(13);
       for (const row of res.rows) {
         expect(row.prosecdef, row.proname).toBe(true);

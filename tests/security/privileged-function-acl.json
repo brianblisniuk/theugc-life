@@ -2198,5 +2198,65 @@
     "authenticated": true,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_followup_earliest",
+    "args": "p_from timestamp with time zone, p_zone text, p_days integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_followup_schedule",
+    "args": "p_user_id uuid, p_event_id uuid, p_subject text, p_body text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_followup_cancel",
+    "args": "p_user_id uuid, p_followup_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_followup_settle",
+    "args": "p_now timestamp with time zone, p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_followup_block_send",
+    "args": "p_user_id uuid, p_attempt_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_followup_list_for_hotel",
+    "args": "p_user_id uuid, p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
   }
 ]

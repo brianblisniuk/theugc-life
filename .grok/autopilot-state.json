@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 3e11ded390a2845603b207433af90bb846d4670e (merge of PR #86, D04 Gmail send, migration 0089, D156-D161). AI cost and anti-abuse is draft PR #87 on cursor/ai-cost-anti-abuse-c721. Same-PR correction for bounce recording, free-mail recipients, free regenerations, and a global-pool hard stop. Migrations 0090 and 0091. D162-D170 Accepted. The global pool stops everyone at 100 percent. An unset ANTHROPIC_MONTHLY_BUDGET_USD refuses generation. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87, D04b, migrations 0090 and 0091, D162-D170). D05 follow-up scheduling is on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Proposed, not Accepted. At most two explicit follow-ups per sent pitch, through the existing send queue, stopped on reply, bounce, won or closed, or cancel. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "3e11ded390a2845603b207433af90bb846d4670e",
-  "active_block": "D04b AI cost and anti-abuse",
-  "branch": "cursor/ai-cost-anti-abuse-c721",
-  "pr": 87,
+  "last_recorded_main": "f892d6e37cd7b606e4b5c663dc002e0503d0145b",
+  "active_block": "D05 follow-up scheduling",
+  "branch": "cursor/d05-followup-scheduling-dd31",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -18,9 +18,9 @@
     }
   ],
   "ci_status": {
-    "ref": "3e11ded390a2845603b207433af90bb846d4670e",
+    "ref": "f892d6e37cd7b606e4b5c663dc002e0503d0145b",
     "verify": "unknown"
   },
-  "required_human_action": "EXTERNAL ACTION APPROVAL REQUIRED — Add gmail.send (sensitive) to the Google Cloud OAuth consent screen for TheUGC.life. Set GMAIL_SEND_ENV=production only on the production site. Leave it unset on staging and previews. Set GMAIL_DISPATCH_SECRET on the host that runs the send schedule. Do not do this from the repository.",
-  "next_dependency": "D04b AI cost and anti-abuse is AWAITING_AUDIT as draft PR #87 on cursor/ai-cost-anti-abuse-c721. Same-PR correction for bounce recording, free-mail recipients, free regenerations, and a global-pool hard stop. Migrations 0090 and 0091. D162-D170 Accepted. The global pool stops everyone at 100 percent. An unset ANTHROPIC_MONTHLY_BUDGET_USD refuses generation. Branched from main 3e11ded390a2845603b207433af90bb846d4670e (merge of PR #86). expected_head stays null. Do not merge."
+  "required_human_action": "PRODUCT DECISION REQUIRED — D171–D177 are Proposed, not Accepted. Confirm at most two follow-ups per thread, three then four business days apart, an explicit opt-in, and no send of text the creator has not submitted. EXTERNAL ACTION APPROVAL REQUIRED remains open from D04: add gmail.send to the Google consent screen, set GMAIL_SEND_ENV=production only on production, and set GMAIL_DISPATCH_SECRET on the send host. Do not do that from the repository.",
+  "next_dependency": "D05 follow-up scheduling is AWAITING_AUDIT on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Proposed. Branched from main f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87). expected_head stays null. Do not merge."
 }
