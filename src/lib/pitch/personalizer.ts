@@ -1,9 +1,9 @@
 /**
- * Pitch personalizer (D110, D03 still open).
+ * Pitch personalizer (D110).
  *
- * The only provider this block wires is `template`. Any other value is refused.
- * Refusal is a return value. It does not throw while the module loads, so an
- * unset variable stays the template provider.
+ * The page-load suggestion stays the template provider. Any other name is
+ * refused, including a model vendor. The assistant is a separate action
+ * (D141) and does not run while this page renders.
  */
 import { suggestPitch, type FactKey, type PitchFacts, type SystemTemplateKey } from "./contract";
 

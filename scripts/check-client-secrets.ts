@@ -16,6 +16,7 @@ export const FORBIDDEN_CLIENT_IDENTIFIERS = [
   "BILLING_WEBHOOK_SECRET",
   "REBILL_SECRET_KEY",
   "REBILL_WEBHOOK_SIGNING_SECRET",
+  "ANTHROPIC_API_KEY",
   "DATABASE_URL",
   "TEST_DATABASE_URL",
 ] as const;
@@ -137,7 +138,9 @@ function resolveSource(fromFile: string, spec: string, srcRoot: string): string 
     path.join(target, "index.tsx"),
     path.join(target, "index.js"),
   ];
-  return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null;
+  return (
+    candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
+  );
 }
 
 /**

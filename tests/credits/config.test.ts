@@ -59,6 +59,19 @@ describe("credit config", () => {
     expect(sql).not.toContain("insert into public.credit_ledger");
   });
 
+  it("charges one configured credit for an assistant draft", () => {
+    const sql = readFileSync(path.join(ROOT, "supabase/migrations/0082_ai_assistant.sql"), "utf8");
+    expect(sql).toContain(`set ai_draft_cost = ${CREDITS_CONFIG.aiDraftCost}`);
+    expect(sql).toContain("ai_draft");
+    const charge = readFileSync(
+      path.join(ROOT, "supabase/migrations/0083_ai_draft_credit.sql"),
+      "utf8",
+    );
+    expect(charge).toContain("-v_cost");
+    expect(charge).toContain("'ai_draft'");
+    expect(charge).not.toMatch(/gmail\.send|messages\.send/);
+  });
+
   it("does not refresh a stored address from the bounce review action", () => {
     const source = readFileSync(path.join(ROOT, "src/lib/credits/actions.ts"), "utf8");
     const review = source.slice(source.indexOf("export async function reviewContactReportAction"));

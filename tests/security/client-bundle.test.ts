@@ -20,10 +20,13 @@ describe("client bundle secret scan", () => {
   it("flags a server secret name and allows the Maps key name", () => {
     const findings = scanClientBundle(
       fixture(
-        `const name = "${ALLOWED_PUBLIC_SECRET_NAME}"; const other = "SUPABASE_SERVICE_ROLE_KEY";`,
+        `const name = "${ALLOWED_PUBLIC_SECRET_NAME}"; const other = "SUPABASE_SERVICE_ROLE_KEY"; const ai = "ANTHROPIC_API_KEY";`,
       ),
     );
-    expect(findings.map((finding) => finding.identifier)).toEqual(["SUPABASE_SERVICE_ROLE_KEY"]);
+    expect(findings.map((finding) => finding.identifier).sort()).toEqual([
+      "ANTHROPIC_API_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ]);
     expect(JSON.stringify(findings)).not.toContain("GOCSPX-");
   });
 

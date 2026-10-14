@@ -4759,6 +4759,9 @@ D03 and D04 stay open. A Destination Pass does not gain that flag. Outreach
 Assisted stays the existing paid Gmail predicate: Pro, Max, or an active
 Destination Pass. Free stays paused.
 
+D142 supersedes the sentence above that the flag does not call a model.
+The flag is unchanged. D04 stays open.
+
 Max-only flags are `priority_ai`, `advanced_signals`, `priority_support`,
 and `future_premium`. They are flags. They do not change Discover order,
 Pipeline order, or support mail.
@@ -4946,3 +4949,113 @@ A monthly refund does not set a revoked entitlement or a canceled
 subscription back to active. A renewal that arrives before the current 30
 days end owns the next unclaimed period grant. A payment row with no slice
 dates ends access instead of inventing a window.
+
+## D141 — Claude Sonnet is the assistant for every paid tier
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
+
+The assistant vendor is Anthropic Claude, called only from the server with
+`ANTHROPIC_API_KEY`. The key is never committed. `.env.example` holds an
+empty placeholder. The client-bundle scan rejects the name
+`ANTHROPIC_API_KEY`.
+
+The model id is `ANTHROPIC_MODEL`. Empty means `claude-sonnet-5-5`, Claude
+Sonnet 5.5, the latest Sonnet on the Claude API model page retrieved
+2026-10-14 (`https://platform.claude.com/docs/en/models/sonnet-5-5/overview`).
+Pro and Max both use that configured id. Max does not switch to another
+model. A value that is not a model id falls back to that Sonnet id.
+
+The call is `POST https://api.anthropic.com/v1/messages` with header
+`anthropic-version: 2023-06-01` (Messages API reference, retrieved
+2026-10-14). Thinking is sent as disabled so `max_tokens` is the draft, not
+hidden reasoning. If the API rejects that, the call fails and is not charged.
+
+## D142 — Free templates, Pro drafts, Max is a fuller draft
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).** Supersedes the
+D133 sentence that `full_ai_email` does not call a model. It does not change
+who the flag is on.
+
+Free, and a Destination Pass without Pro or Max, keep the manual template
+fill. The pitch page still renders that fill without a model call. A named
+personalizer other than `template` is still refused.
+
+Pro (`full_ai_email`) may ask for one draft. Max (`priority_ai`) uses the
+same model with a larger context cap and a higher `max_tokens` cap, and the
+instruction allows one concrete reason to collaborate. Both caps stay under
+the hard ceilings in `AI_LIMITS`.
+
+The draft is written in the creator's `primary_language`. When that field is
+empty, the draft is in English.
+
+The result is a pitch draft with `origin = assistant` and `delivery = unsent`.
+Copy and a mailto link stay on the device. This block does not send mail.
+D04 stays open.
+
+## D143 — One credit on a successful draft
+
+Status: **Accepted.** The debit is an ordinary negative `credit_ledger` row,
+reason `ai_draft`, so the existing spend walk applies: plan credits, then
+weekly credits, then durable credits (D135).
+
+The amount is `credit_config.ai_draft_cost`, seeded at 1, the same unit as
+an unlock (D131). `CREDITS_CONFIG.aiDraftCost` matches it. A failed model
+call, a refused budget check, a rate limit, and a template fill do not
+debit. The key is `ai_draft:{request id}`. A second charge with that key
+does not debit again. The balance is checked again under a lock after the
+model returns. Pro or Max is required. User A's call cannot debit User B.
+
+## D144 — Minimum context, and Anthropic is a subprocessor
+
+Status: **Accepted — owner-approved subprocessor (2026-10-14).**
+
+The prompt may include the creator's name, niche, Instagram handle, primary
+language, the hotel name, the destination, the selected trip's name and
+dates, one portfolio title and https URL, the unlocked contact's name, a
+short public-activity line, one past-collaboration sentence, and the
+pipeline status word. It does not include an email address, private notes,
+compensation, another creator's rows, or a mailbox dump.
+
+Gmail message bodies are included only when the caller selects that
+message. The read returns `text/plain` for those ids when `user_id` is the
+caller, at most three, each cut at 500 characters. HTML is not returned.
+Another user's id returns no row. The subject list used to choose a message
+does not include the body.
+
+Logs and `ai_usage` store token counts, the model id, a status, and an
+estimated cost. They do not store the prompt or the completion. Log keys
+named prompt, completion, or plain text are redacted.
+
+Anthropic is the data processor for the Claude API
+(`https://platform.claude.com/docs/en/build-with-claude/api-and-data-retention`,
+retrieved 2026-10-14). That page says conversation content is not retained
+by default, and that retained data is not used for model training without
+express permission. Sonnet 5.5 is not in the Covered Models list on that
+page (Fable and Mythos). This product does not claim a zero-data-retention
+contract. The call is the Messages API only. See
+`docs/PRIVACY_SUBPROCESSORS.md`.
+
+## D145 — Monthly cap, daily limits, and tight output
+
+Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
+
+`ANTHROPIC_MONTHLY_BUDGET_USD` is the hard stop for estimated spend in the
+current UTC month. Unset, blank, or not a positive number refuses every
+model call. A call whose estimate would pass the cap is refused before the
+request. Spend is `input_tokens * $2 + output_tokens * $10` per million,
+the Sonnet 5.5 list price effective 2026-10-07, counted in micros. Cache
+tokens, when the API reports them, are counted at the input price so the
+cap stops early rather than late.
+
+Each user may start a call at most once every 3 seconds, at most 15 times
+per UTC day, and at most 20,000 tokens per UTC day. The environment may
+lower those daily numbers. The database clamps a higher setting to 40 calls
+and 80,000 tokens. Pro output is capped at 400 tokens and 1,800 characters
+of context. Max output is capped at 800 tokens and 4,500 characters. Nothing
+in the environment may raise output above 1,024 tokens or context above
+6,000 characters.
+
+The client times out at 20 seconds and retries at most twice, and only on a
+timeout or HTTP 429, 500, 502, 503, or 529. Tests inject a fetch
+implementation. `NODE_ENV=test` refuses the default fetch.
+

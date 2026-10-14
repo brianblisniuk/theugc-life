@@ -32,6 +32,10 @@ const REDACT_KEY_PATTERNS = [
   "html_body",
   "mime_body",
   "snippet",
+  "prompt",
+  "completion",
+  "decoded_text",
+  "plain_text",
   "share_token",
   "sharetoken",
 ] as const;
@@ -48,6 +52,19 @@ const GOOGLE_SECRET = /\b(?:GOCSPX-|ya29\.)\S+/g;
 export function shouldRedactKey(key: string): boolean {
   const normalized = key.toLowerCase();
   return REDACT_KEY_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+/** Token counts are numbers. A string under the same name is still a secret. */
+function isUsageCount(key: string, value: unknown): boolean {
+  const normalized = key.toLowerCase().replace(/_/g, "");
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    (normalized === "inputtokens" ||
+      normalized === "outputtokens" ||
+      normalized === "cachecreationinputtokens" ||
+      normalized === "cachereadinputtokens")
+  );
 }
 
 export function redactString(value: string): string {
@@ -80,7 +97,8 @@ export function redact(value: unknown, depth = 0): unknown {
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = shouldRedactKey(key) ? REDACTED : redact(entry, depth + 1);
+      out[key] =
+        shouldRedactKey(key) && !isUsageCount(key, entry) ? REDACTED : redact(entry, depth + 1);
     }
     return out;
   }
