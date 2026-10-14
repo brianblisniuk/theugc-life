@@ -14,6 +14,7 @@ const CREATORS = [
   "f0310000-0000-4000-8000-000000000003",
 ] as const;
 const FREE = "f0310000-0000-4000-8000-00000000000a";
+const PAYER = "f0310000-0000-4000-8000-00000000000b";
 const DEST = "f0320000-0000-4000-8000-000000000001";
 const MED_A = "f0330000-0000-4000-8000-000000000010";
 const MED_B = "f0330000-0000-4000-8000-000000000020";
@@ -41,7 +42,7 @@ async function samples(hotelId: string, count: number) {
 d("F03 metric order", () => {
   beforeAll(async () => {
     await setupDatabase();
-    for (const id of [...CREATORS, FREE]) {
+    for (const id of [...CREATORS, FREE, PAYER]) {
       await adminQuery("insert into auth.users (id, email) values ($1, $2)", [
         id,
         `${id}@test.local`,
@@ -93,7 +94,7 @@ d("F03 metric order", () => {
     await adminQuery(
       `insert into public.access_entitlements (user_id, access_type, status, starts_at)
        values ($1, 'pro', 'active', now())`,
-      [FREE],
+      [PAYER],
     );
     const rows = await adminQuery<{ hotel_id: string }>(
       `select hotel_id
