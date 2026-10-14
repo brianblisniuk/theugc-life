@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `bf756686bf359c22723b5628fa4446bee2af0302` (merge of PR #81, P03 refund policy, D140, migration `0080`, 2026-10-14)  
-**State:** AWAITING_CI. C02–C05 freshness, aggregates, and creator fit on `cursor/c02-c05-freshness-fit-dc8e`. D146–D150. Migrations `0084`–`0087`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
+**State:** AWAITING_AUDIT. C02–C05 freshness, aggregates, and creator fit. Draft PR #83 on `cursor/c02-c05-freshness-fit-dc8e`. D146–D150. Migrations `0084`–`0087`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
 **Current frontier:** C02–C05 extension. P03 is merged (PR #81). P02 is merged (PR #80). P01 is merged (PR #79). F03 is merged (PR #78). H01 is merged (PR #77). G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 network facts are merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 amounts are superseded by D131. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is merged with H01. D121–D124 are unused. D125 is merged with G03. D130 is merged with F03. D131–D134 are merged with P01. D135–D139 are merged with P02. D140 is merged with P03. D146–D150 are Accepted for this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
@@ -60,7 +60,7 @@
 - PR #81 — P03 refund policy, D140, migration `0080` — `bf756686bf359c22723b5628fa4446bee2af0302`
 
 ## Next action
-- C02–C05 freshness, aggregates, and creator fit on `cursor/c02-c05-freshness-fit-dc8e`. AWAITING_CI. D146–D150. Migrations `0084`–`0087`. H01 and F03 are not rewritten. `expected_head` stays null. Do not merge.
+- PR #83 is C02–C05 freshness, aggregates, and creator fit on `cursor/c02-c05-freshness-fit-dc8e`. AWAITING_AUDIT. D146–D150. Migrations `0084`–`0087`. H01 and F03 are not rewritten. `expected_head` stays null. Do not merge.
 - P01 is merged (PR #79, `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7`). D131–D134. Migrations `0075` and `0076`. This PR does not edit those files.
 - F03 is merged (PR #78, `257123db9d830d146fc601a68bb2ccf250ecd49f`). D130. No migration. This PR does not edit the F03 order files.
 - H01 is merged (PR #77, `b541343c7f7e87e3402d377d88bc5b23d67cbe5a`). D120. Migrations `0071` and `0072`. This PR does not edit those files.
