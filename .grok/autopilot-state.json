@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 3e11ded390a2845603b207433af90bb846d4670e (merge of PR #86, D04 Gmail send, migration 0089, D156-D161). AI cost and anti-abuse is draft PR #87 on cursor/ai-cost-anti-abuse-c721. Same-PR audit correction for bounce recording, free-mail recipients, and free regenerations. Migrations 0090 and 0091. D162-D170 Accepted. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 3e11ded390a2845603b207433af90bb846d4670e (merge of PR #86, D04 Gmail send, migration 0089, D156-D161). AI cost and anti-abuse is draft PR #87 on cursor/ai-cost-anti-abuse-c721. Same-PR correction for bounce recording, free-mail recipients, free regenerations, and a global-pool hard stop. Migrations 0090 and 0091. D162-D170 Accepted. The global pool stops everyone at 100 percent. An unset ANTHROPIC_MONTHLY_BUDGET_USD refuses generation. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
@@ -22,5 +22,5 @@
     "verify": "unknown"
   },
   "required_human_action": "EXTERNAL ACTION APPROVAL REQUIRED — Add gmail.send (sensitive) to the Google Cloud OAuth consent screen for TheUGC.life. Set GMAIL_SEND_ENV=production only on the production site. Leave it unset on staging and previews. Set GMAIL_DISPATCH_SECRET on the host that runs the send schedule. Do not do this from the repository.",
-  "next_dependency": "D04b AI cost and anti-abuse is AWAITING_AUDIT as draft PR #87 on cursor/ai-cost-anti-abuse-c721. Same-PR audit correction for bounce recording, free-mail recipients, and free regenerations. Migrations 0090 and 0091. D162-D170 Accepted. Branched from main 3e11ded390a2845603b207433af90bb846d4670e (merge of PR #86). expected_head stays null. Do not merge."
+  "next_dependency": "D04b AI cost and anti-abuse is AWAITING_AUDIT as draft PR #87 on cursor/ai-cost-anti-abuse-c721. Same-PR correction for bounce recording, free-mail recipients, free regenerations, and a global-pool hard stop. Migrations 0090 and 0091. D162-D170 Accepted. The global pool stops everyone at 100 percent. An unset ANTHROPIC_MONTHLY_BUDGET_USD refuses generation. Branched from main 3e11ded390a2845603b207433af90bb846d4670e (merge of PR #86). expected_head stays null. Do not merge."
 }

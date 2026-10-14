@@ -162,9 +162,12 @@ export function readBudgetMicros(
   return micros;
 }
 
-/** Floor of the global pool. Unset means 0, which does not refuse calls. */
-export function poolFloorMicros(): number {
-  return readBudgetMicros() ?? 0;
+/**
+ * Floor of the global pool, in USD micros.
+ * Unset, blank, or not a positive number refuses paid generation.
+ */
+export function poolFloorMicros(): number | null {
+  return readBudgetMicros();
 }
 
 export function tokenPrices(): { inputUsdPerMtok: number; outputUsdPerMtok: number } {

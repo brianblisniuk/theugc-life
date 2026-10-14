@@ -1991,8 +1991,18 @@
   },
   {
     "schema": "public",
+    "name": "ai_pool_snapshot",
+    "args": "p_pool_floor_micros bigint, p_pool_percent_bps integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "prepare_ai_usage",
-    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_hotel_id uuid, p_estimate_micros bigint, p_user_budget_micros bigint, p_regen_weight integer",
+    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_hotel_id uuid, p_estimate_micros bigint, p_user_budget_micros bigint, p_regen_weight integer, p_pool_floor_micros bigint, p_pool_percent_bps integer",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,

@@ -34,6 +34,7 @@ export type ComposeStatus =
   | "templates_only"
   | "out_of_credits"
   | "monthly_limit"
+  | "pool_exhausted"
   | "rate_limited"
   | "paused"
   | "not_unlocked"
@@ -68,10 +69,13 @@ export interface ComposeDeps {
     estimateMicros: number;
     userBudgetMicros: number;
     regenWeight: number;
+    poolFloorMicros: number;
+    poolPercentBps: number;
   }) => Promise<
     | "reserved"
     | "already_reserved"
     | "budget"
+    | "pool"
     | "rate_limited"
     | "paused"
     | "not_unlocked"
@@ -121,9 +125,10 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   if (!deps.fullAi) return { status: "templates_only" };
   if (deps.balance === null) return { status: "error" };
 
-  if (!deps.apiKey) return { status: "paused" };
   if (!deps.hotelId || !deps.brief) return { status: "invalid_input" };
   if (briefLooksLikeInjection(deps.brief.keyPoints)) return { status: "injection" };
+  const floor = poolFloorMicros();
+  if (floor === null || !deps.apiKey) return { status: "paused" };
 
   const tier = tierOf(deps.priority);
   const resolved = resolveAssistantModel(tier);
@@ -142,6 +147,8 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
     estimateMicros: estimate.micros,
     userBudgetMicros: userBudgetMicros(tier),
     regenWeight: regenWeight(),
+    poolFloorMicros: floor,
+    poolPercentBps: poolPercentBps(),
   });
   const preparedStatus = typeof prepared === "string" ? prepared : prepared.status;
   const warning = typeof prepared === "string" ? undefined : prepared.warning;
@@ -150,6 +157,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   if (preparedStatus === "rate_limited") return { status: "rate_limited" };
   if (preparedStatus === "paused") return { status: "paused" };
   if (preparedStatus === "budget") return { status: "monthly_limit" };
+  if (preparedStatus === "pool") return { status: "pool_exhausted" };
   if (preparedStatus === "not_unlocked") return { status: "not_unlocked" };
   if (preparedStatus === "error") return { status: "error" };
   if (preparedStatus !== "reserved" && preparedStatus !== "already_reserved") {
@@ -164,7 +172,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
       outputTokens: 0,
       costMicros: 0,
       status: "rejected",
-      poolFloorMicros: poolFloorMicros(),
+      poolFloorMicros: floor,
       poolPercentBps: poolPercentBps(),
     });
     return { status: "out_of_credits", requestId };
@@ -206,7 +214,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
     outputTokens,
     costMicros: result.ok ? billed : estimate.micros,
     status: finishStatus,
-    poolFloorMicros: poolFloorMicros(),
+    poolFloorMicros: floor,
     poolPercentBps: poolPercentBps(),
   });
   logger.info(

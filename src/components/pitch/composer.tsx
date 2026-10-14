@@ -213,6 +213,10 @@ export function PitchComposer({
       setNote("You're out of credits, so this draft wasn't created.");
     } else if (result.result === "monthly_limit") {
       setNote("You've used this month's AI budget. Your template is still here.");
+    } else if (result.result === "pool_exhausted") {
+      setNote(
+        "AI drafts are paused until next month. This month's shared AI budget is used up. Your template is still here.",
+      );
     } else if (result.result === "rate_limited") {
       setNote("Wait a moment before another AI draft.");
     } else if (result.result === "paused") {

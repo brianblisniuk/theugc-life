@@ -5371,16 +5371,19 @@ override the defaults. The soft warning is 80 percent. At 100 percent
 that user stops. Free still has no AI. A failed or rejected call can
 still consume the budget for tokens the provider billed.
 
-## D163 — The global pool alerts the owner and does not cut a user who is inside their budget
+## D163 — The global pool warns at 80 percent and stops everyone at 100 percent
 
 Status: **Accepted**.
 
 The pool is `AI_GLOBAL_POOL_PERCENT` of the previous calendar month's
 approved USD revenue. The default is 15 percent. Invalid percents stay
-at 15. `ANTHROPIC_MONTHLY_BUDGET_USD` is the floor, and unset means a
-floor of zero. Nearing is 80 percent of the pool. Exhausted is the pool
-or any spend when the pool is zero. Both write one admin-visible alert
-per UTC month. Neither alert refuses a generation.
+at 15. `ANTHROPIC_MONTHLY_BUDGET_USD` is the floor. Unset, blank, or not
+a positive number refuses paid generation before the provider is called.
+Nearing is 80 percent of the pool. Exhausted is 100 percent. Both write
+one admin-visible alert per UTC month. At 100 percent a new generation
+is refused for every user, including one who is still inside their own
+budget. The in-app message says this month's shared AI budget is used
+up. The alert does not replace that refusal.
 
 ## D164 — One model slot per plan, Claude Sonnet for both
 

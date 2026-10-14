@@ -36,6 +36,7 @@ export type AssistantActionResult =
   | { result: "templates_only" }
   | { result: "out_of_credits" }
   | { result: "monthly_limit" }
+  | { result: "pool_exhausted" }
   | { result: "rate_limited" }
   | { result: "paused" }
   | { result: "off_topic" }
@@ -202,6 +203,8 @@ export async function draftPitchWithAssistantAction(
         p_estimate_micros: input.estimateMicros,
         p_user_budget_micros: input.userBudgetMicros,
         p_regen_weight: input.regenWeight,
+        p_pool_floor_micros: input.poolFloorMicros,
+        p_pool_percent_bps: input.poolPercentBps,
       });
       if (prepared.error || !prepared.data || typeof prepared.data !== "object") return "error";
       const row = prepared.data as { status?: unknown; warning?: unknown; weight?: unknown };
@@ -216,6 +219,7 @@ export async function draftPitchWithAssistantAction(
       }
       if (
         status === "budget" ||
+        status === "pool" ||
         status === "rate_limited" ||
         status === "paused" ||
         status === "not_unlocked"
@@ -260,6 +264,7 @@ export async function draftPitchWithAssistantAction(
     if (outcome.status === "templates_only") return { result: "templates_only" };
     if (outcome.status === "out_of_credits") return { result: "out_of_credits" };
     if (outcome.status === "monthly_limit") return { result: "monthly_limit" };
+    if (outcome.status === "pool_exhausted") return { result: "pool_exhausted" };
     if (outcome.status === "rate_limited") return { result: "rate_limited" };
     if (outcome.status === "paused") return { result: "paused" };
     if (outcome.status === "off_topic") return { result: "off_topic" };

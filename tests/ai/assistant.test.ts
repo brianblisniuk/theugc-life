@@ -139,7 +139,7 @@ describe("assistant limits", () => {
     expect(readBudgetMicros("10")).toBe(10_000_000);
     expect(wouldExceedBudget(9_000_000, 2_000_000, 10_000_000)).toBe(true);
     expect(wouldExceedBudget(1_000, 1_000, 10_000)).toBe(false);
-    expect(poolFloorMicros()).toBe(0);
+    expect(poolFloorMicros()).toBeNull();
     expect(userBudgetMicros("pro")).toBe(5_000_000);
     expect(userBudgetMicros("max")).toBe(15_000_000);
     expect(poolPercentBps("15")).toBe(1500);
@@ -388,6 +388,7 @@ describe("compose", () => {
   });
 
   it("stops before the model when credits, the key, or the user budget are missing", async () => {
+    process.env.ANTHROPIC_MONTHLY_BUDGET_USD = "25";
     const poor = deps({ balance: 0 });
     expect((await composePitch(poor)).status).toBe("out_of_credits");
     expect(poor.calls.complete).toBe(0);
@@ -425,6 +426,7 @@ describe("compose", () => {
   });
 
   it("skips the credit debit when prepare returns weight 0 and charges once otherwise", async () => {
+    process.env.ANTHROPIC_MONTHLY_BUDGET_USD = "25";
     const free = deps({
       balance: 0,
       prepare: async () => ({ status: "reserved", weight: 0 }),
@@ -444,6 +446,26 @@ describe("compose", () => {
     });
     expect((await composePitch(heavy)).status).toBe("drafted");
     expect(heavy.calls.charge).toBe(1);
+  });
+
+  it("refuses before the provider when the monthly budget is unset", async () => {
+    delete process.env.ANTHROPIC_MONTHLY_BUDGET_USD;
+    const draft = deps({ apiKey: "test-key-value" });
+    expect((await composePitch(draft)).status).toBe("paused");
+    expect(draft.calls.complete).toBe(0);
+    expect(draft.calls.finish).toBe(0);
+    expect(draft.calls.charge).toBe(0);
+  });
+
+  it("refuses before the provider when the global pool is exhausted", async () => {
+    process.env.ANTHROPIC_MONTHLY_BUDGET_USD = "15";
+    const draft = deps({
+      prepare: async () => "pool",
+    });
+    expect((await composePitch(draft)).status).toBe("pool_exhausted");
+    expect(draft.calls.complete).toBe(0);
+    expect(draft.calls.finish).toBe(0);
+    expect(draft.calls.charge).toBe(0);
   });
 
   it("redacts a prompt if one is ever placed on a log field", () => {

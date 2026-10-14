@@ -52,10 +52,12 @@ async function prepare(
   estimate: number,
   budget: number,
   weight = 2,
+  floor = 100_000_000,
+  bps = 1500,
 ) {
   const rows = await adminQuery<{ result: unknown }>(
-    "select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',$3,$4,$5,$6) as result",
-    [userId, requestId, hotelId, estimate, budget, weight],
+    "select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',$3,$4,$5,$6,$7,$8) as result",
+    [userId, requestId, hotelId, estimate, budget, weight, floor, bps],
   );
   return jsonOf(rows[0]?.result);
 }
@@ -206,7 +208,7 @@ d("AI draft credits and usage", () => {
     const request = "d0300000-0000-4000-8000-00000000b001";
     const denied = await queryAs(
       { role: "authenticated", sub: PRO },
-      "select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',$3,1000,5000000,2)",
+      "select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',$3,1000,5000000,2,100000000,1500)",
       [PRO, request, HOTEL],
     );
     expect(denied.error?.message ?? "").toMatch(/permission denied/i);
@@ -273,7 +275,7 @@ d("AI draft credits and usage", () => {
     expect(JSON.stringify(own.rows)).not.toContain(hiddenId);
   });
 
-  it("weights the first draft, leaves three regenerations free, and alerts the pool without stopping the next user", async () => {
+  it("weights the first draft, leaves three regenerations free, and stops the next user when the pool is spent", async () => {
     await adminQuery(
       `insert into public.ai_usage (
          request_id, user_id, task, model, hotel_id, input_tokens, output_tokens,
@@ -330,8 +332,13 @@ d("AI draft credits and usage", () => {
     );
     expect(alert.length).toBeGreaterThan(0);
 
-    const still = await prepare(OTHER, "d0300000-0000-4000-8000-00000000c003", HOTEL, 1000, 5_000_000);
-    expect(still.status).toBe("reserved");
+    const still = await prepare(OTHER, "d0300000-0000-4000-8000-00000000c003", HOTEL, 1000, 5_000_000, 2, 1, 1500);
+    expect(still.status).toBe("pool");
+    const held = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from public.ai_usage where request_id = $1",
+      ["d0300000-0000-4000-8000-00000000c003"],
+    );
+    expect(held[0]!.n).toBe(0);
 
     await adminQuery("update public.users set role = 'admin' where id = $1", [FREE]);
     const visible = await queryAs<{ signal: string }>(
@@ -523,5 +530,33 @@ d("AI draft credits and usage", () => {
     await expect(adminQuery("delete from public.hotels where id = $1", [hotelId])).rejects.toThrow(
       /foreign key|ai_usage/i,
     );
+  });
+
+  it("reserves nothing when the pool floor is missing or global spend has reached the pool", async () => {
+    const userId = "d0300000-0000-4000-8000-0000000000a6";
+    const missingId = "d0300000-0000-4000-8000-00000000c020";
+    const fullId = "d0300000-0000-4000-8000-00000000c021";
+    await adminQuery(
+      "insert into auth.users (id, email) values ($1, 'd03-pool@example.invalid')",
+      [userId],
+    );
+    const ledger = await adminQuery<{ id: string }>(
+      "select id from public.credit_ledger where user_id = $1 and reason = 'free_grant' limit 1",
+      [userId],
+    );
+    await adminQuery(
+      "insert into public.contact_unlocks (user_id, hotel_id, ledger_id) values ($1, $2, $3)",
+      [userId, HOTEL, ledger[0]!.id],
+    );
+
+    const missing = await prepare(userId, missingId, HOTEL, 1000, 5_000_000, 2, 0, 1500);
+    expect(missing.status).toBe("pool");
+    const full = await prepare(userId, fullId, HOTEL, 1000, 5_000_000, 2, 1, 1500);
+    expect(full.status).toBe("pool");
+    const rows = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from public.ai_usage where request_id in ($1, $2)",
+      [missingId, fullId],
+    );
+    expect(rows[0]!.n).toBe(0);
   });
 });

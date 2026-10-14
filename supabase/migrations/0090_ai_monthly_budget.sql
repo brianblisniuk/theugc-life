@@ -319,6 +319,85 @@ revoke all on function public.read_own_ai_budget()
 grant execute on function public.read_own_ai_budget() to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
+-- The global pool. prepare refuses at 100 percent. finish writes the alerts.
+-- ---------------------------------------------------------------------------
+
+create function public.ai_pool_snapshot(
+  p_pool_floor_micros bigint,
+  p_pool_percent_bps integer
+)
+returns table (pool_micros bigint, spent_micros bigint)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_month timestamptz;
+  v_prev timestamptz;
+  v_revenue numeric;
+  v_bps integer;
+  v_floor bigint;
+  v_pool bigint;
+  v_spent bigint;
+begin
+  v_month := (date_trunc('month', pg_catalog.now() at time zone 'utc') at time zone 'utc');
+  v_prev := v_month - interval '1 month';
+  v_bps := coalesce(p_pool_percent_bps, 1500);
+  if v_bps < 100 or v_bps > 5000 then
+    v_bps := 1500;
+  end if;
+  v_floor := coalesce(p_pool_floor_micros, 0);
+  if v_floor < 0 then
+    v_floor := 0;
+  end if;
+  if v_floor > 100000000000 then
+    v_floor := 100000000000;
+  end if;
+
+  select coalesce(sum(p.amount), 0)
+    into v_revenue
+    from public.purchases p
+   where p.status = 'approved'
+     and p.refunded_at is null
+     and upper(coalesce(p.currency, '')) = 'USD'
+     and p.purchased_at >= v_prev
+     and p.purchased_at < v_month;
+
+  v_pool := greatest(
+    v_floor,
+    least(100000000000, greatest(0, round(v_revenue * v_bps * 100)::bigint))
+  );
+
+  select coalesce(sum(picked.estimated_cost_micros), 0)
+    into v_spent
+    from (
+      select distinct on (u.request_id) u.estimated_cost_micros
+        from public.ai_usage u
+       where u.created_at >= v_month
+       order by u.request_id,
+         case u.status
+           when 'completed' then 0
+           when 'rejected' then 1
+           when 'failed' then 2
+           else 3
+         end,
+         u.created_at desc
+    ) picked;
+
+  pool_micros := v_pool;
+  spent_micros := v_spent;
+  return next;
+end;
+$$;
+
+comment on function public.ai_pool_snapshot(bigint, integer) is
+  'D163. Service role only. This month''s pool in micros and the real token spend against it. No prompt.';
+
+revoke all on function public.ai_pool_snapshot(bigint, integer)
+  from public, anon, authenticated, service_role;
+grant execute on function public.ai_pool_snapshot(bigint, integer) to service_role;
+
+-- ---------------------------------------------------------------------------
 -- prepare / finish. The old signatures are dropped.
 -- ---------------------------------------------------------------------------
 
@@ -333,7 +412,9 @@ create function public.prepare_ai_usage(
   p_hotel_id uuid,
   p_estimate_micros bigint,
   p_user_budget_micros bigint,
-  p_regen_weight integer
+  p_regen_weight integer,
+  p_pool_floor_micros bigint,
+  p_pool_percent_bps integer
 )
 returns jsonb
 language plpgsql
@@ -350,6 +431,9 @@ declare
   v_started integer;
   v_unlock timestamptz;
   v_warning text;
+  v_pool bigint;
+  v_pool_spent bigint;
+  v_month_date date;
 begin
   if p_user_id is null or p_request_id is null or p_model is null or p_hotel_id is null then
     raise exception 'ai usage requires a user, request, model, and hotel' using errcode = '22023';
@@ -472,6 +556,31 @@ begin
 
   v_charge := p_estimate_micros * v_weight;
 
+  if p_pool_floor_micros is null or p_pool_floor_micros <= 0 then
+    return jsonb_build_object('status', 'pool');
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('theugc.ai_pool'), 0);
+
+  select s.pool_micros, s.spent_micros
+    into v_pool, v_pool_spent
+    from public.ai_pool_snapshot(p_pool_floor_micros, p_pool_percent_bps) s;
+
+  v_month_date := (v_month at time zone 'utc')::date;
+  if v_pool > 0 and v_pool_spent * 5 >= v_pool * 4 then
+    insert into private.ai_pool_alerts (month_start, level, pool_micros, spent_micros)
+    values (v_month_date, 'nearing', v_pool, v_pool_spent)
+    on conflict (month_start, level) do nothing;
+  end if;
+  if v_pool <= 0 or v_pool_spent + p_estimate_micros > v_pool then
+    if v_pool > 0 then
+      insert into private.ai_pool_alerts (month_start, level, pool_micros, spent_micros)
+      values (v_month_date, 'exhausted', v_pool, v_pool_spent)
+      on conflict (month_start, level) do nothing;
+    end if;
+    return jsonb_build_object('status', 'pool', 'spent_micros', v_pool_spent, 'pool_micros', v_pool);
+  end if;
+
   select coalesce(sum(picked.budget_micros), 0)
     into v_spent
     from (
@@ -520,12 +629,12 @@ begin
 end;
 $$;
 
-comment on function public.prepare_ai_usage(uuid, uuid, text, uuid, bigint, bigint, integer) is
-  'D162 and D165. Service role only. Reserves a weighted user budget or refuses. Ten starts in a minute pause the account. The global pool is not a refusal. Stores no prompt.';
+comment on function public.prepare_ai_usage(uuid, uuid, text, uuid, bigint, bigint, integer, bigint, integer) is
+  'D162, D163, and D165. Service role only. Reserves a weighted user budget or refuses. Ten starts in a minute pause the account. The global pool stops a new generation at 100 percent. A missing floor refuses. Stores no prompt.';
 
-revoke all on function public.prepare_ai_usage(uuid, uuid, text, uuid, bigint, bigint, integer)
+revoke all on function public.prepare_ai_usage(uuid, uuid, text, uuid, bigint, bigint, integer, bigint, integer)
   from public, anon, authenticated, service_role;
-grant execute on function public.prepare_ai_usage(uuid, uuid, text, uuid, bigint, bigint, integer)
+grant execute on function public.prepare_ai_usage(uuid, uuid, text, uuid, bigint, bigint, integer, bigint, integer)
   to service_role;
 
 drop function if exists public.finish_ai_usage(uuid, uuid, text, integer, integer, bigint, text);
@@ -552,10 +661,6 @@ declare
   v_reserved_budget bigint;
   v_weighted bigint;
   v_month timestamptz;
-  v_prev timestamptz;
-  v_revenue numeric;
-  v_bps integer;
-  v_floor bigint;
   v_pool bigint;
   v_spent bigint;
   v_gens integer;
@@ -627,49 +732,12 @@ begin
   end if;
 
   v_month := (date_trunc('month', pg_catalog.now() at time zone 'utc') at time zone 'utc');
-  v_prev := v_month - interval '1 month';
   v_month_date := (v_month at time zone 'utc')::date;
 
-  select coalesce(sum(p.amount), 0)
-    into v_revenue
-    from public.purchases p
-   where p.status = 'approved'
-     and p.refunded_at is null
-     and upper(coalesce(p.currency, '')) = 'USD'
-     and p.purchased_at >= v_prev
-     and p.purchased_at < v_month;
-
-  v_bps := coalesce(p_pool_percent_bps, 1500);
-  if v_bps < 100 or v_bps > 5000 then
-    v_bps := 1500;
-  end if;
-  v_floor := coalesce(p_pool_floor_micros, 0);
-  if v_floor < 0 then
-    v_floor := 0;
-  end if;
-  if v_floor > 100000000000 then
-    v_floor := 100000000000;
-  end if;
-  v_pool := greatest(
-    v_floor,
-    least(100000000000, greatest(0, round(v_revenue * v_bps * 100)::bigint))
-  );
-
-  select coalesce(sum(picked.estimated_cost_micros), 0)
-    into v_spent
-    from (
-      select distinct on (u.request_id) u.estimated_cost_micros
-        from public.ai_usage u
-       where u.created_at >= v_month
-       order by u.request_id,
-         case u.status
-           when 'completed' then 0
-           when 'rejected' then 1
-           when 'failed' then 2
-           else 3
-         end,
-         u.created_at desc
-    ) picked;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('theugc.ai_pool'), 0);
+  select s.pool_micros, s.spent_micros
+    into v_pool, v_spent
+    from public.ai_pool_snapshot(p_pool_floor_micros, p_pool_percent_bps) s;
 
   if v_pool > 0 and v_spent * 5 >= v_pool * 4 then
     insert into private.ai_pool_alerts (month_start, level, pool_micros, spent_micros)
@@ -685,7 +753,7 @@ end;
 $$;
 
 comment on function public.finish_ai_usage(uuid, uuid, text, integer, integer, bigint, text, bigint, integer) is
-  'D162 and D163. Service role only. Records real token cost and the weighted user charge. A full global pool writes an alert and does not raise. No prompt.';
+  'D162 and D163. Service role only. Records real token cost and the weighted user charge. Eighty percent and a full global pool each write an admin alert. prepare refuses the next generation. No prompt.';
 
 revoke all on function public.finish_ai_usage(uuid, uuid, text, integer, integer, bigint, text, bigint, integer)
   from public, anon, authenticated, service_role;
