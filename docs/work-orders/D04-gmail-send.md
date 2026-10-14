@@ -1,8 +1,9 @@
 # D04 — Gmail send from the OS
 
-**Status:** Binding work order for the draft PR. Awaiting audit. Do not merge.
+**Status:** Binding work order for draft PR #86. Awaiting audit. Do not merge.
 **Base:** `main` `414b9805497a2210dd0ddebb592991331e7221d2` (merge of PR #85, DEC-DEL).
 **Branch:** `cursor/d04-gmail-send-db05`.
+**PR:** https://github.com/brianblisniuk/theugc-life/pull/86
 **Migration:** `0089_gmail_send.sql`. `0001`–`0088` are not edited.
 **Decisions:** D156–D158 and D160–D161 Accepted. D159 Proposed.
 
