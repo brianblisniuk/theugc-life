@@ -25,6 +25,7 @@ bindServerActions([
 ]);
 
 import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
+import { recordCreatorFitDecision } from "@/lib/intelligence/queries";
 import { recordNetworkPriority } from "@/lib/network-intelligence/queries";
 
 import { parseCollaborationForm, parseDealForm, parseWorkflowForm } from "./input";
@@ -205,5 +206,15 @@ export async function recordNetworkPriorityAction(formData: FormData): Promise<v
   const hotelId = readField(formData, "hotelId");
   if (!hotelId) return;
   const result = await recordNetworkPriority(hotelId);
+  if (result.result === "ok") revalidatePath(`/app/hotels/${hotelId}`);
+}
+
+export async function recordCreatorFitDecisionAction(formData: FormData): Promise<void> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return;
+  const hotelId = readField(formData, "hotelId");
+  const decision = readField(formData, "decision");
+  if (!hotelId || (decision !== "pursue" && decision !== "skip")) return;
+  const result = await recordCreatorFitDecision(hotelId, decision);
   if (result.result === "ok") revalidatePath(`/app/hotels/${hotelId}`);
 }

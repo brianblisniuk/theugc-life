@@ -327,10 +327,10 @@ contract, and D076 (open PR #53) does not define it either.
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | C01 | **MERGED, ACCEPTED** — PR #54, merge `989e7f020f07362113b3e9b00fd9950293808f10`. Docs only. D077 is Accepted (Brian, 13 Oct 2026) by D099. | normalized intelligence event/fact contract | every derived fact traces to canonical target + private evidence/event |
-| C02 | **IN THIS PR** with C03–C05. Migration `0056`. D099. D012 bands. Unknown is not zero. | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
-| C03 | **IN THIS PR** with C02, C04, and C05. Anonymous row only at 3 distinct creators. | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
-| C04 | **IN THIS PR**. Baseline order only. Prior is not applied (`no_proven_lift`). | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
-| C05 | **IN THIS PR**. Pipeline Sí/No, personal versus Gmail history, admin-only pilot measures. Do not merge. | intelligence APIs + destination/property decision UI experiment | creators demonstrably change/prioritize decisions or save meaningful time |
+| C02 | **MERGED** PR #67 (D099, `0056`). Extended by D146, migration `0084`: per-metric confidence and freshness beside H01. Unknown is not zero. | freshness, confidence and data-strength engine | unknown ≠ zero; weak sample cannot render false precision |
+| C03 | **MERGED** PR #67. Extended by D147, migration `0085`. Network rows still require 3 distinct creators. Personal counts stay on the caller. | personal + privacy-safe network aggregates | private creator data cannot leak; aggregation thresholds/contracts explicit |
+| C04 | **MERGED** PR #67 baseline. Extended by D148, migration `0086`. Fit orders public activity. A type needs three creators other than the caller. Prior is not applied (`no_proven_lift`). Max adds detail and does not reorder. | ranking / creator-fit V1 + hierarchical-prior experiment | compare against simple baseline; no opaque score without evidence |
+| C05 | **MERGED** PR #67 Sí/No and prioritize. Extended by D149, migration `0087`: pursue or skip on a fit hotel. The choice does not change the aggregate. | intelligence APIs + destination/property decision UI experiment | creators demonstrably change/prioritize decisions or save meaningful time |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 17
@@ -721,6 +721,13 @@ stay. D100 later changes contact access. D089–D091 are unchanged.
 answers. The public aggregate is anonymous. Gmail enters only after Sí.
 Provenance and the pilot measures are admin-only. `0055` is not edited.
 
+D146–D150 extend that block beside H01 and F03. Migrations `0084`–`0087`.
+Per-metric freshness, caller-only personal counts, a k-anonymous network
+read, creator fit ordered by public activity, and pursue/skip. Max
+`advanced_signals` adds rank, confidence, and freshness on the fit list.
+Discover and Pipeline order are not edited. `0056`, `0071`, and `0072` are
+not edited.
+
 **HB01 is merged** as PR #69, merge
 `28656f46dd71f9887e6305cf2e0349099e8f2a9e`. Migration
 `0059_star_rating_provenance.sql`. D106. F05 does not edit that file.
@@ -846,12 +853,12 @@ payment link is service-role only.
 refunded pack does not return on the next period. A chargeback after a
 refund still revokes the subscription.
 
-**D03 AI assistant and email composer** is draft PR #84 on
-`cursor/d03-ai-composer-1361`. Migrations `0082_ai_assistant.sql` and
-`0083_ai_draft_credit.sql`. D141–D145. Pro and Max both use Claude Sonnet.
-Max is more context and a fuller draft on that model. Free and a Destination
-Pass keep the template. One credit on a successful draft. The draft is not
-sent. D04 stays open. Do not merge.
+**D03 AI assistant and email composer** is merged as PR #84, merge
+`b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations
+`0082_ai_assistant.sql` and `0083_ai_draft_credit.sql`. D141–D145. Pro and
+Max both use Claude Sonnet. Max is more context and a fuller draft on that
+model. Free and a Destination Pass keep the template. One credit on a
+successful draft. The draft is not sent. D04 stays open.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

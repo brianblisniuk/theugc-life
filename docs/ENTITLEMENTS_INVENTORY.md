@@ -42,7 +42,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `hotel.premium_contacts` | Hotel Detail | credit unlock for this user, or staff (D100) |
 | `credits.plan_config` | Credits | system grant. Amounts are config (D131). A price is not a grant |
 | `plans.full_ai_email` | Plans | Pro and Max. Free keeps manual templates. The flag allows the Claude draft (D142) |
-| `plans.max_flags` | Plans | Max only. Flags do not change ranking (D133) |
+| `plans.max_flags` | Plans | Max only. Priority AI is a fuller draft. Advanced signals add fit detail. Flags do not change Discover or Pipeline order (D133, D142, D150) |
 | `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; outside counts only outside-coverage rows; Pro exempt |
 | `pipeline.engage` | Pipeline | Free limit 5; same outside-coverage count |
 | `pipeline.own` | Pipeline | owner, every tier |

@@ -2881,6 +2881,28 @@ those metrics with `rank_key desc, hotel_id`. They read the two signal
 views and `read_destination_metric_ranking`. They do not read
 `private.hotel_metric_basis`. `0075` and `0076` are unused.
 
+Migrations `0084`–`0087` (D146–D150) annotate those metrics. They do not
+rewrite `0071`, `0072`, or `0056`. `0081` is the merged P03b refund ledger
+fix and is not edited here. `0082` and `0083` are the merged D03 assistant
+and are not edited here.
+
+`private.hotel_metric_freshness` is confidence and a freshness band for an
+H01 metric that is already available. Activity confidence is the H01 label.
+Freshness is null unless confidence is moderate or strong and three distinct
+creators fall inside that window. `private.hotel_confirmed_types` is a
+collaboration type confirmed by at least three creators other than the
+caller. The caller's own confirmation does not fill that floor. Neither view
+has a count column or a creator id. Select is revoked from `public`, `anon`,
+`authenticated`, and `service_role`.
+
+`read_hotel_metric_confidence`, `read_own_personal_aggregate`,
+`read_network_aggregate`, `read_creator_fit`, `record_creator_fit_decision`,
+and `read_own_fit_decision` are `SECURITY DEFINER` with an empty
+`search_path`. Below three creators, `read_network_aggregate` returns
+`insufficient` and no other keys. `private.creator_fit_decisions` is
+append-only, RLS is enabled, and client roles have no grant. A decision does
+not change a metric or an aggregate.
+
 ## 10. Growth entities
 
 ### hotel_claims
@@ -3098,5 +3120,10 @@ At minimum:
     and a published confirmed collaboration exist. D090 fields are unchanged.
     `0066`, `0068`, and `0069` are not edited. This H01 PR does not edit
     `0073` or `0074`.
+40. Metric freshness, personal and network aggregates, creator fit, and fit
+    decisions (`0084`–`0087`, D146–D150). Annotations and reads beside H01.
+    `0056`, `0071`, and `0072` are not edited. `0081` is the merged P03b
+    refund ledger fix and is not edited here. `0082` and `0083` are the merged
+    D03 assistant and are not edited here.
 
 Every migration must be reproducible from an empty database.
