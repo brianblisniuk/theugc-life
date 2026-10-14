@@ -2596,7 +2596,8 @@ Both tables have RLS enabled and no policies. `anon`, `authenticated`, and
 `public` cannot read them. `gmail_send_list_own()` returns the signed-in
 creator's events without the body. The other send functions are
 `service_role` only. `gmail_send_purge_for_deletion` removes both tables for
-one mailbox during account erasure (D161).
+one mailbox during account erasure (D161). The new send functions pin an
+empty `search_path`. A successful send costs no credits (D159).
 
 `grant_send` is an OAuth purpose on a mailbox that is already connected. It
 asks for `gmail.send` together with the B02 scopes. Connect and reconnect

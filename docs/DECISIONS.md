@@ -5329,26 +5329,26 @@ If the pitch omits a pipeline item, the single non-closed item for that
 creator and hotel is attached, and its trip is used when the creator did
 not name one.
 
-## D159 — Whether a send costs credits
+## D159 — A successful send costs no credits
 
-Status: **Proposed**.
+Status: **Accepted**.
 
-No accepted decision charges credits for sending. This block does not
-debit the ledger. A successful send costs no credits.
-
-Question for Brian: should a successful Gmail send cost credits, and if
-so how many?
+A successful Gmail send costs no credits. This block does not debit the
+ledger.
 
 ## D160 — Allowlist outside production, and a kill switch
 
 Status: **Accepted** for this block.
 
 `GMAIL_SEND_DISABLED=true`, `1`, or `yes` refuses every send and records
-`kill_switch`. Outside production the recipient allowlist is on. An unset
-`GMAIL_SEND_ALLOWLIST` allows only `hello@theugc.life`. Staging sets that
-address. Production allows any recipient unless the allowlist is set.
-Tests mock Gmail. The real adapter throws before any network call when
-`NODE_ENV` is `test`.
+`kill_switch`. Unrestricted sending is on only when
+`GMAIL_SEND_ENV=production`. Next.js and Netlify set `NODE_ENV=production`
+on staging and on deploy previews, so `NODE_ENV` does not open sending.
+When `GMAIL_SEND_ENV` is anything else, including unset, the recipient
+allowlist is on. An unset `GMAIL_SEND_ALLOWLIST` allows only
+`hello@theugc.life`. A set allowlist is enforced even when
+`GMAIL_SEND_ENV=production`. Tests mock Gmail. The real adapter throws
+before any network call when `NODE_ENV` is `test`.
 
 ## D161 — Account deletion erases send rows
 

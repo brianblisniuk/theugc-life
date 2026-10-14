@@ -194,7 +194,7 @@ create or replace function public.gmail_send_scope_persist(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_account public.mail_accounts%rowtype;
@@ -499,7 +499,7 @@ create or replace function public.gmail_send_payload_hash(
 returns text
 language sql
 immutable
-set search_path = public, pg_temp
+set search_path = ''
 as $$
   select encode(public.digest(convert_to(
     coalesce(p_kind, '') || '|' ||
@@ -534,7 +534,7 @@ create or replace function public.gmail_send_reserve(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_creator uuid;
@@ -823,7 +823,7 @@ create or replace function public.gmail_send_mark_provider(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_row private.gmail_send_attempts%rowtype;
@@ -971,7 +971,7 @@ create or replace function public.gmail_send_fail(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_row private.gmail_send_attempts%rowtype;
@@ -1038,7 +1038,7 @@ create or replace function public.gmail_send_bind_pending(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_event private.gmail_sent_events%rowtype;
@@ -1099,7 +1099,7 @@ create or replace function public.gmail_send_commit(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_row private.gmail_send_attempts%rowtype;
@@ -1218,7 +1218,7 @@ create or replace function public.gmail_send_list_own()
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_user uuid;
@@ -1263,7 +1263,7 @@ create or replace function public.gmail_send_purge_for_deletion(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, private, pg_temp
+set search_path = ''
 as $$
 declare
   v_account public.mail_accounts%rowtype;

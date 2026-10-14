@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 414b9805497a2210dd0ddebb592991331e7221d2 (merge of PR #85, DEC-DEL, migration 0088, D151-D155). D04 Gmail send is draft PR #86 on cursor/d04-gmail-send-db05. Migration 0089. D156-D158 and D160-D161 Accepted. D159 Proposed. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 414b9805497a2210dd0ddebb592991331e7221d2 (merge of PR #85, DEC-DEL, migration 0088, D151-D155). D04 Gmail send is draft PR #86 on cursor/d04-gmail-send-db05. Migration 0089. D156-D161 Accepted. D159: a successful send costs no credits. Unrestricted sending requires GMAIL_SEND_ENV=production. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
@@ -21,6 +21,6 @@
     "ref": "414b9805497a2210dd0ddebb592991331e7221d2",
     "verify": "unknown"
   },
-  "required_human_action": "EXTERNAL ACTION APPROVAL REQUIRED — Add gmail.send (sensitive) to the Google Cloud OAuth consent screen for TheUGC.life, and set GMAIL_SEND_ALLOWLIST=hello@theugc.life on staging. Do not do this from the repository.",
-  "next_dependency": "D04 Gmail send is AWAITING_AUDIT as draft PR #86 on cursor/d04-gmail-send-db05. Migration 0089. D156-D158 and D160-D161 Accepted. D159 Proposed (send credits). Branched from main 414b9805497a2210dd0ddebb592991331e7221d2 (merge of PR #85). expected_head stays null. Do not merge."
+  "required_human_action": "EXTERNAL ACTION APPROVAL REQUIRED — Add gmail.send (sensitive) to the Google Cloud OAuth consent screen for TheUGC.life. Set GMAIL_SEND_ENV=production only on the production site. Leave it unset on staging and previews. Do not do this from the repository.",
+  "next_dependency": "D04 Gmail send is AWAITING_AUDIT as draft PR #86 on cursor/d04-gmail-send-db05. Migration 0089. D156-D161 Accepted. D159: a successful send costs no credits. Unrestricted sending requires GMAIL_SEND_ENV=production. Branched from main 414b9805497a2210dd0ddebb592991331e7221d2 (merge of PR #85). expected_head stays null. Do not merge."
 }

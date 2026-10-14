@@ -4,8 +4,12 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GoogleAdapterError, googleOAuthAdapter, type GoogleOAuthAdapter } from "@/lib/gmail/google.server";
-import { assessSendGuard, dailyCapFromEnv } from "@/lib/gmail/send/guard";
+import {
+  GoogleAdapterError,
+  googleOAuthAdapter,
+  type GoogleOAuthAdapter,
+} from "@/lib/gmail/google.server";
+import { assessSendGuard, dailyCapFromEnv, sendGuardFromProcess } from "@/lib/gmail/send/guard";
 import { MimeRejected, buildPlainMessage, encodeRawMessage } from "@/lib/gmail/send/mime";
 import { sendGmailMessage, type SendDeps } from "@/lib/gmail/send/service.server";
 
@@ -26,34 +30,123 @@ describe("send guard", () => {
     expect(blocked).toEqual({ ok: false, code: "allowlist" });
   });
 
-  it("uses a configured list outside production and in production", () => {
+  it("uses a configured list outside production and when sending is open", () => {
     expect(
       assessSendGuard(
-        { nodeEnv: "production", allowlist: "one@example.com, two@example.com" },
+        {
+          nodeEnv: "production",
+          sendEnv: "production",
+          allowlist: "one@example.com, two@example.com",
+        },
         "TWO@example.com",
       ).ok,
     ).toBe(true);
     expect(
-      assessSendGuard({ nodeEnv: "production", allowlist: "one@example.com" }, "two@example.com"),
+      assessSendGuard({ sendEnv: "production", allowlist: "one@example.com" }, "two@example.com"),
+    ).toEqual({ ok: false, code: "allowlist" });
+    expect(
+      assessSendGuard({ nodeEnv: "development", allowlist: "one@example.com" }, "one@example.com")
+        .ok,
+    ).toBe(true);
+  });
+
+  it("allows any recipient only when GMAIL_SEND_ENV=production and the list is unset", () => {
+    expect(assessSendGuard({ sendEnv: "production" }, "guest@hotel.example").ok).toBe(true);
+    expect(
+      assessSendGuard(
+        { nodeEnv: "test", sendEnv: "production", allowlist: "  " },
+        "guest@hotel.example",
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("NODE_ENV=production without GMAIL_SEND_ENV still enforces the default allowlist", () => {
+    const blocked = assessSendGuard({ nodeEnv: "production" }, "guest@hotel.example");
+    expect(blocked).toEqual({ ok: false, code: "allowlist" });
+    expect(assessSendGuard({ nodeEnv: "production" }, "hello@theugc.life").ok).toBe(true);
+    expect(
+      assessSendGuard(
+        { nodeEnv: "production", allowlist: "  ", sendEnv: "" },
+        "guest@hotel.example",
+      ),
+    ).toEqual({ ok: false, code: "allowlist" });
+    expect(
+      assessSendGuard({ nodeEnv: "production", sendEnv: "staging" }, "desk@hotel.example"),
+    ).toEqual({ ok: false, code: "allowlist" });
+    expect(
+      assessSendGuard({ nodeEnv: "production", sendEnv: "Production" }, "desk@hotel.example"),
     ).toEqual({ ok: false, code: "allowlist" });
   });
 
-  it("allows any recipient in production only when the list is unset", () => {
-    expect(assessSendGuard({ nodeEnv: "production" }, "guest@hotel.example").ok).toBe(true);
-    expect(assessSendGuard({ nodeEnv: "production", allowlist: "  " }, "guest@hotel.example").ok).toBe(
-      true,
-    );
+  it("GMAIL_SEND_ENV=production opens sending only when the allowlist is unset", () => {
+    expect(assessSendGuard({ sendEnv: "production" }, "guest@hotel.example").ok).toBe(true);
+    expect(
+      assessSendGuard({ nodeEnv: "development", sendEnv: "production" }, "desk@hotel.example").ok,
+    ).toBe(true);
+    expect(
+      assessSendGuard({ nodeEnv: "production", sendEnv: " production " }, "desk@hotel.example").ok,
+    ).toBe(true);
+    expect(
+      assessSendGuard(
+        { sendEnv: "production", allowlist: "one@example.com" },
+        "desk@hotel.example",
+      ),
+    ).toEqual({ ok: false, code: "allowlist" });
+    expect(
+      assessSendGuard({ sendEnv: "production", disabled: "true" }, "hello@theugc.life"),
+    ).toEqual({ ok: false, code: "kill_switch" });
   });
 
   it("the kill switch wins over the allowlist", () => {
     for (const disabled of ["true", "1", "yes", " TRUE "]) {
       expect(
-        assessSendGuard({ nodeEnv: "production", disabled, allowlist: "" }, "hello@theugc.life"),
+        assessSendGuard(
+          { nodeEnv: "production", sendEnv: "production", disabled, allowlist: "" },
+          "hello@theugc.life",
+        ),
       ).toEqual({ ok: false, code: "kill_switch" });
     }
-    expect(assessSendGuard({ nodeEnv: "production", disabled: "false" }, "guest@hotel.example").ok).toBe(
-      true,
-    );
+    expect(
+      assessSendGuard({ sendEnv: "production", disabled: "false" }, "guest@hotel.example").ok,
+    ).toBe(true);
+    expect(
+      assessSendGuard({ nodeEnv: "production", disabled: "no" }, "guest@hotel.example"),
+    ).toEqual({
+      ok: false,
+      code: "allowlist",
+    });
+  });
+
+  it("reads GMAIL_SEND_ENV from the process and does not treat NODE_ENV as production", () => {
+    const bag = process.env as Record<string, string | undefined>;
+    const previous = {
+      NODE_ENV: bag.NODE_ENV,
+      GMAIL_SEND_ENV: bag.GMAIL_SEND_ENV,
+      GMAIL_SEND_ALLOWLIST: bag.GMAIL_SEND_ALLOWLIST,
+      GMAIL_SEND_DISABLED: bag.GMAIL_SEND_DISABLED,
+    };
+    const restore = () => {
+      for (const key of Object.keys(previous) as (keyof typeof previous)[]) {
+        const value = previous[key];
+        if (value === undefined) delete bag[key];
+        else bag[key] = value;
+      }
+    };
+    bag.NODE_ENV = "production";
+    delete bag.GMAIL_SEND_ENV;
+    delete bag.GMAIL_SEND_ALLOWLIST;
+    delete bag.GMAIL_SEND_DISABLED;
+    try {
+      expect(assessSendGuard(sendGuardFromProcess(), "guest@hotel.example")).toEqual({
+        ok: false,
+        code: "allowlist",
+      });
+      expect(assessSendGuard(sendGuardFromProcess(), "hello@theugc.life").ok).toBe(true);
+      bag.GMAIL_SEND_ENV = "production";
+      expect(assessSendGuard(sendGuardFromProcess(), "guest@hotel.example").ok).toBe(true);
+    } finally {
+      restore();
+    }
   });
 
   it("parses the daily cap and leaves clamping to the database", () => {
@@ -68,7 +161,12 @@ describe("send guard", () => {
 describe("plain message", () => {
   it("rejects a header break in from, to, or subject", () => {
     expect(() =>
-      buildPlainMessage({ from: "a@b.co\r\nBcc: x@y.co", to: "c@d.co", subject: "Hi", body: "Body" }),
+      buildPlainMessage({
+        from: "a@b.co\r\nBcc: x@y.co",
+        to: "c@d.co",
+        subject: "Hi",
+        body: "Body",
+      }),
     ).toThrow(MimeRejected);
     expect(() =>
       buildPlainMessage({ from: "a@b.co", to: "c@d.co\nBcc: x", subject: "Hi", body: "Body" }),
@@ -112,7 +210,13 @@ function scripted(handlers: Record<string, (args: Record<string, unknown>) => un
   const google = { sendMessage: sends } as unknown as GoogleOAuthAdapter;
   const deps: SendDeps = {
     google,
-    env: { nodeEnv: "production", disabled: null, allowlist: null, dailyLimit: "20" },
+    env: {
+      nodeEnv: "production",
+      sendEnv: "production",
+      disabled: null,
+      allowlist: null,
+      dailyLimit: "20",
+    },
     getAccessToken: async () => ({ result: "ok", accessToken: "access-token" }),
     db: {
       rpc: async (fn: string, args: Record<string, unknown>) => {
@@ -150,8 +254,31 @@ describe("send orchestration", () => {
     hotelId: "d04a0000-0000-4000-8000-000000000030",
   };
 
+  it("does not call Gmail when NODE_ENV is production and GMAIL_SEND_ENV is unset", async () => {
+    const fail = vi.fn(() => ({
+      result: "failed",
+      call_provider: false,
+      failure_code: "allowlist",
+      attempt_id: ATTEMPT,
+    }));
+    const { deps, sends } = scripted({
+      gmail_send_reserve: () => reserved,
+      gmail_send_fail: fail,
+    });
+    deps.env = { nodeEnv: "production", sendEnv: null, disabled: null, allowlist: null };
+    const outcome = await sendGmailMessage(input, deps);
+    expect(outcome).toMatchObject({ result: "failed", failureCode: "allowlist" });
+    expect(sends).not.toHaveBeenCalled();
+    expect(fail).toHaveBeenCalled();
+  });
+
   it("does not call Gmail when the kill switch is on, and records the failure", async () => {
-    const fail = vi.fn(() => ({ result: "failed", call_provider: false, failure_code: "kill_switch", attempt_id: ATTEMPT }));
+    const fail = vi.fn(() => ({
+      result: "failed",
+      call_provider: false,
+      failure_code: "kill_switch",
+      attempt_id: ATTEMPT,
+    }));
     const { deps, sends } = scripted({
       gmail_send_reserve: () => reserved,
       gmail_send_fail: fail,
@@ -184,7 +311,12 @@ describe("send orchestration", () => {
   it("sends once and commits the provider ids", async () => {
     const { deps, sends } = scripted({
       gmail_send_reserve: () => reserved,
-      gmail_send_mark_provider: () => ({ result: "ok", call_provider: true, attempt_id: ATTEMPT, daily_cap: 20 }),
+      gmail_send_mark_provider: () => ({
+        result: "ok",
+        call_provider: true,
+        attempt_id: ATTEMPT,
+        daily_cap: 20,
+      }),
       gmail_send_commit: () => ({
         result: "sent",
         attempt_id: ATTEMPT,

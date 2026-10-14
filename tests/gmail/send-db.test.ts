@@ -225,13 +225,11 @@ d("D04 Gmail send", () => {
       "gmail_send_scope_persist",
     ]);
     for (const row of rows) {
+      expect(row.proconfig ?? [], row.proname).toContain('search_path=""');
       if (row.proname === "gmail_send_payload_hash") {
         expect(row.prosecdef).toBe(false);
       } else {
         expect(row.prosecdef, row.proname).toBe(true);
-        expect((row.proconfig ?? []).some((item) => item.startsWith("search_path=")), row.proname).toBe(
-          true,
-        );
       }
     }
   });

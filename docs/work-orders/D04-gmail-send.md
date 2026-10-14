@@ -5,7 +5,7 @@
 **Branch:** `cursor/d04-gmail-send-db05`.
 **PR:** https://github.com/brianblisniuk/theugc-life/pull/86
 **Migration:** `0089_gmail_send.sql`. `0001`–`0088` are not edited.
-**Decisions:** D156–D158 and D160–D161 Accepted. D159 Proposed.
+**Decisions:** D156–D161 Accepted. D159: a successful send costs no credits.
 
 ## Question
 
@@ -26,14 +26,16 @@ event linked to the hotel, contact, trip, and pipeline item?
 - A private sent event with Gmail's message id and thread id. D06 binds the
   thread once it is stored. Pipeline status and outreach events stay as
   they were.
-- Allowlist on outside production. Unset list is `hello@theugc.life`.
-  `GMAIL_SEND_DISABLED` stops every send. Tests never call Gmail.
+- Allowlist on unless `GMAIL_SEND_ENV=production`. `NODE_ENV` does not
+  open sending. Unset list is `hello@theugc.life`. `GMAIL_SEND_DISABLED`
+  stops every send. Tests never call Gmail.
 - Account deletion erases the new rows.
 
 ## Not in this block
 
 - Follow-up scheduling (D05).
-- Charging credits for a send (D159, Proposed).
+- Charging credits for a send. D159 is Accepted: a successful send costs
+  no credits.
 - Adding `gmail.send` on the Google Cloud OAuth consent screen. That is a
   human action outside the repo.
 - Changing CRM status when a message is sent.
@@ -41,6 +43,7 @@ event linked to the hotel, contact, trip, and pipeline item?
 ## Required human action
 
 EXTERNAL ACTION APPROVAL REQUIRED — Add `gmail.send` (sensitive) to the
-Google Cloud OAuth consent screen for TheUGC.life, and set
-`GMAIL_SEND_ALLOWLIST=hello@theugc.life` on staging. Do not do this from
-the repository.
+Google Cloud OAuth consent screen for TheUGC.life. Set
+`GMAIL_SEND_ENV=production` only on the production site. Leave it unset
+on staging and previews, where an unset allowlist allows only
+`hello@theugc.life`. Do not do this from the repository.

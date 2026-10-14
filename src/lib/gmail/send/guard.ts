@@ -1,23 +1,27 @@
 /**
  * The send guard is a pure function of the environment and the recipient.
  *
- * Outside production the allowlist is on. An unset list allows only
- * hello@theugc.life. Production allows any recipient unless
- * GMAIL_SEND_ALLOWLIST is set. GMAIL_SEND_DISABLED stops every send.
- * This module does not read process.env, so a test can pass the env it means.
+ * Unrestricted sending is on only when GMAIL_SEND_ENV is exactly
+ * `production`. NODE_ENV is not that switch: Next.js and Netlify set it
+ * to production on staging and on deploy previews. Everywhere else the
+ * allowlist is on. An unset list allows only hello@theugc.life. A set
+ * list is enforced even when GMAIL_SEND_ENV=production.
+ * GMAIL_SEND_DISABLED stops every send.
+ * assessSendGuard does not read process.env, so a test can pass the env it means.
  */
 
 export const STAGING_ALLOWLIST_RECIPIENT = "hello@theugc.life";
 
 export interface SendGuardEnv {
+  /** Recorded for tests. It does not open unrestricted sending. */
   nodeEnv?: string | null;
+  /** GMAIL_SEND_ENV. Only the exact value `production` opens unrestricted sending. */
+  sendEnv?: string | null;
   disabled?: string | null;
   allowlist?: string | null;
 }
 
-export type SendGuardDecision =
-  | { ok: true }
-  | { ok: false; code: "kill_switch" | "allowlist" };
+export type SendGuardDecision = { ok: true } | { ok: false; code: "kill_switch" | "allowlist" };
 
 function disabledFlag(value: string | null | undefined): boolean {
   const flag = (value ?? "").trim().toLowerCase();
@@ -31,14 +35,19 @@ function allowlistAddresses(raw: string): string[] {
     .filter((part) => part.length > 0);
 }
 
+function unrestrictedSend(env: SendGuardEnv): boolean {
+  return (env.sendEnv ?? "").trim() === "production";
+}
+
 export function assessSendGuard(env: SendGuardEnv, recipient: string): SendGuardDecision {
   if (disabledFlag(env.disabled)) return { ok: false, code: "kill_switch" };
 
-  const production = env.nodeEnv === "production";
   const configured = (env.allowlist ?? "").trim();
-  if (production && configured.length === 0) return { ok: true };
+  if (unrestrictedSend(env) && configured.length === 0) return { ok: true };
 
-  const allowed = allowlistAddresses(configured.length === 0 ? STAGING_ALLOWLIST_RECIPIENT : configured);
+  const allowed = allowlistAddresses(
+    configured.length === 0 ? STAGING_ALLOWLIST_RECIPIENT : configured,
+  );
   if (!allowed.includes(recipient.trim().toLowerCase())) {
     return { ok: false, code: "allowlist" };
   }
@@ -56,6 +65,7 @@ export function dailyCapFromEnv(raw: string | null | undefined): number {
 export function sendGuardFromProcess(): SendGuardEnv & { dailyLimit: string | null } {
   return {
     nodeEnv: process.env.NODE_ENV ?? null,
+    sendEnv: process.env.GMAIL_SEND_ENV ?? null,
     disabled: process.env.GMAIL_SEND_DISABLED ?? null,
     allowlist: process.env.GMAIL_SEND_ALLOWLIST ?? null,
     dailyLimit: process.env.GMAIL_SEND_DAILY_LIMIT ?? null,
