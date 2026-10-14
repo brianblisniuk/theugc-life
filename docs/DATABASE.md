@@ -2844,6 +2844,26 @@ It MUST contain no:
 
 Public pages query only safe projections.
 
+### Per-metric signals (migrations 0071 and 0072, D120)
+
+`private.hotel_metric_basis` computes three rows per hotel that has a
+confirmed network fact: response rate, response time, and creator activity.
+It reads `private.intelligence_facts` only. Select is revoked from `public`,
+`anon`, `authenticated`, and `service_role`. Counts, hours, and creator ids
+are not columns of the public views.
+
+`hotel_metric_signal_public` is creator activity for a published hotel that
+cleared the floor. `anon` may select it. `hotel_metric_signal_premium` is
+reply rate and the reply-time band, and only when
+`has_premium_hotel_access(hotel_id)` is true. `anon` has no privilege on it.
+Hotels below a floor are absent from both views.
+
+`read_hotel_metric_signals(p_hotel_id)` and
+`read_destination_metric_ranking(p_destination_id, p_metric)` are
+`SECURITY DEFINER` with an empty `search_path`. A locked ranking omits
+`hotels`. `0069` is G02 and is not edited. `0070` is unused. `0068` is G01
+and is not edited.
+
 ## 10. Growth entities
 
 ### hotel_claims
@@ -3048,9 +3068,18 @@ At minimum:
     app classifies overdue, due soon, and upcoming against the UTC day.
     No new table. No message is sent. `0070` is reserved and unused.
     `0050` is not edited.
-37. Travel portfolio (0073 and 0074, D125) — a layout row and a per-collaboration
+37. Per-metric hotel signals (0071, D120) — a private basis over confirmed
+    network facts and two public views. Activity is public. Reply rate and
+    the reply-time band are premium. No new table. `hotel_intelligence` is
+    not read. `0069` is G02 and is not edited. `0070` is unused.
+38. Metric ranking reads (0072, D120) — `read_hotel_metric_signals` and
+    `read_destination_metric_ranking`. One metric, destination plus
+    descendants, tie-break hotel id. A locked reply ranking has no hotels
+    key. `0071` is the basis these functions read.
+39. Travel portfolio (0073 and 0074, D125) — a layout row and a per-collaboration
     approval. The share read gains a portfolio object only after both a template
     and a published confirmed collaboration exist. D090 fields are unchanged.
-    `0066`, `0068`, and `0069` are not edited.
+    `0066`, `0068`, and `0069` are not edited. This H01 PR does not edit
+    `0073` or `0074`.
 
 Every migration must be reproducible from an empty database.

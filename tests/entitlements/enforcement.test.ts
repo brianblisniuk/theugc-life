@@ -859,6 +859,61 @@ d("E04 entitlement inventory enforcement", () => {
       return;
     }
 
+    if (enforcement.kind === "metric_ranking") {
+      const metric = enforcement.layer === "public" ? "creator_activity" : "response_rate";
+      if (enforcement.layer === "public") {
+        for (const name of ["anon", "free", "pass", "pro", "expired"] as const) {
+          const who = actor(name);
+          const result = await queryAs<{ body: { result: string } }>(
+            { role: who.role, sub: who.userId },
+            "select public.read_destination_metric_ranking($1, $2) as body",
+            [DEST.bali, metric],
+          );
+          expect(result.error, id).toBeNull();
+          expect(result.rows[0]?.body.result, id).toBe("ok");
+          expect(JSON.stringify(result.rows[0]?.body), id).not.toMatch(
+            /owner_user_id|evidence_id|"score"/,
+          );
+        }
+        return;
+      }
+      for (const name of ["anon", "free", "expired", "revoked"] as const) {
+        const who = actor(name);
+        const result = await queryAs<{ body: { result: string; hotels?: unknown } }>(
+          { role: who.role, sub: who.userId },
+          "select public.read_destination_metric_ranking($1, $2) as body",
+          [DEST.bali, metric],
+        );
+        expect(result.error, id).toBeNull();
+        expect(result.rows[0]?.body.result, id).toBe("locked");
+        expect(result.rows[0]?.body.hotels, id).toBeUndefined();
+      }
+      for (const name of ["pass", "pro"] as const) {
+        const who = actor(name);
+        const result = await queryAs<{ body: { result: string } }>(
+          { role: who.role, sub: who.userId },
+          "select public.read_destination_metric_ranking($1, 'response_rate') as body",
+          [DEST.bali],
+        );
+        expect(result.error, id).toBeNull();
+        expect(result.rows[0]?.body.result, id).toBe("ok");
+      }
+      const ibiza = await queryAs<{ body: { result: string; hotels?: unknown } }>(
+        { role: "authenticated", sub: U.pass },
+        "select public.read_destination_metric_ranking($1, 'response_time') as body",
+        [DEST.ibiza],
+      );
+      expect(ibiza.error, id).toBeNull();
+      expect(ibiza.rows[0]?.body.result, id).toBe("locked");
+      expect(ibiza.rows[0]?.body.hotels, id).toBeUndefined();
+      const premiumView = await queryAs(
+        { role: "anon", sub: null },
+        "select hotel_id from public.hotel_metric_signal_premium",
+      );
+      expect(premiumView.error, id).not.toBeNull();
+      return;
+    }
+
     if (enforcement.kind === "kept_current") {
       expect(["owner_private", "all_tiers", "public_page"]).toContain(
         INVENTORY.find((entry) => entry.id === id)?.rule.kind,

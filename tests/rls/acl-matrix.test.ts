@@ -124,6 +124,10 @@ const CONTRACT: Record<string, Expected> = {
   // so the privilege should not exist at all — the in-view entitlement gate is
   // the second layer, not the only one.
   hotel_premium_intelligence: { anon: "", authenticated: "S", serviceRole: "S" },
+  // H01 (0071, D120). Activity is public. Reply metrics are premium and anon
+  // holds no privilege. Both are select-only projections.
+  hotel_metric_signal_public: { anon: "S", authenticated: "S", serviceRole: "S" },
+  hotel_metric_signal_premium: { anon: "", authenticated: "S", serviceRole: "S" },
 
   // Editorial / import / admin, gated by is_admin_or_editor().
   destination_aliases: { anon: "", authenticated: "SIUD", serviceRole: "all" },

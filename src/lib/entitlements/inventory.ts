@@ -72,6 +72,7 @@ export type Enforcement =
   | { kind: "staff_write" }
   | { kind: "purchase_is_not_access" }
   | { kind: "caller_scoped_rpc"; rpc: "creator_personal_counts" | "creator_past_collaborations" }
+  | { kind: "metric_ranking"; layer: "public" | "premium" }
   | { kind: "kept_current" };
 
 export interface InventoryEntry {
@@ -187,6 +188,42 @@ export const INVENTORY: readonly InventoryEntry[] = [
     anon: "deny",
     enforcement: { kind: "premium_intelligence" },
     sources: ["PRD §5.2", "PRD §5.3", "PRD §5.3.1", "D050", "D056", "D058", "PERMISSIONS.md §9"],
+  },
+  {
+    id: "hotel.metric_activity",
+    module: "Intelligence",
+    summary:
+      "Most active with creators is the public activity label. Anonymous, Free, Pass, and Pro see the same ranking. It does not change Discover or Pipeline order.",
+    routes: ["/app/hotels/[id]"],
+    sourceFiles: [
+      "src/app/(app)/app/hotels/[id]/page.tsx",
+      "src/lib/metrics/queries.ts",
+      "src/components/hotels/metric-signals.tsx",
+    ],
+    serverActions: [],
+    rpcs: ["read_destination_metric_ranking", "read_hotel_metric_signals"],
+    rule: { kind: "all_tiers" },
+    anon: "allow",
+    enforcement: { kind: "metric_ranking", layer: "public" },
+    sources: ["D012", "D058", "D099", "D120", "PRD §12.8"],
+  },
+  {
+    id: "hotel.metric_response",
+    module: "Intelligence",
+    summary:
+      "Most responsive and fastest replying are premium. A Pass covers its destination and descendants. Pro is worldwide. Below the floor the value is not enough data, never zero.",
+    routes: ["/app/hotels/[id]"],
+    sourceFiles: [
+      "src/app/(app)/app/hotels/[id]/page.tsx",
+      "src/lib/metrics/contract.ts",
+      "src/lib/metrics/queries.ts",
+    ],
+    serverActions: [],
+    rpcs: ["read_destination_metric_ranking", "read_hotel_metric_signals"],
+    rule: { kind: "premium_scoped" },
+    anon: "deny",
+    enforcement: { kind: "metric_ranking", layer: "premium" },
+    sources: ["D050", "D058", "D059", "D098", "D120", "PRD §12.8.4"],
   },
   {
     id: "hotel.premium_contacts",

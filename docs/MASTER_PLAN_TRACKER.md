@@ -773,13 +773,13 @@ stay paused and return no suggestion ids (D107). There is no ranking and no
 model. Agency F04 stays planned. `0061`, `0062`, and `0064` are not edited.
 This portfolio PR does not edit `0066` or `src/lib/home`.
 
-**G03 portfolio** (canon v1.1, not the Phase G Coverage Engine row) is PR #76
-on `cursor/g03-portfolio-9c32`. Migrations `0073` and `0074`. D125. A creator
-picks a travel layout and approves confirmed collaborations before they
-appear on the existing hotel share link. Gmail detections are not
-suggestions. The social profile stays free of hotel names. `0066`, `0068`,
-and `0069` are not edited. `0070` stays unused. `0071`/`0072` stay with H01.
-Do not merge.
+**G03 portfolio** (canon v1.1, not the Phase G Coverage Engine row) is merged
+as PR #76, merge `2cb8b2d660b93963e9ad8ec319b843bcd4189832`. Migrations
+`0073` and `0074`. D125. A creator picks a travel layout and approves
+confirmed collaborations before they appear on the existing hotel share
+link. Gmail detections are not suggestions. The social profile stays free
+of hotel names. `0066`, `0068`, and `0069` are not edited. `0070` stays
+unused. This PR does not edit `0073` or `0074`.
 
 **G01 contract templates** (canon v1.1, not the Phase G Coverage Engine row)
 is merged as PR #74, merge
@@ -796,7 +796,17 @@ table above) is merged as PR #75, merge
 and unused. In-app reminders only. The UTC day follows the D112 deliverable
 comparison. No N-day lead and no dismiss row, because neither is stated in
 the decisions. `0050` and `0068` are not edited. F04 home files are not
-edited. This portfolio PR does not edit `0069`.
+edited. This PR does not edit `0069`.
+
+**H01 metric rankings and hotel signals** (canon v1.1 Sprint 5, not the
+second-vertical H01 row) is PR #77 on `cursor/h01-metric-rankings-367c`,
+AWAITING_AUDIT. Migrations `0071_hotel_metric_signals.sql` and
+`0072_hotel_metric_ranking_reads.sql`. D120. Three separate metrics from
+confirmed network facts: response rate, reply-time band, and creator
+activity. Below a floor the value is not enough data, never zero. A locked
+reply ranking omits hotels. Discover and Pipeline order are unchanged (F03).
+`src/lib/home` is not edited. `0069` is G02 and is not edited. `0070` is
+unused. `0073` and `0074` are G03 and are not edited. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

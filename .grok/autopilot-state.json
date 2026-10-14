@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16 (merge of PR #75, G02 deliverable deadlines, D115, migration 0069). G03 portfolio is PR #76 on cursor/g03-portfolio-9c32. Migrations 0073 and 0074. D125. D116 and migration 0070 stay unused. 0071 and 0072 stay with H01. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 2cb8b2d660b93963e9ad8ec319b843bcd4189832 (PR #76, G03 portfolio, D125, migrations 0073 and 0074). H01 metric rankings is PR #77 on cursor/h01-metric-rankings-367c. D120. Migrations 0071 and 0072 add no table. 0070 is unused. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-13",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "6c77347ce5cbc9e57c4d675f0a5bc636474a0c16",
-  "active_block": "G03 portfolio",
-  "branch": "cursor/g03-portfolio-9c32",
-  "pr": 76,
+  "last_recorded_main": "2cb8b2d660b93963e9ad8ec319b843bcd4189832",
+  "active_block": "H01 metric rankings",
+  "branch": "cursor/h01-metric-rankings-367c",
+  "pr": 77,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "6c77347ce5cbc9e57c4d675f0a5bc636474a0c16",
+    "ref": "2cb8b2d660b93963e9ad8ec319b843bcd4189832",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "G03 portfolio is PR #76 on cursor/g03-portfolio-9c32. AWAITING_AUDIT. Migrations 0073 and 0074. D125. A creator picks a travel layout and approves confirmed collaborations before they appear on the hotel share link. Gmail detections are not suggestions. The social profile stays free of hotel names. G02 is merged (PR #75, 6c77347ce5cbc9e57c4d675f0a5bc636474a0c16, migration 0069, D115). D116 and migration 0070 are unused. This PR does not edit 0066, 0068, or 0069. expected_head stays null. Do not merge."
+  "next_dependency": "PR #77 is H01 metric rankings on cursor/h01-metric-rankings-367c. AWAITING_AUDIT. D120. Migrations 0071 and 0072. Three separate metrics from confirmed network facts. Below a floor the value is not enough data. A locked reply ranking omits hotels. Discover and Pipeline order are unchanged. G03 is merged (PR #76, migrations 0073 and 0074, D125). G02 is merged (PR #75, migration 0069, D115). 0070 is unused. expected_head stays null. Do not merge."
 }

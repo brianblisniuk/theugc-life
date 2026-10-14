@@ -4478,6 +4478,96 @@ state. Anon has no table privilege and cannot execute the read.
   Home already lists D112-due deliverables. Sharing this classifier with
   Home is a follow-up after F04 merges.
 
+## D120 — Per-metric hotel rankings stay separate and below-threshold stays unknown
+
+Status: **Accepted** for this block. Canon v1.1 H01 asks for transparent rankings
+such as "Most responsive in Bali", one metric at a time, with a clear sample
+and the rule that produced it. Migrations
+`0071_hotel_metric_signals.sql` and `0072_hotel_metric_ranking_reads.sql`.
+D058 is not rewritten. `read_network_destination_rank` keeps its D099 sort.
+Discover and Pipeline list order are F03 and are not changed here. D121–D124
+are unused.
+
+The only inputs are creator-confirmed network facts (`private.intelligence_facts`
+with `network_eligible`, `provenance_class = creator_confirmed`, not dismissed,
+source family `manual` or `gmail`, hotel target). Machine rows, dismissed rows,
+and trip shortlists stay out, as D077 and D099 already require. The basis does
+not read `hotel_intelligence`, purchases, subscriptions, or access
+entitlements. A hotel payment, a sponsored flag, or a Pass/Pro row cannot move
+a rank. Hotels cannot pay for reputation.
+
+Three metrics. They are never added, averaged, or ranked together.
+
+1. **Response rate** ("Most responsive"), premium. A cycle is one confirmed
+   `pitch_sent` on a pipeline item whose earliest event is inside the trailing
+   365 days. A follow-up is not another pitch. A qualifying reply on that same
+   cycle is `reply_received` or `gmail_human_reply_observed` at or after the
+   initial pitch. `positive_reply` and `negative_reply` do not count. The
+   published value is the whole percent `round(100 * replied / pitched)`. It
+   is available only when pitched cycles are at least 15 and distinct pitch
+   creators are at least 5 (D058). A measured 0% that clears those floors is
+   published. Below either floor the value is null.
+2. **Response time** ("Fastest replying"), premium. Manual observations are
+   hours from the initial pitch to the first qualifying reply. A confirmed
+   `gmail_reply_latency` in the same 365-day window may supply
+   `first_send_to_human_reply_ms` when that cycle has no reply event and no
+   pitch older than 365 days. The published value is the D058 band only:
+   Under 24h, 1–3 days, 3–7 days, 1–2 weeks, 2+ weeks. It is available only
+   when there are at least 10 observations from at least 5 creators and the
+   median exists. The rank key is the band (5 down to 1), never the hidden
+   hours.
+3. **Creator activity** ("Most active with creators"), public. Same confirmed
+   sample as `network_hotel_public`: at least 3 distinct creators, then D012
+   on sample size — 50 or more High, 15–49 Medium, 5–14 Emerging. Below that
+   the value is null. This is all-time confirmed sample facts, not the 90-day
+   `hotel_intelligence` activity count.
+
+The sample sentence is "Based on activity from N creators" and only when that
+metric is available and N is at least 5. Raw pitch, reply, cycle, and sample
+counts stay off the public payload. A contributor count below 5 is omitted
+even when the activity label is Emerging.
+
+A destination ranking is that destination plus its descendants (D013,
+`_destination_is_descendant`). The exact-destination baseline rank is a
+different function and is not this order. Within one metric the order is the
+published rank key descending, then hotel id ascending. Another metric, a
+timestamp, and `created_at` are not tie-breaks. Hotels below the floor are
+absent from the list. An empty list on `result = ok` means no published hotel
+in that scope cleared the floor.
+
+Only a published canonical hotel is ranked (D062, D106): destination present,
+star 4 or 5, coordinates in range, active status `active`,
+`temporarily_closed`, or `unknown`, and star provenance null/null, owner
+confirmed, or Hotelbeds provisional. A closed hotel or a hotel without
+coordinates returns `not_found` on the hotel read, the same as a missing id.
+
+Entitlement follows D098, D050, and D100. Creator activity is readable by
+every tier, including anonymous. Reply rate and reply time require
+`has_premium_hotel_access` on the hotel, or, for a destination ranking, an
+admin or editor, active Pro, or an active Destination Pass on the requested
+destination (descendants of that destination are included in the rows, not as
+a second Pass). A locked reply ranking returns `locked` and omits the hotels
+key. A locked hotel signal returns null value and null sample. It does not
+say "not enough data" (D059). An entitled or public metric below its floor
+says not enough data and publishes no zero and no guess.
+
+`read_hotel_metric_signals` and `read_destination_metric_ranking` are
+`SECURITY DEFINER` with `search_path` pinned empty. Identity is `auth.uid()`.
+A client user id is not an argument. A failed read is a notice, not an empty
+list. F03 may reuse `hotel_metric_signal_public`,
+`hotel_metric_signal_premium`, and `read_destination_metric_ranking`, ordering
+one metric with `rank_key desc, hotel_id`.
+
+### What this decision does not do
+
+- It does not change the default order of Discover or Pipeline.
+- It does not sort Home, and it does not edit `src/lib/home`.
+- It does not publish a paid-collaboration rate or a highest-paying rank.
+  Compensation amounts are not network facts.
+- It does not combine the three metrics into a score.
+- It does not expose a creator id, an evidence id, or a provenance class to a
+  non-admin.
+
 ## D125 — A travel portfolio is a layout plus approved collaborations
 
 Status: **Accepted for this block.** Derived from D045, D088–D091, D096–D098,
@@ -4555,4 +4645,3 @@ object. The private screen says it is no longer confirmed.
 - It does not read Gmail, rank hotels, or call a model.
 - It does not edit migrations `0066`, `0068`, or `0069`, home, contract files,
   deliverable reminders, or Discover.
-
