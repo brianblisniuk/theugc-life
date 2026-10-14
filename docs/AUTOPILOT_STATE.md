@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `93573874a9ec90a8f246ed379bb3b9df23d8d95f` (merge of PR #80, P02 Rebill billing, D135–D139, migrations `0077`, `0078`, and `0079`, 2026-10-14)  
-**State:** AWAITING_AUDIT. P03 refund policy and P02 hardening. Draft on `cursor/p03-refund-policy-9f5b`. D140. Migration `0080`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
+**State:** AWAITING_AUDIT. P03 refund policy and P02 hardening. Draft PR #81 on `cursor/p03-refund-policy-9f5b`. D140. Migration `0080`. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
 **Current frontier:** P03. P02 is merged (PR #80). P01 is merged (PR #79). F03 is merged (PR #78). H01 is merged (PR #77). G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 amounts are superseded by D131. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is merged with H01. D121–D124 are unused. D125 is merged with G03. D130 is merged with F03. D131–D134 are merged with P01. D135–D139 are merged with P02. D140 is Accepted for this block. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
@@ -59,7 +59,7 @@
 - PR #80 — P02 Rebill billing, D135–D139, migrations `0077`, `0078`, and `0079` — `93573874a9ec90a8f246ed379bb3b9df23d8d95f`
 
 ## Next action
-- P03 refund policy and P02 hardening is a draft on `cursor/p03-refund-policy-9f5b`. AWAITING_AUDIT. D140. Migration `0080`. A monthly refund removes that payment's slice. A chargeback still revokes the subscription. `expected_head` stays null. Do not merge.
+- PR #81 is P03 refund policy and P02 hardening on `cursor/p03-refund-policy-9f5b`. AWAITING_AUDIT. D140. Migration `0080`. A monthly refund removes that payment's slice. A chargeback still revokes the subscription. `expected_head` stays null. Do not merge.
 - P01 is merged (PR #79, `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7`). D131–D134. Migrations `0075` and `0076`. This PR does not edit those files.
 - F03 is merged (PR #78, `257123db9d830d146fc601a68bb2ccf250ecd49f`). D130. No migration. This PR does not edit the F03 order files.
 - H01 is merged (PR #77, `b541343c7f7e87e3402d377d88bc5b23d67cbe5a`). D120. Migrations `0071` and `0072`. This PR does not edit those files.

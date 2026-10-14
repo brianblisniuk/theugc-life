@@ -833,7 +833,7 @@ order files are not edited.
 the Rebill signature and confirms the payment before writing an entitlement.
 Live charges stay off unless `REBILL_LIVE=true`.
 
-**P03 refund policy and P02 hardening** is a draft on
+**P03 refund policy and P02 hardening** is draft PR #81 on
 `cursor/p03-refund-policy-9f5b`. D140. Migration `0080_refund_policy.sql`.
 A monthly refund removes that payment's 30-day slice. An annual refund ends
 the plan. A pack refund reverses unused credits only. A chargeback still
