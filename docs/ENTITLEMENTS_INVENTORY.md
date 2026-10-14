@@ -40,7 +40,9 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `hotel.metric_activity` | Intelligence | all tiers, including anonymous (D120) |
 | `hotel.metric_response` | Intelligence | Pass inside destination, Pro worldwide (D120) |
 | `hotel.premium_contacts` | Hotel Detail | credit unlock for this user, or staff (D100) |
-| `credits.pending_numbers` | Credits | undecided until the owner sets the amounts (D101) |
+| `credits.plan_config` | Credits | system grant. Amounts are config (D131). A price is not a grant |
+| `plans.full_ai_email` | Plans | Pro and Max. Free keeps manual templates. Not a model call (D133) |
+| `plans.max_flags` | Plans | Max only. Flags do not change ranking (D133) |
 | `pipeline.save` | Pipeline | Free limit 10; Pass exempt inside; outside counts only outside-coverage rows; Pro exempt |
 | `pipeline.engage` | Pipeline | Free limit 5; same outside-coverage count |
 | `pipeline.own` | Pipeline | owner, every tier |
@@ -88,7 +90,7 @@ Migration `0051_outside_free_allowance.sql` fixes one contradictory gate. When a
 
 ## D098 — features without a written tier are Free
 
-D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written tier. Those features are Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence and the D056 workspace limits are unchanged. D100 changes contacts: a Pass or Pro row is not an email. `questionsForBrian()` returns one question, `credits.pending_numbers`. `profile.public_card` is the social profile at `/creators/[username]`.
+D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written tier. Those features are Free. Owner-only features stay owner-only: a Pro entitlement does not read another creator’s rows. Premium intelligence and the D056 workspace limits are unchanged. D100 changes contacts: a Pass or Pro row is not an email. D131 closes the credit amounts, so `questionsForBrian()` is empty. `profile.public_card` is the social profile at `/creators/[username]`. Max matches Pro on worldwide paid rows (D133).
 
 ## D125 — the travel portfolio is owner-private and Free
 
@@ -98,6 +100,10 @@ D098 (Accepted, 13 Oct 2026) closes the inventory questions that had no written 
 
 `collaborations.contracts` is the won-deal agreement draft. No written tier assigns it to Pass or Pro, so it is Free (D098) and still owner-only. A Pro row does not read another creator's template or draft.
 
-## D101 — pending credit numbers
+## D131 — plan amounts
 
-`credits.pending_numbers` is the only undecided entry. Free credits, Pro and Pro+ monthly credits, pack sizes, cache TTL, and the not-found charge are placeholders in `CREDITS_CONFIG` and `credit_config`. They are not a price. The question for Brian is on the entry.
+`credits.plan_config` is the live amounts. Free is 5 credits per rolling week and does not stack past 5. Pro is 150 credits a month at $20/mo billed annually or $30/mo monthly. Max replaces Pro+ at 500 credits a month, $50/mo billed annually or $60/mo monthly. Packs are 50 for $10, 150 for $20, and 500 for $40. Cache TTL stays 365 days. A miss is still not charged. Unlock cost stays 1. The numbers are config. Checkout is not open.
+
+Free CRM stays 10 saved hotels, 5 active pipeline items, and 1 active trip. Pro and Max are exempt worldwide. A Destination Pass is unchanged.
+
+`plans.full_ai_email` is on for Pro and Max and off for Free and for a Destination Pass. `plans.max_flags` is priority AI, advanced signals, priority support, and a future-premium placeholder. Those flags do not call a model and do not change a ranking.

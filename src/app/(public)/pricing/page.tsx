@@ -2,63 +2,90 @@ import type { Metadata } from "next";
 
 import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { FREE_LIMITS, PRICING } from "@/lib/config";
+import { CREDITS_CONFIG, PLAN_PRICES } from "@/lib/credits/config";
 
 export const metadata: Metadata = { title: "Pricing" };
 
 /**
- * Pricing overview driven by the typed config source (PRD §5, D051/D052).
- *
- * The catalogue is never the product being sold: every publishable hotel is
- * discoverable on every plan (D049). What a plan unlocks is Premium
- * Intelligence, verified contacts and workflow scope — so no copy here may
- * imply "premium hotels" or a gated database.
+ * Plan catalogue (D131). Amounts come from typed config, which matches
+ * credit_config. This page does not start a checkout and does not grant access.
  */
 export default function PricingPage() {
   return (
     <div>
       <AnalyticsPageView event="pricing_viewed" />
       <h1 className="text-2xl font-semibold text-text">Pricing</h1>
-      <p className="mt-2 text-sm text-muted">
-        Every hotel is discoverable on every plan. Paid plans unlock Premium Intelligence and
-        verified contacts.
+      <p className="mt-2 max-w-2xl text-sm text-muted">
+        Every hotel is discoverable on every plan. Prices below are the current plan config.
+        Checkout is not open, and a payment does not by itself turn a plan on.
       </p>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <div className="rounded-[var(--radius-app)] border border-border bg-surface p-5">
           <h2 className="text-base font-semibold text-text">Free</h2>
-          <p className="mt-1 text-sm text-muted">Worldwide discovery, no card required.</p>
+          <p className="mt-1 text-sm text-muted">$0</p>
           <ul className="mt-3 space-y-1 text-sm text-muted">
-            <li>Discover every hotel worldwide</li>
-            <li>Public creator intelligence</li>
+            <li>
+              {CREDITS_CONFIG.freeWeeklyCredits} credits every {CREDITS_CONFIG.freeWeeklyPeriodDays}{" "}
+              days, from the day the account was created. Unused weekly credits do not stack past{" "}
+              {CREDITS_CONFIG.freeWeeklyCredits}.
+            </li>
+            <li>Manual emails: copy a template. No full AI email generation.</li>
             <li>Save up to {FREE_LIMITS.savedHotels} hotels</li>
             <li>{FREE_LIMITS.activePipelineItems} active pipeline items</li>
             <li>{FREE_LIMITS.activeTrips} active trip</li>
+            <li>Public intelligence and a basic portfolio</li>
+            <li>No Outreach Assisted and no Premium Intelligence</li>
           </ul>
         </div>
 
         <div className="rounded-[var(--radius-app)] border border-border bg-surface p-5">
-          <h2 className="text-base font-semibold text-text">Creator Destination Pass</h2>
+          <h2 className="text-base font-semibold text-text">Pro</h2>
           <p className="mt-1 text-sm text-muted">
-            ${PRICING.destinationPass.priceUsd} · {PRICING.destinationPass.durationDays} days
+            ${PLAN_PRICES.pro.annualPerMonthUsd}/mo billed annually, or $
+            {PLAN_PRICES.pro.monthlyUsd}
+            /mo monthly
           </p>
           <ul className="mt-3 space-y-1 text-sm text-muted">
-            <li>Premium creator intelligence in that destination</li>
-            <li>Verified hotel contacts in that destination</li>
-            <li>Unlimited pipeline for that destination</li>
-            <li>Worldwide discovery continues</li>
+            <li>{CREDITS_CONFIG.planMonthlyCredits.pro} credits each month</li>
+            <li>Full AI email generation</li>
+            <li>Outreach Assisted (Gmail detection and drafts)</li>
+            <li>Premium Intelligence worldwide</li>
+            <li>Unlimited CRM</li>
+            <li>Credit packs, basic ranking, and next actions</li>
           </ul>
         </div>
 
         <div className="rounded-[var(--radius-app)] border border-border bg-surface p-5">
-          <h2 className="text-base font-semibold text-text">Creator Pro</h2>
-          <p className="mt-1 text-sm text-muted">${PRICING.pro.launchPriceUsd}/year</p>
+          <h2 className="text-base font-semibold text-text">Max</h2>
+          <p className="mt-1 text-sm text-muted">
+            ${PLAN_PRICES.max.annualPerMonthUsd}/mo billed annually, or $
+            {PLAN_PRICES.max.monthlyUsd}
+            /mo monthly
+          </p>
           <ul className="mt-3 space-y-1 text-sm text-muted">
-            <li>Premium creator intelligence worldwide</li>
-            <li>Verified hotel contacts worldwide</li>
-            <li>Full CRM, trips and portfolio</li>
+            <li>{CREDITS_CONFIG.planMonthlyCredits.max} credits each month</li>
+            <li>Everything in Pro</li>
+            <li>Priority AI, advanced signals and rankings, and priority support</li>
+            <li>Room for later premium features</li>
           </ul>
         </div>
       </div>
+
+      <h2 className="mt-8 text-base font-semibold text-text">Credit packs</h2>
+      <ul className="mt-3 space-y-1 text-sm text-muted">
+        {CREDITS_CONFIG.packs.map((pack) => (
+          <li key={pack.credits}>
+            {pack.credits} credits · ${pack.priceUsd}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-sm text-muted">Pack purchases are not open yet.</p>
+
+      <p className="mt-6 text-sm text-muted">
+        Creator Destination Pass remains ${PRICING.destinationPass.priceUsd} for{" "}
+        {PRICING.destinationPass.durationDays} days in one destination.
+      </p>
     </div>
   );
 }

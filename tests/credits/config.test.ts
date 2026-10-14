@@ -13,6 +13,7 @@ import {
   ADDED_TO_PIPELINE_TOAST,
   ALREADY_UNLOCKED_LABEL,
   CREDITS_CONFIG,
+  PLAN_PRICES,
   addedToPipelineToast,
   creditsLeftLabel,
   OUT_OF_CREDITS_COPY,
@@ -22,21 +23,40 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-describe("credit config placeholders", () => {
-  it("matches the seed migration", () => {
+describe("credit config", () => {
+  it("keeps the D101 seed as history", () => {
     const sql = readFileSync(
       path.join(ROOT, "supabase/migrations/0058_contact_cache_seed_and_free_grant.sql"),
       "utf8",
     );
-    expect(sql).toContain(String(CREDITS_CONFIG.freeCredits));
-    expect(sql).toContain(String(CREDITS_CONFIG.planMonthlyCredits.pro));
-    expect(sql).toContain(String(CREDITS_CONFIG.planMonthlyCredits.proPlus));
-    expect(sql).toContain(String(CREDITS_CONFIG.unlockCost));
-    expect(sql).toContain(String(CREDITS_CONFIG.cacheTtlDays));
-    expect(sql).toContain("false");
-    for (const size of CREDITS_CONFIG.packSizes) expect(sql).toContain(String(size));
+    expect(sql).toContain("15");
+    expect(sql).toContain("50");
+    expect(sql).toContain("150");
+    expect(sql).toContain("array[10, 25, 50]");
     expect(sql).toContain("grandfather_visible_contact_unlocks");
     expect(sql).toContain("insert into public.contact_unlocks");
+  });
+
+  it("matches the live pricing migration", () => {
+    const sql = readFileSync(
+      path.join(ROOT, "supabase/migrations/0075_plan_tier_and_pricing.sql"),
+      "utf8",
+    );
+    expect(sql).toContain(`free_weekly_credits = ${CREDITS_CONFIG.freeWeeklyCredits}`);
+    expect(sql).toContain(`free_weekly_period_days = ${CREDITS_CONFIG.freeWeeklyPeriodDays}`);
+    expect(sql).toContain(`pro_monthly_credits = ${CREDITS_CONFIG.planMonthlyCredits.pro}`);
+    expect(sql).toContain(`max_monthly_credits = ${CREDITS_CONFIG.planMonthlyCredits.max}`);
+    expect(sql).toContain(`pro_price_annual_per_month_usd = ${PLAN_PRICES.pro.annualPerMonthUsd}`);
+    expect(sql).toContain(`pro_price_monthly_usd = ${PLAN_PRICES.pro.monthlyUsd}`);
+    expect(sql).toContain(`max_price_annual_per_month_usd = ${PLAN_PRICES.max.annualPerMonthUsd}`);
+    expect(sql).toContain(`max_price_monthly_usd = ${PLAN_PRICES.max.monthlyUsd}`);
+    expect(sql).toContain(
+      `array[${CREDITS_CONFIG.packs.map((pack) => pack.credits).join(", ")}]::integer[]`,
+    );
+    expect(sql).toContain(
+      `array[${CREDITS_CONFIG.packs.map((pack) => pack.priceUsd).join(", ")}]::integer[]`,
+    );
+    expect(sql).not.toContain("insert into public.credit_ledger");
   });
 
   it("does not refresh a stored address from the bounce review action", () => {
@@ -55,6 +75,20 @@ describe("credit config placeholders", () => {
     expect(sql).not.toMatch(/-\s*1\s*,\s*'unlock'/);
     expect(sql).toContain("has_unlocked_hotel_contact");
     expect(sql).not.toMatch(/create policy hotel_contacts_select[\s\S]*has_premium_hotel_access/);
+  });
+
+  it("shows the live prices on the public pages and does not start checkout", () => {
+    const pricing = readFileSync(path.join(ROOT, "src/app/(public)/pricing/page.tsx"), "utf8");
+    const landing = readFileSync(path.join(ROOT, "src/app/(public)/page.tsx"), "utf8");
+    const billing = readFileSync(path.join(ROOT, "src/app/(app)/app/billing/page.tsx"), "utf8");
+    for (const source of [pricing, landing, billing]) {
+      expect(source).toContain("PLAN_PRICES");
+      expect(source).not.toMatch(/rebill|stripe|startCheckout|buy now/i);
+    }
+    expect(pricing).toContain("Pack purchases are not open yet");
+    expect(pricing).toContain("FREE_LIMITS.savedHotels");
+    expect(landing).toContain("PLAN_PRICES.pro.annualPerMonthUsd");
+    expect(landing).toContain("PLAN_PRICES.max.annualPerMonthUsd");
   });
 
   it("labels the unlock from the cost and keeps a failed balance off zero", () => {

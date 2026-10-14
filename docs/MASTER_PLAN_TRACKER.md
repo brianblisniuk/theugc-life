@@ -807,13 +807,24 @@ value is not enough data, never zero. A locked reply ranking omits hotels.
 `0070` is unused. `0073` and `0074` are G03 and are not edited.
 
 **F03 hotel ranking rules** (canon v1.1, not the agency F03 row in the table
-above) is draft PR #78. It orders Discover and Pipeline by one H01 metric (D130). No migration.
-`0075` and `0076` are unused. D131–D134 are unused. The order is `rank_key`
-descending, then hotel id. A locked reply-rate order has no hotel list.
-Below the floor is not enough data, and those hotels are left out of the
-metric order. The name order and the recent-activity order stay when no
-metric is requested. Agency F03 stays planned. This PR does not edit `0071`
-or `0072`.
+above) is merged as PR #78, merge
+`257123db9d830d146fc601a68bb2ccf250ecd49f`. It orders Discover and Pipeline
+by one H01 metric (D130). No migration. The order is `rank_key` descending,
+then hotel id. A locked reply-rate order has no hotel list. Below the floor
+is not enough data, and those hotels are left out of the metric order. The
+name order and the recent-activity order stay when no metric is requested.
+Agency F03 stays planned. This PR does not edit `0071` or `0072`.
+
+**P01 plans and pricing** (canon v1.1 credits, Brian 14 Oct 2026) is the
+open block on `cursor/p01-plans-pricing-de4c`. D131–D134. Migrations
+`0075_plan_tier_and_pricing.sql` and `0076_credit_grant_periods.sql`. Free
+is 5 credits per rolling week from account creation and does not stack past
+5. Pro is $20/mo billed annually or $30/mo monthly, with 150 credits a
+month. Max replaces Pro+ at $50/mo billed annually or $60/mo monthly, with
+500 credits a month. Packs are 50 credits for $10, 150 for $20, and 500 for
+$40. Prices are config. Checkout is not wired. Existing ledger rows are not
+reduced. `0073` and `0074` are G03 and are not edited. F03 order files are
+not edited.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

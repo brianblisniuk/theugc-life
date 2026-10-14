@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is b541343c7f7e87e3402d377d88bc5b23d67cbe5a (PR #77, H01 metric rankings, D120, migrations 0071 and 0072). F03 hotel ranking rules is PR #78 on cursor/f03-hotel-rankings-70fa. D130. No migration. 0075 and 0076 are unused. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 257123db9d830d146fc601a68bb2ccf250ecd49f (PR #78, F03 hotel ranking rules, D130, no migration). P01 plans and pricing is on cursor/p01-plans-pricing-de4c. D131-D134. Migrations 0075 and 0076. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "b541343c7f7e87e3402d377d88bc5b23d67cbe5a",
-  "active_block": "F03 hotel rankings",
-  "branch": "cursor/f03-hotel-rankings-70fa",
-  "pr": 78,
+  "last_recorded_main": "257123db9d830d146fc601a68bb2ccf250ecd49f",
+  "active_block": "P01 plans and pricing",
+  "branch": "cursor/p01-plans-pricing-de4c",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -24,9 +24,9 @@
     }
   ],
   "ci_status": {
-    "ref": "b541343c7f7e87e3402d377d88bc5b23d67cbe5a",
+    "ref": "257123db9d830d146fc601a68bb2ccf250ecd49f",
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "PR #78 is F03 hotel ranking rules on cursor/f03-hotel-rankings-70fa. AWAITING_AUDIT. D130. No migration. One metric ordered by rank_key desc, hotel_id. A locked reply-rate order has no hotel list. Below the floor is not enough data. H01 is merged (PR #77). expected_head stays null. Do not merge."
+  "next_dependency": "P01 plans and pricing is on cursor/p01-plans-pricing-de4c. AWAITING_AUDIT. D131-D134. Migrations 0075 and 0076. Free is 5 credits per rolling week and does not stack. Pro is 150 credits at $20/mo billed annually or $30 monthly. Max replaces Pro+ at 500 credits, $50/mo billed annually or $60 monthly. Packs are 50/$10, 150/$20, 500/$40. No charge. Existing credits stay. F03 is merged (PR #78). expected_head stays null. Do not merge."
 }

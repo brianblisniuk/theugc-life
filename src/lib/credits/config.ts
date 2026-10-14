@@ -1,28 +1,54 @@
 /**
- * Pending owner credit numbers (D101).
+ * Creator plan amounts (D131, D132).
  *
- * These placeholders are not a pricing decision. The database row
- * `credit_config` is what an unlock debits. This module is the same numbers
- * for the UI and for the test that refuses drift. Change both together, and
- * only when the owner sets them.
+ * `credit_config` is what a grant and an unlock read. This module is the same
+ * numbers for the UI and for the test that refuses drift. Change both together.
  *
- * Pack checkout, plan prices, and a monthly grant job are not in this block.
+ * `legacyFreeGrant` is the one-time amount already written as `free_grant:v1`.
+ * New accounts do not receive it. Prices are config. This module does not
+ * charge a card, and a price is not an entitlement (D007, D134).
  */
 export const CREDITS_CONFIG = {
-  /** Total Free grant, once, not a monthly refill. */
-  freeCredits: 15,
+  /** Historical one-time Free grant. Not issued after D132. */
+  legacyFreeGrant: 15,
+  /** Free allowance per rolling week. Unused weekly credits do not stack past this. */
+  freeWeeklyCredits: 5,
+  freeWeeklyPeriodDays: 7,
   planMonthlyCredits: {
-    pro: 50,
-    proPlus: 150,
+    pro: 150,
+    max: 500,
   },
   unlockCost: 1,
   /** A provider miss is stored and is not charged. */
   chargeOnNotFound: false,
   cacheTtlDays: 365,
-  packSizes: [10, 25, 50],
+  packs: [
+    { credits: 50, priceUsd: 10 },
+    { credits: 150, priceUsd: 20 },
+    { credits: 500, priceUsd: 40 },
+  ],
 } as const;
 
-export type CreditPlanKey = keyof typeof CREDITS_CONFIG.planMonthlyCredits;
+/** Live creator subscription prices (D131). Not the historical D052 annual figure. */
+export const PLAN_PRICES = {
+  pro: { annualPerMonthUsd: 20, monthlyUsd: 30 },
+  max: { annualPerMonthUsd: 50, monthlyUsd: 60 },
+} as const;
+
+export type PaidPlanTier = keyof typeof PLAN_PRICES;
+
+export const PLAN_TIERS = ["free", "pro", "max"] as const;
+export type PlanTier = (typeof PLAN_TIERS)[number];
+
+/** Flags only an active Max entitlement turns on. They do not change ranking or send mail. */
+export const MAX_PLAN_FLAGS = [
+  "priority_ai",
+  "advanced_signals",
+  "priority_support",
+  "future_premium",
+] as const;
+
+export type MaxPlanFlag = (typeof MAX_PLAN_FLAGS)[number];
 
 export function unlockContactLabel(cost: number = CREDITS_CONFIG.unlockCost): string {
   const unit = cost === 1 ? "credit" : "credits";
@@ -46,7 +72,7 @@ export function addedToPipelineToast(
 }
 
 export const OUT_OF_CREDITS_COPY =
-  "You're out of credits. Packs are not for sale in this pilot. An admin can grant credits.";
+  "You're out of credits. Pack purchases are not open yet. An admin can grant credits.";
 
 export function creditsLeftLabel(balance: number): string {
   const unit = balance === 1 ? "credit" : "credits";

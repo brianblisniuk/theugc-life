@@ -302,7 +302,7 @@ Select is allowed for a row when `has_unlocked_hotel_contact(hotel_id)` is true 
 
 The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 
-- `credit_config` — one row. Free grant, Pro monthly credits, Pro+ monthly credits, unlock cost, charge-on-not-found, cache TTL days, pack sizes. Pending owner numbers (D101). Clients have no privilege.
+- `credit_config` — one row. Legacy Free total, weekly Free credits, Pro monthly credits, Max monthly credits, unlock cost, charge-on-not-found, cache TTL days, pack sizes, pack prices, and Pro/Max prices (D131). `pro_plus_monthly_credits` is unread. Clients have no privilege.
 - `credit_ledger` — append-only. `delta <> 0`. Reasons: `free_grant`, `plan_grant`, `pack_purchase`, `admin_grant`, `courtesy`, `unlock`, `reversal`. Unique `(user_id, idempotency_key)`. Owner select. Admin select. No update or delete grant, and a trigger rejects both.
 - `contact_cache` — one row per hotel. Source `owner_import`, `provider`, or `admin`. Status `found`, `not_found`, or `invalid`. `raw_provider_response` stays on this table. No client select. Existing `hotel_contacts` emails are seeded as `owner_import` (D103).
 - `contact_unlocks` — unique `(user_id, hotel_id)`. Owner select. Admin select.
@@ -313,6 +313,8 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 Migration `0062` (D108) makes a revealed unlock call `save_hotel_to_pipeline` in that same transaction. A new row is `saved`. An open cycle is not duplicated and its status is not reset. The Free allowance is `FREE_LIMITS.savedHotels`, not a client argument. `pipeline_limit` debits nothing and returns no email. `read_own_unlocked_contacts(uuid[])` returns cache emails for hotels this caller unlocked, or for admin/editor. A pipeline item still does not require a trip.
 
 Migration `0058` calls `grandfather_visible_contact_unlocks()` after the Free grant. That inserts one unlock per hotel each existing user could already see, with a net-zero ledger pair. Migration `0060` pauses Free Gmail sync at login and in `gmail_incremental_sync_list_due` without deleting Gmail rows. `0059` is the Hotelbeds star provenance migration (D106) and is not edited here. Migration `0061` stores Gmail collaboration suggestions on a thread the creator already linked. Refresh writes those rows only. A deletion purge removes them with the mailbox's other Gmail-derived rows. Disconnect does not.
+
+Migration `0075` adds `access_type` `max` and the D131 price columns. It does not write a ledger row. Migration `0076` replaces the grant functions. Free weekly keys are `free_weekly:{period}` from `users.created_at`. Unused weekly credits expire at the next period. `free_grant:v1` is not reversed. Pro and Max monthly keys are `plan_monthly:{tier}:{entitlement}:{period}`. An active Pro or Max pauses new weekly grants. `ensure_credit_grants(uuid)` is not granted to `authenticated`. `own_plan_features()` reads only `auth.uid()`.
 
 Migration `0066` (D112) adds `list_own_pending_gmail_collaboration_suggestions()`. It reads pending suggestion ids for `auth.uid()` when `private.gmail_collab_is_paid` is true, and returns `paused` with an empty array otherwise. The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. It writes nothing. `0061` and `0064` are not edited.
 

@@ -191,7 +191,7 @@ A contact email is visible when this user owns a `contact_unlocks` row for that 
 
 One configured credit unlocks one hotel for one user. Opening it again costs nothing. A revealed unlock also saves that hotel on the caller's pipeline in the same transaction (D108). The other user's pipeline and the other user's unlock stay invisible. The balance is the sum of `credit_ledger`. No role may update or delete a ledger row. `contact_cache` is not selectable by a client role. Contact authorization happens before returning contact fields. Do not return a locked email and blur it in the browser.
 
-Open amounts (Free grant, Pro and Pro+ monthly credits, pack sizes, cache TTL, not-found charge) are `credit_config` (D101). They are not a price. This block does not sell packs and does not call a real provider.
+Live amounts are `credit_config` (D131). Free is 5 credits per rolling week and does not stack past 5. Pro is 150 a month. Max is 500 a month. Packs are 50, 150, and 500 credits. Cache TTL stays 365 days. A miss is not charged. These are not a charge. Checkout is not open, and this block does not call a provider.
 
 ## 8. CRM plan behavior
 
@@ -218,6 +218,9 @@ does not hide one this user already unlocked.
 Worldwide.
 
 If a Destination Pass expires, do not revoke ownership/read access to creator's own pipeline/trips.
+
+### Max
+Worldwide, same CRM exemption as Pro (D133). Max flags do not widen another creator's rows.
 
 ## 9. Intelligence access
 

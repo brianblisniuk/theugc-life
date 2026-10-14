@@ -449,26 +449,45 @@ d("E04 entitlement inventory enforcement", () => {
     }
 
     if (enforcement.kind === "pending_config") {
-      const { CREDITS_CONFIG } = await import("@/lib/credits/config");
+      const { CREDITS_CONFIG, PLAN_PRICES } = await import("@/lib/credits/config");
       const rows = await adminQuery<{
         free_credits: number;
+        free_weekly_credits: number;
+        free_weekly_period_days: number;
         pro_monthly_credits: number;
-        pro_plus_monthly_credits: number;
+        max_monthly_credits: number;
         unlock_cost: number;
         charge_on_not_found: boolean;
         cache_ttl_days: number;
         pack_sizes: number[];
+        pack_price_usd: number[];
+        pro_price_annual_per_month_usd: number;
+        pro_price_monthly_usd: number;
+        max_price_annual_per_month_usd: number;
+        max_price_monthly_usd: number;
       }>(
-        "select free_credits, pro_monthly_credits, pro_plus_monthly_credits, unlock_cost, charge_on_not_found, cache_ttl_days, pack_sizes from public.credit_config",
+        `select free_credits, free_weekly_credits, free_weekly_period_days,
+                pro_monthly_credits, max_monthly_credits, unlock_cost, charge_on_not_found,
+                cache_ttl_days, pack_sizes, pack_price_usd,
+                pro_price_annual_per_month_usd, pro_price_monthly_usd,
+                max_price_annual_per_month_usd, max_price_monthly_usd
+           from public.credit_config`,
       );
       expect(rows[0], id).toEqual({
-        free_credits: CREDITS_CONFIG.freeCredits,
+        free_credits: CREDITS_CONFIG.legacyFreeGrant,
+        free_weekly_credits: CREDITS_CONFIG.freeWeeklyCredits,
+        free_weekly_period_days: CREDITS_CONFIG.freeWeeklyPeriodDays,
         pro_monthly_credits: CREDITS_CONFIG.planMonthlyCredits.pro,
-        pro_plus_monthly_credits: CREDITS_CONFIG.planMonthlyCredits.proPlus,
+        max_monthly_credits: CREDITS_CONFIG.planMonthlyCredits.max,
         unlock_cost: CREDITS_CONFIG.unlockCost,
         charge_on_not_found: CREDITS_CONFIG.chargeOnNotFound,
         cache_ttl_days: CREDITS_CONFIG.cacheTtlDays,
-        pack_sizes: [...CREDITS_CONFIG.packSizes],
+        pack_sizes: CREDITS_CONFIG.packs.map((pack) => pack.credits),
+        pack_price_usd: CREDITS_CONFIG.packs.map((pack) => pack.priceUsd),
+        pro_price_annual_per_month_usd: PLAN_PRICES.pro.annualPerMonthUsd,
+        pro_price_monthly_usd: PLAN_PRICES.pro.monthlyUsd,
+        max_price_annual_per_month_usd: PLAN_PRICES.max.annualPerMonthUsd,
+        max_price_monthly_usd: PLAN_PRICES.max.monthlyUsd,
       });
       const blocked = await queryAs(
         { role: "authenticated", sub: U.pro },
@@ -911,6 +930,74 @@ d("E04 entitlement inventory enforcement", () => {
         "select hotel_id from public.hotel_metric_signal_premium",
       );
       expect(premiumView.error, id).not.toBeNull();
+      return;
+    }
+
+    if (enforcement.kind === "plan_flag") {
+      const { MAX_PLAN_FLAGS } = await import("@/lib/credits/config");
+      const read = (sub: string) =>
+        queryAs<{ features: Record<string, boolean | string> }>(
+          { role: "authenticated", sub },
+          "select public.own_plan_features() as features",
+        );
+      const free = await read(U.free);
+      const pro = await read(U.pro);
+      const pass = await read(U.pass);
+      expect(free.error, id).toBeNull();
+      expect(pro.error, id).toBeNull();
+      expect(pass.error, id).toBeNull();
+      expect(free.rows[0]?.features.tier, id).toBe("free");
+      expect(free.rows[0]?.features.full_ai_email, id).toBe(false);
+      expect(free.rows[0]?.features.priority_ai, id).toBe(false);
+      expect(pass.rows[0]?.features.full_ai_email, id).toBe(false);
+      expect(pass.rows[0]?.features.outreach_assisted, id).toBe(true);
+      expect(pro.rows[0]?.features.tier, id).toBe("pro");
+      expect(pro.rows[0]?.features.full_ai_email, id).toBe(true);
+      expect(pro.rows[0]?.features.priority_ai, id).toBe(false);
+      expect(pro.rows[0]?.features.unlimited_crm, id).toBe(true);
+      for (const flag of MAX_PLAN_FLAGS) {
+        expect(pro.rows[0]?.features[flag], id).toBe(false);
+        expect(free.rows[0]?.features[flag], id).toBe(false);
+      }
+
+      const maxId = "e4777777-7777-4777-8777-777777777777";
+      await adminQuery(
+        "insert into auth.users (id, email) values ($1, $2) on conflict (id) do nothing",
+        [maxId, "max-enforcement@theugc.test"],
+      );
+      await adminQuery(
+        `insert into public.access_entitlements
+           (user_id, access_type, status, starts_at, source, source_reference)
+         values ($1, 'max', 'active', now(), 'test', 'e04-max')
+         on conflict (source, source_reference) where source_reference is not null do nothing`,
+        [maxId],
+      );
+      const max = await read(maxId);
+      expect(max.error, id).toBeNull();
+      expect(max.rows[0]?.features.tier, id).toBe("max");
+      expect(max.rows[0]?.features[enforcement.flag], id).toBe(true);
+      expect(max.rows[0]?.features.full_ai_email, id).toBe(true);
+      for (const flag of MAX_PLAN_FLAGS) expect(max.rows[0]?.features[flag], id).toBe(true);
+
+      const otherStillFree = await read(U.free);
+      expect(otherStillFree.rows[0]?.features.tier, id).toBe("free");
+      const leaked = await queryAs(
+        { role: "authenticated", sub: U.free },
+        "select public.own_plan_features() as features",
+      );
+      expect(JSON.stringify(leaked.rows)).not.toContain(maxId);
+
+      const purchased = await adminQuery(
+        `insert into public.subscriptions
+           (user_id, provider, provider_subscription_id, plan_code, status, price_paid, currency)
+         values ($1, 'stub', 'e04-max-sub', 'max', 'active', 60, 'USD')
+         on conflict (provider, provider_subscription_id) where provider_subscription_id is not null do nothing`,
+        [U.free],
+      );
+      expect(purchased).toBeDefined();
+      const afterPurchase = await read(U.free);
+      expect(afterPurchase.rows[0]?.features.tier, id).toBe("free");
+      expect(afterPurchase.rows[0]?.features.full_ai_email, id).toBe(false);
       return;
     }
 
