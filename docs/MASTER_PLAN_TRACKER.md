@@ -815,8 +815,8 @@ is not enough data, and those hotels are left out of the metric order. The
 name order and the recent-activity order stay when no metric is requested.
 Agency F03 stays planned. This PR does not edit `0071` or `0072`.
 
-**P01 plans and pricing** (canon v1.1 credits, Brian 14 Oct 2026) is the
-open block on `cursor/p01-plans-pricing-de4c`. D131–D134. Migrations
+**P01 plans and pricing** (canon v1.1 credits, Brian 14 Oct 2026) is draft
+PR #79 on `cursor/p01-plans-pricing-de4c`. D131–D134. Migrations
 `0075_plan_tier_and_pricing.sql` and `0076_credit_grant_periods.sql`. Free
 is 5 credits per rolling week from account creation and does not stack past
 5. Pro is $20/mo billed annually or $30/mo monthly, with 150 credits a

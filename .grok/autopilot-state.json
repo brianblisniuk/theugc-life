@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 257123db9d830d146fc601a68bb2ccf250ecd49f (PR #78, F03 hotel ranking rules, D130, no migration). P01 plans and pricing is on cursor/p01-plans-pricing-de4c. D131-D134. Migrations 0075 and 0076. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 257123db9d830d146fc601a68bb2ccf250ecd49f (PR #78, F03 hotel ranking rules, D130, no migration). P01 plans and pricing is draft PR #79 on cursor/p01-plans-pricing-de4c. D131-D134. Migrations 0075 and 0076. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "257123db9d830d146fc601a68bb2ccf250ecd49f",
   "active_block": "P01 plans and pricing",
   "branch": "cursor/p01-plans-pricing-de4c",
-  "pr": null,
+  "pr": 79,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -28,5 +28,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "P01 plans and pricing is on cursor/p01-plans-pricing-de4c. AWAITING_AUDIT. D131-D134. Migrations 0075 and 0076. Free is 5 credits per rolling week and does not stack. Pro is 150 credits at $20/mo billed annually or $30 monthly. Max replaces Pro+ at 500 credits, $50/mo billed annually or $60 monthly. Packs are 50/$10, 150/$20, 500/$40. No charge. Existing credits stay. F03 is merged (PR #78). expected_head stays null. Do not merge."
+  "next_dependency": "PR #79 is P01 plans and pricing on cursor/p01-plans-pricing-de4c. AWAITING_AUDIT. D131-D134. Migrations 0075 and 0076. Free is 5 credits per rolling week and does not stack. Pro is 150 credits at $20/mo billed annually or $30 monthly. Max replaces Pro+ at 500 credits, $50/mo billed annually or $60 monthly. Packs are 50/$10, 150/$20, 500/$40. No charge. Existing credits stay. F03 is merged (PR #78). expected_head stays null. Do not merge."
 }
