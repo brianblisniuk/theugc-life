@@ -4936,3 +4936,13 @@ weekly credits resume.
 The payment link is attached by the server with the service role. A
 signed-in user cannot call that function. Confirmed Rebill ids win over
 the webhook body.
+
+A reversal is not a spend. `rebill_revoke:{payment}` reduces that pack, or
+that payment's plan grant. `rebill_revoke_plan:{payment}` and
+`plan_expire:*` reduce plan credits. `free_weekly_expire:*` reduces weekly
+credits. `ensure_credit_grants` uses the same rule. A chargeback of a plan
+payment still revokes the subscription after a refund of that same payment.
+A monthly refund does not set a revoked entitlement or a canceled
+subscription back to active. A renewal that arrives before the current 30
+days end owns the next unclaimed period grant. A payment row with no slice
+dates ends access instead of inventing a window.
