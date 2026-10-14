@@ -25,11 +25,17 @@ export async function GET(request: NextRequest) {
   }
 
   const purposeParam = searchParams.get("purpose");
-  const purpose = purposeParam === "reconnect" ? "reconnect" : "connect";
+  const purpose =
+    purposeParam === "reconnect"
+      ? "reconnect"
+      : purposeParam === "grant_send"
+        ? "grant_send"
+        : "connect";
   // A `mail_account_id` on a CONNECT is dropped here rather than passed along.
   // The two fields would otherwise describe different flows, and the one the
-  // caller controls should not be the one that decides.
-  const target = purpose === "reconnect" ? searchParams.get("mail_account_id") : null;
+  // caller controls should not be the one that decides. `grant_send` names the
+  // mailbox that is already connected, the same way a reconnect does.
+  const target = purpose === "connect" ? null : searchParams.get("mail_account_id");
 
   const started = await startGmailAuthorization({
     userId: resolution.session.userId,
@@ -48,6 +54,10 @@ export async function GET(request: NextRequest) {
       ? "gmail_not_configured"
       : started.result === "not_reconnectable"
         ? "gmail_not_reconnectable"
-        : "gmail_bad_target";
+        : started.result === "not_connected"
+          ? "gmail_not_connected"
+          : started.result === "scope_refused"
+            ? "gmail_scope_refused"
+            : "gmail_bad_target";
   return NextResponse.redirect(`${origin}/app/account?gmail=${reason}`);
 }

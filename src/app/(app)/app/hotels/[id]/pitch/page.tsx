@@ -1,8 +1,9 @@
 /**
  * Pitch draft for one hotel (canon v1.1 F02, D110).
  *
- * The suggestion is a template fill. Copy and a mailto link are the only
- * ways out. This page does not send mail and does not mark a pitch.
+ * The suggestion is a template fill. Copy and a mailto link stay on the
+ * device. Send is a separate explicit action through the creator's own
+ * Gmail, and it does not mark a pitch.
  */
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -13,6 +14,8 @@ import { EmptyState } from "@/components/empty-state";
 import { PitchComposer } from "@/components/pitch/composer";
 import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
+import { hasSendScope } from "@/lib/gmail/contract";
+import { listGmailAccounts } from "@/lib/gmail/connection.server";
 import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { isSystemTemplateKey, omissionNote } from "@/lib/pitch/contract";
@@ -58,6 +61,9 @@ export default async function HotelPitchPage({
   const templateParam = first(raw.template);
 
   const assistant = await loadAssistantChrome();
+  const mailboxes = await listGmailAccounts(session.userId);
+  const connected = mailboxes.filter((account) => account.connectionState === "connected");
+  const sender = connected.find((account) => hasSendScope(account.grantedScopes)) ?? connected[0] ?? null;
   const context = await loadPitchContext({
     userId: session.userId,
     hotelId: hotel.id,
@@ -133,7 +139,7 @@ export default async function HotelPitchPage({
           { label: hotel.name, href: back ?? undefined },
           { label: "Pitch" },
         ]}
-        description="A draft from the facts already on your account. You edit it, then copy it or open it in your mail app."
+        description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched."
       />
       <p className="max-w-prose text-sm text-muted">{note}</p>
       <div className="flex flex-wrap gap-2 text-sm">
@@ -193,6 +199,9 @@ export default async function HotelPitchPage({
           recipientEmail={context.recipientEmail}
           suggestionHref={`/app/hotels/${hotel.id}/pitch?${suggestionParams.toString()}`}
           assistant={assistant}
+          canSend={assistant.status === "on"}
+          mailAccountId={sender?.mailAccountId ?? null}
+          hasSendScope={sender ? hasSendScope(sender.grantedScopes) : false}
         />
       )}
     </div>

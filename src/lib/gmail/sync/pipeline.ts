@@ -23,6 +23,17 @@ export async function runStoredGmailPipeline(
     mailAccountId: input.mailAccountId,
     batchSize: 25,
   });
+  try {
+    await db.rpc("gmail_send_bind_pending", {
+      p_user_id: input.userId,
+      p_mail_account_id: input.mailAccountId,
+    });
+  } catch {
+    // A bind retry must not stop the rest of the stored pipeline.
+    console.warn("[gmail] pending send bind skipped", {
+      mail_account_id: input.mailAccountId,
+    });
+  }
   await outreachInterpretMailboxUntilIdle(deps, {
     userId: input.userId,
     mailAccountId: input.mailAccountId,

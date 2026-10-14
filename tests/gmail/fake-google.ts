@@ -117,6 +117,8 @@ export interface FakeGoogleOptions {
   /** Overrides the nonce echoed in the ID token, for replay/mix-up tests. */
   nonceOverride?: string | null;
   idTokenError?: string | null;
+  sendError?: GoogleAdapterError | null;
+  sendResult?: { id: string; threadId: string } | null;
   profileError?: string | null;
   exchangeError?: string | null;
   refreshError?: GoogleAdapterError | null;
@@ -133,6 +135,8 @@ export interface FakeGoogle extends GoogleOAuthAdapter {
     revocations: string[];
     /** Must stay empty: B02 reads no mail. */
     messageListings: number;
+    /** D04 sends. Existing B02 tests leave this empty. */
+    sends: { raw: string; threadId?: string | null }[];
   };
   options: FakeGoogleOptions;
 }
@@ -152,6 +156,7 @@ export function createFakeGoogle(options: FakeGoogleOptions = {}): FakeGoogle {
     refreshes: 0,
     revocations: [],
     messageListings: 0,
+    sends: [],
   };
 
   // The nonce the fake will echo back inside the ID token. Real Google returns
@@ -234,6 +239,12 @@ export function createFakeGoogle(options: FakeGoogleOptions = {}): FakeGoogle {
         expiryDate: Date.now() + 3_600_000,
         refreshTokenExpiresAt: null,
       };
+    },
+
+    async sendMessage({ raw, threadId }) {
+      calls.sends.push({ raw, threadId });
+      if (options.sendError) throw options.sendError;
+      return options.sendResult ?? { id: "fake-message-id", threadId: threadId || "fake-thread-id" };
     },
 
     async revoke({ token }) {

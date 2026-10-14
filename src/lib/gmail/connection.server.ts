@@ -5,11 +5,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   B02_REQUESTED_SCOPES,
-  PRIVATE_PROCESSING_CONSENT_TEXT,
   PRIVATE_PROCESSING_POLICY_VERSION,
+  SEND_INCREMENTAL_SCOPES,
   canonicalScopeSet,
   forbiddenScopes,
   hasReadScope,
+  hasSendScope,
+  privateProcessingConsent,
   type GmailAccountStatus,
   type GmailConnectionState,
 } from "@/lib/gmail/contract";
@@ -86,7 +88,11 @@ export type StartResult =
   | { result: "not_configured" }
   | { result: "invalid_target" }
   /** The target is not in a state a reconnect may start against — `connected`, retired, or deleting. */
-  | { result: "not_reconnectable"; connectionState?: GmailConnectionState };
+  | { result: "not_reconnectable"; connectionState?: GmailConnectionState }
+  /** `grant_send` only starts against a mailbox that is already connected. */
+  | { result: "not_connected"; connectionState?: GmailConnectionState }
+  /** Connect and reconnect must not ask for `gmail.send`. `grant_send` must ask for exactly that set. */
+  | { result: "scope_refused" };
 
 /**
  * CONNECT / RECONNECT, step one: record the in-flight authorization and send the
@@ -99,7 +105,7 @@ export type StartResult =
 export async function startGmailAuthorization(
   input: {
     userId: string;
-    purpose: "connect" | "reconnect";
+    purpose: "connect" | "reconnect" | "grant_send";
     targetMailAccountId?: string | null;
     returnPath?: string | null;
     loginHint?: string | null;
@@ -120,10 +126,13 @@ export async function startGmailAuthorization(
   // different flows, and the caller does not get to leave that ambiguity for the
   // callback to resolve. The database enforces the same IFF — this is the
   // friendly refusal, that one is the binding one.
-  const target = input.purpose === "reconnect" ? (input.targetMailAccountId ?? null) : null;
-  if (input.purpose === "reconnect" && !target) {
+  const incremental = input.purpose === "grant_send";
+  const needsTarget = input.purpose === "reconnect" || incremental;
+  const target = needsTarget ? (input.targetMailAccountId ?? null) : null;
+  if (needsTarget && !target) {
     return { result: "invalid_target" };
   }
+  const scopes = incremental ? SEND_INCREMENTAL_SCOPES : B02_REQUESTED_SCOPES;
 
   const state = randomToken();
   const nonce = randomToken();
@@ -140,7 +149,7 @@ export async function startGmailAuthorization(
     p_key_version: sealedVerifier.keyVersion,
     p_purpose: input.purpose,
     p_target_mail_account_id: target,
-    p_requested_scopes: [...B02_REQUESTED_SCOPES],
+    p_requested_scopes: [...scopes],
     p_return_path: safeReturnPath(input.returnPath),
     p_ttl_seconds: STATE_TTL_SECONDS,
   });
@@ -160,6 +169,12 @@ export async function startGmailAuthorization(
   if (begin.result === "not_reconnectable") {
     return { result: "not_reconnectable", connectionState: begin.connection_state };
   }
+  if (begin.result === "not_connected") {
+    return { result: "not_connected", connectionState: begin.connection_state };
+  }
+  if (begin.result === "scope_refused") {
+    return { result: "scope_refused" };
+  }
   if (begin.result !== "ok") {
     return { result: "invalid_target" };
   }
@@ -167,7 +182,7 @@ export async function startGmailAuthorization(
   return {
     result: "ok",
     authorizationUrl: deps.google.buildAuthorizationUrl({
-      scopes: B02_REQUESTED_SCOPES,
+      scopes,
       state,
       nonce,
       codeChallenge: codeChallengeFor(codeVerifier),
@@ -238,7 +253,7 @@ export type CallbackOutcome =
   | { result: "reconnect_required"; mailAccountId: string; returnPath: string | null }
   | { result: "invalid_state" }
   | { result: "missing_refresh_token" }
-  | { result: "scope_refused"; detail: "missing_read" | "forbidden_scope" }
+  | { result: "scope_refused"; detail: "missing_read" | "forbidden_scope" | "missing_send" }
   | { result: "identity_unverified" }
   | { result: "mailbox_unusable" }
   | { result: "owned_by_other_user" }
@@ -486,6 +501,10 @@ export async function completeGmailAuthorization(
     discardWithoutRevoking();
     return { result: "scope_refused", detail: "missing_read" };
   }
+  if (tx.purpose === "grant_send" && !hasSendScope(granted)) {
+    discardWithoutRevoking();
+    return { result: "scope_refused", detail: "missing_send" };
+  }
 
   if (!tokens.idToken) {
     discardWithoutRevoking();
@@ -519,36 +538,61 @@ export async function completeGmailAuthorization(
 
   const sealed = sealSecret(tokens.refreshToken, cfg.encryptionKey, cfg.encryptionKeyVersion);
 
-  const { data: persisted, error: persistError } = await deps.db.rpc("gmail_connection_persist", {
-    p_user_id: input.userId,
-    // The VERIFIED subject, never the email address. B01's durable identity.
-    p_provider_account_subject: identity.subject,
-    p_email_address: profile.emailAddress,
-    p_granted_scopes: granted,
-    p_refresh_ciphertext: sealed.ciphertext,
-    p_refresh_iv: sealed.iv,
-    p_refresh_auth_tag: sealed.authTag,
-    p_key_version: sealed.keyVersion,
-    p_provider_refresh_expires_at: tokens.refreshTokenExpiresAt?.toISOString() ?? null,
-    p_expected_mail_account_id: tx.target_mail_account_id ?? null,
-    // The revision this flow was started against. The database refuses to land a
-    // reconnect on any other version of that mailbox.
-    p_expected_target_revision:
-      tx.target_authorization_revision == null ? null : Number(tx.target_authorization_revision),
-    p_consent_policy_version: PRIVATE_PROCESSING_POLICY_VERSION,
-    // The universal fence. Unlike the revision above it is present for a generic
-    // connect too, so the database can tell an in-flight flow from work the
-    // human started after their Disconnect — once it knows, from the verified
-    // subject, which mailbox this callback is actually about.
-    p_oauth_intent_seq: intentSeq,
-  });
+  const { data: persisted, error: persistError } =
+    tx.purpose === "grant_send"
+      ? await deps.db.rpc("gmail_send_scope_persist", {
+          p_user_id: input.userId,
+          p_mail_account_id: tx.target_mail_account_id,
+          p_expected_revision:
+            tx.target_authorization_revision == null
+              ? null
+              : Number(tx.target_authorization_revision),
+          p_oauth_intent_seq: intentSeq,
+          p_provider_account_subject: identity.subject,
+          p_email_address: profile.emailAddress,
+          p_granted_scopes: granted,
+          p_refresh_ciphertext: sealed.ciphertext,
+          p_refresh_iv: sealed.iv,
+          p_refresh_auth_tag: sealed.authTag,
+          p_key_version: sealed.keyVersion,
+          p_provider_refresh_expires_at: tokens.refreshTokenExpiresAt?.toISOString() ?? null,
+        })
+      : await deps.db.rpc("gmail_connection_persist", {
+          p_user_id: input.userId,
+          // The VERIFIED subject, never the email address. B01's durable identity.
+          p_provider_account_subject: identity.subject,
+          p_email_address: profile.emailAddress,
+          p_granted_scopes: granted,
+          p_refresh_ciphertext: sealed.ciphertext,
+          p_refresh_iv: sealed.iv,
+          p_refresh_auth_tag: sealed.authTag,
+          p_key_version: sealed.keyVersion,
+          p_provider_refresh_expires_at: tokens.refreshTokenExpiresAt?.toISOString() ?? null,
+          p_expected_mail_account_id: tx.target_mail_account_id ?? null,
+          // The revision this flow was started against. The database refuses to land a
+          // reconnect on any other version of that mailbox.
+          p_expected_target_revision:
+            tx.target_authorization_revision == null
+              ? null
+              : Number(tx.target_authorization_revision),
+          p_consent_policy_version: PRIVATE_PROCESSING_POLICY_VERSION,
+          // The universal fence. Unlike the revision above it is present for a generic
+          // connect too, so the database can tell an in-flight flow from work the
+          // human started after their Disconnect — once it knows, from the verified
+          // subject, which mailbox this callback is actually about.
+          p_oauth_intent_seq: intentSeq,
+        });
 
   if (persistError) {
     discardWithoutRevoking();
     return { result: "persist_failed" };
   }
 
-  const outcome = (persisted ?? {}) as { result?: string; mail_account_id?: string };
+  const outcome = (persisted ?? {}) as {
+    result?: string;
+    mail_account_id?: string;
+    detail?: string;
+  };
 
   switch (outcome.result) {
     case "connected":
@@ -660,6 +704,17 @@ export async function completeGmailAuthorization(
       // Refused, and the answer says nothing about who owns it.
       discardWithoutRevoking();
       return { result: "owned_by_other_user" };
+    case "scope_refused":
+      discardWithoutRevoking();
+      return {
+        result: "scope_refused",
+        detail:
+          outcome.detail === "missing_send"
+            ? "missing_send"
+            : outcome.detail === "forbidden_scope"
+              ? "forbidden_scope"
+              : "missing_read",
+      };
     default:
       discardWithoutRevoking();
       return { result: "persist_failed" };
@@ -677,14 +732,17 @@ export async function grantPrivateProcessingConsent(
   input: { userId: string; mailAccountId: string },
   deps: GmailDeps = defaultDeps(),
 ): Promise<{ result: string }> {
-  const consentTextDigest = sha256(PRIVATE_PROCESSING_CONSENT_TEXT);
+  const accounts = await listGmailAccounts(input.userId, deps);
+  const held = accounts.find((account) => account.mailAccountId === input.mailAccountId);
+  const consent = privateProcessingConsent(held?.grantedScopes ?? []);
+  const consentTextDigest = sha256(consent.text);
   const receiptDigest = sha256(
     [
       input.mailAccountId,
       input.userId,
       "private_gmail_processing",
       "granted",
-      PRIVATE_PROCESSING_POLICY_VERSION,
+      consent.policyVersion,
       consentTextDigest,
       new Date().toISOString(),
     ].join("|"),
@@ -693,7 +751,7 @@ export async function grantPrivateProcessingConsent(
   const { data, error } = await deps.db.rpc("gmail_grant_private_processing_consent", {
     p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
-    p_policy_version: PRIVATE_PROCESSING_POLICY_VERSION,
+    p_policy_version: consent.policyVersion,
     p_consent_text_digest: consentTextDigest,
     p_receipt_digest: receiptDigest,
   });

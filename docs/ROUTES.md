@@ -87,6 +87,17 @@ Includes entitlement-aware contact section and private creator relationship.
 `from` and `trip` choose the breadcrumb only (D081, Accepted). They do not
 authorize the read. The map marker and Discover cards omit them.
 
+### `/app/hotels/[id]/pitch`
+Pitch draft for one hotel. Copy and a mailto link stay on the device.
+Send is a separate explicit action through the creator's connected Gmail
+(D156). It does not mark the hotel as pitched. Pro and Max can send. Free
+and a Destination Pass cannot. The server enforces that.
+
+### `/api/integrations/gmail/oauth/start`
+`purpose=connect` and `purpose=reconnect` ask for the B02 scopes only.
+`purpose=grant_send` with `mail_account_id` asks for `gmail.send` on a
+mailbox that is already connected. A connect that asks for send is refused.
+
 ### `/app/pipeline`
 List/Kanban CRM.
 

@@ -18,6 +18,7 @@ import * as collaborationActions from "@/lib/collaboration/actions";
 import * as contractActions from "@/lib/contracts/actions";
 import * as collaborationDetectionActions from "@/lib/gmail/collaboration/actions";
 import * as gmailActions from "@/lib/gmail/actions";
+import * as gmailSendActions from "@/lib/gmail/send/actions";
 import * as inboxActions from "@/lib/inbox-pipeline/actions";
 import * as onboardingActions from "@/lib/onboarding/actions";
 import * as pipelineActions from "@/lib/pipeline/actions";
@@ -103,6 +104,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(collaborationActions),
       ...exportedFunctions(contractActions),
       ...exportedFunctions(gmailActions),
+      ...exportedFunctions(gmailSendActions),
       ...exportedFunctions(collaborationDetectionActions),
       ...exportedFunctions(inboxActions),
       ...exportedFunctions(onboardingActions),

@@ -83,6 +83,19 @@ export interface GoogleOAuthAdapter {
 
   /** Best effort. Used both on disconnect and to compensate a failed connect. */
   revoke(input: { token: string }): Promise<void>;
+
+  /**
+   * Send one RFC822 message through the creator's own mailbox (D04).
+   *
+   * `raw` is base64url. `threadId` is set only when that thread is already
+   * stored for this mailbox. The real adapter refuses before any network call
+   * when `NODE_ENV` is `test`.
+   */
+  sendMessage(input: {
+    accessToken: string;
+    raw: string;
+    threadId?: string | null;
+  }): Promise<{ id: string; threadId: string }>;
 }
 
 /**
@@ -278,4 +291,63 @@ export const googleOAuthAdapter: GoogleOAuthAdapter = {
       throw classified;
     }
   },
+
+  async sendMessage({ accessToken, raw, threadId }) {
+    // Tests and CI never reach Gmail. The throw is before fetch, so a missing
+    // mock cannot become a real send.
+    if (process.env.NODE_ENV === "test") {
+      throw new GoogleAdapterError("gmail_send_blocked_in_test", true);
+    }
+    let response: Response;
+    try {
+      response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          raw,
+          ...(threadId ? { threadId } : {}),
+        }),
+      });
+    } catch {
+      // The request left the process. Whether Gmail accepted it is unknown.
+      throw new GoogleAdapterError("gmail_send_transport", false);
+    }
+    if (!response.ok) {
+      throw await classifySendResponse(response);
+    }
+    const body = (await response.json()) as { id?: unknown; threadId?: unknown };
+    if (typeof body.id !== "string" || typeof body.threadId !== "string") {
+      throw new GoogleAdapterError("gmail_send_transport", false);
+    }
+    return { id: body.id, threadId: body.threadId };
+  },
 };
+
+async function classifySendResponse(response: Response): Promise<GoogleAdapterError> {
+  let reason = "";
+  try {
+    const body = (await response.json()) as {
+      error?: { status?: unknown; errors?: { reason?: unknown }[] };
+    };
+    const fromErrors = body.error?.errors?.[0]?.reason;
+    const fromStatus = body.error?.status;
+    reason = typeof fromErrors === "string" ? fromErrors : typeof fromStatus === "string" ? fromStatus : "";
+  } catch {
+    reason = "";
+  }
+  if (response.status === 401) return new GoogleAdapterError("token_revoked", true);
+  if (response.status === 429) return new GoogleAdapterError("quota", false);
+  if (response.status === 403) {
+    if (/rate|quota|limit/i.test(reason) && !/scope|insufficient|forbidden/i.test(reason)) {
+      return new GoogleAdapterError("quota", false);
+    }
+    if (/scope|insufficient|forbidden/i.test(reason)) {
+      return new GoogleAdapterError("scope_missing", true);
+    }
+    return new GoogleAdapterError("provider_error", false);
+  }
+  return new GoogleAdapterError("provider_error", false);
+}

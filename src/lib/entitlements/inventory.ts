@@ -535,6 +535,30 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["D018", "D067", "D098"],
   },
   {
+    id: "gmail.send",
+    module: "Gmail",
+    summary:
+      "Sending a pitch or a reply from the creator's own connected Gmail is Pro or Max. Free and a Destination Pass cannot. The send is an explicit action. A draft is not sent.",
+    routes: ["/app/hotels/[id]/pitch", "/api/integrations/gmail/oauth/start"],
+    sourceFiles: [
+      "src/lib/gmail/send/actions.ts",
+      "src/lib/gmail/send/service.server.ts",
+      "src/app/(app)/app/hotels/[id]/pitch/page.tsx",
+      "src/components/pitch/composer.tsx",
+    ],
+    serverActions: ["sendPitchFromGmailAction"],
+    rpcs: [
+      "gmail_send_reserve",
+      "gmail_send_mark_provider",
+      "gmail_send_commit",
+      "gmail_send_fail",
+    ],
+    rule: { kind: "paid_worldwide" },
+    anon: "deny",
+    enforcement: { kind: "owner_rows", tables: ["mail_accounts"] },
+    sources: ["D156", "D133", "P01"],
+  },
+  {
     id: "gmail.sync",
     module: "Gmail",
     summary:
