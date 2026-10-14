@@ -33,24 +33,39 @@
         <p class="meta">Tema claro. Archivo. El amarillo es acción, nunca un aviso. Los datos de muestra no son una base real.</p>
       </header>
 
+      <section class="stack" aria-labelledby="preview-title">
+        <div class="spread">
+          <h2 id="preview-title" class="h2">Vista previa</h2>
+          <div class="cluster" role="group" aria-label="Ancho de la vista previa">
+            <button class="btn btn-line btn-small is-on" type="button" data-viewport="desktop" aria-pressed="true">Escritorio</button>
+            <button class="btn btn-line btn-small" type="button" data-viewport="mobile" aria-pressed="false">Celular</button>
+          </div>
+        </div>
+        <p class="meta" id="preview-caption">Escritorio · 1280 px. Barra a la izquierda, columnas, mapa junto a la lista y panel en la ficha.</p>
+        <div class="preview-stage" id="preview-stage" data-viewport="desktop">
+          <iframe id="screen-frame" title="Vista previa de Inicio" src="inicio.html"></iframe>
+        </div>
+      </section>
+
       <section class="stack" aria-labelledby="screens">
         <h2 id="screens" class="h2">Pantallas</h2>
+        <p class="meta">Un clic carga el marco. Abrir deja la pantalla en esta ventana. Control-clic abre otra pestaña.</p>
         <nav class="screen-index" aria-label="Pantallas del prototipo">
-          <a href="landing.html"><strong>Landing</strong><span class="meta">Promesa, cómo se usa, y el camino a los planes.</span></a>
-          <a href="signup.html"><strong>Registro</strong><span class="meta">Nombre, correo y contraseña. Después, el onboarding.</span></a>
-          <a href="onboarding.html"><strong>Onboarding</strong><span class="meta">Un destino y el primer hotel del catálogo. El mail no se muestra.</span></a>
-          <a href="inicio.html"><strong>Inicio</strong><span class="meta">Próximo viaje, acciones de hoy y hoteles recomendados.</span></a>
-          <a href="discover.html"><strong>Descubrir</strong><span class="meta">Lista y mapa, filtros y señales de inteligencia.</span></a>
-          <a href="hotel.html"><strong>Hotel</strong><span class="meta">Inteligencia, confianza, encaje, contacto y pitch.</span></a>
-          <a href="pitch.html"><strong>Pitch</strong><span class="meta">Tono, puntos, idioma, presupuesto de IA, envío y cola.</span></a>
-          <a href="pipeline.html"><strong>Pipeline</strong><span class="meta">Tablero y lista. Ocho estados, en tus palabras.</span></a>
-          <a href="inbox.html"><strong>Inbox</strong><span class="meta">Lecturas de Gmail al lado de cada ciclo. No es un cliente de mail.</span></a>
-          <a href="trips.html"><strong>Viajes</strong><span class="meta">Destino, fechas y hoteles de esa salida.</span></a>
-          <a href="perfil.html"><strong>Perfil</strong><span class="meta">Cuenta pública, conteos propios y colaboraciones privadas.</span></a>
-          <a href="portfolio.html"><strong>Portfolio</strong><span class="meta">Tres layouts. Cada colaboración se aprueba sola.</span></a>
-          <a href="pricing.html"><strong>Planes</strong><span class="meta">Free, Pro, Max y packs, con el Pase de destino aparte.</span></a>
-          <a href="billing.html"><strong>Facturación y créditos</strong><span class="meta">Saldo, período y checkout. Un pago no es acceso.</span></a>
-          <a href="account.html"><strong>Cuenta</strong><span class="meta">Gmail, contraseña y baja. La confirmación es DELETE.</span></a>
+          <div class="screen-row"><a class="screen-preview" href="landing.html"><strong>Landing</strong><span class="meta">Promesa, cómo se usa, y el camino a los planes.</span></a><a class="screen-open" href="landing.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="signup.html"><strong>Registro</strong><span class="meta">Nombre, correo y contraseña. Después, el onboarding.</span></a><a class="screen-open" href="signup.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="onboarding.html"><strong>Onboarding</strong><span class="meta">Un destino y el primer hotel del catálogo. El mail no se muestra.</span></a><a class="screen-open" href="onboarding.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview is-selected" href="inicio.html"><strong>Inicio</strong><span class="meta">Próximo viaje, acciones de hoy y hoteles recomendados.</span></a><a class="screen-open" href="inicio.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="discover.html"><strong>Descubrir</strong><span class="meta">Lista y mapa, filtros y señales de inteligencia.</span></a><a class="screen-open" href="discover.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="hotel.html"><strong>Hotel</strong><span class="meta">Inteligencia, confianza, encaje, contacto y pitch.</span></a><a class="screen-open" href="hotel.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="pitch.html"><strong>Pitch</strong><span class="meta">Tono, puntos, idioma, presupuesto de IA, envío y cola.</span></a><a class="screen-open" href="pitch.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="pipeline.html"><strong>Pipeline</strong><span class="meta">Tablero y lista. Ocho estados, en tus palabras.</span></a><a class="screen-open" href="pipeline.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="inbox.html"><strong>Inbox</strong><span class="meta">Lecturas de Gmail al lado de cada ciclo. No es un cliente de mail.</span></a><a class="screen-open" href="inbox.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="trips.html"><strong>Viajes</strong><span class="meta">Destino, fechas y hoteles de esa salida.</span></a><a class="screen-open" href="trips.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="perfil.html"><strong>Perfil</strong><span class="meta">Cuenta pública, conteos propios y colaboraciones privadas.</span></a><a class="screen-open" href="perfil.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="portfolio.html"><strong>Portfolio</strong><span class="meta">Tres layouts. Cada colaboración se aprueba sola.</span></a><a class="screen-open" href="portfolio.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="pricing.html"><strong>Planes</strong><span class="meta">Free, Pro, Max y packs, con el Pase de destino aparte.</span></a><a class="screen-open" href="pricing.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="billing.html"><strong>Facturación y créditos</strong><span class="meta">Saldo, período y checkout. Un pago no es acceso.</span></a><a class="screen-open" href="billing.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="account.html"><strong>Cuenta</strong><span class="meta">Gmail, contraseña y baja. La confirmación es DELETE.</span></a><a class="screen-open" href="account.html">Abrir</a></div>
         </nav>
       </section>
 
@@ -150,10 +165,12 @@
       <section class="stack">
         <h2 class="h2">Cómo se lee</h2>
         <p>En el celular, Descubrir abre en lista y el mapa es una pantalla. El pipeline abre en lista. La navegación principal queda abajo: Inicio, Descubrir, Pipeline, Viajes, Perfil.</p>
+        <p>Desde 1024 px la navegación principal pasa a la izquierda. Descubrir muestra el mapa y la lista juntos. La ficha del hotel deja el contacto y el pitch en un panel al costado. El pipeline abre el tablero en columnas.</p>
         <p class="meta">Inbox, Cuenta y Facturación no son ítems primarios. El foco visible es tinta, porque el sol sobre papel no alcanza contraste.</p>
       </section>
       <p class="footer-note"><a href="landing.html">Entrar al prototipo</a> · UX01 fase 1 · sin código de la app</p>
     </div>
   </main>
+  <script src="proto.js"></script>
 </body>
 </html>

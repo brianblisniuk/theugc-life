@@ -32,6 +32,7 @@ Open `index.html`. It is the design system and the index of every screen.
 - Light theme is the product. Dark tokens are documented on the index and are not applied to the screens.
 - UI copy is Spanish, voseo, matching the live shell (Inicio, Descubrir, Pipeline, Viajes, Perfil) and the home checklist. Pipeline, Pro, Max, Gmail, and Inbox stay as product names. The deletion phrase stays `DELETE`.
 - Mobile is list-first. Discover opens the map from a toggle. The pipeline opens as a list; the board scrolls sideways. Five primary items sit on the bottom bar.
+- From 1024px the same screens become desktop: a left sidebar replaces the bottom bar, content goes to columns, Discover keeps the map beside the list, and the hotel page puts status, pitch, and contact in a side panel. The index has an Escritorio / Celular toggle that previews either width. Copy and links stay the same.
 - Rows, rules, and photography carry the layout. A box is used when the thing is clicked as a unit.
 - The map is a static stand-in. The product map remains Google Maps.
 - Sample contacts use `.example` addresses. A missing public signal is “todavía no hay datos”, not a low score.

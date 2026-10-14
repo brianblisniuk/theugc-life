@@ -11,6 +11,22 @@
 </head>
 <body class="page-app">
   <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a href="inicio.html">Inicio</a>
+      <a href="discover.html">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a href="trips.html">Viajes</a>
+      <a href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a class="is-active" href="account.html" aria-current="page">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
   <header class="shell-top">
     <div class="shell-bar">
       <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
@@ -39,12 +55,14 @@
     </div>
   </header>
   <main id="contenido" class="page">
-    <div class="wrap stack-lg" style="max-width:720px">
+    <div class="wrap-l stack-lg">
       <div>
         <p class="eyebrow">Inicio / Cuenta</p>
         <h1 class="h1">Cuenta</h1>
         <p class="meta">La casilla y la baja viven en esta página.</p>
       </div>
+      <div class="cols-2">
+      <div class="stack">
       <dl class="stack">
         <div class="spread"><dt class="meta">Correo</dt><dd>lucia@correo.example</dd></div>
         <div class="spread"><dt class="meta">Rol</dt><dd>Creadora</dd></div>
@@ -67,8 +85,9 @@
         <p class="meta">Para cambiarla, te mandamos un enlace de restablecimiento. Este prototipo no envía ese correo.</p>
         <a class="btn btn-line" href="signup.html">Restablecer contraseña</a>
       </section>
+      </div>
 
-      <section class="stack" style="border-top:1px solid var(--line);padding-top:20px">
+      <section class="stack side-panel">
         <h2 class="h3">Eliminar cuenta</h2>
         <p>Tu nombre, correo, casilla, contactos, perfil, borradores y el resto de los datos personales se borran dentro de los 30 días. Las estadísticas agregadas que no se pueden rastrear hasta vos pueden quedar.</p>
         <button class="btn btn-danger" type="button" data-delete-open data-delete-ask>Eliminar cuenta</button>
@@ -84,6 +103,7 @@
         </form>
         <p class="note" data-delete-scheduled hidden>La baja quedó programada. Los datos personales se eliminan el 13 de noviembre de 2026 (UTC).</p>
       </section>
+      </div>
       <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
     </div>
   </main>

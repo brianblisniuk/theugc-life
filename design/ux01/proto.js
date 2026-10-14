@@ -292,4 +292,66 @@
       if (note) note.hidden = false;
     });
   }
+
+  const stage = $("#preview-stage");
+  if (stage) {
+    const frame = $("#screen-frame");
+    const caption = $("#preview-caption");
+    const buttons = $$("[data-viewport]");
+    const previews = $$(".screen-preview");
+    const copy = {
+      desktop:
+        "Escritorio · 1280 px. Barra a la izquierda, columnas, mapa junto a la lista y panel en la ficha.",
+      mobile:
+        "Celular · 390 px. Barra abajo, Descubrir en lista y el mapa en su propia pantalla.",
+    };
+    const deskW = 1280;
+    const deskH = 800;
+
+    function fit() {
+      const mode = stage.dataset.viewport;
+      if (mode === "mobile") {
+        const width = Math.min(390, stage.clientWidth);
+        frame.style.width = width + "px";
+        frame.style.height = "760px";
+        frame.style.transform = "none";
+        stage.style.height = "auto";
+        return;
+      }
+      const scale = Math.min(1, stage.clientWidth / deskW);
+      frame.style.width = deskW + "px";
+      frame.style.height = deskH + "px";
+      frame.style.transformOrigin = "top left";
+      frame.style.transform = "scale(" + scale + ")";
+      stage.style.height = Math.ceil(deskH * scale) + "px";
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.viewport;
+        stage.dataset.viewport = mode;
+        if (caption) caption.textContent = copy[mode] || "";
+        buttons.forEach((item) => {
+          const on = item === button;
+          item.classList.toggle("is-on", on);
+          item.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        fit();
+      });
+    });
+
+    previews.forEach((link) => {
+      link.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        frame.src = link.getAttribute("href");
+        const name = $("strong", link);
+        frame.title = "Vista previa de " + (name ? name.textContent : "la pantalla");
+        previews.forEach((item) => item.classList.toggle("is-selected", item === link));
+      });
+    });
+
+    window.addEventListener("resize", fit);
+    fit();
+  }
 })();

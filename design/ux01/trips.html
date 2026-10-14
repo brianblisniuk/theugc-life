@@ -11,6 +11,22 @@
 </head>
 <body class="page-app">
   <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a href="inicio.html">Inicio</a>
+      <a href="discover.html">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a class="is-active" href="trips.html" aria-current="page">Viajes</a>
+      <a href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a href="account.html">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
   <header class="shell-top">
     <div class="shell-bar">
       <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
@@ -46,6 +62,7 @@
         <p class="meta">Un destino, las fechas y los hoteles de esa salida. El viaje es privado. No hace falta un viaje para guardar un hotel.</p>
       </div>
 
+      <div class="cols-2">
       <article class="stack">
         <figure class="hero">
           <img src="https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=75" alt="Sur de Bali.">
@@ -75,6 +92,7 @@
         </article>
       </article>
 
+      <div class="stack">
       <article class="spread" style="border-top:1px solid var(--line);padding-top:16px">
         <div>
           <h2 class="h3">Alfama en marzo</h2>
@@ -83,7 +101,7 @@
         <span class="badge">Planeando</span>
       </article>
 
-      <section class="stack" style="max-width:560px">
+      <section class="stack">
         <h2 class="h3">Nuevo viaje</h2>
         <form class="stack" data-trip-form>
           <label class="field" for="trip-name"><span>Nombre</span><input class="control" id="trip-name" value="Ciudad amurallada"></label>
@@ -99,6 +117,8 @@
         </form>
         <p class="meta">En Free hay un viaje activo. Pro y Max no tienen ese tope. Un Pase no cuenta los viajes de su destino.</p>
       </section>
+      </div>
+      </div>
       <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
     </div>
   </main>

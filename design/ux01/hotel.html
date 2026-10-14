@@ -11,6 +11,22 @@
 </head>
 <body class="page-app">
   <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a href="inicio.html">Inicio</a>
+      <a class="is-active" href="discover.html" aria-current="page">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a href="trips.html">Viajes</a>
+      <a href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a href="account.html">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
   <header class="shell-top">
     <div class="shell-bar">
       <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
@@ -39,22 +55,23 @@
     </div>
   </header>
   <main id="contenido">
-    <figure class="hero">
+    <div class="wrap-l hotel-desk">
+    <figure class="hero bleed">
       <img src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1800&q=75" alt="Pileta y horizonte en un resort de acantilado, luz de tarde.">
     </figure>
-    <div class="wrap page stack-lg" style="padding-top:20px">
+    <div class="hotel-copy page stack-lg">
       <p class="meta"><a href="inicio.html">Inicio</a> / <a href="discover.html">Descubrir</a> / Alila Villas Uluwatu</p>
       <header class="spread">
         <div class="stack">
           <p class="eyebrow">Uluwatu · Bali · Indonesia</p>
           <h1 class="h1">Alila Villas Uluwatu</h1>
           <p class="meta">5 estrellas · Resort · Estado editorial: verificado · Clasificación provisoria de la fuente, no una reseña de huéspedes</p>
-          <div class="cluster">
+          <div class="cluster only-phone">
             <span class="badge">Negociando</span>
             <span class="badge">En el viaje Costa sur</span>
           </div>
         </div>
-        <a class="btn btn-sun" href="pitch.html">Generar pitch</a>
+        <a class="btn btn-sun only-phone" href="pitch.html">Generar pitch</a>
       </header>
 
       <nav class="surface-nav" aria-label="Secciones del hotel">
@@ -105,6 +122,15 @@
         </div>
       </section>
 
+    </div>
+    <aside class="side-panel stack">
+      <div class="only-desk stack">
+        <div class="cluster">
+          <span class="badge">Negociando</span>
+          <span class="badge">En el viaje Costa sur</span>
+        </div>
+        <a class="btn btn-sun" href="pitch.html">Generar pitch</a>
+      </div>
       <section id="contacto" class="stack" data-unlock-root>
         <h2 class="h2">Contacto</h2>
         <div data-locked class="stack">
@@ -121,8 +147,9 @@
           <a class="btn btn-ink" href="pitch.html">Generar pitch</a>
         </div>
       </section>
-      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </aside>
     </div>
+    <p class="footer-note wrap-l"><a href="index.html">Sistema de diseño</a></p>
   </main>
   <nav class="tabbar" aria-label="Principal">
     <a href="inicio.html">Inicio</a>
