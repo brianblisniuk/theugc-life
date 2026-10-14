@@ -842,7 +842,6 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/app/api/billing/webhook/route.ts",
       "src/app/(public)/pricing/page.tsx",
       "src/lib/billing/actions.ts",
-      "src/lib/billing/grant.ts",
       "src/lib/billing/rebill-webhook.ts",
     ],
     serverActions: ["startRebillCheckoutAction"],

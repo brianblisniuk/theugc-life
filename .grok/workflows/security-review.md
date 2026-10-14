@@ -17,7 +17,7 @@ Run on every PR that touches `supabase/migrations/`, `src/lib/**/actions.ts`, `s
 3. **RLS / IDOR:** User A↔B tests for direct id, list, count inference, update, delete, FK link, and RPC. Foreign and missing ids give identical responses.
 4. **Concurrency/replay:** unique keys + `ON CONFLICT`, row locks, stale-write fences. A two-session race test using `tests/db/tx.ts`.
 5. **Idempotency:** a replay with mismatched identity must not grant or leak (pattern: 0043 `source_reference_conflict`).
-6. **Secrets/webhooks:** server-only env, constant-time compare (`src/lib/billing/webhook-auth.ts`), allowlisted events, stubs labelled.
+6. **Secrets/webhooks:** server-only env, constant-time compare (`src/lib/billing/rebill-signature.ts`), allowlisted events, stubs labelled.
 7. **Negative controls:** each guard proven by `negative-control-generator`.
 
 Output: an AUDIT VERDICT comment (format in `pr-cycle.md`) tied to the exact head.

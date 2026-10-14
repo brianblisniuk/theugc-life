@@ -826,13 +826,19 @@ for $10, 150 for $20, and 500 for $40. Prices are config. Existing ledger
 rows are not reduced. `0073` and `0074` are G03 and are not edited. F03
 order files are not edited.
 
-**P02 Rebill billing integration** is draft PR #80 on
-`cursor/p02-rebill-billing-9f5b`. D135–D139. Migrations
+**P02 Rebill billing integration** is merged as PR #80, merge
+`93573874a9ec90a8f246ed379bb3b9df23d8d95f`. D135–D139. Migrations
 `0077_rebill_checkout.sql`, `0078_rebill_apply_event.sql`, and
 `0079_plan_credit_periods.sql`. Hosted checkout only. The webhook verifies
 the Rebill signature and confirms the payment before writing an entitlement.
-Live charges stay off unless `REBILL_LIVE=true`. `expected_head` stays null.
-Do not merge.
+Live charges stay off unless `REBILL_LIVE=true`.
+
+**P03 refund policy and P02 hardening** is a draft on
+`cursor/p03-refund-policy-9f5b`. D140. Migration `0080_refund_policy.sql`.
+A monthly refund removes that payment's 30-day slice. An annual refund ends
+the plan. A pack refund reverses unused credits only. A chargeback still
+revokes the subscription. Attaching a payment link is service-role only.
+`expected_head` stays null. Do not merge.
 
 > **B08 — continuous Gmail sync (D076) is merged** as PR #53, merge
 > `eb136190f676e9201b6b39de4b570d51e52da73d`. Migration

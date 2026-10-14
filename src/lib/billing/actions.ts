@@ -53,9 +53,9 @@ export async function startRebillCheckoutAction(formData: FormData): Promise<voi
     redirect("/app/billing?checkout=provider_error");
   }
 
+  const admin = createAdminClient();
   let planId: string | null = null;
   if (isRebillPlanProduct(product)) {
-    const admin = createAdminClient();
     const existing = await admin
       .from("rebill_catalog")
       .select("provider_plan_id")
@@ -96,7 +96,7 @@ export async function startRebillCheckoutAction(formData: FormData): Promise<voi
     redirect(`/app/billing?checkout=${link.result}`);
   }
 
-  const attached = await supabase.rpc("attach_own_rebill_checkout_link", {
+  const attached = await admin.rpc("attach_own_rebill_checkout_link", {
     p_checkout_id: row.checkout_id,
     p_link_id: link.linkId,
   });

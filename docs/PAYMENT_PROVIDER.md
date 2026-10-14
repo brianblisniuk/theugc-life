@@ -21,3 +21,9 @@ Live charges stay off unless `REBILL_LIVE` is exactly `true`. A sandbox key
 may open a hosted link. A productive organization may not, until that flag
 is set. Production keys and the Rebill webhook registration are still an
 owner step. No secret is committed.
+
+A monthly refund shortens that payment's 30 days and reverses only the
+unused plan credits of that period (D140). An annual refund ends the plan.
+A pack refund reverses unused credits of that pack and does not take the
+balance below zero. A chargeback still revokes the subscription. The
+webhook uses the checkout id from the confirmed payment.

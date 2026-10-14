@@ -13,8 +13,6 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { mapGrantRpcResult } from "@/lib/billing/grant";
-
 import { adminQuery, hasTestDb, queryAs, setupDatabase, teardownDatabase } from "../db/harness";
 import { closeSession, endTxPool, openSession } from "../db/tx";
 import { DEST, USERS, seed } from "../rls/seed";
@@ -212,6 +210,36 @@ d("grant_access_entitlement — privileges", () => {
     expect(anon.error?.code).toBe("42501");
   });
 });
+
+type GrantResult =
+  | { result: "granted"; entitlementId: string }
+  | { result: "already_granted"; entitlementId: string }
+  | { result: "source_reference_conflict" }
+  | { result: "error" }
+  | { result: "invalid_input" };
+
+type RpcRow = { result?: string; entitlement_id?: string } | null;
+
+/** Maps the RPC jsonb result. A conflict does not forward another row's id. */
+function mapGrantRpcResult(row: RpcRow): GrantResult {
+  if (row?.result === "granted" && row.entitlement_id) {
+    return { result: "granted", entitlementId: row.entitlement_id };
+  }
+  if (row?.result === "already_granted" && row.entitlement_id) {
+    return { result: "already_granted", entitlementId: row.entitlement_id };
+  }
+  if (row?.result === "source_reference_conflict") return { result: "source_reference_conflict" };
+  if (
+    row?.result === "invalid_input" ||
+    row?.result === "source_required" ||
+    row?.result === "invalid_access_type" ||
+    row?.result === "destination_required" ||
+    row?.result === "pro_cannot_have_destination"
+  ) {
+    return { result: "invalid_input" };
+  }
+  return { result: "error" };
+}
 
 describe("mapGrantRpcResult", () => {
   it("never surfaces an id on conflict and maps shape errors to invalid_input", () => {

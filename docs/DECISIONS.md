@@ -4823,9 +4823,11 @@ Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
 Packs stay 50 credits for $10, 150 for $20, and 500 for $40 (D131). A
 successful payment grants that pack once. The ledger key is `pack:{payment
 id}`. A pack is not a plan and does not write an entitlement. Replaying the
-same payment id does not grant again. A refund or chargeback reverses the
-full pack grant. The balance may go negative if those credits were already
-spent. Spent hotel unlocks are not undone (D014).
+same payment id does not grant again. A chargeback reverses the full pack
+grant. The balance may go negative if those credits were already spent.
+Spent hotel unlocks are not undone (D014). D140 supersedes a pack refund:
+it reverses only the unused credits of that pack and does not take the
+balance below zero.
 
 ## D137 — Sandbox checkout; live charges stay off
 
@@ -4868,9 +4870,13 @@ accounts, the result is `user_conflict` and nothing is granted.
 A `purchases` row, a `subscriptions` row, a checkout row, or a webhook row
 is not access. `BILLING_WEBHOOK_SECRET` does not authorize this route.
 
-`authenticated` may create and attach only its own checkout. It cannot
-execute `apply_rebill_event` or `record_rebill_plan_id`. It cannot read
-another account's checkout, and it cannot read webhook events.
+`authenticated` may create only its own checkout. It cannot attach the
+payment link. D140 makes `attach_own_rebill_checkout_link` service_role
+only. It cannot execute `apply_rebill_event`, `record_rebill_plan_id`, or
+`rebill_unused_credits`. It cannot read another account's checkout, and it
+cannot read webhook events. The webhook applies the checkout id, payment
+link id, and subscription id from the confirmed Rebill payment. It does
+not copy those ids from the body when the confirm response omits them.
 
 ## D139 — Plan state, refunds, and Pro ↔ Max
 
@@ -4899,5 +4905,34 @@ Upgrade or downgrade between Pro and Max, from `subscription.updated` with
 does not change `expires_at` and does not add credits for the current
 bucket. The next 30-day bucket uses the new tier amount. The subscription
 interval is updated so the next successful payment uses the new window. The
-current window stays. A refund of one payment on a shared entitlement
-revokes that entitlement and reverses the unused plan credits then outstanding.
+current window stays. D140 supersedes the monthly-refund and pack-refund
+sentences above. A chargeback still revokes the whole subscription and
+reverses all unused plan credits.
+
+## D140 — Refund the period that payment bought
+
+Status: **Accepted — PRODUCT DECISION (owner, Brian, 2026-10-14).**
+Supersedes the monthly-refund and pack-refund parts of D136 and D139.
+Chargebacks stay as D139 wrote them.
+
+A refund, full or partial, of a monthly Pro or Max payment revokes only
+the period that payment bought. The paid window shortens by that payment's
+30 days. If the refunded payment is the current period, access ends now.
+Only the unused plan credits granted for that payment's period are
+reversed. Other paid periods stay, including a later slice whose start is
+still in the future: access is off until that slice starts, and that
+slice's credits are not reversed. A refund of an annual payment ends the
+plan and reverses unused plan credits.
+
+A pack refund reverses only the unused credits of that pack. The reversal
+is `min(unused, granted)` and also not more than the current balance, so
+the balance does not go below zero. A pack chargeback still reverses the
+full grant and may go below zero.
+
+A chargeback or dispute of a plan payment still revokes the whole
+subscription and all unused plan credits. When a paid plan lapses, Free
+weekly credits resume.
+
+The payment link is attached by the server with the service role. A
+signed-in user cannot call that function. Confirmed Rebill ids win over
+the webhook body.

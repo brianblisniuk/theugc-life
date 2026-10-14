@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleRebillWebhook, type WebhookDeps } from "@/lib/billing/rebill-webhook";
 import { rebillSignatureValid } from "@/lib/billing/rebill-signature";
-import { secretMatches } from "@/lib/billing/webhook-auth";
 
 const SIGNING = "whsec_test_signing_secret";
 
@@ -79,7 +78,6 @@ describe("rebill webhook signature", () => {
   });
 
   it("does not treat the retired billing secret as a signature", () => {
-    expect(secretMatches("s3cret-value", "s3cret-value")).toBe(true);
     expect(rebillSignatureValid(new Uint8Array(), "s3cret-value", SIGNING)).toBe(false);
   });
 });
@@ -127,8 +125,30 @@ describe("rebill webhook handler", () => {
       amount: 30,
       currency: "USD",
       checkoutId: "33333333-3333-4333-8333-333333333333",
+      paymentLinkId: null,
       subscriptionId: "sub_confirmed",
     });
+  });
+
+  it("prefers the confirmed checkout id and does not fall back to the body", async () => {
+    const body = JSON.stringify(envelope);
+    const d = deps({
+      fetchImpl: vi.fn(async () =>
+        Response.json({
+          id: "pay_body",
+          status: "approved",
+          amount: 30,
+          currency: "USD",
+        }),
+      ) as unknown as typeof fetch,
+    });
+    const res = await handleRebillWebhook(request(body, sign(body)), d);
+    expect(res.status).toBe(200);
+    const event = d.applied[0] as { payment: Record<string, unknown> };
+    expect(event.payment.checkoutId).toBeNull();
+    expect(event.payment.paymentLinkId).toBeNull();
+    expect(event.payment.subscriptionId).toBeNull();
+    expect(JSON.stringify(event)).not.toMatch(/33333333|pl_body|sub_body|forged/);
   });
 
   it("refuses a checkout id that disagrees with the confirmed payment", async () => {
