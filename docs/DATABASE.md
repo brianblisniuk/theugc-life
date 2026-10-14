@@ -2864,6 +2864,11 @@ Hotels below a floor are absent from both views.
 `hotels`. `0069` is G02 and is not edited. `0070` is unused. `0068` is G01
 and is not edited.
 
+F03 (D130) does not add a migration. Discover and Pipeline order one of
+those metrics with `rank_key desc, hotel_id`. They read the two signal
+views and `read_destination_metric_ranking`. They do not read
+`private.hotel_metric_basis`. `0075` and `0076` are unused.
+
 ## 10. Growth entities
 
 ### hotel_claims

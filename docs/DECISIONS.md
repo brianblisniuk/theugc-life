@@ -4645,3 +4645,44 @@ object. The private screen says it is no longer confirmed.
 - It does not read Gmail, rank hotels, or call a model.
 - It does not edit migrations `0066`, `0068`, or `0069`, home, contract files,
   deliverable reminders, or Discover.
+
+## D130 — Discover and Pipeline order one metric at a time
+
+Status: **Accepted** for this block. Canon v1.1 F03 is the order of Discover
+and Pipeline. H01 (D120) already computes the three metrics and the read
+API. Migrations `0075` and `0076` are not used. D131–D134 are unused.
+
+The caller asks for one metric: response rate, response time, or creator
+activity. The order is that metric's `rank_key` descending, then hotel id
+ascending. A second metric, a name, a timestamp, and a composite score are
+not sort keys. The name order on Discover and the recent-activity order on
+Pipeline stay in place until the caller asks for a metric. A metric order
+cannot be the silent default: hotels below the floor are absent from it, and
+Discover still has to list every published hotel (D049).
+
+A destination order calls `read_destination_metric_ranking`. Without a
+destination, Discover reads `hotel_metric_signal_public` or
+`hotel_metric_signal_premium`. Pipeline orders the caller's own hotels
+through those same views. It does not read `hotel_intelligence` or
+`private.hotel_metric_basis`.
+
+Reply rate and reply time are premium. A caller who is not staff, not Pro,
+and has no active Destination Pass receives `locked` and no hotel list. A
+Pass orders only hotels in a destination that pass covers, including
+descendants. Hotels outside that pass are omitted. A failed entitlement read
+is an error, not a lock and not an empty pipeline.
+
+Below the floor the state is not enough data. Those hotels are left out of
+the metric order. They are not given a zero and they are not placed last. A
+measured zero that cleared the floor stays in the order. An empty pipeline
+stays an empty pipeline. It is not described as not enough data.
+
+### What this decision does not do
+
+- It does not add a table or a migration.
+- It does not combine the three metrics.
+- It does not sort Home, and it does not edit `src/lib/home`.
+- It does not change the catalog order or the recent-activity order when no
+  metric is requested.
+- It does not let a hotel payment, a sponsored flag, or a plan row move a
+  rank.

@@ -2,8 +2,9 @@
  * Discover result row (PRD §7.2, D058).
  *
  * Public identity, disclosed public intelligence, and the viewer's own
- * pipeline/trip badges. Premium contacts and premium metrics are not props.
- * A null badge load is unknown and renders no "not saved" / "not on a trip".
+ * pipeline/trip badges. Premium contacts are not props. A rank line is one
+ * metric the list already authorized. A null badge load renders no
+ * "not saved" / "not on a trip".
  */
 import Link from "next/link";
 
@@ -28,11 +29,22 @@ export function HotelCard({
   hotel,
   signal,
   badge,
+  rankLine = null,
 }: {
   hotel: HotelSummary;
   signal: PublicCardSignal | null;
   /** Null when the viewer's own state could not be read. */
   badge: CreatorBadge | null;
+  /**
+   * One metric already authorized for this list. The card does not fetch it.
+   * Absent on the name order.
+   */
+  rankLine?: {
+    rank: number;
+    title: string;
+    valueLabel: string;
+    sampleBasis: string | null;
+  } | null;
 }) {
   const href = `/app/hotels/${hotel.id}`;
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
@@ -59,6 +71,16 @@ export function HotelCard({
         <StarRating rating={hotel.starRating} />
         {CLOSED_LABEL[hotel.activeStatus] ? (
           <p className="text-xs text-text">{CLOSED_LABEL[hotel.activeStatus]}</p>
+        ) : null}
+        {rankLine ? (
+          <p className="text-sm font-semibold text-text" data-testid="hotel-rank-line">
+            {rankLine.rank}. {rankLine.title}: {rankLine.valueLabel}
+            {rankLine.sampleBasis ? (
+              <span className="mt-0.5 block text-xs font-normal text-muted">
+                {rankLine.sampleBasis}
+              </span>
+            ) : null}
+          </p>
         ) : null}
         {showSignal && signal ? (
           <p className="text-sm font-semibold text-[#0b6b4b]">

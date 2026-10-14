@@ -36,6 +36,7 @@ import { HOTEL_CONTACT_COLUMNS, HOTEL_PUBLIC_COLUMNS } from "./columns";
 import {
   destinationSelfAndDescendants,
   DISCOVER_MAX_PAGE_SIZE,
+  hasDiscoverNarrowing,
   type DestinationNode,
   type DiscoverQuery,
 } from "./filters";
@@ -304,6 +305,52 @@ async function disclosedIntelligenceIds(
   return rows.map((row) => String((row as { hotel_id: string }).hotel_id));
 }
 
+export type DestinationScope =
+  | { status: "none" }
+  | { status: "empty" }
+  | { status: "error" }
+  | { status: "ok"; rootId: string; ids: string[] };
+
+/**
+ * The destination itself and its descendants (D013). A missing slug matches
+ * nothing. A failed or truncated catalog is an error, not the whole world.
+ */
+export async function resolveDestinationScope(
+  slug: string | null,
+  supabase: HotelQueryClient,
+): Promise<DestinationScope> {
+  if (!slug) return { status: "none" };
+  const { data: catalog, error: catalogError } = await supabase
+    .from("destinations")
+    .select("id, slug, parent_destination_id")
+    .order("id", { ascending: true })
+    .limit(DESTINATION_CATALOG_LIMIT);
+
+  if (catalogError) return { status: "error" };
+  const rows = catalog ?? [];
+  if (rows.length >= DESTINATION_CATALOG_LIMIT) return { status: "error" };
+
+  const nodes: DestinationNode[] = [];
+  let rootId: string | null = null;
+  for (const row of rows) {
+    const record = row as {
+      id?: unknown;
+      slug?: unknown;
+      parent_destination_id?: unknown;
+    };
+    if (typeof record.id !== "string" || typeof record.slug !== "string") continue;
+    nodes.push({
+      id: record.id,
+      slug: record.slug,
+      parentId:
+        typeof record.parent_destination_id === "string" ? record.parent_destination_id : null,
+    });
+    if (record.slug === slug) rootId = record.id;
+  }
+  if (!rootId) return { status: "empty" };
+  return { status: "ok", rootId, ids: destinationSelfAndDescendants(nodes, rootId) };
+}
+
 /**
  * Server-side hotel search. Always bounded by `pageSize` (hard-capped) and
  * never selects contact columns. Free-text matches hotel name or the name/slug
@@ -320,42 +367,11 @@ export async function searchHotels(
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let destinationIds: string[] | null = null;
-  if (query.destination) {
-    const { data: catalog, error: catalogError } = await supabase
-      .from("destinations")
-      .select("id, slug, parent_destination_id")
-      .order("id", { ascending: true })
-      .limit(DESTINATION_CATALOG_LIMIT);
-
-    // A failed scope lookup must not fall open to every hotel.
-    if (catalogError) throw new Error("hotel_search_failed:destination_scope");
-    const rows = catalog ?? [];
-    if (rows.length >= DESTINATION_CATALOG_LIMIT) {
-      throw new Error("hotel_search_failed:destination_scope");
-    }
-
-    const nodes: DestinationNode[] = [];
-    let rootId: string | null = null;
-    for (const row of rows) {
-      const record = row as {
-        id?: unknown;
-        slug?: unknown;
-        parent_destination_id?: unknown;
-      };
-      if (typeof record.id !== "string" || typeof record.slug !== "string") continue;
-      nodes.push({
-        id: record.id,
-        slug: record.slug,
-        parentId:
-          typeof record.parent_destination_id === "string" ? record.parent_destination_id : null,
-      });
-      if (record.slug === query.destination) rootId = record.id;
-    }
-    // A well-formed slug that is not in the catalog matches nothing.
-    if (!rootId) return emptySearch(page, pageSize);
-    destinationIds = destinationSelfAndDescendants(nodes, rootId);
-  }
+  const scope = await resolveDestinationScope(query.destination, supabase);
+  // A failed scope lookup must not fall open to every hotel.
+  if (scope.status === "error") throw new Error("hotel_search_failed:destination_scope");
+  if (scope.status === "empty") return emptySearch(page, pageSize);
+  const destinationIds = scope.status === "ok" ? scope.ids : null;
 
   const intelligenceIds = await disclosedIntelligenceIds(supabase, query);
   if (intelligenceIds && intelligenceIds.length === 0) return emptySearch(page, pageSize);
@@ -416,6 +432,96 @@ export async function searchHotels(
     pageSize,
     hasMore: total === null ? hotels.length === pageSize : from + hotels.length < total,
   };
+}
+
+const RETAIN_CHUNK = 100;
+
+/**
+ * Keep candidate ids that still match the Discover filters, in the candidate
+ * order. No narrowing returns the same ids. A lookup failure throws.
+ */
+export async function retainDiscoverHotelIds(
+  query: DiscoverQuery,
+  orderedIds: readonly string[],
+  injectedClient?: HotelQueryClient,
+): Promise<string[]> {
+  if (!hasDiscoverNarrowing(query)) return [...orderedIds];
+  if (orderedIds.length > 5000) throw new Error("hotel_search_failed:metric_rank");
+  const supabase = injectedClient ?? (await createClient());
+  const intelligenceIds = await disclosedIntelligenceIds(supabase, query);
+  if (intelligenceIds && intelligenceIds.length === 0) return [];
+  const intelligence = intelligenceIds ? new Set(intelligenceIds) : null;
+
+  let textDestinationIds: string[] = [];
+  if (query.q) {
+    const { data: destRows, error: destError } = await supabase
+      .from("destinations")
+      .select("id")
+      .or(`name.ilike.%${query.q}%,slug.ilike.%${query.q}%`)
+      .order("id", { ascending: true })
+      .limit(DESTINATION_MATCH_LIMIT);
+    if (destError) throw new Error("hotel_search_failed:destination_lookup");
+    textDestinationIds = (destRows ?? []).map((row) => String((row as { id: string }).id));
+  }
+
+  const matched = new Set<string>();
+  for (let index = 0; index < orderedIds.length; index += RETAIN_CHUNK) {
+    const chunk = orderedIds.slice(index, index + RETAIN_CHUNK);
+    let builder = applyPublishedFilters(
+      supabase
+        .from("hotels")
+        .select("id")
+        .in("id", [...chunk]) as unknown as HotelReadBuilder,
+    );
+    if (query.country) builder = builder.eq("country_code", query.country);
+    if (query.type) builder = builder.eq("hotel_type", query.type);
+    if (query.minStars !== null) builder = builder.gte("star_rating", query.minStars);
+    if (query.verification)
+      builder = builder.eq("editorial_verification_status", query.verification);
+    if (query.q) {
+      const orParts = [`name.ilike.%${query.q}%`];
+      if (textDestinationIds.length > 0) {
+        orParts.push(`destination_id.in.(${textDestinationIds.join(",")})`);
+      }
+      builder = builder.or(orParts.join(","));
+    }
+    const { data, error } = await builder.range(0, chunk.length - 1);
+    if (error) throw new Error(`hotel_search_failed:${error.code ?? "unknown"}`);
+    for (const row of data ?? []) {
+      const id = String((row as { id?: unknown }).id ?? "");
+      if (id && (!intelligence || intelligence.has(id))) matched.add(id);
+    }
+  }
+  return orderedIds.filter((id) => matched.has(id));
+}
+
+/**
+ * Published hotels in the caller's id order. A missing id is a failed read,
+ * not a hole filled from the name order.
+ */
+export async function loadPublishedInOrder(
+  ids: readonly string[],
+  injectedClient?: HotelQueryClient,
+): Promise<PublishedHotelView[]> {
+  if (ids.length === 0) return [];
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await applyPublishedFilters(
+    supabase
+      .from("hotels")
+      .select(HOTEL_SELECT)
+      .in("id", [...ids]) as unknown as HotelReadBuilder,
+  ).range(0, ids.length - 1);
+  if (error) throw new Error(`hotel_search_failed:${error.code ?? "unknown"}`);
+  const byId = new Map<string, PublishedHotelView>();
+  for (const row of data ?? []) {
+    const mapped = mapPublished(row as unknown as RawHotel);
+    if (mapped) byId.set(mapped.hotel.id, mapped);
+  }
+  return ids.map((id) => {
+    const row = byId.get(id);
+    if (!row) throw new Error("hotel_search_failed:metric_rank");
+    return row;
+  });
 }
 
 /**

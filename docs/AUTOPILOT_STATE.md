@@ -1,8 +1,8 @@
 # AUTOPILOT STATE
 
-**Last verified main:** `2cb8b2d660b93963e9ad8ec319b843bcd4189832` (merge of PR #76, G03 portfolio, D125, migrations `0073` and `0074`, 2026-10-13)  
-**State:** AWAITING_AUDIT. H01 metric rankings and hotel signals. Branch `cursor/h01-metric-rankings-367c`. PR #77. D120. Migrations `0071` and `0072` add no table. `0070` is unused. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
-**Current frontier:** H01. G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is Accepted for this block. D121–D124 are unused. D125 is merged with G03. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
+**Last verified main:** `b541343c7f7e87e3402d377d88bc5b23d67cbe5a` (merge of PR #77, H01 metric rankings, D120, migrations `0071` and `0072`, 2026-10-14)  
+**State:** BUILDING. F03 hotel ranking rules. Branch `cursor/f03-hotel-rankings-70fa`. D130. No migration. `0075` and `0076` are unused. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Live GitHub is the head to audit. Do not merge.  
+**Current frontier:** F03. H01 is merged (PR #77). G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 numbers stay Proposed. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is merged with H01. D121–D124 are unused. D125 is merged with G03. D130 is Accepted for this block. D131–D134 are unused. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed. D03 and D04 stay open.
 
 ## Main history note (not rewritten)
 - `0844874` (`docs: update autopilot state after PR #44 merge`) reached `main` by
@@ -53,9 +53,11 @@
 - PR #73 — F04 home next actions, D112, migration `0066` — `0a69413beb338c7910d8b9473693a3db7136a6aa`
 - PR #75 — G02 deliverable deadlines, D115, migration `0069` — `6c77347ce5cbc9e57c4d675f0a5bc636474a0c16`
 - PR #76 — G03 portfolio, D125, migrations `0073` and `0074` — `2cb8b2d660b93963e9ad8ec319b843bcd4189832`
+- PR #77 — H01 metric rankings, D120, migrations `0071` and `0072` — `b541343c7f7e87e3402d377d88bc5b23d67cbe5a`
 
 ## Next action
-- PR #77 is H01 metric rankings and hotel signals on `cursor/h01-metric-rankings-367c`. AWAITING_AUDIT. D120. Migrations `0071` and `0072`. Three separate metrics from confirmed facts. Below a floor the value is not enough data. A locked reply ranking omits hotels. Discover and Pipeline order are unchanged. `expected_head` stays null. Do not merge from automation.
+- F03 hotel ranking rules is on `cursor/f03-hotel-rankings-70fa`. D130. No migration. Discover and Pipeline can order one H01 metric by rank key, then hotel id. A locked reply-rate order has no hotel list. Below the floor is not enough data. `expected_head` stays null. Do not merge.
+- H01 is merged (PR #77, `b541343c7f7e87e3402d377d88bc5b23d67cbe5a`). D120. Migrations `0071` and `0072`. This PR does not edit those files.
 - G03 is merged (PR #76, `2cb8b2d660b93963e9ad8ec319b843bcd4189832`). D125. Migrations `0073` and `0074`. This PR does not edit those files.
 - G02 is merged (PR #75, `6c77347ce5cbc9e57c4d675f0a5bc636474a0c16`). D115. Migration `0069`. In-app reminders only. D116 and migration `0070` are unused. This PR does not edit `0069`.
 - F04 is merged (PR #73, `0a69413beb338c7910d8b9473693a3db7136a6aa`). D112. Migration `0066` lists the caller's pending Gmail suggestions. The cap of 100 keeps human reply, then pitch sent, then collaboration, then id. Free returns paused and no ids. No new table. No send and no model. This PR does not edit `src/lib/home`.

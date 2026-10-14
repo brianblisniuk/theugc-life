@@ -31,6 +31,7 @@ describe("parseDiscoverQuery", () => {
       destination: null,
       activity: null,
       collaboration: null,
+      rank: null,
       page: 1,
       pageSize: DISCOVER_PAGE_SIZE,
     });
@@ -56,6 +57,12 @@ describe("parseDiscoverQuery", () => {
     expect(parseDiscoverQuery({ verified: "sort-of" }).verification).toBeNull();
     expect(parseDiscoverQuery({ activity: "none" }).activity).toBeNull();
     expect(parseDiscoverQuery({ collaboration: "false" }).collaboration).toBeNull();
+    expect(parseDiscoverQuery({ rank: "response_rate" }).rank).toBe("response_rate");
+    expect(parseDiscoverQuery({ rank: "response_rate,creator_activity" }).rank).toBeNull();
+    expect(parseDiscoverQuery({ rank: "score" }).rank).toBeNull();
+    expect(parseDiscoverQuery({ rank: ["creator_activity", "response_rate"] }).rank).toBe(
+      "creator_activity",
+    );
     expect(parseDiscoverQuery({ country: "UAE" }).country).toBeNull();
     expect(parseDiscoverQuery({ country: "ae" }).country).toBe("AE");
   });
@@ -77,6 +84,8 @@ describe("parseDiscoverQuery", () => {
     expect(hasActiveFilters(parseDiscoverQuery({ type: "resort" }))).toBe(true);
     expect(hasActiveFilters(parseDiscoverQuery({ stars: "4" }))).toBe(true);
     expect(hasActiveFilters(parseDiscoverQuery({ page: "2" }))).toBe(false);
+    expect(hasActiveFilters(parseDiscoverQuery({ rank: "creator_activity" }))).toBe(true);
+    expect(buildDiscoverHref({ rank: "response_time" })).toBe("/app/discover?rank=response_time");
   });
 });
 

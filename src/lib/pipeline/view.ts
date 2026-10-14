@@ -26,6 +26,7 @@ import {
   type SaveResult,
   type TransitionResult,
 } from "./types";
+import type { MetricId } from "@/lib/metrics/contract";
 
 /** Copy owned by the product, asserted by tests so it cannot drift silently. */
 export const PIPELINE_COPY = {
@@ -201,10 +202,12 @@ export function pipelinePageHref(
   status: string | null,
   page: number,
   surface: PipelineSurface = "all",
+  rank: MetricId | null = null,
 ): string {
   const params = new URLSearchParams();
   if (surface === "inbox" || surface === "collaborations") params.set("surface", surface);
   if (surface !== "collaborations" && status) params.set("status", status);
+  if (rank) params.set("rank", rank);
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/app/pipeline?${query}` : "/app/pipeline";
@@ -224,6 +227,7 @@ export function pipelineListState(input: {
   page: PipelinePageInput | null;
   status: string | null;
   surface?: PipelineSurface;
+  rank?: MetricId | null;
 }): PipelineListState {
   if (input.failed || input.page === null) {
     return { kind: "error", title: PIPELINE_COPY.errorTitle };
@@ -251,8 +255,12 @@ export function pipelineListState(input: {
             totalPages,
             hasPrevious,
             hasNext,
-            previousHref: hasPrevious ? pipelinePageHref(input.status, page - 1, surface) : null,
-            nextHref: hasNext ? pipelinePageHref(input.status, page + 1, surface) : null,
+            previousHref: hasPrevious
+              ? pipelinePageHref(input.status, page - 1, surface, input.rank)
+              : null,
+            nextHref: hasNext
+              ? pipelinePageHref(input.status, page + 1, surface, input.rank)
+              : null,
             label: `Page ${page} of ${totalPages}`,
           }
         : null,

@@ -33,9 +33,32 @@ import {
   searchHotels,
   type HotelSearchResult,
 } from "@/lib/hotels/queries";
+import {
+  searchRankedHotels,
+  type MetricLine,
+  type RankedDiscover,
+} from "@/lib/metrics/discover-rank";
+import {
+  METRIC_TITLES,
+  ORDER_BELOW_FLOOR_COPY,
+  THRESHOLD_RULES,
+  LOCKED_METRIC_COPY,
+} from "@/lib/metrics/contract";
 import { DISCOVER_LIST_COPY, discoverListOutcome } from "@/lib/surfaces/list-outcome";
 
 export const metadata: Metadata = { title: "Discover" };
+
+function rankLineFor(
+  lines: ReadonlyMap<string, MetricLine> | null,
+  title: string | null,
+  hotelId: string,
+) {
+  if (!lines || !title) return null;
+  const line = lines.get(hotelId);
+  return line
+    ? { rank: line.rank, title, valueLabel: line.valueLabel, sampleBasis: line.sampleBasis }
+    : null;
+}
 
 function ResultsSummary({ result }: { result: HotelSearchResult }) {
   const shown = result.hotels.length;
@@ -63,12 +86,20 @@ export default async function DiscoverPage({
   const catalog = await listDiscoverCatalog();
 
   let result: HotelSearchResult | null = null;
+  let ranked: RankedDiscover | null = null;
   let failed = false;
   try {
-    result = await searchHotels(query);
+    if (query.rank) {
+      ranked = await searchRankedHotels(query);
+      if (ranked.kind === "list") result = ranked.result;
+    } else {
+      result = await searchHotels(query);
+    }
   } catch {
     failed = true;
   }
+
+  const catalogHref = buildDiscoverHref({ ...query, rank: null, page: 1 });
 
   const listOutcome = discoverListOutcome({
     failed: failed || result === null,
@@ -77,6 +108,8 @@ export default async function DiscoverPage({
     page: query.page,
   });
 
+  const rankLines = ranked?.kind === "list" ? ranked.lines : null;
+  const rankTitle = ranked?.kind === "list" ? ranked.title : null;
   const hotelIds = result?.hotels.map((hotel) => hotel.id) ?? [];
   const signals = hotelIds.length > 0 ? await getPublicCardSignals(hotelIds) : new Map();
   const session = hotelIds.length > 0 ? await resolveSession() : null;
@@ -104,7 +137,34 @@ export default async function DiscoverPage({
           catalogFailed={catalog.status === "error"}
         />
 
-        {listOutcome === "error" ? (
+        {query.rank ? (
+          <p className="max-w-prose text-sm text-muted">
+            {METRIC_TITLES[query.rank]}. One metric, not a score. {THRESHOLD_RULES[query.rank]}
+          </p>
+        ) : null}
+
+        {ranked?.kind === "locked" ? (
+          <EmptyState title={LOCKED_METRIC_COPY.title} description={LOCKED_METRIC_COPY.description}>
+            <Link
+              href={catalogHref}
+              className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
+            >
+              Show the catalog order
+            </Link>
+          </EmptyState>
+        ) : ranked?.kind === "below_floor" ? (
+          <EmptyState
+            title="Not enough data"
+            description={`${ORDER_BELOW_FLOOR_COPY} ${ranked.thresholdRule}`}
+          >
+            <Link
+              href={catalogHref}
+              className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
+            >
+              Show the catalog order
+            </Link>
+          </EmptyState>
+        ) : listOutcome === "error" ? (
           <EmptyState
             title={DISCOVER_LIST_COPY.errorTitle}
             description={DISCOVER_LIST_COPY.errorBody}
@@ -129,6 +189,7 @@ export default async function DiscoverPage({
                     badge={
                       badges.status === "known" ? (badges.byHotel.get(hotel.id) ?? null) : null
                     }
+                    rankLine={rankLineFor(rankLines, rankTitle, hotel.id)}
                   />
                 </li>
               ))}

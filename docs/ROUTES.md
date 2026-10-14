@@ -77,7 +77,9 @@ the pipeline. Those steps are not extra profile fields.
 Dashboard/home.
 
 ### `/app/discover`
-Authenticated map/search/filter experience.
+Authenticated map/search/filter experience. `rank` is one H01 metric
+(`creator_activity`, `response_rate`, or `response_time`). Absent, the list
+stays name then id (D130).
 
 ### `/app/hotels/[id]`
 Authenticated hotel workspace using UUID.
@@ -102,6 +104,8 @@ Recommended query params:
 - filters may use URL search params.
 - `surface=inbox` frames the same list as the inbox (D081, Accepted). It is not a new route.
 - `surface=collaborations` lists won cycles. It is not a new route.
+- `rank` is one H01 metric. Absent, the list stays recent activity then id
+  (D130). A locked premium rank returns no hotel list.
 
 ### `/app/trips`
 Trip list.

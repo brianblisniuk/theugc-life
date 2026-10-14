@@ -18,6 +18,7 @@ Migration `0051_outside_free_allowance.sql` corrects the outside Free counters (
 | Premium intelligence | No | Entitled destination, including descendants | Worldwide |
 | Metric activity ranking | Yes, including anonymous | Yes | Yes |
 | Metric response rankings | No | Entitled destination, including descendants | Worldwide |
+| Discover and Pipeline metric order | Public metric only | Premium metrics inside the Pass | Premium metrics worldwide |
 | Hotel contact email | No, until this user unlocks that hotel | A Pass does not reveal it | A Pro row does not reveal it |
 | Open relationships | 10 | Unlimited inside the destination; outside, only outside-coverage rows count toward 10 | Unlimited |
 | Engaged pipeline | 5 | Same exemption; in-destination rows do not consume the outside allowance | Unlimited |

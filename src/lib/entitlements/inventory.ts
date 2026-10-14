@@ -193,11 +193,13 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "hotel.metric_activity",
     module: "Intelligence",
     summary:
-      "Most active with creators is the public activity label. Anonymous, Free, Pass, and Pro see the same ranking. It does not change Discover or Pipeline order.",
+      "Most active with creators is the public activity label. Anonymous, Free, Pass, and Pro see the same ranking. Discover and Pipeline may order this one metric by rank key, then hotel id.",
     routes: ["/app/hotels/[id]"],
     sourceFiles: [
       "src/app/(app)/app/hotels/[id]/page.tsx",
       "src/lib/metrics/queries.ts",
+      "src/lib/metrics/order.ts",
+      "src/lib/metrics/discover-rank.ts",
       "src/components/hotels/metric-signals.tsx",
     ],
     serverActions: [],
@@ -211,12 +213,15 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "hotel.metric_response",
     module: "Intelligence",
     summary:
-      "Most responsive and fastest replying are premium. A Pass covers its destination and descendants. Pro is worldwide. Below the floor the value is not enough data, never zero.",
+      "Most responsive and fastest replying are premium. A Pass covers its destination and descendants. Pro is worldwide. Below the floor the value is not enough data, never zero. A locked order has no hotel list.",
     routes: ["/app/hotels/[id]"],
     sourceFiles: [
       "src/app/(app)/app/hotels/[id]/page.tsx",
       "src/lib/metrics/contract.ts",
       "src/lib/metrics/queries.ts",
+      "src/lib/metrics/pipeline-rank.ts",
+      "src/app/(app)/app/discover/page.tsx",
+      "src/app/(app)/app/pipeline/page.tsx",
     ],
     serverActions: [],
     rpcs: ["read_destination_metric_ranking", "read_hotel_metric_signals"],

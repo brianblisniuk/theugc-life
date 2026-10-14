@@ -20,6 +20,7 @@ import {
 } from "@/lib/hotels/filters";
 import { activityLabel } from "@/lib/hotels/intelligence";
 import type { DiscoverCountryOption, DiscoverDestinationOption } from "@/lib/hotels/queries";
+import { METRIC_IDS, METRIC_TITLES } from "@/lib/metrics/contract";
 
 const FIELD = "w-full border border-border bg-background px-3 py-2 text-sm text-text";
 const LABEL = "block text-xs font-medium text-muted";
@@ -180,6 +181,20 @@ export function DiscoverFilters({
             {COLLABORATION_FILTERS.map((value) => (
               <option key={value} value={value}>
                 Observed collaboration
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className={LABEL} htmlFor="discover-rank">
+            Order
+          </label>
+          <select id="discover-rank" name="rank" defaultValue={query.rank ?? ""} className={FIELD}>
+            <option value="">Name</option>
+            {METRIC_IDS.map((metric) => (
+              <option key={metric} value={metric}>
+                {METRIC_TITLES[metric]}
               </option>
             ))}
           </select>
