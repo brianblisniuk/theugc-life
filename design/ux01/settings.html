@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account settings — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6', danger: '#DC2626' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <nav class="border-b border-border bg-white">
+    <div class="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="discover.html" class="text-sm text-muted">← App</a>
+      <span class="font-semibold">Account</span>
+    </div>
+  </nav>
+  <div class="max-w-4xl mx-auto px-4 py-6 space-y-8">
+    <section>
+      <h2 class="font-semibold mb-3">Profile</h2>
+      <div class="space-y-3 max-w-md">
+        <div>
+          <label class="text-sm block mb-1">Display name</label>
+          <input value="Sofía Reyes" class="w-full border border-border rounded px-3 py-2">
+        </div>
+        <div>
+          <label class="text-sm block mb-1">Username</label>
+          <input value="sofiareyes" class="w-full border border-border rounded px-3 py-2">
+        </div>
+        <div>
+          <label class="text-sm block mb-1">Email</label>
+          <input value="sofia@creator.example" class="w-full border border-border rounded px-3 py-2 bg-stone-50" disabled>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2 class="font-semibold mb-3">Connected mailbox</h2>
+      <div class="border border-border rounded p-4 flex justify-between items-center">
+        <div>
+          <div class="font-medium">sofia@gmail.com</div>
+          <div class="text-xs text-muted">Connected · Send enabled</div>
+        </div>
+        <button class="text-sm border border-border px-3 py-1.5 rounded">Reconnect</button>
+      </div>
+    </section>
+    <section>
+      <h2 class="font-semibold mb-3 text-danger">Delete account</h2>
+      <p class="text-sm text-muted mb-3">Personal data is removed within 30 days. Pipeline history and collaborations are deleted. This cannot be undone.</p>
+      <div class="max-w-md">
+        <label class="text-sm block mb-1">Type DELETE to confirm</label>
+        <input placeholder="DELETE" class="w-full border border-danger/30 rounded px-3 py-2 mb-3">
+        <button class="bg-danger text-white text-sm px-4 py-2 rounded">Request deletion</button>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

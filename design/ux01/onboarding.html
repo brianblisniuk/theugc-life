@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Onboarding — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <div class="max-w-lg mx-auto px-4 py-16">
+    <div class="flex items-center gap-2 font-semibold mb-8">
+      <div class="w-7 h-7 bg-sun rounded flex items-center justify-center text-xs font-bold">UGC</div>
+      theugc.life
+    </div>
+    <div class="text-sm text-muted mb-2">Step 1 of 2</div>
+    <h1 class="text-2xl font-bold mb-6">Tell us about you</h1>
+    <form class="space-y-4" onsubmit="event.preventDefault(); window.location='discover.html'">
+      <div>
+        <label class="text-sm font-medium block mb-1">Display name</label>
+        <input type="text" value="Sofía Reyes" class="w-full border border-border rounded px-3 py-2 bg-white">
+      </div>
+      <div>
+        <label class="text-sm font-medium block mb-1">Username</label>
+        <input type="text" value="sofiareyes" class="w-full border border-border rounded px-3 py-2 bg-white">
+      </div>
+      <div>
+        <label class="text-sm font-medium block mb-1">Main platforms</label>
+        <div class="flex gap-2 flex-wrap">
+          <span class="border border-border px-3 py-1 rounded text-sm bg-sun/20">Instagram</span>
+          <span class="border border-border px-3 py-1 rounded text-sm">TikTok</span>
+          <span class="border border-border px-3 py-1 rounded text-sm">YouTube</span>
+        </div>
+      </div>
+      <button type="submit" class="w-full bg-sun text-ink font-semibold py-3 rounded mt-4">Continue to Discover</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Billing & Credits — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <nav class="border-b border-border bg-white">
+    <div class="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="discover.html" class="text-sm text-muted">← App</a>
+      <span class="font-semibold">Billing</span>
+    </div>
+  </nav>
+  <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+    <div class="border border-border rounded p-5 bg-white">
+      <div class="flex justify-between items-start">
+        <div>
+          <div class="font-medium">Current plan</div>
+          <div class="text-2xl font-bold mt-1">Pro</div>
+          <div class="text-sm text-muted">$20 / year · Renews 14 Oct 2027</div>
+        </div>
+        <a href="pricing.html" class="text-sm border border-border px-3 py-1.5 rounded">Change plan</a>
+      </div>
+    </div>
+    <div class="border border-border rounded p-5 bg-white">
+      <div class="font-medium mb-2">Credits</div>
+      <div class="text-3xl font-bold">138</div>
+      <div class="text-sm text-muted">of 150 monthly · Resets 1 Nov</div>
+      <div class="h-2 bg-border rounded-full mt-3 overflow-hidden">
+        <div class="h-full bg-sun w-[92%]"></div>
+      </div>
+    </div>
+    <div class="border border-border rounded p-5 bg-white">
+      <div class="font-medium mb-3">Buy more credits</div>
+      <div class="flex flex-wrap gap-3">
+        <button class="border border-border px-4 py-2 rounded text-sm">50 for $10</button>
+        <button class="border border-border px-4 py-2 rounded text-sm">150 for $20</button>
+        <button class="border border-border px-4 py-2 rounded text-sm">500 for $40</button>
+      </div>
+    </div>
+    <div class="text-sm text-muted">
+      Invoices · Payment method (Rebill) · Referral link
+    </div>
+  </div>
+</body>
+</html>

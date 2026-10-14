@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discover — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6', success: '#0B6B4B' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <nav class="border-b border-border bg-white sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <a href="index.html" class="flex items-center gap-2 font-semibold">
+          <div class="w-6 h-6 bg-sun rounded flex items-center justify-center text-xs font-bold">U</div>
+          Discover
+        </a>
+        <div class="hidden md:flex gap-4 text-sm">
+          <a href="pipeline.html" class="text-muted hover:text-ink">Pipeline</a>
+          <a href="trips.html" class="text-muted hover:text-ink">Trips</a>
+          <a href="inbox.html" class="text-muted hover:text-ink">Inbox</a>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <span class="text-muted">12 credits</span>
+        <a href="billing.html" class="border border-border px-3 py-1 rounded">Pro</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-7xl mx-auto px-4 py-4 flex gap-3 flex-wrap items-center border-b border-border">
+    <input type="search" placeholder="Search hotels or destinations" value="Bali" class="border border-border rounded px-3 py-1.5 text-sm w-48 md:w-64">
+    <select class="border border-border rounded px-3 py-1.5 text-sm"><option>Bali</option><option>All destinations</option></select>
+    <button class="text-sm border border-border rounded px-3 py-1.5">Stars 4–5</button>
+    <button class="text-sm border border-border rounded px-3 py-1.5">Has contact</button>
+    <button class="text-sm bg-sun/30 border border-sun rounded px-3 py-1.5">Creator activity</button>
+  </div>
+
+  <div class="max-w-7xl mx-auto flex flex-col lg:flex-row h-[calc(100vh-8rem)]">
+    <!-- List -->
+    <div class="lg:w-1/2 overflow-y-auto border-r border-border">
+      <div class="divide-y divide-border">
+        <!-- Hotel 1 -->
+        <a href="hotel-detail.html" class="flex gap-3 p-3 hover:bg-sun/10 block">
+          <div class="w-24 h-20 bg-gradient-to-br from-amber-100 to-orange-200 rounded flex-shrink-0 flex items-end p-1 text-[10px] text-ink/60">No photo</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between">
+              <div class="font-medium truncate">The Mulia Resort</div>
+              <span class="text-xs bg-success text-white px-1.5 py-0.5 rounded">Strong</span>
+            </div>
+            <div class="text-xs text-muted">Nusa Dua, Bali · 5★</div>
+            <div class="text-xs mt-1 flex gap-2">
+              <span>Reply rate 42%</span>
+              <span>·</span>
+              <span>Last activity 3d</span>
+            </div>
+            <div class="text-xs mt-1 flex gap-1">
+              <span class="border border-border px-1.5 rounded">Stay</span>
+              <span class="border border-border px-1.5 rounded">Content</span>
+            </div>
+          </div>
+        </a>
+        <!-- Hotel 2 -->
+        <a href="hotel-detail.html" class="flex gap-3 p-3 hover:bg-sun/10 block">
+          <div class="w-24 h-20 bg-gradient-to-br from-blue-100 to-cyan-200 rounded flex-shrink-0"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between">
+              <div class="font-medium truncate">COMO Uma Ubud</div>
+              <span class="text-xs bg-border px-1.5 py-0.5 rounded">Emerging</span>
+            </div>
+            <div class="text-xs text-muted">Ubud, Bali · 5★</div>
+            <div class="text-xs mt-1">Creator activity detected</div>
+            <div class="text-xs mt-1 text-muted">Contact locked</div>
+          </div>
+        </a>
+        <!-- Hotel 3 -->
+        <a href="hotel-detail.html" class="flex gap-3 p-3 hover:bg-sun/10 block bg-sun/5">
+          <div class="w-24 h-20 bg-gradient-to-br from-stone-100 to-stone-300 rounded flex-shrink-0"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between">
+              <div class="font-medium truncate">Four Seasons Resort Bali</div>
+              <span class="text-xs bg-success text-white px-1.5 py-0.5 rounded">Strong</span>
+            </div>
+            <div class="text-xs text-muted">Jimbaran, Bali · 5★</div>
+            <div class="text-xs mt-1">Reply time ~2d · Fit: High</div>
+            <div class="text-xs mt-1 flex gap-1">
+              <span class="bg-sun text-ink px-1.5 rounded text-[10px]">Saved</span>
+            </div>
+          </div>
+        </a>
+        <!-- More placeholders -->
+        <div class="p-3 text-sm text-muted">+ 47 more in Bali</div>
+      </div>
+    </div>
+    <!-- Map placeholder -->
+    <div class="lg:w-1/2 bg-stone-100 flex items-center justify-center relative">
+      <div class="text-center text-muted">
+        <div class="text-4xl mb-2">🗺️</div>
+        <div class="font-medium">Map</div>
+        <div class="text-sm">Synchronized with list</div>
+        <div class="text-xs mt-2">Markers for hotels with coordinates</div>
+      </div>
+      <div class="absolute bottom-4 left-4 right-4 bg-white border border-border rounded p-3 text-sm lg:hidden">
+        Tap list or map to switch
+      </div>
+    </div>
+  </div>
+</body>
+</html>

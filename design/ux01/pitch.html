@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pitch composer — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <nav class="border-b border-border bg-white">
+    <div class="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="hotel-detail.html" class="text-sm text-muted">← Four Seasons Bali</a>
+      <span class="text-sm text-muted">AI budget: 12 / 150 this month</span>
+    </div>
+  </nav>
+
+  <div class="max-w-4xl mx-auto px-4 py-6">
+    <h1 class="text-xl font-bold mb-1">Pitch to Four Seasons Resort Bali</h1>
+    <p class="text-sm text-muted mb-6">Sofía Reyes · @sofiareyes · 48k Instagram</p>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="md:col-span-2 space-y-4">
+        <div>
+          <label class="text-sm font-medium block mb-1">Tone</label>
+          <div class="flex gap-2">
+            <button class="bg-sun/30 border border-sun px-3 py-1 rounded text-sm">Warm & professional</button>
+            <button class="border border-border px-3 py-1 rounded text-sm">Direct</button>
+            <button class="border border-border px-3 py-1 rounded text-sm">Casual</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-sm font-medium block mb-1">Key points</label>
+          <textarea class="w-full border border-border rounded p-3 text-sm h-24" placeholder="Mention previous Bali content, audience demographics, proposed deliverables...">Lifestyle content for 48k travel-focused audience. Propose 2 Reels + 5 Stories. Available May 12–18.</textarea>
+        </div>
+        <div>
+          <label class="text-sm font-medium block mb-1">Language</label>
+          <select class="border border-border rounded px-3 py-1.5 text-sm"><option>English</option><option>Spanish</option></select>
+        </div>
+        <div>
+          <label class="text-sm font-medium block mb-1">Draft</label>
+          <div class="border border-border rounded p-4 text-sm bg-white min-h-40">
+            Hi team,<br><br>
+            I’m Sofía, a travel creator based between Buenos Aires and Bali. I create lifestyle content for an audience of 48k that plans real trips.<br><br>
+            I’d love to explore a collaboration during my May stay (12–18). I can offer two Reels and a Stories series highlighting the property’s design and guest experience.<br><br>
+            Happy to share recent work and discuss details.<br><br>
+            Best,<br>Sofía
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button class="bg-sun text-ink font-medium px-5 py-2.5 rounded">Regenerate</button>
+          <button class="bg-ink text-paper font-medium px-5 py-2.5 rounded">Send via Gmail</button>
+          <button class="border border-border px-5 py-2.5 rounded">Queue</button>
+        </div>
+      </div>
+      <div class="space-y-4">
+        <div class="border border-border rounded p-4 text-sm">
+          <div class="font-medium mb-2">AI budget meter</div>
+          <div class="h-2 bg-border rounded-full overflow-hidden">
+            <div class="h-full bg-sun w-[8%]"></div>
+          </div>
+          <div class="text-xs text-muted mt-1">12 of 150 credits used this month (Pro)</div>
+        </div>
+        <div class="border border-border rounded p-4 text-sm">
+          <div class="font-medium mb-2">Will use</div>
+          <div>1 credit for generation</div>
+          <div class="text-muted text-xs mt-1">Send is free once generated</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
