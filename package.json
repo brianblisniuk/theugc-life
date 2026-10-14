@@ -62,6 +62,7 @@
     "gmail:reply:run": "tsx scripts/gmail-reply/cli.ts run",
     "gmail:reply:status": "tsx scripts/gmail-reply/cli.ts status",
     "gmail:sync:work": "tsx --conditions=react-server scripts/gmail-sync/cli.ts",
+    "account:erase-due": "tsx scripts/account-deletion/erase-due.ts",
     "eval:b07:status": "tsx scripts/b07-benchmark/cli.ts status",
     "eval:b07:baseline": "tsx scripts/b07-benchmark/cli.ts baseline",
     "eval:b07:screen": "tsx scripts/b07-benchmark/cli.ts screen",

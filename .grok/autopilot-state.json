@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 4c8eecde65cc537e71131914343751207d2d7f6d (PR #82, P03b refund ledger fix, migration 0081). D03 is merged as PR #84 at b2b4e49825a1dd212734e812a4fbb069ee7db0ea (migrations 0082 and 0083, D141-D145); that merge SHA's verify was still running when this file was written. C02-C05 freshness, aggregates, and creator fit is draft PR #83 on cursor/c02-c05-freshness-fit-dc8e. D146-D150. Migrations 0084-0087. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 4b9f70aaa2d15d955e6633581eae8a2c5833f33a (merge of PR #83, C02-C05 freshness, aggregates, and creator fit, migrations 0084-0087, D146-D150). DEC-DEL account deletion is on cursor/dec-del-account-deletion-8e3c. D151-D155. Migration 0088. expected_head stays null until a later commit can name a SHA this commit does not itself change. pr is filled once the draft PR exists. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
-  "last_recorded_main": "4c8eecde65cc537e71131914343751207d2d7f6d",
-  "active_block": "C02-C05 freshness, aggregates, and creator fit",
-  "branch": "cursor/c02-c05-freshness-fit-dc8e",
-  "pr": 83,
+  "last_recorded_main": "4b9f70aaa2d15d955e6633581eae8a2c5833f33a",
+  "active_block": "DEC-DEL account deletion",
+  "branch": "cursor/dec-del-account-deletion-8e3c",
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -18,9 +18,9 @@
     }
   ],
   "ci_status": {
-    "ref": "4c8eecde65cc537e71131914343751207d2d7f6d",
-    "verify": "success"
+    "ref": "4b9f70aaa2d15d955e6633581eae8a2c5833f33a",
+    "verify": "unknown"
   },
   "required_human_action": null,
-  "next_dependency": "PR #83 is C02-C05 freshness, aggregates, and creator fit on cursor/c02-c05-freshness-fit-dc8e. AWAITING_AUDIT. D146-D150. Migrations 0084-0087. H01 and F03 are not rewritten. P03b is merged (PR #82, migration 0081). D03 is merged (PR #84, migrations 0082 and 0083, D141-D145). expected_head stays null. Do not merge."
+  "next_dependency": "DEC-DEL account deletion on cursor/dec-del-account-deletion-8e3c. AWAITING_AUDIT. D151-D155. Migration 0088. Branched from main 4b9f70aaa2d15d955e6633581eae8a2c5833f33a (merge of PR #83). expected_head stays null. Do not merge."
 }

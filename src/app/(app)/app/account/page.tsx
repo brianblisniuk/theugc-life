@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { DeleteAccountPanel } from "@/components/account/delete-account-panel";
 import { GmailConnectionPanel } from "@/components/gmail/gmail-connection-panel";
 import { PageHeader } from "@/components/shell/page-header";
+import { getOwnAccountDeletion } from "@/lib/account/deletion";
 import { listCrumbs } from "@/lib/shell/navigation";
 import { requireUser } from "@/lib/auth/guards";
 import { listGmailAccounts } from "@/lib/gmail/connection.server";
@@ -24,12 +26,13 @@ export default async function AccountPage({
   // Only this user's mailboxes: the RPC filters on the session-derived id, and
   // the page never accepts one from the request.
   const gmailAccounts = configured ? await listGmailAccounts(session.userId) : [];
+  const deletion = session.role === "creator" ? await getOwnAccountDeletion() : null;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Account"
-        description="Mailbox connection for inbox readings lives on this page."
+        description="Mailbox connection and account deletion live on this page."
         crumbs={listCrumbs("Account")}
       />
       <dl className="grid gap-4 rounded-[var(--radius-app)] border border-border bg-surface p-5 text-sm sm:grid-cols-2">
@@ -56,6 +59,22 @@ export default async function AccountPage({
         </Link>
         .
       </p>
+
+      {deletion?.status === "error" ? (
+        <p className="text-sm text-danger">We couldn’t load the deletion status. Try again.</p>
+      ) : null}
+      {deletion && deletion.status !== "error" ? (
+        <DeleteAccountPanel
+          schedule={
+            deletion.status === "scheduled"
+              ? {
+                  deletionRequestedAt: deletion.deletionRequestedAt,
+                  deleteAfter: deletion.deleteAfter,
+                }
+              : null
+          }
+        />
+      ) : null}
     </div>
   );
 }

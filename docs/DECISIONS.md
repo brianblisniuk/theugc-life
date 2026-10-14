@@ -5164,3 +5164,100 @@ The flag does not call a model and does not send mail.
 
 User A's Max row does not reveal User B's facts, decisions, or personal
 counts. A payment, a subscription, or a sponsored flag is not a fit input.
+
+## D151 — Account deletion removes personal data within 30 days
+
+Status: **Accepted** (Brian, 2026-10-14). Migration `0088_account_deletion.sql`.
+
+When a creator deletes their account, personal data is deleted within 30
+days. That includes the name, email, synced mail, contacts, private CRM,
+profile, Gmail-derived private rows, AI usage tied to them, credentials,
+and share links.
+
+Aggregated, anonymized statistics may remain as internal TheUGC.life stats.
+Those are the counters the product already stores without a person attached:
+revenue generated, contacts unlocked, replies, yeses, and similar
+network or intelligence metrics. Nothing that remains may be joined back to
+the person. No email, auth user id, or share token is kept for that purpose.
+
+Unknown is not stored as zero. This decision does not invent a revenue or
+compensation rollup from rows that still name the creator. Those rows are
+deleted with the person.
+
+## D152 — The deletion clock is one pair of timestamps
+
+Status: **Accepted** for this block.
+
+`public.users.deletion_requested_at` and `delete_after` are both null, or
+both set. `delete_after` is later than the request and no later than the
+request plus 30 days. The request function sets `delete_after` to exactly
+`deletion_requested_at + interval '30 days'`.
+
+A second request does not move or clear that deadline. There is no new
+`users.status` value. Pending deletion is this clock. The existing statuses
+stay `active`, `suspended`, and `deleted`.
+
+`anon` and `authenticated` cannot change the clock. The request function
+opts its own write in with a transaction-local setting. A superuser or
+`service_role` may move `delete_after` earlier inside the 30-day window so
+the hard delete can be proven without waiting. The check still refuses a
+deadline past 30 days.
+
+The hard delete refuses to run before `delete_after`.
+
+## D153 — Request time stops Gmail, links, assistant drafts, and credits
+
+Status: **Accepted** for this block.
+
+At request time, not only at the hard delete:
+
+- Gmail stops through the existing deletion request. Scope is
+  `account_and_gmail_derived_data`, status `in_progress`, mailbox
+  `connection_state` `deletion_pending`, scopes cleared, `disconnected_at`
+  set. An open request that already exists is reused. A second open request
+  is not inserted, and an existing narrower scope is not rewritten.
+- Stored OAuth credentials and OAuth transactions for that user are deleted
+  immediately, so this product cannot keep syncing. This block does not call
+  Google. Disconnect prepare and finalize are unchanged.
+- The existing lifecycle trigger cancels runnable or paused sync runs when
+  the mailbox becomes `deletion_pending`.
+- Share links are revoked immediately with the existing `revoked_at`. The
+  rows leave with the profile at the hard delete.
+- Pitch drafts whose `origin` is `assistant` are deleted immediately.
+- If the credit balance is greater than zero, one reversal of exactly that
+  sum is inserted, with idempotency key `account-deletion:<uuid>` and reason
+  `reversal`. A zero or negative balance inserts nothing. The ledger rows
+  themselves are removed at the hard delete.
+
+## D154 — Identifier-free aggregates are not rewritten
+
+Status: **Accepted** for this block.
+
+`hotel_intelligence`, `destination_intelligence`, the `network_hotel_public`
+view, H01, and F03 are not recomputed and their SQL is not edited.
+`private.intelligence_facts` rows that name `owner_user_id` are deleted with
+the user. Stored counters that already have no creator identifier stay at
+the numbers they already hold.
+
+## D155 — Only a creator can ask, and erasure is not a signed-in call
+
+Status: **Accepted** for this block.
+
+`request_own_account_deletion(p_confirmation text)` uses `auth.uid()` only.
+It does not take a user id. The confirmation must be exactly `DELETE`.
+A lowercase word is `confirmation_required` and does not set the clock.
+`already_scheduled` does not require the phrase again and does not move the
+deadline. A staff role (`admin` or `editor`) gets `not_creator` and no clock
+change.
+
+`erase_creator_account(uuid)` and `erase_due_creator_accounts()` are
+`service_role` only. If `auth.uid()` is not null, the result is `forbidden`.
+`erase_due_creator_accounts` returns `{result:'ok', erased:n}` and no user
+ids or emails. It locks due creator rows with `FOR UPDATE SKIP LOCKED`.
+`not_creator` and `not_found` are skipped. Any other result raises and rolls
+the statement back.
+
+Editorial append-only reviewer foreign keys stay `NO ACTION`. This path does
+not set them null and does not rewrite that evidence. A creator id on one of
+those columns stops erasure. A creator account does not normally have those
+rows.

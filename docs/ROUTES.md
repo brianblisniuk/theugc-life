@@ -122,7 +122,7 @@ share link. The later link is not this route.
 Placeholder. Public portfolio management is not built.
 
 ### `/app/account`
-Account/security/preferences.
+Account, mailbox connection, and the creator deletion request (D151). The confirm step requires the word DELETE. Personal data is removed within 30 days.
 
 ### `/app/billing`
 Current access, passes, Pro state, referral link if enabled.

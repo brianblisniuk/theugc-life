@@ -280,6 +280,39 @@ d("B03 deletion", () => {
       expect([table, res.rows[0].n]).toEqual([table, 0]);
     }
   });
+
+  it("121. account erasure removes this creator's B03 rows and leaves the other mailbox", async () => {
+    const run = await importedMailbox("b03-acct-erase");
+    const other = await importedMailbox("b03-acct-erase-b");
+
+    await client.query("begin");
+    await client.query("select set_config('request.jwt.claims', $1, true)", [
+      JSON.stringify({ sub: run.userId }),
+    ]);
+    await client.query("set local role authenticated");
+    const scheduled = await client.query<{ r: { result: string } }>(
+      "select public.request_own_account_deletion('DELETE') as r",
+    );
+    await client.query("commit");
+    expect(scheduled.rows[0]!.r.result).toBe("scheduled");
+    expect(await rawMessages(client, run.mailAccountId)).toHaveLength(1);
+    expect(await rawMessages(client, other.mailAccountId)).toHaveLength(1);
+
+    await client.query(
+      `update public.users
+          set deletion_requested_at = now() - interval '30 days',
+              delete_after = now() - interval '1 second'
+        where id = $1`,
+      [run.userId],
+    );
+    const erased = await client.query<{ r: { result: string } }>(
+      "select public.erase_creator_account($1) as r",
+      [run.userId],
+    );
+    expect(erased.rows[0]!.r.result).toBe("erased");
+    expect(await rawMessages(client, run.mailAccountId)).toHaveLength(0);
+    expect(await rawMessages(client, other.mailAccountId)).toHaveLength(1);
+  });
 });
 
 d("B03 has no raw-content surface", () => {
