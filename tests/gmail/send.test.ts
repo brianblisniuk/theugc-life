@@ -9,7 +9,7 @@ import {
   googleOAuthAdapter,
   type GoogleOAuthAdapter,
 } from "@/lib/gmail/google.server";
-import { assessSendGuard, dailyCapFromEnv, sendGuardFromProcess } from "@/lib/gmail/send/guard";
+import { assessSendGuard, planCapsFromEnv, sendGuardFromProcess, spacingSeconds } from "@/lib/gmail/send/guard";
 import { MimeRejected, buildPlainMessage, encodeRawMessage } from "@/lib/gmail/send/mime";
 import { sendGmailMessage, type SendDeps } from "@/lib/gmail/send/service.server";
 
@@ -149,12 +149,13 @@ describe("send guard", () => {
     }
   });
 
-  it("parses the daily cap and leaves clamping to the database", () => {
-    expect(dailyCapFromEnv(undefined)).toBe(20);
-    expect(dailyCapFromEnv("")).toBe(20);
-    expect(dailyCapFromEnv("nope")).toBe(20);
-    expect(dailyCapFromEnv("1000")).toBe(1000);
-    expect(dailyCapFromEnv("1")).toBe(1);
+  it("parses the soft daily caps and leaves clamping to the database", () => {
+    expect(planCapsFromEnv(undefined)).toEqual({ pro: 120, max: 300 });
+    expect(planCapsFromEnv({ proDailyCap: "", maxDailyCap: "nope" })).toEqual({ pro: 120, max: 300 });
+    expect(planCapsFromEnv({ proDailyCap: "1000", maxDailyCap: "1" })).toEqual({ pro: 1000, max: 1 });
+    expect(spacingSeconds(() => 0)).toBe(180);
+    expect(spacingSeconds(() => 0.999)).toBe(300);
+    expect(spacingSeconds(() => Number.NaN)).toBe(180);
   });
 });
 
@@ -215,7 +216,6 @@ function scripted(handlers: Record<string, (args: Record<string, unknown>) => un
       sendEnv: "production",
       disabled: null,
       allowlist: null,
-      dailyLimit: "20",
     },
     getAccessToken: async () => ({ result: "ok", accessToken: "access-token" }),
     db: {
@@ -304,6 +304,20 @@ describe("send orchestration", () => {
     });
     const outcome = await sendGmailMessage(input, deps);
     expect(outcome.result).toBe("sent");
+    expect(sends).not.toHaveBeenCalled();
+    expect(calls.map((call) => call.fn)).toEqual(["gmail_send_reserve"]);
+  });
+
+  it("leaves a queued send for the dispatcher and does not call Gmail", async () => {
+    const { deps, sends, calls } = scripted({
+      gmail_send_reserve: () => ({
+        result: "queued",
+        call_provider: false,
+        attempt_id: ATTEMPT,
+      }),
+    });
+    const outcome = await sendGmailMessage(input, deps);
+    expect(outcome).toMatchObject({ result: "queued", attemptId: ATTEMPT });
     expect(sends).not.toHaveBeenCalled();
     expect(calls.map((call) => call.fn)).toEqual(["gmail_send_reserve"]);
   });

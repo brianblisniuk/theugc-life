@@ -1,8 +1,8 @@
 /**
- * Assistant limits (D141, D145).
+ * Assistant limits (D141, D145, D162–D164).
  *
- * One model id for every paid tier. Max raises the context and token caps.
- * Those caps cannot be raised from the environment past the ceilings here.
+ * One model slot per tier. Both slots are Claude Sonnet now. The daily call
+ * and token caps are gone: each paid user has a monthly dollar budget.
  * The API key is not read in this module.
  */
 
@@ -19,20 +19,33 @@ export const AI_LIMITS = {
   selectedMailChars: 500,
   timeoutMs: 20_000,
   maxRetries: 2,
-  dailyCallsDefault: 15,
-  dailyCallsCeiling: 40,
-  dailyTokensDefault: 20_000,
-  dailyTokensCeiling: 80_000,
   /** Sonnet 5.5 list price, USD per million tokens, effective 2026-10-07. */
   inputUsdPerMtok: 2,
   outputUsdPerMtok: 10,
   minMaxTokens: 64,
   rateLimitSeconds: 3,
+  generationsPerMinute: 10,
+  proBudgetUsd: 5,
+  maxBudgetUsd: 15,
+  proBudgetCeilingUsd: 50,
+  maxBudgetCeilingUsd: 100,
+  warningRatio: 0.8,
+  regenFreeCount: 3,
+  regenWeight: 2,
+  poolPercent: 15,
 } as const;
 
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 
 export type AssistantTier = "pro" | "max";
+
+/** Future slot. This block never selects grok. */
+export type AssistantProvider = "anthropic" | "grok";
+
+export interface ResolvedAssistantModel {
+  provider: AssistantProvider;
+  model: string;
+}
 
 function integerSetting(
   raw: string | undefined,
@@ -46,12 +59,28 @@ function integerSetting(
   return Math.min(parsed, ceiling);
 }
 
+function dollarSetting(raw: string | undefined, fallback: number, ceiling: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, ceiling);
+}
+
 /** The configured model. Empty means the default Sonnet. Pro and Max share it. */
 export function resolveModel(raw: string | undefined = process.env.ANTHROPIC_MODEL): string {
   const name = (raw ?? "").trim();
   if (name === "") return AI_LIMITS.defaultModel;
   if (!MODEL_ID.test(name)) return AI_LIMITS.defaultModel;
   return name;
+}
+
+/**
+ * Per-tier model slot (D164). Both tiers are Anthropic Sonnet. A later block
+ * can return Grok for Pro and Claude for Max without a second call site.
+ */
+export function resolveAssistantModel(tier: AssistantTier): ResolvedAssistantModel {
+  void tier;
+  return { provider: "anthropic", model: resolveModel() };
 }
 
 export function maxTokensFor(tier: AssistantTier): number {
@@ -88,27 +117,39 @@ export function contextCharsFor(tier: AssistantTier): number {
   );
 }
 
-export function dailyCallCap(): number {
-  return integerSetting(
-    process.env.ANTHROPIC_USER_DAILY_CALLS,
-    AI_LIMITS.dailyCallsDefault,
-    1,
-    AI_LIMITS.dailyCallsCeiling,
-  );
+/** Monthly user budget in micros. Invalid input keeps the plan default. */
+export function userBudgetMicros(tier: AssistantTier): number {
+  const dollars =
+    tier === "max"
+      ? dollarSetting(
+          process.env.AI_BUDGET_MAX_USD,
+          AI_LIMITS.maxBudgetUsd,
+          AI_LIMITS.maxBudgetCeilingUsd,
+        )
+      : dollarSetting(
+          process.env.AI_BUDGET_PRO_USD,
+          AI_LIMITS.proBudgetUsd,
+          AI_LIMITS.proBudgetCeilingUsd,
+        );
+  return Math.round(dollars * 1_000_000);
 }
 
-export function dailyTokenCap(): number {
-  return integerSetting(
-    process.env.ANTHROPIC_USER_DAILY_TOKENS,
-    AI_LIMITS.dailyTokensDefault,
-    1,
-    AI_LIMITS.dailyTokensCeiling,
-  );
+/** Weight applied after the free regenerations. The database clamps it to 2–5. */
+export function regenWeight(): number {
+  return integerSetting(process.env.AI_REGEN_WEIGHT, AI_LIMITS.regenWeight, 2, 5);
+}
+
+/** Basis points. 1500 is 15%. Invalid input keeps 15%. Clamped to 1–50%. */
+export function poolPercentBps(raw: string | undefined = process.env.AI_GLOBAL_POOL_PERCENT): number {
+  if (raw === undefined || raw.trim() === "") return AI_LIMITS.poolPercent * 100;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 50) return AI_LIMITS.poolPercent * 100;
+  return Math.round(parsed * 100);
 }
 
 /**
- * Unset, blank, or not a positive number means the call is refused.
- * The result is USD micros. The ceiling is $100,000 in a month.
+ * Unset, blank, or not a positive number means there is no floor.
+ * The result is USD micros. The ceiling is $100,000.
  */
 export function readBudgetMicros(
   raw: string | undefined = process.env.ANTHROPIC_MONTHLY_BUDGET_USD,
@@ -121,11 +162,32 @@ export function readBudgetMicros(
   return micros;
 }
 
-/** Micros at list price. Cache reads are counted at the input price, which over-estimates. */
+/** Floor of the global pool. Unset means 0, which does not refuse calls. */
+export function poolFloorMicros(): number {
+  return readBudgetMicros() ?? 0;
+}
+
+export function tokenPrices(): { inputUsdPerMtok: number; outputUsdPerMtok: number } {
+  return {
+    inputUsdPerMtok: dollarSetting(
+      process.env.ANTHROPIC_INPUT_USD_PER_MTOK,
+      AI_LIMITS.inputUsdPerMtok,
+      1000,
+    ),
+    outputUsdPerMtok: dollarSetting(
+      process.env.ANTHROPIC_OUTPUT_USD_PER_MTOK,
+      AI_LIMITS.outputUsdPerMtok,
+      1000,
+    ),
+  };
+}
+
+/** Micros at the configured list price. Cache reads are counted at the input price. */
 export function costMicros(inputTokens: number, outputTokens: number): number {
+  const prices = tokenPrices();
   const input = Number.isInteger(inputTokens) && inputTokens > 0 ? inputTokens : 0;
   const output = Number.isInteger(outputTokens) && outputTokens > 0 ? outputTokens : 0;
-  return input * AI_LIMITS.inputUsdPerMtok + output * AI_LIMITS.outputUsdPerMtok;
+  return input * prices.inputUsdPerMtok + output * prices.outputUsdPerMtok;
 }
 
 export function estimateCallMicros(
@@ -149,4 +211,9 @@ export function wouldExceedBudget(
   capMicros: number,
 ): boolean {
   return spentMicros + estimateMicros > capMicros;
+}
+
+export function budgetWarning(spentMicros: number, capMicros: number): boolean {
+  if (capMicros <= 0) return false;
+  return spentMicros * 5 >= capMicros * 4;
 }

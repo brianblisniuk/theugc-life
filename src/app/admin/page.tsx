@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
+import { AdminAiControls } from "@/components/admin/ai-admin";
 import { AdminGrantForm, AdminReportQueue } from "@/components/admin/credit-admin";
+import { listAdminAbuseFlags, listAdminPoolAlerts } from "@/lib/ai/admin-queries";
 import { requireRole } from "@/lib/auth/guards";
 import { listPendingContactReports } from "@/lib/credits/queries";
 import { factTypeLabel, responseTimeBandLabel } from "@/lib/network-intelligence/display";
@@ -19,6 +21,8 @@ export default async function AdminHomePage({
   const isAdmin = session.role === "admin";
   const kpis = isAdmin ? await getAdminPilotKpis() : { status: "hidden" as const };
   const reports = isAdmin ? await listPendingContactReports() : { status: "hidden" as const };
+  const abuseFlags = isAdmin ? await listAdminAbuseFlags() : [];
+  const poolAlerts = isAdmin ? await listAdminPoolAlerts() : [];
   const grantKey = crypto.randomUUID();
   const provenance =
     isAdmin && factId ? await getAdminProvenance(factId) : { status: "hidden" as const };
@@ -154,6 +158,8 @@ export default async function AdminHomePage({
           ) : null}
         </section>
       ) : null}
+
+      {isAdmin ? <AdminAiControls flags={abuseFlags} alerts={poolAlerts} /> : null}
 
       {isAdmin ? (
         <section className="space-y-3">

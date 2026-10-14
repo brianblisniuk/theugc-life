@@ -9,7 +9,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { loadAssistantChrome } from "@/lib/ai/queries";
+import { loadAssistantChrome, loadOwnAiBudget } from "@/lib/ai/queries";
 import { EmptyState } from "@/components/empty-state";
 import { PitchComposer } from "@/components/pitch/composer";
 import { PageHeader } from "@/components/shell/page-header";
@@ -61,6 +61,10 @@ export default async function HotelPitchPage({
   const templateParam = first(raw.template);
 
   const assistant = await loadAssistantChrome();
+  const budget =
+    assistant.status === "on"
+      ? await loadOwnAiBudget(assistant.priority ? "max" : "pro")
+      : { paused: false, sendsPaused: false, warning: false };
   const mailboxes = await listGmailAccounts(session.userId);
   const connected = mailboxes.filter((account) => account.connectionState === "connected");
   const sender = connected.find((account) => hasSendScope(account.grantedScopes)) ?? connected[0] ?? null;
@@ -199,7 +203,10 @@ export default async function HotelPitchPage({
           recipientEmail={context.recipientEmail}
           suggestionHref={`/app/hotels/${hotel.id}/pitch?${suggestionParams.toString()}`}
           assistant={assistant}
-          canSend={assistant.status === "on"}
+          budgetWarning={budget.warning}
+          accountPaused={budget.paused}
+          sendsPaused={budget.sendsPaused}
+          canSend={assistant.status === "on" && !budget.paused && !budget.sendsPaused}
           mailAccountId={sender?.mailAccountId ?? null}
           hasSendScope={sender ? hasSendScope(sender.grantedScopes) : false}
         />

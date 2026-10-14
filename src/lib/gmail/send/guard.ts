@@ -54,20 +54,49 @@ export function assessSendGuard(env: SendGuardEnv, recipient: string): SendGuard
   return { ok: true };
 }
 
-/** The database clamps this. A blank or non-integer value stays at the default of 20. */
-export function dailyCapFromEnv(raw: string | null | undefined): number {
-  if (raw == null || raw.trim() === "") return 20;
+export interface PlanSendCaps {
+  pro: number;
+  max: number;
+}
+
+/**
+ * Soft daily caps (D168). Blank or non-integer values stay at Pro 120 and Max 300.
+ * The database clamps a higher Pro value to 240 and a higher Max value to 600.
+ */
+export function planCapsFromEnv(env: {
+  proDailyCap?: string | null;
+  maxDailyCap?: string | null;
+} | null | undefined): PlanSendCaps {
+  return {
+    pro: rawCap(env?.proDailyCap, 120),
+    max: rawCap(env?.maxDailyCap, 300),
+  };
+}
+
+function rawCap(raw: string | null | undefined, fallback: number): number {
+  if (raw == null || raw.trim() === "") return fallback;
   const parsed = Number(raw);
-  if (!Number.isInteger(parsed)) return 20;
+  if (!Number.isInteger(parsed)) return fallback;
   return parsed;
 }
 
-export function sendGuardFromProcess(): SendGuardEnv & { dailyLimit: string | null } {
+/** Inclusive random gap of 180 to 300 seconds. */
+export function spacingSeconds(random: () => number = Math.random): number {
+  const roll = random();
+  const unit = Number.isFinite(roll) ? Math.min(1, Math.max(0, roll)) : 0;
+  return 180 + Math.floor(unit * 121);
+}
+
+export function sendGuardFromProcess(): SendGuardEnv & {
+  proDailyCap: string | null;
+  maxDailyCap: string | null;
+} {
   return {
     nodeEnv: process.env.NODE_ENV ?? null,
     sendEnv: process.env.GMAIL_SEND_ENV ?? null,
     disabled: process.env.GMAIL_SEND_DISABLED ?? null,
     allowlist: process.env.GMAIL_SEND_ALLOWLIST ?? null,
-    dailyLimit: process.env.GMAIL_SEND_DAILY_LIMIT ?? null,
+    proDailyCap: process.env.GMAIL_SEND_PRO_DAILY_CAP ?? null,
+    maxDailyCap: process.env.GMAIL_SEND_MAX_DAILY_CAP ?? null,
   };
 }

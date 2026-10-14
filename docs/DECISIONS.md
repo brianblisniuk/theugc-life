@@ -5359,3 +5359,100 @@ then its send attempts, under the same deletion-request checks as the
 other Gmail purges. `erase_creator_account` calls it inside the mailbox
 loop. Another creator's rows stay. Migration `0088` is not edited. The
 replacement lives in `0089`.
+
+## D162 — A paid user has a monthly AI budget in USD
+
+Status: **Accepted**.
+
+The daily caps of 15 calls and 20,000 tokens are gone. Pro defaults to
+$5 a month and Max to $15, tracked from real token counts at the
+configured Sonnet prices. `AI_BUDGET_PRO_USD` and `AI_BUDGET_MAX_USD`
+override the defaults. The soft warning is 80 percent. At 100 percent
+that user stops. Free still has no AI. A failed or rejected call can
+still consume the budget for tokens the provider billed.
+
+## D163 — The global pool alerts the owner and does not cut a user who is inside their budget
+
+Status: **Accepted**.
+
+The pool is `AI_GLOBAL_POOL_PERCENT` of the previous calendar month's
+approved USD revenue. The default is 15 percent. Invalid percents stay
+at 15. `ANTHROPIC_MONTHLY_BUDGET_USD` is the floor, and unset means a
+floor of zero. Nearing is 80 percent of the pool. Exhausted is the pool
+or any spend when the pool is zero. Both write one admin-visible alert
+per UTC month. Neither alert refuses a generation.
+
+## D164 — One model slot per plan, Claude Sonnet for both
+
+Status: **Accepted**.
+
+Pro and Max each have a model slot. Both slots are Claude Sonnet in this
+block. A later block can put Grok on one slot and Claude on the other
+without a second call site. This block does not call Grok.
+
+## D165 — Ten generations in a minute pause the account
+
+Status: **Accepted**.
+
+An eleventh generation start inside 60 seconds pauses that user. The
+pause stops AI and Gmail sends. The in-app message tells them to email
+support@theugc.life. `admin_unpause_account` is admin-only. An editor or
+the creator receives `forbidden` and changes nothing. A gap under three
+seconds returns `rate_limited` and does not pause.
+
+## D166 — Generation is a structured pitch for an unlocked hotel
+
+Status: **Accepted**.
+
+The assistant runs only for a hotel that user has unlocked. The creator
+sends a tone, up to five key points, and a language from a fixed list.
+There is no free-form instruction box. The system prompt is fixed on the
+server. A pitch send's recipient must be that hotel's contact or the
+same domain. A heuristic checks that the draft is a collaboration pitch
+for that hotel. It makes no extra model call. The first generation for a
+hotel in the month is charged at weight 1. The next three are free.
+Later ones use `AI_REGEN_WEIGHT`, default 2, clamped from 2 to 5.
+
+## D167 — Abuse signals are an admin-visible flag
+
+Status: **Accepted**.
+
+`high_regen_send_ratio`, `generation_without_recent_unlock`, and
+`injection_attempt` are the signals. A repeat of the same signal for the
+same user and hotel inside 24 hours is ignored. The row stores no prompt
+and no message body. A creator or an editor receives no rows.
+`injection_attempt` is recorded before any paid call.
+
+## D168 — Sends are queued inside local business hours
+
+Status: **Accepted**.
+
+A Send click enqueues. It does not call Gmail. The dispatcher claims at
+most one due send per creator, then waits a random 180 to 300 seconds
+before that creator's next claim. Claims run only from 09:00 to 18:00 in
+the user's timezone. Blank or invalid timezones are UTC. The soft daily
+caps are Pro 120 and Max 300. `GMAIL_SEND_PRO_DAILY_CAP` and
+`GMAIL_SEND_MAX_DAILY_CAP` override them. The database clamps Pro to 240
+and Max to 600. A cap defers the send to the next business morning. It
+does not fail the attempt. D160's allowlist and kill switch still apply
+at the moment of the provider call. The schedule is a Netlify function
+that calls `POST /api/internal/gmail-send-dispatch` with
+`GMAIL_DISPATCH_SECRET`.
+
+## D169 — A bounce rate above 5 percent pauses sends
+
+Status: **Accepted**.
+
+The window is the last 20 sent messages in 30 days. More than 5 percent
+bounced pauses sends for that creator. AI is not paused. The message
+tells them to email support. `admin_unpause_sends` is admin-only.
+
+## D170 — New per-user rows die with the account
+
+Status: **Accepted**.
+
+Account pauses, abuse flags, send schedule, send pauses, and bounces
+reference the user with `on delete cascade`. Pool alerts have no user id
+and stay. Sends still cost no credits (D159). Migrations `0082`, `0083`,
+`0088`, and `0089` are not edited. The new functions are `0090` and
+`0091`.

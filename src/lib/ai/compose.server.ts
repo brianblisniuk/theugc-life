@@ -12,26 +12,34 @@ import { logger } from "@/lib/logger";
 import { CREDITS_CONFIG } from "@/lib/credits/config";
 
 import { completeClaude, type ClaudeRequest, type ClaudeResult } from "./claude.server";
+import { briefLooksLikeInjection } from "./injection";
 import {
   contextCharsFor,
   costMicros,
-  dailyCallCap,
-  dailyTokenCap,
   estimateCallMicros,
   maxTokensFor,
-  readBudgetMicros,
-  resolveModel,
+  poolFloorMicros,
+  poolPercentBps,
+  regenWeight,
+  resolveAssistantModel,
+  userBudgetMicros,
   type AssistantTier,
 } from "./limits";
+import { collaborationPitchOk } from "./postcheck";
 import { buildOutreachPrompt, parseDraftText, type OutreachFacts } from "./prompt";
+import type { PitchBrief } from "./structured";
 
 export type ComposeStatus =
   | "drafted"
   | "templates_only"
   | "out_of_credits"
-  | "daily_limit"
+  | "monthly_limit"
   | "rate_limited"
   | "paused"
+  | "not_unlocked"
+  | "injection"
+  | "off_topic"
+  | "invalid_input"
   | "error";
 
 export interface ComposeOutcome {
@@ -39,6 +47,7 @@ export interface ComposeOutcome {
   subject?: string;
   body?: string;
   requestId?: string;
+  warning?: "budget_80";
 }
 
 export interface ComposeDeps {
@@ -50,22 +59,23 @@ export interface ComposeDeps {
   charge: (
     idempotencyKey: string,
   ) => Promise<"charged" | "already_charged" | "out_of_credits" | "forbidden" | "error">;
+  hotelId: string;
+  brief: PitchBrief;
   prepare: (input: {
     requestId: string;
     model: string;
+    hotelId: string;
     estimateMicros: number;
-    budgetMicros: number;
-    dailyCalls: number;
-    dailyTokens: number;
-    estimateInputTokens: number;
-    estimateOutputTokens: number;
+    userBudgetMicros: number;
+    regenWeight: number;
   }) => Promise<
     | "reserved"
     | "already_reserved"
     | "budget"
-    | "daily_calls"
-    | "daily_tokens"
     | "rate_limited"
+    | "paused"
+    | "not_unlocked"
+    | { status: "reserved"; warning?: "budget_80" }
     | "error"
   >;
   finish: (input: {
@@ -74,7 +84,9 @@ export interface ComposeDeps {
     inputTokens: number;
     outputTokens: number;
     costMicros: number;
-    status: "completed" | "failed";
+    status: "completed" | "failed" | "rejected";
+    poolFloorMicros: number;
+    poolPercentBps: number;
   }) => Promise<void>;
   complete?: (request: ClaudeRequest) => Promise<ClaudeResult>;
   now?: () => Date;
@@ -110,13 +122,16 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   if (deps.balance === null) return { status: "error" };
   if (deps.balance < CREDITS_CONFIG.aiDraftCost) return { status: "out_of_credits" };
 
-  const budget = readBudgetMicros();
-  if (budget === null || !deps.apiKey) return { status: "paused" };
+  if (!deps.apiKey) return { status: "paused" };
+  if (!deps.hotelId || !deps.brief) return { status: "invalid_input" };
+  if (briefLooksLikeInjection(deps.brief.keyPoints)) return { status: "injection" };
 
   const tier = tierOf(deps.priority);
-  const model = resolveModel();
+  const resolved = resolveAssistantModel(tier);
+  if (resolved.provider !== "anthropic") return { status: "error" };
+  const model = resolved.model;
   const maxTokens = maxTokensFor(tier);
-  const prompt = buildOutreachPrompt(deps.facts, tier);
+  const prompt = buildOutreachPrompt({ ...deps.facts, brief: deps.brief }, tier);
   if (prompt.user.length > contextCharsFor(tier)) return { status: "error" };
 
   const estimate = estimateCallMicros(prompt.system.length + prompt.user.length, maxTokens);
@@ -124,17 +139,18 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   const prepared = await deps.prepare({
     requestId,
     model,
+    hotelId: deps.hotelId,
     estimateMicros: estimate.micros,
-    budgetMicros: budget,
-    dailyCalls: dailyCallCap(),
-    dailyTokens: dailyTokenCap(),
-    estimateInputTokens: estimate.inputTokens,
-    estimateOutputTokens: estimate.outputTokens,
+    userBudgetMicros: userBudgetMicros(tier),
+    regenWeight: regenWeight(),
   });
-  if (prepared === "daily_calls" || prepared === "daily_tokens") return { status: "daily_limit" };
-  if (prepared === "rate_limited") return { status: "rate_limited" };
-  if (prepared === "budget") return { status: "paused" };
-  if (prepared === "error") return { status: "error" };
+  const preparedStatus = typeof prepared === "string" ? prepared : prepared.status;
+  const warning = typeof prepared === "string" ? undefined : prepared.warning;
+  if (preparedStatus === "rate_limited") return { status: "rate_limited" };
+  if (preparedStatus === "paused") return { status: "paused" };
+  if (preparedStatus === "budget") return { status: "monthly_limit" };
+  if (preparedStatus === "not_unlocked") return { status: "not_unlocked" };
+  if (preparedStatus === "error") return { status: "error" };
 
   const complete = deps.complete ?? completeClaude;
   let result: ClaudeResult;
@@ -155,13 +171,25 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   const billed = result.ok
     ? costMicros(inputTokens, outputTokens)
     : Math.max(estimate.micros, costMicros(inputTokens, outputTokens));
+  const draft = result.ok ? parseDraftText(result.text) : null;
+  const onTopic =
+    result.ok &&
+    draft !== null &&
+    collaborationPitchOk({
+      subject: draft.subject,
+      body: draft.body,
+      hotelName: deps.facts.hotelName,
+    });
+  const finishStatus = !result.ok || !draft ? "failed" : onTopic ? "completed" : "rejected";
   await deps.finish({
     requestId,
     model,
     inputTokens,
     outputTokens,
     costMicros: result.ok ? billed : estimate.micros,
-    status: result.ok ? "completed" : "failed",
+    status: finishStatus,
+    poolFloorMicros: poolFloorMicros(),
+    poolPercentBps: poolPercentBps(),
   });
   logger.info(
     "ai.usage",
@@ -169,17 +197,16 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
       model,
       inputTokens,
       outputTokens,
-      status: result.ok ? "completed" : result.status,
+      status: finishStatus === "completed" ? "completed" : result.ok ? finishStatus : result.status,
     }),
   );
 
-  if (!result.ok) return { status: "error", requestId };
-  const draft = parseDraftText(result.text);
-  if (!draft) return { status: "error", requestId };
+  if (!result.ok || !draft) return { status: "error", requestId };
+  if (!onTopic) return { status: "off_topic", requestId };
 
   const charged = await deps.charge(`ai_draft:${requestId}`);
   if (charged === "out_of_credits") return { status: "out_of_credits", requestId };
   if (charged !== "charged" && charged !== "already_charged") return { status: "error", requestId };
 
-  return { status: "drafted", subject: draft.subject, body: draft.body, requestId };
+  return { status: "drafted", subject: draft.subject, body: draft.body, requestId, warning };
 }

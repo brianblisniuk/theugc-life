@@ -1092,7 +1092,7 @@
   {
     "schema": "public",
     "name": "gmail_send_mark_provider",
-    "args": "p_user_id uuid, p_attempt_id uuid, p_daily_cap integer",
+    "args": "p_user_id uuid, p_attempt_id uuid, p_pro_cap integer, p_max_cap integer",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,
@@ -1992,7 +1992,7 @@
   {
     "schema": "public",
     "name": "prepare_ai_usage",
-    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_estimate_micros bigint, p_budget_micros bigint, p_daily_call_cap integer, p_daily_token_cap integer, p_estimate_input_tokens integer, p_estimate_output_tokens integer",
+    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_hotel_id uuid, p_estimate_micros bigint, p_user_budget_micros bigint, p_regen_weight integer",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,
@@ -2002,7 +2002,7 @@
   {
     "schema": "public",
     "name": "finish_ai_usage",
-    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_input_tokens integer, p_output_tokens integer, p_cost_micros bigint, p_status text",
+    "args": "p_user_id uuid, p_request_id uuid, p_model text, p_input_tokens integer, p_output_tokens integer, p_cost_micros bigint, p_status text, p_pool_floor_micros bigint, p_pool_percent_bps integer",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,
@@ -2083,6 +2083,86 @@
     "schema": "public",
     "name": "request_own_account_deletion",
     "args": "p_confirmation text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "record_abuse_flag",
+    "args": "p_user_id uuid, p_hotel_id uuid, p_signal text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_abuse_flags",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_ai_pool_alerts",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "admin_unpause_account",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_own_ai_budget",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_claim_due",
+    "args": "p_now timestamp with time zone, p_limit integer, p_spacing_seconds integer, p_pro_cap integer, p_max_cap integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_record_bounce",
+    "args": "p_user_id uuid, p_attempt_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "admin_unpause_sends",
+    "args": "p_user_id uuid",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": true,

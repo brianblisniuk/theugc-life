@@ -362,16 +362,17 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
 | D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
-| D03 | **IN THIS PR.** Draft PR #84. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Max is more context on that model. Drafts are not sent. Do not merge. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
-| D04 | **IN THIS PR.** Draft PR #86. Migration `0089`. D156–D161 Accepted. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. Explicit Pro/Max send through the creator's own Gmail. `gmail.send` is incremental. A sent event links the Gmail message and thread to the hotel, pipeline item, trip, and draft. Pipeline status is not changed. Do not merge. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
+| D03 | **DONE** — PR #84, merge `b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Drafts are not sent. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
+| D04 | **DONE** — PR #86, merge `3e11ded390a2845603b207433af90bb846d4670e`. Migration `0089`. D156–D161. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
+| D04b | **IN THIS PR.** Branch `cursor/ai-cost-anti-abuse-c721`. Migrations `0090` and `0091`. D162–D170. Monthly USD AI budget, 10-per-minute account pause, structured generation, queued sends, bounce pause. Sends still cost no credits. Do not merge. | AI cost and anti-abuse | per-user budget before the global pool; queued sends; deletion cascades |
 | D05 | PLANNED | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | **DONE** — PR #61, merge `d030cd0329c8b1e30afcdd14a72485174edcd9f5`, migration `0052`. D086–D088 stay Proposed. Private profile editor, creator-recorded counts, a past-collaboration list, and a private per-field opt-in table. The hotel link is D09. | creator context + personal analytics. Verified proof stays out. | history is reused to improve next opportunity, not just archived |
 | D09 | **DONE** — PR #63, merge `1fc15658fc69acaa799860f8340736e15e1f5728`, migration `0053`. D089–D091 Accepted (Brian, 13 Oct 2026). Creator-controlled revocable hotel link at `/p/[token]`. Per-field opt-in. | creator profile shareable with hotels | a hotel sees only what that creator opted in, and a revoked link shows nothing |
 
-**Base rounds:** 9  
-**Cumulative future rounds:** 26
+**Base rounds:** 10  
+**Cumulative future rounds:** 27
 
 **Milestone D gate — Complete Travel OS loop:**
 

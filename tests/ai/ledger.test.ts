@@ -32,10 +32,32 @@ const FREE = "d0300000-0000-4000-8000-0000000000a2";
 const PASS = "d0300000-0000-4000-8000-0000000000a3";
 const OTHER = "d0300000-0000-4000-8000-0000000000a4";
 const DEST = "d0300000-0000-4000-8000-0000000000d1";
+const HOTEL = "d0300000-0000-4000-8000-0000000000b1";
+const HOTEL_LOCKED = "d0300000-0000-4000-8000-0000000000b2";
 
-function jsonOf(value: unknown): { status?: string } {
-  if (typeof value === "string") return JSON.parse(value) as { status?: string };
-  return (value ?? {}) as { status?: string };
+function jsonOf(value: unknown): {
+  status?: string;
+  result?: string;
+  weight?: number;
+  warning?: string | null;
+} {
+  if (typeof value === "string") return JSON.parse(value) as { status?: string; weight?: number };
+  return (value ?? {}) as { status?: string; weight?: number; warning?: string | null };
+}
+
+async function prepare(
+  userId: string,
+  requestId: string,
+  hotelId: string,
+  estimate: number,
+  budget: number,
+  weight = 2,
+) {
+  const rows = await adminQuery<{ result: unknown }>(
+    "select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',$3,$4,$5,$6) as result",
+    [userId, requestId, hotelId, estimate, budget, weight],
+  );
+  return jsonOf(rows[0]?.result);
 }
 
 async function balanceOf(userId: string): Promise<number> {
@@ -69,6 +91,23 @@ d("AI draft credits and usage", () => {
        values ($1, 'destination', $2, 'active', now(), 'test', 'd03-pass')`,
       [PASS, DEST],
     );
+    await adminQuery(
+      `insert into public.hotels (id, name, slug, destination_id)
+       values ($1, 'Draft Hotel', 'draft-hotel', $3),
+              ($2, 'Locked Hotel', 'locked-hotel', $3)`,
+      [HOTEL, HOTEL_LOCKED, DEST],
+    );
+    for (const userId of [PRO, FREE, PASS, OTHER]) {
+      const ledger = await adminQuery<{ id: string }>(
+        "select id from public.credit_ledger where user_id = $1 and reason = 'free_grant' limit 1",
+        [userId],
+      );
+      await adminQuery(
+        `insert into public.contact_unlocks (user_id, hotel_id, ledger_id, created_at)
+         values ($1, $2, $3, case when $1 = $4::uuid then now() - interval '40 days' else now() end)`,
+        [userId, HOTEL, ledger[0]!.id, PASS],
+      );
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -167,40 +206,34 @@ d("AI draft credits and usage", () => {
     const request = "d0300000-0000-4000-8000-00000000b001";
     const denied = await queryAs(
       { role: "authenticated", sub: PRO },
-      `select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',1000,1000,15,20000,10,20)`,
-      [PRO, request],
+      "select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',$3,1000,5000000,2)",
+      [PRO, request, HOTEL],
     );
     expect(denied.error?.message ?? "").toMatch(/permission denied/i);
 
     await adminQuery(
       `insert into public.ai_usage (
-         request_id, user_id, task, model, input_tokens, output_tokens,
-         estimated_cost_micros, status, created_at
-       ) values ($1, $2, 'compose_pitch', 'claude-sonnet-5-5', 0, 0, 1000, 'reserved', now() - interval '1 hour')`,
-      [request, PRO],
+         request_id, user_id, task, model, hotel_id, input_tokens, output_tokens,
+         estimated_cost_micros, budget_micros, status, created_at
+       ) values ($1, $2, 'compose_pitch', 'claude-sonnet-5-5', $3, 0, 0, 4900000, 4900000, 'reserved', now() - interval '1 hour')`,
+      [request, PRO, HOTEL],
     );
 
     // The compat shim does not grant service_role USAGE on public. Hosted
     // Supabase does. The execute grant is asserted in the ACL matrix. The
     // body is run as the migration owner, the same way other service-only
     // functions are tested.
-    const over = await adminQuery<{ result: unknown }>(
-      `select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',600,1500,15,20000,10,20) as result`,
-      [PRO, "d0300000-0000-4000-8000-00000000b002"],
-    );
-    expect(jsonOf(over[0]?.result).status).toBe("budget");
+    const locked = await prepare(PRO, "d0300000-0000-4000-8000-00000000b002", HOTEL_LOCKED, 1000, 5_000_000);
+    expect(locked.status).toBe("not_unlocked");
+    const over = await prepare(PRO, "d0300000-0000-4000-8000-00000000b003", HOTEL, 200_000, 5_000_000);
+    expect(over.status).toBe("budget");
 
-    const recent = "d0300000-0000-4000-8000-00000000b003";
-    const first = await adminQuery<{ result: unknown }>(
-      `select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',10,5000000,15,20000,1,1) as result`,
-      [OTHER, recent],
-    );
-    expect(jsonOf(first[0]?.result).status).toBe("reserved");
-    const again = await adminQuery<{ result: unknown }>(
-      `select public.prepare_ai_usage($1,$2,'claude-sonnet-5-5',10,5000000,15,20000,1,1) as result`,
-      [OTHER, "d0300000-0000-4000-8000-00000000b004"],
-    );
-    expect(jsonOf(again[0]?.result).status).toBe("rate_limited");
+    const recent = "d0300000-0000-4000-8000-00000000b004";
+    const first = await prepare(PRO, recent, HOTEL, 1000, 20_000_000);
+    expect(first.status).toBe("reserved");
+    expect(first.weight).toBe(1);
+    const again = await prepare(PRO, "d0300000-0000-4000-8000-00000000b005", HOTEL, 1000, 20_000_000);
+    expect(again.status).toBe("rate_limited");
 
     const columns = await adminQuery<{ column_name: string }>(
       `select column_name from information_schema.columns
@@ -210,6 +243,15 @@ d("AI draft credits and usage", () => {
     expect(names).not.toContain("prompt");
     expect(names).not.toContain("body");
     expect(names).not.toContain("plain_text");
+
+    const hiddenId = "d0300000-0000-4000-8000-00000000b099";
+    await adminQuery(
+      `insert into public.ai_usage (
+         request_id, user_id, task, model, hotel_id, input_tokens, output_tokens,
+         estimated_cost_micros, budget_micros, status, created_at
+       ) values ($1, $2, 'compose_pitch', 'claude-sonnet-5-5', $3, 0, 0, 1, 1, 'reserved', now() - interval '1 hour')`,
+      [hiddenId, OTHER, HOTEL],
+    );
 
     const seen = await queryAs(
       { role: "authenticated", sub: FREE },
@@ -225,7 +267,135 @@ d("AI draft credits and usage", () => {
     expect(own.rows.map((row) => String((row as { request_id: string }).request_id))).toContain(
       request,
     );
-    expect(JSON.stringify(own.rows)).not.toContain(recent);
+    expect(own.rows.map((row) => String((row as { request_id: string }).request_id))).toContain(
+      recent,
+    );
+    expect(JSON.stringify(own.rows)).not.toContain(hiddenId);
+  });
+
+  it("weights the first draft, leaves three regenerations free, and alerts the pool without stopping the next user", async () => {
+    await adminQuery(
+      `insert into public.ai_usage (
+         request_id, user_id, task, model, hotel_id, input_tokens, output_tokens,
+         estimated_cost_micros, budget_micros, status, created_at
+       )
+       select gen_random_uuid(), $1, 'compose_pitch', 'claude-sonnet-5-5', $2,
+              1, 1, 0, 0, 'completed', now() - interval '2 hours'
+         from generate_series(1, 2)`,
+      [PASS, HOTEL],
+    );
+    await adminQuery(
+      `insert into public.ai_usage (
+         request_id, user_id, task, model, hotel_id, input_tokens, output_tokens,
+         estimated_cost_micros, budget_micros, status, created_at
+       )
+       select gen_random_uuid(), $1, 'compose_pitch', 'claude-sonnet-5-5', $2,
+              1, 1, 0, 0, 'completed', now() - interval '2 hours'
+         from generate_series(1, 5)`,
+      [FREE, HOTEL],
+    );
+
+    const freeRegen = await prepare(PASS, "d0300000-0000-4000-8000-00000000c001", HOTEL, 1000, 5_000_000);
+    expect(freeRegen.status).toBe("reserved");
+    expect(freeRegen.weight).toBe(0);
+    const flags = await adminQuery<{ signal: string }>(
+      "select signal from private.abuse_flags where user_id = $1",
+      [PASS],
+    );
+    expect(flags.map((row) => row.signal)).toContain("generation_without_recent_unlock");
+    const hidden = await queryAs(
+      { role: "authenticated", sub: PRO },
+      "select signal from public.read_admin_abuse_flags(10)",
+    );
+    expect(hidden.error).toBeNull();
+    expect(hidden.rows).toEqual([]);
+    const table = await queryAs({ role: "authenticated", sub: PRO }, "select * from private.abuse_flags");
+    expect(table.error?.message ?? "").toMatch(/permission denied/i);
+
+    const weighted = "d0300000-0000-4000-8000-00000000c002";
+    const heavy = await prepare(FREE, weighted, HOTEL, 1000, 5_000_000, 2);
+    expect(heavy.status).toBe("reserved");
+    expect(heavy.weight).toBe(2);
+    await adminQuery(
+      "select public.finish_ai_usage($1,$2,'claude-sonnet-5-5',10,5,1000,'completed',1,1500)",
+      [FREE, weighted],
+    );
+    const ratio = await adminQuery<{ signal: string }>(
+      "select signal from private.abuse_flags where user_id = $1 and signal = 'high_regen_send_ratio'",
+      [FREE],
+    );
+    expect(ratio).toHaveLength(1);
+    const alert = await adminQuery<{ level: string }>(
+      "select level from private.ai_pool_alerts where level = 'exhausted'",
+    );
+    expect(alert.length).toBeGreaterThan(0);
+
+    const still = await prepare(OTHER, "d0300000-0000-4000-8000-00000000c003", HOTEL, 1000, 5_000_000);
+    expect(still.status).toBe("reserved");
+
+    await adminQuery("update public.users set role = 'admin' where id = $1", [FREE]);
+    const visible = await queryAs<{ signal: string }>(
+      { role: "authenticated", sub: FREE },
+      "select signal from public.read_admin_abuse_flags(20)",
+    );
+    expect(visible.error).toBeNull();
+    expect(visible.rows.map((row) => row.signal)).toContain("generation_without_recent_unlock");
+    const creatorBudget = await queryAs(
+      { role: "authenticated", sub: OTHER },
+      "select public.read_own_ai_budget() as result",
+    );
+    expect(jsonOf(creatorBudget.rows[0]?.result).result).toBe("ok");
+    const foreign = await queryAs(
+      { role: "authenticated", sub: PRO },
+      "select public.read_own_ai_budget() as result",
+    );
+    expect(JSON.stringify(foreign.rows)).not.toContain(OTHER);
+  });
+
+  it("pauses the account after ten generations in a minute, and only an admin clears it", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    await adminQuery(
+      `insert into public.ai_usage (
+         request_id, user_id, task, model, hotel_id, input_tokens, output_tokens,
+         estimated_cost_micros, budget_micros, status, created_at
+       )
+       select gen_random_uuid(), $1, 'compose_pitch', 'claude-sonnet-5-5', $2,
+              0, 0, 1, 1, 'reserved', now() - interval '20 seconds'
+         from generate_series(1, 10)`,
+      [OTHER, HOTEL],
+    );
+    const paused = await prepare(OTHER, "d0300000-0000-4000-8000-00000000d001", HOTEL, 1000, 5_000_000);
+    expect(paused.status).toBe("paused");
+    const forbidden = await commitAs<{ result: unknown }>(
+      { role: "authenticated", sub: PRO },
+      "select public.admin_unpause_account($1::uuid) as result",
+      [OTHER],
+    );
+    expect(jsonOf(forbidden.rows[0]?.result).result).toBe("forbidden");
+    await adminQuery("update public.users set role = 'editor' where id = $1", [FREE]);
+    const editor = await commitAs<{ result: unknown }>(
+      { role: "authenticated", sub: FREE },
+      "select public.admin_unpause_account($1::uuid) as result",
+      [OTHER],
+    );
+    expect(jsonOf(editor.rows[0]?.result).result).toBe("forbidden");
+    const still = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from private.ai_account_pauses where user_id = $1 and unpaused_at is null",
+      [OTHER],
+    );
+    expect(still[0]!.n).toBe(1);
+    await adminQuery("update public.users set role = 'admin' where id = $1", [FREE]);
+    const cleared = await commitAs<{ result: unknown }>(
+      { role: "authenticated", sub: FREE },
+      "select public.admin_unpause_account($1::uuid) as result",
+      [OTHER],
+    );
+    expect(jsonOf(cleared.rows[0]?.result).result).toBe("ok");
+    const open = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from private.ai_account_pauses where user_id = $1 and unpaused_at is null",
+      [OTHER],
+    );
+    expect(open[0]!.n).toBe(0);
   });
 
   it("returns plain text only for a message the caller selected and owns", async () => {

@@ -116,6 +116,31 @@ async function unlock(userId: string): Promise<void> {
   );
 }
 
+function businessTimezone(now = new Date()): string {
+  const shift = (12 - now.getUTCHours() + 24) % 24;
+  return shift === 0 ? "UTC" : `Etc/GMT-${shift}`;
+}
+
+async function dropQueued(userId: string): Promise<void> {
+  await adminQuery(
+    `update private.gmail_send_attempts
+        set status = 'failed', failure_code = 'provider_error'
+      where user_id = $1 and status in ('queued', 'reserved')`,
+    [userId],
+  );
+  await adminQuery("delete from private.gmail_send_schedule where user_id = $1", [userId]);
+}
+
+async function claimDue(proCap = 120, maxCap = 300) {
+  const rows = await asService<{
+    r: {
+      result: string;
+      claims: { user_id?: string; attempt_id?: string; daily_cap?: number; call_provider?: boolean }[];
+    };
+  }>("select public.gmail_send_claim_due(clock_timestamp(), 25, 180, $1, $2) as r", [proCap, maxCap]);
+  return rows[0]!.r;
+}
+
 function reserveSql(): string {
   return `select public.gmail_send_reserve(
     $1::uuid, $2::uuid, $3, 'pitch', $4, $5, $6, $7::uuid, $8::uuid, $9::uuid, null, null
@@ -199,6 +224,14 @@ d("D04 Gmail send", () => {
       await connectMailbox(userId, userId.replace(/-/g, ""), SEND_SCOPES);
       await unlock(userId);
     }
+    const zone = businessTimezone();
+    await adminQuery("update public.users set timezone = $1 where id = any($2::uuid[])", [zone, users]);
+    const hour = await adminQuery<{ hour: number }>(
+      "select extract(hour from clock_timestamp() at time zone timezone)::int as hour from public.users where id = $1",
+      [PRO],
+    );
+    expect(hour[0]!.hour).toBeGreaterThanOrEqual(9);
+    expect(hour[0]!.hour).toBeLessThan(18);
   });
 
   afterAll(async () => {
@@ -215,12 +248,14 @@ d("D04 Gmail send", () => {
     );
     expect(rows.map((row) => row.proname)).toEqual([
       "gmail_send_bind_pending",
+      "gmail_send_claim_due",
       "gmail_send_commit",
       "gmail_send_fail",
       "gmail_send_list_own",
       "gmail_send_mark_provider",
       "gmail_send_payload_hash",
       "gmail_send_purge_for_deletion",
+      "gmail_send_record_bounce",
       "gmail_send_reserve",
       "gmail_send_scope_persist",
     ]);
@@ -247,8 +282,12 @@ d("D04 Gmail send", () => {
       expect(row.failure_code, userId).toBe(code);
       expect(row.call_provider, userId).toBe(false);
     }
-    expect((await reserve({ userId: PRO, key: "pro-allow-000000001" })).result).toBe("reserved");
-    expect((await reserve({ userId: MAX, key: "max-allow-000000001" })).call_provider).toBe(true);
+    const pro = await reserve({ userId: PRO, key: "pro-allow-000000001" });
+    expect(pro.result).toBe("queued");
+    expect(pro.call_provider).toBe(false);
+    const max = await reserve({ userId: MAX, key: "max-allow-000000001" });
+    expect(max.result).toBe("queued");
+    expect(max.call_provider).toBe(false);
   });
 
   it("a missing unlock is not_found and writes no attempt", async () => {
@@ -265,7 +304,7 @@ d("D04 Gmail send", () => {
 
   it("one key has one outcome, and a different payload conflicts", async () => {
     const first = await reserve({ userId: PRO, key: "pro-idem-0000000001", subject: "First subject" });
-    expect(first.result).toBe("reserved");
+    expect(first.result).toBe("queued");
     const again = await reserve({ userId: PRO, key: "pro-idem-0000000001", subject: "First subject" });
     expect(again.result).toBe("in_progress");
     expect(again.call_provider).toBe(false);
@@ -273,33 +312,71 @@ d("D04 Gmail send", () => {
     expect(clash.result).toBe("idempotency_conflict");
   });
 
-  it("enforces the 10 second gap and clamps a daily cap of 1000 to 40", async () => {
-    const first = await reserve({ userId: MAX, key: "max-limit-000000001" });
+  it("queues inside business hours, spaces the next claim, and soft-caps instead of failing", async () => {
+    await dropQueued(MAX);
+    const first = await reserve({ userId: MAX, key: "max-queue-000000001" });
+    expect(first).toMatchObject({ result: "queued", call_provider: false });
+    const claimed = await claimDue(1000, 1000);
+    const mine = claimed.claims.filter((row) => row.user_id === MAX);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.attempt_id).toBe(first.attempt_id);
+    expect(mine[0]!.daily_cap).toBe(600);
+    expect(mine[0]!.call_provider).toBe(true);
+    const spaced = await claimDue(120, 300);
+    expect(spaced.claims.filter((row) => row.user_id === MAX)).toEqual([]);
+
     const marked = await asService<{ r: Record<string, unknown> }>(
-      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 1000) as r",
+      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 120, 1) as r",
       [MAX, first.attempt_id],
     );
-    expect(marked[0]!.r.result).toBe("ok");
-    expect(marked[0]!.r.daily_cap).toBe(40);
-    const second = await reserve({ userId: MAX, key: "max-limit-000000002" });
-    const blocked = await asService<{ r: Record<string, unknown> }>(
-      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 20) as r",
-      [MAX, second.attempt_id],
-    );
-    expect(blocked[0]!.r).toMatchObject({ result: "failed", failure_code: "rate_limited", call_provider: false });
+    expect(marked[0]!.r).toMatchObject({ result: "ok", call_provider: true, daily_cap: 1 });
+
     await adminQuery(
-      `update private.gmail_send_attempts
-          set provider_started_at = now() - interval '11 seconds'
-        where id = $1`,
-      [first.attempt_id],
+      "update private.gmail_send_schedule set next_eligible_at = clock_timestamp() - interval '1 minute' where user_id = $1",
+      [MAX],
     );
-    const third = await reserve({ userId: MAX, key: "max-limit-000000003" });
-    const afterGap = await asService<{ r: Record<string, unknown> }>(
-      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 1) as r",
-      [MAX, third.attempt_id],
+    const second = await reserve({ userId: MAX, key: "max-queue-000000002" });
+    expect(second.result).toBe("queued");
+    const capped = await claimDue(120, 1);
+    expect(capped.claims.filter((row) => row.attempt_id === second.attempt_id)).toEqual([]);
+    const parked = await adminQuery<{ status: string }>(
+      "select status from private.gmail_send_attempts where id = $1",
+      [second.attempt_id],
     );
-    expect(afterGap[0]!.r.failure_code).toBe("rate_limited");
-    expect(afterGap[0]!.r.daily_cap).toBe(1);
+    expect(parked[0]!.status).toBe("queued");
+  });
+
+  it("accepts the hotel domain and refuses a different domain", async () => {
+    const same = await reserve({
+      userId: PRO,
+      key: "pro-domain-00000001",
+      recipient: "other@hotel.example",
+    });
+    expect(same.result).toBe("queued");
+    const other = await reserve({
+      userId: PRO,
+      key: "pro-domain-00000002",
+      recipient: "other@elsewhere.example",
+    });
+    expect(other).toMatchObject({ result: "failed", failure_code: "invalid_recipient", call_provider: false });
+  });
+
+  it("an account pause stops a send until the row is cleared", async () => {
+    await adminQuery(
+      "insert into private.ai_account_pauses (user_id, reason) values ($1, 'generation_rate')",
+      [PRO],
+    );
+    try {
+      const paused = await reserve({ userId: PRO, key: "pro-pause-000000001" });
+      expect(paused).toMatchObject({ result: "paused", call_provider: false, reason: "account" });
+      const attempts = await adminQuery<{ n: number }>(
+        "select count(*)::int as n from private.gmail_send_attempts where idempotency_key = $1",
+        ["pro-pause-000000001"],
+      );
+      expect(attempts[0]!.n).toBe(0);
+    } finally {
+      await adminQuery("delete from private.ai_account_pauses where user_id = $1", [PRO]);
+    }
   });
 
   it("does not let one creator attach another creator's pipeline item", async () => {
@@ -344,15 +421,18 @@ d("D04 Gmail send", () => {
       "select count(*)::int as n from public.outreach_events where creator_id = $1",
       [creator],
     );
+    await dropQueued(PRO);
     const reserved = await reserve({
       userId: PRO,
       key: "pro-link-0000000001",
       pipelineId: item[0]!.id,
     });
-    expect(reserved.result).toBe("reserved");
+    expect(reserved.result).toBe("queued");
     expect(reserved.trip_id).toBe(trip[0]!.id);
+    const claimed = await claimDue();
+    expect(claimed.claims.some((row) => row.attempt_id === reserved.attempt_id)).toBe(true);
     const marked = await asService<{ r: { result: string } }>(
-      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 20) as r",
+      "select public.gmail_send_mark_provider($1::uuid, $2::uuid, 120, 300) as r",
       [PRO, reserved.attempt_id],
     );
     expect(marked[0]!.r.result).toBe("ok");
@@ -455,6 +535,53 @@ d("D04 Gmail send", () => {
     expect(ready[0]!.r.result).toBe("ok");
   });
 
+  it("pauses sends when more than 5 percent of the recent window bounced", async () => {
+    await dropQueued(MAX);
+    const hash = "ab".repeat(32);
+    await adminQuery(
+      `insert into private.gmail_send_attempts
+         (user_id, mail_account_id, idempotency_key, payload_sha256, kind, status,
+          recipient, subject, body, provider_started_at)
+       select $1, $2, 'bounce-key-' || lpad(g::text, 8, '0'), $3, 'pitch', 'sent',
+              $4, 'Bounced', 'body', clock_timestamp()
+         from generate_series(1, 20) as g`,
+      [MAX, mailboxes.get(MAX), hash, RECIPIENT],
+    );
+    const ids = await adminQuery<{ id: string }>(
+      `select id from private.gmail_send_attempts
+        where user_id = $1 and idempotency_key like 'bounce-key-%'
+        order by idempotency_key
+        limit 2`,
+      [MAX],
+    );
+    const first = await asService<{ r: { result: string } }>(
+      "select public.gmail_send_record_bounce($1::uuid, $2::uuid) as r",
+      [MAX, ids[0]!.id],
+    );
+    expect(first[0]!.r.result).toBe("recorded");
+    const second = await asService<{ r: { result: string } }>(
+      "select public.gmail_send_record_bounce($1::uuid, $2::uuid) as r",
+      [MAX, ids[1]!.id],
+    );
+    expect(second[0]!.r.result).toBe("paused");
+    const paused = await reserve({ userId: MAX, key: "max-bounce-00000001" });
+    expect(paused).toMatchObject({ result: "paused", reason: "sends", call_provider: false });
+    const creator = await commitAs<{ r: { result: string } }>(
+      { role: "authenticated", sub: MAX },
+      "select public.admin_unpause_sends($1::uuid) as r",
+      [MAX],
+    );
+    expect(creator.rows[0]!.r.result).toBe("forbidden");
+    const cleared = await commitAs<{ r: { result: string } }>(
+      { role: "authenticated", sub: ADMIN },
+      "select public.admin_unpause_sends($1::uuid) as r",
+      [MAX],
+    );
+    expect(cleared.rows[0]!.r.result).toBe("ok");
+    const again = await reserve({ userId: MAX, key: "max-bounce-00000002" });
+    expect(again.result).toBe("queued");
+  });
+
   it("account deletion erases one creator's send rows and leaves the other's", async () => {
     await adminQuery(
       `insert into private.gmail_send_attempts
@@ -470,6 +597,29 @@ d("D04 Gmail send", () => {
         RECIPIENT,
         mailboxes.get(OTHER),
       ],
+    );
+    await adminQuery(
+      `insert into private.gmail_send_schedule (user_id, next_eligible_at)
+       values ($1, clock_timestamp()), ($2, clock_timestamp())`,
+      [DEL, OTHER],
+    );
+    await adminQuery(
+      `insert into private.gmail_send_pauses (user_id, reason)
+       values ($1, 'bounce_rate'), ($2, 'bounce_rate')`,
+      [DEL, OTHER],
+    );
+    await adminQuery(
+      "insert into private.ai_account_pauses (user_id, reason) values ($1, 'generation_rate'), ($2, 'generation_rate')",
+      [DEL, OTHER],
+    );
+    await adminQuery(
+      "insert into private.abuse_flags (user_id, hotel_id, signal) values ($1, $3, 'injection_attempt'), ($2, $3, 'injection_attempt')",
+      [DEL, OTHER, HOTEL],
+    );
+    await adminQuery(
+      `insert into private.ai_pool_alerts (month_start, level, pool_micros, spent_micros)
+       values ('2026-10-01', 'exhausted', 1, 2)
+       on conflict (month_start, level) do nothing`,
     );
     const attemptIds = await adminQuery<{ id: string; user_id: string }>(
       `select id, user_id from private.gmail_send_attempts
@@ -519,5 +669,29 @@ d("D04 Gmail send", () => {
       "select user_id from private.gmail_sent_events where subject = 'Sub'",
     );
     expect(events.map((row) => row.user_id)).toEqual([OTHER]);
+    const schedules = await adminQuery<{ user_id: string }>(
+      "select user_id from private.gmail_send_schedule where user_id in ($1, $2)",
+      [DEL, OTHER],
+    );
+    expect(schedules.map((row) => row.user_id)).toEqual([OTHER]);
+    const pauses = await adminQuery<{ user_id: string }>(
+      "select user_id from private.gmail_send_pauses where user_id in ($1, $2)",
+      [DEL, OTHER],
+    );
+    expect(pauses.map((row) => row.user_id)).toEqual([OTHER]);
+    const accountPauses = await adminQuery<{ user_id: string }>(
+      "select user_id from private.ai_account_pauses where user_id in ($1, $2)",
+      [DEL, OTHER],
+    );
+    expect(accountPauses.map((row) => row.user_id)).toEqual([OTHER]);
+    const flags = await adminQuery<{ user_id: string }>(
+      "select user_id from private.abuse_flags where user_id in ($1, $2)",
+      [DEL, OTHER],
+    );
+    expect(flags.map((row) => row.user_id)).toEqual([OTHER]);
+    const alerts = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from private.ai_pool_alerts where month_start = '2026-10-01'",
+    );
+    expect(alerts[0]!.n).toBe(1);
   });
 });
