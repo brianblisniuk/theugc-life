@@ -826,7 +826,7 @@ for $10, 150 for $20, and 500 for $40. Prices are config. Existing ledger
 rows are not reduced. `0073` and `0074` are G03 and are not edited. F03
 order files are not edited.
 
-**P02 Rebill billing integration** is a draft on
+**P02 Rebill billing integration** is draft PR #80 on
 `cursor/p02-rebill-billing-9f5b`. D135–D139. Migrations
 `0077_rebill_checkout.sql`, `0078_rebill_apply_event.sql`, and
 `0079_plan_credit_periods.sql`. Hosted checkout only. The webhook verifies

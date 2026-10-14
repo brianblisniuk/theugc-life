@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 7d9e9815e33a25792f684d1e4f372f4cd36a8ed7 (PR #79, P01 plans and pricing, D131-D134, migrations 0075 and 0076). P02 Rebill billing is a draft on cursor/p02-rebill-billing-9f5b. D135-D139. Migrations 0077, 0078, and 0079. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 7d9e9815e33a25792f684d1e4f372f4cd36a8ed7 (PR #79, P01 plans and pricing, D131-D134, migrations 0075 and 0076). P02 Rebill billing is draft PR #80 on cursor/p02-rebill-billing-9f5b. D135-D139. Migrations 0077, 0078, and 0079. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "7d9e9815e33a25792f684d1e4f372f4cd36a8ed7",
   "active_block": "P02 Rebill billing integration",
   "branch": "cursor/p02-rebill-billing-9f5b",
-  "pr": null,
+  "pr": 80,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -22,5 +22,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "P02 Rebill billing integration on cursor/p02-rebill-billing-9f5b. AWAITING_AUDIT. D135-D139. Migrations 0077, 0078, and 0079. Hosted checkout. Webhook /api/billing/webhook. Live charges off unless REBILL_LIVE=true. P01 is merged (PR #79). expected_head stays null. Do not merge."
+  "next_dependency": "PR #80 is P02 Rebill billing integration on cursor/p02-rebill-billing-9f5b. AWAITING_AUDIT. D135-D139. Migrations 0077, 0078, and 0079. Hosted checkout. Webhook /api/billing/webhook. Live charges off unless REBILL_LIVE=true. P01 is merged (PR #79). expected_head stays null. Do not merge."
 }
