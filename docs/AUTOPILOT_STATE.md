@@ -1,7 +1,7 @@
 # AUTOPILOT STATE
 
 **Last verified main:** `4c8eecde65cc537e71131914343751207d2d7f6d` (merge of PR #82, P03b refund ledger fix, migration `0081`, 2026-10-14)  
-**State:** BUILDING. D03 AI assistant and email composer on `cursor/d03-ai-composer-1361`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Max is more context on that same model. Drafts are not sent. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Do not merge.  
+**State:** AWAITING_CI. D03 AI assistant and email composer. Draft PR #84 on `cursor/d03-ai-composer-1361`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Max is more context on that same model. Drafts are not sent. `expected_head` stays null until a later commit can name a SHA this commit does not itself change. Do not merge.  
 **Current frontier:** D03. P03b is merged (PR #82). P03 is merged (PR #81). P02 is merged (PR #80). P01 is merged (PR #79). F03 is merged (PR #78). H01 is merged (PR #77). G03 is merged (PR #76). G02 is merged (PR #75). F04 is merged (PR #73). G01 is merged (PR #74). F02 is merged (PR #72). F05b is merged (PR #70). F01 is merged (PR #71). F05 is merged (PR #68). HB01 is merged (PR #69). C02–C05 is merged (PR #67). DATA01 is merged. UX01 is merged. D100 supersedes contact gating. D101 amounts are superseded by D131. D102 keeps Pass and pauses Free Gmail sync. D106 stays Accepted. D107 is merged with F01. D108 is merged with F05b. D110 is merged with F02. D112 is merged with F04. D114 is merged with G01. D115 is merged with G02. D116 is unused. D120 is merged with H01. D121–D124 are unused. D125 is merged with G03. D130 is merged with F03. D131–D134 are merged with P01. D135–D139 are merged with P02. D140 is merged with P03. D141–D145 are this block. D04 stays open. D095–D098 stay Accepted except where D100 changes contacts. D089–D091 stay Accepted. D082 and D086–D088 stay Proposed and are superseded where D095–D097 say so. D092–D094 stay Proposed.
 
 ## Main history note (not rewritten)
@@ -61,7 +61,7 @@
 - PR #82 — P03b refund ledger fix, migration `0081` — `4c8eecde65cc537e71131914343751207d2d7f6d`
 
 ## Next action
-- D03 AI assistant and email composer is on `cursor/d03-ai-composer-1361`. Migrations `0082` and `0083`. D141–D145. One Claude Sonnet model for Pro and Max. Max is a fuller draft on that model. A successful draft costs one credit. The product does not send mail. `expected_head` stays null. Do not merge.
+- Draft PR #84 is D03 AI assistant and email composer on `cursor/d03-ai-composer-1361`. AWAITING_CI. Migrations `0082` and `0083`. D141–D145. One Claude Sonnet model for Pro and Max. Max is a fuller draft on that model. A successful draft costs one credit. The product does not send mail. `expected_head` stays null. Do not merge.
 - P03b is merged (PR #82, `4c8eecde65cc537e71131914343751207d2d7f6d`). Migration `0081`. A reversal reduces the grant it names. A chargeback after a refund still revokes the subscription.
 - P01 is merged (PR #79, `7d9e9815e33a25792f684d1e4f372f4cd36a8ed7`). D131–D134. Migrations `0075` and `0076`. This PR does not edit those files.
 - F03 is merged (PR #78, `257123db9d830d146fc601a68bb2ccf250ecd49f`). D130. No migration. This PR does not edit the F03 order files.

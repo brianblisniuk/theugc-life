@@ -1,6 +1,6 @@
 # D03 — AI assistant and email composer
 
-**Status:** Binding work order for this PR. Awaiting CI. Do not merge.
+**Status:** Binding work order for draft PR #84. Awaiting CI. Do not merge.
 **Base:** `main` `4c8eecde65cc537e71131914343751207d2d7f6d` (merge of PR #82).
 **Branch:** `cursor/d03-ai-composer-1361`.
 **Migration:** `0082_ai_assistant.sql`, `0083_ai_draft_credit.sql`.

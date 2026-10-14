@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 4c8eecde65cc537e71131914343751207d2d7f6d (PR #82, P03b refund ledger fix, migration 0081). D03 AI composer is on cursor/d03-ai-composer-1361. Migrations 0082 and 0083. D141-D145. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 4c8eecde65cc537e71131914343751207d2d7f6d (PR #82, P03b refund ledger fix, migration 0081). D03 AI composer is draft PR #84 on cursor/d03-ai-composer-1361. Migrations 0082 and 0083. D141-D145. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
-  "state": "BUILDING",
+  "state": "AWAITING_CI",
   "last_recorded_main": "4c8eecde65cc537e71131914343751207d2d7f6d",
   "active_block": "D03",
   "branch": "cursor/d03-ai-composer-1361",
-  "pr": null,
+  "pr": 84,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -22,5 +22,5 @@
     "verify": "success"
   },
   "required_human_action": null,
-  "next_dependency": "D03 AI composer on cursor/d03-ai-composer-1361. Migrations 0082 and 0083. D141-D145. P03b is merged (PR #82). expected_head stays null. Do not merge."
+  "next_dependency": "Draft PR #84 is D03 AI composer on cursor/d03-ai-composer-1361. AWAITING_CI. Migrations 0082 and 0083. D141-D145. P03b is merged (PR #82). expected_head stays null. Do not merge."
 }
