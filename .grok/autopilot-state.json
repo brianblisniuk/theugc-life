@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 4b9f70aaa2d15d955e6633581eae8a2c5833f33a (merge of PR #83, C02-C05 freshness, aggregates, and creator fit, migrations 0084-0087, D146-D150). DEC-DEL account deletion is on cursor/dec-del-account-deletion-8e3c. D151-D155. Migration 0088. expected_head stays null until a later commit can name a SHA this commit does not itself change. pr is filled once the draft PR exists. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 4b9f70aaa2d15d955e6633581eae8a2c5833f33a (merge of PR #83, C02-C05 freshness, aggregates, and creator fit, migrations 0084-0087, D146-D150). DEC-DEL account deletion is draft PR #85 on cursor/dec-del-account-deletion-8e3c. D151-D155. Migration 0088. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
   "schema_version": 1,
   "as_of": "2026-10-14",
   "state": "AWAITING_AUDIT",
   "last_recorded_main": "4b9f70aaa2d15d955e6633581eae8a2c5833f33a",
   "active_block": "DEC-DEL account deletion",
   "branch": "cursor/dec-del-account-deletion-8e3c",
-  "pr": null,
+  "pr": 85,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -22,5 +22,5 @@
     "verify": "unknown"
   },
   "required_human_action": null,
-  "next_dependency": "DEC-DEL account deletion on cursor/dec-del-account-deletion-8e3c. AWAITING_AUDIT. D151-D155. Migration 0088. Branched from main 4b9f70aaa2d15d955e6633581eae8a2c5833f33a (merge of PR #83). expected_head stays null. Do not merge."
+  "next_dependency": "DEC-DEL account deletion is draft PR #85 on cursor/dec-del-account-deletion-8e3c. AWAITING_AUDIT. D151-D155. Migration 0088. Branched from main 4b9f70aaa2d15d955e6633581eae8a2c5833f33a (merge of PR #83). expected_head stays null. Do not merge."
 }
