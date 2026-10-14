@@ -8,7 +8,7 @@ import {
   type GmailActionState,
 } from "@/lib/gmail/actions";
 import {
-  PRIVATE_PROCESSING_CONSENT_TEXT,
+  privateProcessingConsent,
   type GmailAccountStatus,
   type GmailConnectionState,
 } from "@/lib/gmail/contract";
@@ -73,8 +73,15 @@ function StatusMessage({ state }: { state: GmailActionState }) {
   );
 }
 
-function ConsentPrompt({ mailAccountId }: { mailAccountId: string }) {
+function ConsentPrompt({
+  mailAccountId,
+  grantedScopes,
+}: {
+  mailAccountId: string;
+  grantedScopes: readonly string[];
+}) {
   const [state, action, pending] = useActionState(grantGmailConsentAction, idle);
+  const consent = privateProcessingConsent(grantedScopes);
   return (
     <form
       action={action}
@@ -83,7 +90,7 @@ function ConsentPrompt({ mailAccountId }: { mailAccountId: string }) {
       <input type="hidden" name="mail_account_id" value={mailAccountId} />
       {/* The exact words the server hashes into the consent receipt. What is
           shown and what is recorded must be the same text. */}
-      <p className="text-sm text-text">{PRIVATE_PROCESSING_CONSENT_TEXT}</p>
+      <p className="text-sm text-text">{consent.text}</p>
       <button
         type="submit"
         disabled={pending}
@@ -171,7 +178,12 @@ export function GmailConnectionPanel({
                   <p className="text-sm text-muted">{copy.hint}</p>
                 </div>
 
-                {needsConsent ? <ConsentPrompt mailAccountId={account.mailAccountId} /> : null}
+                {needsConsent ? (
+                  <ConsentPrompt
+                    mailAccountId={account.mailAccountId}
+                    grantedScopes={account.grantedScopes}
+                  />
+                ) : null}
 
                 <div className="flex flex-wrap items-start gap-3">
                   {/* Reconnect is the ONLY way back for a mailbox that already

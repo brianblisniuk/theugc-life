@@ -1051,6 +1051,86 @@
   },
   {
     "schema": "public",
+    "name": "gmail_send_bind_pending",
+    "args": "p_user_id uuid, p_mail_account_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_commit",
+    "args": "p_user_id uuid, p_attempt_id uuid, p_provider_message_id text, p_provider_thread_id text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_fail",
+    "args": "p_user_id uuid, p_attempt_id uuid, p_code text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_list_own",
+    "args": "",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_mark_provider",
+    "args": "p_user_id uuid, p_attempt_id uuid, p_daily_cap integer",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_purge_for_deletion",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_deletion_request_id uuid",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_reserve",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_idempotency_key text, p_kind text, p_recipient text, p_subject text, p_body text, p_hotel_id uuid, p_pipeline_item_id uuid, p_trip_id uuid, p_pitch_draft_id uuid, p_provider_thread_id text",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_scope_persist",
+    "args": "p_user_id uuid, p_mail_account_id uuid, p_expected_revision bigint, p_oauth_intent_seq bigint, p_provider_account_subject text, p_email_address text, p_granted_scopes text[], p_refresh_ciphertext text, p_refresh_iv text, p_refresh_auth_tag text, p_key_version text, p_provider_refresh_expires_at timestamp with time zone",
+    "searchPath": "public, private, pg_temp",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "grant_access_entitlement",
     "args": "p_user_id uuid, p_access_type text, p_destination_id uuid, p_source text, p_source_reference text, p_starts_at timestamp with time zone, p_expires_at timestamp with time zone",
     "searchPath": "public, pg_temp",

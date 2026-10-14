@@ -137,6 +137,7 @@ d("B02 credential boundary (0036)", () => {
            and p.proname not like 'gmail\\_reply\\_%'
            and p.proname not like 'gmail\\_commercial\\_%'
            and p.proname not like 'gmail\\_incremental\\_sync\\_%'
+           and p.proname not like 'gmail\\_send\\_%'
       `);
       // B02's own surface. B03 adds definer functions of its own in 0037,
       // B04 in 0038, B05 in 0039, B06 in 0040, B07 in 0044, and B08 in 0047 —

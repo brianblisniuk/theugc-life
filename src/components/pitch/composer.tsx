@@ -4,13 +4,15 @@
  * Editable pitch draft (D110).
  *
  * Copy puts the text on the clipboard. The mail link opens the creator's own
- * client. Neither button sends mail, and neither marks the hotel as pitched.
+ * client. Send is a separate explicit action. None of them mark the hotel
+ * as pitched.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { draftPitchWithAssistantAction } from "@/lib/ai/actions";
 import { CREDITS_CONFIG } from "@/lib/credits/config";
+import { sendPitchFromGmailAction } from "@/lib/gmail/send/actions";
 import {
   recordPitchDeliveryAction,
   savePitchDraftAction,
@@ -42,6 +44,9 @@ export function PitchComposer({
   recipientEmail,
   suggestionHref,
   assistant,
+  canSend = false,
+  mailAccountId = null,
+  hasSendScope = false,
 }: {
   hotelId: string;
   hotelName: string;
@@ -57,6 +62,9 @@ export function PitchComposer({
   assistant:
     | { status: "on"; priority: boolean; mail: readonly { id: string; subject: string }[] }
     | { status: "off"; reason: "free" | "unknown" };
+  canSend?: boolean;
+  mailAccountId?: string | null;
+  hasSendScope?: boolean;
 }) {
   const router = useRouter();
   const [subjectValue, setSubjectValue] = useState(subject);
@@ -65,6 +73,15 @@ export function PitchComposer({
   const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [selectedMail, setSelectedMail] = useState<string[]>([]);
+  const idempotencyKey = useRef<string | null>(null);
+  const inflight = useRef(false);
+  const locked = useRef(false);
+
+  function mintKey(): string {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
 
   function formData(): FormData {
     const data = new FormData();
@@ -122,6 +139,36 @@ export function PitchComposer({
     );
     setPending(false);
   }
+
+  async function onSend() {
+    if (!canSend || !mailAccountId || !hasSendScope || !recipientEmail) return;
+    if (inflight.current || locked.current) return;
+    inflight.current = true;
+    setPending(true);
+    if (!idempotencyKey.current) idempotencyKey.current = mintKey();
+    const data = new FormData();
+    data.set("hotelId", hotelId);
+    data.set("mailAccountId", mailAccountId);
+    data.set("idempotencyKey", idempotencyKey.current);
+    data.set("kind", "pitch");
+    data.set("recipient", recipientEmail);
+    data.set("subject", subjectValue);
+    data.set("body", bodyValue);
+    data.set("tripId", tripId ?? "");
+    data.set("draftId", savedId ?? "");
+    const result = await sendPitchFromGmailAction(data);
+    if (result.result === "sent" || result.result === "unknown") locked.current = true;
+    else if (result.retry) idempotencyKey.current = mintKey();
+    setNote(result.message);
+    inflight.current = false;
+    setPending(false);
+  }
+
+  const returnTo = encodeURIComponent(`/app/hotels/${hotelId}/pitch`);
+  const connectHref = `/api/integrations/gmail/oauth/start?return_to=${returnTo}`;
+  const allowSendHref = mailAccountId
+    ? `/api/integrations/gmail/oauth/start?purpose=grant_send&mail_account_id=${mailAccountId}&return_to=${returnTo}`
+    : connectHref;
 
   const mailto = buildMailto({
     email: recipientEmail,
@@ -292,10 +339,37 @@ export function PitchComposer({
         >
           {recipientEmail ? `Open mail draft to ${hotelName}` : "Open mail draft"}
         </a>
+        {canSend && mailAccountId && hasSendScope && recipientEmail ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void onSend()}
+            className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+          >
+            Send
+          </button>
+        ) : null}
+        {canSend && !mailAccountId ? (
+          <a
+            href={connectHref}
+            className="inline-flex border border-border px-4 py-2 text-sm font-medium text-text"
+          >
+            Connect Gmail to send
+          </a>
+        ) : null}
+        {canSend && mailAccountId && !hasSendScope ? (
+          <a
+            href={allowSendHref}
+            className="inline-flex border border-border px-4 py-2 text-sm font-medium text-text"
+          >
+            Allow sending
+          </a>
+        ) : null}
       </div>
       <p className="max-w-prose text-sm text-muted">
         Copy and the mail draft stay on your device. Neither sends the message, and neither marks{" "}
-        {hotelName} as pitched.{" "}
+        {hotelName} as pitched. Send is a separate action from your connected Gmail, and it does
+        not mark {hotelName} as pitched either.{" "}
         <a className="underline" href={suggestionHref}>
           Start again from the suggestion
         </a>

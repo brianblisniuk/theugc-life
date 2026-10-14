@@ -5261,3 +5261,101 @@ Editorial append-only reviewer foreign keys stay `NO ACTION`. This path does
 not set them null and does not rewrite that evidence. A creator id on one of
 those columns stops erasure. A creator account does not normally have those
 rows.
+
+## D156 — Gmail send is an explicit Pro or Max action
+
+Status: **Accepted** for this block.
+
+A creator sends a pitch or a reply from inside TheUGC.life only by choosing
+Send. Free and a Destination Pass cannot. An admin entitlement cannot. The
+check is an active `pro` or `max` row on `access_entitlements`, in the
+database, on reserve and again immediately before the provider call.
+
+`gmail.send` is requested only when the creator first chooses Send, through
+a `grant_send` authorization on a mailbox that is already connected.
+Connect and reconnect stay on the B02 scopes and are refused if they ask
+for `gmail.send`. Widening the granted set requires the send consent text,
+policy version `gmail-private-processing/2026-10-14-send`.
+
+A template, a copied draft, a mailto link, and an AI draft are not sent.
+Nothing in this block schedules a follow-up. That remains D05.
+
+## D157 — One idempotency key, one outcome, and a send limit
+
+Status: **Accepted** for this block.
+
+The client sends an idempotency key of 16 to 80 characters from
+`[A-Za-z0-9_-]`. The same creator and the same key return the stored
+outcome. A different payload on that key is `idempotency_conflict` and
+does not send. A key that has reached `provider_called`, `unknown`, or
+`sent` never calls Gmail again.
+
+The provider attempt is recorded before the HTTP call. A transport error
+after that call is stored as `unknown`. The button keeps that key. A
+definite non-send failure (`plan_required`, `scope_missing`,
+`not_connected`, `token_revoked`, `quota`, `rate_limited`, `allowlist`,
+`kill_switch`, `provider_error`, `invalid_recipient`, `mailbox_unusable`)
+is stored on the attempt. The button may mint a new key only after one of
+those.
+
+There is at least 10 seconds between provider attempts for one creator.
+The default daily cap is 20 provider attempts per UTC day. `GMAIL_SEND_DAILY_LIMIT`
+may lower it. The database clamps a higher setting to 40 and a lower
+setting to 1. A replay does not count and does not call Gmail.
+
+One recipient. No Cc or Bcc. Subject is 1 to 200 characters with no line
+break. Body is 1 to 8000 characters. A pitch names a hotel the creator has
+unlocked, and the recipient matches a non-invalid contact email on that
+hotel. A missing unlock is `not_found` and writes no row.
+
+## D158 — A sent event is linked, and CRM state stays put
+
+Status: **Accepted** for this block.
+
+A successful send writes one private sent event with Gmail's message id
+and thread id, and the hotel, pipeline item, trip, and draft the creator
+named. It does not change `pipeline_items.status` or `first_pitched_at`.
+It does not insert `outreach_events`. Pitch draft delivery stays
+`unsent`, `copied`, or `mailto_opened`.
+
+When the creator named a pipeline item, the existing D06
+`bind_pipeline_inbox_thread` runs once that thread is stored on the
+mailbox. Until then the event stays `pending_thread`, and a later sync
+retries the bind. `item_already_bound` and `thread_already_bound` are
+recorded as `conflict`. They do not move the binding the creator already
+made. The message is still sent.
+
+If the pitch omits a pipeline item, the single non-closed item for that
+creator and hotel is attached, and its trip is used when the creator did
+not name one.
+
+## D159 — Whether a send costs credits
+
+Status: **Proposed**.
+
+No accepted decision charges credits for sending. This block does not
+debit the ledger. A successful send costs no credits.
+
+Question for Brian: should a successful Gmail send cost credits, and if
+so how many?
+
+## D160 — Allowlist outside production, and a kill switch
+
+Status: **Accepted** for this block.
+
+`GMAIL_SEND_DISABLED=true`, `1`, or `yes` refuses every send and records
+`kill_switch`. Outside production the recipient allowlist is on. An unset
+`GMAIL_SEND_ALLOWLIST` allows only `hello@theugc.life`. Staging sets that
+address. Production allows any recipient unless the allowlist is set.
+Tests mock Gmail. The real adapter throws before any network call when
+`NODE_ENV` is `test`.
+
+## D161 — Account deletion erases send rows
+
+Status: **Accepted** for this block.
+
+`gmail_send_purge_for_deletion` deletes that mailbox's sent events and
+then its send attempts, under the same deletion-request checks as the
+other Gmail purges. `erase_creator_account` calls it inside the mailbox
+loop. Another creator's rows stay. Migration `0088` is not edited. The
+replacement lives in `0089`.

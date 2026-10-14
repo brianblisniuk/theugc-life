@@ -2584,6 +2584,24 @@ evidence ("Nike and Adidas") is preserved as ONE unresolved private fact.
 segmentation/observation-identity behavior). `OUTREACH_DETECTOR_VERSION`/
 `CLASSIFIER_INPUT_TRANSFORM_VERSION` are unchanged.
 
+## 5n. Gmail send (migration 0089)
+
+`private.gmail_send_attempts` is one explicit send. The idempotency key is
+unique per creator. `provider_called` is written before the Gmail call.
+`private.gmail_sent_events` stores the Gmail message id, thread id, and the
+hotel, pipeline item, trip, and draft it belongs to. It does not change
+pipeline status and it does not insert `outreach_events`.
+
+Both tables have RLS enabled and no policies. `anon`, `authenticated`, and
+`public` cannot read them. `gmail_send_list_own()` returns the signed-in
+creator's events without the body. The other send functions are
+`service_role` only. `gmail_send_purge_for_deletion` removes both tables for
+one mailbox during account erasure (D161).
+
+`grant_send` is an OAuth purpose on a mailbox that is already connected. It
+asks for `gmail.send` together with the B02 scopes. Connect and reconnect
+that include `gmail.send` are refused before a transaction row exists.
+
 ## 6. Editorial evidence and signals
 
 ### contact_signals
@@ -2927,6 +2945,7 @@ Attribution and conversion record. Payout implementation is separate.
 - Subscription expiry never deletes creator workflow.
 - Closing a hotel preserves historical references.
 - Account deletion must allow PII/private data deletion or anonymization while preserving lawful anonymous aggregates.
+- Gmail send attempts and sent events are private to that creator and are erased with the mailbox during account deletion (D161, migration 0089).
 - Hotel merge uses canonicalization, not blind deletion.
 - Historical events referencing merged hotels must be migrated transactionally or resolved through canonical IDs.
 

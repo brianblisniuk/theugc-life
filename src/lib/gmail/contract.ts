@@ -36,6 +36,19 @@ export const B02_REQUESTED_SCOPES: readonly string[] = [
   GMAIL_READONLY_SCOPE,
 ];
 
+/**
+ * What a creator asks for the first time they choose Send (D156).
+ *
+ * This is incremental authorization on a mailbox that is already connected
+ * with `gmail.readonly`. Connect and reconnect keep `B02_REQUESTED_SCOPES`.
+ */
+export const SEND_INCREMENTAL_SCOPES: readonly string[] = [
+  OPENID_SCOPE,
+  USERINFO_EMAIL_SCOPE,
+  GMAIL_READONLY_SCOPE,
+  GMAIL_SEND_SCOPE,
+];
+
 /** Scopes 0035 permits at all. Google must never hand back anything outside it. */
 export const APPROVED_SCOPES: readonly string[] = [
   GMAIL_READONLY_SCOPE,
@@ -66,6 +79,10 @@ export function hasReadScope(scopes: readonly string[]): boolean {
   return scopes.includes(GMAIL_READONLY_SCOPE);
 }
 
+export function hasSendScope(scopes: readonly string[]): boolean {
+  return scopes.includes(GMAIL_SEND_SCOPE);
+}
+
 /** Any scope outside the approved set, for a refusal that can name what it saw. */
 export function forbiddenScopes(scopes: readonly string[]): string[] {
   return scopes.filter((s) => !APPROVED_SCOPES.includes(s));
@@ -93,6 +110,33 @@ export const PRIVATE_PROCESSING_CONSENT_TEXT =
   "other creators and does not contribute to any shared or network intelligence. " +
   "You can withdraw this permission, disconnect the mailbox, or request deletion " +
   "of the data derived from it at any time.";
+
+/**
+ * The words shown when the granted set includes `gmail.send` (D156).
+ *
+ * A readonly receipt does not cover sending. The database refuses the readonly
+ * policy version once the mailbox holds `gmail.send`.
+ */
+export const SEND_PROCESSING_POLICY_VERSION = "gmail-private-processing/2026-10-14-send";
+
+export const SEND_PROCESSING_CONSENT_TEXT =
+  "Allow TheUGC to send email from this Gmail account only when you explicitly choose Send. " +
+  "Drafts, templates, and AI drafts are not sent on their own. " +
+  "This applies to your own workspace only. Your Gmail data is not shared with " +
+  "other creators and does not contribute to any shared or network intelligence. " +
+  "You can withdraw this permission, disconnect the mailbox, or request deletion " +
+  "of the data derived from it at any time.";
+
+/** The receipt text that matches the scopes the mailbox actually holds. */
+export function privateProcessingConsent(scopes: readonly string[]): {
+  policyVersion: string;
+  text: string;
+} {
+  if (hasSendScope(scopes)) {
+    return { policyVersion: SEND_PROCESSING_POLICY_VERSION, text: SEND_PROCESSING_CONSENT_TEXT };
+  }
+  return { policyVersion: PRIVATE_PROCESSING_POLICY_VERSION, text: PRIVATE_PROCESSING_CONSENT_TEXT };
+}
 
 /**
  * The states the account surface can render — B01's state machine, plus the one
