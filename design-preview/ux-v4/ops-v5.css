@@ -182,3 +182,5 @@
 .ops-lead-right .btn{min-height:32px;white-space:nowrap}
 @media(max-width:1390px){.ops-card-grid{grid-template-columns:1fr}.ops-aside{display:grid;grid-template-columns:1fr 1fr}}
 @media(max-width:680px){.ops-aside{grid-template-columns:1fr}.ops-lead-table{min-width:790px}}
+
+.ops-wrap [hidden]{display:none!important}
