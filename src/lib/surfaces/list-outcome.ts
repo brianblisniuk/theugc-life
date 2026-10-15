@@ -34,9 +34,9 @@ export const TRIP_LIST_COPY = {
 } as const;
 
 export const DISCOVER_LIST_COPY = {
-  errorTitle: "We couldn’t load hotels just now",
-  errorBody: "Something went wrong fetching results. Try again, or adjust your filters.",
-  emptyTitle: "No published hotels yet",
+  errorTitle: "Hotels couldn't be loaded.",
+  errorBody: "Your search is still available. Try again.",
+  emptyTitle: "No published hotels yet.",
   emptyBody: "Hotels appear here once they are in the published catalog.",
 } as const;
 

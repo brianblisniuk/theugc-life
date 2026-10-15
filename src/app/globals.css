@@ -1,24 +1,86 @@
 @import "tailwindcss";
 
 /*
- * Semantic design tokens (DESIGN_SYSTEM.md §9). Branding can change centrally by
- * editing these variables. Colors are defined on :root and overridden for dark
- * mode; @theme maps them to Tailwind utilities (bg-background, text-muted, etc.).
- * Accent is Sun #FFE01B (D048). It is a brand / action color, never a status color.
- * Warning stays a separate darker orange so it cannot be read as the accent.
+ * UX02 tokens. Dark is the default. Light uses the same names on
+ * [data-theme="light"]. Accent #DFFF4F is a fill. Text on it is #17191B.
+ * The accent is never a text or icon color. Tailwind aliases point at these
+ * names so existing utilities follow the active theme.
  */
-:root {
-  --background: #ffffff;
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121416;
+  --surface: #1c1f22;
+  --text: #f4f5f3;
+  --text-secondary: #c8cdd1;
+  --muted: #a8afb4;
+  --border: #34393d;
+  --control-border: #8b9196;
+  --accent: #dfff4f;
+  --accent-ink: #17191b;
+  --accent-edge: #5e6c00;
+  --success: #3ebe78;
+  --warning: #e39a4a;
+  --danger: #f08a84;
+  --focus: #8eb4ff;
+  --process: #8eb4ff;
+  --success-soft: #13261c;
+  --warning-soft: #2a2116;
+  --danger-soft: #2c181c;
+  --process-soft: #172033;
+  --neutral-soft: #24282b;
+  --private-bg: #262c33;
+  --private-text: #d5dce3;
+  --placeholder: #2c3130;
+  --skeleton: #2a2e32;
+  --map-land: #2a2f2c;
+  --map-water: #16191c;
+  --map-line: #3e4540;
+  --pin: #f4f5f3;
+  --pin-ring: #121416;
+  --hover: #22262a;
+  --header-h: 64px;
+  --subnav-h: 48px;
+  --bottom-nav-h: 56px;
+  --background: var(--bg);
+  --accent-contrast: var(--accent-ink);
+  --radius: 8px;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fafaf8;
   --surface: #ffffff;
-  --text: #111111;
-  --muted: #555555;
-  --border: #e6e6e6;
-  --accent: #ffe01b;
-  --accent-contrast: #111111;
-  --success: #0b6b4b;
-  --warning: #b4400b;
-  --danger: #dc2626;
-  --radius: 6px;
+  --text: #17191b;
+  --text-secondary: #52585e;
+  --muted: #6c7379;
+  --border: #e3e6e7;
+  --control-border: #8a9094;
+  --accent: #dfff4f;
+  --accent-ink: #17191b;
+  --accent-edge: #5e6c00;
+  --success: #177245;
+  --warning: #a45113;
+  --danger: #b42332;
+  --focus: #225fcc;
+  --process: #225fcc;
+  --success-soft: #e5f4ec;
+  --warning-soft: #f8ede4;
+  --danger-soft: #f8e6e8;
+  --process-soft: #e7eef8;
+  --neutral-soft: #f3f4f2;
+  --private-bg: #e6ebf0;
+  --private-text: #243040;
+  --placeholder: #e4e6e2;
+  --skeleton: #e8ebe8;
+  --map-land: #e4e7e2;
+  --map-water: #f7f8f6;
+  --map-line: #c5cac3;
+  --pin: #17191b;
+  --pin-ring: #ffffff;
+  --hover: #f3f4f1;
+  --background: var(--bg);
+  --accent-contrast: var(--accent-ink);
 }
 
 @theme inline {
@@ -36,17 +98,35 @@
 }
 
 body {
-  background: var(--background);
+  background: var(--bg);
   color: var(--text);
-  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-archivo), Archivo, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 22px;
   -webkit-font-smoothing: antialiased;
 }
 
 /*
- * Focus uses ink. Sun on paper does not meet a visible-focus contrast bar
- * (DESIGN_SYSTEM.md §7). The accent remains the action fill.
+ * Focus is the token ring, not the accent. #DFFF4F on paper is 1.08:1.
  */
 :focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+@media (max-width: 1023px) {
+  :root,
+  [data-theme="dark"],
+  [data-theme="light"] {
+    --header-h: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

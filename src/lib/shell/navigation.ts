@@ -9,11 +9,11 @@
 import { isUuid } from "@/lib/hotels/ids";
 
 export const PRIMARY_NAV = [
-  { href: "/app", label: "Inicio" },
-  { href: "/app/discover", label: "Descubrir" },
+  { href: "/app", label: "Home" },
+  { href: "/app/discover", label: "Discover" },
   { href: "/app/pipeline", label: "Pipeline" },
-  { href: "/app/trips", label: "Viajes" },
-  { href: "/app/profile", label: "Perfil" },
+  { href: "/app/trips", label: "Trips" },
+  { href: "/app/profile", label: "Profile" },
 ] as const;
 
 export const UTILITY_NAV = [
@@ -21,11 +21,23 @@ export const UTILITY_NAV = [
   { href: "/app/billing", label: "Billing" },
 ] as const;
 
+/** Four Hotel Detail tabs. Map, inbox, collaboration, and trip stay anchors inside them. */
+export const HOTEL_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "intelligence", label: "Intelligence" },
+  { id: "contact", label: "Contact" },
+  { id: "work", label: "My work" },
+] as const;
+
+export type HotelTabId = (typeof HOTEL_TABS)[number]["id"];
+
 export const HOTEL_SECTIONS = [
+  { id: "overview", label: "Overview" },
   { id: "identity", label: "Overview" },
   { id: "map", label: "Map" },
   { id: "intelligence", label: "Intelligence" },
   { id: "contact", label: "Contact" },
+  { id: "work", label: "My work" },
   { id: "activity", label: "Activity" },
   { id: "inbox", label: "Inbox" },
   { id: "collaboration", label: "Collaboration" },
@@ -33,6 +45,21 @@ export const HOTEL_SECTIONS = [
 ] as const;
 
 export type HotelSectionId = (typeof HOTEL_SECTIONS)[number]["id"];
+
+export function hotelTabForHash(hash: string): HotelTabId {
+  if (hash === "intelligence") return "intelligence";
+  if (hash === "contact") return "contact";
+  if (
+    hash === "work" ||
+    hash === "activity" ||
+    hash === "inbox" ||
+    hash === "collaboration" ||
+    hash === "trip"
+  ) {
+    return "work";
+  }
+  return "overview";
+}
 
 export type PipelineSurface = "all" | "inbox" | "collaborations";
 
@@ -214,11 +241,11 @@ export function pitchHref(hotelId: string, tripId?: string | null): string | nul
 }
 
 export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
-  const home: Crumb = { label: "Inicio", href: "/app" };
+  const home: Crumb = { label: "Home", href: "/app" };
   const current: Crumb = { label: hotelName.trim() || "Hotel" };
   switch (origin.kind) {
     case "discover":
-      return [home, { label: "Descubrir", href: "/app/discover" }, current];
+      return [home, { label: "Discover", href: "/app/discover" }, current];
     case "pipeline":
       return [home, { label: "Pipeline", href: "/app/pipeline" }, current];
     case "inbox":
@@ -238,8 +265,8 @@ export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
     case "trip":
       return [
         home,
-        { label: "Viajes", href: "/app/trips" },
-        { label: "Viaje", href: `/app/trips/${origin.tripId}` },
+        { label: "Trips", href: "/app/trips" },
+        { label: "Trip", href: `/app/trips/${origin.tripId}` },
         current,
       ];
   }
@@ -298,7 +325,7 @@ export function pipelineRowLinks(
 }
 
 export function listCrumbs(current: string, parent?: { href: string; label: string }): Crumb[] {
-  const home: Crumb = { label: "Inicio", href: "/app" };
+  const home: Crumb = { label: "Home", href: "/app" };
   if (!parent) return [home, { label: current }];
   return [home, parent, { label: current }];
 }

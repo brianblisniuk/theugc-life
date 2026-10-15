@@ -54,7 +54,7 @@ export type MaxPlanFlag = (typeof MAX_PLAN_FLAGS)[number];
 
 export function unlockContactLabel(cost: number = CREDITS_CONFIG.unlockCost): string {
   const unit = cost === 1 ? "credit" : "credits";
-  return `Unlock contact (${cost} ${unit})`;
+  return `Unlock contact · ${cost} ${unit}`;
 }
 
 export const ALREADY_UNLOCKED_LABEL = "Already unlocked";

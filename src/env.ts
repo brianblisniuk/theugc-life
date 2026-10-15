@@ -20,8 +20,8 @@ const clientSchema = z.object({
   // Analytics is optional: absent key => analytics no-ops (see lib/analytics).
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
-  // Maps JavaScript API (D079). Absent or blank => Discover and Hotel Detail
-  // render no map and no error. Never a server secret.
+  // Maps JavaScript API (D079). Absent or blank => the map slot says it is
+  // unavailable. The hotel list still renders. Never a server secret.
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();

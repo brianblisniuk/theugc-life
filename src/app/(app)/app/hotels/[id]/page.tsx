@@ -28,14 +28,15 @@ import {
   PremiumIntelligencePanel,
 } from "@/components/hotels/intelligence-panel";
 import { DecisionIntelligence } from "@/components/intelligence/decision-panel";
-import { MetricSignals } from "@/components/hotels/metric-signals";
-import { NoPhoto } from "@/components/hotels/no-photo";
-import { StarRating } from "@/components/hotels/star-rating";
+import { MetricCells, RankingBoards } from "@/components/hotels/metric-signals";
+import { NextStepPanel } from "@/components/hotels/next-step-panel";
+import { Methodology } from "@/components/hotels/methodology";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
 import { PastCollaborations } from "@/components/profile/past-collaborations";
 import { HotelSectionNav } from "@/components/shell/hotel-section-nav";
-import { PageHeader } from "@/components/shell/page-header";
 import { resolveSession } from "@/lib/auth/guards";
+import { loadBillingAccess } from "@/lib/billing/queries";
+import { FREE_LIMITS } from "@/lib/config";
 import { getCollaborationWorkspace } from "@/lib/collaboration/queries";
 import { listCollaborationContracts } from "@/lib/contracts/queries";
 import { getCollaborationSuggestions } from "@/lib/gmail/collaboration/queries";
@@ -43,6 +44,7 @@ import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/quer
 import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
+import { isPublishedStarRating } from "@/lib/hotels/publication";
 import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
 import {
   getHotelById,
@@ -72,12 +74,22 @@ import { getPastCollaborations } from "@/lib/profile/queries";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
 import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
 import {
-  backLink,
   hotelCrumbs,
   parseHotelOrigin,
+  pitchHref,
   pipelineReturnHref,
 } from "@/lib/shell/navigation";
+import { tripLimitMessage } from "@/lib/trips/display";
 import { listTrips } from "@/lib/trips/queries";
+import {
+  CONTACT_ERROR_BODY,
+  CONTACT_ERROR_TITLE,
+  NO_CONTACT_TITLE,
+  NO_RELATIONSHIP,
+} from "@/lib/ux02/copy";
+import { initialsFromName } from "@/lib/ux02/initials";
+import { nextStep, type ContactFact, type RelationshipFact } from "@/lib/ux02/next-step";
+import { planChipFromAccess } from "@/lib/ux02/plan-chip";
 
 /** Deduped per request so metadata and the page share one fetch. */
 const loadHotel = cache(getHotelById);
@@ -236,99 +248,128 @@ export default async function HotelDetailPage({
       : [];
 
   const trail = hotelCrumbs(origin, hotel.name);
+  const contactFact: ContactFact =
+    contactState === "locked"
+      ? "locked"
+      : contactState === "contacts"
+        ? "ready"
+        : contactState === "empty"
+          ? "empty"
+          : "error";
+  const relationshipFact: RelationshipFact =
+    relationship.status === "error"
+      ? { status: "error" }
+      : relationship.status === "none"
+        ? { status: "none" }
+        : { status: "open", stage: relationship.relationship.status };
+  const billing =
+    session.status === "authenticated"
+      ? await loadBillingAccess(session.session.userId)
+      : ({ status: "error" } as const);
+  const plan = session.status === "authenticated" ? planChipFromAccess(billing) : null;
+  const pitch = pitchHref(hotel.id) ?? "#work";
+  const step = nextStep({
+    relationship: relationshipFact,
+    contact: contactFact,
+    balance,
+    cost,
+    pitchHref: pitch,
+    plan,
+  });
+  const classification =
+    hotel.starRating !== null && isPublishedStarRating(hotel.starRating)
+      ? `${hotel.starRating}-star classification`
+      : null;
+  const initials = initialsFromName(hotel.name);
 
   return (
-    <div className="space-y-8">
+    <div className="ux-hotel">
+      <div className="ux-hotel-main">
       <AnalyticsPageView event="hotel_viewed" />
 
-      <PageHeader title={hotel.name} crumbs={trail} back={backLink(trail)} />
-      {firstHotelNotice && relationship.status === "open" ? (
-        <p
-          className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-contrast"
-          role="status"
-        >
-          {FIRST_RUN_COPY.savedToast}
-        </p>
-      ) : null}
-      <HotelSectionNav />
-
-      {/* 1. Identity / location. No photograph is invented (D064). */}
-      <header id="identity" className="grid scroll-mt-24 gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
-        <NoPhoto name={hotel.name} />
-        <div className="space-y-3">
-          <div className="space-y-1">
-            {location ? <p className="text-sm text-muted">{location}</p> : null}
-            {hotel.address ? <p className="text-sm text-muted">{hotel.address}</p> : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <VerificationBadge status={hotel.verificationStatus} />
-            {type ? <span className="text-sm text-muted">{type}</span> : null}
-            <StarRating rating={hotel.starRating} />
-            {statusNote ? (
-              <span className="rounded-[var(--radius-app)] border border-warning/40 px-2 py-0.5 text-xs font-medium text-warning">
-                {statusNote}
+      <header className="ux-stack" id="overview">
+        <p className="ux-eyebrow">Hotel information</p>
+        <nav className="ux-wrap ux-meta" aria-label="Breadcrumb">
+          {trail.map((crumb, index) =>
+            crumb.href ? (
+              <a key={crumb.href} href={crumb.href}>
+                {crumb.label}
+                {index < trail.length - 1 ? <span aria-hidden="true"> / </span> : null}
+              </a>
+            ) : (
+              <span key={crumb.label} aria-current="page">
+                {crumb.label}
               </span>
-            ) : null}
-          </div>
-
-          {(hotel.websiteUrl || hotel.instagramUrl) && (
-            <div className="flex flex-wrap gap-3 text-sm">
-              {hotel.websiteUrl ? (
-                <a
-                  href={hotel.websiteUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="underline hover:no-underline"
-                >
-                  {`Official website for ${hotel.name}`}
-                </a>
-              ) : null}
-              {hotel.instagramUrl ? (
-                <a
-                  href={hotel.instagramUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="underline hover:no-underline"
-                >
-                  {`Instagram profile for ${hotel.name}`}
-                </a>
-              ) : null}
-            </div>
+            ),
           )}
+        </nav>
+        <h1 className="ux-h1">{hotel.name}</h1>
+        {location || type ? <p className="ux-lede">{[location, type].filter(Boolean).join(" · ")}</p> : null}
+        <div className="ux-hero" id="identity">
+          <strong>{initials}</strong>
+          <span>No verified photograph on file.</span>
+          <span className="sr-only">No photograph</span>
         </div>
+        <div className="ux-wrap">
+          {classification ? <span className="ux-tag">{classification}</span> : null}
+          <VerificationBadge status={hotel.verificationStatus} />
+          {hotel.activeStatus === "active" ? <span className="ux-tag">Open</span> : null}
+          {statusNote ? <span className="ux-tag ux-tag-warning">{statusNote}</span> : null}
+        </div>
+        {hotel.address ? <p className="ux-meta">{hotel.address}</p> : null}
+        <div className="ux-wrap">
+          {hotel.websiteUrl ? (
+            <a className="ux-meta" href={hotel.websiteUrl} target="_blank" rel="noreferrer noopener">
+              Website
+            </a>
+          ) : null}
+          {hotel.instagramUrl ? (
+            <a className="ux-meta" href={hotel.instagramUrl} target="_blank" rel="noreferrer noopener">
+              Instagram
+            </a>
+          ) : null}
+        </div>
+        {firstHotelNotice && relationship.status === "open" ? (
+          <p className="ux-notice" role="status">
+            {FIRST_RUN_COPY.savedToast}
+          </p>
+        ) : null}
       </header>
+      <HotelSectionNav />
 
       <div id="map" className="scroll-mt-24">
         <HotelMap pins={[loaded.mapPin]} variant="section" />
       </div>
 
       {/* 2. Creator intelligence — public layer, then the premium layer */}
-      <Section id="intelligence" title="Creator intelligence">
-        <div className="space-y-4">
-          <IntelligencePanel result={intelligence} />
-          <PremiumIntelligencePanel state={premiumState} result={premium} />
-          <NetworkIntelligencePanel
-            hotelId={hotel.id}
-            network={network}
-            rank={rank}
-            prioritized={prioritized}
-          />
-          <PersonalFacts load={ownFacts} />
-          <MetricSignals
-            destinationName={hotel.destination?.name ?? null}
-            signals={metricSignals}
-            rankings={metricRankings}
-          />
-          <DecisionIntelligence
-            hotelId={hotel.id}
-            strength={strength}
-            personal={personal}
-            fit={fit}
-            decision={fitDecision}
-          />
+      <section className="ux-stack" id="intelligence">
+        <div className="ux-results">
+          <div className="ux-stack-sm">
+            <p className="ux-eyebrow">Creator network</p>
+            <h2 className="ux-name">Creator intelligence</h2>
+            <p className="ux-meta">Signals based on confirmed creator activity.</p>
+          </div>
+          <Methodology />
         </div>
-      </Section>
+        <MetricCells signals={metricSignals} strength={strength} />
+        <IntelligencePanel result={intelligence} />
+        <PremiumIntelligencePanel state={premiumState} result={premium} />
+        <NetworkIntelligencePanel
+          hotelId={hotel.id}
+          network={network}
+          rank={rank}
+          prioritized={prioritized}
+        />
+        <PersonalFacts load={ownFacts} />
+        <RankingBoards destinationName={hotel.destination?.name ?? null} rankings={metricRankings} />
+        <DecisionIntelligence
+          hotelId={hotel.id}
+          strength={strength}
+          personal={personal}
+          fit={fit}
+          decision={fitDecision}
+        />
+      </section>
 
       {/* 3. Premium contact */}
       <Section id="contact" title="Hotel contact">
@@ -374,20 +415,18 @@ export default async function HotelDetailPage({
           </div>
         ) : contactState === "fetch-error" ? (
           <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            <h3 className="text-base font-semibold text-text">
-              Contact details couldn&rsquo;t be loaded
-            </h3>
-            <p className="mt-2 max-w-prose text-sm text-muted">
-              This is a temporary problem on our side, not a missing contact. Reload the page to try
-              again.
-            </p>
+            <h3 className="text-base font-semibold text-text">{CONTACT_ERROR_TITLE}</h3>
+            <p className="mt-2 max-w-prose text-sm text-muted">{CONTACT_ERROR_BODY}</p>
+            <a className="ux-btn" href="">
+              Retry
+            </a>
           </div>
         ) : (
           <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6">
             {via === "unlock" ? (
               <p className="text-sm font-semibold text-text">Already unlocked</p>
             ) : null}
-            <h3 className="text-base font-semibold text-text">No contact on file yet</h3>
+            <h3 className="text-base font-semibold text-text">{NO_CONTACT_TITLE}</h3>
             <p className="max-w-prose text-sm text-muted">
               {via === "unlock"
                 ? "This unlock did not return an email. Reporting it is how a courtesy credit starts."
@@ -399,7 +438,10 @@ export default async function HotelDetailPage({
       </Section>
 
       {/* 4. The creator's private relationship */}
-      <Section id="activity" title="Your activity">
+      <section className="ux-stack" id="work">
+        <p className="ux-eyebrow">Your history</p>
+        <h2 className="ux-name">Your work with this hotel</h2>
+        {relationship.status === "none" ? <p>{NO_RELATIONSHIP}</p> : null}
         <PastCollaborations
           load={pastCollaborations}
           heading="Past collaborations with this hotel"
@@ -426,7 +468,13 @@ export default async function HotelDetailPage({
             alreadyOn={alreadyOn}
           />
         </div>
-      </Section>
+      </section>
+      </div>
+      <NextStepPanel
+        model={step}
+        hotelId={hotel.id}
+        tripNote={plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null}
+      />
     </div>
   );
 }

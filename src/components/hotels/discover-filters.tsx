@@ -1,16 +1,9 @@
-/**
- * Discover search + filter controls (PRD §7.2, D013).
- *
- * GET form so the URL is the state. Destination is a catalogue record; the
- * search includes that record and its descendants. Country is the hotel's
- * country code. Creator activity and observed collaboration match only
- * disclosed public signals.
- */
-import Link from "next/link";
+"use client";
+
+import { useEffect, useState } from "react";
 
 import {
   ACTIVITY_FILTERS,
-  COLLABORATION_FILTERS,
   HOTEL_TYPE_FILTERS,
   STAR_FILTERS,
   VERIFICATION_FILTERS,
@@ -20,68 +13,67 @@ import {
 } from "@/lib/hotels/filters";
 import { activityLabel } from "@/lib/hotels/intelligence";
 import type { DiscoverCountryOption, DiscoverDestinationOption } from "@/lib/hotels/queries";
-import { METRIC_IDS, METRIC_TITLES } from "@/lib/metrics/contract";
-
-const FIELD = "w-full border border-border bg-background px-3 py-2 text-sm text-text";
-const LABEL = "block text-xs font-medium text-muted";
+import { METRIC_IDS, METRIC_LAYERS, METRIC_TITLES } from "@/lib/metrics/contract";
+import { sortOptionLabel } from "@/lib/ux02/discover-sort";
+import { DISCOVER_SEARCH_LABEL, DISCOVER_SEARCH_PLACEHOLDER } from "@/lib/ux02/copy";
 
 export function DiscoverFilters({
   query,
-  showClear,
   destinations,
   countries,
   catalogFailed,
 }: {
   query: DiscoverQuery;
-  showClear: boolean;
   destinations: readonly DiscoverDestinationOption[];
   countries: readonly DiscoverCountryOption[];
   catalogFailed: boolean;
 }) {
-  const destinationKnown = destinations.some(
-    (destination) => destination.slug === query.destination,
-  );
+  const [open, setOpen] = useState(false);
+  const destinationKnown = destinations.some((destination) => destination.slug === query.destination);
   const countryKnown = countries.some((country) => country.code === query.country);
 
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
-    <form
-      action="/app/discover"
-      method="get"
-      role="search"
-      aria-label="Search hotels"
-      className="space-y-3"
-    >
+    <form action="/app/discover" method="get" role="search" className="ux-stack">
       {catalogFailed ? (
-        <p className="text-sm text-muted" role="status">
+        <p className="ux-meta" role="status">
           The destination list couldn’t be loaded. You can still search by name.
         </p>
       ) : null}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-1 sm:col-span-2">
-          <label className={LABEL} htmlFor="discover-q">
-            Search hotels or destinations
+      <div className="ux-toolbar">
+        <div className="ux-field ux-search">
+          <label className="ux-label" htmlFor="discover-q">
+            {DISCOVER_SEARCH_LABEL}
           </label>
           <input
             id="discover-q"
             name="q"
             type="search"
             defaultValue={query.q ?? ""}
-            placeholder="Hotel or destination"
-            className={FIELD}
+            placeholder={DISCOVER_SEARCH_PLACEHOLDER}
+            autoComplete="off"
+            className="ux-control"
           />
         </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-destination">
+        <div className="ux-field ux-select">
+          <label className="ux-label" htmlFor="discover-destination">
             Destination
           </label>
           <select
             id="discover-destination"
             name="destination"
             defaultValue={query.destination ?? ""}
-            className={FIELD}
+            className="ux-control"
           >
-            <option value="">Any destination</option>
+            <option value="">All destinations</option>
             {query.destination && !destinationKnown ? (
               <option value={query.destination}>{query.destination}</option>
             ) : null}
@@ -92,35 +84,12 @@ export function DiscoverFilters({
             ))}
           </select>
         </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-country">
-            Country
-          </label>
-          <select
-            id="discover-country"
-            name="country"
-            defaultValue={query.country ?? ""}
-            className={FIELD}
-          >
-            <option value="">Any country</option>
-            {query.country && !countryKnown ? (
-              <option value={query.country}>{query.country}</option>
-            ) : null}
-            {countries.map((country) => (
-              <option key={country.code} value={country.code}>
-                {country.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-type">
+        <div className="ux-field ux-select">
+          <label className="ux-label" htmlFor="discover-type">
             Hotel type
           </label>
-          <select id="discover-type" name="type" defaultValue={query.type ?? ""} className={FIELD}>
-            <option value="">Any type</option>
+          <select id="discover-type" name="type" defaultValue={query.type ?? ""} className="ux-control">
+            <option value="">All types</option>
             {HOTEL_TYPE_FILTERS.map((type) => (
               <option key={type} value={type}>
                 {hotelTypeLabel(type)}
@@ -128,110 +97,144 @@ export function DiscoverFilters({
             ))}
           </select>
         </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-stars">
-            Hospitality classification
+        <div className="ux-anchor">
+          <button
+            type="button"
+            className="ux-btn"
+            aria-expanded={open}
+            aria-controls="discover-more"
+            onClick={() => setOpen((value) => !value)}
+          >
+            More filters
+          </button>
+          {open ? (
+            <div className="ux-popover" id="discover-more" role="dialog" aria-label="More filters">
+              <h2 className="ux-name">More filters</h2>
+              <div className="ux-field">
+                <label className="ux-label" htmlFor="discover-country">
+                  Country
+                </label>
+                <select
+                  id="discover-country"
+                  name="country"
+                  defaultValue={query.country ?? ""}
+                  className="ux-control"
+                >
+                  <option value="">Any country</option>
+                  {query.country && !countryKnown ? (
+                    <option value={query.country}>{query.country}</option>
+                  ) : null}
+                  {countries.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="ux-field">
+                <label className="ux-label" htmlFor="discover-stars">
+                  Classification
+                </label>
+                <select
+                  id="discover-stars"
+                  name="stars"
+                  defaultValue={query.minStars ? String(query.minStars) : ""}
+                  className="ux-control"
+                >
+                  <option value="">Any published classification</option>
+                  {STAR_FILTERS.map((stars) => (
+                    <option key={stars} value={stars}>
+                      {stars}-star
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="ux-field">
+                <label className="ux-label" htmlFor="discover-verified">
+                  Editorial verification
+                </label>
+                <select
+                  id="discover-verified"
+                  name="verified"
+                  defaultValue={query.verification ?? ""}
+                  className="ux-control"
+                >
+                  <option value="">Any status</option>
+                  {VERIFICATION_FILTERS.map((status) => (
+                    <option key={status} value={status}>
+                      {verificationLabel(status)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="ux-field">
+                <label className="ux-label" htmlFor="discover-activity">
+                  Creator activity
+                </label>
+                <select
+                  id="discover-activity"
+                  name="activity"
+                  defaultValue={query.activity ?? ""}
+                  className="ux-control"
+                >
+                  <option value="">Any disclosed activity</option>
+                  {ACTIVITY_FILTERS.map((level) => (
+                    <option key={level} value={level}>
+                      {activityLabel(level)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="ux-meta" style={{ display: "flex", gap: 8, minHeight: 44, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  name="collaboration"
+                  value="observed"
+                  defaultChecked={query.collaboration === "observed"}
+                />
+                Creator collaboration observed
+              </label>
+              <button type="submit" className="ux-btn ux-btn-primary">
+                Apply
+              </button>
+            </div>
+          ) : (
+            <>
+              {query.country ? <input type="hidden" name="country" value={query.country} /> : null}
+              {query.minStars ? <input type="hidden" name="stars" value={String(query.minStars)} /> : null}
+              {query.verification ? <input type="hidden" name="verified" value={query.verification} /> : null}
+              {query.activity ? <input type="hidden" name="activity" value={query.activity} /> : null}
+              {query.collaboration ? (
+                <input type="hidden" name="collaboration" value={query.collaboration} />
+              ) : null}
+            </>
+          )}
+        </div>
+        <button type="submit" className="ux-btn ux-btn-primary">
+          Apply
+        </button>
+      </div>
+      <div className="ux-results">
+        <span />
+        <div className="ux-field" style={{ minWidth: 220 }}>
+          <label className="ux-label" htmlFor="discover-rank">
+            Sort by
           </label>
           <select
-            id="discover-stars"
-            name="stars"
-            defaultValue={query.minStars ? String(query.minStars) : ""}
-            className={FIELD}
+            id="discover-rank"
+            name="rank"
+            defaultValue={query.rank ?? ""}
+            className="ux-control"
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
-            <option value="">4- and 5-star</option>
-            {STAR_FILTERS.map((stars) => (
-              <option key={stars} value={stars}>
-                {stars === "5" ? "5-star" : "4-star and above"}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-activity">
-            Creator activity
-          </label>
-          <select
-            id="discover-activity"
-            name="activity"
-            defaultValue={query.activity ?? ""}
-            className={FIELD}
-          >
-            <option value="">Any disclosed activity</option>
-            {ACTIVITY_FILTERS.map((level) => (
-              <option key={level} value={level}>
-                {activityLabel(level)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-collaboration">
-            Collaboration
-          </label>
-          <select
-            id="discover-collaboration"
-            name="collaboration"
-            defaultValue={query.collaboration ?? ""}
-            className={FIELD}
-          >
-            <option value="">Any</option>
-            {COLLABORATION_FILTERS.map((value) => (
-              <option key={value} value={value}>
-                Observed collaboration
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-rank">
-            Order
-          </label>
-          <select id="discover-rank" name="rank" defaultValue={query.rank ?? ""} className={FIELD}>
             <option value="">Name</option>
             {METRIC_IDS.map((metric) => (
               <option key={metric} value={metric}>
-                {METRIC_TITLES[metric]}
+                {sortOptionLabel(metric, METRIC_TITLES[metric], METRIC_LAYERS[metric] === "premium")}
               </option>
             ))}
           </select>
         </div>
-
-        <div className="space-y-1">
-          <label className={LABEL} htmlFor="discover-verified">
-            Editorial status
-          </label>
-          <select
-            id="discover-verified"
-            name="verified"
-            defaultValue={query.verification ?? ""}
-            className={FIELD}
-          >
-            <option value="">Any status</option>
-            {VERIFICATION_FILTERS.map((status) => (
-              <option key={status} value={status}>
-                {verificationLabel(status)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          className="bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
-        >
-          Apply filters
-        </button>
-        {showClear ? (
-          <Link href="/app/discover" className="text-sm text-muted underline hover:text-text">
-            Clear filters
-          </Link>
-        ) : null}
       </div>
     </form>
   );

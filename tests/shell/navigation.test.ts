@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { pipelineListState, pipelinePageHref, type PipelinePageInput } from "@/lib/pipeline/view";
 import {
+  HOTEL_TABS,
   PRIMARY_NAV,
   WORKSPACES,
   activePrimaryHref,
@@ -16,6 +17,7 @@ import {
   backLink,
   hotelCrumbs,
   hotelHref,
+  hotelTabForHash,
   isHotelSection,
   normalizePipelineSurface,
   parseHotelOrigin,
@@ -52,13 +54,13 @@ function assertAppPath(href: string) {
 }
 
 describe("primary navigation stays the approved five", () => {
-  it("names Inicio, Descubrir, Pipeline, Viajes, and Perfil", () => {
+  it("names Home, Discover, Pipeline, Trips, and Profile", () => {
     expect(PRIMARY_NAV.map((item) => item.label)).toEqual([
-      "Inicio",
-      "Descubrir",
+      "Home",
+      "Discover",
       "Pipeline",
-      "Viajes",
-      "Perfil",
+      "Trips",
+      "Profile",
     ]);
   });
 
@@ -111,9 +113,9 @@ describe("hotel origin is an allowlist", () => {
       kind: "discover",
     });
     const crumbs = hotelCrumbs({ kind: "trip", tripId: TRIP }, "Casa");
-    expect(crumbs.map((crumb) => crumb.label)).toEqual(["Inicio", "Viajes", "Viaje", "Casa"]);
+    expect(crumbs.map((crumb) => crumb.label)).toEqual(["Home", "Trips", "Trip", "Casa"]);
     expect(crumbs[2]?.href).toBe(`/app/trips/${TRIP}`);
-    expect(backLink(crumbs)).toEqual({ href: `/app/trips/${TRIP}`, label: "Viaje" });
+    expect(backLink(crumbs)).toEqual({ href: `/app/trips/${TRIP}`, label: "Trip" });
   });
 
   it("builds hotel hrefs with no extra query and no off-site target", () => {
@@ -244,6 +246,29 @@ describe("pipeline surfaces", () => {
         expect(item.href.startsWith("/app/pipeline?surface=")).toBe(true);
       }
     }
+  });
+});
+
+describe("hotel detail tabs", () => {
+  it("keeps Overview, Intelligence, Contact, and My work, and folds inner anchors into My work", () => {
+    expect(HOTEL_TABS.map((tab) => tab.label)).toEqual([
+      "Overview",
+      "Intelligence",
+      "Contact",
+      "My work",
+    ]);
+    expect(hotelTabForHash("")).toBe("overview");
+    expect(hotelTabForHash("identity")).toBe("overview");
+    expect(hotelTabForHash("map")).toBe("overview");
+    expect(hotelTabForHash("intelligence")).toBe("intelligence");
+    expect(hotelTabForHash("contact")).toBe("contact");
+    expect(hotelTabForHash("work")).toBe("work");
+    expect(hotelTabForHash("activity")).toBe("work");
+    expect(hotelTabForHash("inbox")).toBe("work");
+    expect(hotelTabForHash("collaboration")).toBe("work");
+    expect(hotelTabForHash("trip")).toBe("work");
+    expect(hotelTabForHash("admin")).toBe("overview");
+    expect(hotelTabForHash("../inbox")).toBe("overview");
   });
 });
 

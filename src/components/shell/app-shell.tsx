@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
-import { Brand } from "@/components/brand";
 import { SignOutButton } from "@/components/sign-out-button";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import {
   PRIMARY_NAV,
   UTILITY_NAV,
@@ -14,127 +14,115 @@ import {
   parseHotelOrigin,
 } from "@/lib/shell/navigation";
 
-function primaryClass(active: boolean): string {
+function Icon({ d }: { d: string }) {
   return (
-    "border-b-[3px] px-3.5 py-2 text-sm font-semibold " +
-    (active ? "border-accent text-text" : "border-transparent text-[#555]")
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d={d} />
+    </svg>
   );
 }
 
-function mobileClass(active: boolean): string {
-  return (
-    "flex min-h-11 flex-1 flex-col items-center justify-center px-1 text-[12px] font-semibold " +
-    (active ? "text-text" : "text-[#555]")
-  );
-}
-
-function CreditCounter({ label }: { label: string }) {
-  return (
-    <p data-testid="credit-balance" className="text-sm font-semibold text-text">
-      {label}
-    </p>
-  );
-}
+const ICONS = [
+  "M2 7.5 8 2l6 5.5V14H10V9H6v5H2z",
+  "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2",
+  "M2 4h12M2 8h12M2 12h8",
+  "M2 12h12M4 12V7l4-3 4 3v5",
+  "M8 6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 13c1.2-2 2.8-3 5-3s3.8 1 5 3",
+] as const;
 
 function ShellChrome({
   isStaff,
-  initials,
   creditLabel,
+  planLabel,
   pathname,
   origin,
   navKey,
 }: {
   isStaff: boolean;
-  initials: string;
   creditLabel: string;
+  planLabel: string | null;
   pathname: string;
   origin: ReturnType<typeof parseHotelOrigin> | null;
   navKey: string;
 }) {
   const primary = activePrimaryHref(pathname, origin);
   const utility = activeUtilityHref(pathname);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-[#e6e6e6] bg-white">
-        <div className="flex h-14 items-center gap-3 px-4 md:h-16 md:gap-10 md:px-10">
-          <Brand href="/app" />
-          <nav aria-label="Primary" className="hidden flex-1 items-center gap-1.5 md:flex">
-            {PRIMARY_NAV.map((item) => {
-              const active = item.href === primary;
+      <a className="ux-btn ux-skip" href="#main">
+        Skip to content
+      </a>
+      <header className="ux-header">
+        <Link href="/app" className="ux-wordmark">
+          theugc<span>.life</span>
+        </Link>
+        <nav className="ux-nav" aria-label="Primary">
+          {PRIMARY_NAV.map((item) => {
+            const active = item.href === primary;
+            return (
+              <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="ux-tools">
+          {planLabel ? <span className="ux-plan">{planLabel}</span> : null}
+          <p data-testid="credit-balance" className="ux-credit">
+            {creditLabel}
+          </p>
+          <ThemeToggle />
+          <div className="ux-desktop-tools">
+            {UTILITY_NAV.map((item) => {
+              const active = item.href === utility;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={primaryClass(active)}
+                  className="ux-credit"
                 >
                   {item.label}
                 </Link>
               );
             })}
-          </nav>
-          <div className="ml-auto flex items-center gap-3">
-            <CreditCounter label={creditLabel} />
-            <div className="hidden items-center gap-3 md:flex">
-              {UTILITY_NAV.map((item) => {
-                const active = item.href === utility;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={active ? "text-sm font-semibold text-text" : "text-sm text-[#555]"}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-              {isStaff ? (
-                <Link href="/admin" className="text-sm text-[#555]">
-                  Admin
-                </Link>
-              ) : null}
-              <SignOutButton />
-              <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent">
-                {initials}
-              </span>
-            </div>
+            {isStaff ? (
+              <Link href="/admin" className="ux-credit">
+                Admin
+              </Link>
+            ) : null}
+            <SignOutButton />
           </div>
-          <details key={navKey} className="relative md:hidden">
-            <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full bg-[#111] text-[13px] font-bold text-accent [&::-webkit-details-marker]:hidden">
-              {initials}
-            </summary>
-            <div className="absolute right-0 z-40 mt-2 w-56 rounded-md border border-[#e6e6e6] bg-white p-2">
-              {UTILITY_NAV.map((item) => (
-                <Link key={item.href} href={item.href} className="block px-3 py-2 text-sm">
-                  {item.label}
-                </Link>
-              ))}
-              {isStaff ? (
-                <Link href="/admin" className="block px-3 py-2 text-sm">
-                  Admin
-                </Link>
-              ) : null}
-              <SignOutButton />
-            </div>
-          </details>
+          <button
+            type="button"
+            className="ux-btn ux-view-toggle"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            Account
+          </button>
         </div>
       </header>
-      <nav
-        aria-label="Primary"
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#e6e6e6] bg-white md:hidden"
-      >
-        {PRIMARY_NAV.map((item) => {
+      {menuOpen ? (
+        <div key={navKey} className="ux-lock" style={{ margin: "8px 16px" }}>
+          {UTILITY_NAV.map((item) => (
+            <Link key={item.href} href={item.href}>
+              {item.label}
+            </Link>
+          ))}
+          {isStaff ? <Link href="/admin">Admin</Link> : null}
+          <SignOutButton />
+        </div>
+      ) : null}
+      <nav className="ux-bottom" aria-label="Primary mobile">
+        {PRIMARY_NAV.map((item, index) => {
           const active = item.href === primary;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={mobileClass(active)}
-            >
-              <span className={active ? "border-b-[3px] border-accent" : ""}>{item.label}</span>
+            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
+              <Icon d={ICONS[index] ?? ICONS[0]} />
+              {item.label}
             </Link>
           );
         })}
@@ -143,47 +131,33 @@ function ShellChrome({
   );
 }
 
-function ShellHeader({
-  isStaff,
-  initials,
-  creditLabel,
-  pathname,
-}: {
+function ShellHeader(props: {
   isStaff: boolean;
-  initials: string;
   creditLabel: string;
+  planLabel: string | null;
   pathname: string;
 }) {
   const search = useSearchParams();
   const origin = useMemo(() => {
-    if (!pathname.startsWith("/app/hotels/") && pathname !== "/app/hotels") return null;
+    if (!props.pathname.startsWith("/app/hotels/") && props.pathname !== "/app/hotels") return null;
     const raw: Record<string, string> = {};
     search.forEach((value, key) => {
       raw[key] = value;
     });
     return parseHotelOrigin(raw);
-  }, [pathname, search]);
-  const navKey = `${pathname}?${search.toString()}`;
-  return (
-    <ShellChrome
-      isStaff={isStaff}
-      initials={initials}
-      creditLabel={creditLabel}
-      pathname={pathname}
-      origin={origin}
-      navKey={navKey}
-    />
-  );
+  }, [props.pathname, search]);
+  const navKey = `${props.pathname}?${search.toString()}`;
+  return <ShellChrome {...props} origin={origin} navKey={navKey} />;
 }
 
 function ShellFrame({
   isStaff,
-  initials,
   creditLabel,
+  planLabel,
 }: {
   isStaff: boolean;
-  initials: string;
   creditLabel: string;
+  planLabel: string | null;
 }) {
   const pathname = usePathname() || "/app";
   return (
@@ -191,8 +165,8 @@ function ShellFrame({
       fallback={
         <ShellChrome
           isStaff={isStaff}
-          initials={initials}
           creditLabel={creditLabel}
+          planLabel={planLabel}
           pathname={pathname}
           origin={null}
           navKey={pathname}
@@ -201,8 +175,8 @@ function ShellFrame({
     >
       <ShellHeader
         isStaff={isStaff}
-        initials={initials}
         creditLabel={creditLabel}
+        planLabel={planLabel}
         pathname={pathname}
       />
     </Suspense>
@@ -210,24 +184,26 @@ function ShellFrame({
 }
 
 /**
- * Direction A shell. Desktop keeps one row. Narrow screens pin the five
- * primary items to the bottom. Sun is the active underline, not a status color.
+ * UX02 shell. Desktop keeps one row. Narrow screens pin the five primary
+ * items, each with an icon and a label. The underline is ink, not the accent.
  */
 export function AppShell({
   isStaff,
-  initials,
   creditLabel,
+  planLabel,
   children,
 }: {
   isStaff: boolean;
-  initials: string;
   creditLabel: string;
+  planLabel: string | null;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col bg-white text-[#111]">
-      <ShellFrame isStaff={isStaff} initials={initials} creditLabel={creditLabel} />
-      <main className="w-full flex-1 px-4 py-6 pb-24 md:px-10 md:py-7 md:pb-8">{children}</main>
+    <div className="flex min-h-dvh flex-col" style={{ background: "var(--bg)", color: "var(--text)" }}>
+      <ShellFrame isStaff={isStaff} creditLabel={creditLabel} planLabel={planLabel} />
+      <main id="main" tabIndex={-1} className="ux-main flex-1">
+        {children}
+      </main>
     </div>
   );
 }

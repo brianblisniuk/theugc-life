@@ -1,7 +1,10 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { requireUser } from "@/lib/auth/guards";
-import { creditsLeftLabel } from "@/lib/credits/config";
+import { loadBillingAccess } from "@/lib/billing/queries";
 import { getOwnCreditBalance } from "@/lib/credits/queries";
+import { creditsAvailableLabel } from "@/lib/ux02/next-step";
+import { CREDITS_UNAVAILABLE } from "@/lib/ux02/copy";
+import { planChipFromAccess } from "@/lib/ux02/plan-chip";
 
 /**
  * Authenticated app shell. Route-group middleware already gates authentication;
@@ -11,14 +14,16 @@ import { getOwnCreditBalance } from "@/lib/credits/queries";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireUser("/app");
   const isStaff = session.role === "admin" || session.role === "editor";
-  const letters = (session.email ?? "").split("@")[0]?.replace(/[^a-z]/gi, "") ?? "";
-  const initials = letters.slice(0, 2).toUpperCase() || "•";
-  const credits = await getOwnCreditBalance();
+  const [credits, billing] = await Promise.all([
+    getOwnCreditBalance(),
+    loadBillingAccess(session.userId),
+  ]);
   const creditLabel =
-    credits.status === "ok" ? creditsLeftLabel(credits.balance) : "Credits unavailable";
+    credits.status === "ok" ? creditsAvailableLabel(credits.balance) : CREDITS_UNAVAILABLE;
+  const planLabel = planChipFromAccess(billing);
 
   return (
-    <AppShell isStaff={isStaff} initials={initials} creditLabel={creditLabel}>
+    <AppShell isStaff={isStaff} creditLabel={creditLabel} planLabel={planLabel}>
       {children}
     </AppShell>
   );
