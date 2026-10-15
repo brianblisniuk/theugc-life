@@ -334,13 +334,13 @@ function renderPipeline(){
  const root=$('pipeline-view');if(!root)return;
  const ids=[...new Set([...a().state.pipeline,...st.events.map(e=>e.hotelId),...st.drafts.map(d=>d.hotelId)])];
  root.innerHTML=ids.length?ids.map(id=>{let h=findHotel(id);if(!h)return '';const draft=st.drafts.find(d=>d.hotelId===id),t=a().state.trips.find(t=>(a().state.shortlists[t.id]||[]).includes(id));
- return '<div class="campaign-lead"><div><a href="'+hotelLink(id)+'"><strong>'+html(h.name)+'</strong></a><div class="fine">'+html(h.city)+' · '+html(t?.name||'No trip')+'</div></div><div>'+badge(stageValue(id))+'</div><div class="fine">'+(draft?'Draft available':'No pitch draft')+'</div><div class="lead-action"><a class="btn small" href="pitch-standalone.html?hotel='+encodeURIComponent(id)+'">Open pitch '+icon('arrow')+'</a></div></div>'}).join(''):'<div class="empty"><strong>No pipeline activity yet</strong>Save a hotel in Discover or create a pitch to start tracking.</div>';
+ return '<div class="campaign-lead"><div><a href="'+hotelLink(id)+'"><strong>'+html(h.name)+'</strong></a><div class="fine">'+html(h.city)+' · '+html(t?.name||'No trip')+'</div></div><div>'+badge(stageValue(id))+'</div><div class="fine">'+(draft?'Draft available':'No pitch draft')+' · '+st.contracts.filter(c=>c.hotelId===id).length+' contract reviews</div><div class="lead-action" style="display:flex;flex-wrap:wrap;gap:6px"><a class="btn small" href="pitch-standalone.html?hotel='+encodeURIComponent(id)+'">Open pitch</a><a class="btn small" href="contract-review-standalone.html?hotel='+encodeURIComponent(id)+'">Contract</a></div></div>'}).join(''):'<div class="empty"><strong>No pipeline activity yet</strong>Save a hotel in Discover or create a pitch to start tracking.</div>';
  $('pipeline-count').textContent=ids.length;
 }
 function renderInbox(){
  const root=$('inbox-view');if(!root)return;
  const sent=st.events.filter(e=>e.type==='stage'&&['sent','bounced','replied','won'].includes(e.value)).reverse();
- root.innerHTML=sent.length?sent.map(e=>{let h=findHotel(e.hotelId);return '<div class="campaign-lead"><div><strong>'+html(h?.name||'Hotel')+'</strong><div class="fine">'+html(new Date(e.at).toLocaleString())+' · '+html(e.source||'manual')+'</div></div><div>'+badge(e.value)+'</div><div class="fine">No Gmail sync in this preview</div><div class="lead-action"><a class="btn small" href="pitch-standalone.html?hotel='+encodeURIComponent(e.hotelId)+'">View draft</a>'+(e.value==='sent'?'<button class="btn small" data-report-bounce="'+html(e.hotelId)+'">Report bounce</button>':'')+'</div></div>'}).join(''):'<div class="empty"><strong>No outreach events recorded</strong>Log a pitch as sent manually in Pitch Studio. Gmail messages do not sync to this design preview.</div>';
+ root.innerHTML=sent.length?sent.map(e=>{let h=findHotel(e.hotelId);return '<div class="campaign-lead"><div><strong>'+html(h?.name||'Hotel')+'</strong><div class="fine">'+html(new Date(e.at).toLocaleString())+' · '+html(e.source||'manual')+'</div></div><div>'+badge(e.value)+'</div><div class="fine">No Gmail sync in this preview</div><div class="lead-action"><a class="btn small" href="pitch-standalone.html?hotel='+encodeURIComponent(e.hotelId)+'">View draft</a>'+(e.value==='sent'&&stageValue(e.hotelId)!=='bounced'?'<button class="btn small" data-report-bounce="'+html(e.hotelId)+'">Report bounce</button>':'')+'</div></div>'}).join(''):'<div class="empty"><strong>No outreach events recorded</strong>Log a pitch as sent manually in Pitch Studio. Gmail messages do not sync to this design preview.</div>';
 }
 function renderTrips(){
  const root=$('trips-view');if(!root)return;
@@ -348,7 +348,8 @@ function renderTrips(){
 }
 function renderContracts(){
  let root=$('contract-documents');if(!root)return;
- root.innerHTML=st.contracts.length?st.contracts.slice().reverse().map(c=>'<div class="draft-row"><div><strong>'+html(c.title||'Untitled contract')+'</strong><div class="fine">Saved '+html(new Date(c.savedAt).toLocaleDateString())+' · '+c.content.length+' characters</div></div><button class="btn small" data-contract-load="'+html(c.id)+'">Open</button></div>').join(''):'<p>No contract excerpts saved yet. Paste contract text to review.</p>';
+ if($('contract-hotel')){const selected=$('contract-hotel').value||qs().get('hotel')||st.lastHotel||'';$('contract-hotel').innerHTML='<option value="">Select associated hotel</option>'+a().H.map(h=>'<option value="'+html(h.id)+'" '+(h.id===selected?'selected':'')+'>'+html(h.name)+'</option>').join('')}
+ root.innerHTML=st.contracts.length?st.contracts.slice().reverse().map(c=>'<div class="draft-row"><div><strong>'+html(c.title||'Untitled contract')+'</strong><div class="fine">'+html(findHotel(c.hotelId)?.name||'Unassigned hotel')+' · Saved '+html(new Date(c.savedAt).toLocaleDateString())+' · '+c.content.length+' characters</div></div><button class="btn small" data-contract-load="'+html(c.id)+'">Open</button></div>').join(''):'<p>No contract excerpts saved yet. Paste contract text to review.</p>';
 }
 function contractHeuristics(text){
  const fields=[['Deliverables',/(deliverabl|content|video|photo|reel|post)/i,'Identify exactly what must be delivered, specifications, revision rounds and deadlines.'],
@@ -373,7 +374,7 @@ function contactEnhancement(){
  '<div class="contact-panel-bottom">'+(unlocked?'<a class="btn lime" href="pitch-standalone.html?hotel='+encodeURIComponent(h.id)+'">Create personalized pitch '+icon('arrow')+'</a>':'<button class="btn lime" data-contact-unlock>Unlock hotel contacts · 1 credit '+icon('arrow')+'</button>')+'<p>1 credit per hotel upon successful unlock. Named contacts only when verified; otherwise show department or availability honestly.</p></div>';
  }
  if($('hotel-intelligence-upper'))$('hotel-intelligence-upper').classList.add('intelligence-first');
- if($('continue-pitch-btn'))$('continue-pitch-btn').href='pitch-standalone.html?hotel='+encodeURIComponent(h.id);
+ if($('continue-pitch-btn'))$('continue-pitch-btn').href='pitch-standalone.html?hotel='+encodeURIComponent(h.id);if($('hotel-contract-link'))$('hotel-contract-link').href='contract-review-standalone.html?hotel='+encodeURIComponent(h.id);
  if($('hotel-crumb-link'))$('hotel-crumb-link').href='discover-standalone.html';
 }
 function discoverEnhancement(){
@@ -430,14 +431,14 @@ document.addEventListener('click',e=>{
  if(b.dataset.v4==='confirm-manual-send'){a().closeModal();saveDraft(true)}
  if(b.dataset.pitchCopy){const data=inputValue('pitch-subject')+'\n\n'+inputValue('pitch-body');if(!inputValue('pitch-body'))return a().toast('No email body to copy');navigator.clipboard?.writeText(data).then(()=>a().toast('Email copied')).catch(()=>a().toast('Clipboard unavailable')); }
  if(b.dataset.useTrip){a().state.trip=b.dataset.useTrip;const t=a().tripById(b.dataset.useTrip);if(t)a().state.city=t.city;a().saveState();location.href='discover-standalone.html'}
- if(b.dataset.contractLoad){const c=st.contracts.find(x=>x.id===b.dataset.contractLoad);if(c){$('contract-title').value=c.title;$('contract-text').value=c.content;$('contract-notes').innerHTML=contractHeuristics(c.content);a().toast('Saved excerpt loaded')}}
+ if(b.dataset.contractLoad){const c=st.contracts.find(x=>x.id===b.dataset.contractLoad);if(c){$('contract-title').value=c.title;if($('contract-hotel'))$('contract-hotel').value=c.hotelId||'';$('contract-text').value=c.content;$('contract-notes').innerHTML=contractHeuristics(c.content);a().toast('Saved excerpt loaded')}}
  if(b.dataset.searchSave)saveSearch();
  if(b.hasAttribute('data-saved-searches'))savedSearchModal();
  if(b.dataset.searchRestore)restoreSearch(st.savedSearches.find(x=>x.id===b.dataset.searchRestore));
  if(b.hasAttribute('data-restore-search')){a().render();discoverEnhancement();a().toast('Search context restored')}
  if(b.dataset.v4==='contract-review'){let text=inputValue('contract-text');if(!text){a().toast('Paste a contract excerpt first');return}if(text.length<25){a().toast('Add a longer excerpt so there is text to review');return}
  $('contract-notes').innerHTML=contractHeuristics(text);a().toast('Checklist generated from text keywords; not an AI or legal review')}
- if(b.dataset.v4==='contract-save'){let text=inputValue('contract-text');if(!text)return a().toast('Paste contract text first');st.contracts.push({id:newId('contract'),title:inputValue('contract-title')||'Untitled excerpt',content:text,savedAt:new Date().toISOString()});persist();renderContracts();a().toast('Contract excerpt saved locally')}
+ if(b.dataset.v4==='contract-save'){let text=inputValue('contract-text');if(!text)return a().toast('Paste contract text first');st.contracts.push({id:newId('contract'),hotelId:inputValue('contract-hotel')||null,title:inputValue('contract-title')||'Untitled excerpt',content:text,savedAt:new Date().toISOString()});persist();renderContracts();a().toast('Contract excerpt saved locally')}
  if(b.dataset.v4==='campaign-from-trip'){location.href='campaigns-standalone.html'}
 });
 document.addEventListener('click',e=>{const x=e.target.closest('[data-confirm-bounce]');if(!x)return;const id=x.dataset.confirmBounce;st.events.push({id:newId('event'),hotelId:id,type:'stage',value:'bounced',source:'manual',at:new Date().toISOString()});persist();a().closeModal();renderInbox();a().toast('Manual bounce recorded · contact flagged for review');});
@@ -500,7 +501,7 @@ document.addEventListener('submit',e=>{
 <section class="detail-section" id="work"><div class="section-title"><div><div class="eyebrow" style="margin-bottom:6px">YOUR PRIVATE WORKSPACE</div><h2>Your work with this hotel</h2><p>Trips, contact unlocks, pipeline and outreach activity.</p></div></div><div id="hotel-private"></div></section>
 </div>
 <aside class="side-sticky"><section class="side-contact" id="contact-feature" aria-label="Hotel contact preview"></section><div class="side-card"><div class="eyebrow">YOUR NEXT STEP</div><h2 id="next-action-title">Start a collaboration</h2><p id="next-action-text">Unlock a contact to start your pitch.</p><button class="btn lime wide" data-next-action id="next-action-btn">Unlock contact</button><button class="btn wide" data-save="canopy" id="detail-save-button"><span data-icon="bookmark"></span> Save to Pipeline / Trip</button><div class="side-divider"></div><div class="side-row"><span>Plan preview</span><b id="user-plan">FREE</b></div><div class="side-row"><span>Sample monthly/weekly allowance</span><b id="demo-credits">5</b></div><p class="fine">All contacts require a successful per-hotel unlock, regardless of plan.</p></div>
-<div class="side-card"><div class="small-heading">Your trip context</div><div id="hotel-trip-side"></div></div>
+<div class="side-card"><div class="small-heading">Contracts and agreements</div><p class="fine">Keep a received agreement associated with this hotel. The preview runs only a local keyword checklist.</p><a class="btn small wide" id="hotel-contract-link" href="contract-review-standalone.html">Open Contract Review →</a></div><div class="side-card"><div class="small-heading">Your trip context</div><div id="hotel-trip-side"></div></div>
 <div class="side-card" style="background:#F7FAF1"><a class="btn small" id="continue-pitch-btn" href="pitch-standalone.html" style="width:100%;margin-bottom:15px">Open Pitch Studio →</a><div class="eyebrow">PRO FEATURE</div><h2 style="font-size:16px">Know before you pitch.</h2><p>Use verified response trends, creator intelligence and AI assistance to focus your outreach.</p><button class="btn dark wide" data-upgrade>Compare plans <span data-icon="arrow"></span></button></div>
 </aside>
 </div>
