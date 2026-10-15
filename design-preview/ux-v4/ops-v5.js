@@ -139,7 +139,7 @@ E("ops-drawer-content").innerHTML=`<div class="eyebrow">RELATIONSHIP COCKPIT</di
 <div class="ops-divider"></div><h3>Private notes</h3><p class="ops-micro">Keep context without creating a new data record for the same hotel.</p><textarea id="ops-note" placeholder="What matters for the next response?"></textarea><button class="btn small" data-op="note-add" style="margin-top:9px">Add note</button>
 <div class="ops-divider"></div><h3>Activity</h3>${dealHistory(id)}`;
 }
-function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer").setAttribute("aria-hidden","true");E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
+function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer").setAttribute("aria-hidden","true");E("ops-drawer").inert=true;E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
 function stageChange(id,v){
 if(stage(id)===v){A().toast("Already in that stage");return}
 if(A().state.plan==="free"&&["draft","sent","replied","negotiating","won","bounced"].includes(v)){
@@ -149,7 +149,7 @@ if(count>=5&&!["draft","sent","replied","negotiating","won","bounced"].includes(
 if(["sent","replied","won","bounced"].includes(v)){A().modal("Confirm manual status",`<p>Record <b>${esc(hotel(id).name)}</b> as <b>${esc(v)}</b>? This is a manual statement, not a verified Gmail event or confirmed hotel agreement.</p><div class="modal-bottom"><button class="btn" data-close>Cancel</button><button class="btn lime" data-op-stage-confirm="${esc(id)}" data-stage="${esc(v)}">Confirm manual update</button></div>`)}
 else applyStage(id,v);
 }
-function applyStage(id,v){data.events.push({id:uid("event"),hotelId:id,type:"stage",value:v,at:new Date().toISOString(),source:"manual"});if(!A().state.pipeline.includes(id))A().state.pipeline.push(id);persist();A().saveState();A().closeModal();A().toast("Stage saved locally · "+v);showPipeline();if(ui.drawer===id)drawerRender()}
+function applyStage(id,v){data.events.push({id:uid("event"),hotelId:id,type:"stage",value:v,at:new Date().toISOString(),source:"manual"});if(!A().state.pipeline.includes(id))A().state.pipeline.push(id);persist();A().saveState();A().closeModal();A().toast("Stage saved locally · "+v);showPipeline();if(ui.drawer===id){document.body.style.overflow="hidden";drawerRender()}}
 function init(){
 if(!["campaigns","pipeline"].includes(document.body.dataset.page))return;
 refresh();bootstrap();refresh();let q=new URLSearchParams(location.search);
