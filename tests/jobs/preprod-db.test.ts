@@ -309,6 +309,197 @@ d("preprod jobs", () => {
     expect(blockedService.error?.message ?? "").toMatch(/permission denied/i);
   });
 
+  it("fails a reserved send on mark-provider and refuses queued and reserved rows in claim_due while a sent replay still reports sent", async () => {
+    const blocked = await adminQuery<{ a: boolean; b: boolean }>(
+      `select public.account_gmail_blocked($1::uuid) as a,
+              public.account_gmail_blocked($2::uuid) as b`,
+      [USER_A, USER_B],
+    );
+    expect(blocked[0]).toEqual({ a: true, b: false });
+
+    const hashRows = await adminQuery<{ h: string }>(
+      `select public.gmail_send_payload_hash(
+         'pitch', 'desk@hotel.example', 'Already sent', 'Body that was sent',
+         $1::uuid, null, null, null, null
+       ) as h`,
+      [HOTEL],
+    );
+    const sentHash = hashRows[0]!.h;
+    const filler = "ab".repeat(32);
+
+    const seeded = await adminQuery<{ id: string; idempotency_key: string }>(
+      `insert into private.gmail_send_attempts
+         (user_id, mail_account_id, idempotency_key, payload_sha256, kind, status,
+          recipient, subject, body, dispatch_not_before)
+       values
+         ($1, $3, 'preprod-mark-reserved1', $5, 'pitch', 'reserved',
+          'desk@hotel.example', 'Reserved', 'Do not send', clock_timestamp()),
+         ($1, $3, 'preprod-sent-replay01', $6, 'pitch', 'sent',
+          'desk@hotel.example', 'Already sent', 'Body that was sent', null),
+         ($1, $3, 'preprod-claim-queued-a', $5, 'pitch', 'queued',
+          'desk@hotel.example', 'Queued A', 'Do not claim', clock_timestamp() - interval '1 hour'),
+         ($1, $3, 'preprod-claim-reserv-a', $5, 'pitch', 'reserved',
+          'desk@hotel.example', 'Reserved A', 'Do not claim', clock_timestamp()),
+         ($2, $4, 'preprod-claim-queued-b', $5, 'pitch', 'queued',
+          'desk@hotel.example', 'Queued B', 'May claim', clock_timestamp() - interval '1 hour'),
+         ($2, $4, 'preprod-claim-reserv-b', $5, 'pitch', 'reserved',
+          'desk@hotel.example', 'Reserved B', 'Leave reserved', clock_timestamp())
+       returning id, idempotency_key`,
+      [USER_A, USER_B, mailA, mailB, filler, sentHash],
+    );
+    const idOf = (key: string) => seeded.find((row) => row.idempotency_key === key)!.id;
+    const reservedId = idOf("preprod-mark-reserved1");
+    const sentId = idOf("preprod-sent-replay01");
+    const queuedA = idOf("preprod-claim-queued-a");
+    const reservedA = idOf("preprod-claim-reserv-a");
+    const queuedB = idOf("preprod-claim-queued-b");
+    const reservedB = idOf("preprod-claim-reserv-b");
+
+    await adminQuery(
+      `insert into private.gmail_sent_events
+         (attempt_id, user_id, mail_account_id, kind, hotel_id, recipient, subject,
+          provider_message_id, provider_thread_id, binding_status)
+       values ($1, $2, $3, 'pitch', $4, 'desk@hotel.example', 'Already sent',
+               'preprod-sent-msg-a', 'preprod-sent-thread', 'not_requested')`,
+      [sentId, USER_A, mailA, HOTEL],
+    );
+
+    const markedReserved = await adminQuery<{
+      r: { result: string; call_provider: boolean; failure_code?: string; attempt_id?: string };
+    }>("select public.gmail_send_mark_provider($1::uuid, $2::uuid, 120, 300) as r", [
+      USER_A,
+      reservedId,
+    ]);
+    expect(markedReserved[0]!.r).toMatchObject({
+      result: "failed",
+      call_provider: false,
+      failure_code: "deletion_pending",
+      attempt_id: reservedId,
+    });
+    const reservedRow = await adminQuery<{
+      status: string;
+      failure_code: string | null;
+      provider_started_at: string | null;
+    }>(
+      "select status, failure_code, provider_started_at from private.gmail_send_attempts where id = $1",
+      [reservedId],
+    );
+    expect(reservedRow[0]).toEqual({
+      status: "failed",
+      failure_code: "deletion_pending",
+      provider_started_at: null,
+    });
+    const markedAgain = await adminQuery<{
+      r: { result: string; call_provider: boolean; failure_code?: string };
+    }>("select public.gmail_send_mark_provider($1::uuid, $2::uuid, 120, 300) as r", [
+      USER_A,
+      reservedId,
+    ]);
+    expect(markedAgain[0]!.r).toMatchObject({
+      result: "failed",
+      call_provider: false,
+      failure_code: "deletion_pending",
+    });
+
+    const markedSent = await adminQuery<{
+      r: { result: string; call_provider: boolean; attempt_id?: string };
+    }>("select public.gmail_send_mark_provider($1::uuid, $2::uuid, 120, 300) as r", [
+      USER_A,
+      sentId,
+    ]);
+    expect(markedSent[0]!.r).toMatchObject({
+      result: "sent",
+      call_provider: false,
+      attempt_id: sentId,
+    });
+
+    const replay = await adminQuery<{
+      r: { result: string; call_provider: boolean; attempt_id?: string };
+    }>(
+      `select public.gmail_send_reserve(
+         $1::uuid, $2::uuid, 'preprod-sent-replay01', 'pitch', 'desk@hotel.example',
+         'Already sent', 'Body that was sent', $3::uuid, null, null, null, null
+       ) as r`,
+      [USER_A, mailA, HOTEL],
+    );
+    expect(replay[0]!.r).toMatchObject({
+      result: "sent",
+      call_provider: false,
+      attempt_id: sentId,
+    });
+    const sentRow = await adminQuery<{ status: string; failure_code: string | null }>(
+      "select status, failure_code from private.gmail_send_attempts where id = $1",
+      [sentId],
+    );
+    expect(sentRow[0]).toEqual({ status: "sent", failure_code: null });
+
+    await adminQuery(
+      `update public.users
+          set timezone = (
+            select case
+              when h = 12 then 'UTC'
+              else 'Etc/GMT-' || ((12 - h + 24) % 24)::text
+            end
+              from (select extract(hour from clock_timestamp())::int as h) s
+          )
+        where id = $1`,
+      [USER_B],
+    );
+    const claimed = await adminQuery<{
+      r: {
+        result: string;
+        claims: { attempt_id: string; user_id: string; result: string; call_provider: boolean }[];
+      };
+    }>("select public.gmail_send_claim_due(clock_timestamp(), 25, 180, 120, 300) as r");
+    expect(claimed[0]!.r.result).toBe("ok");
+    const claims = claimed[0]!.r.claims;
+    expect(claims.map((row) => row.user_id)).not.toContain(USER_A);
+    expect(claims.map((row) => row.attempt_id)).toEqual(
+      expect.not.arrayContaining([queuedA, reservedA, reservedId, sentId]),
+    );
+    expect(claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attempt_id: queuedB,
+          user_id: USER_B,
+          result: "reserved",
+          call_provider: true,
+        }),
+      ]),
+    );
+    expect(claims.map((row) => row.attempt_id)).not.toContain(reservedB);
+
+    const after = await adminQuery<{
+      idempotency_key: string;
+      status: string;
+      failure_code: string | null;
+    }>(
+      `select idempotency_key, status, failure_code
+         from private.gmail_send_attempts
+        where idempotency_key in (
+          'preprod-claim-queued-a', 'preprod-claim-reserv-a',
+          'preprod-claim-queued-b', 'preprod-claim-reserv-b',
+          'preprod-sent-replay01'
+        )
+        order by idempotency_key`,
+    );
+    expect(after).toEqual([
+      {
+        idempotency_key: "preprod-claim-queued-a",
+        status: "failed",
+        failure_code: "deletion_pending",
+      },
+      { idempotency_key: "preprod-claim-queued-b", status: "reserved", failure_code: null },
+      {
+        idempotency_key: "preprod-claim-reserv-a",
+        status: "failed",
+        failure_code: "deletion_pending",
+      },
+      { idempotency_key: "preprod-claim-reserv-b", status: "reserved", failure_code: null },
+      { idempotency_key: "preprod-sent-replay01", status: "sent", failure_code: null },
+    ]);
+  });
+
   it("refreshes an annual window once and skips a monthly plan and a pending deletion", async () => {
     await adminQuery(
       `insert into public.subscriptions

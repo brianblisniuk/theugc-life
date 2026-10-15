@@ -1,12 +1,12 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87, D04b, migrations 0090 and 0091, D162-D170). D05 follow-up scheduling is draft PR #89 on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Accepted. Opt-in per thread, at most two, original hotel contact only, stop on reply, bounce, won or closed, or cancel. Free cannot schedule. Scheduling and sending spend no credits. Defaults are 3 days then 5 days. Each delay is 1 to 30 days. The send queue, allowlist, and kill switch stay. expected_head stays null until a later commit can name a SHA this commit does not itself change. Do not merge.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 697ca0946fcef24f32fe0da518512ec1c3c3b4cf (merge of PR #92, PREPROD-1, migration 0093_preprod_jobs.sql). D05 follow-up scheduling is merged as PR #89 (2549b96836d90180b655a7d0893316e57e92a5f2, migration 0092). UX02 Discover + Hotel Detail is merged as PR #91 (dbfd2472b00d49590c17f416a10f6dbef371781b, design only). Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. D02 Contact Hub is blocked on the Hunter credential. D178 stays Proposed. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository.",
   "schema_version": 1,
-  "as_of": "2026-10-14",
-  "state": "AWAITING_AUDIT",
-  "last_recorded_main": "f892d6e37cd7b606e4b5c663dc002e0503d0145b",
-  "active_block": "D05 follow-up scheduling",
-  "branch": "cursor/d05-followup-scheduling-dd31",
-  "pr": 89,
+  "as_of": "2026-10-15",
+  "state": "HUMAN_FRONTIER",
+  "last_recorded_main": "697ca0946fcef24f32fe0da518512ec1c3c3b4cf",
+  "active_block": "D02 Contact Hub",
+  "branch": null,
+  "pr": null,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [
@@ -18,9 +18,9 @@
     }
   ],
   "ci_status": {
-    "ref": "f892d6e37cd7b606e4b5c663dc002e0503d0145b",
-    "verify": "unknown"
+    "ref": "697ca0946fcef24f32fe0da518512ec1c3c3b4cf",
+    "verify": "success"
   },
-  "required_human_action": "EXTERNAL ACTION APPROVAL REQUIRED remains open from D04: add gmail.send to the Google consent screen, set GMAIL_SEND_ENV=production only on production, and set GMAIL_DISPATCH_SECRET on the send host. Do not do that from the repository. D171-D177 are Accepted. Do not merge PR #89 until audit and exact-head CI pass.",
-  "next_dependency": "D05 follow-up scheduling is AWAITING_AUDIT as draft PR #89 on cursor/d05-followup-scheduling-dd31. Migration 0092. D171-D177 are Accepted. Defaults are 3 days then 5 days, each delay 1 to 30 days. Branched from main f892d6e37cd7b606e4b5c663dc002e0503d0145b (merge of PR #87). expected_head stays null. Do not merge."
+  "required_human_action": "CREDENTIAL REQUIRED — D02 Contact Hub stays blocked until the Hunter credential is available. D178 stays Proposed and the owner should Accept it. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
+  "next_dependency": "D02 Contact Hub is blocked on the Hunter credential. PREPROD-1 is merged (PR #92, 697ca0946fcef24f32fe0da518512ec1c3c3b4cf, migration 0093). D05 is merged (PR #89, 2549b96836d90180b655a7d0893316e57e92a5f2, migration 0092). UX02 is merged (PR #91, dbfd2472b00d49590c17f416a10f6dbef371781b, design only). D178 stays Proposed. Drafts #88 and #90 stay open for the owner. Do not merge them. Do not implement Hunter in this follow-up."
 }
