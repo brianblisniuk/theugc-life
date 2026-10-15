@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discover · 390 · more filters</title>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/app.css">
+</head>
+<body class="force-mobile">
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="device">
+    <header class="app-header">
+      <a class="wordmark" href="../index.html">theugc<span>.life</span></a>
+      <nav class="primary-nav" aria-label="Primary">
+        <a href="../index.html#workspaces" >Home</a>
+        <a href="1440-free.html" aria-current="page">Discover</a>
+        <a href="../index.html#workspaces">Pipeline</a>
+        <a href="../index.html#workspaces">Trips</a>
+        <a href="../index.html#workspaces">Profile</a>
+      </nav>
+      <div class="header-tools">
+        <span class="chip plan-chip">Free</span>
+        
+        <button type="button" class="btn btn-quiet" data-theme-toggle aria-pressed="false">Theme: Light</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"><div class="page"><div class="discover" data-discover>
+    <div class="list-column">
+      <p class="sample-banner"><span class="sample-tag">Sample data</span> Names, counts, and signals on this frame are illustrative. The frame draws representative rows, not all 24.</p>
+      <div class="spread">
+        <div class="stack-sm">
+          <h1>Discover</h1>
+          <p class="lede">Find hotels, explore creator activity, and build your next collaboration.</p>
+        </div>
+        <button type="button" class="btn view-toggle" data-map-toggle aria-pressed="false">Map</button>
+      </div>
+      <form class="toolbar" role="search" action="#" onsubmit="return false">
+    <div class="field search-field"><label class="label" for="d-q">Search</label>
+      <input class="search-input" id="d-q" type="search" placeholder="Search hotels or destinations" autocomplete="off"></div>
+    <div class="field select-field"><label class="label" for="d-dest">Destination</label>
+      <select class="select" id="d-dest"><option>All destinations</option><option>Barcelona</option><option>Lisbon</option><option>Madrid</option><option>Palma</option><option>Lyon</option><option>Deià</option></select></div>
+    <div class="field select-field"><label class="label" for="d-type">Hotel type</label>
+      <select class="select" id="d-type"><option>All types</option><option>Hotel</option><option>Resort</option><option>Boutique hotel</option><option>Aparthotel</option><option>Hostel</option><option>Villa</option><option>Residence</option><option>Guesthouse</option><option>Lodge</option><option>Other</option></select></div>
+    <button type="button" class="btn" data-popover-open aria-expanded="true" aria-controls="d-more">More filters</button>
+    <button type="button" class="btn btn-primary">Apply</button>
+  </form>
+      
+      <div class="list-results stack">
+        
+        <div class="results-bar">
+    <p role="status">Showing 1–24 of 186 hotels <span class="sample-tag">Sample data</span></p>
+    <div class="field sort-field"><label class="label" for="sort">Sort by</label>
+    <select class="select" id="sort" data-sort data-plan="free" data-list="hotel-list" data-lock="sort-lock">
+      <option value="name"  selected>Name</option>
+      <option value="creator_activity"  >Most active with creators</option>
+      <option value="response_rate" data-premium >Most responsive (Pro)</option>
+      <option value="response_time" data-premium >Fastest replying (Pro)</option>
+    </select></div>
+  </div>
+    <div class="lock-panel" id="sort-lock" hidden>
+    <h2>Hotel response insights</h2>
+    <p>See confirmed reply-rate and response-time signals when enough creator data is available.</p>
+    <p class="secondary">Available on Pro and Max, or with a Destination Pass for this destination. A locked metric shows no value and no ranking. These results stayed in name order.</p>
+    <a class="btn" href="../index.html#plans">View plans</a>
+  </div>
+    <h2 class="sr-only">Hotel results</h2>
+    <ul class="hotel-list" id="hotel-list"><li class="hotel-row" data-hotel="lucia" data-name="casa lucía" data-creator_activity-rank="2" data-creator_activity-label="High" data-creator_activity-basis="Based on activity from 8 creators" data-response_rate-rank="1" data-response_rate-label="64%" data-response_rate-basis="Based on activity from 11 creators" data-response_time-rank="2" data-response_time-label="1–3 days" data-response_time-basis="Based on activity from 6 creators">
+    <a class="row-link" href="../hotel/390-no-relation.html">
+      <span class="photo"><span class="sr-only">No photograph. Initials </span>CL</span>
+      <span class="stack-sm">
+        <span class="hotel-name">Casa Lucía</span>
+        <span class="meta-line">Barcelona, Spain · Boutique hotel</span>
+        <span class="meta-line">5-star classification</span>
+        <span class="signal">High creator activity · Creator collaboration observed</span>
+        
+        
+        <span class="secondary" data-rank-line hidden></span>
+      </span>
+    </a>
+    <div class="save-slot">
+      <button type="button" class="btn" >Save</button>
+    </div>
+  </li><li class="hotel-row" data-hotel="mar" data-name="hotel mar azul">
+    <a class="row-link" href="../hotel/390-no-relation.html">
+      <span class="photo"><span class="sr-only">No photograph. Initials </span>MA</span>
+      <span class="stack-sm">
+        <span class="hotel-name">Hotel Mar Azul</span>
+        <span class="meta-line">Palma, Spain · Resort</span>
+        <span class="meta-line">4-star classification</span>
+        <span class="signal">Creator activity detected</span>
+        <span class="closed-note">Temporarily closed</span>
+        
+        <span class="secondary" data-rank-line hidden></span>
+      </span>
+    </a>
+    <div class="save-slot">
+      <button type="button" class="btn" >Save</button>
+    </div>
+  </li></ul>
+    <nav class="pagination" aria-label="Pagination">
+    <button type="button" class="btn" disabled>Previous</button>
+    <span>Page 1 of 8</span>
+    <button type="button" class="btn" >Next</button>
+  </nav>
+      </div>
+    </div>
+    <div class="map-column"><div class="map-panel">
+    <div class="map-canvas" data-map>
+      <svg viewBox="0 0 644 560" role="img" aria-label="Schematic map. Pins are neutral and match the list.">
+  <rect width="644" height="560" fill="var(--map-water)"></rect>
+  <path fill="var(--map-land)" stroke="var(--map-line)" stroke-width="1" d="M40 80l80-20 70 30 90-10 60 40 80-20 70 50 40 80-30 70 20 60-80 40-90-10-70 30-100-20-60-50-40-80z"></path>
+  <path fill="none" stroke="var(--map-line)" stroke-width="1" d="M180 160h90M300 220v70M220 300h120"></path>
+</svg>
+      <button type="button" class="pin" style="left:68%;top:42%" data-pin="lucia" data-name="Casa Lucía" data-meta="Barcelona, Spain · Boutique hotel · 5-star classification" data-href="../hotel/390-no-relation.html" aria-expanded="false" aria-label="Casa Lucía, Barcelona. Show preview."><i></i></button><button type="button" class="pin" style="left:62%;top:64%" data-pin="mar" data-name="Hotel Mar Azul" data-meta="Palma, Spain · Resort · 4-star classification" data-href="../hotel/390-no-relation.html" aria-expanded="false" aria-label="Hotel Mar Azul, Palma. Show preview."><i></i></button>
+    </div>
+    <p class="map-note">Map shows hotels on this results page.</p>
+    <div class="preview stack-sm" id="map-preview" hidden>
+      <p class="hotel-name" data-preview-name></p>
+      <p class="meta-line" data-preview-meta></p>
+      <a class="btn" data-preview-link href="#">View hotel</a>
+    </div>
+  </div></div>
+  </div></div></main>
+    
+    <div class="sheet-open" data-sheet data-sheet-locked>
+      <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+        <div class="sheet-body">
+          <h2 id="sheet-title">More filters</h2>
+          <div class="field"><label class="label" for="sheet-country">Country</label>
+    <select class="select" id="sheet-country"><option>Any country</option><option>Spain</option><option>Portugal</option><option>France</option><option>Italy</option></select></div>
+    <div class="field"><label class="label" for="sheet-stars">Classification</label>
+    <select class="select" id="sheet-stars"><option>Any published classification</option><option>4-star</option><option>5-star</option></select></div>
+    <div class="field"><label class="label" for="sheet-verified">Editorial verification</label>
+    <select class="select" id="sheet-verified"><option>Any status</option><option>Editorially verified</option><option>Needs review</option><option>Verification stale</option><option>Unverified</option></select></div>
+    <div class="field"><label class="label" for="sheet-activity">Creator activity</label>
+    <select class="select" id="sheet-activity"><option>Any disclosed activity</option><option>High creator activity</option><option>Medium creator activity</option><option>Emerging creator activity</option><option>Creator activity detected</option></select></div>
+    <label class="check"><input type="checkbox" id="sheet-collab"> Creator collaboration observed</label>
+        </div>
+        <div class="sheet-apply">
+          <button type="button" class="btn">Close</button>
+          <button type="button" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+    <nav class="bottom-nav" aria-label="Primary mobile">
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5 8 2l6 5.5V14H10V9H6v5H2z"/></svg>Home</a>
+      <a href="1440-free.html" aria-current="page"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2"/></svg>Discover</a>
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h8"/></svg>Pipeline</a>
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h12M4 12V7l4-3 4 3v5"/></svg>Trips</a>
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="6" r="2.5"/><path d="M3 13c1.2-2 2.8-3 5-3s3.8 1 5 3"/></svg>Profile</a>
+    </nav>
+  </div>
+  <script src="../assets/ui.js"></script>
+</body>
+</html>

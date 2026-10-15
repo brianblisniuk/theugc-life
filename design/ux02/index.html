@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UX02 · Discover and Hotel Detail</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="">
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="">
+    <header class="app-header">
+      <a class="wordmark" href="index.html">theugc<span>.life</span></a>
+      <nav class="primary-nav" aria-label="Primary">
+        <a href="index.html#workspaces" aria-current="page">Home</a>
+        <a href="discover/1440-free.html" >Discover</a>
+        <a href="index.html#workspaces">Pipeline</a>
+        <a href="index.html#workspaces">Trips</a>
+        <a href="index.html#workspaces">Profile</a>
+      </nav>
+      <div class="header-tools">
+        
+        
+        <button type="button" class="btn btn-quiet" data-theme-toggle aria-pressed="false">Theme: Light</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"><div class="page stack">
+  <p class="sample-banner"><span class="sample-tag">Sample data</span> Static UX02 frames. Light is the master. Dark uses the same token names.</p>
+  <div class="stack-sm">
+    <h1>Discover and Hotel Detail</h1>
+    <p class="lede">Product design specification v1.0, grounded on main 2549b96. The brand accent on these frames is #DFFF4F. Text on that fill is #17191B. The accent is never used as text or as an icon on a light surface, and primary buttons keep a #5E6C00 edge because the fill is 1.08:1 against the paper background.</p>
+  </div>
+  <p><button type="button" class="btn" data-theme-toggle aria-pressed="false">Theme: Light</button></p>
+  <div class="frame-index">
+    <div class="index-group"><h2>Discover</h2>
+      <a href="discover/1440-free.html">1440 · Free · no filters<span>List and map</span></a>
+      <a href="discover/1440-pro-filters.html">1440 · Pro · filters and data<span>Chips, one metric</span></a>
+      <a href="discover/1440-max-sort.html">1440 · Max · premium sort<span>Most responsive</span></a>
+      <a href="discover/insufficient.html">Insufficient data<span>Below the floor</span></a>
+      <a href="discover/no-results.html">No results<span>Clear filters</span></a>
+      <a href="discover/search-error.html">Search error<span>Retry</span></a>
+      <a href="discover/map-unavailable.html">Map unavailable<span>List still works</span></a>
+      <a href="discover/390-list.html">390 · list<span>Map toggle</span></a>
+      <a href="discover/390-map.html">390 · map<span>List toggle</span></a>
+      <a href="discover/390-filters.html">390 · More filters<span>Bottom sheet</span></a>
+    </div>
+    <div class="index-group"><h2>Hotel detail</h2>
+      <a href="hotel/free-locked.html">Free · contact locked<span>Unlock · 1 credit</span></a>
+      <a href="hotel/free-unlocked.html">Free · contact unlocked<span>Templates only</span></a>
+      <a href="hotel/free-credit-limit.html">Free · credit limit<span>0 and unreadable</span></a>
+      <a href="hotel/pro-intel.html">Pro · intelligence available<span>Fit without rank</span></a>
+      <a href="hotel/pro-insufficient.html">Pro · intelligence insufficient<span>Not locked</span></a>
+      <a href="hotel/max-fit.html">Max · advanced Fit<span>Rank, confidence, recency</span></a>
+      <a href="hotel/pitched.html">Pitched<span>Open conversation</span></a>
+      <a href="hotel/reply-followup.html">Reply and follow-up<span>Draft, scheduled, sent</span></a>
+      <a href="hotel/won.html">Won<span>Deliverables</span></a>
+      <a href="hotel/contact-error.html">Contact error<span>Not an empty file</span></a>
+      <a href="hotel/390-no-relation.html">390 · no relation<span>Bottom action</span></a>
+      <a href="hotel/390-negotiating.html">390 · negotiating<span>Above the nav</span></a>
+    </div>
+  </div>
+  <div class="index-group">
+    <h2>Required states outside the 22 frames</h2>
+    <a href="discover/empty-catalog.html">Empty catalog<span>Not a filter miss</span></a>
+    <a href="hotel/not-found.html">Hotel not found<span>Published catalog</span></a>
+    <a href="specimens.html">Component specimens<span>Skeleton, tags, four states</span></a>
+  </div>
+  <section class="layer" id="plans">
+    <h2>Plans</h2>
+    <p>The same product architecture. A price is not an entitlement. A Destination Pass covers premium intelligence inside its destination and descendants. It does not unlock a contact, a Claude draft, or Gmail send.</p>
+    <div class="deliverable"><span>Free</span><span>5 credits / rolling week</span><span>Templates, 1 active trip</span></div>
+    <div class="deliverable"><span>Pro</span><span>150 credits / 30 days</span><span>Reply insights, Fit, Claude, Gmail</span></div>
+    <div class="deliverable"><span>Max</span><span>500 credits / 30 days</span><span>Advanced Fit and more AI context</span></div>
+    <p class="secondary">Contact unlock is 1 credit on every plan, charged only after a successful unlock. The first AI draft is 1 credit.</p>
+  </section>
+  <section class="layer" id="workspaces">
+    <h2>Workspaces</h2>
+    <p class="secondary">Home, Pipeline, Trips, and Profile are named here so the shell can link to them. They are not part of this UX02 pair.</p>
+    <ul class="rank-list">
+      <li><span>1</span><span><strong>Discover</strong><br><span class="secondary">Published hotels and the map</span></span></li>
+      <li><span>2</span><span><strong>Trips</strong><br><span class="secondary">Destination, dates, and shortlist</span></span></li>
+      <li><span>3</span><span><strong>Pipeline</strong><br><span class="secondary">Private hotel tracking</span></span></li>
+      <li><span>4</span><span><strong>Inbox</strong><br><span class="secondary">Gmail readings beside each open cycle. A pipeline surface, not a new primary item.</span></span></li>
+      <li><span>5</span><span><strong>Collaborations</strong><br><span class="secondary">Won deals, deliverables, and agreed compensation.</span></span></li>
+    </ul>
+  </section>
+  <p class="secondary">Desktop frames use the 708/644 and 900/452 columns from 1024px upward, and the exact 708 + 24 + 644 split from 1440px. Mobile frames are 390-wide artboards and reflow at 320. Contrast notes are in WCAG.md.</p>
+</div></main>
+    
+    
+    <nav class="bottom-nav" aria-label="Primary mobile">
+      <a href="index.html#workspaces" aria-current="page"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5 8 2l6 5.5V14H10V9H6v5H2z"/></svg>Home</a>
+      <a href="discover/1440-free.html" ><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2"/></svg>Discover</a>
+      <a href="index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h8"/></svg>Pipeline</a>
+      <a href="index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h12M4 12V7l4-3 4 3v5"/></svg>Trips</a>
+      <a href="index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="6" r="2.5"/><path d="M3 13c1.2-2 2.8-3 5-3s3.8 1 5 3"/></svg>Profile</a>
+    </nav>
+  </div>
+  <script src="assets/ui.js"></script>
+</body>
+</html>

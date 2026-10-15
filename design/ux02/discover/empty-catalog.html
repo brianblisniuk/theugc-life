@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discover · empty catalog</title>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/app.css">
+</head>
+<body class="">
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="">
+    <header class="app-header">
+      <a class="wordmark" href="../index.html">theugc<span>.life</span></a>
+      <nav class="primary-nav" aria-label="Primary">
+        <a href="../index.html#workspaces" >Home</a>
+        <a href="1440-free.html" aria-current="page">Discover</a>
+        <a href="../index.html#workspaces">Pipeline</a>
+        <a href="../index.html#workspaces">Trips</a>
+        <a href="../index.html#workspaces">Profile</a>
+      </nav>
+      <div class="header-tools">
+        <span class="chip plan-chip">Free</span>
+        <span class="secondary credit-readout">5 credits available</span>
+        <button type="button" class="btn btn-quiet" data-theme-toggle aria-pressed="false">Theme: Light</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"><div class="page"><div class="discover" data-discover>
+    <div class="list-column">
+      <p class="sample-banner"><span class="sample-tag">Sample data</span> This is an empty catalog. It is not a filter miss and not a failed search.</p>
+      <div class="spread">
+        <div class="stack-sm">
+          <h1>Discover</h1>
+          <p class="lede">Find hotels, explore creator activity, and build your next collaboration.</p>
+        </div>
+        <button type="button" class="btn view-toggle" data-map-toggle aria-pressed="false">Map</button>
+      </div>
+      <form class="toolbar" role="search" action="#" onsubmit="return false">
+    <div class="field search-field"><label class="label" for="d-q">Search</label>
+      <input class="search-input" id="d-q" type="search" placeholder="Search hotels or destinations" autocomplete="off"></div>
+    <div class="field select-field"><label class="label" for="d-dest">Destination</label>
+      <select class="select" id="d-dest"><option>All destinations</option><option>Barcelona</option><option>Lisbon</option><option>Madrid</option><option>Palma</option><option>Lyon</option><option>Deià</option></select></div>
+    <div class="field select-field"><label class="label" for="d-type">Hotel type</label>
+      <select class="select" id="d-type"><option>All types</option><option>Hotel</option><option>Resort</option><option>Boutique hotel</option><option>Aparthotel</option><option>Hostel</option><option>Villa</option><option>Residence</option><option>Guesthouse</option><option>Lodge</option><option>Other</option></select></div>
+    <div class="popover-anchor"><button type="button" class="btn" data-popover-open aria-expanded="false" aria-controls="d-more">More filters</button>
+      <div class="popover" id="d-more" data-popover hidden>
+        <h2>More filters</h2>
+        <div class="field"><label class="label" for="d-country">Country</label>
+    <select class="select" id="d-country"><option>Any country</option><option>Spain</option><option>Portugal</option><option>France</option><option>Italy</option></select></div>
+    <div class="field"><label class="label" for="d-stars">Classification</label>
+    <select class="select" id="d-stars"><option>Any published classification</option><option>4-star</option><option>5-star</option></select></div>
+    <div class="field"><label class="label" for="d-verified">Editorial verification</label>
+    <select class="select" id="d-verified"><option>Any status</option><option>Editorially verified</option><option>Needs review</option><option>Verification stale</option><option>Unverified</option></select></div>
+    <div class="field"><label class="label" for="d-activity">Creator activity</label>
+    <select class="select" id="d-activity"><option>Any disclosed activity</option><option>High creator activity</option><option>Medium creator activity</option><option>Emerging creator activity</option><option>Creator activity detected</option></select></div>
+    <label class="check"><input type="checkbox" id="d-collab"> Creator collaboration observed</label>
+      </div></div>
+    <button type="button" class="btn btn-primary">Apply</button>
+  </form>
+      
+      <div class="list-results stack">
+        
+        <div class="state-panel" role="status">
+      <h2>No published hotels yet</h2>
+      <p>Hotels appear here once they are in the published catalog.</p>
+    </div>
+      </div>
+    </div>
+    <div class="map-column"><div class="map-panel">
+    <div class="map-canvas" data-map>
+      <svg viewBox="0 0 644 560" role="img" aria-label="Schematic map. Pins are neutral and match the list.">
+  <rect width="644" height="560" fill="var(--map-water)"></rect>
+  <path fill="var(--map-land)" stroke="var(--map-line)" stroke-width="1" d="M40 80l80-20 70 30 90-10 60 40 80-20 70 50 40 80-30 70 20 60-80 40-90-10-70 30-100-20-60-50-40-80z"></path>
+  <path fill="none" stroke="var(--map-line)" stroke-width="1" d="M180 160h90M300 220v70M220 300h120"></path>
+</svg>
+      
+    </div>
+    <p class="map-note">Map shows hotels on this results page.</p>
+    <div class="preview stack-sm" id="map-preview" hidden>
+      <p class="hotel-name" data-preview-name></p>
+      <p class="meta-line" data-preview-meta></p>
+      <a class="btn" data-preview-link href="#">View hotel</a>
+    </div>
+  </div></div>
+  </div></div></main>
+    
+    
+    <nav class="bottom-nav" aria-label="Primary mobile">
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5 8 2l6 5.5V14H10V9H6v5H2z"/></svg>Home</a>
+      <a href="1440-free.html" aria-current="page"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2"/></svg>Discover</a>
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h8"/></svg>Pipeline</a>
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h12M4 12V7l4-3 4 3v5"/></svg>Trips</a>
+      <a href="../index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="6" r="2.5"/><path d="M3 13c1.2-2 2.8-3 5-3s3.8 1 5 3"/></svg>Profile</a>
+    </nav>
+  </div>
+  <script src="../assets/ui.js"></script>
+</body>
+</html>
