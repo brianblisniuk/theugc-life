@@ -23,7 +23,7 @@ export default async function PitchTemplatesPage() {
     <div className="space-y-8">
       <PageHeader
         title="Pitch templates"
-        crumbs={listCrumbs("Pitch templates", { href: "/app/profile", label: "Perfil" })}
+        crumbs={listCrumbs("Pitch templates", { href: "/app/profile", label: "Profile" })}
         description="Templates you save are only yours. A blank {{token}} is omitted when a fact is missing. Nothing here sends mail."
       />
       {loaded.status === "error" ? (

@@ -11,6 +11,7 @@ import {
   unlockChrome,
   unlockContactLabel,
 } from "@/lib/credits/config";
+import { CREDITS_UNAVAILABLE, UNLOCK_ASSURANCE } from "@/lib/ux02/copy";
 import { unlockHotelContactAction } from "@/lib/credits/actions";
 import type { UnlockActionResult } from "@/lib/credits/types";
 import { PIPELINE_COPY, freeLimitExplanation } from "@/lib/pipeline/view";
@@ -21,7 +22,7 @@ function SubmitButton({ label }: { label: string }) {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+      className="ux-btn ux-btn-primary"
     >
       {pending ? "Unlocking…" : label}
     </button>
@@ -96,9 +97,13 @@ export function UnlockContact({
 
   if (chrome === "unknown") {
     return (
-      <p className="text-sm text-muted">
-        We couldn&rsquo;t read your credits. Reload the page. This is not an empty balance.
-      </p>
+      <div className="ux-stack-sm" role="status">
+        <p className="ux-name">{CREDITS_UNAVAILABLE}</p>
+        <p className="ux-meta">Retry the balance. This is not 0, and it is not an upgrade.</p>
+        <a className="ux-btn" href="">
+          Retry
+        </a>
+      </div>
     );
   }
 
@@ -120,6 +125,7 @@ export function UnlockContact({
         <input type="hidden" name="hotelId" value={hotelId} />
         <SubmitButton label={label} />
       </form>
+      <p className="ux-meta">{UNLOCK_ASSURANCE}</p>
       {result?.status === "not_found" ? (
         <p className="text-sm text-muted" role="status">
           Contact not available yet. This did not use a credit.

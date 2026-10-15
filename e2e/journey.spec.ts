@@ -176,7 +176,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   const balanceText = async (page: typeof ada) =>
     (await page.getByTestId("credit-balance").innerText()).replace(/\s+/g, " ").trim();
   const balanceNumber = (label: string) => {
-    const match = label.match(/^(\d+) credits? left$/);
+    const match = label.match(/^(\d+) credits? available$/);
     if (!match) throw new Error(`credit counter was ${label}`);
     return Number(match[1]);
   };
@@ -205,10 +205,10 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.locator('aside[aria-label="Map"]')).toHaveCount(0);
   await expect(ada.locator('script[src*="maps.googleapis.com"]')).toHaveCount(0);
   expect(balanceNumber(await balanceText(ada))).toBe(balanceAfterOnboarding);
-  await expect(ada.getByRole("button", { name: "Unlock contact (1 credit)" })).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Unlock contact · 1 credit" })).toBeVisible();
   await expect(ada.getByText("found-222222222222@fake-provider.test")).toHaveCount(0);
   await postAction(ada, () =>
-    ada.getByRole("button", { name: "Unlock contact (1 credit)" }).click(),
+    ada.getByRole("button", { name: "Unlock contact · 1 credit" }).click(),
   );
   await expect(ada.getByTestId("added-to-pipeline")).toHaveText("Added to Pipeline");
   await ada.reload();
@@ -281,7 +281,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
-  await ada.getByRole("link", { name: "Perfil" }).click();
+  await ada.getByRole("link", { name: "Profile" }).click();
   await ada.waitForURL("**/app/profile");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
@@ -379,7 +379,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByText(ADA_NAME)).toHaveCount(0);
   await expect(bea.getByText("found-222222222222@fake-provider.test")).toHaveCount(0);
   await expect(bea.getByText("Already unlocked")).toHaveCount(0);
-  await expect(bea.getByRole("button", { name: "Unlock contact (1 credit)" })).toBeVisible();
+  await expect(bea.getByRole("button", { name: "Unlock contact · 1 credit" })).toBeVisible();
 
   await bea.goto("/app/pipeline");
   await expect(bea.getByText("Your pipeline is empty")).toBeVisible();
@@ -409,6 +409,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByRole("link", { name: HOTEL_NAME })).toBeVisible();
   await expect(bea.getByText("We couldn’t load hotels just now")).toHaveCount(0);
   await expect(bea.getByText("On a trip")).toHaveCount(0);
+  await expect(bea.getByText("On trip")).toHaveCount(0);
 
   await bea.goto("/app/profile");
   await expect(bea.getByLabel("Display name")).toHaveValue(BEA_NAME);

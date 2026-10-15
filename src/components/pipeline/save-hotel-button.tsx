@@ -23,7 +23,7 @@ function SubmitButton({ idle, pendingLabel }: { idle: string; pendingLabel: stri
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+      className="ux-btn"
     >
       {pending ? pendingLabel : idle}
     </button>

@@ -14,11 +14,11 @@ describe("primary navigation", () => {
       nav.indexOf("export const PRIMARY_NAV"),
       nav.indexOf("export const UTILITY_NAV"),
     );
-    expect(primary).toContain('{ href: "/app", label: "Inicio" }');
-    expect(primary).toContain('{ href: "/app/discover", label: "Descubrir" }');
+    expect(primary).toContain('{ href: "/app", label: "Home" }');
+    expect(primary).toContain('{ href: "/app/discover", label: "Discover" }');
     expect(primary).toContain('{ href: "/app/pipeline", label: "Pipeline" }');
-    expect(primary).toContain('{ href: "/app/trips", label: "Viajes" }');
-    expect(primary).toContain('{ href: "/app/profile", label: "Perfil" }');
+    expect(primary).toContain('{ href: "/app/trips", label: "Trips" }');
+    expect(primary).toContain('{ href: "/app/profile", label: "Profile" }');
     expect(primary).not.toContain("/app/inbox");
     expect(primary).not.toContain("/app/collaborations");
     expect(primary).not.toContain("surface=");

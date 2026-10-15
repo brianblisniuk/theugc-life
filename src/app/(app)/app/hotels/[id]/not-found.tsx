@@ -5,17 +5,14 @@
  */
 import Link from "next/link";
 
+import { HOTEL_NOT_FOUND_BODY, HOTEL_NOT_FOUND_TITLE } from "@/lib/ux02/copy";
+
 export default function HotelNotFound() {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
-      <h1 className="text-xl font-semibold text-text">Hotel not found</h1>
-      <p className="max-w-sm text-sm text-muted">
-        This hotel doesn’t exist or may have been removed from the catalog.
-      </p>
-      <Link
-        href="/app/discover"
-        className="rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
-      >
+    <div className="ux-stack">
+      <h1 className="ux-h1">{HOTEL_NOT_FOUND_TITLE}</h1>
+      <p className="ux-lede">{HOTEL_NOT_FOUND_BODY}</p>
+      <Link href="/app/discover" className="ux-btn ux-btn-primary">
         Back to Discover
       </Link>
     </div>

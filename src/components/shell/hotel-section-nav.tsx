@@ -1,20 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
 
-import { HOTEL_SECTIONS, isHotelSection } from "@/lib/shell/navigation";
+import { HOTEL_TABS, hotelTabForHash } from "@/lib/shell/navigation";
 
-/**
- * In-page sections of Hotel Detail. The active section follows the URL hash.
- * An unknown hash leaves Overview active and does not navigate away.
- */
+/** Four sections. The active tab follows the hash, including anchors inside My work. */
 export function HotelSectionNav() {
-  const pathname = usePathname() ?? "";
   const [hash, setHash] = useState("");
-  const pitchHref = pathname.startsWith("/app/hotels/")
-    ? `${pathname.replace(/\/pitch$/, "").replace(/\/$/, "")}/pitch`
-    : null;
 
   useEffect(() => {
     const read = () => setHash(window.location.hash.replace(/^#/, ""));
@@ -23,37 +15,18 @@ export function HotelSectionNav() {
     return () => window.removeEventListener("hashchange", read);
   }, []);
 
-  const active = isHotelSection(hash) ? hash : "identity";
+  const active = hotelTabForHash(hash);
 
   return (
-    <nav
-      aria-label="Hotel sections"
-      className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0"
-    >
-      {HOTEL_SECTIONS.map((section) => {
+    <nav className="ux-subnav" aria-label="Hotel sections">
+      {HOTEL_TABS.map((section) => {
         const current = section.id === active;
         return (
-          <a
-            key={section.id}
-            href={`#${section.id}`}
-            aria-current={current ? "location" : undefined}
-            className={
-              "inline-flex min-h-11 shrink-0 items-center rounded-[var(--radius-app)] px-3 text-sm " +
-              (current ? "bg-surface font-semibold text-text" : "text-muted hover:text-text")
-            }
-          >
+          <a key={section.id} href={`#${section.id}`} aria-current={current ? "true" : undefined}>
             {section.label}
           </a>
         );
       })}
-      {pitchHref ? (
-        <a
-          href={pitchHref}
-          className="inline-flex min-h-11 shrink-0 items-center rounded-[var(--radius-app)] px-3 text-sm text-muted hover:text-text"
-        >
-          Pitch
-        </a>
-      ) : null}
     </nav>
   );
 }

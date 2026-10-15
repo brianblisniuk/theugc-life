@@ -40,7 +40,7 @@ export function ReportContact({ hotelId }: { hotelId: string }) {
         type="submit"
         className="inline-flex rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-semibold text-text"
       >
-        Report this email
+        Report incorrect contact
       </button>
       {result?.status === "error" ? (
         <p className="text-sm text-muted" role="status">

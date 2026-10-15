@@ -108,8 +108,8 @@ describe("credit config", () => {
   });
 
   it("labels the unlock from the cost and keeps a failed balance off zero", () => {
-    expect(unlockContactLabel(1)).toBe("Unlock contact (1 credit)");
-    expect(unlockContactLabel(2)).toBe("Unlock contact (2 credits)");
+    expect(unlockContactLabel(1)).toBe("Unlock contact · 1 credit");
+    expect(unlockContactLabel(2)).toBe("Unlock contact · 2 credits");
     expect(ALREADY_UNLOCKED_LABEL).toBe("Already unlocked");
     expect(creditsLeftLabel(1)).toBe("1 credit left");
     expect(creditsLeftLabel(15)).toBe("15 credits left");
