@@ -128,7 +128,7 @@ const notes=data.notes.filter(n=>n.hotelId===id).map(n=>({type:"note",text:n.tex
 return [...events,...notes].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,12).map(e=>`<div class="ops-event"><strong>${e.type==="note"?"Your note":esc(e.text)}</strong><p>${e.type==="note"?esc(e.text):e.source==="sample"?"Illustrative event":"Manual · not Gmail verified"}</p><small>${when(e.at)}</small></div>`).join("")||'<p class="ops-micro">No activity logged yet.</p>';
 }
 function drawerOpen(id){
-if(!hotel(id))return;ui.drawer=id;E("ops-drawer").classList.add("open");E("ops-drawer-shade").classList.add("visible");document.body.style.overflow="hidden";drawerRender();E("ops-drawer-close").focus();
+if(!hotel(id))return;ui.drawer=id;E("ops-drawer").classList.add("open");E("ops-drawer").setAttribute("aria-hidden","false");E("ops-drawer-shade").classList.add("visible");document.body.style.overflow="hidden";drawerRender();E("ops-drawer-close").focus();
 }
 function drawerRender(){
 const id=ui.drawer,h=hotel(id),c=data.campaigns.find(c=>c.hotelIds.includes(id));
@@ -139,7 +139,7 @@ E("ops-drawer-content").innerHTML=`<div class="eyebrow">RELATIONSHIP COCKPIT</di
 <div class="ops-divider"></div><h3>Private notes</h3><p class="ops-micro">Keep context without creating a new data record for the same hotel.</p><textarea id="ops-note" placeholder="What matters for the next response?"></textarea><button class="btn small" data-op="note-add" style="margin-top:9px">Add note</button>
 <div class="ops-divider"></div><h3>Activity</h3>${dealHistory(id)}`;
 }
-function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
+function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer").setAttribute("aria-hidden","true");E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
 function stageChange(id,v){
 if(stage(id)===v){A().toast("Already in that stage");return}
 if(A().state.plan==="free"&&["draft","sent","replied","negotiating","won","bounced"].includes(v)){
