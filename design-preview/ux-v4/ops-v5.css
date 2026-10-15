@@ -173,3 +173,12 @@
 .ops-task small{font-size:12px}
 .ops-pill{font-size:11.5px}
 .ops-lane-head strong{font-size:13px}
+
+/* Keep campaign actions readable instead of squeezing columns into narrow cells. */
+.ops-card-grid>.ops-panel{min-width:0}
+.ops-panel.table-scroller{overflow-x:auto}
+.ops-lead-table{min-width:805px}
+.ops-lead-right{flex-wrap:wrap;gap:5px;justify-content:flex-start}
+.ops-lead-right .btn{min-height:32px;white-space:nowrap}
+@media(max-width:1390px){.ops-card-grid{grid-template-columns:1fr}.ops-aside{display:grid;grid-template-columns:1fr 1fr}}
+@media(max-width:680px){.ops-aside{grid-template-columns:1fr}.ops-lead-table{min-width:790px}}
