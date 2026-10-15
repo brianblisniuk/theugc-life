@@ -361,11 +361,11 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
-| D02 | PLANNED | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
+| D02 | **BLOCKED** — CREDENTIAL REQUIRED. Contact Hub is the active frontier after PREPROD-1. It stays blocked until the Hunter credential is available. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | **DONE** — PR #84, merge `b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Drafts are not sent. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | **DONE** — PR #86, merge `3e11ded390a2845603b207433af90bb846d4670e`. Migration `0089`. D156–D161. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D04b | **DONE** — PR #87, merge `f892d6e37cd7b606e4b5c663dc002e0503d0145b`. Migrations `0090` and `0091`. D162–D170. Monthly USD AI budget, account pause, structured generation, queued sends, bounce pause. Sends still cost no credits. | AI cost and anti-abuse | per-user budget before the global pool; queued sends; deletion cascades |
-| D05 | **IN THIS PR.** Draft PR #89. Branch `cursor/d05-followup-scheduling-dd31`. Migration `0092`. D171–D177 Accepted (owner, 14 Oct 2026). Opt-in per thread, at most two, original hotel contact only, stop on reply, bounce, won or closed, or cancel. Free cannot schedule. Scheduling and sending spend no credits. Defaults are 3 days then 5 days. Each delay is 1 to 30 days. Do not merge. | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
+| D05 | **DONE** — PR #89, merge `2549b96836d90180b655a7d0893316e57e92a5f2`. Migration `0092`. D171–D177 Accepted (owner, 14 Oct 2026). Opt-in per thread, at most two, original hotel contact only, stop on reply, bounce, won or closed, or cancel. Free cannot schedule. Scheduling and sending spend no credits. Defaults are 3 days then 5 days. Each delay is 1 to 30 days. | follow-up scheduling/automation | reply-aware stop; safe sending limits; transparent next action |
 | D06 | **DONE** — PR #58, merge `6b59318bbe33897a5204f42fa2292eccaf6d13a7`, migration `0049`, D080 Accepted (Brian, 13 Oct 2026). Creator link plus suggestions. Gmail does not write CRM state. A redirect is not a rejection. | unified Inbox ↔ Pipeline experience | email state and CRM state cannot drift silently |
 | D07 | **DONE** — PR #56, merge `61d0e385894670bc55a78675e64526c353c288d5`, migration `0050`, D078 Accepted (Brian, 12 Oct 2026, option B). Records only: no charge. | collaboration deliverables + agreed compensation, with derived value per piece | creator compensation values each deliverable; unknown stays unknown |
 | D08 | **DONE** — PR #61, merge `d030cd0329c8b1e30afcdd14a72485174edcd9f5`, migration `0052`. D086–D088 stay Proposed. Private profile editor, creator-recorded counts, a past-collaboration list, and a private per-field opt-in table. The hotel link is D09. | creator context + personal analytics. Verified proof stays out. | history is reused to improve next opportunity, not just archived |
@@ -373,6 +373,12 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 
 **Base rounds:** 10  
 **Cumulative future rounds:** 27
+
+**PREPROD-1 (PR #92) is merged**, as merge commit
+`697ca0946fcef24f32fe0da518512ec1c3c3b4cf`. Migration
+`0093_preprod_jobs.sql`. D178 stays Proposed. UX02 (PR #91) is merged as
+`dbfd2472b00d49590c17f416a10f6dbef371781b` and is design only. Draft PRs #88
+and #90 are UX01 mockups awaiting the owner. Do not merge them.
 
 **Milestone D gate — Complete Travel OS loop:**
 
@@ -604,6 +610,13 @@ After every 5–8 merged base rounds:
 ---
 
 # 9. Immediate next move
+
+**Current frontier (15 Oct 2026).** Main is the merge of PREPROD-1, PR #92,
+`697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`. D05 is merged
+(PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`). UX02 is merged (PR #91,
+`dbfd2472b00d49590c17f416a10f6dbef371781b`, design only). D02 Contact Hub is
+blocked on the Hunter credential. D178 stays Proposed. Draft PRs #88 and #90
+await the owner. Do not merge them.
 
 At this baseline, Phase A is closed at the code gate:
 
