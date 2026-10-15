@@ -101,7 +101,7 @@ let ids=savedIDs().filter(id=>ui.closed||stage(id)!=="closed");
 const x=m(ids);
 E("ops-pipeline-count").textContent=ids.length;
 E("ops-pipeline-summary").textContent=ids.length+" tracked hotels · "+x.conversations+" conversations";
-E("ops-pipeline-stats").innerHTML=stats(ids);
+E("ops-pipeline-stats").innerHTML=stats(ids);E("ops-pipeline-progress").style.width=(x.leads?Math.round(100*x.contacted/x.leads):0)+"%";
 E("ops-pipeline-hero-action").textContent=x.conversations?x.conversations+" conversations in motion":"Build your next opportunity";
 E("ops-priority-cards").innerHTML=focused().length?focused().map((r,i)=>`<button class="ops-task" data-op-deal="${esc(r.id)}"><span class="ops-pill ${i===0?"lime":""}">${esc(r.category)}</span><strong>${esc(r.label)}</strong><small>${esc(r.text)} ${ic("arrow")}</small></button>`).join(""):'<div class="ops-emptybox"><h3>All clear for now</h3><p>Explore hotels and start a conversation.</p></div>';
 if(ui.search)ids=ids.filter(id=>hotel(id).name.toLowerCase().includes(ui.search.toLowerCase())||hotel(id).city.toLowerCase().includes(ui.search.toLowerCase()));
@@ -115,7 +115,7 @@ const h=hotel(id),campaign=data.campaigns.find(c=>c.hotelIds.includes(id));
 return `<article class="ops-deal" data-op-deal="${esc(id)}" draggable="true" role="button" tabindex="0" aria-label="Open ${esc(h.name)}"><div class="ops-deal-top"><span class="ops-initial">${esc(initials(h))}</span>${pill(id)}</div><h3>${esc(h.name)}</h3><p>${esc(h.city)} · ${esc(campaign?.name||"Independent")}</p><div class="ops-deal-foot"><span>${data.drafts.some(d=>d.hotelId===id)?"Pitch saved":"No pitch yet"}</span><button class="action" data-op-deal="${esc(id)}">Open ${ic("arrow")}</button></div></article>`;
 }
 function showBoard(ids){
-E("ops-deal-board").innerHTML=steps.map(([id,name])=>`<section class="ops-lane" data-stage="${id}"><div class="ops-lane-head"><strong><span class="ops-dot ${id==="sent"?"blue":id==="draft"?"amber":"gray"}"></span> ${name}</strong><small>${ids.filter(x=>laneFor(x)===id).length}</small></div><div class="ops-lane-stack">${ids.filter(x=>laneFor(x)===id).map(dealCard).join("")}</div></section>`).join("");
+E("ops-deal-board").innerHTML=[...steps,...(ui.closed?[["closed","Closed / archived"]]:[])].map(([id,name])=>`<section class="ops-lane" data-stage="${id}"><div class="ops-lane-head"><strong><span class="ops-dot ${id==="sent"?"blue":id==="draft"?"amber":"gray"}"></span> ${name}</strong><small>${ids.filter(x=>laneFor(x)===id).length}</small></div><div class="ops-lane-stack">${ids.filter(x=>laneFor(x)===id).map(dealCard).join("")}</div></section>`).join("");
 }
 function showList(ids){E("ops-deal-list").innerHTML=ids.length?ids.map(id=>{const h=hotel(id),c=data.campaigns.find(c=>c.hotelIds.includes(id));return `<div class="ops-list-item"><div><strong>${esc(h.name)}</strong><br><small>${esc(h.city)}</small></div><div>${pill(id)}</div><div><small>${esc(c?.name||"No campaign")}</small></div><div><small>${data.drafts.some(d=>d.hotelId===id)?"Pitch saved":"No draft"}</small></div><button class="btn small" data-op-deal="${esc(id)}">Details ${ic("arrow")}</button></div>`}).join(""):'<div class="ops-no-data">No deals match this view.</div>'}
 function showTimeline(ids){
