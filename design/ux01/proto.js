@@ -314,21 +314,30 @@
         mobile:
           "v2 · Celular · 390 px. Una columna, créditos y pitch en la barra, mapa en su pantalla.",
       },
+      v3: {
+        desktop:
+          "v3 · Desktop · 1280 px. Dark desk, English. List on the left, map on the right. Generate pitch is the hotel hero.",
+        mobile:
+          "v3 · Phone · 390 px. Bottom bar. Discover opens on the list, and the map is one tap away.",
+      },
     };
     const notes = {
-      v1: "v1 · filas sobre papel. v2 deja el hotel, la respuesta y el contacto adelante.",
+      v1: "v1 · filas sobre papel. v2 deja el hotel, la respuesta y el contacto adelante. v3 es el escritorio oscuro, en inglés.",
       v2: 'v2 · el hotel es la interfaz. Sun en Generar pitch, Desbloquear, Upgrade y las chapas. <a href="v2/index.html">Sistema v2</a>',
+      v3: 'v3 · English, dark only, tennis-ball yellow on the primary action. Notes mark live vs to build. <a href="v3/inicio.html">Open home</a>',
     };
     const note = $("#version-note");
     const deskW = 1280;
     const deskH = 800;
 
     function screenFile(src) {
-      return (src || "").replace(/^v2\//, "");
+      return (src || "").replace(/^(v2|v3)\//, "");
     }
 
     function screenUrl(file) {
-      return version === "v2" ? "v2/" + file : file;
+      if (version === "v2") return "v2/" + file;
+      if (version === "v3") return "v3/" + file;
+      return file;
     }
 
     function applyChrome() {
