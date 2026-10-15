@@ -29,7 +29,7 @@ const activePlan=()=>a().state.plan;
 const label=(v)=>v==='not-started'?'Not started':v==='draft'?'Draft ready':v==='sent'?'Sent · manual':v==='replied'?'Replied · manual':v==='won'?'Won · manual':v==='closed'?'Closed':v;
 const stageColors={sent:'outlined',replied:'success',won:'success',draft:'outlined'};
 const badge=(v)=>'<span class="badge '+(stageColors[v]||'')+'">'+html(label(v))+'</span>';
-const stageValue=(hotelId)=>{let m=st.events.filter(e=>e.hotelId===hotelId&&e.type==='stage').at(-1);return m?m.value:'not-started'};
+const stageValue=(hotelId)=>{let m=st.events.filter(e=>e.hotelId===hotelId&&e.type==='stage').at(-1);return m?m.value:(st.drafts.some(d=>d.hotelId===hotelId)?'draft':'not-started')};
 const stages=['not-started','draft','sent','replied','won','closed'];
 const newId=prefix=>prefix+'-'+Date.now()+'-'+Math.floor(Math.random()*1e6);
 const inputValue=id=>($(id)?.value||'').trim();
@@ -182,6 +182,7 @@ document.addEventListener('input',e=>{
  if(e.target.id==='search'&&document.body.dataset.page==='discover'){st.recentSearch={city:a().state.city,search:a().state.search,trip:a().state.trip};persist()}
 });
 document.addEventListener('click',e=>{
+ if(e.target.closest('#confirm-unlock'))setTimeout(contactEnhancement,0);
  const b=e.target.closest('[data-v4],[data-campaign-add],[data-open-campaign],[data-pitch-save],[data-pitch-copy],[data-pitch-log],[data-pitch-template],[data-use-trip],[data-contract-load],[data-search-save],[data-search-restore],[data-restore-search],[data-saved-searches]');
  if(!b)return;
  if(b.dataset.v4==='new-campaign')campaignForm();
