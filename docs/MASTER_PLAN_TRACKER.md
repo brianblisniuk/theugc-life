@@ -379,8 +379,9 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 adds no migration. PREPROD-1 (PR #92) stays merged as
 `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration
 `0093_preprod_jobs.sql`. D178 stays Proposed. D02 Contact Hub stays
-blocked on the Hunter credential. UX02 (PR #91) is merged as
-`dbfd2472b00d49590c17f416a10f6dbef371781b` and is design only. Draft PRs #88
+blocked on the Hunter credential. UX02 design (PR #91) is merged as
+`dbfd2472b00d49590c17f416a10f6dbef371781b`. Draft PR #95 applies those
+screens to Discover and Hotel Detail and is not merged. Draft PRs #88
 and #90 are UX01 mockups awaiting the owner. Do not merge them. BASE-N9
 is closed by migration `0094` (D179) and is not the frontier.
 
@@ -619,8 +620,9 @@ After every 5–8 merged base rounds:
 `9c50400c104b6f5aa036eea3ea798f269aeffe5e`. Verify is green. That merge adds
 no migration. PREPROD-1 (PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`,
 migration `0093`) stays merged. D05 is merged (PR #89,
-`2549b96836d90180b655a7d0893316e57e92a5f2`). UX02 is merged (PR #91,
-`dbfd2472b00d49590c17f416a10f6dbef371781b`, design only). D02 Contact Hub is
+`2549b96836d90180b655a7d0893316e57e92a5f2`). UX02 design is merged (PR #91,
+`dbfd2472b00d49590c17f416a10f6dbef371781b`). Draft PR #95 applies the
+screens and is not merged. D02 Contact Hub is
 blocked on the Hunter credential. D178 stays Proposed. Draft PRs #88 and #90
 await the owner. Do not merge them. BASE-N9 is closed by migration `0094`
 (D179) and is not the frontier.
