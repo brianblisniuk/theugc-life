@@ -157,3 +157,19 @@
 @media(max-width:950px){.ops-wrap{padding:22px 20px 70px}.ops-hero{grid-template-columns:1fr;gap:17px}.ops-hero-right{align-items:start;flex-direction:row}.ops-progress{max-width:320px}.ops-nextsteps{grid-template-columns:1fr 1fr}.ops-lead-table{min-width:780px}.ops-panel.table-scroller{overflow-x:auto}.ops-hero h2{font-size:25px}}
 @media(max-width:680px){.ops-wrap{padding:18px 13px 58px}.ops-head{align-items:start;flex-direction:column;gap:15px}.ops-head h1{font-size:32px}.ops-controls{width:100%}.ops-hero{padding:23px 20px}.ops-hero-right{flex-direction:column;align-items:stretch}.ops-hero-actions{justify-content:flex-start}.ops-hero h2{font-size:25px}.ops-stats{grid-template-columns:repeat(2,1fr)}.ops-stat{min-height:95px}.ops-stat strong{font-size:27px}.ops-aside{grid-template-columns:1fr}.ops-chooser-card{min-width:230px}.ops-nextsteps{grid-template-columns:1fr}.ops-lane{min-height:290px}.ops-board{grid-auto-columns:minmax(250px,78vw)}.ops-list-item{grid-template-columns:1fr auto}.ops-list-item>div:nth-child(3),.ops-list-item>div:nth-child(4){display:none}.ops-panel-header{padding:14px}.ops-filterbar{padding:13px}.ops-filterbar select{width:auto;flex:1}.ops-lead-table{min-width:800px}.ops-drawer-head{padding:14px 17px}.ops-drawer-body{padding:18px 17px 55px}}
 @media(prefers-reduced-motion:reduce){.ops-drawer,.ops-deal{transition:none}}
+
+/* V5 readability pass: actionable text should not be microscopic. */
+.ops-wrap .ops-hint,.ops-wrap .ops-micro{font-size:12px!important}
+.ops-wrap .nav-item strong{font-size:14px}
+.ops-wrap .nav-item small{font-size:11.5px}
+.sidebar .nav-item strong{font-size:14px}
+.sidebar .nav-item small{font-size:11.5px}
+.ops-lead-table td{font-size:13px}.ops-lead-table th{font-size:11.5px}
+.ops-lead-ident strong{font-size:14px}.ops-lead-ident small{font-size:12px}
+.ops-stat .k{font-size:12px}.ops-stat small{font-size:12px}
+.ops-deal p{font-size:12px}.ops-deal h3{font-size:15px}
+.ops-hero p{font-size:14px}
+.ops-task strong{font-size:14px}
+.ops-task small{font-size:12px}
+.ops-pill{font-size:11.5px}
+.ops-lane-head strong{font-size:13px}
