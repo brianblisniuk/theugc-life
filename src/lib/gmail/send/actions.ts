@@ -35,7 +35,7 @@ export type SendPitchResult =
   | { result: "not_found"; message: string; retry: true }
   | { result: "signed_out"; message: string; retry: false };
 
-const NO_RETRY = new Set(["unknown", "sent", "in_progress"]);
+const NO_RETRY = new Set(["unknown", "sent", "in_progress", "deletion_pending"]);
 
 function readRaw(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -102,7 +102,11 @@ function messageFor(outcome: GmailSendOutcome): SendPitchResult {
     };
   }
   if (outcome.result === "invalid_input") {
-    return { result: "invalid_input", retry: true, message: "Check the subject, message, and address." };
+    return {
+      result: "invalid_input",
+      retry: true,
+      message: "Check the subject, message, and address.",
+    };
   }
   if (outcome.result === "not_found") {
     return { result: "not_found", retry: true, message: "That mailbox or hotel isn't available." };
@@ -120,6 +124,7 @@ function messageFor(outcome: GmailSendOutcome): SendPitchResult {
     provider_error: "Gmail didn't accept the message. It was not sent.",
     invalid_recipient: "That address isn't a contact on this hotel.",
     mailbox_unusable: "This mailbox can't send.",
+    deletion_pending: "Account deletion is pending, so this was not sent.",
   };
   return {
     result: "failed",

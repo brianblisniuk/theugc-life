@@ -106,6 +106,9 @@ function storedOutcome(row: RpcRow): GmailSendOutcome {
   if (result === "idempotency_conflict") return { result: "idempotency_conflict" };
   if (result === "invalid_input") return { result: "invalid_input" };
   if (result === "not_found") return { result: "not_found" };
+  if (result === "deletion_pending") {
+    return { result: "failed", attemptId, failureCode: "deletion_pending" };
+  }
   if (result === "failed") {
     return {
       result: "failed",

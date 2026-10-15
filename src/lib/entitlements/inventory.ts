@@ -590,6 +590,35 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["D068", "D076", "D067", "D098", "D102"],
   },
   {
+    id: "jobs.scheduled",
+    module: "Operations",
+    summary:
+      "Bearer schedules discharge inbox sync, account erasure, annual credit windows, and follow-up housekeeping. A creator plan does not call them. A missing secret fails closed. A pending account deletion blocks new Gmail connect, send, and sync.",
+    routes: [
+      "/api/internal/gmail-inbox-sync",
+      "/api/internal/account-erasure",
+      "/api/internal/credit-period-refresh",
+      "/api/internal/gmail-followup-housekeeping",
+    ],
+    sourceFiles: [
+      "src/app/api/internal/gmail-inbox-sync/route.ts",
+      "src/app/api/internal/account-erasure/route.ts",
+      "src/app/api/internal/credit-period-refresh/route.ts",
+      "src/app/api/internal/gmail-followup-housekeeping/route.ts",
+    ],
+    serverActions: [],
+    rpcs: [
+      "erase_due_creator_accounts",
+      "refresh_annual_credit_periods",
+      "gmail_followup_settle",
+      "gmail_incremental_sync_list_due",
+    ],
+    rule: { kind: "system_grant" },
+    anon: "deny",
+    enforcement: { kind: "purchase_is_not_access" },
+    sources: ["D178", "D151", "D135", "D076"],
+  },
+  {
     id: "gmail.collaboration_detection",
     module: "Gmail",
     summary:

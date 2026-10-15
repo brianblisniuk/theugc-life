@@ -5574,3 +5574,43 @@ only. Migrations `0088` through `0091` are not edited. `0092` replaces
 `gmail_send_claim_due` and `gmail_send_fail` so a due follow-up is
 queued before a claim, and `followup_stopped` is a failure code. Each
 stored follow-up has `delay_days` from 1 to 30.
+
+## D178 — Production schedules discharge the operator jobs
+
+Status: **Proposed**.
+
+D076 said this repository has no production scheduler for inbox sync.
+D168 later scheduled the Gmail send dispatcher. This block schedules the
+remaining operator jobs the same way: a Netlify scheduled function posts
+to an internal route with a bearer secret. A missing site URL, a missing
+secret, or a secret shorter than 16 characters fails closed and does not
+call the route.
+
+Four jobs:
+
+- Gmail inbox sync, about every 15 minutes (`GMAIL_SYNC_SECRET`). It
+  discharges `gmail_incremental_sync_list_due`. Login still requests a
+  sync. A non-ok result does not fail login.
+- Account erasure, once a day (`ACCOUNT_ERASURE_SECRET`). It calls
+  `erase_due_creator_accounts`. A second run erases nothing. Stored
+  identifier-free hotel counters stay. The operator command remains.
+- Annual credit windows, once a day (`CREDIT_PERIOD_SECRET`). It calls
+  `ensure_credit_grants` for creators with an active or past-due annual
+  subscription. Monthly plans stay on the payment webhook. A pending
+  deletion is skipped. The same 30-day ledger key is not granted twice.
+  D135 named the billing page as the refresh path. This job is the
+  production discharge for an annual plan that has no monthly payment.
+- Follow-up housekeeping, about every 15 minutes
+  (`GMAIL_FOLLOWUP_SECRET`). It calls `gmail_followup_settle` and does
+  not call Gmail. The send dispatcher still settles before a claim. This
+  job stops and enqueues follow-ups when the send secret is unset.
+
+While `deletion_requested_at` is set, connect, reconnect, and grant-send
+are refused, a new send is not queued or claimed, and a new sync is not
+started. A credential or OAuth transaction insert or update is refused.
+User B is unchanged. A replay of an already-sent attempt still reports
+sent. Historical import, normalization, outreach, and reply commands
+stay operator commands because each names one mailbox or one run. They
+are not a due queue.
+
+Proposed because D076 and D135 named a different discharge path.

@@ -92,7 +92,9 @@ export type StartResult =
   /** `grant_send` only starts against a mailbox that is already connected. */
   | { result: "not_connected"; connectionState?: GmailConnectionState }
   /** Connect and reconnect must not ask for `gmail.send`. `grant_send` must ask for exactly that set. */
-  | { result: "scope_refused" };
+  | { result: "scope_refused" }
+  /** The account deletion clock is set. No new Gmail flow starts. */
+  | { result: "deletion_pending" };
 
 /**
  * CONNECT / RECONNECT, step one: record the in-flight authorization and send the
@@ -174,6 +176,9 @@ export async function startGmailAuthorization(
   }
   if (begin.result === "scope_refused") {
     return { result: "scope_refused" };
+  }
+  if (begin.result === "deletion_pending") {
+    return { result: "deletion_pending" };
   }
   if (begin.result !== "ok") {
     return { result: "invalid_target" };

@@ -3,6 +3,8 @@
  * argument so a test can pass one without reading the environment.
  */
 
+import { GMAIL_SEND_DISPATCH_PATH, runScheduledPost } from "@/lib/jobs/scheduled-post";
+
 export function authorizeDispatch(header: string | null, secret: string | undefined): boolean {
   if (!secret || secret.length < 16) return false;
   const expected = `Bearer ${secret}`;
@@ -17,13 +19,13 @@ export function authorizeDispatch(header: string | null, secret: string | undefi
 export async function handleDispatchPost(
   authorization: string | null,
   secret: string | undefined,
-  run: () => Promise<{ sent: number; deferred: number; failed: number; paused: number }>,
+  run: () => Promise<object>,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   if (!authorizeDispatch(authorization, secret)) {
     return { status: 401, body: { result: "forbidden" } };
   }
   const summary = await run();
-  return { status: 200, body: { result: "ok", ...summary } };
+  return { status: 200, body: { result: "ok", ...(summary as Record<string, unknown>) } };
 }
 
 export async function runScheduledDispatch(options: {
@@ -31,15 +33,5 @@ export async function runScheduledDispatch(options: {
   siteUrl: string | null;
   secret: string | null;
 }): Promise<{ statusCode: number; body: string }> {
-  if (!options.secret || options.secret.length < 16 || !options.siteUrl) {
-    return { statusCode: 500, body: JSON.stringify({ result: "not_configured" }) };
-  }
-  const response = await options.fetchImpl(
-    `${options.siteUrl.replace(/\/$/, "")}/api/internal/gmail-send-dispatch`,
-    {
-      method: "POST",
-      headers: { authorization: `Bearer ${options.secret}` },
-    },
-  );
-  return { statusCode: response.status, body: await response.text() };
+  return runScheduledPost({ ...options, path: GMAIL_SEND_DISPATCH_PATH });
 }

@@ -5,7 +5,8 @@
  *
  * The database decides who is due (15 minutes since the last completed sync,
  * a creator-login request, or a pipeline catch-up). This process discharges
- * that queue. It prints counts and result codes only.
+ * that queue. It prints counts and result codes only. Production discharges
+ * the same queue from the Netlify gmail-inbox-sync schedule.
  *
  * The npm script sets `--conditions=react-server` so the server-only token
  * and Gmail adapter modules load under tsx. Without that condition those
