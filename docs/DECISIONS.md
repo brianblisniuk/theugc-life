@@ -5614,3 +5614,36 @@ stay operator commands because each names one mailbox or one run. They
 are not a due queue.
 
 Proposed because D076 and D135 named a different discharge path.
+
+## D179 — A null entitlement reference is one logical grant
+
+Status: **Accepted**. Records the BASE-N9 bugfix. It does not change who
+may hold destination, Pro, or Max access.
+
+`grant_access_entitlement` still requires a source and still accepts
+only `destination`, `pro`, and `max`. A non-null `source_reference`
+stays on the existing partial unique index. A replay of that reference
+with the same user, access type, and destination returns
+`already_granted` and the existing id. A replay whose identity differs
+returns `source_reference_conflict` and no id.
+
+A null `source_reference` is one logical grant for `(user_id,
+access_type, destination_id, source)`. Status is not part of that key.
+Exactly one matching row, including a revoked row, is a safe replay:
+`already_granted` and that id, with no second insert and no change to
+the stored expiry. More than one matching row returns
+`ambiguous_null_reference`, includes no id, and inserts nothing. Two
+concurrent null-reference deliveries of the same logical grant take one
+row. A different user, source, or destination is a different grant.
+Migration `0094` does not add a unique index, because rows that already
+duplicate a null reference must not fail the migration.
+
+`expires_at` set strictly before the effective `starts_at`
+(`p_starts_at`, or `now()` when that is null) returns
+`invalid_expires_at` and inserts nothing, including when a matching row
+already exists. A null expiry stays allowed. An expiry equal to
+`starts_at` stays allowed.
+
+The function stays `SECURITY DEFINER`, with `search_path = public,
+pg_temp`, and execute granted to `service_role` only. Migrations `0043`,
+`0075`, and `0088` through `0093` are not edited.

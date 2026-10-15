@@ -1,26 +1,19 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 697ca0946fcef24f32fe0da518512ec1c3c3b4cf (merge of PR #92, PREPROD-1, migration 0093_preprod_jobs.sql). D05 follow-up scheduling is merged as PR #89 (2549b96836d90180b655a7d0893316e57e92a5f2, migration 0092). UX02 Discover + Hotel Detail is merged as PR #91 (dbfd2472b00d49590c17f416a10f6dbef371781b, design only). Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. D02 Contact Hub is blocked on the Hunter credential. D178 stays Proposed. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last verified main is 9c50400c104b6f5aa036eea3ea798f269aeffe5e (merge of PR #93, PREPROD-1b, no new migration, verify green). PREPROD-1 is merged as PR #92 (697ca0946fcef24f32fe0da518512ec1c3c3b4cf, migration 0093). D05 is merged as PR #89 (2549b96836d90180b655a7d0893316e57e92a5f2, migration 0092). UX02 is merged as PR #91 (dbfd2472b00d49590c17f416a10f6dbef371781b, design only). Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. D02 Contact Hub is blocked on the Hunter credential. D178 stays Proposed. D179 records the BASE-N9 bugfix in migration 0094. BASE-N9 is not an unresolved finding. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository.",
   "schema_version": 1,
   "as_of": "2026-10-15",
   "state": "HUMAN_FRONTIER",
-  "last_recorded_main": "697ca0946fcef24f32fe0da518512ec1c3c3b4cf",
+  "last_recorded_main": "9c50400c104b6f5aa036eea3ea798f269aeffe5e",
   "active_block": "D02 Contact Hub",
   "branch": null,
   "pr": null,
   "expected_head": null,
   "pending_jobs": [],
-  "unresolved_findings": [
-    {
-      "id": "BASE-N9",
-      "severity": "NON-BLOCKING",
-      "summary": "grant_access_entitlement: null p_source_reference is not idempotent; p_expires_at not validated",
-      "ref": "supabase/migrations/0043_grant_access_entitlement_hardening.sql"
-    }
-  ],
+  "unresolved_findings": [],
   "ci_status": {
-    "ref": "697ca0946fcef24f32fe0da518512ec1c3c3b4cf",
+    "ref": "9c50400c104b6f5aa036eea3ea798f269aeffe5e",
     "verify": "success"
   },
   "required_human_action": "CREDENTIAL REQUIRED — D02 Contact Hub stays blocked until the Hunter credential is available. D178 stays Proposed and the owner should Accept it. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
-  "next_dependency": "D02 Contact Hub is blocked on the Hunter credential. PREPROD-1 is merged (PR #92, 697ca0946fcef24f32fe0da518512ec1c3c3b4cf, migration 0093). D05 is merged (PR #89, 2549b96836d90180b655a7d0893316e57e92a5f2, migration 0092). UX02 is merged (PR #91, dbfd2472b00d49590c17f416a10f6dbef371781b, design only). D178 stays Proposed. Drafts #88 and #90 stay open for the owner. Do not merge them. Do not implement Hunter in this follow-up."
+  "next_dependency": "D02 Contact Hub is blocked on the Hunter credential. PREPROD-1b is merged (PR #93, 9c50400c104b6f5aa036eea3ea798f269aeffe5e, no new migration, verify green). PREPROD-1 is merged (PR #92, 697ca0946fcef24f32fe0da518512ec1c3c3b4cf, migration 0093). D05 is merged (PR #89, 2549b96836d90180b655a7d0893316e57e92a5f2, migration 0092). UX02 is merged (PR #91, dbfd2472b00d49590c17f416a10f6dbef371781b, design only). D178 stays Proposed. D179 records the BASE-N9 bugfix in migration 0094. Drafts #88 and #90 stay open for the owner. Do not merge them. Do not implement Hunter."
 }
