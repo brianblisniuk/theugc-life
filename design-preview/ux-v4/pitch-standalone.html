@@ -260,7 +260,7 @@ const icon=n=>a().ic(n);
 const stripTags=v=>String(v||'').replace(/<[^>]*>/g,'');
 const allSaved=()=>[...new Set([...a().state.pipeline,...Object.values(a().state.shortlists).flat()])];
 const activePlan=()=>a().state.plan;
-const label=(v)=>v==='not-started'?'Not started':v==='draft'?'Draft ready':v==='sent'?'Sent · manual':v==='replied'?'Replied · manual':v==='won'?'Won · manual':v==='closed'?'Closed':v;
+const label=(v)=>v==='not-started'?'Not started':v==='draft'?'Draft ready':v==='sent'?'Sent · manual':v==='bounced'?'Bounced · reported':v==='replied'?'Replied · manual':v==='won'?'Won · manual':v==='closed'?'Closed':v;
 const stageColors={sent:'outlined',replied:'success',won:'success',draft:'outlined'};
 const badge=(v)=>'<span class="badge '+(stageColors[v]||'')+'">'+html(label(v))+'</span>';
 const stageValue=(hotelId)=>{let m=st.events.filter(e=>e.hotelId===hotelId&&e.type==='stage').at(-1);return m?m.value:(st.drafts.some(d=>d.hotelId===hotelId)?'draft':'not-started')};
@@ -339,8 +339,8 @@ function renderPipeline(){
 }
 function renderInbox(){
  const root=$('inbox-view');if(!root)return;
- const sent=st.events.filter(e=>e.type==='stage'&&['sent','replied','won'].includes(e.value)).reverse();
- root.innerHTML=sent.length?sent.map(e=>{let h=findHotel(e.hotelId);return '<div class="campaign-lead"><div><strong>'+html(h?.name||'Hotel')+'</strong><div class="fine">'+html(new Date(e.at).toLocaleString())+' · '+html(e.source||'manual')+'</div></div><div>'+badge(e.value)+'</div><div class="fine">No Gmail sync in this preview</div><div class="lead-action"><a class="btn small" href="pitch-standalone.html?hotel='+encodeURIComponent(e.hotelId)+'">View draft</a></div></div>'}).join(''):'<div class="empty"><strong>No outreach events recorded</strong>Log a pitch as sent manually in Pitch Studio. Gmail messages do not sync to this design preview.</div>';
+ const sent=st.events.filter(e=>e.type==='stage'&&['sent','bounced','replied','won'].includes(e.value)).reverse();
+ root.innerHTML=sent.length?sent.map(e=>{let h=findHotel(e.hotelId);return '<div class="campaign-lead"><div><strong>'+html(h?.name||'Hotel')+'</strong><div class="fine">'+html(new Date(e.at).toLocaleString())+' · '+html(e.source||'manual')+'</div></div><div>'+badge(e.value)+'</div><div class="fine">No Gmail sync in this preview</div><div class="lead-action"><a class="btn small" href="pitch-standalone.html?hotel='+encodeURIComponent(e.hotelId)+'">View draft</a>'+(e.value==='sent'?'<button class="btn small" data-report-bounce="'+html(e.hotelId)+'">Report bounce</button>':'')+'</div></div>'}).join(''):'<div class="empty"><strong>No outreach events recorded</strong>Log a pitch as sent manually in Pitch Studio. Gmail messages do not sync to this design preview.</div>';
 }
 function renderTrips(){
  const root=$('trips-view');if(!root)return;
@@ -397,7 +397,7 @@ function restoreSearch(x){
 }
 document.addEventListener('DOMContentLoaded',()=>{
  const page=document.body.dataset.page;
- if(page==='discover'){discoverEnhancement()}
+ if(page==='discover'){discoverEnhancement();try{if(sessionStorage.getItem('ugc_v4_restore_scroll')==='1'){const y=Number(sessionStorage.getItem('ugc_v4_scroll_y')||0);sessionStorage.removeItem('ugc_v4_restore_scroll');setTimeout(()=>window.scrollTo(0,y),120)}}catch(e){}}
  if(page==='hotel')contactEnhancement();
  if(page==='campaigns')renderCampaigns();
  if(page==='pitch')renderPitch();
@@ -407,6 +407,7 @@ document.addEventListener('DOMContentLoaded',()=>{
  if(page==='contracts')renderContracts();
  document.querySelectorAll('[data-credit-count]').forEach(e=>e.textContent=activePlan()==='free'?'5':activePlan()==='pro'?'150':'500');
 });
+document.addEventListener('click',e=>{if(document.body.dataset.page==='discover'&&e.target.closest('a.hotel-details')){try{sessionStorage.setItem('ugc_v4_scroll_y',String(window.scrollY));sessionStorage.setItem('ugc_v4_restore_scroll','1')}catch(err){}}});
 document.addEventListener('change',e=>{
  if(e.target.matches('[data-plan-select]'))setTimeout(()=>{contactEnhancement();if(document.body.dataset.page==='discover')discoverEnhancement()},0);
  if(e.target.id==='campaign-trip'){const t=a().tripById(e.target.value);if(t&&$('campaign-city'))$('campaign-city').value=t.city}
@@ -417,8 +418,9 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('click',e=>{
  if(e.target.closest('#confirm-unlock'))setTimeout(contactEnhancement,0);
- const b=e.target.closest('[data-v4],[data-campaign-add],[data-open-campaign],[data-pitch-save],[data-pitch-copy],[data-pitch-log],[data-pitch-template],[data-use-trip],[data-contract-load],[data-search-save],[data-search-restore],[data-restore-search],[data-saved-searches]');
+ const b=e.target.closest('[data-report-bounce],[data-v4],[data-campaign-add],[data-open-campaign],[data-pitch-save],[data-pitch-copy],[data-pitch-log],[data-pitch-template],[data-use-trip],[data-contract-load],[data-search-save],[data-search-restore],[data-restore-search],[data-saved-searches]');
  if(!b)return;
+ if(b.dataset.reportBounce){a().modal('Report a bounced address','<p>This is a manual report in the local preview, not an automatically confirmed Gmail bounce. A production system should suppress the address, verify evidence and route the contact for review.</p><div class="modal-bottom"><button class="btn" data-close>Cancel</button><button class="btn lime" data-confirm-bounce="'+html(b.dataset.reportBounce)+'">Mark as bounced</button></div>');return}
  if(b.dataset.v4==='new-campaign')campaignForm();
  if(b.dataset.campaignAdd)addHotelsModal(b.dataset.campaignAdd);
  if(b.dataset.openCampaign){history.replaceState({},'','campaigns-standalone.html?campaign='+encodeURIComponent(b.dataset.openCampaign));renderCampaigns();window.scrollTo({top:0,behavior:'smooth'})}
@@ -438,6 +440,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.v4==='contract-save'){let text=inputValue('contract-text');if(!text)return a().toast('Paste contract text first');st.contracts.push({id:newId('contract'),title:inputValue('contract-title')||'Untitled excerpt',content:text,savedAt:new Date().toISOString()});persist();renderContracts();a().toast('Contract excerpt saved locally')}
  if(b.dataset.v4==='campaign-from-trip'){location.href='campaigns-standalone.html'}
 });
+document.addEventListener('click',e=>{const x=e.target.closest('[data-confirm-bounce]');if(!x)return;const id=x.dataset.confirmBounce;st.events.push({id:newId('event'),hotelId:id,type:'stage',value:'bounced',source:'manual',at:new Date().toISOString()});persist();a().closeModal();renderInbox();a().toast('Manual bounce recorded · contact flagged for review');});
 document.addEventListener('submit',e=>{
  if(e.target.id==='campaign-create'){
   e.preventDefault();let name=inputValue('campaign-name'),tripId=$('campaign-trip').value,t=a().tripById(tripId),city=t?t.city:$('campaign-city').value;
