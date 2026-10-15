@@ -11,3 +11,15 @@
 
 [functions."gmail-send-dispatch"]
   schedule = "* * * * *"
+
+[functions."gmail-inbox-sync"]
+  schedule = "*/15 * * * *"
+
+[functions."account-erasure"]
+  schedule = "15 6 * * *"
+
+[functions."credit-period-refresh"]
+  schedule = "45 6 * * *"
+
+[functions."gmail-followup-housekeeping"]
+  schedule = "7,22,37,52 * * * *"

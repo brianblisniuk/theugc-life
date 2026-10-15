@@ -2258,5 +2258,35 @@
     "authenticated": false,
     "serviceRole": true,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "account_gmail_blocked",
+    "args": "p_user_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "refresh_annual_credit_periods",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "private",
+    "name": "refuse_gmail_credential_while_deleting",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
   }
 ]

@@ -56,6 +56,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `gmail.connect` | Gmail | owner, Free (D098) |
 | `gmail.send` | Gmail | Pro and Max (D156, D171). Free and a Destination Pass cannot. An explicit send, not a draft. Follow-ups are opted in per thread, at most two, with a delay of 1 to 30 days. Scheduling and sending spend no credits |
 | `gmail.sync` | Gmail | owner. Login and scheduled sync pause on Free (D102). Stored mail stays |
+| `jobs.scheduled` | Operations | system grant. Bearer jobs. A plan does not call them. A pending deletion blocks new Gmail connect, send, and sync (D178) |
 | `gmail.collaboration_detection` | Gmail | owner. Detection pauses on Free (D102, D107). Suggestions until the creator confirms |
 | `onboarding.activation` | Onboarding | owner, Free (D095, D098) |
 | `home.dashboard` | Home | owner, Free (D098). Gmail suggestion ids on Home follow D107 and D112 |

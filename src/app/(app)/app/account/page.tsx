@@ -50,6 +50,7 @@ export default async function AccountPage({
         accounts={gmailAccounts}
         configured={configured}
         callbackStatus={typeof gmailStatus === "string" ? gmailStatus : null}
+        deletionPending={deletion?.status === "scheduled"}
       />
 
       <p className="text-sm text-muted">

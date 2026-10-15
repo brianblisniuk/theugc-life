@@ -4,8 +4,8 @@
  *   npm run account:erase-due
  *
  * Prints a result code and a count. It does not print emails, tokens, or
- * environment values. There is no scheduler in this repository; run the
- * command when delete_after has arrived.
+ * environment values. Production runs the same function from the Netlify
+ * account-erasure schedule. This command remains the operator path.
  */
 import { Client } from "pg";
 

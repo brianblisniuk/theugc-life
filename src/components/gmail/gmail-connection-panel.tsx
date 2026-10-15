@@ -17,6 +17,7 @@ import {
   canDisconnect,
   canReconnect,
   disconnectNoticeFor,
+  gmailConnectionOffered,
   needsPrivateProcessingConsent,
 } from "@/lib/gmail/panel-actions";
 
@@ -124,13 +125,17 @@ export function GmailConnectionPanel({
   accounts,
   configured,
   callbackStatus,
+  deletionPending = false,
 }: {
   accounts: GmailAccountStatus[];
   configured: boolean;
   /** The `gmail` query parameter the OAuth callback redirects with, if any. */
   callbackStatus?: string | null;
+  /** Account deletion is scheduled. Connect and reconnect stay hidden. */
+  deletionPending?: boolean;
 }) {
   const notice = disconnectNoticeFor(callbackStatus);
+  const offered = gmailConnectionOffered(deletionPending);
   return (
     <section className="space-y-4 rounded-[var(--radius-app)] border border-border bg-surface p-5">
       <div>
@@ -150,17 +155,25 @@ export function GmailConnectionPanel({
         </p>
       ) : null}
 
+      {!offered ? (
+        <p className="text-sm text-muted">
+          Gmail stays disconnected while account deletion is pending.
+        </p>
+      ) : null}
+
       {!configured ? (
         <p className="text-sm text-muted">Gmail is not configured on this deployment.</p>
       ) : accounts.length === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">Not connected</p>
-          <a
-            href="/api/integrations/gmail/oauth/start"
-            className="inline-block rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-medium text-white"
-          >
-            Connect Gmail
-          </a>
+          {offered ? (
+            <a
+              href="/api/integrations/gmail/oauth/start"
+              className="inline-block rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-medium text-white"
+            >
+              Connect Gmail
+            </a>
+          ) : null}
         </div>
       ) : (
         <ul className="space-y-5">
@@ -192,7 +205,7 @@ export function GmailConnectionPanel({
                       callback, so it has no lifecycle snapshot to check the
                       answer against. This link does — and it appears only for
                       the states the database will actually accept. */}
-                  {reconnectable ? (
+                  {offered && reconnectable ? (
                     <a
                       href={`/api/integrations/gmail/oauth/start?purpose=reconnect&mail_account_id=${account.mailAccountId}`}
                       className="rounded-[var(--radius-app)] border border-border px-4 py-2 text-sm"
@@ -236,7 +249,7 @@ export function GmailConnectionPanel({
           This starts a generic CONNECT, which is the right flow for an account
           we have never seen; Reconnect is for a mailbox that already exists
           here, and using it for a new one would be aiming at the wrong row. */}
-      {canConnectAnother(configured, accounts.length) ? (
+      {offered && canConnectAnother(configured, accounts.length) ? (
         <a
           href="/api/integrations/gmail/oauth/start"
           className="inline-block rounded-[var(--radius-app)] border border-border px-4 py-2 text-sm"

@@ -58,6 +58,8 @@ export async function GET(request: NextRequest) {
           ? "gmail_not_connected"
           : started.result === "scope_refused"
             ? "gmail_scope_refused"
-            : "gmail_bad_target";
+            : started.result === "deletion_pending"
+              ? "gmail_deletion_pending"
+              : "gmail_bad_target";
   return NextResponse.redirect(`${origin}/app/account?gmail=${reason}`);
 }

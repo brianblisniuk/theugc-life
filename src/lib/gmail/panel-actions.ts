@@ -29,6 +29,14 @@ export function canReconnect(account: Pick<GmailAccountStatus, "connectionState"
 }
 
 /**
+ * Connect and reconnect stay hidden while the account deletion clock is set.
+ * The database refuses the flow either way.
+ */
+export function gmailConnectionOffered(deletionPending: boolean): boolean {
+  return !deletionPending;
+}
+
+/**
  * WHETHER TO ASK FOR PRIVATE-PROCESSING CONSENT — decided by the STATE, not by
  * the consent projection.
  *
