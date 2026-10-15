@@ -361,7 +361,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
-| D02 | **BLOCKED** — CREDENTIAL REQUIRED. Contact Hub is the active frontier after PREPROD-1. It stays blocked until the Hunter credential is available. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
+| D02 | **BLOCKED** — CREDENTIAL REQUIRED. Contact Hub is the active frontier after PREPROD-1b. It stays blocked until the Hunter credential is available. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | **DONE** — PR #84, merge `b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Drafts are not sent. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | **DONE** — PR #86, merge `3e11ded390a2845603b207433af90bb846d4670e`. Migration `0089`. D156–D161. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D04b | **DONE** — PR #87, merge `f892d6e37cd7b606e4b5c663dc002e0503d0145b`. Migrations `0090` and `0091`. D162–D170. Monthly USD AI budget, account pause, structured generation, queued sends, bounce pause. Sends still cost no credits. | AI cost and anti-abuse | per-user budget before the global pool; queued sends; deletion cascades |
@@ -374,11 +374,15 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 **Base rounds:** 10  
 **Cumulative future rounds:** 27
 
-**PREPROD-1 (PR #92) is merged**, as merge commit
-`697ca0946fcef24f32fe0da518512ec1c3c3b4cf`. Migration
-`0093_preprod_jobs.sql`. D178 stays Proposed. UX02 (PR #91) is merged as
+**PREPROD-1b (PR #93) is merged**, as merge commit
+`9c50400c104b6f5aa036eea3ea798f269aeffe5e`. Verify is green. That merge
+adds no migration. PREPROD-1 (PR #92) stays merged as
+`697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration
+`0093_preprod_jobs.sql`. D178 stays Proposed. D02 Contact Hub stays
+blocked on the Hunter credential. UX02 (PR #91) is merged as
 `dbfd2472b00d49590c17f416a10f6dbef371781b` and is design only. Draft PRs #88
-and #90 are UX01 mockups awaiting the owner. Do not merge them.
+and #90 are UX01 mockups awaiting the owner. Do not merge them. BASE-N9
+is closed by migration `0094` (D179) and is not the frontier.
 
 **Milestone D gate — Complete Travel OS loop:**
 
@@ -611,12 +615,15 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-**Current frontier (15 Oct 2026).** Main is the merge of PREPROD-1, PR #92,
-`697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`. D05 is merged
-(PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`). UX02 is merged (PR #91,
+**Current frontier (15 Oct 2026).** Main is the merge of PREPROD-1b, PR #93,
+`9c50400c104b6f5aa036eea3ea798f269aeffe5e`. Verify is green. That merge adds
+no migration. PREPROD-1 (PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`,
+migration `0093`) stays merged. D05 is merged (PR #89,
+`2549b96836d90180b655a7d0893316e57e92a5f2`). UX02 is merged (PR #91,
 `dbfd2472b00d49590c17f416a10f6dbef371781b`, design only). D02 Contact Hub is
 blocked on the Hunter credential. D178 stays Proposed. Draft PRs #88 and #90
-await the owner. Do not merge them.
+await the owner. Do not merge them. BASE-N9 is closed by migration `0094`
+(D179) and is not the frontier.
 
 At this baseline, Phase A is closed at the code gate:
 
