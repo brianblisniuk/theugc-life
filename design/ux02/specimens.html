@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UX02 · components</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="">
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="">
+    <header class="app-header">
+      <a class="wordmark" href="index.html">theugc<span>.life</span></a>
+      <nav class="primary-nav" aria-label="Primary">
+        <a href="index.html#workspaces" aria-current="page">Home</a>
+        <a href="discover/1440-free.html" >Discover</a>
+        <a href="index.html#workspaces">Pipeline</a>
+        <a href="index.html#workspaces">Trips</a>
+        <a href="index.html#workspaces">Profile</a>
+      </nav>
+      <div class="header-tools">
+        
+        
+        <button type="button" class="btn btn-quiet" data-theme-toggle aria-pressed="false">Theme: Light</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"><div class="page stack">
+  <p class="sample-banner"><span class="sample-tag">Sample data</span> Component specimens. Toggle the theme in the header.</p>
+  <h1>Components</h1>
+  <div class="specimen-grid">
+    <section class="specimen"><h2>Buttons</h2><div class="row-wrap"><button type="button" class="btn btn-primary">Apply</button><button type="button" class="btn">Save</button><button type="button" class="btn" disabled>Saved</button><button type="button" class="btn btn-quiet">Clear all</button></div><p class="secondary">One primary per context. The accent fill has a #5E6C00 edge.</p></section>
+    <section class="specimen"><h2>Chips and pipeline</h2><div class="row-wrap"><span class="chip chip-selected">Barcelona <button type="button" aria-label="Remove Barcelona">×</button></span><span class="tag">Saved</span><span class="tag">Planned</span><span class="tag tag-process">Pitched</span><span class="tag tag-process">Replied</span><span class="tag tag-warning">Follow-up</span><span class="tag tag-process">Negotiating</span><span class="tag tag-success">Won</span><span class="tag">Closed</span><span class="tag tag-private">On trip</span></div></section>
+    <section class="specimen"><h2>Photo placeholder</h2><span class="photo">CL</span><p class="secondary">Neutral initials. No hotel photograph.</p></section>
+    <section class="specimen"><h2>Skeleton</h2><div class="skeleton-row" aria-hidden="true"><div class="sk sk-photo"></div><div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div><div class="sk sk-line"></div></div><p class="secondary">Same size as a row. No shimmer.</p></section>
+    <section class="specimen"><h2>Metric · available</h2><article class="metric">
+    <p class="label">Reply rate · Pro · Creator network</p>
+    <p class="key-number">64% <span class="sample-tag">Sample data</span></p>
+    <p class="secondary">Confidence: Moderate. Freshness: Past month.</p>
+    <p class="secondary">Based on activity from 11 creators</p>
+  </article></section>
+    <section class="specimen"><h2>Metric · locked</h2><article class="metric">
+      <p class="label">Reply rate · Pro</p>
+      <h3>Hotel response insights</h3>
+      <p>See confirmed reply-rate and response-time signals when enough creator data is available.</p>
+      <p class="secondary">Available on Pro and Max, or with a Destination Pass for this destination.</p>
+      <a href="index.html#plans">View plans</a>
+    </article></section>
+    <section class="specimen"><h2>Metric · insufficient</h2><article class="metric">
+      <p class="label">Reply rate · Pro</p>
+      <p><strong>Not enough data</strong> <span class="sample-tag">Sample data</span></p>
+      <p class="secondary">The sample is below this metric’s floor. That is not 0% and not Low.</p>
+    </article></section>
+    <section class="specimen"><h2>Metric · error</h2><article class="metric">
+      <p class="label">Reply rate · Pro</p>
+      <h3>Couldn’t be loaded</h3>
+      <p>Metric rankings couldn't be loaded. This is a temporary problem, not an empty ranking.</p>
+      <button type="button" class="btn">Retry</button>
+    </article></section>
+    <section class="specimen"><h2>Contact · empty</h2><div class="notice"><h2>No contact on file yet.</h2><p>We haven’t published a verified contact for this hotel yet.</p></div></section>
+    <section class="specimen"><h2>Contact · error</h2><div class="notice"><h2>Contact details couldn’t be loaded</h2><p>This is a temporary problem on our side, not a missing contact.</p><button type="button" class="btn">Retry</button></div></section>
+    <section class="specimen"><h2>Credits · unreadable</h2><div class="notice"><p><strong>Credits unavailable</strong></p><button type="button" class="btn">Retry</button></div></section>
+    <section class="specimen"><h2>Empty and error</h2><div class="notice"><h2>No hotels match your filters.</h2><p>Try another destination or remove some filters.</p></div><div class="notice"><h2>Hotels couldn't be loaded.</h2><p>Your search is still available. Try again.</p></div></section>
+  </div>
+</div></main>
+    
+    
+    <nav class="bottom-nav" aria-label="Primary mobile">
+      <a href="index.html#workspaces" aria-current="page"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5 8 2l6 5.5V14H10V9H6v5H2z"/></svg>Home</a>
+      <a href="discover/1440-free.html" ><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2"/></svg>Discover</a>
+      <a href="index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h8"/></svg>Pipeline</a>
+      <a href="index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h12M4 12V7l4-3 4 3v5"/></svg>Trips</a>
+      <a href="index.html#workspaces" ><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="6" r="2.5"/><path d="M3 13c1.2-2 2.8-3 5-3s3.8 1 5 3"/></svg>Profile</a>
+    </nav>
+  </div>
+  <script src="assets/ui.js"></script>
+</body>
+</html>
