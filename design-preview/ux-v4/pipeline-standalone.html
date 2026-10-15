@@ -263,6 +263,22 @@ svg{display:block}.icon{width:17px;height:17px;flex:none;stroke:currentColor;str
 @media(max-width:680px){.ops-wrap{padding:18px 13px 58px}.ops-head{align-items:start;flex-direction:column;gap:15px}.ops-head h1{font-size:32px}.ops-controls{width:100%}.ops-hero{padding:23px 20px}.ops-hero-right{flex-direction:column;align-items:stretch}.ops-hero-actions{justify-content:flex-start}.ops-hero h2{font-size:25px}.ops-stats{grid-template-columns:repeat(2,1fr)}.ops-stat{min-height:95px}.ops-stat strong{font-size:27px}.ops-aside{grid-template-columns:1fr}.ops-chooser-card{min-width:230px}.ops-nextsteps{grid-template-columns:1fr}.ops-lane{min-height:290px}.ops-board{grid-auto-columns:minmax(250px,78vw)}.ops-list-item{grid-template-columns:1fr auto}.ops-list-item>div:nth-child(3),.ops-list-item>div:nth-child(4){display:none}.ops-panel-header{padding:14px}.ops-filterbar{padding:13px}.ops-filterbar select{width:auto;flex:1}.ops-lead-table{min-width:800px}.ops-drawer-head{padding:14px 17px}.ops-drawer-body{padding:18px 17px 55px}}
 @media(prefers-reduced-motion:reduce){.ops-drawer,.ops-deal{transition:none}}
 
+/* V5 readability pass: actionable text should not be microscopic. */
+.ops-wrap .ops-hint,.ops-wrap .ops-micro{font-size:12px!important}
+.ops-wrap .nav-item strong{font-size:14px}
+.ops-wrap .nav-item small{font-size:11.5px}
+.sidebar .nav-item strong{font-size:14px}
+.sidebar .nav-item small{font-size:11.5px}
+.ops-lead-table td{font-size:13px}.ops-lead-table th{font-size:11.5px}
+.ops-lead-ident strong{font-size:14px}.ops-lead-ident small{font-size:12px}
+.ops-stat .k{font-size:12px}.ops-stat small{font-size:12px}
+.ops-deal p{font-size:12px}.ops-deal h3{font-size:15px}
+.ops-hero p{font-size:14px}
+.ops-task strong{font-size:14px}
+.ops-task small{font-size:12px}
+.ops-pill{font-size:11.5px}
+.ops-lane-head strong{font-size:13px}
+
 </style><script>
 /* theugc.life UX V3 — browser-only demonstrator. No backend, no real hotel claims. */
 (function(){
@@ -523,7 +539,7 @@ const notes=data.notes.filter(n=>n.hotelId===id).map(n=>({type:"note",text:n.tex
 return [...events,...notes].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,12).map(e=>`<div class="ops-event"><strong>${e.type==="note"?"Your note":esc(e.text)}</strong><p>${e.type==="note"?esc(e.text):e.source==="sample"?"Illustrative event":"Manual · not Gmail verified"}</p><small>${when(e.at)}</small></div>`).join("")||'<p class="ops-micro">No activity logged yet.</p>';
 }
 function drawerOpen(id){
-if(!hotel(id))return;ui.drawer=id;E("ops-drawer").classList.add("open");E("ops-drawer-shade").classList.add("visible");document.body.style.overflow="hidden";drawerRender();E("ops-drawer-close").focus();
+if(!hotel(id))return;ui.drawer=id;E("ops-drawer").classList.add("open");E("ops-drawer").setAttribute("aria-hidden","false");E("ops-drawer-shade").classList.add("visible");document.body.style.overflow="hidden";drawerRender();E("ops-drawer-close").focus();
 }
 function drawerRender(){
 const id=ui.drawer,h=hotel(id),c=data.campaigns.find(c=>c.hotelIds.includes(id));
@@ -534,7 +550,7 @@ E("ops-drawer-content").innerHTML=`<div class="eyebrow">RELATIONSHIP COCKPIT</di
 <div class="ops-divider"></div><h3>Private notes</h3><p class="ops-micro">Keep context without creating a new data record for the same hotel.</p><textarea id="ops-note" placeholder="What matters for the next response?"></textarea><button class="btn small" data-op="note-add" style="margin-top:9px">Add note</button>
 <div class="ops-divider"></div><h3>Activity</h3>${dealHistory(id)}`;
 }
-function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
+function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer").setAttribute("aria-hidden","true");E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
 function stageChange(id,v){
 if(stage(id)===v){A().toast("Already in that stage");return}
 if(A().state.plan==="free"&&["draft","sent","replied","negotiating","won","bounced"].includes(v)){
