@@ -11,9 +11,11 @@ import {
   contactLine,
   contextLine,
   COUNT_UNAVAILABLE,
+  duplicateHotelNote,
   followUpPresentation,
   followUpRows,
   laneBadge,
+  laneTone,
   nextStep,
   rowsForStage,
   shownDisplayRef,
@@ -70,59 +72,89 @@ export function PipelineCommand({ counts }: { counts: Parameters<typeof commandS
   }
   const moving =
     summary.moving === 0
-      ? "No replied, negotiating, or follow-up rows."
+      ? "No conversations are in reply, negotiation, or follow-up."
       : summary.moving === 1
-        ? "1 opportunity is in reply, negotiation, or follow-up."
-        : `${summary.moving} opportunities are in reply, negotiation, or follow-up.`;
+        ? "One conversation is moving."
+        : `${summary.moving} conversations are moving.`;
   const stats = [
-    ["Tracked opportunities", summary.tracked],
-    ["Replies recorded", summary.replied],
-    ["Follow-up events", summary.followUps],
-    ["Agreed", summary.agreed],
+    ["Tracked opportunities", summary.tracked, "Every stage, including closed"],
+    ["Responses reported", summary.replied, "Replied status only"],
+    ["Follow-up checks", summary.followUps, "An event count, not a stage"],
+    ["Agreements", summary.agreed, "Won status"],
   ] as const;
   return (
-    <section className="v12-card v12-card-pad space-y-3" aria-label="Relationship command center">
-      <p className="text-sm text-text">{moving}</p>
-      <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {stats.map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</dt>
-            <dd className="text-2xl font-semibold text-text">{value}</dd>
+    <div className="v12-stack">
+      <section className="v12-darkhero" aria-label="Relationship command center">
+        <div>
+          <p className="v12-eyebrow">Relationship command center</p>
+          <h2>{moving}</h2>
+          <p>
+            Each attempt has its own opportunity id, stage, and history. A hotel&rsquo;s identity
+            stays shared. These counts are exact.
+          </p>
+        </div>
+        <Link href="/app/inbox" className="v12-btn v12-btn-primary">
+          Open Inbox
+        </Link>
+      </section>
+      <div className="v12-stats">
+        {stats.map(([label, value, note], index) => (
+          <div key={label} className={index === 2 ? "v12-stat v12-stat-tint" : "v12-stat"}>
+            <span className="v12-stat-label">{label}</span>
+            <div className="v12-stat-num">{value}</div>
+            <div className="v12-stat-note">{note}</div>
           </div>
         ))}
-      </dl>
-    </section>
+      </div>
+    </div>
   );
 }
 
 export function PipelineAttentionList({ board }: { board: AttentionBoard }) {
   return (
-    <section className="space-y-3" aria-label="What needs your attention">
-      <h2 className="text-lg font-semibold text-text">What needs your attention</h2>
+    <section className="v12-stack" aria-label="What needs your attention">
+      <div className="v12-subhead">
+        <div>
+          <h2>What needs your attention</h2>
+          <p>Priorities before the board.</p>
+        </div>
+        {board.actions.length > 0 ? (
+          <span className="v12-badge v12-badge-green">
+            {board.actions.length === 1
+              ? "1 next step"
+              : `${board.actions.length} next steps`}
+          </span>
+        ) : null}
+      </div>
       {board.notices.map((notice) => (
-        <p key={notice} className="text-sm text-text" role="status">
+        <p key={notice} role="status">
           {notice}
         </p>
       ))}
-      {board.empty ? <p className="text-sm text-muted">{board.empty}</p> : null}
+      {board.empty ? <p>{board.empty}</p> : null}
       {board.actions.length > 0 ? (
-        <ul className="space-y-2">
-          {board.actions.map((action) => (
-            <li key={action.id} className="v12-card px-4 py-3">
-              {action.href ? (
-                <Link href={action.href} className="font-semibold text-text hover:underline">
-                  {action.title}
-                </Link>
-              ) : (
-                <span className="font-semibold text-text">{action.title}</span>
-              )}
-              <p className="text-sm text-muted">{action.detail}</p>
-            </li>
-          ))}
-        </ul>
+        <div className="v12-attention">
+          {board.actions.map((action) => {
+            const body = (
+              <>
+                <strong>{action.title}</strong>
+                <p>{action.detail}</p>
+              </>
+            );
+            return action.href ? (
+              <Link key={action.id} href={action.href} className="v12-navtile">
+                <span>{body}</span>
+              </Link>
+            ) : (
+              <div key={action.id} className="v12-navtile">
+                <span>{body}</span>
+              </div>
+            );
+          })}
+        </div>
       ) : null}
       {board.hiddenCount > 0 ? (
-        <p className="text-sm text-muted">
+        <p>
           {board.hiddenCount === 1
             ? "1 more action is in the rows we read."
             : `${board.hiddenCount} more actions are in the rows we read.`}
@@ -149,9 +181,12 @@ export function PipelineViewSwitch({
     { id: "timeline", label: "Timeline" },
   ];
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-lg font-semibold text-text">Opportunity board</h2>
-      <div className="flex gap-2" role="group" aria-label="Pipeline view">
+    <div className="v12-subhead">
+      <div>
+        <h2>Opportunity board</h2>
+        <p>Use Board, List, or Timeline to work from the same set of opportunities.</p>
+      </div>
+      <div className="v12-head-actions" role="group" aria-label="Pipeline view">
         {views.map((item) => {
           const current = view === item.id;
           return (
@@ -203,13 +238,14 @@ function OpportunityCard({
   );
   const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id) : null;
   return (
-    <article className="mt-2 rounded-md border border-border bg-surface p-3 text-sm text-text">
-      <h3 className="font-semibold">{row.hotelName}</h3>
-      {context ? <p className="text-muted">{context}</p> : null}
-      <p className="mt-1 text-xs font-semibold text-text">
-        {ref ?? "Opportunity"} · {step.title}
-      </p>
-      <p className="text-xs text-muted">{step.detail}</p>
+    <article className="v12-deal">
+      <h3>{row.hotelName}</h3>
+      {context ? <p>{context}</p> : null}
+      <p>{step.detail}</p>
+      <div className="v12-deal-foot">
+        <span>{ref ?? "Opportunity"}</span>
+        <span>{step.title}</span>
+      </div>
       <p className="mt-1 text-xs text-text" data-testid="pipeline-signal">
         Hotel signal: {signal.text}
       </p>
@@ -331,6 +367,7 @@ export function PipelineDense({
   const events = followUpRows(rows);
   const followTotal = counts && typeof counts.follow_up === "number" ? counts.follow_up : null;
   const follow = followUpPresentation(events.length, followTotal);
+  const sameHotel = duplicateHotelNote(rows);
   return (
     <div className="space-y-4">
       {follow.visible ? (
@@ -355,7 +392,7 @@ export function PipelineDense({
           ))}
         </section>
       ) : null}
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="v12-stage-board">
         {STAGE_COLUMNS.map((column) => {
           const columnRows = rowsForStage(rows, column.status);
           const total =
@@ -363,16 +400,20 @@ export function PipelineDense({
           const badge = laneBadge(total);
           const empty = columnEmptyNote(columnRows.length, total);
           const emptyText = badge === COUNT_UNAVAILABLE ? COUNT_UNAVAILABLE : (empty ?? "—");
+          const tone = laneTone(column.status);
+          const laneClass = [
+            "v12-lane",
+            tone === "reply" ? "v12-lane-reply" : "",
+            tone === "negotiate" ? "v12-lane-negotiate" : "",
+            tone === "agreed" ? "v12-lane-agreed" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
           return (
-            <section key={column.status} className="w-56 shrink-0">
-              <h3 className="flex justify-between border-b border-border py-2 text-xs font-bold uppercase tracking-wider">
+            <section key={column.status} className={laneClass}>
+              <h3 className="v12-lanehead">
                 {column.label}
-                <span
-                  className="font-normal text-muted"
-                  data-testid={`lane-count-${column.status}`}
-                >
-                  {badge}
-                </span>
+                <span data-testid={`lane-count-${column.status}`}>{badge}</span>
               </h3>
               {columnRows.length === 0 ? (
                 <p className="px-1 py-2 text-sm text-muted">{emptyText}</p>
@@ -392,6 +433,12 @@ export function PipelineDense({
           );
         })}
       </div>
+      {sameHotel ? (
+        <p className="v12-callout">
+          <strong>Same hotel, different opportunities: </strong>
+          {sameHotel}
+        </p>
+      ) : null}
     </div>
   );
 }

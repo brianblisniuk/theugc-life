@@ -1701,6 +1701,16 @@
   },
   {
     "schema": "public",
+    "name": "catalog_contact_exists",
+    "args": "p_hotel_ids uuid[]",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "claim_contact_provider_lookup",
     "args": "p_cache_key text",
     "searchPath": "\"\"",

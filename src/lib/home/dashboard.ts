@@ -128,6 +128,23 @@ export function outreachFractionLabel(card: OutreachCard): string {
   return `${card.contactedCount} of ${card.hotelCount} hotels are sent or further. Saved and pitch-ready hotels are not counted as contacted.`;
 }
 
+/** Progress for the home campaign card. A zero hotel list is not a 0% bar. */
+export function outreachProgress(
+  card: OutreachCard,
+): { kind: "empty" } | { kind: "bar"; label: string; percentLabel: string; width: number } {
+  if (!Number.isInteger(card.hotelCount) || card.hotelCount <= 0) return { kind: "empty" };
+  const contacted = Number.isInteger(card.contactedCount) && card.contactedCount > 0
+    ? card.contactedCount
+    : 0;
+  const width = Math.min(100, (contacted / card.hotelCount) * 100);
+  return {
+    kind: "bar",
+    label: `${contacted} of ${card.hotelCount} hotels contacted`,
+    percentLabel: `${Math.round(width)}%`,
+    width,
+  };
+}
+
 export type OutreachLoad =
   | { status: "ok"; cards: OutreachCard[]; truncated: boolean }
   | { status: "empty" }

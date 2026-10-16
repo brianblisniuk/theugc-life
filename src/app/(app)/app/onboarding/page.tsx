@@ -6,6 +6,7 @@ import { ErrorState } from "@/components/ui/states";
 import { requireUser } from "@/lib/auth/guards";
 import { ONBOARDING_GOALS } from "@/lib/onboarding/goals";
 import { homeView } from "@/lib/onboarding/first-run";
+import { FIRST_PITCH_STEPS, firstPitchMarks } from "@/lib/onboarding/path";
 import { loadHomeProgress } from "@/lib/onboarding/queries";
 import { listDestinations } from "@/lib/trips/queries";
 
@@ -23,28 +24,85 @@ export default async function OnboardingDestinationPage() {
   ]);
   const view = homeView(progress.facts);
 
+  const marks = firstPitchMarks(
+    view.kind === "checklist"
+      ? {
+          destination: view.steps.find((step) => step.id === "destination")?.done === true,
+          saved: view.steps.find((step) => step.id === "hotel")?.done === true,
+          pitch: view.steps.find((step) => step.id === "pitch")?.done === true,
+        }
+      : null,
+  );
+
   return (
-    <div className="s6-page">
-      <header className="s6-head">
+    <div className="v12-stack">
+      <header className="v12-pagehead">
         <div>
-          <p className="s6-eyebrow">Getting Started</p>
+          <p className="v12-eyebrow">GETTING STARTED / CREATOR WORKSPACE</p>
           <h1>Your first opportunity, not a long setup.</h1>
-          <p>One useful action is enough. The rest of the profile can wait.</p>
+          <p>We’ll guide you to one useful action. You can complete the rest of your profile later.</p>
         </div>
-        <ButtonLink href="/app/discover">Skip to Discover</ButtonLink>
+        <div className="v12-head-actions">
+          <ButtonLink href="/app/discover">Skip to Discover</ButtonLink>
+        </div>
       </header>
 
-      <div className="v12-stack">
-        {ONBOARDING_GOALS.map((goal, index) => (
-          <Link key={goal.id} href={goal.href} className="v12-navtile">
-            <div>
-              <strong>
-                {index + 1}. {goal.title}
-              </strong>
-              <p>{goal.detail}</p>
+      <div className="v12-layout">
+        <section className="v12-panel v12-panel-pad">
+          <p className="v12-eyebrow">YOUR FIRST SUCCESS</p>
+          <h2>What are you here to do?</h2>
+          <p>You don&rsquo;t need a confirmed trip or a large audience to begin.</p>
+          <div className="v12-stepper" aria-hidden="true">
+            {marks.map((mark, index) => (
+              <span
+                key={FIRST_PITCH_STEPS[index]?.title ?? index}
+                className={
+                  mark === "done"
+                    ? "v12-step v12-step-done"
+                    : mark === "current"
+                      ? "v12-step v12-step-current"
+                      : "v12-step"
+                }
+              />
+            ))}
+          </div>
+          {view.kind === "blocked" ? (
+            <p>The stepper is blank because your progress could not be read. That is not zero steps done.</p>
+          ) : null}
+          <div className="v12-stack">
+            {ONBOARDING_GOALS.map((goal, index) => (
+              <Link key={goal.id} href={goal.href} className="v12-navtile">
+                <div>
+                  <strong>
+                    {index + 1}. {goal.title}
+                  </strong>
+                  <p>{goal.detail}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+        <aside className="v12-stack">
+          <section className="v12-panel v12-panel-pad">
+            <p className="v12-eyebrow">YOUR PATH TO A FIRST PITCH</p>
+            <h3>Four small steps</h3>
+            <div className="v12-timeline">
+              {FIRST_PITCH_STEPS.map((step, index) => (
+                <div key={step.title} className="v12-event">
+                  <strong>
+                    {marks[index] === "done" ? "Done · " : marks[index] === "current" ? "Now · " : ""}
+                    {step.title}
+                  </strong>
+                  <p>{step.detail}</p>
+                </div>
+              ))}
             </div>
-          </Link>
-        ))}
+          </section>
+          <p className="v12-callout">
+            <strong>First value before a full profile: </strong>
+            you can prepare a pitch with no follower metrics and no travel dates.
+          </p>
+        </aside>
       </div>
 
       {view.kind === "blocked" ? (

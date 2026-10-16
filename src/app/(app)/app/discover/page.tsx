@@ -24,6 +24,7 @@ import {
   parseDiscoverQuery,
   type RawSearchParams,
 } from "@/lib/hotels/filters";
+import { listCatalogContactFlags } from "@/lib/hotels/contact-exists-query";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 import {
   getPublicCardSignals,
@@ -150,6 +151,10 @@ export default async function DiscoverPage({
     session?.status === "authenticated"
       ? await loadSessionCreatorBadges(hotelIds, session.session.userId)
       : { status: "unknown" as const };
+  const contacts =
+    session?.status === "authenticated" && hotelIds.length > 0
+      ? await listCatalogContactFlags(hotelIds)
+      : { status: "ok" as const, flags: new Map<string, boolean>() };
 
   const destinationName =
     catalog.status === "ok"
@@ -370,6 +375,12 @@ export default async function DiscoverPage({
               </p>
             ) : null}
             <h2 className="sr-only">Hotel results</h2>
+            {contacts.status === "error" ? (
+              <p role="status">
+                Contact availability could not be checked. This is not a statement that contacts
+                are missing.
+              </p>
+            ) : null}
             <ul className="s1-rows s1-list">
               {result.hotels.map((hotel) => (
                 <SyncRow key={hotel.id} id={hotel.id}>
@@ -382,6 +393,9 @@ export default async function DiscoverPage({
                     rankLine={rankLineFor(rankLines, rankTitle, hotel.id)}
                     href={meta[hotel.id]?.href ?? `/app/hotels/${hotel.id}`}
                     figures={discoverFigures(metrics.get(hotel.id))}
+                    contactAvailable={
+                      contacts.status === "ok" ? (contacts.flags.get(hotel.id) ?? false) : null
+                    }
                   />
                 </SyncRow>
               ))}

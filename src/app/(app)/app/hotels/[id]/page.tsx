@@ -393,27 +393,30 @@ export default async function HotelDetailPage({
                 <MetricValue figure={figures.activity} label="Aggregated public signal" />
               </article>
             </div>
-            <MetricCells signals={metricSignals} strength={strength} />
-            <IntelligencePanel result={intelligence} />
-            <PremiumIntelligencePanel state={premiumState} result={premium} />
-            <NetworkIntelligencePanel
-              hotelId={hotel.id}
-              network={network}
-              rank={rank}
-              prioritized={prioritized}
-            />
-            <PersonalFacts load={ownFacts} />
-            <RankingBoards
-              destinationName={hotel.destination?.name ?? null}
-              rankings={metricRankings}
-            />
-            <DecisionIntelligence
-              hotelId={hotel.id}
-              strength={strength}
-              personal={personal}
-              fit={fit}
-              decision={fitDecision}
-            />
+            <details className="v12-details" id="more-intelligence">
+              <summary>More signals, rankings, and your history</summary>
+              <MetricCells signals={metricSignals} strength={strength} />
+              <IntelligencePanel result={intelligence} />
+              <PremiumIntelligencePanel state={premiumState} result={premium} />
+              <NetworkIntelligencePanel
+                hotelId={hotel.id}
+                network={network}
+                rank={rank}
+                prioritized={prioritized}
+              />
+              <PersonalFacts load={ownFacts} />
+              <RankingBoards
+                destinationName={hotel.destination?.name ?? null}
+                rankings={metricRankings}
+              />
+              <DecisionIntelligence
+                hotelId={hotel.id}
+                strength={strength}
+                personal={personal}
+                fit={fit}
+                decision={fitDecision}
+              />
+            </details>
           </section>
 
           <section className="s1-panel" id="identity">

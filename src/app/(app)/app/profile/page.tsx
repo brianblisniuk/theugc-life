@@ -12,12 +12,14 @@ import { ShareOptIns } from "@/components/profile/share-opt-ins";
 import { ButtonLink } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { requireUser } from "@/lib/auth/guards";
+import { initialsFromName } from "@/lib/screens/initials";
 import {
   getOwnProfile,
   getPastCollaborations,
   getPersonalCounts,
   getProfileVisibility,
 } from "@/lib/profile/queries";
+import { profileReadiness } from "@/lib/profile/readiness";
 import { getShareSettings } from "@/lib/profile/share-queries";
 import { PROFILE_LIST_COPY } from "@/lib/surfaces/list-outcome";
 
@@ -38,18 +40,33 @@ export default async function ProfilePage() {
     getProfileVisibility(session.userId),
   ]);
 
+  const selectedCount =
+    (past.status === "ok" ? past.items.length : 0) +
+    (share.status === "ok" ? share.deliverables.length : 0);
+  const readiness =
+    profile.status === "ok"
+      ? profileReadiness({
+          bio: profile.profile.bio,
+          formats: profile.profile.contentFormats,
+          languages: profile.profile.languages,
+          selectedCount: past.status === "ok" && share.status === "ok" ? selectedCount : 0,
+          shareLinkUsable: share.status === "ok" && share.link?.usable === true,
+        })
+      : null;
+  const pieceReadsFailed = past.status !== "ok" || share.status !== "ok";
+
   return (
-    <div className="s6-page">
-      <header className="s6-head">
+    <div className="v12-stack">
+      <header className="v12-pagehead">
         <div>
-          <p className="s6-eyebrow">My Profile</p>
+          <p className="v12-eyebrow">MY PROFILE / CREATOR WORKSPACE</p>
           <h1>Your work speaks before your follower count.</h1>
           <p>
-            Audience size is optional. A new creator can have a portfolio without invented follower
-            counts. Private fields stay off the hotel link until you turn them on.
+            A hotel-facing portfolio that makes quality, experience and creative fit easy to
+            understand.
           </p>
         </div>
-        <div className="s6-actions">
+        <div className="v12-head-actions">
           <ButtonLink href="/app/profile/pitches">Pitch templates</ButtonLink>
           <ButtonLink href="/app/pitch" variant="primary">
             Open Pitch Studio
@@ -57,63 +74,162 @@ export default async function ProfilePage() {
         </div>
       </header>
 
-      <section className="v12-card v12-card-pad">
-        <h2>Your details</h2>
-        {profile.status === "ok" ? (
-          <ProfileEditor profile={profile.profile} />
-        ) : (
-          <ErrorState title="Profile" description={PROFILE_LIST_COPY.error} />
-        )}
-      </section>
+      <div className="v12-layout">
+        <div className="v12-stack">
+          <section className="v12-panel v12-panel-pad">
+            <div className="v12-panel-head">
+              <div>
+                <p className="v12-eyebrow">YOUR CREATOR IDENTITY</p>
+                <h2>Make a strong introduction.</h2>
+              </div>
+              {readiness ? (
+                <span className={readiness.ready ? "v12-badge v12-badge-green" : "v12-badge"}>
+                  {readiness.ready ? "Ready to share" : "Not ready to share"}
+                </span>
+              ) : null}
+            </div>
+            {profile.status === "ok" ? (
+              <>
+                <div className="v12-row">
+                  <span className="v12-mark">
+                    {initialsFromName(profile.profile.displayName || "Creator")}
+                  </span>
+                  <div>
+                    <h2>{profile.profile.displayName.trim() || "Creator portfolio"}</h2>
+                    <p>
+                      {[profile.profile.contentFormats, profile.profile.languages]
+                        .map((value) => value.trim())
+                        .filter(Boolean)
+                        .join(" · ") || "Formats and languages are not filled in."}
+                    </p>
+                  </div>
+                </div>
+                <ProfileEditor profile={profile.profile} />
+              </>
+            ) : (
+              <ErrorState title="Profile" description={PROFILE_LIST_COPY.error} />
+            )}
+          </section>
 
-      {visibility.status === "ok" ? (
-        <PublicProfileToggle enabled={visibility.enabled} username={visibility.username} />
-      ) : (
-        <ErrorState title="Public profile" description={PROFILE_LIST_COPY.error} />
-      )}
-
-      {share.status === "ok" ? (
-        <>
-          <AudienceFields followers={share.followers} engagement={share.engagement} />
-          <ShareOptIns optIns={share.optIns} />
-          <ShareLinkPanel link={share.link} />
-          <ContentExamples
-            deliverables={share.deliverables}
-            sharedIds={share.sharedDeliverableIds}
-          />
-        </>
-      ) : (
-        <ErrorState title="Hotel share link" description={PROFILE_LIST_COPY.shareError} />
-      )}
-
-      <section className="v12-card v12-card-pad">
-        <h2>Hotel-facing preview</h2>
-        <p className="s6-muted">
-          Selected work and the share link are the portfolio a hotel can open. Mailbox connection
-          and account deletion stay on <Link href="/app/account">Account</Link>.
-        </p>
-      </section>
-
-      <section className="v12-card v12-card-pad">
-        <h2>Pitch templates and portfolio</h2>
-        <p className="s6-muted">
-          Templates you write are only yours. Confirmed collaborations join the portfolio only after
-          you approve them. Gmail detections are not included.
-        </p>
-        <div className="s6-actions">
-          <Link href="/app/profile/pitches">Edit templates</Link>
-          <Link href="/app/profile/portfolio">Edit portfolio</Link>
+          <section className="v12-panel v12-panel-pad">
+            <div className="v12-panel-head">
+              <div>
+                <h2>Selected work</h2>
+                <p>Lead with recorded projects. Nothing here is a sample.</p>
+              </div>
+              <Link href="/app/profile/portfolio" className="v12-btn v12-btn-small">
+                Edit portfolio
+              </Link>
+            </div>
+            {pieceReadsFailed ? (
+              <ErrorState
+                title="Selected work"
+                description="Selected work could not be loaded. This is not an empty portfolio."
+              />
+            ) : selectedCount === 0 ? (
+              <p>No selected work is recorded yet.</p>
+            ) : (
+              <div className="v12-work-grid">
+                {past.status === "ok"
+                  ? past.items.slice(0, 6).map((item) => (
+                      <article key={item.id} className="v12-work-card">
+                        <div className="v12-work-preview">{item.typeLabel ?? item.statusLabel}</div>
+                        <strong>{item.hotelName}</strong>
+                        <p>{item.when ?? "Dates not recorded"}</p>
+                      </article>
+                    ))
+                  : null}
+                {share.status === "ok"
+                  ? share.deliverables.slice(0, 6).map((item) => (
+                      <article key={item.id} className="v12-work-card">
+                        <div className="v12-work-preview">{item.label}</div>
+                        <strong>{item.platform ?? "Content example"}</strong>
+                        <p>{item.proofUrl ? "Proof link recorded" : "No proof link yet"}</p>
+                      </article>
+                    ))
+                  : null}
+              </div>
+            )}
+            {share.status === "ok" ? (
+              <ContentExamples
+                deliverables={share.deliverables}
+                sharedIds={share.sharedDeliverableIds}
+              />
+            ) : null}
+            <PastCollaborations
+              load={past}
+              heading="Past collaborations"
+              linkToHotel
+              sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
+            />
+            <p>
+              Past collaborations stay on this page until you mark them for the hotel link. They
+              are not public by default.
+            </p>
+          </section>
         </div>
-      </section>
+
+        <aside className="v12-stack">
+          <section className="v12-port-preview">
+            <p className="v12-eyebrow">HOTEL-FACING PREVIEW</p>
+            <h3>
+              {profile.status === "ok" && profile.profile.displayName.trim()
+                ? profile.profile.displayName.trim()
+                : "Your introduction"}
+            </h3>
+            <p>
+              {profile.status === "ok" && profile.profile.bio.trim()
+                ? profile.profile.bio.trim()
+                : "A bio appears here after you save one. Follower counts are not shown."}
+            </p>
+            <p>
+              {pieceReadsFailed
+                ? "Selected work could not be counted."
+                : selectedCount === 0
+                  ? "No featured projects yet."
+                  : `${selectedCount} featured project${selectedCount === 1 ? "" : "s"}`}
+            </p>
+            <p>
+              Mailbox connection and account deletion stay on <Link href="/app/account">Account</Link>.
+            </p>
+          </section>
+          <section className="v12-panel v12-panel-pad">
+            <p className="v12-eyebrow">PROFILE READINESS</p>
+            <h3>{readiness?.ready ? "Ready enough to pitch" : "Still private until you fill it"}</h3>
+            {readiness ? (
+              <ul className="v12-checklist">
+                {readiness.items.map((item) => (
+                  <li key={item.id}>
+                    {item.done ? "Done" : "Not yet"} · {item.label}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>Readiness could not be checked because the profile did not load.</p>
+            )}
+            {pieceReadsFailed ? (
+              <p>Selected pieces and the share link were not counted. That is not zero.</p>
+            ) : null}
+            <p>Audience-size claims are optional. A new creator can have a portfolio without invented follower counts.</p>
+          </section>
+          {visibility.status === "ok" ? (
+            <PublicProfileToggle enabled={visibility.enabled} username={visibility.username} />
+          ) : (
+            <ErrorState title="Public profile" description={PROFILE_LIST_COPY.error} />
+          )}
+          {share.status === "ok" ? (
+            <>
+              <AudienceFields followers={share.followers} engagement={share.engagement} />
+              <ShareOptIns optIns={share.optIns} />
+              <ShareLinkPanel link={share.link} />
+            </>
+          ) : (
+            <ErrorState title="Hotel share link" description={PROFILE_LIST_COPY.shareError} />
+          )}
+        </aside>
+      </div>
 
       <PersonalCounts load={counts} />
-      <p className="s6-muted">Past collaborations stay on this page. They are not public.</p>
-      <PastCollaborations
-        load={past}
-        heading="Past collaborations"
-        linkToHotel
-        sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
-      />
     </div>
   );
 }

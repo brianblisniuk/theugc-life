@@ -6,10 +6,53 @@ import {
   HOME_DASHBOARD_COPY,
   attentionEmptyCopy,
   outreachFractionLabel,
+  outreachProgress,
   type HomeDashboard,
+  type OutreachCard,
 } from "@/lib/home/dashboard";
 import { HOME_NEXT_COPY } from "@/lib/home/next-actions";
 import type { InboxMailbox } from "@/lib/inbox/model";
+
+function CampaignProgress({ card }: { card: OutreachCard }) {
+  const progress = outreachProgress(card);
+  const remaining =
+    card.hotelCount > card.contactedCount ? card.hotelCount - card.contactedCount : 0;
+  return (
+    <>
+      {progress.kind === "empty" ? (
+        <p>{HOME_DASHBOARD_COPY.outreachHotelsEmpty}</p>
+      ) : (
+        <>
+          <div className="v12-between">
+            <strong>{progress.label}</strong>
+            <span>{progress.percentLabel}</span>
+          </div>
+          <div className="v12-progress" aria-hidden="true">
+            <span style={{ width: `${progress.width}%` }} />
+          </div>
+          <p>{outreachFractionLabel(card)}</p>
+          <div className="v12-stats v12-stats-3">
+            <div className="v12-stat">
+              <span className="v12-stat-label">Shortlist</span>
+              <div className="v12-stat-num">{card.hotelCount}</div>
+              <div className="v12-stat-note">Hotels</div>
+            </div>
+            <div className="v12-stat">
+              <span className="v12-stat-label">Contacted</span>
+              <div className="v12-stat-num">{card.contactedCount}</div>
+              <div className="v12-stat-note">Sent or further</div>
+            </div>
+            <div className="v12-stat">
+              <span className="v12-stat-label">Not contacted</span>
+              <div className="v12-stat-num">{remaining}</div>
+              <div className="v12-stat-note">Still on the shortlist</div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
 function MailLine({ mailbox }: { mailbox: InboxMailbox }) {
   if (mailbox.kind === "connected") {
@@ -213,11 +256,7 @@ export function HomeScreen({
                 <span className="v12-badge v12-badge-green">In progress</span>
               </div>
               {dashboard.outreach.cards[0] ? (
-                <p>
-                  {dashboard.outreach.cards[0].hotelCount === 0
-                    ? HOME_DASHBOARD_COPY.outreachHotelsEmpty
-                    : outreachFractionLabel(dashboard.outreach.cards[0])}
-                </p>
+                <CampaignProgress card={dashboard.outreach.cards[0]} />
               ) : null}
               {dashboard.outreach.truncated ? <p>{HOME_DASHBOARD_COPY.outreachTruncated}</p> : null}
               {dashboard.outreach.cards[0] ? (

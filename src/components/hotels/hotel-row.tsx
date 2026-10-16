@@ -33,6 +33,7 @@ export function HotelRow({
   rankLine = null,
   href,
   figures = EMPTY_FIGURES,
+  contactAvailable = null,
 }: {
   hotel: HotelSummary;
   signal: PublicCardSignal | null;
@@ -45,6 +46,8 @@ export function HotelRow({
   } | null;
   href: string;
   figures?: DiscoverFigures;
+  /** True only when the catalog RPC says a contact exists. Null is unchecked. */
+  contactAvailable?: boolean | null;
 }) {
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
@@ -86,10 +89,13 @@ export function HotelRow({
               {rankLine.sampleBasis ? ` · ${rankLine.sampleBasis}` : ""}
             </span>
           ) : null}
-          {pipeline || onTrip ? (
+          {pipeline || onTrip || contactAvailable ? (
             <span className="s1-chips">
               {pipeline ? <span className="v12-badge v12-badge-blue">{pipeline}</span> : null}
               {onTrip ? <span className="v12-badge">{ON_TRIP}</span> : null}
+              {contactAvailable ? (
+                <span className="v12-badge v12-badge-green">Contact available</span>
+              ) : null}
             </span>
           ) : null}
         </span>
