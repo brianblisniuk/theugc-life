@@ -267,7 +267,8 @@ export default async function HotelDetailPage({
       ? await loadBillingAccess(session.session.userId)
       : ({ status: "error" } as const);
   const plan = session.status === "authenticated" ? planChipFromAccess(billing) : null;
-  const pitch = pitchHref(hotel.id) ?? "#work";
+  const pitch =
+    pitchHref(hotel.id, origin.kind === "trip" ? origin.tripId : null, origin) ?? "#work";
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,
