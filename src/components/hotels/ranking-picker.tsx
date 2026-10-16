@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 
+import { RetryButton } from "@/components/ui/retry-button";
+
 import {
   METRIC_IDS,
   METRIC_LAYERS,
@@ -86,9 +88,7 @@ export function RankingPicker({
         <div className="ux-notice" role="alert">
           <h2 className="ux-name">Metric rankings couldn&apos;t be loaded.</h2>
           <p className="ux-meta">{panel.notice}</p>
-          <a className="ux-btn" href="">
-            Retry
-          </a>
+          <RetryButton className="ux-btn" />
         </div>
       ) : null}
     </section>

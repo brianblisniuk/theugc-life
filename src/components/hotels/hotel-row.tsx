@@ -33,6 +33,7 @@ export function HotelRow({
   rankLine = null,
   href,
   figures = EMPTY_FIGURES,
+  contactAvailable = null,
 }: {
   hotel: HotelSummary;
   signal: PublicCardSignal | null;
@@ -45,6 +46,8 @@ export function HotelRow({
   } | null;
   href: string;
   figures?: DiscoverFigures;
+  /** True only when the catalog RPC says a contact exists. Null is unchecked. */
+  contactAvailable?: boolean | null;
 }) {
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
@@ -74,7 +77,9 @@ export function HotelRow({
           {tag.state === "insufficient" ? (
             <span className="s1-tag">✧ Insufficient data</span>
           ) : null}
-          {tag.state === "error" ? <span className="s1-tag">✧ Couldn&rsquo;t load activity</span> : null}
+          {tag.state === "error" ? (
+            <span className="s1-tag">✧ Couldn&rsquo;t load activity</span>
+          ) : null}
           {CLOSED_LABEL[hotel.activeStatus] ? (
             <span className="s1-place">{CLOSED_LABEL[hotel.activeStatus]}</span>
           ) : null}
@@ -84,10 +89,13 @@ export function HotelRow({
               {rankLine.sampleBasis ? ` · ${rankLine.sampleBasis}` : ""}
             </span>
           ) : null}
-          {pipeline || onTrip ? (
+          {pipeline || onTrip || contactAvailable ? (
             <span className="s1-chips">
-              {pipeline ? <span className="v12-badge v12-badge-lime">{pipeline}</span> : null}
+              {pipeline ? <span className="v12-badge v12-badge-blue">{pipeline}</span> : null}
               {onTrip ? <span className="v12-badge">{ON_TRIP}</span> : null}
+              {contactAvailable ? (
+                <span className="v12-badge v12-badge-green">Contact available</span>
+              ) : null}
             </span>
           ) : null}
         </span>
@@ -99,11 +107,21 @@ export function HotelRow({
           View hotel
         </Link>
         {saved ? (
-          <Link className="s1-icon-save" href="/app/pipeline" aria-pressed="true" aria-label="Saved. View in Pipeline">
+          <Link
+            className="s1-icon-save"
+            href="/app/pipeline"
+            aria-pressed="true"
+            aria-label="Saved. View in Pipeline"
+          >
             <Bookmark filled />
           </Link>
         ) : (
-          <SaveHotelButton hotelId={hotel.id} idle="Save" pendingLabel="Saving…" appearance="icon" />
+          <SaveHotelButton
+            hotelId={hotel.id}
+            idle="Save"
+            pendingLabel="Saving…"
+            appearance="icon"
+          />
         )}
       </div>
     </>
@@ -112,7 +130,15 @@ export function HotelRow({
 
 function Bookmark({ filled }: { filled?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.7">
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      aria-hidden="true"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.7"
+    >
       <path d="M6 3h12v18l-6-4-6 4z" />
     </svg>
   );

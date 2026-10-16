@@ -11,7 +11,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { AnalyticsPageView } from "@/components/analytics-page-view";
-import { DiscoverFilters } from "@/components/hotels/discover-filters";
+import { DiscoverFilters, DiscoverSort } from "@/components/hotels/discover-filters";
 import { DiscoverFrame, SyncRow } from "@/components/hotels/discover-sync";
 import { DiscoverMap } from "@/components/hotels/hotel-map";
 import { HotelRow } from "@/components/hotels/hotel-row";
@@ -24,6 +24,7 @@ import {
   parseDiscoverQuery,
   type RawSearchParams,
 } from "@/lib/hotels/filters";
+import { listCatalogContactFlags } from "@/lib/hotels/contact-exists-query";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 import {
   getPublicCardSignals,
@@ -32,7 +33,11 @@ import {
   searchHotels,
   type HotelSearchResult,
 } from "@/lib/hotels/queries";
-import { searchRankedHotels, type MetricLine, type RankedDiscover } from "@/lib/metrics/discover-rank";
+import {
+  searchRankedHotels,
+  type MetricLine,
+  type RankedDiscover,
+} from "@/lib/metrics/discover-rank";
 import { loadPageMetricSignals } from "@/lib/metrics/page-signals";
 import { METRIC_LAYERS, ORDER_BELOW_FLOOR_COPY, THRESHOLD_RULES } from "@/lib/metrics/contract";
 import { discoverListOutcome } from "@/lib/surfaces/list-outcome";
@@ -124,7 +129,10 @@ export default async function DiscoverPage({
     rankedKind: ranked?.kind ?? null,
     failed,
   });
-  const catalogHref = withDiscoverTrip(buildDiscoverHref({ ...query, rank: null, page: 1 }), tripId);
+  const catalogHref = withDiscoverTrip(
+    buildDiscoverHref({ ...query, rank: null, page: 1 }),
+    tripId,
+  );
   const listOutcome = discoverListOutcome({
     failed: gate === "error" || (gate !== "below_floor" && gate !== "locked" && result === null),
     count: result?.hotels.length ?? 0,
@@ -143,6 +151,10 @@ export default async function DiscoverPage({
     session?.status === "authenticated"
       ? await loadSessionCreatorBadges(hotelIds, session.session.userId)
       : { status: "unknown" as const };
+  const contacts =
+    session?.status === "authenticated" && hotelIds.length > 0
+      ? await listCatalogContactFlags(hotelIds)
+      : { status: "ok" as const, flags: new Map<string, boolean>() };
 
   const destinationName =
     catalog.status === "ok"
@@ -210,7 +222,10 @@ export default async function DiscoverPage({
             <strong>
               {destinationName ? `Continue exploring ${destinationName}` : "Continue this search"}
             </strong>
-            <p>Destination, filters, trip, and this page stay in the address. Hotel Detail returns here.</p>
+            <p>
+              Destination, filters, trip, and this page stay in the address. Hotel Detail returns
+              here.
+            </p>
           </div>
           <ButtonLink href={discoverHref} size="small">
             Resume this search
@@ -224,41 +239,55 @@ export default async function DiscoverPage({
             <div className="s1-eyebrow">01 / DISCOVER ON THE MAP</div>
             <h2>
               {placeLabel}
-              {showList && result ? ` · ${matchCount} matching hotel${matchCount === 1 ? "" : "s"}` : ""}
+              {showList && result
+                ? ` · ${matchCount} matching hotel${matchCount === 1 ? "" : "s"}`
+                : ""}
             </h2>
-            <p>Pins are hotels on this page, not a collaboration score.</p>
+            <p>Area clusters represent hotels, not a collaboration score.</p>
           </div>
           {tripId ? <span className="v12-badge v12-badge-green">Trip linked</span> : null}
         </div>
-        <DiscoverMap pins={showList && result ? result.pins : []} meta={meta} listFailed={gate === "error"} />
+        <DiscoverMap
+          pins={showList && result ? result.pins : []}
+          meta={meta}
+          listFailed={gate === "error"}
+        />
         <div className="s1-chips" aria-label="Filters">
           {chips.map((chip) => (
             <Link
               key={chip.key}
               className="v12-chip"
               href={withDiscoverTrip(chip.removeHref, tripId)}
-              aria-current="true"
             >
               {chip.label}
             </Link>
           ))}
           <Link
             className="v12-chip"
-            href={withDiscoverTrip(buildDiscoverHref({ ...query, rank: "creator_activity", page: 1 }), tripId)}
+            href={withDiscoverTrip(
+              buildDiscoverHref({ ...query, rank: "creator_activity", page: 1 }),
+              tripId,
+            )}
             aria-current={query.rank === "creator_activity" ? "true" : undefined}
           >
             Creator activity
           </Link>
           <Link
             className="v12-chip"
-            href={withDiscoverTrip(buildDiscoverHref({ ...query, rank: "response_rate", page: 1 }), tripId)}
+            href={withDiscoverTrip(
+              buildDiscoverHref({ ...query, rank: "response_rate", page: 1 }),
+              tripId,
+            )}
             aria-current={query.rank === "response_rate" ? "true" : undefined}
           >
             Reply rate · Pro
           </Link>
           <Link
             className="v12-chip"
-            href={withDiscoverTrip(buildDiscoverHref({ ...query, rank: "response_time", page: 1 }), tripId)}
+            href={withDiscoverTrip(
+              buildDiscoverHref({ ...query, rank: "response_time", page: 1 }),
+              tripId,
+            )}
             aria-current={query.rank === "response_time" ? "true" : undefined}
           >
             Faster replies · Pro
@@ -279,7 +308,10 @@ export default async function DiscoverPage({
           {chips.map((chip) => (
             <span key={chip.key} className="v12-chip">
               {chip.label}
-              <Link href={withDiscoverTrip(chip.removeHref, tripId)} aria-label={`Remove ${chip.label}`}>
+              <Link
+                href={withDiscoverTrip(chip.removeHref, tripId)}
+                aria-label={`Remove ${chip.label}`}
+              >
                 ×
               </Link>
             </span>
@@ -294,8 +326,11 @@ export default async function DiscoverPage({
         <div className="s1-subhead">
           <div>
             <h2>Hotels to explore</h2>
-            {showList && listOutcome === "items" && result ? <ResultsSummary result={result} /> : null}
+            {showList && listOutcome === "items" && result ? (
+              <ResultsSummary result={result} />
+            ) : null}
           </div>
+          <DiscoverSort query={query} tripId={tripId} />
         </div>
 
         {gate === "locked" && query.rank && METRIC_LAYERS[query.rank] === "premium" ? (
@@ -340,16 +375,27 @@ export default async function DiscoverPage({
               </p>
             ) : null}
             <h2 className="sr-only">Hotel results</h2>
+            {contacts.status === "error" ? (
+              <p role="status">
+                Contact availability could not be checked. This is not a statement that contacts
+                are missing.
+              </p>
+            ) : null}
             <ul className="s1-rows s1-list">
               {result.hotels.map((hotel) => (
                 <SyncRow key={hotel.id} id={hotel.id}>
                   <HotelRow
                     hotel={hotel}
                     signal={signals?.get(hotel.id) ?? null}
-                    badge={badges.status === "known" ? (badges.byHotel.get(hotel.id) ?? null) : null}
+                    badge={
+                      badges.status === "known" ? (badges.byHotel.get(hotel.id) ?? null) : null
+                    }
                     rankLine={rankLineFor(rankLines, rankTitle, hotel.id)}
                     href={meta[hotel.id]?.href ?? `/app/hotels/${hotel.id}`}
                     figures={discoverFigures(metrics.get(hotel.id))}
+                    contactAvailable={
+                      contacts.status === "ok" ? (contacts.flags.get(hotel.id) ?? false) : null
+                    }
                   />
                 </SyncRow>
               ))}
@@ -359,7 +405,10 @@ export default async function DiscoverPage({
                 {query.page > 1 ? (
                   <Link
                     className="v12-btn"
-                    href={withDiscoverTrip(buildDiscoverHref({ ...query, page: query.page - 1 }), tripId)}
+                    href={withDiscoverTrip(
+                      buildDiscoverHref({ ...query, page: query.page - 1 }),
+                      tripId,
+                    )}
                   >
                     Previous
                   </Link>
@@ -375,7 +424,10 @@ export default async function DiscoverPage({
                 {result.hasMore ? (
                   <Link
                     className="v12-btn"
-                    href={withDiscoverTrip(buildDiscoverHref({ ...query, page: query.page + 1 }), tripId)}
+                    href={withDiscoverTrip(
+                      buildDiscoverHref({ ...query, page: query.page + 1 }),
+                      tripId,
+                    )}
                   >
                     Next
                   </Link>
@@ -393,7 +445,10 @@ export default async function DiscoverPage({
           <div className="v12-state">
             <h2>Nothing on this page</h2>
             <p>You may have gone past the last page of results.</p>
-            <Link className="v12-btn v12-btn-primary" href={withDiscoverTrip(buildDiscoverHref({ ...query, page: 1 }), tripId)}>
+            <Link
+              className="v12-btn v12-btn-primary"
+              href={withDiscoverTrip(buildDiscoverHref({ ...query, page: 1 }), tripId)}
+            >
               Back to first page
             </Link>
           </div>
@@ -403,7 +458,10 @@ export default async function DiscoverPage({
           <div className="v12-state">
             <h2>{DISCOVER_NO_RESULTS_TITLE}</h2>
             <p>{DISCOVER_NO_RESULTS_BODY}</p>
-            <Link className="v12-btn v12-btn-primary" href={withDiscoverTrip("/app/discover", tripId)}>
+            <Link
+              className="v12-btn v12-btn-primary"
+              href={withDiscoverTrip("/app/discover", tripId)}
+            >
               Clear filters
             </Link>
           </div>

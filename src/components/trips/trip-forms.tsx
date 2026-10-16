@@ -20,6 +20,7 @@ import { tripLimitMessage } from "@/lib/trips/display";
 import {
   TRIP_STATUSES,
   tripStatusLabel,
+  type ShortlistResult,
   type TripStatus,
   type TripWriteResult,
 } from "@/lib/trips/types";
@@ -299,18 +300,32 @@ export function ShortlistAddButton({ tripId, hotelId }: { tripId: string; hotelI
   );
 }
 
+function shortlistRefusal(result: ShortlistResult): string | null {
+  if (result.result === "removed") return "Removed.";
+  if (result.result === "not_found") return "That stay isn’t on your account. Nothing was changed.";
+  return "We couldn’t remove that hotel. Nothing was changed.";
+}
+
 export function ShortlistRemoveButton({ tripId, hotelId }: { tripId: string; hotelId: string }) {
+  const [message, setMessage] = useState<string | null>(null);
+
   async function onSubmit(formData: FormData) {
-    await removeTripHotelAction(formData);
+    const result = await removeTripHotelAction(formData);
+    setMessage(shortlistRefusal(result));
   }
 
   return (
-    <form action={onSubmit}>
+    <form action={onSubmit} className="space-y-1">
       <input type="hidden" name="tripId" value={tripId} />
       <input type="hidden" name="hotelId" value={hotelId} />
       <button type="submit" className="text-sm text-muted underline hover:text-text">
         Remove
       </button>
+      {message ? (
+        <p className="text-xs text-muted" role="status">
+          {message}
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -324,18 +339,34 @@ export function PipelineLinkButton({
   pipelineItemId: string;
   linked: boolean;
 }) {
+  const [message, setMessage] = useState<string | null>(null);
+
   async function onSubmit(formData: FormData) {
-    await linkPipelineItemAction(formData);
+    const result = await linkPipelineItemAction(formData);
+    if (result.result === "linked" || result.result === "unlinked") {
+      setMessage(result.result === "linked" ? "Linked." : "Unlinked.");
+      return;
+    }
+    if (result.result === "not_found") {
+      setMessage("That item isn’t on your account. Nothing was changed.");
+      return;
+    }
+    setMessage("We couldn’t update that link. Nothing was changed.");
   }
 
   return (
-    <form action={onSubmit}>
+    <form action={onSubmit} className="space-y-1">
       <input type="hidden" name="tripId" value={tripId} />
       <input type="hidden" name="pipelineItemId" value={pipelineItemId} />
       <input type="hidden" name="mode" value={linked ? "unlink" : "link"} />
       <button type="submit" className="text-sm font-medium text-text underline">
         {linked ? "Unlink" : "Link to this trip"}
       </button>
+      {message ? (
+        <p className="text-xs text-muted" role="status">
+          {message}
+        </p>
+      ) : null}
     </form>
   );
 }

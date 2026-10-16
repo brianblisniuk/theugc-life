@@ -18,7 +18,14 @@ import {
   deliverableTypeLabel,
   paymentStatusLabel,
 } from "@/lib/collaboration/display";
-import type { BoardCard, BoardCompensation, BoardDeliverable } from "@/lib/collaboration/board";
+import {
+  approvalProgress,
+  deliverablePillClass,
+  inPreparationCount,
+  type BoardCard,
+  type BoardCompensation,
+  type BoardDeliverable,
+} from "@/lib/collaboration/board";
 import { saveCompensationAction, saveDeliverableAction } from "@/lib/collaboration/actions";
 import { hotelHref } from "@/lib/shell/navigation";
 
@@ -57,6 +64,7 @@ function DeliverableStatusForm({ row, hotelId }: { row: BoardDeliverable; hotelI
             .filter(Boolean)
             .join(" · ")}
         </p>
+        <span className={deliverablePillClass(row.status)}>{row.statusLabel}</span>
       </div>
       <label className="v12-field">
         <span>Status</span>
@@ -251,51 +259,13 @@ function CompensationEditor({
 }
 
 function CardView({ card }: { card: BoardCard }) {
-  const href = hotelHref(card.hotelId, { kind: "collaboration" }, "collaboration");
   return (
-    <article className="v12-card v12-card-pad s6-card">
-      <header className="s6-card-head">
-        <div>
-          <p className="s6-eyebrow">{card.displayRef ?? "Collaboration"}</p>
-          <h2>{card.hotelName}</h2>
-          <p className="s6-muted">
-            {card.statusLabel}
-            {card.typeLabel ? ` · ${card.typeLabel}` : ""}
-            {card.when ? ` · ${card.when}` : ""}
-          </p>
-          {card.displayMissing ? (
-            <p className="s6-muted">The opportunity id could not be read.</p>
-          ) : null}
-        </div>
-        {href ? (
-          <Link href={href} className="v12-btn v12-btn-small">
-            Open hotel
-          </Link>
-        ) : null}
-      </header>
-      <div className="s6-stats">
-        <div>
-          <span>Deliverables</span>
-          <strong>{card.deliverables.length}</strong>
-        </div>
-        <div>
-          <span>Approved</span>
-          <strong>{card.approved}</strong>
-        </div>
-        <div>
-          <span>Revision requested</span>
-          <strong>{card.revisionRequested}</strong>
-        </div>
-        <div>
-          <span>Next deadline</span>
-          <strong>{card.datesUnreadable ? "Unreadable" : (card.nextDue ?? "None")}</strong>
-        </div>
-      </div>
+    <div className="v12-stack">
       <section>
         <h3>Compensation</h3>
         {card.compensation ? (
           <p>
-            <span className="v12-badge v12-badge-lime">{card.compensation.familyLabel}</span>{" "}
+            <span className="v12-badge">{card.compensation.familyLabel}</span>{" "}
             {card.compensation.summary} · {card.compensation.paymentLabel}
           </p>
         ) : (
@@ -334,16 +304,142 @@ function CardView({ card }: { card: BoardCard }) {
           <AddDeliverableForm pipelineItemId={card.pipelineItemId} hotelId={card.hotelId} />
         ) : null}
       </section>
-    </article>
+    </div>
   );
 }
 
-export function CollaborationBoardView({ cards }: { cards: readonly BoardCard[] }) {
+export function CollaborationBoardView({
+  cards,
+  selectedId,
+}: {
+  cards: readonly BoardCard[];
+  selectedId: string | null;
+}) {
+  const selected = cards.find((card) => card.id === selectedId) ?? cards[0];
+  if (!selected) return null;
+  const missingSelection = selectedId !== null && selected.id !== selectedId;
+  const hotelLink = hotelHref(selected.hotelId, { kind: "collaboration" }, "collaboration");
+  const progress = approvalProgress(selected.approved, selected.deliverables.length);
+  const preparing = inPreparationCount(selected.deliverables);
+  const context = [selected.typeLabel, selected.when, selected.statusLabel].filter(Boolean).join(" · ");
   return (
-    <div className="s6-stack">
-      {cards.map((card) => (
-        <CardView key={card.id} card={card} />
-      ))}
+    <div className="v12-stack">
+      <nav className="v12-picker" aria-label="Other collaborations">
+        {cards.map((card) => {
+          const current = card.id === selected.id;
+          return (
+            <Link
+              key={card.id}
+              href={`/app/collaborations?collaboration=${card.id}`}
+              aria-current={current ? "page" : undefined}
+              className={current ? "v12-btn v12-btn-primary v12-btn-small" : "v12-btn v12-btn-small"}
+            >
+              {card.hotelName}
+            </Link>
+          );
+        })}
+      </nav>
+      {missingSelection ? (
+        <p role="status">That collaboration is not in this list. Showing the first one.</p>
+      ) : null}
+      <div className="v12-context">
+        <div>
+          <strong>
+            {selected.hotelName}
+            {selected.displayRef ? ` · ${selected.displayRef}` : ""}
+          </strong>
+          <p>{context || "Status not recorded"}</p>
+          {selected.displayMissing ? <p>The opportunity id could not be read.</p> : null}
+        </div>
+        <span className="v12-badge">{selected.statusLabel}</span>
+        {hotelLink ? (
+          <Link href={hotelLink} className="v12-btn v12-btn-small">
+            Open hotel
+          </Link>
+        ) : null}
+      </div>
+      <div className="v12-stats">
+        <div className="v12-stat">
+          <span className="v12-stat-label">Deliverables</span>
+          <div className="v12-stat-num">{selected.deliverables.length}</div>
+          <div className="v12-stat-note">On this collaboration</div>
+        </div>
+        <div className="v12-stat">
+          <span className="v12-stat-label">Approved</span>
+          <div className="v12-stat-num">{selected.approved}</div>
+          <div className="v12-stat-note">Approved status only</div>
+        </div>
+        <div className="v12-stat v12-stat-tint">
+          <span className="v12-stat-label">In preparation</span>
+          <div className="v12-stat-num">{preparing}</div>
+          <div className="v12-stat-note">Pending or submitted</div>
+        </div>
+        <div className="v12-stat">
+          <span className="v12-stat-label">Next milestone</span>
+          <div className="v12-stat-num">
+            {selected.datesUnreadable ? "Unreadable" : (selected.nextDue ?? "None")}
+          </div>
+          <div className="v12-stat-note">
+            {selected.datesUnreadable ? "A date could not be read" : "Earliest open due date"}
+          </div>
+        </div>
+      </div>
+      <div className="v12-layout">
+        <section className="v12-panel v12-panel-pad">
+          <div className="v12-panel-head">
+            <div>
+              <h2>Deliverables and milestones</h2>
+              <p>Progress tracks recorded deliverables, not the deal stage.</p>
+            </div>
+          </div>
+          <div className="v12-between">
+            <strong>{progress.label}</strong>
+            <span>{selected.deliverables.length > 0 ? `${progress.percent}%` : "—"}</span>
+          </div>
+          <div className="v12-progress" aria-hidden="true">
+            <span style={{ width: `${progress.width}%` }} />
+          </div>
+          <CardView card={selected} />
+        </section>
+        <aside className="v12-stack">
+          <section className="v12-panel v12-panel-pad">
+            <p className="v12-eyebrow">NEXT MILESTONE</p>
+            <h2>
+              {selected.datesUnreadable
+                ? "A due date could not be read"
+                : selected.nextDue
+                  ? `Due ${selected.nextDue}`
+                  : "No due date recorded"}
+            </h2>
+            <p>
+              {selected.revisionRequested > 0
+                ? `${selected.revisionRequested} revision request${selected.revisionRequested === 1 ? "" : "s"}`
+                : "No revision is requested on this collaboration."}
+            </p>
+          </section>
+          <section className="v12-panel v12-panel-pad">
+            <h3>Agreement at a glance</h3>
+            <div className="v12-list-item">
+              <strong>Compensation</strong>
+              <p>
+                {selected.compensation
+                  ? `${selected.compensation.familyLabel} · ${selected.compensation.summary}`
+                  : "Compensation is not recorded. Unknown is not zero."}
+              </p>
+            </div>
+            <div className="v12-list-item">
+              <strong>Linked opportunity</strong>
+              <p>
+                {selected.displayRef ?? "Opportunity id unavailable"} · {selected.hotelName}
+              </p>
+            </div>
+          </section>
+        </aside>
+      </div>
+      <section className="v12-panel v12-panel-pad">
+        <h2>Activity timeline</h2>
+        <p>No activity timeline is stored for this collaboration. Deliverable dates above are the record.</p>
+      </section>
     </div>
   );
 }

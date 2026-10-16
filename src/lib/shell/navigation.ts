@@ -165,7 +165,7 @@ export function pipelineSurfaceHeading(surface: PipelineSurface): {
     };
   }
   return {
-    title: "Pipeline",
+    title: "Every opportunity. One clear next step.",
     description:
       "Each commercial attempt has its own opportunity id, stage, and history. A hotel can appear more than once. Only you can see this.",
   };
@@ -511,22 +511,22 @@ export type ShellIcon = (typeof SHELL_ICONS)[number];
 export function shellHeading(pathname: string): { title: string; subtle: string } {
   if (pathname === "/app") return { title: "Home", subtle: "Your daily priorities" };
   if (isUnder(pathname, "/app/discover"))
-    return { title: "Discover", subtle: "Hotels worth a closer look" };
+    return { title: "Discover", subtle: "Explore real opportunities" };
   if (isUnder(pathname, "/app/trips"))
-    return { title: "My Trips", subtle: "Dates, shortlist, and nights" };
+    return { title: "My Trips", subtle: "Plan travel and shortlist hotels" };
   if (isUnder(pathname, "/app/outreach"))
-    return { title: "Outreach", subtle: "Shortlists into conversations" };
+    return { title: "Outreach", subtle: "Prepare focused hotel outreach" };
   if (isPitchStudioPath(pathname))
     return { title: "Pitch Studio", subtle: "Compose and review a pitch" };
   if (isUnder(pathname, "/app/pipeline"))
-    return { title: "Pipeline", subtle: "Each commercial attempt" };
+    return { title: "Pipeline", subtle: "Manage every opportunity" };
   if (isUnder(pathname, "/app/inbox"))
-    return { title: "Inbox", subtle: "Replies that need a decision" };
+    return { title: "Inbox", subtle: "Conversations that need action" };
   if (isUnder(pathname, "/app/collaborations")) {
-    return { title: "Collaborations", subtle: "Deliverables and deadlines" };
+    return { title: "Collaborations", subtle: "Deliver the work you agreed" };
   }
   if (isUnder(pathname, "/app/profile"))
-    return { title: "My Profile", subtle: "How hotels see your work" };
+    return { title: "My Profile", subtle: "Your hotel-facing portfolio" };
   if (isUnder(pathname, "/app/plans"))
     return { title: "Plans & Credits", subtle: "Plans and available capabilities" };
   if (isUnder(pathname, "/app/billing"))
@@ -534,12 +534,15 @@ export function shellHeading(pathname: string): { title: string; subtle: string 
   if (isUnder(pathname, "/app/account"))
     return { title: "Account", subtle: "Sign-in and connected email" };
   if (isUnder(pathname, "/app/onboarding"))
-    return { title: "Getting Started", subtle: "Your first useful step" };
+    return { title: "Getting Started", subtle: "Your first useful action" };
   if (isUnder(pathname, "/app/design")) return { title: "UI guide", subtle: "Midnight components" };
   if (isUnder(pathname, "/app/hotels")) {
     if (pathname.endsWith("/pitch"))
       return { title: "Pitch Studio", subtle: "Compose and review a pitch" };
-    return { title: "Hotel", subtle: "Detail" };
+    return {
+      title: "Discover",
+      subtle: "Hotel intelligence and contact",
+    };
   }
   return { title: "theugc.life", subtle: "Creator workspace" };
 }

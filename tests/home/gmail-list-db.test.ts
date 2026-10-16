@@ -339,4 +339,33 @@ d("F04 home Gmail suggestion list", () => {
       "pipeline_item_id",
     ]);
   });
+
+  it("returns a listed pipeline item and not a suggestion on a different item", async () => {
+    const ada = await seed("scope", "pro", "pending");
+    const other = await seed("scope-other", "pro", "pending");
+    const scoped = await queryAs<{
+      res: { result?: string; truncated?: boolean; suggestions?: { id: string }[] };
+    }>(
+      { role: "authenticated", sub: ada.userId },
+      "select public.list_own_pending_gmail_collaboration_suggestions($1::uuid[]) as res",
+      [[ada.pipelineItemId]],
+    );
+    expect(scoped.error).toBeNull();
+    const ids = (scoped.rows[0]?.res.suggestions ?? []).map((row) => row.id);
+    expect(scoped.rows[0]?.res.result).toBe("ok");
+    expect(scoped.rows[0]?.res.truncated).toBe(false);
+    expect(ids).toEqual([ada.suggestionId]);
+    expect(ids).not.toContain(other.suggestionId);
+
+    const none = await queryAs<{
+      res: { result?: string; truncated?: boolean; suggestions?: unknown[] };
+    }>(
+      { role: "authenticated", sub: ada.userId },
+      "select public.list_own_pending_gmail_collaboration_suggestions($1::uuid[]) as res",
+      [[]],
+    );
+    expect(none.rows[0]?.res.result).toBe("ok");
+    expect(none.rows[0]?.res.suggestions).toEqual([]);
+    expect(none.rows[0]?.res.truncated).toBe(false);
+  });
 });

@@ -19,7 +19,6 @@ import {
   PipelineViewSwitch,
   attentionFromRows,
 } from "@/components/pipeline/pipeline-workspace";
-import { PageHeader } from "@/components/shell/page-header";
 import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
 import { requireUser } from "@/lib/auth/guards";
 import { DEADLINE_COPY } from "@/lib/collaboration/deadlines";
@@ -51,7 +50,6 @@ import {
   pipelinePageHref,
 } from "@/lib/pipeline/view";
 import {
-  listCrumbs,
   normalizePipelineSurface,
   pipelineQueryStatus,
   pipelineSurfaceHeading,
@@ -81,12 +79,6 @@ export default async function PipelinePage({
   const view = normalizePipelineView(raw.view);
   const requestedPage = normalizePageParam(raw.page);
   const heading = pipelineSurfaceHeading(surface);
-  const crumbs =
-    surface === "inbox"
-      ? listCrumbs("Inbox", { href: "/app/pipeline", label: "Pipeline" })
-      : surface === "collaborations"
-        ? listCrumbs("Collaborations", { href: "/app/pipeline", label: "Pipeline" })
-        : listCrumbs("Pipeline");
 
   let loaded: PipelinePage | null = null;
   let failed = false;
@@ -161,39 +153,60 @@ export default async function PipelinePage({
 
   const counts = countsResult.status === "ok" ? countsResult.counts : null;
 
+  const eyebrow =
+    surface === "inbox"
+      ? "INBOX / CREATOR WORKSPACE"
+      : surface === "collaborations"
+        ? "COLLABORATIONS / CREATOR WORKSPACE"
+        : "PIPELINE / CREATOR WORKSPACE";
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={heading.title}
-        description={
-          surface === "inbox" ? (
-            <>
+    <div className="v12-stack">
+      <header className="v12-pagehead">
+        <div>
+          <p className="v12-eyebrow">{eyebrow}</p>
+          <h1>{heading.title}</h1>
+          <p>
+            {surface === "all"
+              ? "A global view of your relationships, even when the same hotel appears in multiple commercial initiatives."
+              : heading.description}
+          </p>
+          {surface === "inbox" ? (
+            <p>
               Each open cycle can hold one Gmail thread. The reading is a suggestion beside your
               pipeline status. Connecting a mailbox is on{" "}
-              <Link href="/app/account" className="text-text underline hover:no-underline">
-                Account
-              </Link>
-              . Opening this page does not start a sync.
-            </>
+              <Link href="/app/account">Account</Link>. Opening this page does not start a sync.
+            </p>
           ) : (
-            heading.description
-          )
-        }
-        crumbs={crumbs}
-      />
+            <p>Only you can see this. Counts below are database totals, not the length of this page.</p>
+          )}
+        </div>
+        <div className="v12-head-actions">
+          <Link href="/app/outreach" className="v12-btn">
+            View Outreach
+          </Link>
+          <Link href="/app/discover" className="v12-btn v12-btn-primary">
+            Find hotels
+          </Link>
+        </div>
+      </header>
 
-      <PipelineSurfaceNav surface={surface} />
       <DeliverableReminders board={deadlines} />
       <PipelineCommand counts={counts} />
       <PipelineAttentionList board={attention} />
 
-      <PipelineStatusFilter
-        status={status}
-        surface={surface}
-        rank={rank}
-        view={view}
-        showStatus={surface !== "collaborations"}
-      />
+      <div className="v12-context">
+        <div>
+          <PipelineSurfaceNav surface={surface} />
+          <PipelineStatusFilter
+            status={status}
+            surface={surface}
+            rank={rank}
+            view={view}
+            showStatus={surface !== "collaborations"}
+          />
+        </div>
+      </div>
 
       {rank ? (
         <p className="max-w-prose text-sm text-muted">

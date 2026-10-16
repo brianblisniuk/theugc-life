@@ -1,4 +1,5 @@
 import { UnlockContact } from "@/components/contacts/unlock-contact";
+import { RetryButton } from "@/components/ui/retry-button";
 import { ReportContact } from "@/components/contacts/report-contact";
 import { ContactCard } from "@/components/hotels/contact-card";
 import {
@@ -65,7 +66,14 @@ export function ContactFeature({
     <section className="s1-contact" id="contact" aria-label="Hotel contact">
       <div className="s1-contact-head">
         <span className="s1-square" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7">
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+          >
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
           </svg>
@@ -88,7 +96,10 @@ export function ContactFeature({
               showEmail
             />
           </div>
-          <p className="s1-muted">{UNLOCK_ASSURANCE} One credit per hotel, not per person. Reopening this hotel costs zero.</p>
+          <p className="s1-muted">
+            {UNLOCK_ASSURANCE} One credit per hotel, not per person. Reopening this hotel costs
+            zero.
+          </p>
         </>
       ) : null}
 
@@ -141,12 +152,9 @@ export function ContactFeature({
         <div className="v12-state v12-state-danger" role="alert">
           <h2>{CONTACT_ERROR_TITLE}</h2>
           <p>{CONTACT_ERROR_BODY}</p>
-          <a className="v12-btn" href="">
-            Retry
-          </a>
+          <RetryButton />
         </div>
       ) : null}
-
     </section>
   );
 }

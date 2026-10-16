@@ -1,35 +1,21 @@
-function RowSkeleton() {
-  return (
-    <div className="ux-row" style={{ gridTemplateColumns: "120px minmax(0, 1fr)" }}>
-      <div className="ux-sk-photo" />
-      <div>
-        <div className="ux-sk-line" style={{ width: "66%" }} />
-        <div className="ux-sk-line" style={{ width: "45%" }} />
-      </div>
-    </div>
-  );
-}
-
 export default function Loading() {
   return (
-    <div className="ux-discover" aria-busy="true">
+    <div className="v12-stack" aria-busy="true">
       <span role="status" aria-live="polite" className="sr-only">
         Loading hotels…
       </span>
-      <div className="ux-list">
-        <div className="ux-sk-line" style={{ width: 180, height: 32 }} />
-        <div className="ux-sk-line" style={{ width: "70%" }} />
-        <ul className="ux-rows">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <li key={index}>
-              <RowSkeleton />
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="ux-map-col">
-        <div className="ux-map" />
-      </div>
+      <header className="v12-pagehead">
+        <div>
+          <div className="ux-sk-line" style={{ width: 180, height: 14 }} />
+          <div className="ux-sk-line" style={{ width: 280, height: 36, marginTop: 10 }} />
+        </div>
+      </header>
+      <section className="s1-panel s1-map" aria-hidden="true">
+        <div className="ux-map-canvas" style={{ height: 245 }} />
+      </section>
+      <div className="ux-sk-line" style={{ width: "100%", height: 72 }} />
+      <div className="ux-sk-line" style={{ width: "100%", height: 72 }} />
+      <div className="ux-sk-line" style={{ width: "100%", height: 72 }} />
     </div>
   );
 }

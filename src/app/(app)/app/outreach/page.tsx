@@ -9,7 +9,7 @@ import { CreateOutreachForm } from "@/components/outreach/campaign-forms";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/ui/states";
-import { listCampaigns } from "@/lib/outreach/queries";
+import { campaignRemainderNotice, listCampaigns } from "@/lib/outreach/queries";
 import { listDestinations, listTrips } from "@/lib/trips/queries";
 
 export const metadata: Metadata = { title: "Outreach" };
@@ -43,8 +43,8 @@ export default async function OutreachPage() {
           <div className="v12-eyebrow">Outreach / Creator workspace</div>
           <h1>Turn your shortlist into conversations.</h1>
           <p>
-            Organize focused hotel initiatives with or without an upcoming trip. Each hotel gets its
-            own opportunity.
+            Organize focused hotel initiatives with or without an upcoming trip. Each hotel gets a
+            personalized pitch.
           </p>
         </div>
         <div className="v12-head-actions">
@@ -90,6 +90,9 @@ export default async function OutreachPage() {
           })}
         </ul>
       )}
+      {campaigns.status === "ok" && campaigns.truncated ? (
+        <p>{campaignRemainderNotice(campaigns.total, campaigns.campaigns.length)}</p>
+      ) : null}
 
       <section className="v12-card v12-card-pad">
         <h2>New outreach</h2>

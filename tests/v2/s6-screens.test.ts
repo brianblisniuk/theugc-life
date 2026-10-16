@@ -436,10 +436,12 @@ describe("profile and getting started", () => {
     expect(onboardingGoalsAreInternal()).toBe(true);
     expect(ONBOARDING_GOALS.map((goal) => goal.href)).not.toContain("/app/contracts");
     const profile = source("src/app/(app)/app/profile/page.tsx");
-    expect(profile).toContain("GmailConnectionPanel");
-    expect(profile).toContain("30 days");
-    expect(profile).toContain("DeleteAccountPanel");
-    expect(profile).toContain("deletionReadable");
+    const account = source("src/app/(app)/app/account/page.tsx");
+    expect(profile).not.toContain("GmailConnectionPanel");
+    expect(profile).not.toContain("DeleteAccountPanel");
+    expect(profile).toContain("/app/account");
+    expect(account).toContain("GmailConnectionPanel");
+    expect(account).toContain("DeleteAccountPanel");
     expect(profile).not.toMatch(/12\.4k|follower count of/);
     const chips = source("src/components/onboarding/destination-question.tsx");
     expect(chips).toContain("aria-pressed");

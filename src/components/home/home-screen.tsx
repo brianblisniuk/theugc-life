@@ -6,10 +6,53 @@ import {
   HOME_DASHBOARD_COPY,
   attentionEmptyCopy,
   outreachFractionLabel,
+  outreachProgress,
   type HomeDashboard,
+  type OutreachCard,
 } from "@/lib/home/dashboard";
 import { HOME_NEXT_COPY } from "@/lib/home/next-actions";
 import type { InboxMailbox } from "@/lib/inbox/model";
+
+function CampaignProgress({ card }: { card: OutreachCard }) {
+  const progress = outreachProgress(card);
+  const remaining =
+    card.hotelCount > card.contactedCount ? card.hotelCount - card.contactedCount : 0;
+  return (
+    <>
+      {progress.kind === "empty" ? (
+        <p>{HOME_DASHBOARD_COPY.outreachHotelsEmpty}</p>
+      ) : (
+        <>
+          <div className="v12-between">
+            <strong>{progress.label}</strong>
+            <span>{progress.percentLabel}</span>
+          </div>
+          <div className="v12-progress" aria-hidden="true">
+            <span style={{ width: `${progress.width}%` }} />
+          </div>
+          <p>{outreachFractionLabel(card)}</p>
+          <div className="v12-stats v12-stats-3">
+            <div className="v12-stat">
+              <span className="v12-stat-label">Shortlist</span>
+              <div className="v12-stat-num">{card.hotelCount}</div>
+              <div className="v12-stat-note">Hotels</div>
+            </div>
+            <div className="v12-stat">
+              <span className="v12-stat-label">Contacted</span>
+              <div className="v12-stat-num">{card.contactedCount}</div>
+              <div className="v12-stat-note">Sent or further</div>
+            </div>
+            <div className="v12-stat">
+              <span className="v12-stat-label">Not contacted</span>
+              <div className="v12-stat-num">{remaining}</div>
+              <div className="v12-stat-note">Still on the shortlist</div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
 function MailLine({ mailbox }: { mailbox: InboxMailbox }) {
   if (mailbox.kind === "connected") {
@@ -49,28 +92,26 @@ export function HomeScreen({
   dashboard,
   mailbox,
   credits,
+  continueExplore,
 }: {
   dashboard: HomeDashboard;
   mailbox: InboxMailbox;
   credits: { title: string; detail: string } | null;
+  continueExplore: { title: string; href: string; detail: string };
 }) {
   const trip = dashboard.trip;
   return (
     <div className="v12-workspace" data-testid="home-dashboard">
       <header className="v12-pagehead">
         <div>
-          <p className="v12-eyebrow">Home</p>
+          <p className="v12-eyebrow">HOME / CREATOR WORKSPACE</p>
           <h1>{dashboard.heading}</h1>
-          <p>
-            Open what the data supports. Leave the rest for later. Nothing on this page is a sample.
-          </p>
+          <p>A focused start to your day. Open what matters, leave the rest for later.</p>
+          <p>Nothing on this page is a sample.</p>
         </div>
         <div className="v12-head-actions">
           <Link href="/app/pipeline" className="v12-btn">
             View all opportunities
-          </Link>
-          <Link href="/app/inbox" className="v12-btn v12-btn-dark">
-            Open Inbox
           </Link>
         </div>
       </header>
@@ -155,7 +196,7 @@ export function HomeScreen({
               {trip.coverage.status === "error" ? (
                 <InsufficientDataState description={HOME_DASHBOARD_COPY.nightsError} />
               ) : trip.coverage.status === "none" ? (
-                <InsufficientDataState description={HOME_DASHBOARD_COPY.nightsError} />
+                <p>{HOME_DASHBOARD_COPY.nightsNone}</p>
               ) : (
                 <div data-testid="home-nights">
                   <p>
@@ -196,30 +237,48 @@ export function HomeScreen({
         ))}
       </div>
 
-      <section className="v12-panel v12-panel-pad" aria-label="Outreach">
-        <h2>Outreach</h2>
-        {dashboard.outreach.status === "error" ? (
-          <InsufficientDataState description={HOME_DASHBOARD_COPY.outreachError} />
-        ) : dashboard.outreach.status === "empty" ? (
-          <p>{HOME_DASHBOARD_COPY.outreachEmpty}</p>
-        ) : (
-          <>
-            {dashboard.outreach.truncated ? <p>{HOME_DASHBOARD_COPY.outreachTruncated}</p> : null}
-            <ul className="v12-outreach">
-              {dashboard.outreach.cards.map((card) => (
-                <li key={card.id}>
-                  <strong>{card.name}</strong>
-                  {card.hotelCount === 0 ? (
-                    <p>{HOME_DASHBOARD_COPY.outreachHotelsEmpty}</p>
-                  ) : (
-                    <p>{outreachFractionLabel(card)}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
+      <div className="v12-split">
+        <section className="v12-panel v12-panel-pad" aria-label="Outreach">
+          {dashboard.outreach.status === "error" ? (
+            <InsufficientDataState description={HOME_DASHBOARD_COPY.outreachError} />
+          ) : dashboard.outreach.status === "empty" ? (
+            <>
+              <h2>Outreach</h2>
+              <p>{HOME_DASHBOARD_COPY.outreachEmpty}</p>
+            </>
+          ) : (
+            <>
+              <div className="v12-panel-head">
+                <div>
+                  <h2>{dashboard.outreach.cards[0]?.name ?? "Outreach"}</h2>
+                  <p>Your main active initiative</p>
+                </div>
+                <span className="v12-badge v12-badge-green">In progress</span>
+              </div>
+              {dashboard.outreach.cards[0] ? (
+                <CampaignProgress card={dashboard.outreach.cards[0]} />
+              ) : null}
+              {dashboard.outreach.truncated ? <p>{HOME_DASHBOARD_COPY.outreachTruncated}</p> : null}
+              {dashboard.outreach.cards[0] ? (
+                <Link
+                  href={`/app/outreach/${dashboard.outreach.cards[0].id}`}
+                  className="v12-btn v12-btn-dark"
+                >
+                  Continue outreach
+                </Link>
+              ) : null}
+            </>
+          )}
+        </section>
+        <section className="v12-panel v12-panel-pad" aria-label="Continue where you left off">
+          <p className="v12-eyebrow">CONTINUE WHERE YOU LEFT OFF</p>
+          <h2>{continueExplore.title}</h2>
+          <p>{continueExplore.detail}</p>
+          <Link href={continueExplore.href} className="v12-btn v12-btn-primary">
+            {continueExplore.title}
+          </Link>
+        </section>
+      </div>
 
       <section className="v12-panel v12-panel-pad" aria-label="Intelligence">
         <h2>{dashboard.intelligence.title}</h2>

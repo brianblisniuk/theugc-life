@@ -725,6 +725,7 @@ describe("home dashboard", () => {
           destinationName: "Past",
           startDate: "2026-01-01",
           endDate: "2026-01-08",
+          status: "completed",
         },
         {
           id: "2",
@@ -732,6 +733,7 @@ describe("home dashboard", () => {
           destinationName: "Lisbon",
           startDate: "2026-10-10",
           endDate: "2026-10-20",
+          status: "active",
         },
       ],
       "2026-10-16T00:00:00.000Z",

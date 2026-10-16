@@ -101,17 +101,43 @@ function mapCampaign(row: Record<string, unknown>): OutreachCampaign | null {
 const CAMPAIGN_SELECT =
   "id, name, trip_id, destination_id, trip:trips(name, start_date, end_date), destination:destinations(name)";
 
+export const OUTREACH_CAMPAIGN_CAP = 100;
+
+export function campaignRemainderNotice(total: number, shown: number): string | null {
+  if (!Number.isInteger(total) || !Number.isInteger(shown) || total < shown || shown < 0)
+    return null;
+  const rest = total - shown;
+  if (rest === 0) return null;
+  return rest === 1
+    ? "1 more campaign is not on this page."
+    : `${rest} more campaigns are not on this page.`;
+}
+
 export async function listCampaigns(
   injected?: QueryClient,
-): Promise<{ status: "ok"; campaigns: OutreachCampaign[] } | { status: "error" }> {
+): Promise<
+  | { status: "ok"; campaigns: OutreachCampaign[]; total: number; truncated: boolean }
+  | { status: "error" }
+> {
   try {
     const supabase = await clientOrInjected(injected);
+    const counted = await supabase
+      .from("outreach_initiatives")
+      .select("id", { count: "exact", head: true });
+    if (
+      counted.error ||
+      typeof counted.count !== "number" ||
+      !Number.isInteger(counted.count) ||
+      counted.count < 0
+    ) {
+      return { status: "error" };
+    }
     const { data, error } = await supabase
       .from("outreach_initiatives")
       .select(CAMPAIGN_SELECT)
       .order("updated_at", { ascending: false })
       .order("id", { ascending: true })
-      .limit(100);
+      .limit(OUTREACH_CAMPAIGN_CAP);
     if (error) return { status: "error" };
     const campaigns: OutreachCampaign[] = [];
     for (const row of data ?? []) {
@@ -119,7 +145,13 @@ export async function listCampaigns(
       if (!campaign) return { status: "error" };
       campaigns.push(campaign);
     }
-    return { status: "ok", campaigns };
+    if (counted.count < campaigns.length) return { status: "error" };
+    return {
+      status: "ok",
+      campaigns,
+      total: counted.count,
+      truncated: counted.count > campaigns.length,
+    };
   } catch {
     return { status: "error" };
   }

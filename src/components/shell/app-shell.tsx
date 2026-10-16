@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -205,7 +205,45 @@ function ShellBody({
   const active = activeSidebarHref(pathname, origin);
   const heading = shellHeading(pathname);
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const initials = workspaceInitials(email);
+
+  useEffect(() => {
+    if (!open) return;
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const focusable = () =>
+      Array.from(
+        sidebar.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+    focusable()[0]?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      menuRef.current?.focus();
+    };
+  }, [open]);
 
   return (
     <div className="v12-shell">
@@ -219,11 +257,16 @@ function ShellBody({
         tabIndex={open ? 0 : -1}
         onClick={() => setOpen(false)}
       />
-      <aside className={open ? "v12-sidebar is-open" : "v12-sidebar"} aria-label="Main navigation">
+      <aside
+        ref={sidebarRef}
+        className={open ? "v12-sidebar is-open" : "v12-sidebar"}
+        aria-label="Main navigation"
+      >
         <Link href="/app" className="v12-brand">
           <span>theugc</span>
           <span className="v12-brand-dot" />
           <span>life</span>
+          <span className="v12-brand-version">V12.2</span>
         </Link>
         {SIDEBAR_NAV.map((section) => (
           <div key={section.label}>
@@ -278,14 +321,15 @@ function ShellBody({
           <SignOutButton />
         </div>
       </aside>
-      <div className="v12-main">
+      <div className="v12-main" inert={open ? true : undefined}>
         <header className="v12-topbar">
           <button
+            ref={menuRef}
             type="button"
             className="v12-menu"
-            aria-label="Open navigation"
+            aria-label={open ? "Close navigation" : "Open navigation"}
             aria-expanded={open}
-            onClick={() => setOpen(true)}
+            onClick={() => setOpen((value) => !value)}
           >
             <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true">
               <path

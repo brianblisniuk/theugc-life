@@ -241,6 +241,37 @@ export function laneBadge(total: number | null | undefined): string {
   return String(total);
 }
 
+/** Visual lane tone. Negotiating, closed, and follow-up stay visible as their own rows. */
+export function laneTone(status: string): "reply" | "negotiate" | "agreed" | "plain" {
+  if (status === "replied") return "reply";
+  if (status === "negotiating") return "negotiate";
+  if (status === "won") return "agreed";
+  return "plain";
+}
+
+/**
+ * Same hotel on two rows of this page. Other pages are not included.
+ * The sentence names the rows that are actually on the page.
+ */
+export function duplicateHotelNote(
+  rows: readonly Pick<DensityRow, "hotelId" | "hotelName" | "displayRef">[],
+): string | null {
+  const byHotel = new Map<string, { name: string; refs: string[] }>();
+  for (const row of rows) {
+    if (!row.hotelId) continue;
+    const entry = byHotel.get(row.hotelId) ?? { name: row.hotelName, refs: [] };
+    entry.refs.push(shownDisplayRef(row.displayRef) ?? "an opportunity on this page");
+    byHotel.set(row.hotelId, entry);
+  }
+  const duplicated = [...byHotel.values()].filter((entry) => entry.refs.length > 1);
+  if (duplicated.length === 0) return null;
+  const sentences = duplicated.map(
+    (entry) =>
+      `${entry.name} appears in ${entry.refs.join(" and ")} on this page. Neither row overwrites the other.`,
+  );
+  return sentences.join(" ");
+}
+
 export function followUpPresentation(
   pageCount: number,
   total: number | null | undefined,

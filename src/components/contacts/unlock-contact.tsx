@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import { RetryButton } from "@/components/ui/retry-button";
+
 import { capture } from "@/lib/analytics";
 import {
   ALREADY_UNLOCKED_LABEL,
@@ -97,9 +99,7 @@ export function UnlockContact({
       <div className="ux-stack-sm" role="status">
         <p className="ux-name">{CREDITS_UNAVAILABLE}</p>
         <p className="ux-meta">Retry the balance. This is not 0, and it is not an upgrade.</p>
-        <a className="ux-btn" href="">
-          Retry
-        </a>
+        <RetryButton className="ux-btn" />
       </div>
     );
   }

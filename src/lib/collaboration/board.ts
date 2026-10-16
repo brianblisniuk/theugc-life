@@ -212,6 +212,35 @@ export function countApproved(rows: readonly { status: string }[]): number {
   return rows.filter((row) => row.status === "approved").length;
 }
 
+/** Pending and submitted are still in preparation. Approved is not. */
+export function inPreparationCount(rows: readonly { status: string }[]): number {
+  return rows.filter((row) => row.status === "pending" || row.status === "submitted").length;
+}
+
+export function approvalProgress(
+  approved: number,
+  total: number,
+): { label: string; percent: number; width: number } {
+  if (!Number.isInteger(total) || total <= 0) {
+    return { label: "No deliverables recorded", percent: 0, width: 0 };
+  }
+  const safeApproved = Number.isInteger(approved) && approved > 0 ? Math.min(approved, total) : 0;
+  const width = (safeApproved / total) * 100;
+  return {
+    label: `${safeApproved} of ${total} approved`,
+    percent: Math.round(width),
+    width,
+  };
+}
+
+/** Status color is green, amber, blue, or gray. Lime stays a primary action. */
+export function deliverablePillClass(status: string): string {
+  if (status === "approved") return "v12-badge v12-badge-green";
+  if (status === "revision_requested" || status === "rejected") return "v12-badge v12-badge-amber";
+  if (status === "submitted") return "v12-badge v12-badge-blue";
+  return "v12-badge";
+}
+
 function nextDue(rows: readonly BoardDeliverable[]): {
   nextDue: string | null;
   datesUnreadable: boolean;
