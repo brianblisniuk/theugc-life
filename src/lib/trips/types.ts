@@ -196,6 +196,89 @@ export function mapTripSummary(payload: unknown): TripSummaryResult {
   };
 }
 
+export type NightCoverageRead =
+  | {
+      status: "ok";
+      tripNights: number;
+      confirmedNights: number;
+      pendingNights: number;
+      gapNights: number;
+    }
+  | { status: "not_found" }
+  | { status: "error" };
+
+export function mapNightCoverage(payload: unknown): NightCoverageRead {
+  if (!payload || typeof payload !== "object") return { status: "error" };
+  const row = payload as Record<string, unknown>;
+  if (row.result === "not_found") return { status: "not_found" };
+  if (row.result !== "ok") return { status: "error" };
+  const tripNights = readCount(row.trip_nights);
+  const confirmedNights = readCount(row.confirmed_nights);
+  const pendingNights = readCount(row.pending_nights);
+  const gapNights = readCount(row.gap_nights);
+  if (
+    tripNights === null ||
+    confirmedNights === null ||
+    pendingNights === null ||
+    gapNights === null
+  ) {
+    return { status: "error" };
+  }
+  if (confirmedNights + pendingNights + gapNights !== tripNights) return { status: "error" };
+  return { status: "ok", tripNights, confirmedNights, pendingNights, gapNights };
+}
+
+export type StayWriteResult =
+  | { result: "updated"; tripHotelId: string; nightStatus: "pending" | "confirmed" }
+  | { result: "invalid_input" }
+  | { result: "not_found" }
+  | { result: "creator_profile_missing" }
+  | { result: "error" };
+
+export function mapStayWriteResult(payload: unknown): StayWriteResult {
+  if (!payload || typeof payload !== "object") return { result: "error" };
+  const row = payload as Record<string, unknown>;
+  if (row.result === "updated") {
+    const tripHotelId = readId(row, "trip_hotel_id");
+    const nightStatus = row.night_status === "confirmed" ? "confirmed" : null;
+    const pending = row.night_status === "pending" ? "pending" : nightStatus;
+    if (!tripHotelId || !pending) return { result: "error" };
+    return { result: "updated", tripHotelId, nightStatus: pending };
+  }
+  if (row.result === "invalid_input") return { result: "invalid_input" };
+  if (row.result === "not_found") return { result: "not_found" };
+  if (row.result === "creator_profile_missing") return { result: "creator_profile_missing" };
+  return { result: "error" };
+}
+
+export type SuggestionDecision =
+  | { result: "accepted"; suggestionId: string; nightStatus: "pending" | "confirmed" | null }
+  | { result: "rejected"; suggestionId: string }
+  | { result: "overlap" }
+  | { result: "not_pending" }
+  | { result: "not_found" }
+  | { result: "invalid_input" }
+  | { result: "creator_profile_missing" }
+  | { result: "error" };
+
+export function mapSuggestionDecision(payload: unknown): SuggestionDecision {
+  if (!payload || typeof payload !== "object") return { result: "error" };
+  const row = payload as Record<string, unknown>;
+  const suggestionId = readId(row, "suggestion_id");
+  if (row.result === "accepted" && suggestionId) {
+    const nightStatus =
+      row.night_status === "pending" || row.night_status === "confirmed" ? row.night_status : null;
+    return { result: "accepted", suggestionId, nightStatus };
+  }
+  if (row.result === "rejected" && suggestionId) return { result: "rejected", suggestionId };
+  if (row.result === "overlap") return { result: "overlap" };
+  if (row.result === "not_pending") return { result: "not_pending" };
+  if (row.result === "not_found") return { result: "not_found" };
+  if (row.result === "invalid_input") return { result: "invalid_input" };
+  if (row.result === "creator_profile_missing") return { result: "creator_profile_missing" };
+  return { result: "error" };
+}
+
 export function isTripStatusValue(value: string): value is TripStatus {
   return isTripStatus(value);
 }
