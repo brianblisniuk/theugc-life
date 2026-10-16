@@ -1,9 +1,9 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last recorded main is 9658a451a09e2543a36184ae47562cb4dde59241 (merge of PR #97, D02 Hunter adapter, migration 0095, D180, verify green). PR #98 merges the D02 audit fix (migration 0096) and the D181 email cascade. D02 is not finished: provenance and freshness are not on the unlock screen. The merge SHA of PR #98 is recorded by the next block. UX02 screens are merged as PR #95 (3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59). UX02 design is merged as PR #91 (dbfd2472b00d49590c17f416a10f6dbef371781b). PREPROD-1b is merged as PR #93 (9c50400c104b6f5aa036eea3ea798f269aeffe5e). Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository. Leave HUNTER_API_KEY unset in CI.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last recorded main is 7041104f7fce3e9a8e0916621daa39d0799b2b22 (merge of PR #99, Gmail callback error log). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). D02 is not finished: provenance and freshness are not on the unlock screen. PR #102 merges V2-F1, the V12.2 Midnight shell and theme, no migration. The merge SHA of PR #102 is recorded by the next block. Full screen rebuilds stay in later blocks. Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository. Leave HUNTER_API_KEY unset in CI.",
   "schema_version": 1,
   "as_of": "2026-10-16",
   "state": "HUMAN_FRONTIER",
-  "last_recorded_main": "9658a451a09e2543a36184ae47562cb4dde59241",
+  "last_recorded_main": "7041104f7fce3e9a8e0916621daa39d0799b2b22",
   "active_block": null,
   "branch": null,
   "pr": null,
@@ -11,9 +11,9 @@
   "pending_jobs": [],
   "unresolved_findings": [],
   "ci_status": {
-    "ref": "9658a451a09e2543a36184ae47562cb4dde59241",
+    "ref": "7041104f7fce3e9a8e0916621daa39d0799b2b22",
     "verify": "success"
   },
   "required_human_action": "CREDENTIAL REQUIRED — set HUNTER_API_KEY and CONTACT_PROVIDER=hunter only on the host that should call Hunter. Leave both unset in CI. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
-  "next_dependency": "Recorded main is PR #97 (9658a451a09e2543a36184ae47562cb4dde59241, migration 0095, D180). PR #98 merges the D02 audit fix (migration 0096) and the D181 email cascade. The merge SHA of PR #98 is recorded by the next block. Provenance and freshness are not on the unlock screen, so D02 is not finished. Fake stays the local and CI provider. One creator credit is still charged only when an address is found. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. UX02 screens are merged (PR #95, 3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59). Drafts #88 and #90 stay open for the owner. Do not merge them."
+  "next_dependency": "Recorded main is PR #99 (7041104f7fce3e9a8e0916621daa39d0799b2b22). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). Provenance and freshness are not on the unlock screen, so D02 is not finished. Fake stays the local and CI provider. One creator credit is still charged only when an address is found. PR #102 merges V2-F1 (V12.2 Midnight shell and theme, no migration). The merge SHA of PR #102 is recorded by the next block. Full screen rebuilds stay in later blocks. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
 }
