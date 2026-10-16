@@ -27,6 +27,7 @@ describe("deletion gate", () => {
   it("hides connect and reconnect while deletion is pending", () => {
     expect(gmailConnectionOffered(true)).toBe(false);
     expect(gmailConnectionOffered(false)).toBe(true);
+    expect(gmailConnectionOffered(false, false)).toBe(false);
   });
 
   it("does not build a Google URL when oauth begin refuses", async () => {
