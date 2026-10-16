@@ -75,6 +75,18 @@ describe("Midnight shell", () => {
     expect(existsSync("src/app/(app)/app/contracts/page.tsx")).toBe(false);
   });
 
+  it("keeps the Midnight English journey copy", () => {
+    const journey = source("e2e/journey.spec.ts");
+    expect(journey).toContain('name: "Back to home"');
+    expect(journey).toContain('getByText("Did this happen this way?")');
+    expect(journey).toContain("You confirmed this. It did not enter the network");
+    expect(journey).toContain('getByText("Manually recorded"');
+    expect(journey).toContain('getByText("Pitch sent"');
+    expect(journey).toContain('getByText("Verified via Gmail"');
+    expect(journey).toContain('name: "No network fact yet"');
+    expect(journey).not.toMatch(/Ir al inicio|¿Esto pasó así\?|Registrado a mano|Pitch enviado/);
+  });
+
   it("links Outreach and still leaves Plans and Contract Review unlinked", () => {
     const labels = SIDEBAR_NAV.flatMap((section) => section.items.map((item) => item.label));
     expect(labels).toEqual([
