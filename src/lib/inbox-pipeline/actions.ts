@@ -26,6 +26,7 @@ function readField(formData: FormData, name: string): string | null {
 function revalidate(hotelId: string | null) {
   if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
   revalidatePath("/app/pipeline");
+  revalidatePath("/app/inbox");
 }
 
 export async function bindInboxThreadAction(formData: FormData): Promise<InboxWriteResult> {
