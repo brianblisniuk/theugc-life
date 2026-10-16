@@ -105,7 +105,7 @@ export function HotelCard({
             href={`${href}?from=pipeline`}
             className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
           >
-            Guardado
+            Saved
           </Link>
         ) : (
           <SaveHotelButton hotelId={hotel.id} idle="Save" pendingLabel="Saving…" />

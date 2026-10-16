@@ -118,7 +118,7 @@ const FACT_LABEL: Record<string, string> = {
 };
 
 export function factTypeLabel(factType: string): string {
-  return FACT_LABEL[factType] ?? "Hecho confirmado";
+  return FACT_LABEL[factType] ?? "Confirmed fact";
 }
 
 export function parseConfidence(value: unknown): NetworkPublicRow["confidenceLevel"] {
