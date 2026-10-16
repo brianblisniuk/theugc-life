@@ -56,7 +56,7 @@ type HomeQueryChain = {
 export const LIST_OWN_GMAIL_SUGGESTIONS_RPC = "list_own_pending_gmail_collaboration_suggestions";
 
 const PIPELINE_COLUMNS =
-  "id, creator_id, status, hotel_id, next_followup_at, last_activity_at, hotel:hotels(name)";
+  "id, creator_id, status, hotel_id, trip_id, next_followup_at, last_activity_at, hotel:hotels(name)";
 
 const DELIVERABLE_COLUMNS =
   "id, creator_id, status, due_on, pipeline_item:pipeline_items(hotel_id, hotel:hotels(name))";
@@ -100,8 +100,10 @@ function mapPipeline(data: unknown, profileId: string): OwnedPipelineItem[] | nu
     const status = typeof row.status === "string" ? row.status : "";
     const nextFollowupAt = textOrNull(row.next_followup_at);
     const lastActivityAt = textOrNull(row.last_activity_at);
+    const tripId = textOrNull(row.trip_id);
     if (row.next_followup_at != null && nextFollowupAt === null) return null;
     if (row.last_activity_at != null && lastActivityAt === null) return null;
+    if (row.trip_id != null && tripId === null) return null;
     items.push({
       id: row.id,
       creatorId: row.creator_id,
@@ -110,6 +112,7 @@ function mapPipeline(data: unknown, profileId: string): OwnedPipelineItem[] | nu
       hotelName: name,
       nextFollowupAt,
       lastActivityAt,
+      tripId: tripId && isUuid(tripId) ? tripId : null,
     });
   }
   return items;

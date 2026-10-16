@@ -7,6 +7,7 @@
  * the breadcrumb only. They do not authorize a read.
  */
 import { isUuid } from "@/lib/hotels/ids";
+import { discoverReturnHref } from "@/lib/screens/discover-return";
 
 export const PRIMARY_NAV = [
   { href: "/app", label: "Home" },
@@ -264,9 +265,81 @@ export function pitchHref(
 }
 
 /** Pitch Studio for one opportunity. The id is the row id, not the display id. */
-export function opportunityPitchHref(hotelId: string, pipelineItemId: string): string | null {
+export function opportunityPitchHref(
+  hotelId: string,
+  pipelineItemId: string,
+  tripId?: string | null,
+): string | null {
   if (!isUuid(hotelId) || !isUuid(pipelineItemId)) return null;
-  return `/app/hotels/${hotelId}/pitch?opportunity=${pipelineItemId}&from=pipeline`;
+  if (tripId && !isUuid(tripId)) return null;
+  const params = new URLSearchParams();
+  params.set("opportunity", pipelineItemId);
+  params.set("from", "pipeline");
+  if (tripId) params.set("trip", tripId);
+  return `/app/hotels/${hotelId}/pitch?${params.toString()}`;
+}
+
+/** Adds the row id and, when the href does not already name a trip, that row's trip. */
+export function withOpportunityQuery(
+  href: string,
+  opportunityId: string | null | undefined,
+  tripId: string | null | undefined,
+): string {
+  const hashIndex = href.indexOf("#");
+  const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+  const url = new URL(withoutHash, "http://local");
+  if (opportunityId && isUuid(opportunityId)) url.searchParams.set("opportunity", opportunityId);
+  if (tripId && isUuid(tripId) && !url.searchParams.has("trip")) url.searchParams.set("trip", tripId);
+  return `${url.pathname}${url.search}${hash}`;
+}
+
+/**
+ * Pitch Studio query. A trip origin names the trip this screen is about.
+ * Discover `back` is validated again. A foreign return path becomes the catalog.
+ */
+export function pitchContextParams(input: {
+  origin: HotelOrigin;
+  tripId: string | null;
+  opportunityId: string | null;
+  back: string | null;
+}): URLSearchParams {
+  const tripId = input.tripId && isUuid(input.tripId) ? input.tripId : null;
+  const origin: HotelOrigin =
+    input.origin.kind === "trip"
+      ? tripId
+        ? { kind: "trip", tripId }
+        : { kind: "discover" }
+      : input.origin;
+  const params = new URLSearchParams();
+  applyHotelOrigin(params, origin);
+  if (tripId && origin.kind !== "trip") params.set("trip", tripId);
+  if (input.opportunityId && isUuid(input.opportunityId)) {
+    params.set("opportunity", input.opportunityId);
+  }
+  if (input.back) params.set("back", discoverReturnHref(input.back));
+  return params;
+}
+
+/** One chooser link. The arrival trip is not copied onto a different row. */
+export function chooserPitchParams(
+  pageOrigin: HotelOrigin,
+  opportunity: { id: string; tripId: string | null },
+  back: string | null,
+): URLSearchParams {
+  const tripId = opportunity.tripId && isUuid(opportunity.tripId) ? opportunity.tripId : null;
+  const origin: HotelOrigin =
+    pageOrigin.kind === "trip"
+      ? tripId
+        ? { kind: "trip", tripId }
+        : { kind: "discover" }
+      : pageOrigin;
+  return pitchContextParams({
+    origin,
+    tripId,
+    opportunityId: opportunity.id,
+    back,
+  });
 }
 
 export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
@@ -316,7 +389,13 @@ export function pipelineReturnHref(origin: HotelOrigin): string {
 }
 
 export function pipelineRowLinks(
-  item: { status: string; hotelId: string | null; hotelName?: string | null },
+  item: {
+    status: string;
+    hotelId: string | null;
+    hotelName?: string | null;
+    id?: string | null;
+    tripId?: string | null;
+  },
   surface: PipelineSurface,
 ): ShellLink[] {
   if (!item.hotelId || !isUuid(item.hotelId)) return [];
@@ -338,17 +417,20 @@ export function pipelineRowLinks(
         : undefined;
   const primary = hotelHref(item.hotelId, origin, section);
   if (!primary) return [];
+  const rowHref = (href: string) => withOpportunityQuery(href, item.id, item.tripId);
   const primaryLabel = surface === "all" ? "Manage" : "Open";
   const links: ShellLink[] = [
-    { href: primary, label: primaryLabel, ariaLabel: `${primaryLabel} ${name}` },
+    { href: rowHref(primary), label: primaryLabel, ariaLabel: `${primaryLabel} ${name}` },
   ];
   if (surface !== "inbox" && inboxLink) {
     const href = hotelHref(item.hotelId, { kind: "inbox" }, "inbox");
-    if (href) links.push({ href, label: "Inbox", ariaLabel: `Inbox for ${name}` });
+    if (href) links.push({ href: rowHref(href), label: "Inbox", ariaLabel: `Inbox for ${name}` });
   }
   if (surface !== "collaborations" && item.status === "won") {
     const href = hotelHref(item.hotelId, { kind: "collaboration" }, "collaboration");
-    if (href) links.push({ href, label: "Collaboration", ariaLabel: `Collaboration for ${name}` });
+    if (href) {
+      links.push({ href: rowHref(href), label: "Collaboration", ariaLabel: `Collaboration for ${name}` });
+    }
   }
   return links;
 }

@@ -19,9 +19,14 @@ import { getOwnProfile } from "@/lib/profile/queries";
 import { listTrips } from "@/lib/trips/queries";
 
 import {
+  PITCH_OPPORTUNITY_CAP,
   chooseOpportunity,
+  closedRowDraft,
+  mergeNamedOpportunity,
+  opportunityDraftTrip,
   selectBoundDraft,
   shownDisplayRef,
+  takeOpportunityPage,
   type StudioOpportunity,
 } from "./studio";
 import {
@@ -82,6 +87,7 @@ export type PitchContextLoad =
       selectedTripId: string | null;
       primaryLanguage: string | null;
       opportunities: StudioOpportunity[];
+      opportunitiesCapped: boolean;
       opportunityChoice: ReturnType<typeof chooseOpportunity>["choice"];
       selectedOpportunity: StudioOpportunity | null;
       otherDraft: PitchOtherDraft | null;
@@ -91,6 +97,17 @@ export type PitchContextLoad =
 
 function asText(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function opportunityFromRecord(record: Record<string, unknown>): StudioOpportunity {
+  return {
+    id: String(record.id),
+    displayRef: shownDisplayRef(asText(record.display_ref)),
+    status: asText(record.status),
+    stayStart: asText(record.stay_start),
+    stayEnd: asText(record.stay_end),
+    tripId: asText(record.trip_id),
+  };
 }
 
 function publicNote(signal: IntelligenceSignal): string | null {
@@ -122,6 +139,8 @@ export async function loadPitchContext(input: {
   preferDraftTrip: boolean;
   /** Pipeline row id. A display id is not accepted. */
   requestedPipelineItemId?: string | null;
+  /** Set only when the page origin is a trip. A trip on a pipeline link is not this. */
+  originTripId?: string | null;
 }): Promise<PitchContextLoad> {
   if (!isUuid(input.userId) || !isUuid(input.hotelId)) return { status: "error" };
   if (input.requestedTripId && !isUuid(input.requestedTripId)) return { status: "error" };
@@ -151,7 +170,7 @@ export async function loadPitchContext(input: {
           .eq("hotel_id", input.hotelId)
           .neq("status", "closed")
           .order("last_activity_at", { ascending: false })
-          .limit(20),
+          .limit(PITCH_OPPORTUNITY_CAP + 1),
         supabase
           .from("collaborations")
           .select("status, collaboration_type")
@@ -243,21 +262,37 @@ export async function loadPitchContext(input: {
       recipientEmail = email;
     }
 
-    const opportunities: StudioOpportunity[] = [];
+    const loadedOpportunities: StudioOpportunity[] = [];
     for (const raw of pipeline.data ?? []) {
       const record = raw as Record<string, unknown>;
       if (typeof record.id !== "string") return { status: "error" };
-      opportunities.push({
-        id: record.id,
-        displayRef: shownDisplayRef(asText(record.display_ref)),
-        status: asText(record.status),
-        stayStart: asText(record.stay_start),
-        stayEnd: asText(record.stay_end),
-        tripId: asText(record.trip_id),
-      });
+      loadedOpportunities.push(opportunityFromRecord(record));
     }
-    const chosen = chooseOpportunity(opportunities, input.requestedPipelineItemId ?? null);
-    const relationshipStatus = chosen.selected?.status ?? null;
+    const page = takeOpportunityPage(loadedOpportunities);
+    const requestedId =
+      input.requestedPipelineItemId && isUuid(input.requestedPipelineItemId)
+        ? input.requestedPipelineItemId
+        : null;
+    let named: StudioOpportunity | null = null;
+    if (requestedId && !page.rows.some((row) => row.id === requestedId)) {
+      const extra = await supabase
+        .from("pipeline_items")
+        .select("id, status, display_ref, stay_start, stay_end, trip_id")
+        .eq("id", requestedId)
+        .eq("hotel_id", input.hotelId)
+        .maybeSingle();
+      if (extra.error) return { status: "error" };
+      if (extra.data && typeof (extra.data as { id?: unknown }).id === "string") {
+        named = opportunityFromRecord(extra.data as Record<string, unknown>);
+      }
+    }
+    const opportunities = mergeNamedOpportunity(page.rows, named);
+    let chosen = chooseOpportunity(
+      opportunities,
+      input.requestedPipelineItemId ?? null,
+      input.originTripId ?? null,
+    );
+    let relationshipStatus = chosen.selected?.status ?? null;
 
     const templateRows: PitchTemplateRow[] = [];
     for (const row of templates.data ?? []) {
@@ -280,7 +315,11 @@ export async function loadPitchContext(input: {
 
     const boundOpportunityId = chosen.selected?.id ?? null;
     let draft: PitchDraftRow | null = null;
-    if (chosen.choice !== "many" && chosen.choice !== "missing") {
+    if (
+      chosen.choice !== "many" &&
+      chosen.choice !== "missing" &&
+      chosen.choice !== "trip_empty"
+    ) {
       let draftQuery = supabase
         .from("pitch_drafts")
         .select(
@@ -336,9 +375,92 @@ export async function loadPitchContext(input: {
       }
     }
 
+    if (!draft && chosen.choice === "none") {
+      const closedDrafts = await supabase
+        .from("pitch_drafts")
+        .select(
+          "id, subject, body, trip_id, template_id, system_template_key, delivery, pipeline_item_id",
+        )
+        .eq("hotel_id", input.hotelId)
+        .not("pipeline_item_id", "is", null)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (closedDrafts.error) return { status: "error" };
+      const closedRaw = (closedDrafts.data ?? [])[0] as
+        | {
+            id?: unknown;
+            subject?: unknown;
+            body?: unknown;
+            trip_id?: unknown;
+            template_id?: unknown;
+            system_template_key?: unknown;
+            delivery?: unknown;
+            pipeline_item_id?: unknown;
+          }
+        | undefined;
+      const closedItemId = asText(closedRaw?.pipeline_item_id);
+      if (
+        closedRaw &&
+        typeof closedRaw.id === "string" &&
+        typeof closedRaw.subject === "string" &&
+        typeof closedRaw.body === "string" &&
+        closedItemId &&
+        (closedRaw.delivery === "unsent" ||
+          closedRaw.delivery === "copied" ||
+          closedRaw.delivery === "mailto_opened")
+      ) {
+        const closedItem = await supabase
+          .from("pipeline_items")
+          .select("id, status, display_ref, stay_start, stay_end, trip_id")
+          .eq("id", closedItemId)
+          .eq("hotel_id", input.hotelId)
+          .maybeSingle();
+        if (closedItem.error) return { status: "error" };
+        const closedRecord = closedItem.data as Record<string, unknown> | null;
+        const closedStatus = asText(closedRecord?.status);
+        const systemKey = asText(closedRaw.system_template_key);
+        const candidate: PitchDraftRow = {
+          id: closedRaw.id,
+          subject: closedRaw.subject,
+          body: closedRaw.body,
+          tripId: asText(closedRaw.trip_id),
+          templateId: asText(closedRaw.template_id),
+          systemTemplateKey:
+            systemKey === "introduction" ||
+            systemKey === "stay" ||
+            systemKey === "follow_up" ||
+            systemKey === "return_visit"
+              ? systemKey
+              : null,
+          delivery: closedRaw.delivery,
+          pipelineItemId: closedItemId,
+        };
+        if (closedRowDraft(candidate, closedStatus) && closedRecord && typeof closedRecord.id === "string") {
+          const closedOpportunity = opportunityFromRecord(closedRecord);
+          opportunities.push(closedOpportunity);
+          chosen = chooseOpportunity(opportunities, closedOpportunity.id);
+          relationshipStatus = chosen.selected?.status ?? null;
+          draft = selectBoundDraft([candidate], closedOpportunity.id, chosen.choice);
+        }
+      }
+    }
+
     if (!selected && input.preferDraftTrip) {
       const fromBound = draft?.tripId ?? chosen.selected?.tripId ?? null;
       selected = fromBound ? (tripChoices.find((trip) => trip.id === fromBound) ?? null) : null;
+      if (selected) {
+        put("trip_name", pitchFact(selected.name, 120));
+        put("trip_start", pitchFact(selected.startDate, 20));
+        put("trip_end", pitchFact(selected.endDate, 20));
+      }
+    }
+
+    if (chosen.selected) {
+      const ownTripId = opportunityDraftTrip(chosen.selected, null);
+      selected = ownTripId ? (tripChoices.find((trip) => trip.id === ownTripId) ?? null) : null;
+      delete facts.trip_name;
+      delete facts.trip_start;
+      delete facts.trip_end;
       if (selected) {
         put("trip_name", pitchFact(selected.name, 120));
         put("trip_start", pitchFact(selected.startDate, 20));
@@ -379,6 +501,7 @@ export async function loadPitchContext(input: {
       relationshipStatus,
       selectedTripId: selected?.id ?? null,
       opportunities,
+      opportunitiesCapped: page.capped,
       opportunityChoice: chosen.choice,
       selectedOpportunity: chosen.selected,
       otherDraft,

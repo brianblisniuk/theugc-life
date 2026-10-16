@@ -26,7 +26,8 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { buildDiscoverHref, parseDiscoverQuery, sanitizeSearchTerm } from "@/lib/hotels/filters";
 import { searchHotels } from "@/lib/hotels/queries";
 import { stageTone, stageWord } from "@/lib/outreach/board";
-import { pitchHref, tripHotelHref } from "@/lib/shell/navigation";
+import { tripHotelHref } from "@/lib/shell/navigation";
+import { shortlistPitchHref } from "@/lib/screens/hotel-opportunities";
 import { coverNights, formatStay, monthName, nightCountsMatch } from "@/lib/trips/nights";
 import {
   getTrip,
@@ -332,11 +333,15 @@ export default async function TripWorkspacePage({
           <ul className="v12-plain-list">
             {shortlist.hotels.map((hotel) => {
               const href = tripHotelHref(trip.id, hotel.id);
-              const pitch = pitchHref(hotel.id, trip.id);
               const rows =
                 opportunities.status === "ok"
                   ? opportunities.opportunities.filter((item) => item.hotelId === hotel.id)
                   : [];
+              const pitch = shortlistPitchHref(
+                hotel.id,
+                trip.id,
+                rows.map((row) => ({ id: row.id, status: row.status, tripId: trip.id })),
+              );
               return (
                 <li key={hotel.tripHotelId} className="v12-list-item">
                   <div className="v12-row">

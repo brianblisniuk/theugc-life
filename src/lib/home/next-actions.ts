@@ -8,7 +8,7 @@
 import { CREDITS_CONFIG, OUT_OF_CREDITS_COPY, creditsLeftLabel } from "@/lib/credits/config";
 import { isUuid } from "@/lib/hotels/ids";
 import { PIPELINE_STATUSES, type PipelineStatus } from "@/lib/pipeline/types";
-import { hotelHref } from "@/lib/shell/navigation";
+import { hotelHref, withOpportunityQuery } from "@/lib/shell/navigation";
 
 import {
   COLLABORATION_SUGGESTION_KINDS,
@@ -133,6 +133,7 @@ export interface OwnedPipelineItem {
   hotelName: string;
   nextFollowupAt: string | null;
   lastActivityAt: string | null;
+  tripId: string | null;
 }
 
 export interface OwnedDeliverable {
@@ -234,8 +235,13 @@ function owned<T extends { creatorId: string }>(rows: readonly T[], profileId: s
   return rows.filter((row) => row.creatorId === profileId);
 }
 
-function pipelineHref(hotelId: string): string | null {
-  return hotelHref(hotelId, { kind: "pipeline" });
+function pipelineHref(
+  hotelId: string,
+  opportunityId: string,
+  tripId: string | null,
+): string | null {
+  const href = hotelHref(hotelId, { kind: "pipeline" });
+  return href ? withOpportunityQuery(href, opportunityId, tripId) : null;
 }
 
 function creditAction(balance: number): NextAction {
@@ -320,8 +326,9 @@ function validatePipeline(
     }
     if (row.nextFollowupAt !== null && instantMs(row.nextFollowupAt) === null) return { ok: false };
     if (row.lastActivityAt !== null && instantMs(row.lastActivityAt) === null) return { ok: false };
+    if (row.tripId !== null && !isUuid(row.tripId)) return { ok: false };
     seen.add(row.id);
-    clean.push({ ...row, hotelName: name });
+    clean.push({ ...row, hotelName: name, tripId: row.tripId });
   }
   return { ok: true, items: clean };
 }
@@ -421,7 +428,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
       const dueActions: NextAction[] = [];
       let dueOk = true;
       for (const row of due) {
-        const href = pipelineHref(row.hotelId);
+        const href = pipelineHref(row.hotelId, row.id, row.tripId);
         const when = instantMs(row.nextFollowupAt!);
         if (!href || when === null) {
           dueOk = false;
@@ -526,7 +533,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
           return a.id < b.id ? -1 : 1;
         });
       for (const row of attention) {
-        const href = pipelineHref(row.hotelId);
+        const href = pipelineHref(row.hotelId, row.id, row.tripId);
         const title =
           row.status === "closed"
             ? null
@@ -570,7 +577,8 @@ function gmailActionsFor(suggestions: readonly OwnedGmailSuggestion[]): NextActi
   });
   const actions: NextAction[] = [];
   for (const row of ordered) {
-    const href = hotelHref(row.hotelId, { kind: "inbox" }, "activity");
+    const base = hotelHref(row.hotelId, { kind: "inbox" }, "activity");
+    const href = base ? withOpportunityQuery(base, row.pipelineItemId, null) : null;
     if (!href) return null;
     actions.push({
       id: `gmail:${row.id}`,

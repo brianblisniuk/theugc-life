@@ -40,7 +40,8 @@ import {
   listDraftHotelIds,
   listTripHotelIds,
 } from "@/lib/outreach/queries";
-import { hotelHref, pitchHref } from "@/lib/shell/navigation";
+import { pitchHref } from "@/lib/shell/navigation";
+import { outreachPrepareHref } from "@/lib/screens/hotel-opportunities";
 import { formatStay } from "@/lib/trips/nights";
 import { listStaySuggestions } from "@/lib/trips/queries";
 
@@ -136,6 +137,7 @@ export default async function OutreachDetailPage({
           stayStart: item.stayStart,
           stayEnd: item.stayEnd,
           pipelineItemId: item.id,
+          tripId: item.tripId,
         }))
       : [];
   const hotelsWithoutOpportunity =
@@ -167,18 +169,20 @@ export default async function OutreachDetailPage({
   const otherCampaigns =
     others.status === "ok" ? others.campaigns.filter((item) => item.id !== campaign.id) : [];
 
-  function openHref(status: string, hotelId: string): string | null {
-    if (status === "replied" || status === "negotiating") {
-      return hotelHref(hotelId, { kind: "inbox" }, "inbox");
-    }
-    if (status === "won") return hotelHref(hotelId, { kind: "collaboration" }, "collaboration");
-    if (status === "saved" || status === "planned" || !status) {
-      return pitchHref(hotelId, campaign.tripId);
-    }
-    return hotelHref(hotelId, { kind: "pipeline" }, "work");
+  function openHref(
+    status: string,
+    hotelId: string,
+    pipelineItemId: string | null,
+    tripId: string | null,
+  ): string | null {
+    return outreachPrepareHref(hotelId, status, pipelineItemId, tripId);
   }
 
-  const nextHref = move ? openHref(move.status, move.hotelId) : null;
+  const moveTrip =
+    move && opportunities.status === "ok"
+      ? (opportunities.opportunities.find((item) => item.id === move.pipelineItemId)?.tripId ?? null)
+      : null;
+  const nextHref = move ? openHref(move.status, move.hotelId, move.pipelineItemId, moveTrip) : null;
 
   return (
     <div className="v12-stack">
@@ -343,7 +347,7 @@ export default async function OutreachDetailPage({
                 </thead>
                 <tbody>
                   {visibleOpportunities.map((row) => {
-                    const href = openHref(row.status, row.hotelId);
+                    const href = openHref(row.status, row.hotelId, row.pipelineItemId, row.tripId);
                     const when =
                       row.stayStart && row.stayEnd ? formatStay(row.stayStart, row.stayEnd) : null;
                     return (
