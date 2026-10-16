@@ -17,6 +17,7 @@ import { blockedNextActionBoard } from "@/lib/home/next-actions";
 import {
   INBOX_COPY,
   INBOX_SEND_GATE,
+  INBOX_SUGGESTION_CAP,
   buildInboxScreen,
   classifyMailbox,
   commercialSummary,
@@ -99,6 +100,7 @@ describe("inbox screen", () => {
       dates: [],
       threadsCapped: false,
       datesCapped: false,
+      suggestionsCapped: false,
       suggestionsFailed: false,
       datesFailed: false,
       collaborationsFailed: false,
@@ -126,6 +128,7 @@ describe("inbox screen", () => {
       dates: [],
       threadsCapped: false,
       datesCapped: false,
+      suggestionsCapped: false,
       suggestionsFailed: false,
       datesFailed: false,
       collaborationsFailed: false,
@@ -197,6 +200,7 @@ describe("inbox screen", () => {
       dates: [],
       threadsCapped: false,
       datesCapped: false,
+      suggestionsCapped: false,
       suggestionsFailed: false,
       datesFailed: false,
       collaborationsFailed: false,
@@ -220,6 +224,7 @@ describe("inbox screen", () => {
       dates: [],
       threadsCapped: false,
       datesCapped: false,
+      suggestionsCapped: false,
       suggestionsFailed: false,
       datesFailed: false,
       collaborationsFailed: false,
@@ -256,6 +261,7 @@ describe("inbox screen", () => {
       ],
       threadsCapped: false,
       datesCapped: false,
+      suggestionsCapped: false,
       suggestionsFailed: false,
       datesFailed: false,
       collaborationsFailed: false,
@@ -286,6 +292,7 @@ describe("inbox screen", () => {
       dates: [],
       threadsCapped: false,
       datesCapped: false,
+      suggestionsCapped: false,
       suggestionsFailed: false,
       datesFailed: true,
       collaborationsFailed: false,
@@ -301,6 +308,84 @@ describe("inbox screen", () => {
     expect(panel.text).not.toContain("No date suggestion is waiting");
     expect(datePanelState({ datesUnavailable: false, dateCount: 0 }).kind).toBe("empty");
   });
+
+  it("does not call a failed suggestion or collaboration read a completed empty review", () => {
+    const waiting = thread({ status: "replied", hasHumanReply: false, stale: false });
+    const base = {
+      profileId: PROFILE_A,
+      asOf: "2026-10-16T15:00:00.000Z",
+      filter: "all" as const,
+      selectedId: null,
+      mailbox: { kind: "connected" as const, email: "ada@example.com" },
+      threads: [waiting],
+      suggestions: [],
+      collaborations: [],
+      dates: [],
+      threadsCapped: false,
+      datesCapped: false,
+      suggestionsCapped: false,
+      datesFailed: false,
+      foreign: false,
+    };
+    const complete = buildInboxScreen({
+      ...base,
+      collaborationStatus: "ok",
+      suggestionsFailed: false,
+      collaborationsFailed: false,
+    });
+    expect(complete.kind).toBe("ready");
+    if (complete.kind !== "ready") return;
+    expect(complete.heading).toBe("Nothing in these conversations needs a reply.");
+
+    const suggestionsDown = buildInboxScreen({
+      ...base,
+      collaborationStatus: "ok",
+      suggestionsFailed: true,
+      collaborationsFailed: false,
+    });
+    expect(suggestionsDown.kind).toBe("ready");
+    if (suggestionsDown.kind !== "ready") return;
+    expect(suggestionsDown.heading).toBe(INBOX_COPY.reviewUnavailable);
+    expect(suggestionsDown.heading).not.toContain("Nothing in these conversations needs a reply");
+
+    const collaborationsDown = buildInboxScreen({
+      ...base,
+      collaborationStatus: "error",
+      suggestionsFailed: false,
+      collaborationsFailed: true,
+    });
+    expect(collaborationsDown.kind).toBe("ready");
+    if (collaborationsDown.kind !== "ready") return;
+    expect(collaborationsDown.heading).toBe(INBOX_COPY.reviewUnavailable);
+    expect(collaborationsDown.notices.join(" ")).toContain("could not review");
+  });
+
+  it("withholds the empty heading when inbox suggestions are truncated", () => {
+    const screen = buildInboxScreen({
+      profileId: PROFILE_A,
+      asOf: "2026-10-16T15:00:00.000Z",
+      filter: "all",
+      selectedId: null,
+      mailbox: { kind: "connected", email: "ada@example.com" },
+      threads: [thread({ status: "replied", hasHumanReply: false })],
+      suggestions: [],
+      collaborations: [],
+      collaborationStatus: "ok",
+      dates: [],
+      threadsCapped: false,
+      datesCapped: false,
+      suggestionsCapped: true,
+      suggestionsFailed: false,
+      datesFailed: false,
+      collaborationsFailed: false,
+      foreign: false,
+    });
+    expect(screen.kind).toBe("ready");
+    if (screen.kind !== "ready") return;
+    expect(screen.heading).toBe(INBOX_COPY.suggestionsCappedHeading);
+    expect(screen.heading).not.toContain("Nothing in these conversations needs a reply");
+    expect(screen.notices.join(" ")).toContain("more inbox suggestions");
+  });
 });
 
 describe("inbox loader", () => {
@@ -314,6 +399,9 @@ describe("inbox loader", () => {
             return api;
           },
           eq() {
+            return api;
+          },
+          in() {
             return api;
           },
           order() {
@@ -343,6 +431,103 @@ describe("inbox loader", () => {
     expect(screen.kind).toBe("error");
     expect(tables).toEqual(["creator_profiles", "mail_accounts"]);
     expect(JSON.stringify(screen)).not.toContain("Bee");
+  });
+
+  it("loads each listed thread's reading and scopes suggestions without an unordered cap", async () => {
+    const calls: { table: string; ops: string[] }[] = [];
+    const binding = {
+      id: BIND_A,
+      creator_id: PROFILE_A,
+      pipeline_item_id: ITEM_A,
+      updated_at: "2026-10-16T12:00:00.000Z",
+      pipeline_item: {
+        id: ITEM_A,
+        creator_id: PROFILE_A,
+        status: "replied",
+        display_ref: "OP-1001",
+        hotel_id: HOTEL_A,
+        hotel: { id: HOTEL_A, name: "North House" },
+      },
+    };
+    const reading = {
+      binding_id: BIND_A,
+      creator_id: PROFILE_A,
+      commercial_state: "engaged",
+      stale: false,
+      has_human_reply: false,
+      has_redirect: false,
+      has_rejection: false,
+    };
+    const suggestions = Array.from({ length: INBOX_SUGGESTION_CAP + 1 }, (_, index) => ({
+      id: `12121212-1212-4212-8212-${String(index).padStart(12, "0")}`,
+      creator_id: PROFILE_A,
+      pipeline_item_id: ITEM_A,
+      kind: "review_decline",
+      applies_crm: false,
+      status: "pending",
+    }));
+    const tables: Record<string, unknown> = {
+      creator_profiles: { id: PROFILE_A, user_id: AUTH_A, display_name: "Ada" },
+      pipeline_inbox_bindings: [binding],
+      pipeline_inbox_readings: [reading],
+      pipeline_inbox_suggestions: suggestions,
+      stay_date_suggestions: [],
+    };
+    const client = {
+      from(table: string) {
+        const ops: string[] = [];
+        const api = {
+          select() {
+            return api;
+          },
+          eq(column: string) {
+            ops.push(`eq:${column}`);
+            return api;
+          },
+          in(column: string, values: readonly string[]) {
+            ops.push(`in:${column}:${values.join(",")}`);
+            return api;
+          },
+          order(column: string) {
+            ops.push(`order:${column}`);
+            return api;
+          },
+          limit(count: number) {
+            ops.push(`limit:${count}`);
+            return api;
+          },
+          maybeSingle() {
+            calls.push({ table, ops: [...ops] });
+            return Promise.resolve({ data: tables[table] ?? null, error: null });
+          },
+          then(resolve: (value: unknown) => unknown) {
+            calls.push({ table, ops: [...ops] });
+            const data = tables[table] ?? [];
+            return Promise.resolve({ data, error: null }).then(resolve);
+          },
+        };
+        return { select: () => api };
+      },
+      rpc: () => Promise.resolve({ data: { result: "paused" }, error: null }),
+    };
+    const screen = await loadInboxWorkspace(
+      AUTH_A,
+      {},
+      { client: client as InboxQueryClient, gmailConfigured: false },
+    );
+    const readings = calls.find((call) => call.table === "pipeline_inbox_readings");
+    const suggestionCall = calls.find((call) => call.table === "pipeline_inbox_suggestions");
+    expect(readings?.ops).toContain(`in:binding_id:${BIND_A}`);
+    expect(readings?.ops.some((op) => op.startsWith("limit:"))).toBe(false);
+    expect(suggestionCall?.ops).toContain(`in:pipeline_item_id:${ITEM_A}`);
+    expect(suggestionCall?.ops).toContain("order:created_at");
+    expect(suggestionCall?.ops).toContain("order:id");
+    expect(suggestionCall?.ops).toContain(`limit:${INBOX_SUGGESTION_CAP + 1}`);
+    expect(screen.kind).toBe("ready");
+    if (screen.kind !== "ready") return;
+    expect(screen.threads[0]?.summary).not.toBe(INBOX_COPY.noClassification);
+    expect(screen.heading).toBe(INBOX_COPY.suggestionsCappedHeading);
+    expect(screen.heading).not.toContain("Nothing in these conversations needs a reply");
   });
 
   it("selects no token, no message body, and no service credential", () => {
@@ -570,6 +755,17 @@ describe("inbox and home sources", () => {
     expect(signals).toContain("head: true");
     expect(signals).not.toContain(".limit(200)");
     expect(signals).not.toContain("outreachCards");
+    const queries = readFileSync(path.join(root, "src/lib/inbox/queries.ts"), "utf8");
+    const readingsQuery = queries.slice(
+      queries.indexOf('from("pipeline_inbox_readings")'),
+      queries.indexOf('from("pipeline_inbox_suggestions")'),
+    );
+    expect(readingsQuery).toContain('.in("binding_id"');
+    expect(readingsQuery).not.toContain(".limit(");
+    expect(queries).toContain('.in("pipeline_item_id"');
+    expect(queries).toContain('.order("created_at"');
+    expect(queries).toContain("INBOX_SUGGESTION_CAP + 1");
+    expect(queries).not.toContain(".limit(200)");
     expect(page).not.toContain("revokedEmptyInbox");
     expect(screen).toContain("revokedEmptyInbox");
     expect(screen).toContain('datesPanel.kind === "unavailable"');

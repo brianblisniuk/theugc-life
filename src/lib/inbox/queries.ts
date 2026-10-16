@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   INBOX_COPY,
   INBOX_DATE_CAP,
+  INBOX_SUGGESTION_CAP,
   INBOX_THREAD_CAP,
   buildInboxScreen,
   classifyMailbox,
@@ -50,6 +51,7 @@ export type InboxQueryClient = {
 
 type InboxQueryChain = {
   eq: (column: string, value: string) => InboxQueryChain;
+  in: (column: string, values: readonly string[]) => InboxQueryChain;
   order: (column: string, options?: { ascending?: boolean }) => InboxQueryChain;
   limit: (count: number) => InboxQueryChain;
   maybeSingle: () => Promise<QueryResult>;
@@ -271,59 +273,85 @@ export async function loadInboxWorkspace(
       return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
     }
 
-    const [bindingResult, readingResult, suggestionResult, dateResult, gmailResult] =
-      await Promise.all([
-        supabase
-          .from("pipeline_inbox_bindings")
-          .select(BINDING_COLUMNS)
-          .eq("creator_id", profile.profileId)
-          .order("updated_at", { ascending: false })
-          .limit(INBOX_THREAD_CAP + 1),
-        supabase
-          .from("pipeline_inbox_readings")
-          .select(READING_COLUMNS)
-          .eq("creator_id", profile.profileId)
-          .limit(INBOX_THREAD_CAP + 1),
-        supabase
-          .from("pipeline_inbox_suggestions")
-          .select(SUGGESTION_COLUMNS)
-          .eq("creator_id", profile.profileId)
-          .eq("status", "pending")
-          .limit(200),
-        supabase
-          .from("stay_date_suggestions")
-          .select(DATE_COLUMNS)
-          .eq("creator_id", profile.profileId)
-          .eq("status", "pending")
-          .limit(INBOX_DATE_CAP + 1),
-        supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC),
-      ]);
-
-    if (bindingResult.error || readingResult.error) {
+    const bindingResult = await supabase
+      .from("pipeline_inbox_bindings")
+      .select(BINDING_COLUMNS)
+      .eq("creator_id", profile.profileId)
+      .order("updated_at", { ascending: false })
+      .limit(INBOX_THREAD_CAP + 1);
+    if (bindingResult.error) {
       return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
     }
     const bindingRows = asRecords(bindingResult.data);
-    const readingRows = asRecords(readingResult.data);
-    if (!bindingRows || !readingRows) {
+    if (!bindingRows) {
       return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
     }
-    const mappedThreads = mapThreads(
-      bindingRows.slice(0, INBOX_THREAD_CAP),
-      readingRows,
-      profile.profileId,
-    );
+    const listedBindings = bindingRows.slice(0, INBOX_THREAD_CAP);
+    const bindingIds = [
+      ...new Set(
+        listedBindings
+          .map((row) => row.id)
+          .filter((id): id is string => typeof id === "string" && isUuid(id)),
+      ),
+    ];
+    const pipelineIds = [
+      ...new Set(
+        listedBindings
+          .map((row) => row.pipeline_item_id)
+          .filter((id): id is string => typeof id === "string" && isUuid(id)),
+      ),
+    ];
+
+    const [readingResult, suggestionResult, dateResult, gmailResult] = await Promise.all([
+      bindingIds.length === 0
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("pipeline_inbox_readings")
+            .select(READING_COLUMNS)
+            .eq("creator_id", profile.profileId)
+            .in("binding_id", bindingIds),
+      pipelineIds.length === 0
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("pipeline_inbox_suggestions")
+            .select(SUGGESTION_COLUMNS)
+            .eq("creator_id", profile.profileId)
+            .eq("status", "pending")
+            .in("pipeline_item_id", pipelineIds)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: true })
+            .limit(INBOX_SUGGESTION_CAP + 1),
+      supabase
+        .from("stay_date_suggestions")
+        .select(DATE_COLUMNS)
+        .eq("creator_id", profile.profileId)
+        .eq("status", "pending")
+        .limit(INBOX_DATE_CAP + 1),
+      supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC),
+    ]);
+
+    if (readingResult.error) {
+      return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
+    }
+    const readingRows = asRecords(readingResult.data);
+    if (!readingRows) {
+      return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
+    }
+    const mappedThreads = mapThreads(listedBindings, readingRows, profile.profileId);
     if (!mappedThreads || mappedThreads.foreign) {
       return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
     }
 
     let suggestions: InboxSuggestionRow[] = [];
     let suggestionsFailed = false;
+    let suggestionsCapped = false;
     if (suggestionResult.error) suggestionsFailed = true;
     else {
       const rows = asRecords(suggestionResult.data);
       if (!rows) suggestionsFailed = true;
       else {
-        const mapped = mapSuggestions(rows, profile.profileId);
+        suggestionsCapped = rows.length > INBOX_SUGGESTION_CAP;
+        const mapped = mapSuggestions(rows.slice(0, INBOX_SUGGESTION_CAP), profile.profileId);
         if (mapped === "foreign" || mapped === null) {
           return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
         }
@@ -386,6 +414,7 @@ export async function loadInboxWorkspace(
       dates,
       threadsCapped: bindingRows.length > INBOX_THREAD_CAP,
       datesCapped,
+      suggestionsCapped,
       suggestionsFailed,
       datesFailed,
       collaborationsFailed,

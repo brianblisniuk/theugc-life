@@ -23,6 +23,8 @@ import {
 
 export const INBOX_THREAD_CAP = 50;
 export const INBOX_DATE_CAP = 50;
+/** Pending suggestions for the threads on this page. One extra row means the list is truncated. */
+export const INBOX_SUGGESTION_CAP = 200;
 
 const DISPLAY_REF = /^OP-[1-9][0-9]{3,}$/;
 const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -40,6 +42,12 @@ export const INBOX_COPY = {
     "Gmail is not connected. Linked conversations that were already stored can still appear. Nothing here sends mail.",
   datesError: "Date suggestions are unavailable. This does not mean there are none.",
   suggestionsError: "We could not review inbox suggestions. This does not mean there are none.",
+  reviewUnavailable:
+    "We could not review what these conversations need. This does not mean nothing needs a reply.",
+  suggestionsTruncated:
+    "There are more inbox suggestions than this page lists. This is not a completed review.",
+  suggestionsCappedHeading:
+    "Inbox suggestions on this page are incomplete. This does not mean nothing needs a reply.",
   gmailError:
     "We could not review Gmail collaboration suggestions. This does not mean there are none.",
   gmailPaused:
@@ -186,6 +194,8 @@ export interface InboxBuildInput {
   dates: readonly InboxDateRow[];
   threadsCapped: boolean;
   datesCapped: boolean;
+  /** The suggestion query returned more rows than this page keeps. */
+  suggestionsCapped: boolean;
   suggestionsFailed: boolean;
   datesFailed: boolean;
   collaborationsFailed: boolean;
@@ -490,6 +500,7 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
   const notices: string[] = [];
   if (input.threadsCapped) notices.push(INBOX_COPY.truncated);
   if (input.datesCapped) notices.push(INBOX_COPY.datesTruncated);
+  if (input.suggestionsCapped) notices.push(INBOX_COPY.suggestionsTruncated);
   if (input.suggestionsFailed) notices.push(INBOX_COPY.suggestionsError);
   if (input.datesFailed) notices.push(INBOX_COPY.datesError);
   if (input.collaborationsFailed || input.collaborationStatus === "error") {
@@ -497,6 +508,8 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
   }
   if (input.collaborationStatus === "paused") notices.push(INBOX_COPY.gmailPaused);
 
+  const reviewFailed =
+    input.suggestionsFailed || input.collaborationsFailed || input.collaborationStatus === "error";
   let heading = "Nothing in these conversations needs a reply.";
   if (built.length === 0) heading = "No linked conversations yet.";
   else if (counts.needsReply > 0) {
@@ -504,7 +517,9 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
       counts.needsReply === 1
         ? "One conversation needs a reply."
         : `${counts.needsReply} conversations need a reply.`;
-  } else if (counts.followUp > 0) {
+  } else if (reviewFailed) heading = INBOX_COPY.reviewUnavailable;
+  else if (input.suggestionsCapped) heading = INBOX_COPY.suggestionsCappedHeading;
+  else if (counts.followUp > 0) {
     heading =
       counts.followUp === 1
         ? "One follow-up is waiting."
