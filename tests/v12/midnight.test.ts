@@ -57,12 +57,13 @@ describe("Midnight shell", () => {
     expect(shell).toContain("v12-topbar");
     expect(shell).toContain('aria-label="Breadcrumb"');
     expect(shell).toContain('aria-label="Quick navigation"');
-    expect(shell).toContain("fallback={null}");
-    expect(shell.match(/<ShellBody/g)).toHaveLength(1);
     const fallbackAt = shell.indexOf("fallback=");
-    const shellBodyAt = shell.indexOf("<ShellBody");
-    expect(shellBodyAt).toBeGreaterThan(fallbackAt);
-    expect(shell.slice(fallbackAt, shellBodyAt)).not.toContain("{children}");
+    const resolvedAt = shell.indexOf("<ShellHeader");
+    expect(resolvedAt).toBeGreaterThan(fallbackAt);
+    const fallback = shell.slice(fallbackAt, resolvedAt);
+    expect(fallback).toContain("<ShellBody");
+    expect(fallback).not.toContain("{children}");
+    expect(shell.slice(resolvedAt)).toContain("{children}");
     expect(shell).not.toContain("ThemeToggle");
     expect(shell).not.toContain("contracts.html");
     expect(css).toContain("@media (max-width: 760px)");
