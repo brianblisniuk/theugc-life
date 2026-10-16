@@ -746,6 +746,342 @@
   }
 }
 
+.v12-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.v12-pagehead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.v12-pagehead h1 {
+  margin: 0;
+  font-size: clamp(30px, 2.5vw, 41px);
+  line-height: 1.1;
+  letter-spacing: -1.2px;
+}
+
+.v12-pagehead p,
+.v12-panel p,
+.v12-notice,
+.v12-send-gate,
+.v12-body-hidden,
+.v12-date-note {
+  margin: 8px 0 0;
+  color: #c7d0cc;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.v12-eyebrow {
+  margin: 0 0 6px;
+  color: #d1ff02;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.v12-head-actions,
+.v12-choice,
+.v12-date-actions,
+.v12-night-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.v12-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.v12-stat {
+  min-height: 104px;
+  padding: 16px 18px;
+  border: 1px solid #293932;
+  border-radius: 10px;
+  background: #151d1b;
+}
+
+.v12-stat span,
+.v12-stat small {
+  display: block;
+  color: #c5d5ca;
+  font-size: 12px;
+}
+
+.v12-stat strong {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 28px;
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+.v12-stat-word {
+  font-size: 18px !important;
+}
+
+.v12-panel {
+  min-width: 0;
+  border: 1px solid #26332e;
+  border-radius: 13px;
+  background: #121918;
+}
+
+.v12-panel-pad {
+  padding: 21px;
+}
+
+.v12-panel-head,
+.v12-thread-top,
+.v12-thread-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.v12-panel-head {
+  padding: 16px 19px;
+  border-bottom: 1px solid #25322c;
+}
+
+.v12-panel-pad .v12-panel-head {
+  padding: 0 0 12px;
+  border-bottom: 0;
+}
+
+.v12-panel h2,
+.v12-panel h3 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: -0.4px;
+}
+
+.v12-panel-empty {
+  margin: 0;
+  padding: 19px;
+  color: #c7d0cc;
+}
+
+.v12-inbox-grid,
+.v12-home-grid {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+
+.v12-inbox-grid {
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.3fr) minmax(220px, 0.8fr);
+}
+
+.v12-home-grid {
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.8fr);
+}
+
+.v12-threads,
+.v12-tasks,
+.v12-outreach,
+.v12-intel,
+.v12-night-pills {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v12-thread,
+.v12-task {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #25322c;
+  border-left: 3px solid transparent;
+  color: inherit;
+  text-decoration: none;
+}
+
+.v12-task {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  border: 1px solid #293932;
+  border-radius: 9px;
+  background: #151d1b;
+}
+
+.v12-thread.is-active,
+.v12-thread[aria-current="true"] {
+  background: #26351f;
+  border-left-color: #d1ff02;
+}
+
+.v12-thread strong,
+.v12-task strong {
+  font-size: 14px;
+}
+
+.v12-thread-summary,
+.v12-task-body span,
+.v12-thread-meta {
+  color: #b7c6bc;
+  font-size: 13px;
+}
+
+.v12-task-num {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  background: #2d3c1f;
+  color: #e3ff9d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.v12-task-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v12-pill-inline {
+  flex: none;
+  border: 1px solid #5c4426;
+  border-radius: 99px;
+  background: #3b2e1d;
+  color: #ffd89e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.v12-mail-ok {
+  margin: 0;
+  color: #a5f0c0;
+  font-size: 14px;
+}
+
+.v12-conversation,
+.v12-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.v12-conversation {
+  padding: 19px;
+}
+
+.v12-side {
+  gap: 16px;
+}
+
+.v12-date {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #25322c;
+}
+
+.v12-date p {
+  margin: 0;
+}
+
+.v12-date span,
+.v12-outreach p,
+.v12-intel li {
+  color: #c7d0cc;
+  font-size: 13px;
+}
+
+.v12-decision {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.v12-decision-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.v12-decision-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #c7d0cc;
+  font-size: 12px;
+}
+
+.v12-decision-form select {
+  min-height: 36px;
+  border: 1px solid #35483c;
+  border-radius: 8px;
+  background: #1c2623;
+  color: #f5f8f6;
+  padding: 6px 8px;
+}
+
+.v12-send-gate {
+  padding: 12px;
+  border: 1px solid #5c432a;
+  border-radius: 9px;
+  background: #2f271a;
+  color: #ffe3ac;
+}
+
+@media (max-width: 1030px) {
+  .v12-inbox-grid,
+  .v12-home-grid,
+  .v12-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v12-inbox-grid > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .v12-pagehead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .v12-inbox-grid,
+  .v12-home-grid,
+  .v12-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .v12-task {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+
 /* Trips and Outreach layout. Dark only. Night marks carry a word, not color alone. */
 
 .v12-stack {
@@ -1116,6 +1452,30 @@
 
   .v12-night span {
     font-size: 10px;
+  }
+}
+
+
+/* Shared class names keep both screens. Inbox and Home sit in .v12-workspace.
+   Trips and Outreach sit in .v12-stack and keep the rules above. */
+
+.v12-workspace .v12-eyebrow {
+  color: #d1ff02;
+}
+
+.v12-workspace .v12-panel-head {
+  align-items: center;
+}
+
+.v12-workspace .v12-stat {
+  min-height: 104px;
+  padding: 16px 18px;
+  border-radius: 10px;
+}
+
+@media (max-width: 1030px) {
+  .v12-workspace .v12-stats {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
