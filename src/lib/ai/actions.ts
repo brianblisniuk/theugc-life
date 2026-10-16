@@ -15,7 +15,7 @@ import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { FACT_KEYS, type FactKey } from "@/lib/pitch/contract";
 import { loadPitchContext } from "@/lib/pitch/queries";
-import { currentDraftWrite } from "@/lib/pitch/studio";
+import { resolveOpportunityDraftWrite } from "@/lib/pitch/studio";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -328,13 +328,14 @@ async function draftAssistant(
     delivery: "unsent" as const,
     origin: "assistant" as const,
   };
-  const write = currentDraftWrite({
-    draftId: context.draft?.id,
-    draftOpportunityId: context.draft?.pipelineItemId,
+  const write = resolveOpportunityDraftWrite({
+    postedDraftId: null,
+    loadedDraftId: context.draft?.id,
+    loadedOpportunityId: context.draft?.pipelineItemId,
     boundOpportunityId,
   });
   const saved =
-    write === "update" && context.draft
+    write.action === "update" && context.draft
       ? await supabase
           .from("pitch_drafts")
           .update(draftFields)

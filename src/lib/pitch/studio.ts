@@ -218,30 +218,63 @@ export function closedRowDraft<T extends { pipelineItemId: string | null }>(
   return draft;
 }
 
+export type OpportunityDraftWrite =
+  | { action: "update"; draftId: string }
+  | { action: "insert" }
+  | { action: "reject" };
+
 /**
- * The composer shows the saved draft unless the creator asked to start over.
- * A trip on the URL is context. It does not hide the draft or let a template
- * overwrite that row.
+ * One current draft per opportunity. The loaded row bound to that opportunity
+ * is updated, including when a fresh start or a template posts no draft id.
+ * Insert only when this opportunity has no draft. A posted id for a different
+ * row is rejected.
  */
-/**
- * One current draft per opportunity. A loaded draft already bound to that
- * row is updated. A missing draft, or a draft for a different row, is inserted.
- */
+export function resolveOpportunityDraftWrite(input: {
+  postedDraftId: string | null | undefined;
+  loadedDraftId: string | null | undefined;
+  loadedOpportunityId: string | null | undefined;
+  boundOpportunityId: string | null;
+}): OpportunityDraftWrite {
+  const posted =
+    typeof input.postedDraftId === "string" && input.postedDraftId.length > 0
+      ? input.postedDraftId
+      : null;
+  const loaded =
+    typeof input.loadedDraftId === "string" &&
+    input.loadedDraftId.length > 0 &&
+    input.boundOpportunityId !== null &&
+    input.loadedOpportunityId === input.boundOpportunityId
+      ? input.loadedDraftId
+      : null;
+  if (loaded) {
+    if (posted && posted !== loaded) return { action: "reject" };
+    return { action: "update", draftId: loaded };
+  }
+  if (posted) return { action: "update", draftId: posted };
+  return { action: "insert" };
+}
+
+/** AI drafting has no posted id. It updates the loaded bound draft or inserts. */
 export function currentDraftWrite(input: {
   draftId: string | null | undefined;
   draftOpportunityId: string | null | undefined;
   boundOpportunityId: string | null;
 }): "update" | "insert" {
-  if (
-    typeof input.draftId === "string" &&
-    input.draftId.length > 0 &&
-    input.boundOpportunityId !== null &&
-    input.draftOpportunityId === input.boundOpportunityId
-  ) {
-    return "update";
-  }
-  return "insert";
+  const write = resolveOpportunityDraftWrite({
+    postedDraftId: null,
+    loadedDraftId: input.draftId,
+    loadedOpportunityId: input.draftOpportunityId,
+    boundOpportunityId: input.boundOpportunityId,
+  });
+  return write.action === "update" ? "update" : "insert";
 }
+
+/**
+ * The composer shows the saved draft unless the creator asked to start over.
+ * A trip on the URL is context. It does not hide the draft. A fresh start or
+ * a template clears the posted id so the visible text is what gets saved.
+ * The server still updates the opportunity's existing draft.
+ */
 
 export function visiblePitchDraft(input: {
   draft: { id: string; subject: string; body: string } | null;

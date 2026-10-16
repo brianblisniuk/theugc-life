@@ -22,7 +22,7 @@ import {
   type FactKey,
 } from "./contract";
 import { loadPitchContext } from "./queries";
-import { pitchTripToStore } from "./studio";
+import { pitchTripToStore, resolveOpportunityDraftWrite } from "./studio";
 
 bindServerActions(["pitch.drafts"]);
 
@@ -158,36 +158,57 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
     variables_used: factKeys(context.facts),
   };
 
+  const write = resolveOpportunityDraftWrite({
+    postedDraftId: parsed.draftId,
+    loadedDraftId: context.draft?.id ?? null,
+    loadedOpportunityId: context.draft?.pipelineItemId ?? null,
+    boundOpportunityId: boundId,
+  });
+  if (write.action === "reject") {
+    return {
+      result: "invalid_input",
+      message: "That draft belongs to a different opportunity.",
+    };
+  }
+
   try {
     const supabase = await createClient();
-    if (parsed.draftId) {
-      const existing = await supabase
-        .from("pitch_drafts")
-        .select("id, pipeline_item_id")
-        .eq("id", parsed.draftId)
-        .eq("hotel_id", parsed.hotelId)
-        .maybeSingle();
-      if (existing.error) return { result: "error" };
-      if (!existing.data) return { result: "not_found" };
-      const current =
-        typeof existing.data.pipeline_item_id === "string" ? existing.data.pipeline_item_id : null;
-      if (current !== boundId) {
-        return {
-          result: "invalid_input",
-          message: "That draft belongs to a different opportunity.",
-        };
+    if (write.action === "update") {
+      const loadedBound =
+        context.draft?.id === write.draftId &&
+        boundId !== null &&
+        context.draft.pipelineItemId === boundId;
+      if (!loadedBound) {
+        const existing = await supabase
+          .from("pitch_drafts")
+          .select("id, pipeline_item_id")
+          .eq("id", write.draftId)
+          .eq("hotel_id", parsed.hotelId)
+          .maybeSingle();
+        if (existing.error) return { result: "error" };
+        if (!existing.data) return { result: "not_found" };
+        const current =
+          typeof existing.data.pipeline_item_id === "string"
+            ? existing.data.pipeline_item_id
+            : null;
+        if (current !== boundId) {
+          return {
+            result: "invalid_input",
+            message: "That draft belongs to a different opportunity.",
+          };
+        }
       }
       const { data, error } = await supabase
         .from("pitch_drafts")
         .update(row)
-        .eq("id", parsed.draftId)
+        .eq("id", write.draftId)
         .eq("hotel_id", parsed.hotelId)
         .select("id")
         .maybeSingle();
       if (error) return { result: "error" };
       if (!data) return { result: "not_found" };
       revalidatePath(`/app/hotels/${parsed.hotelId}/pitch`);
-      return { result: "saved", draftId: parsed.draftId };
+      return { result: "saved", draftId: write.draftId };
     }
 
     const { data, error } = await supabase

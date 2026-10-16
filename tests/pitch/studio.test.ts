@@ -5,6 +5,9 @@
  * opportunity is not absorbed into the first. The draft checklist does not
  * invent a claim the text does not contain.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -15,6 +18,7 @@ import {
   PITCH_OPPORTUNITY_CAP,
   closedRowDraft,
   currentDraftWrite,
+  resolveOpportunityDraftWrite,
   mergeNamedOpportunity,
   opportunityDraftTrip,
   pitchTripToStore,
@@ -260,6 +264,144 @@ describe("recipient and portfolio", () => {
 });
 
 describe("one current draft", () => {
+  const OPP = "22222222-2222-4222-8222-222222222222";
+  const suggestion = { subject: "Template subject", body: "Template body for this hotel" };
+  const savedDraft = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    subject: "Saved subject",
+    body: "Saved body",
+  };
+
+  type Stored = { id: string; opportunityId: string; body: string };
+
+  function apply(
+    rows: Stored[],
+    postedDraftId: string | null,
+    body: string,
+  ): { rows: Stored[]; result: "saved" | "error"; draftId: string | null } {
+    const loaded = rows.find((row) => row.opportunityId === OPP) ?? null;
+    const write = resolveOpportunityDraftWrite({
+      postedDraftId,
+      loadedDraftId: loaded?.id ?? null,
+      loadedOpportunityId: loaded ? OPP : null,
+      boundOpportunityId: OPP,
+    });
+    if (write.action === "reject") return { rows, result: "error", draftId: null };
+    if (write.action === "insert") {
+      if (loaded) return { rows, result: "error", draftId: null };
+      const id = `draft-${rows.length + 1}`;
+      return {
+        rows: [...rows, { id, opportunityId: OPP, body }],
+        result: "saved",
+        draftId: id,
+      };
+    }
+    if (!rows.some((row) => row.id === write.draftId)) {
+      return { rows, result: "error", draftId: null };
+    }
+    return {
+      rows: rows.map((row) => (row.id === write.draftId ? { ...row, body } : row)),
+      result: "saved",
+      draftId: write.draftId,
+    };
+  }
+
+  it("saves a template onto the opportunity's existing draft", () => {
+    const visible = visiblePitchDraft({
+      draft: savedDraft,
+      fresh: false,
+      templateRequested: true,
+      suggestion,
+    });
+    expect(visible.draftId).toBeNull();
+    const saved = apply(
+      [{ id: savedDraft.id, opportunityId: OPP, body: savedDraft.body }],
+      visible.draftId,
+      visible.body,
+    );
+    expect(saved.result).toBe("saved");
+    expect(saved.draftId).toBe(savedDraft.id);
+    expect(saved.rows).toEqual([{ id: savedDraft.id, opportunityId: OPP, body: suggestion.body }]);
+  });
+
+  it("saves a fresh start onto the opportunity's existing draft", () => {
+    const visible = visiblePitchDraft({
+      draft: savedDraft,
+      fresh: true,
+      templateRequested: false,
+      suggestion,
+    });
+    expect(visible.draftId).toBeNull();
+    const saved = apply(
+      [{ id: savedDraft.id, opportunityId: OPP, body: savedDraft.body }],
+      visible.draftId,
+      "Edited after a fresh start",
+    );
+    expect(saved.result).toBe("saved");
+    expect(saved.draftId).toBe(savedDraft.id);
+    expect(saved.rows).toHaveLength(1);
+    expect(saved.rows[0]?.body).toBe("Edited after a fresh start");
+  });
+
+  it("saves twice without inserting a second draft", () => {
+    const first = apply([], null, "First save");
+    expect(first.result).toBe("saved");
+    const second = apply(first.rows, first.draftId, "Second save");
+    expect(second.result).toBe("saved");
+    expect(second.draftId).toBe(first.draftId);
+    expect(second.rows).toHaveLength(1);
+    expect(second.rows[0]?.body).toBe("Second save");
+    const again = apply(second.rows, null, "Third save with no posted id");
+    expect(again.result).toBe("saved");
+    expect(again.draftId).toBe(first.draftId);
+    expect(again.rows).toHaveLength(1);
+  });
+
+  it("lets a save and then an AI draft keep the same row", () => {
+    const saved = apply([], null, "Saved by hand");
+    const ai = currentDraftWrite({
+      draftId: saved.draftId,
+      draftOpportunityId: OPP,
+      boundOpportunityId: OPP,
+    });
+    expect(ai).toBe("update");
+    const after = apply(saved.rows, null, "AI replacement");
+    expect(after.result).toBe("saved");
+    expect(after.draftId).toBe(saved.draftId);
+    expect(after.rows).toHaveLength(1);
+    expect(after.rows[0]?.body).toBe("AI replacement");
+  });
+
+  it("lets an AI draft and then a save keep the same row", () => {
+    expect(
+      currentDraftWrite({
+        draftId: null,
+        draftOpportunityId: null,
+        boundOpportunityId: OPP,
+      }),
+    ).toBe("insert");
+    const ai = apply([], null, "AI first");
+    expect(
+      currentDraftWrite({
+        draftId: ai.draftId,
+        draftOpportunityId: OPP,
+        boundOpportunityId: OPP,
+      }),
+    ).toBe("update");
+    const saved = apply(ai.rows, null, "Saved after AI");
+    expect(saved.result).toBe("saved");
+    expect(saved.draftId).toBe(ai.draftId);
+    expect(saved.rows).toHaveLength(1);
+    expect(saved.rows[0]?.body).toBe("Saved after AI");
+  });
+
+  it("is the write save uses for a bound draft", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/lib/pitch/actions.ts"), "utf8");
+    const save = source.slice(source.indexOf("export async function savePitchDraftAction"));
+    expect(save).toContain("resolveOpportunityDraftWrite");
+    expect(save.indexOf("resolveOpportunityDraftWrite")).toBeLessThan(save.indexOf(".insert("));
+  });
+
   it("updates the draft already bound to the opportunity", () => {
     const bound = "22222222-2222-4222-8222-222222222222";
     const other = "33333333-3333-4333-8333-333333333333";

@@ -519,7 +519,7 @@ describe("assistant source", () => {
 
   it("updates the opportunity draft instead of inserting a second one", () => {
     const source = readFileSync(path.join(ROOT, "src/lib/ai/actions.ts"), "utf8");
-    expect(source).toContain("currentDraftWrite");
+    expect(source).toContain("resolveOpportunityDraftWrite");
     expect(source).toContain(".update(draftFields)");
     const pitchBranch = source.slice(source.indexOf('if (purpose === "follow_up")'));
     const updateAt = pitchBranch.indexOf(".update(draftFields)");
