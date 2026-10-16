@@ -1,4 +1,4 @@
--- 0103_catalog_contact_exists.sql
+-- 0104_catalog_contact_exists.sql
 -- Discover may show "Contact available" without an address.
 -- The function returns a boolean per published hotel id. It does not return
 -- email, phone, name, or the cache row.

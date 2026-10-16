@@ -125,7 +125,7 @@ describe("V12.2 layout rebuild", () => {
   });
 
   it("exposes contact existence as booleans and never an email", () => {
-    const sql = source("supabase/migrations/0103_catalog_contact_exists.sql");
+    const sql = source("supabase/migrations/0104_catalog_contact_exists.sql");
     expect(sql).toContain("returns table (hotel_id uuid, contact_exists boolean)");
     expect(sql).not.toMatch(/select[^;]*email/i);
     const id = "11111111-1111-4111-8111-111111111111";
