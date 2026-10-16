@@ -37,6 +37,11 @@ function formatIssues(error: z.ZodError): string {
 
 let _clientEnv: ClientEnv | undefined;
 
+/** Drops a cached parse so a test can change `process.env` and read it again. */
+export function resetClientEnvCache(): void {
+  _clientEnv = undefined;
+}
+
 /** Client-safe environment. Only `NEXT_PUBLIC_*` values. Safe to import anywhere. */
 export function getClientEnv(): ClientEnv {
   if (_clientEnv) return _clientEnv;
