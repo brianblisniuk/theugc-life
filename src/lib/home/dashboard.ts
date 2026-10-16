@@ -29,6 +29,9 @@ export const HOME_DASHBOARD_COPY = {
   oneAttention: "You have one thing to move forward.",
   manyAttention: (count: number) => `You have ${count} things to move forward.`,
   blockedAttention: "We could not review what needs attention. This is not an empty day.",
+  attentionUnavailable: "Next actions are unavailable. This is not an empty day.",
+  attentionReviewed:
+    "Pipeline, deliverables, and Gmail suggestions were reviewed for this account.",
   noTrip: "No upcoming trip is recorded.",
   tripError: "We could not review your trips. This does not mean you have none.",
   nightsError: "We could not count nights. This is not zero.",
@@ -40,6 +43,8 @@ export const HOME_DASHBOARD_COPY = {
   followUpsNote: "Due dates on your pipeline. Silence is not ghosting.",
   outreachError: "We could not review outreach campaigns. This does not mean you have none.",
   outreachEmpty: "No outreach campaign is recorded.",
+  outreachTruncated:
+    "There are more outreach campaigns than this page lists. Each fraction is the stored total for that campaign, not a sample.",
   outreachHotelsEmpty: "No hotels are on this campaign.",
   network:
     "Anonymous network figures are read on a hotel. This page does not publish a score, a rank, or a response rate.",
@@ -95,11 +100,38 @@ export interface OutreachCard {
   contactedCount: number;
 }
 
+export const OUTREACH_LIST_CAP = 8;
+
+const FAILED_ATTENTION_SOURCES = new Set([
+  "home",
+  "pipeline",
+  "follow-ups",
+  "deliverables",
+  "gmail",
+]);
+
+export function attentionSourcesUnavailable(notices: readonly { id: string }[]): boolean {
+  return notices.some((notice) => FAILED_ATTENTION_SOURCES.has(notice.id));
+}
+
+export function attentionEmptyCopy(unavailable: boolean): string {
+  return unavailable
+    ? HOME_DASHBOARD_COPY.attentionUnavailable
+    : HOME_DASHBOARD_COPY.attentionReviewed;
+}
+
+export function outreachFractionLabel(card: OutreachCard): string {
+  return `${card.contactedCount} of ${card.hotelCount} hotels are sent or further. Saved and pitch-ready hotels are not counted as contacted.`;
+}
+
 export type OutreachLoad =
-  { status: "ok"; cards: OutreachCard[] } | { status: "empty" } | { status: "error" };
+  | { status: "ok"; cards: OutreachCard[]; truncated: boolean }
+  | { status: "empty" }
+  | { status: "error" };
 
 export interface HomeDashboard {
   heading: string;
+  attentionUnavailable: boolean;
   tasks: HomeTask[];
   hiddenCount: number;
   notices: string[];
@@ -213,7 +245,60 @@ export function outreachCards(
     };
   });
   if (cards.length === 0) return { status: "empty" };
-  return { status: "ok", cards };
+  return { status: "ok", cards, truncated: false };
+}
+
+export interface OutreachCount {
+  initiativeId: string;
+  hotelCount: number;
+  contactedCount: number;
+}
+
+/**
+ * Fractions come from exact counts. `initiativeTotal` is the stored campaign
+ * count. A longer total truncates the list and must be shown as truncation.
+ */
+export function outreachFromCounts(
+  profileId: string,
+  initiatives: readonly OutreachInitiativeRow[],
+  totals: readonly OutreachCount[],
+  initiativeTotal: number,
+): OutreachLoad | "foreign" {
+  if (!Number.isInteger(initiativeTotal) || initiativeTotal < 0) return { status: "error" };
+  if (initiatives.length === 0 && initiativeTotal === 0 && totals.length === 0) {
+    return { status: "empty" };
+  }
+  if (initiativeTotal < initiatives.length) return { status: "error" };
+  for (const row of initiatives) {
+    if (row.creatorId !== profileId || !row.name.trim()) return "foreign";
+  }
+  const byId = new Map<string, OutreachCount>();
+  for (const total of totals) {
+    if (
+      !Number.isInteger(total.hotelCount) ||
+      !Number.isInteger(total.contactedCount) ||
+      total.hotelCount < 0 ||
+      total.contactedCount < 0 ||
+      total.contactedCount > total.hotelCount ||
+      byId.has(total.initiativeId)
+    ) {
+      return { status: "error" };
+    }
+    byId.set(total.initiativeId, total);
+  }
+  const cards: OutreachCard[] = [];
+  for (const initiative of initiatives) {
+    const total = byId.get(initiative.id);
+    if (!total) return { status: "error" };
+    cards.push({
+      id: initiative.id,
+      name: initiative.name.trim(),
+      hotelCount: total.hotelCount,
+      contactedCount: total.contactedCount,
+    });
+  }
+  if (cards.length === 0) return { status: "error" };
+  return { status: "ok", cards, truncated: initiativeTotal > initiatives.length };
 }
 
 function statFromCount(
@@ -253,7 +338,7 @@ export function buildHomeDashboard(input: {
     | { status: "hidden" }
     | { status: "error" };
 }): HomeDashboard {
-  const blocked = input.actions.notices.some((notice) => notice.id === "home");
+  const attentionUnavailable = attentionSourcesUnavailable(input.actions.notices);
   const operational = input.actions.actions.filter((action) => action.kind !== "credits");
   const tasks: HomeTask[] = operational.map((action, index) => ({
     id: action.id,
@@ -265,13 +350,14 @@ export function buildHomeDashboard(input: {
     source: taskSource(action),
   }));
 
-  const heading = blocked
-    ? HOME_DASHBOARD_COPY.blockedAttention
-    : operational.length === 0
-      ? HOME_DASHBOARD_COPY.emptyAttention
-      : operational.length === 1
-        ? HOME_DASHBOARD_COPY.oneAttention
-        : HOME_DASHBOARD_COPY.manyAttention(operational.length);
+  const heading =
+    attentionUnavailable && operational.length === 0
+      ? HOME_DASHBOARD_COPY.blockedAttention
+      : operational.length === 0
+        ? HOME_DASHBOARD_COPY.emptyAttention
+        : operational.length === 1
+          ? HOME_DASHBOARD_COPY.oneAttention
+          : HOME_DASHBOARD_COPY.manyAttention(operational.length);
 
   const followUps: HomeStat =
     input.actions.followUpsDue === null
@@ -354,6 +440,7 @@ export function buildHomeDashboard(input: {
 
   return {
     heading,
+    attentionUnavailable,
     tasks,
     hiddenCount: input.actions.hiddenCount,
     notices: input.actions.notices.map((notice) => notice.text),

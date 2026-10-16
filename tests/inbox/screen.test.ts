@@ -4,8 +4,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  CONTACTED_STATUSES,
+  attentionEmptyCopy,
   buildHomeDashboard,
   outreachCards,
+  outreachFractionLabel,
+  outreachFromCounts,
   parseNightCoverage,
   upcomingTrip,
 } from "@/lib/home/dashboard";
@@ -17,6 +21,7 @@ import {
   classifyMailbox,
   commercialSummary,
   dateDecisionMessage,
+  datePanelState,
   mapDateDecision,
   revokedEmptyInbox,
   threadAttention,
@@ -224,6 +229,77 @@ describe("inbox screen", () => {
     if (kept.kind !== "ready") return;
     expect(revokedEmptyInbox(kept)).toBeNull();
     expect(kept.threads[0]?.hotelName).toBe("North House");
+    expect(kept.threads[0]?.pitchHref).toContain("from=inbox");
+  });
+
+  it("keeps a pending stay-date decision when the mailbox is revoked and no thread is linked", () => {
+    const screen = buildInboxScreen({
+      profileId: PROFILE_A,
+      asOf: "2026-10-16T15:00:00.000Z",
+      filter: "all",
+      selectedId: null,
+      mailbox: { kind: "reauth" },
+      threads: [],
+      suggestions: [],
+      collaborations: [],
+      collaborationStatus: "ok",
+      dates: [
+        {
+          id: "12121212-1212-4212-8212-121212121212",
+          creatorId: PROFILE_A,
+          pipelineItemId: null,
+          tripHotelId: HOTEL_A,
+          hotelName: "North House",
+          checkIn: "2026-11-01",
+          checkOut: "2026-11-04",
+        },
+      ],
+      threadsCapped: false,
+      datesCapped: false,
+      suggestionsFailed: false,
+      datesFailed: false,
+      collaborationsFailed: false,
+      foreign: false,
+    });
+    expect(screen.kind).toBe("ready");
+    if (screen.kind !== "ready") return;
+    expect(revokedEmptyInbox(screen)?.body).toContain("not an empty inbox");
+    expect(screen.dates).toEqual([
+      expect.objectContaining({ hotelName: "North House", checkIn: "2026-11-01" }),
+    ]);
+    expect(datePanelState({ datesUnavailable: false, dateCount: screen.dates.length }).kind).toBe(
+      "list",
+    );
+  });
+
+  it("does not describe a failed stay-date read as an empty list", () => {
+    const screen = buildInboxScreen({
+      profileId: PROFILE_A,
+      asOf: "2026-10-16T15:00:00.000Z",
+      filter: "all",
+      selectedId: null,
+      mailbox: { kind: "connected", email: "ada@example.com" },
+      threads: [],
+      suggestions: [],
+      collaborations: [],
+      collaborationStatus: "ok",
+      dates: [],
+      threadsCapped: false,
+      datesCapped: false,
+      suggestionsFailed: false,
+      datesFailed: true,
+      collaborationsFailed: false,
+      foreign: false,
+    });
+    expect(screen.kind).toBe("ready");
+    if (screen.kind !== "ready") return;
+    expect(screen.datesUnavailable).toBe(true);
+    const panel = datePanelState({ datesUnavailable: true, dateCount: 0 });
+    expect(panel.kind).toBe("unavailable");
+    if (panel.kind === "list") return;
+    expect(panel.text).toContain("unavailable");
+    expect(panel.text).not.toContain("No date suggestion is waiting");
+    expect(datePanelState({ datesUnavailable: false, dateCount: 0 }).kind).toBe("empty");
   });
 });
 
@@ -337,8 +413,90 @@ describe("home dashboard", () => {
     );
     expect(result).toEqual({
       status: "ok",
+      truncated: false,
       cards: [{ id: ITEM_A, name: "Lisbon week", hotelCount: 2, contactedCount: 1 }],
     });
+    expect(CONTACTED_STATUSES).not.toContain("saved");
+    expect(CONTACTED_STATUSES).not.toContain("planned");
+  });
+
+  it("uses exact outreach totals and says when the campaign list is truncated", () => {
+    const shown = outreachFromCounts(
+      PROFILE_A,
+      [{ id: ITEM_A, creatorId: PROFILE_A, name: "Lisbon week" }],
+      [{ initiativeId: ITEM_A, hotelCount: 240, contactedCount: 17 }],
+      9,
+    );
+    expect(shown).toEqual({
+      status: "ok",
+      truncated: true,
+      cards: [{ id: ITEM_A, name: "Lisbon week", hotelCount: 240, contactedCount: 17 }],
+    });
+    if (shown === "foreign" || shown.status !== "ok") return;
+    expect(outreachFractionLabel(shown.cards[0]!)).toBe(
+      "17 of 240 hotels are sent or further. Saved and pitch-ready hotels are not counted as contacted.",
+    );
+    expect(
+      outreachFromCounts(
+        PROFILE_A,
+        [{ id: ITEM_A, creatorId: PROFILE_A, name: "Lisbon week" }],
+        [],
+        1,
+      ),
+    ).toEqual({ status: "error" });
+  });
+
+  it("says next actions are unavailable when a source failed", () => {
+    const blocked = buildHomeDashboard({
+      actions: blockedNextActionBoard(),
+      counts: {
+        status: "ok",
+        counts: {
+          outreach: 1,
+          replies: 0,
+          agreements: 0,
+          completedCollaborations: 0,
+          deliverablesDone: 0,
+        },
+      },
+      trips: { status: "ok", trips: [] },
+      coverage: { status: "none" },
+      outreach: { status: "empty" },
+      asOf: "2026-10-16T00:00:00.000Z",
+      gmail: { status: "paused" },
+    });
+    expect(blocked.attentionUnavailable).toBe(true);
+    expect(attentionEmptyCopy(true)).toContain("unavailable");
+    expect(attentionEmptyCopy(true)).not.toContain("were reviewed");
+    const partial = buildHomeDashboard({
+      actions: {
+        ...emptyBoard(),
+        notices: [
+          { id: "pipeline", text: "pipeline failed" },
+          { id: "deliverables", text: "deliverables failed" },
+          { id: "gmail", text: "gmail failed" },
+        ],
+      },
+      counts: { status: "not_found" },
+      trips: { status: "ok", trips: [] },
+      coverage: { status: "none" },
+      outreach: { status: "empty" },
+      asOf: "2026-10-16T00:00:00.000Z",
+      gmail: { status: "error" },
+    });
+    expect(partial.attentionUnavailable).toBe(true);
+    expect(partial.tasks).toEqual([]);
+    const reviewed = buildHomeDashboard({
+      actions: { ...emptyBoard(), followUpsDue: 0 },
+      counts: { status: "not_found" },
+      trips: { status: "ok", trips: [] },
+      coverage: { status: "none" },
+      outreach: { status: "empty" },
+      asOf: "2026-10-16T00:00:00.000Z",
+      gmail: { status: "paused" },
+    });
+    expect(reviewed.attentionUnavailable).toBe(false);
+    expect(attentionEmptyCopy(false)).toContain("were reviewed");
   });
 
   it("picks the trip that has not ended and says paused Gmail is not an empty suggestion list", () => {
@@ -402,5 +560,20 @@ describe("inbox and home sources", () => {
     expect(source).not.toContain("OP-1042");
     expect(source).not.toContain("Sample only");
     expect(source).not.toMatch(/messages\.send|users\.messages/);
+  });
+
+  it("counts outreach with exact totals and keeps date decisions on a revoked inbox", () => {
+    const signals = readFileSync(path.join(root, "src/lib/home/signals.ts"), "utf8");
+    const page = readFileSync(path.join(root, "src/app/(app)/app/inbox/page.tsx"), "utf8");
+    const screen = readFileSync(path.join(root, "src/components/inbox/inbox-screen.tsx"), "utf8");
+    expect(signals).toContain('count: "exact"');
+    expect(signals).toContain("head: true");
+    expect(signals).not.toContain(".limit(200)");
+    expect(signals).not.toContain("outreachCards");
+    expect(page).not.toContain("revokedEmptyInbox");
+    expect(screen).toContain("revokedEmptyInbox");
+    expect(screen).toContain('datesPanel.kind === "unavailable"');
+    expect(screen).toContain("<DateDecision");
+    expect(screen.indexOf("datesPanel")).toBeGreaterThan(screen.indexOf("revoked"));
   });
 });

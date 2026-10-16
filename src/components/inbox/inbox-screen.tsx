@@ -3,7 +3,13 @@ import Link from "next/link";
 import { CollaborationSuggestions } from "@/components/pipeline/collaboration-suggestions";
 import { SourceBadge } from "@/components/ui/badge";
 import { DisconnectedEmailState, ErrorState, InsufficientDataState } from "@/components/ui/states";
-import { INBOX_COPY, inboxHref, type InboxReady } from "@/lib/inbox/model";
+import {
+  INBOX_COPY,
+  datePanelState,
+  inboxHref,
+  revokedEmptyInbox,
+  type InboxReady,
+} from "@/lib/inbox/model";
 
 import { DateDecision } from "./date-decision";
 import { ThreadDecisions } from "./thread-decisions";
@@ -46,6 +52,11 @@ function MailboxBanner({ mailbox }: { mailbox: InboxReady["mailbox"] }) {
 
 export function InboxScreen({ model }: { model: InboxReady }) {
   const selected = model.selected;
+  const revoked = revokedEmptyInbox(model);
+  const datesPanel = datePanelState({
+    datesUnavailable: model.datesUnavailable,
+    dateCount: model.dates.length,
+  });
   return (
     <div className="v12-workspace" data-testid="inbox-workspace">
       <header className="v12-pagehead">
@@ -61,7 +72,16 @@ export function InboxScreen({ model }: { model: InboxReady }) {
         </div>
       </header>
 
-      <MailboxBanner mailbox={model.mailbox} />
+      {revoked ? (
+        <div className="space-y-3">
+          <ErrorState title={revoked.title} description={revoked.body} />
+          <Link href="/app/inbox" className="v12-btn">
+            Try again
+          </Link>
+        </div>
+      ) : (
+        <MailboxBanner mailbox={model.mailbox} />
+      )}
 
       <div className="v12-stats" data-testid="inbox-counts">
         <div className="v12-stat">
@@ -220,8 +240,10 @@ export function InboxScreen({ model }: { model: InboxReady }) {
           ) : null}
           <section className="v12-panel v12-panel-pad">
             <h2>{INBOX_COPY.datesTitle}</h2>
-            {model.dates.length === 0 ? (
-              <p>{INBOX_COPY.datesEmpty}</p>
+            {datesPanel.kind === "unavailable" ? (
+              <InsufficientDataState description={datesPanel.text} />
+            ) : datesPanel.kind === "empty" ? (
+              <p>{datesPanel.text}</p>
             ) : (
               <>
                 <p>Accept copies the dates onto that one record. Reject leaves them as they are.</p>

@@ -2,7 +2,12 @@ import Link from "next/link";
 
 import { SourceBadge } from "@/components/ui/badge";
 import { DisconnectedEmailState, InsufficientDataState } from "@/components/ui/states";
-import { HOME_DASHBOARD_COPY, type HomeDashboard } from "@/lib/home/dashboard";
+import {
+  HOME_DASHBOARD_COPY,
+  attentionEmptyCopy,
+  outreachFractionLabel,
+  type HomeDashboard,
+} from "@/lib/home/dashboard";
 import { HOME_NEXT_COPY } from "@/lib/home/next-actions";
 import type { InboxMailbox } from "@/lib/inbox/model";
 
@@ -87,7 +92,11 @@ export function HomeScreen({
             </Link>
           </div>
           {dashboard.tasks.length === 0 ? (
-            <p>Pipeline, deliverables, and Gmail suggestions were reviewed for this account.</p>
+            dashboard.attentionUnavailable ? (
+              <InsufficientDataState description={attentionEmptyCopy(true)} />
+            ) : (
+              <p>{attentionEmptyCopy(false)}</p>
+            )
           ) : (
             <ol className="v12-tasks">
               {dashboard.tasks.map((task) => {
@@ -194,21 +203,21 @@ export function HomeScreen({
         ) : dashboard.outreach.status === "empty" ? (
           <p>{HOME_DASHBOARD_COPY.outreachEmpty}</p>
         ) : (
-          <ul className="v12-outreach">
-            {dashboard.outreach.cards.map((card) => (
-              <li key={card.id}>
-                <strong>{card.name}</strong>
-                {card.hotelCount === 0 ? (
-                  <p>{HOME_DASHBOARD_COPY.outreachHotelsEmpty}</p>
-                ) : (
-                  <p>
-                    {card.contactedCount} of {card.hotelCount} hotels are sent or further. Saved and
-                    pitch-ready hotels are not counted as contacted.
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
+          <>
+            {dashboard.outreach.truncated ? <p>{HOME_DASHBOARD_COPY.outreachTruncated}</p> : null}
+            <ul className="v12-outreach">
+              {dashboard.outreach.cards.map((card) => (
+                <li key={card.id}>
+                  <strong>{card.name}</strong>
+                  {card.hotelCount === 0 ? (
+                    <p>{HOME_DASHBOARD_COPY.outreachHotelsEmpty}</p>
+                  ) : (
+                    <p>{outreachFractionLabel(card)}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 

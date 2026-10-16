@@ -9,7 +9,6 @@ import Link from "next/link";
 import { InboxScreen } from "@/components/inbox/inbox-screen";
 import { ErrorState } from "@/components/ui/states";
 import { requireUser } from "@/lib/auth/guards";
-import { revokedEmptyInbox } from "@/lib/inbox/model";
 import { loadInboxWorkspace } from "@/lib/inbox/queries";
 
 export const metadata: Metadata = { title: "Inbox" };
@@ -29,17 +28,6 @@ export default async function InboxPage({
     return (
       <div className="space-y-3">
         <ErrorState title={model.title} description={model.body} />
-        <Link href="/app/inbox" className="v12-btn">
-          Try again
-        </Link>
-      </div>
-    );
-  }
-  const revoked = revokedEmptyInbox(model);
-  if (revoked) {
-    return (
-      <div className="space-y-3">
-        <ErrorState title={revoked.title} description={revoked.body} />
         <Link href="/app/inbox" className="v12-btn">
           Try again
         </Link>

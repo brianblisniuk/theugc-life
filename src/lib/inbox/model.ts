@@ -38,7 +38,7 @@ export const INBOX_COPY = {
     "No conversation is linked yet. A sync does not start from this page, and an unlinked thread is not listed.",
   emptyDisconnected:
     "Gmail is not connected. Linked conversations that were already stored can still appear. Nothing here sends mail.",
-  datesError: "We could not review date suggestions. This does not mean there are none.",
+  datesError: "Date suggestions are unavailable. This does not mean there are none.",
   suggestionsError: "We could not review inbox suggestions. This does not mean there are none.",
   gmailError:
     "We could not review Gmail collaboration suggestions. This does not mean there are none.",
@@ -157,6 +157,8 @@ export interface InboxReady {
   threads: InboxThreadView[];
   selected: InboxThreadView | null;
   dates: DateSuggestionView[];
+  /** A failed stay-date read. An empty list is not proof that none are waiting. */
+  datesUnavailable: boolean;
   notices: string[];
   collaborationStatus: "ok" | "paused" | "hidden" | "error";
   sendGate: string;
@@ -445,7 +447,7 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
       attention,
       attentionLabel: attentionLabel(attention, row.status),
       source: "gmail",
-      pitchHref: pitchHref(row.hotelId),
+      pitchHref: pitchHref(row.hotelId, null, { kind: "inbox" }),
       pipelineHref: hotelHref(row.hotelId, { kind: "pipeline" }),
       stale: row.stale,
       suggestions,
@@ -519,15 +521,25 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
     threads,
     selected: threads.find((row) => row.active) ?? null,
     dates,
+    datesUnavailable: input.datesFailed,
     notices,
     collaborationStatus: input.collaborationStatus,
     sendGate: INBOX_SEND_GATE,
   };
 }
 
+export function datePanelState(input: {
+  datesUnavailable: boolean;
+  dateCount: number;
+}): { kind: "unavailable"; text: string } | { kind: "empty"; text: string } | { kind: "list" } {
+  if (input.datesUnavailable) return { kind: "unavailable", text: INBOX_COPY.datesError };
+  if (input.dateCount === 0) return { kind: "empty", text: INBOX_COPY.datesEmpty };
+  return { kind: "list" };
+}
+
 /**
  * A revoked mailbox with no linked conversation is an authorization failure.
- * It is not an empty inbox. Stored conversations still render with the reconnect banner.
+ * It is not an empty inbox. The rest of the page, including date decisions, still renders.
  */
 export function revokedEmptyInbox(model: InboxReady): { title: string; body: string } | null {
   if (model.mailbox.kind !== "reauth" || model.filter !== "all" || model.threads.length > 0) {

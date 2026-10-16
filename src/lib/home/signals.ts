@@ -15,10 +15,12 @@ import { resolveOwnProfile } from "@/lib/onboarding/first-run";
 import { createClient } from "@/lib/supabase/server";
 
 import {
-  outreachCards,
+  CONTACTED_STATUSES,
+  OUTREACH_LIST_CAP,
+  outreachFromCounts,
   parseNightCoverage,
   type NightCoverageLoad,
-  type OutreachHotelRow,
+  type OutreachCount,
   type OutreachInitiativeRow,
   type OutreachLoad,
 } from "./dashboard";
@@ -46,7 +48,8 @@ type HomeSignalChain = {
 const PROFILE_COLUMNS = "id, user_id, display_name";
 const MAIL_COLUMNS = "user_id, connection_state, email_address";
 const INITIATIVE_COLUMNS = "id, creator_id, name";
-const HOTEL_COLUMNS = "creator_id, initiative_id, hotel_id, pipeline_item:pipeline_items(status)";
+const HOTEL_COUNT_COLUMNS = "id";
+const HOTEL_CONTACTED_COLUMNS = "id, pipeline_item:pipeline_items!inner(status)";
 
 export type HomeGmailSignal =
   | { status: "ok"; count: number; truncated: boolean }
@@ -71,10 +74,33 @@ function asRecords(data: unknown): Record<string, unknown>[] | null {
   return rows;
 }
 
-function one(value: unknown): Record<string, unknown> | null {
-  const row = Array.isArray(value) ? value[0] : value;
-  if (!row || typeof row !== "object") return null;
-  return row as Record<string, unknown>;
+type CountChain = {
+  eq: (column: string, value: string) => CountChain;
+  in: (column: string, values: readonly string[]) => CountChain;
+  then: PromiseLike<{ count: number | null; error: { message?: string } | null }>["then"];
+};
+
+async function exactCount(
+  supabase: HomeSignalClient,
+  table: string,
+  columns: string,
+  apply: (query: CountChain) => CountChain,
+): Promise<number | "error"> {
+  const client = supabase as unknown as {
+    from: (name: string) => {
+      select: (cols: string, options: { count: "exact"; head: true }) => CountChain;
+    };
+  };
+  const result = await apply(client.from(table).select(columns, { count: "exact", head: true }));
+  if (
+    result.error ||
+    typeof result.count !== "number" ||
+    !Number.isInteger(result.count) ||
+    result.count < 0
+  ) {
+    return "error";
+  }
+  return result.count;
 }
 
 async function clientOr(injected?: HomeSignalClient): Promise<HomeSignalClient> {
@@ -151,19 +177,17 @@ export async function loadHomeSignals(
           })
         : Promise.resolve({ status: "none" as const });
 
-    const [coverage, initiativeResult, hotelResult, gmailResult] = await Promise.all([
+    const [coverage, initiativeTotal, initiativeResult, gmailResult] = await Promise.all([
       coveragePromise,
+      exactCount(supabase, "outreach_initiatives", "id", (query) =>
+        query.eq("creator_id", profile.profileId),
+      ),
       supabase
         .from("outreach_initiatives")
         .select(INITIATIVE_COLUMNS)
         .eq("creator_id", profile.profileId)
         .order("created_at", { ascending: false })
-        .limit(8),
-      supabase
-        .from("outreach_initiative_hotels")
-        .select(HOTEL_COLUMNS)
-        .eq("creator_id", profile.profileId)
-        .limit(200),
+        .limit(OUTREACH_LIST_CAP),
       supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC),
     ]);
 
@@ -181,12 +205,11 @@ export async function loadHomeSignals(
       }
     }
 
-    if (initiativeResult.error || hotelResult.error) {
+    if (initiativeTotal === "error" || initiativeResult.error) {
       return { mailbox, coverage, outreach: { status: "error" }, gmail };
     }
     const initiativeRows = asRecords(initiativeResult.data);
-    const hotelRows = asRecords(hotelResult.data);
-    if (!initiativeRows || !hotelRows) {
+    if (!initiativeRows || initiativeRows.length > initiativeTotal) {
       return { mailbox, coverage, outreach: { status: "error" }, gmail };
     }
     const initiatives: OutreachInitiativeRow[] = [];
@@ -200,25 +223,25 @@ export async function loadHomeSignals(
       }
       initiatives.push({ id: row.id, creatorId: row.creator_id, name: row.name });
     }
-    const hotels: OutreachHotelRow[] = [];
-    for (const row of hotelRows) {
-      if (
-        typeof row.creator_id !== "string" ||
-        typeof row.initiative_id !== "string" ||
-        typeof row.hotel_id !== "string"
-      ) {
+    const totals: OutreachCount[] = [];
+    for (const initiative of initiatives) {
+      const [hotelCount, contactedCount] = await Promise.all([
+        exactCount(supabase, "outreach_initiative_hotels", HOTEL_COUNT_COLUMNS, (query) =>
+          query.eq("creator_id", profile.profileId).eq("initiative_id", initiative.id),
+        ),
+        exactCount(supabase, "outreach_initiative_hotels", HOTEL_CONTACTED_COLUMNS, (query) =>
+          query
+            .eq("creator_id", profile.profileId)
+            .eq("initiative_id", initiative.id)
+            .in("pipeline_item.status", CONTACTED_STATUSES),
+        ),
+      ]);
+      if (hotelCount === "error" || contactedCount === "error") {
         return { mailbox, coverage, outreach: { status: "error" }, gmail };
       }
-      const pipeline = one(row.pipeline_item);
-      const status = pipeline && typeof pipeline.status === "string" ? pipeline.status : null;
-      hotels.push({
-        creatorId: row.creator_id,
-        initiativeId: row.initiative_id,
-        hotelId: row.hotel_id,
-        pipelineStatus: status,
-      });
+      totals.push({ initiativeId: initiative.id, hotelCount, contactedCount });
     }
-    const outreach = outreachCards(profile.profileId, initiatives, hotels);
+    const outreach = outreachFromCounts(profile.profileId, initiatives, totals, initiativeTotal);
     if (outreach === "foreign") {
       return {
         mailbox,
@@ -236,5 +259,6 @@ export async function loadHomeSignals(
 export const HOME_SIGNAL_COLUMNS = {
   mail: MAIL_COLUMNS,
   initiatives: INITIATIVE_COLUMNS,
-  hotels: HOTEL_COLUMNS,
+  hotels: HOTEL_COUNT_COLUMNS,
+  contacted: HOTEL_CONTACTED_COLUMNS,
 } as const;
