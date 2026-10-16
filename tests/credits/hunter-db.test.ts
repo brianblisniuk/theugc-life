@@ -210,4 +210,49 @@ d("Hunter lookup cache and monthly budget", () => {
     expect(released.error).toBeNull();
     expect(released.rows[0]).toEqual({ reserved_used: 1, released_used: 0 });
   });
+
+  it("trims and dates with pg_catalog even when the session shadows btrim and to_char", async () => {
+    await setupDatabase();
+    const trimmed = await asService(
+      `do $do$
+       begin
+         execute $fn$
+           create function pg_temp.btrim(text) returns text
+           language plpgsql as $body$
+           begin
+             raise exception 'shadow btrim';
+           end;
+           $body$
+         $fn$;
+         execute $fn$
+           create function pg_temp.to_char(timestamp, text) returns text
+           language plpgsql as $body$
+           begin
+             raise exception 'shadow to_char';
+           end;
+           $body$
+         $fn$;
+         perform public.claim_contact_provider_lookup('domain:trim.test');
+         perform public.complete_contact_provider_lookup(
+           'domain:trim.test',
+           'found',
+           '  ada@trim.test  ',
+           '{"provider":"hunter","status":"found"}'::jsonb
+         );
+         if (
+           select email
+             from public.contact_provider_lookups
+            where cache_key = 'domain:trim.test'
+         ) is distinct from 'ada@trim.test' then
+           raise exception 'email was not trimmed by pg_catalog.btrim';
+         end if;
+         if public.apply_contact_provider_budget('verification', 'reserve')->>'outcome'
+            is distinct from 'reserved' then
+           raise exception 'budget month was not formatted by pg_catalog.to_char';
+         end if;
+       end
+       $do$`,
+    );
+    expect(trimmed.error).toBeNull();
+  });
 });

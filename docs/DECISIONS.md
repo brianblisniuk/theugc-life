@@ -5700,3 +5700,56 @@ select, insert, update, and delete. The four functions are
 `SECURITY DEFINER` with an empty search path and execute for
 `service_role` only. Automated tests mock Hunter. CI does not call
 `api.hunter.io`. The fake provider stays for local and CI.
+
+### Amendment (16 Oct 2026, D02 audit)
+
+This amendment is appended. The paragraphs above stay the record of what
+was accepted for the first Hunter block.
+
+Verifier HTTP 451 (`claimed_email`) finishes that lookup as `not_found`
+with a null email and a raw note that does not contain the address. Hunter
+is not called again with that address. The unlock does not charge.
+
+Verifier `invalid` stays a stored miss and is not charged. Verifier
+`unknown` means verification failed: the lookup stays `unverified`, the
+result is an error, `contact_cache` is not written, and the unlock is not
+charged. A later unlock may try the verifier again. It does not run Domain
+Search again.
+
+Verifier `webmail` and `disposable` are stored as found, and then charged,
+only when the address host equals the hotel website host (one leading
+`www.` removed). Otherwise the result is an error, `contact_cache` is not
+written, and Hunter is not called again with that address.
+
+Domain Search spends verification credits as well as a search credit. Each
+email in the response that has a verification object costs one verification
+credit. Before the call, this block reserves 10 verification credits, the
+same number as `limit`. The call is not sent when fewer than 10 remain.
+If the body includes `requests.verifications.available` and that number is
+below 10, the verification bucket is exhausted for the rest of the UTC
+month. This block does not call `/v2/account`.
+
+A 403 whose error id is quota-like is the same quota error on Domain
+Search and on the Email Verifier. A 403 without that id stays the short
+rate limit: the reservation is released and the month stays open.
+
+A timeout, a malformed body, or a thrown budget call releases a reservation
+Hunter did not count and abandons a pending claim. The creator is not
+charged and `contact_cache` is not written.
+
+`contact_provider_lookups` is not creator personal data. The hotel unlock
+writes a domain key only: the website host, with no user id, no creator
+name, and no creator email. Account erasure does not delete the row, for
+the same reason it does not delete `contact_cache`. The row is shared by
+hotel domain and cannot be joined back to a deleted creator. Email Finder
+can store a person key, and the hotel unlock action does not call it.
+
+The unlock screen is still one status line. Confidence, department, and
+verification are stored on the provider note and are not shown. The D02
+gate that provenance and freshness are visible on screen is not met.
+
+Migration `0096` redefines `complete_contact_provider_lookup` and
+`apply_contact_provider_budget` so `btrim` and `to_char` are
+`pg_catalog` functions. `COALESCE` and `NULLIF` are SQL expressions, not
+`pg_catalog` functions, so the email trim calls `pg_catalog.btrim` and
+then treats a null or empty result as no address. `0095` is not edited.
