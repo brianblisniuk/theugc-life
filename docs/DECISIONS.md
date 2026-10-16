@@ -5634,9 +5634,37 @@ characters, still fails closed and does not run the job. The site URL is
 not required. The secret is not logged and is not taken from the request.
 The public routes keep their bearer check. Follow-up housekeeping and
 send dispatch stay inert when their own secrets are absent. No new
-provider is added. The functions are background functions so the work is
-not cut off at the synchronous limit. Locking and idempotency stay in
-the same database functions.
+provider is added. Locking and idempotency stay in the same database
+functions.
+
+### Amendment (16 Oct 2026) — a scheduled function is not a background function
+
+Netlify answers a function that is both scheduled and `background = true`
+with a bare 502 in under a second and writes no function log. The five
+jobs stay synchronous scheduled functions. `background` is not set.
+`node_bundler` stays `none` so Netlify does not rebundle the prebuilt
+file and reintroduce the `server-only` throw.
+
+On Node 20, which is the pinned Netlify runtime, `@supabase/supabase-js`
+throws while constructing its Realtime client because there is no global
+`WebSocket`. The service-role client passes an inert transport when that
+constructor is missing. The jobs still only call `.rpc()`. A missing or
+short secret still does not run the job.
+
+`runScheduledJob` catches a throw from `run()`. It logs
+`[job] scheduled run failed` plus the error name and code, and returns
+500 `{ "result": "error", "code" }`. The log and the body do not include
+the message, a token, an email address, or the secret.
+
+### Amendment (16 Oct 2026) — send dispatch claims one row inside the 30s limit
+
+The scheduled function is killed at 30 seconds. `dispatchDueGmailSends`
+claims one queued row (`gmail_send_claim_due` with `p_limit` 1), delivers
+it, then claims the next, and stops claiming at 25 seconds. A kill cannot
+leave a batch of unsent reservations. A reserved row is not returned to
+`queued` and is not claimed again. One send already in progress can still
+be interrupted; that row stays `reserved` and becomes `unknown` after 15
+minutes (D168). The public route uses the same dispatcher.
 
 ## D179 — A null entitlement reference is one logical grant
 

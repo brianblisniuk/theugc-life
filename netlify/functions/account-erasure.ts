@@ -3,7 +3,7 @@ import { runScheduledJob } from "../../src/lib/jobs/scheduled-post";
 import { createAdminClient } from "../../src/lib/supabase/admin";
 
 /**
- * Netlify schedule. The cron and the background flag are in netlify.toml.
+ * Netlify schedule. The cron is in netlify.toml. This is not a background function.
  * Erasure runs in this process. A missing or short ACCOUNT_ERASURE_SECRET
  * does not erase. This file does not import Gmail or Claude.
  */
