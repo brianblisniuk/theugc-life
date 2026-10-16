@@ -395,7 +395,7 @@ export default async function HotelDetailPage({
               <div>
                 <p className="s1-eyebrow">CREATOR INTELLIGENCE · BEFORE PHOTOGRAPHY</p>
                 <h2>Signals that help you decide</h2>
-                <p>Aggregates stay unpublished until the sample is large enough.</p>
+                <p>Aggregates must be backed by eligible sample sizes in the real product.</p>
               </div>
               <Methodology />
             </div>

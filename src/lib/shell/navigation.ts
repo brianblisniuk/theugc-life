@@ -560,6 +560,9 @@ export function shellCrumbs(pathname: string, origin: HotelOrigin | null): Crumb
   if (isUnder(pathname, "/app/outreach") && pathname !== "/app/outreach") {
     return [root, { label: "Outreach", href: "/app/outreach" }, { label: "Campaign" }];
   }
+  if (pathname === "/app/profile/edit") {
+    return [root, { label: "My Profile", href: "/app/profile" }, { label: "Edit profile" }];
+  }
   if (pathname === "/app/profile/portfolio") {
     return [root, { label: "My Profile", href: "/app/profile" }, { label: "Portfolio" }];
   }

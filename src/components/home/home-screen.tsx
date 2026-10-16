@@ -13,10 +13,8 @@ import {
 import { HOME_NEXT_COPY } from "@/lib/home/next-actions";
 import type { InboxMailbox } from "@/lib/inbox/model";
 
-function CampaignProgress({ card }: { card: OutreachCard }) {
+function CampaignProgress({ card, openTasks }: { card: OutreachCard; openTasks: number | null }) {
   const progress = outreachProgress(card);
-  const remaining =
-    card.hotelCount > card.contactedCount ? card.hotelCount - card.contactedCount : 0;
   return (
     <>
       {progress.kind === "empty" ? (
@@ -44,8 +42,10 @@ function CampaignProgress({ card }: { card: OutreachCard }) {
             </div>
             <div className="v12-stat">
               <span className="v12-stat-label">Open tasks</span>
-              <div className="v12-stat-num">{remaining}</div>
-              <div className="v12-stat-note">Next steps</div>
+              <div className="v12-stat-num">{openTasks === null ? "—" : openTasks}</div>
+              <div className="v12-stat-note">
+                {openTasks === null ? "Could not be read" : "Next steps"}
+              </div>
             </div>
           </div>
         </>
@@ -256,7 +256,14 @@ export function HomeScreen({
                 <span className="v12-badge v12-badge-green">In progress</span>
               </div>
               {dashboard.outreach.cards[0] ? (
-                <CampaignProgress card={dashboard.outreach.cards[0]} />
+                <CampaignProgress
+                  card={dashboard.outreach.cards[0]}
+                  openTasks={
+                    dashboard.attentionUnavailable
+                      ? null
+                      : dashboard.tasks.length + dashboard.hiddenCount
+                  }
+                />
               ) : null}
               {dashboard.outreach.truncated ? <p>{HOME_DASHBOARD_COPY.outreachTruncated}</p> : null}
               {dashboard.outreach.cards[0] ? (

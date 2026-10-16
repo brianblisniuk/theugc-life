@@ -792,9 +792,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Profile",
     summary:
       "A Free creator can manage their own profile. Private profile rows and non-public portfolio assets are owner-only.",
-    routes: ["/app/profile", "/app/profile/portfolio", "/onboarding"],
+    routes: ["/app/profile", "/app/profile/edit", "/app/profile/portfolio", "/onboarding"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
+      "src/app/(app)/app/profile/edit/page.tsx",
       "src/app/(app)/app/profile/portfolio/page.tsx",
       "src/lib/auth/actions.ts",
       "src/lib/profile/actions.ts",
@@ -811,9 +812,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Profile",
     summary:
       "The full profile editor is Free. Nothing on it is withheld for a Destination Pass or Pro. D098.",
-    routes: ["/app/profile", "/app/profile/portfolio"],
+    routes: ["/app/profile", "/app/profile/edit", "/app/profile/portfolio"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
+      "src/app/(app)/app/profile/edit/page.tsx",
       "src/app/(app)/app/profile/portfolio/page.tsx",
     ],
     serverActions: [],
@@ -827,8 +829,12 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "profile.personal_analytics",
     module: "Profile",
     summary: "Personal counts are the caller's recorded outcomes and are Free. D097 and D098.",
-    routes: ["/app/profile"],
-    sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/queries.ts"],
+    routes: ["/app/profile", "/app/profile/edit"],
+    sourceFiles: [
+      "src/app/(app)/app/profile/page.tsx",
+      "src/app/(app)/app/profile/edit/page.tsx",
+      "src/lib/profile/queries.ts",
+    ],
     serverActions: [],
     rpcs: ["creator_personal_counts", "read_own_personal_aggregate", "read_own_fit_decision"],
     rule: { kind: "owner_private" },
@@ -841,9 +847,10 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Profile",
     summary:
       "Past collaborations stay a private Free list. They are not on the social profile. D097. The hotel share link is unchanged.",
-    routes: ["/app/profile", "/app/hotels/[id]"],
+    routes: ["/app/profile", "/app/profile/edit", "/app/hotels/[id]"],
     sourceFiles: [
       "src/app/(app)/app/profile/page.tsx",
+      "src/app/(app)/app/profile/edit/page.tsx",
       "src/app/(app)/app/hotels/[id]/page.tsx",
       "src/lib/profile/queries.ts",
     ],
@@ -859,9 +866,9 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Profile",
     summary:
       "A per-field opt-in for the hotel share link is Free and owner-only. D098. D090 is unchanged.",
-    routes: ["/app/profile"],
+    routes: ["/app/profile", "/app/profile/edit"],
     sourceFiles: [
-      "src/app/(app)/app/profile/page.tsx",
+      "src/app/(app)/app/profile/edit/page.tsx",
       "supabase/migrations/0052_creator_profile_personal_analytics.sql",
     ],
     serverActions: [],
@@ -876,8 +883,8 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Profile",
     summary:
       "Creating, rotating, and revoking the hotel share link is Free. D098. D089 and D090 are unchanged.",
-    routes: ["/app/profile"],
-    sourceFiles: ["src/app/(app)/app/profile/page.tsx", "src/lib/profile/share-actions.ts"],
+    routes: ["/app/profile", "/app/profile/edit"],
+    sourceFiles: ["src/app/(app)/app/profile/edit/page.tsx", "src/lib/profile/share-actions.ts"],
     serverActions: [
       "saveSelfReportedAudience",
       "saveShareOptIns",

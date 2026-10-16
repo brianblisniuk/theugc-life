@@ -11,7 +11,6 @@ import type { Metadata } from "next";
 import { DeliverableReminders } from "@/components/collaboration/deliverable-reminders";
 import { EmptyState } from "@/components/empty-state";
 import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
-import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filter";
 import {
   PipelineAttentionList,
   PipelineCommand,
@@ -19,7 +18,6 @@ import {
   PipelineViewSwitch,
   attentionFromRows,
 } from "@/components/pipeline/pipeline-workspace";
-import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
 import { requireUser } from "@/lib/auth/guards";
 import { loadDeliverableDeadlineBoard } from "@/lib/collaboration/deadline-queries";
 import {
@@ -159,19 +157,6 @@ export default async function PipelinePage({
       <DeliverableReminders board={deadlines} />
       <PipelineCommand counts={counts} />
       <PipelineAttentionList board={attention} />
-
-      <div className="v12-context">
-        <div>
-          <PipelineSurfaceNav surface={surface} />
-          <PipelineStatusFilter
-            status={status}
-            surface={surface}
-            rank={rank}
-            view={view}
-            showStatus={surface !== "collaborations"}
-          />
-        </div>
-      </div>
 
       {rank ? (
         <p className="max-w-prose text-sm text-muted">

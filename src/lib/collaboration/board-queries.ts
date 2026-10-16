@@ -12,6 +12,7 @@ import {
   BOARD_READ_LIMIT,
   assembleCollaborationBoard,
   mapOutreachActivity,
+  type ActivityTimeline,
   type CollaborationBoard,
 } from "./board";
 
@@ -116,33 +117,7 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
       pipelineItems: Array.isArray(pipeline.data) ? pipeline.data : [],
       childFailed: childFailed || pipeline.error !== null || !Array.isArray(pipeline.data),
     });
-    if (board.kind !== "items") return board;
-    const pipelineItemIds = [
-      ...new Set(
-        board.cards
-          .map((card) => card.pipelineItemId)
-          .filter((id): id is string => typeof id === "string"),
-      ),
-    ];
-    if (pipelineItemIds.length === 0) {
-      return { ...board, timeline: { kind: "ok", events: [], capped: false } };
-    }
-    const events = await supabase
-      .from("outreach_events")
-      .select("creator_id, pipeline_item_id, event_type, event_at")
-      .eq("creator_id", profile.profileId)
-      .in("pipeline_item_id", pipelineItemIds)
-      .order("event_at", { ascending: false })
-      .limit(BOARD_READ_LIMIT);
-    if (events.error !== null || !Array.isArray(events.data)) {
-      return { ...board, timeline: { kind: "error" } };
-    }
-    const timeline = mapOutreachActivity(events.data, profile.profileId);
-    if (timeline.kind === "error") return { ...board, timeline };
-    return {
-      ...board,
-      timeline: { ...timeline, capped: events.data.length >= BOARD_READ_LIMIT },
-    };
+    return board;
   } catch {
     return assembleCollaborationBoard({
       viewerId: null,
@@ -154,5 +129,41 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
       pipelineItems: [],
       childFailed: true,
     });
+  }
+}
+
+/**
+ * Events for one opportunity, newest first. The limit is this opportunity's
+ * window. A full window is capped, never described as no stored events.
+ */
+export async function loadOpportunityTimeline(
+  authUserId: string,
+  pipelineItemId: string | null,
+): Promise<ActivityTimeline> {
+  if (!pipelineItemId || !isUuid(pipelineItemId) || !isUuid(authUserId)) {
+    return { kind: "ok", events: [], capped: false };
+  }
+  try {
+    const supabase = await createClient();
+    const profileResult = await supabase
+      .from("creator_profiles")
+      .select("id, user_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+    const profile = resolveOwnProfile(profileResult.data, profileResult.error !== null, authUserId);
+    if (profile.status !== "ok") return { kind: "error" };
+    const events = await supabase
+      .from("outreach_events")
+      .select("creator_id, pipeline_item_id, event_type, event_at")
+      .eq("creator_id", profile.profileId)
+      .eq("pipeline_item_id", pipelineItemId)
+      .order("event_at", { ascending: false })
+      .limit(BOARD_READ_LIMIT);
+    if (events.error !== null || !Array.isArray(events.data)) return { kind: "error" };
+    const timeline = mapOutreachActivity(events.data, profile.profileId);
+    if (timeline.kind === "error") return timeline;
+    return { ...timeline, capped: events.data.length >= BOARD_READ_LIMIT };
+  } catch {
+    return { kind: "error" };
   }
 }

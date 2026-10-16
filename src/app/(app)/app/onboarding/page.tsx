@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/guards";
 import { ONBOARDING_GOALS } from "@/lib/onboarding/goals";
 import { homeView } from "@/lib/onboarding/first-run";
 import { FIRST_PITCH_STEPS, firstPitchMarks } from "@/lib/onboarding/path";
-import { loadHomeProgress } from "@/lib/onboarding/queries";
+import { loadContactReviewed, loadHomeProgress } from "@/lib/onboarding/queries";
 import { listDestinations } from "@/lib/trips/queries";
 
 export const metadata = { title: "Getting Started" };
@@ -18,20 +18,22 @@ export const metadata = { title: "Getting Started" };
  */
 export default async function OnboardingDestinationPage() {
   const session = await requireUser("/app/onboarding");
-  const [catalog, progress] = await Promise.all([
+  const [catalog, progress, contact] = await Promise.all([
     listDestinations(),
     loadHomeProgress(session.userId),
+    loadContactReviewed(session.userId),
   ]);
   const view = homeView(progress.facts);
 
   const marks = firstPitchMarks(
-    view.kind === "checklist"
-      ? {
-          destination: view.steps.find((step) => step.id === "destination")?.done === true,
-          saved: view.steps.find((step) => step.id === "hotel")?.done === true,
-          pitch: view.steps.find((step) => step.id === "pitch")?.done === true,
-        }
-      : null,
+    view.kind === "blocked"
+      ? null
+      : {
+          destination: progress.facts.destination === "yes",
+          saved: progress.facts.saved === "yes",
+          pitch: progress.facts.pitch === "yes",
+          contact: contact === "error" ? "unknown" : contact === "yes",
+        },
   );
 
   return (
@@ -82,6 +84,9 @@ export default async function OnboardingDestinationPage() {
               The stepper is blank because your progress could not be read. That is not zero steps
               done.
             </p>
+          ) : null}
+          {contact === "error" && view.kind !== "blocked" ? (
+            <p>Contact review could not be read. That is not “not reviewed”.</p>
           ) : null}
           <div className="v12-stack">
             {ONBOARDING_GOALS.map((goal, index) => (

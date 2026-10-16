@@ -7,7 +7,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { requireUser } from "@/lib/auth/guards";
 import { AGREED_IS_NOT_APPROVED } from "@/lib/collaboration/board";
-import { loadCollaborationBoard } from "@/lib/collaboration/board-queries";
+import { loadCollaborationBoard, loadOpportunityTimeline } from "@/lib/collaboration/board-queries";
 import { loadDeliverableDeadlineBoard } from "@/lib/collaboration/deadline-queries";
 
 export const metadata: Metadata = { title: "Collaborations" };
@@ -28,6 +28,14 @@ export default async function CollaborationsPage({
     loadCollaborationBoard(session.userId),
     loadDeliverableDeadlineBoard(session.userId, new Date().toISOString()),
   ]);
+  const selectedCard =
+    board.kind === "items"
+      ? (board.cards.find((card) => card.id === selectedId) ?? board.cards[0] ?? null)
+      : null;
+  const timeline =
+    board.kind === "items"
+      ? await loadOpportunityTimeline(session.userId, selectedCard?.pipelineItemId ?? null)
+      : { kind: "error" as const };
 
   return (
     <div className="v12-stack">
@@ -66,11 +74,7 @@ export default async function CollaborationsPage({
           {board.capped ? (
             <p className="s6-muted">This list is capped. It is not every deliverable.</p>
           ) : null}
-          <CollaborationBoardView
-            cards={board.cards}
-            selectedId={selectedId}
-            timeline={board.timeline}
-          />
+          <CollaborationBoardView cards={board.cards} selectedId={selectedId} timeline={timeline} />
         </>
       )}
     </div>

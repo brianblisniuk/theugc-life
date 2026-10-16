@@ -104,6 +104,21 @@ export const ACTIVITY_UNLINKED =
   "This collaboration is not linked to an opportunity, so there is no event timeline.";
 export const ACTIVITY_CAPPED = "This timeline is capped. Older events are not listed.";
 
+/**
+ * A full read window is not an empty history. Empty is only a completed
+ * read that returned no rows for this opportunity.
+ */
+export function activityTimelineClaim(
+  timeline: ActivityTimeline,
+  pipelineItemId: string | null,
+): "unlinked" | "error" | "empty" | "events" {
+  if (!pipelineItemId) return "unlinked";
+  if (timeline.kind === "error") return "error";
+  const count = timeline.events.filter((event) => event.pipelineItemId === pipelineItemId).length;
+  if (count === 0) return timeline.capped ? "events" : "empty";
+  return "events";
+}
+
 const EVENT_LABELS: Record<string, string> = {
   hotel_saved: "Hotel saved",
   pitch_sent: "Pitch recorded",

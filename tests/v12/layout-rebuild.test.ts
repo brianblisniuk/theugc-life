@@ -4,12 +4,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  activityTimelineClaim,
   approvalProgress,
   deliverablePillClass,
   inPreparationCount,
+  mapOutreachActivity,
 } from "@/lib/collaboration/board";
 import { contactAvailability, parseContactFlags } from "@/lib/hotels/contact-exists";
-import { mapOutreachActivity } from "@/lib/collaboration/board";
 import { outreachProgress } from "@/lib/home/dashboard";
 import { firstPitchMarks } from "@/lib/onboarding/path";
 import { duplicateHotelNote, laneTone } from "@/lib/pipeline/density";
@@ -24,8 +25,8 @@ describe("V12.2 layout rebuild", () => {
     const page = source("src/app/(app)/app/pipeline/page.tsx");
     const board = source("src/components/pipeline/pipeline-workspace.tsx");
     expect(page).toContain("v12-pagehead");
-    expect(page).toContain("v12-context");
-    expect(page).toContain("PipelineStatusFilter");
+    expect(page).not.toContain("PipelineStatusFilter");
+    expect(page).not.toContain("PipelineSurfaceNav");
     expect(board).toContain("v12-darkhero");
     expect(board).toContain("v12-stats");
     expect(board).toContain("v12-attention");
@@ -60,6 +61,9 @@ describe("V12.2 layout rebuild", () => {
     expect(home).toContain("Shortlist");
     expect(home).toContain("Replies");
     expect(home).toContain("Open tasks");
+    expect(home).toContain("attentionUnavailable");
+    expect(home).toContain("hiddenCount");
+    expect(home).not.toContain("hotelCount - card.contactedCount");
     expect(home).not.toContain("Not contacted");
     expect(home).toContain("v12-progress");
     const bar = outreachProgress({
@@ -87,12 +91,11 @@ describe("V12.2 layout rebuild", () => {
     expect(page).toContain("Selected work");
     expect(page).toContain("HOTEL-FACING PREVIEW");
     expect(page).toContain("PROFILE READINESS");
-    expect(page).toContain('id="edit-profile"');
-    const identity = page.indexOf("YOUR CREATOR IDENTITY");
-    const editor = page.indexOf("<ProfileEditor");
-    expect(editor).toBeGreaterThan(page.indexOf('id="edit-profile"'));
-    expect(page.slice(identity, page.indexOf('id="edit-profile"'))).not.toContain("ProfileEditor");
-    expect(page).toContain("ShareLinkPanel");
+    expect(page).toContain('href="/app/profile/edit"');
+    expect(page).not.toContain("ProfileEditor");
+    const edit = source("src/app/(app)/app/profile/edit/page.tsx");
+    expect(edit).toContain("ProfileEditor");
+    expect(edit).toContain("ShareLinkPanel");
     expect(page).toContain("/app/account");
     expect(page).not.toContain("GmailConnectionPanel");
     const ready = profileReadiness({
@@ -122,6 +125,9 @@ describe("V12.2 layout rebuild", () => {
     expect(board).toContain("v12-context");
     expect(board).toContain("v12-stats");
     expect(board).toContain("Activity timeline");
+    const queries = source("src/lib/collaboration/board-queries.ts");
+    expect(queries).toContain('.eq("pipeline_item_id", pipelineItemId)');
+    expect(queries).not.toContain('.in("pipeline_item_id"');
     expect(board).toContain("v12-list-item");
     expect(board).toContain("Update this collaboration");
     expect(board).not.toContain("No activity timeline is stored");
@@ -184,8 +190,18 @@ describe("V12.2 layout rebuild", () => {
     expect(page).toContain("v12-timeline");
     expect(page).toContain("Skip to Discover");
     expect(firstPitchMarks(null)).toEqual(["upcoming", "upcoming", "upcoming", "upcoming"]);
-    expect(firstPitchMarks({ destination: true, saved: false, pitch: false })[1]).toBe("current");
-    expect(firstPitchMarks({ destination: true, saved: true, pitch: true })[2]).toBe("upcoming");
+    expect(
+      firstPitchMarks({ destination: true, saved: false, pitch: false, contact: false })[1],
+    ).toBe("current");
+    expect(firstPitchMarks({ destination: true, saved: true, pitch: true, contact: true })[2]).toBe(
+      "done",
+    );
+    expect(
+      firstPitchMarks({ destination: true, saved: true, pitch: false, contact: "unknown" })[2],
+    ).toBe("upcoming");
+    const pipe = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    expect(activityTimelineClaim({ kind: "ok", events: [], capped: true }, pipe)).toBe("events");
+    expect(activityTimelineClaim({ kind: "ok", events: [], capped: false }, pipe)).toBe("empty");
   });
 
   it("exposes contact existence as booleans and never an email", () => {
@@ -231,7 +247,14 @@ describe("V12.2 layout rebuild", () => {
     expect(cards).toBeGreaterThan(0);
     expect(more).toBeGreaterThan(cards);
     expect(page.indexOf("<MetricCells")).toBeGreaterThan(more);
+    expect(page).toContain(
+      "Aggregates must be backed by eligible sample sizes in the real product.",
+    );
     expect(page).toContain("<details");
+    expect(source("src/app/(auth)/login/page.tsx")).toContain("v12-pagehead");
+    expect(source("src/app/(auth)/login/page.tsx")).not.toContain("text-lg");
+    expect(source("src/app/(app)/app/onboarding/hotels/page.tsx")).toContain("v12-pagehead");
+    expect(source("src/app/(app)/app/onboarding/hotels/page.tsx")).not.toContain("s6-page");
     const journey = source("e2e/journey.spec.ts");
     expect(journey).toContain("#more-intelligence");
     expect(journey).toContain("Manually recorded");

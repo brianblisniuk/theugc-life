@@ -13,10 +13,12 @@ export default async function SignupPage({
   const { redirect } = await searchParams;
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-semibold text-text">Create your account</h1>
-        <p className="mt-1 text-sm text-muted">Start free in under a minute.</p>
-      </div>
+      <header className="v12-pagehead">
+        <div>
+          <h1>Create your account</h1>
+          <p>Start free in under a minute.</p>
+        </div>
+      </header>
       <SignupForm redirectTo={redirect} />
       <p className="text-sm text-muted">
         Already have an account?{" "}

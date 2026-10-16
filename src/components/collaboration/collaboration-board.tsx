@@ -23,6 +23,7 @@ import {
   ACTIVITY_EMPTY,
   ACTIVITY_ERROR,
   ACTIVITY_UNLINKED,
+  activityTimelineClaim,
   approvalProgress,
   deliverablePillClass,
   inPreparationCount,
@@ -315,10 +316,14 @@ function ActivityTimelineView({
   pipelineItemId: string | null;
   timeline: ActivityTimeline;
 }) {
-  if (!pipelineItemId) return <p>{ACTIVITY_UNLINKED}</p>;
-  if (timeline.kind === "error") return <p>{ACTIVITY_ERROR}</p>;
-  const events = timeline.events.filter((event) => event.pipelineItemId === pipelineItemId);
-  if (events.length === 0) return <p>{ACTIVITY_EMPTY}</p>;
+  const claim = activityTimelineClaim(timeline, pipelineItemId);
+  if (claim === "unlinked") return <p>{ACTIVITY_UNLINKED}</p>;
+  if (claim === "error") return <p>{ACTIVITY_ERROR}</p>;
+  if (claim === "empty") return <p>{ACTIVITY_EMPTY}</p>;
+  const events =
+    timeline.kind === "ok"
+      ? timeline.events.filter((event) => event.pipelineItemId === pipelineItemId)
+      : [];
   return (
     <div className="v12-timeline">
       {events.map((event, index) => (
@@ -330,7 +335,7 @@ function ActivityTimelineView({
           <p>{event.day}</p>
         </div>
       ))}
-      {timeline.capped ? <p>{ACTIVITY_CAPPED}</p> : null}
+      {timeline.kind === "ok" && timeline.capped ? <p>{ACTIVITY_CAPPED}</p> : null}
     </div>
   );
 }
