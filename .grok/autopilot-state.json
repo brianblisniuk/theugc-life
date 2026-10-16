@@ -1,9 +1,9 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last recorded main is 7041104f7fce3e9a8e0916621daa39d0799b2b22 (merge of PR #99, verify green). PR #98 merged the D02 audit fix (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). PR #100 merges V2-D1 (migration 0097, D182-D187) as 4001a628a347c0588fcc402d03fadb40302b8b6a. PR #102 merges V2-F1, the V12.2 Midnight shell and theme, no migration. V2-S2 is draft PR #108 (Trips and Outreach on Midnight, no new migration) and depends on PR #102. It is not merged. Contract Review is out of MVP (D185). D02 is not finished: provenance and freshness are not on the unlock screen. Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository. Leave HUNTER_API_KEY unset in CI.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last recorded main is b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50 (merge of PR #103, in-process scheduled jobs, verify green). PR #100 is merged as 4001a628a347c0588fcc402d03fadb40302b8b6a (migration 0097, D182-D187). Contract Review is out of MVP (D185). PR #98 merged the D02 audit fix (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). D02 is not finished: provenance and freshness are not on the unlock screen. PR #102 merges V2-F1, the V12.2 Midnight shell and theme, no migration. The merge SHA of PR #102 is recorded by the next block. V2-S2 is draft PR #108 (Trips and Outreach on Midnight, no new migration) and depends on PR #102. It is not merged. Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository. Leave HUNTER_API_KEY unset in CI.",
   "schema_version": 1,
   "as_of": "2026-10-16",
   "state": "HUMAN_FRONTIER",
-  "last_recorded_main": "7041104f7fce3e9a8e0916621daa39d0799b2b22",
+  "last_recorded_main": "b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50",
   "active_block": "V2-S2",
   "branch": "cursor/v2-s2-trips-outreach-97c1",
   "pr": 108,
@@ -11,9 +11,9 @@
   "pending_jobs": [],
   "unresolved_findings": [],
   "ci_status": {
-    "ref": "7041104f7fce3e9a8e0916621daa39d0799b2b22",
+    "ref": "b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50",
     "verify": "success"
   },
   "required_human_action": "CREDENTIAL REQUIRED — set HUNTER_API_KEY and CONTACT_PROVIDER=hunter only on the host that should call Hunter. Leave both unset in CI. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
-  "next_dependency": "Recorded main is PR #99 (7041104f7fce3e9a8e0916621daa39d0799b2b22). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). PR #100 merges V2-D1 (migration 0097, D182-D187) as 4001a628a347c0588fcc402d03fadb40302b8b6a: several opportunities per hotel, per-creator OP- display ids, creator-set trip nights, Gmail date suggestions that do not auto-apply, and outreach campaigns. PR #102 merges V2-F1 (V12.2 Midnight shell and theme, no migration). V2-S2 is draft PR #108 on cursor/v2-s2-trips-outreach-97c1. It implements Trips and Outreach on that shell, with no new migration, and must not merge before PR #102. Contract Review stays out of MVP (D185). Provenance and freshness are not on the unlock screen, so D02 is not finished. Fake stays the local and CI provider. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
+  "next_dependency": "Recorded main is PR #103 (b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50, in-process scheduled jobs, verify green). PR #100 is merged (4001a628a347c0588fcc402d03fadb40302b8b6a, migration 0097, D182-D187): several opportunities per hotel, per-creator OP- display ids, creator-set trip nights, Gmail date suggestions that do not auto-apply, and outreach campaigns. Contract Review stays out of MVP (D185). PR #102 merges V2-F1 (V12.2 Midnight shell and theme, no migration). The merge SHA of PR #102 is recorded by the next block. V2-S2 is draft PR #108 on cursor/v2-s2-trips-outreach-97c1. It depends on PR #102 and is not merged. Provenance and freshness are not on the unlock screen, so D02 is not finished. Fake stays the local and CI provider. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
 }
