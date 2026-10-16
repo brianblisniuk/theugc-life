@@ -431,7 +431,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | UX01 | **DONE** — PR #65, merge `9a449239df1ebd859d4876c35e83e35007cf41af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. PR #102 replaces this visual system with V12.2 Midnight. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
 | V2-D1 | **DONE — PR #100**, merge `4001a628a347c0588fcc402d03fadb40302b8b6a`, migration `0097`. D182–D187. | Opportunity model: several open rows per hotel, `OP-` ids, trip nights, Gmail date suggestions, outreach campaigns | User A cannot read User B; a suggestion does not write dates until accept |
 | V2-F1 | **DONE — PR #102**. No migration. V12.2 Midnight is the single theme (dark only, accent `#D1FF02`). Shell, base components, and a minimal re-skin of existing pages. `contracts.html` is design reference only. The merge SHA is recorded by the next block. | Midnight shell and theme | existing pages compile on the new shell; contrast AA |
-| V2-S2 | **IN REVIEW**. No new migration. Trips and Outreach on Midnight, wired to migration `0097` (D182–D184). Depends on PR #102. Not merged. | Trip nights, Gmail date decisions, outreach campaigns, `OP-` ids | counts match `trip_night_coverage`; User B cannot read User A’s campaign |
+| V2-S2 | **IN REVIEW — draft PR #108**. No new migration. Trips and Outreach on Midnight, wired to migration `0097` (D182–D184). Depends on PR #102. Not merged. | Trip nights, Gmail date decisions, outreach campaigns, `OP-` ids | counts match `trip_night_coverage`; User B cannot read User A’s campaign |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -635,7 +635,7 @@ migration `0096`, D181). PR #100 merges V2-D1 (migration `0097`, D182–D187)
 as `4001a628a347c0588fcc402d03fadb40302b8b6a`. Contract Review stays out of
 MVP (D185). V2-F1 is **DONE — PR #102** (V12.2 Midnight shell and theme, no
 migration). The merge SHA of PR #102 is recorded by the next block. V2-S2
-(Trips and Outreach on Midnight, no new migration) is in review and depends
+(Trips and Outreach on Midnight, no new migration) is draft PR #108 and depends
 on PR #102. It is not merged.
 PREPROD-1b (PR #93, `9c50400c104b6f5aa036eea3ea798f269aeffe5e`) and PREPROD-1
 (PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`) stay
