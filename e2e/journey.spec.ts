@@ -85,7 +85,7 @@ async function signUp(page: Page, input: { email: string; name: string; username
   await page.getByLabel("Username").fill(input.username);
   await page.getByRole("button", { name: "Continue" }).click();
   await page.waitForURL((url) => url.pathname === "/app/onboarding");
-  await page.getByRole("link", { name: "Ir al inicio" }).click();
+  await page.getByRole("link", { name: "Back to home", exact: true }).click();
   await page.waitForURL((url) => url.pathname === "/app");
 }
 
@@ -224,19 +224,22 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.locator("#add-to-trip option:checked")).toContainText("already on this trip");
 
   await ada.goto("/app/pipeline");
-  await expect(ada.getByTestId("pipeline-contact")).toHaveText(
-    "found-222222222222@fake-provider.test",
-  );
+  const pipelineContact = ada.getByTestId("pipeline-contact");
+  await expect(pipelineContact).toHaveCount(1);
+  await expect(pipelineContact).toHaveText("found-222222222222@fake-provider.test");
   await ada.goto(HOTEL_PATH);
 
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
   await commitAction(ada, () => ada.getByRole("button", { name: "Link thread" }).click());
   await expect(ada.getByText(`Linked thread ${FIXTURE_THREAD_ID}`)).toBeVisible();
-  await expect(ada.getByText("¿Esto pasó así?")).toBeVisible();
-  await expect(ada.getByRole("button", { name: "Priorizar este hotel" })).toHaveCount(0);
-  await commitAction(ada, () => ada.getByRole("button", { name: "Sí", exact: true }).click());
+  const confirmation = ada.getByTestId("gmail-confirmation");
+  await expect(confirmation.getByText("Did this happen this way?")).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Prioritize this hotel" })).toHaveCount(0);
+  await commitAction(ada, () =>
+    confirmation.getByRole("button", { name: "Yes", exact: true }).click(),
+  );
   await expect(ada.getByTestId("gmail-confirmation-stored")).toContainText(
-    "Confirmaste que sí. No entró a la red: no hay un hotel canónico único para este correo.",
+    "You confirmed this. It did not enter the network: there is no single canonical hotel for this email.",
   );
 
   await ada.getByRole("button", { name: "Mark as pitched" }).click();
@@ -245,9 +248,9 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await commitAction(ada, () => ada.getByRole("button", { name: "Mark as pitched" }).click());
   await expect(ada.getByRole("heading", { name: "Sent", exact: true })).toBeVisible();
   const personal = ada.getByTestId("personal-intelligence");
-  await expect(personal.getByText("Registrado a mano", { exact: true })).toBeVisible();
-  await expect(personal.getByText("Pitch enviado", { exact: true })).toBeVisible();
-  await expect(personal.getByText("Desde Gmail", { exact: true })).toHaveCount(0);
+  await expect(personal.getByText("Manually recorded", { exact: true })).toBeVisible();
+  await expect(personal.getByText("Pitch sent", { exact: true })).toBeVisible();
+  await expect(personal.getByText("Verified via Gmail", { exact: true })).toHaveCount(0);
 
   await ada.getByRole("button", { name: "Mark replied" }).click();
   await ada.locator("#reply-date").fill(day(0));
@@ -281,7 +284,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
-  await ada.getByRole("link", { name: "Profile" }).click();
+  await ada.getByRole("link", { name: "My Profile", exact: true }).click();
   await ada.waitForURL("**/app/profile");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
@@ -368,11 +371,13 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByRole("heading", { name: "Trip not found" })).toBeVisible();
   await bea.goto(HOTEL_PATH);
   await expect(bea.getByRole("button", { name: "Save to Pipeline" })).toBeVisible();
-  await expect(bea.getByText("Todavía no hay un dato de red")).toBeVisible();
-  await expect(bea.getByText("Confirmaste que sí.")).toHaveCount(0);
-  await expect(bea.getByText("¿Esto pasó así?")).toHaveCount(0);
-  await expect(bea.getByText("Registrado a mano", { exact: true })).toHaveCount(0);
-  await expect(bea.getByRole("button", { name: "Priorizar este hotel" })).toHaveCount(0);
+  await expect(
+    bea.getByRole("heading", { name: "No network fact yet", exact: true }),
+  ).toBeVisible();
+  await expect(bea.getByText("You confirmed this.")).toHaveCount(0);
+  await expect(bea.getByText("Did this happen this way?")).toHaveCount(0);
+  await expect(bea.getByText("Manually recorded", { exact: true })).toHaveCount(0);
+  await expect(bea.getByRole("button", { name: "Prioritize this hotel" })).toHaveCount(0);
   await expect(bea.getByText(FIXTURE_THREAD_ID)).toHaveCount(0);
   await expect(bea.getByText("Collaboration agreed")).toHaveCount(0);
   await expect(bea.getByText(BIO)).toHaveCount(0);

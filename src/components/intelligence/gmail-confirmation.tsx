@@ -20,7 +20,7 @@ function Choice({ label }: { label: string }) {
       disabled={pending}
       className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
     >
-      {pending ? "Guardando…" : label}
+      {pending ? "Saving…" : label}
     </button>
   );
 }
@@ -37,9 +37,7 @@ export function GmailConfirmation({
   const [message, setMessage] = useState<string | null>(null);
   if (prompt.status === "hidden") return null;
   if (prompt.status === "error") {
-    return (
-      <p className="text-sm text-muted">No se pudo cargar la confirmación de este correo.</p>
-    );
+    return <p className="text-sm text-muted">This email confirmation could not be loaded.</p>;
   }
 
   const stored = gmailPromptCopy(prompt.status);
@@ -65,19 +63,19 @@ export function GmailConfirmation({
             setMessage(
               result.result === "dismissed"
                 ? GMAIL_DISMISSED
-                : (gmailPromptCopy(result.result) ?? "No se pudo guardar."),
+                : (gmailPromptCopy(result.result) ?? "Could not save."),
             );
           }}
         >
           <input type="hidden" name="pipelineItemId" value={pipelineItemId} />
           <input type="hidden" name="hotelId" value={hotelId} />
           <input type="hidden" name="decision" value="confirmed" />
-          <Choice label="Sí" />
+          <Choice label="Yes" />
         </form>
         <form
           action={async (formData) => {
             const result = await answerGmailReadingAction(formData);
-            setMessage(result.result === "dismissed" ? GMAIL_DISMISSED : "No se pudo guardar.");
+            setMessage(result.result === "dismissed" ? GMAIL_DISMISSED : "Could not save.");
           }}
         >
           <input type="hidden" name="pipelineItemId" value={pipelineItemId} />

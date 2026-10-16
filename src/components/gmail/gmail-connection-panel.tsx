@@ -95,7 +95,7 @@ function ConsentPrompt({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        className="rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-medium text-accent-contrast disabled:opacity-60"
       >
         {pending ? "Saving…" : "Allow private processing"}
       </button>
@@ -169,7 +169,7 @@ export function GmailConnectionPanel({
           {offered ? (
             <a
               href="/api/integrations/gmail/oauth/start"
-              className="inline-block rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-medium text-white"
+              className="inline-block rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-medium text-accent-contrast"
             >
               Connect Gmail
             </a>

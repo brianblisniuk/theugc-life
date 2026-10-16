@@ -14,8 +14,8 @@ import {
 import { activityLabel } from "@/lib/hotels/intelligence";
 import type { DiscoverCountryOption, DiscoverDestinationOption } from "@/lib/hotels/queries";
 import { METRIC_IDS, METRIC_LAYERS, METRIC_TITLES } from "@/lib/metrics/contract";
-import { sortOptionLabel } from "@/lib/ux02/discover-sort";
-import { DISCOVER_SEARCH_LABEL, DISCOVER_SEARCH_PLACEHOLDER } from "@/lib/ux02/copy";
+import { sortOptionLabel } from "@/lib/screens/discover-sort";
+import { DISCOVER_SEARCH_LABEL, DISCOVER_SEARCH_PLACEHOLDER } from "@/lib/screens/copy";
 
 export function DiscoverFilters({
   query,

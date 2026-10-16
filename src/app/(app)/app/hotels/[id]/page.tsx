@@ -86,10 +86,10 @@ import {
   CONTACT_ERROR_TITLE,
   NO_CONTACT_TITLE,
   NO_RELATIONSHIP,
-} from "@/lib/ux02/copy";
-import { initialsFromName } from "@/lib/ux02/initials";
-import { nextStep, type ContactFact, type RelationshipFact } from "@/lib/ux02/next-step";
-import { planChipFromAccess } from "@/lib/ux02/plan-chip";
+} from "@/lib/screens/copy";
+import { initialsFromName } from "@/lib/screens/initials";
+import { nextStep, type ContactFact, type RelationshipFact } from "@/lib/screens/next-step";
+import { planChipFromAccess } from "@/lib/screens/plan-chip";
 
 /** Deduped per request so metadata and the page share one fetch. */
 const loadHotel = cache(getHotelById);
@@ -267,7 +267,8 @@ export default async function HotelDetailPage({
       ? await loadBillingAccess(session.session.userId)
       : ({ status: "error" } as const);
   const plan = session.status === "authenticated" ? planChipFromAccess(billing) : null;
-  const pitch = pitchHref(hotel.id) ?? "#work";
+  const pitch =
+    pitchHref(hotel.id, origin.kind === "trip" ? origin.tripId : null, origin) ?? "#work";
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,

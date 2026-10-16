@@ -163,7 +163,7 @@ describe("loadHomeNextActions", () => {
     const body = JSON.stringify(board);
     expect(body).not.toContain("Bee");
     expect(body).not.toContain(SUGGEST_B);
-    expect(board.actions.map((action) => action.title)).toEqual(["Hotel guardado: Ada House"]);
+    expect(board.actions.map((action) => action.title)).toEqual(["Saved hotel: Ada House"]);
     expect(board.followUpsDue).toBe(0);
     expect(board.credits?.title).toBe("3 credits left");
     expect(harness.calls.some((call) => call.table === "gmail_collaboration_suggestions")).toBe(

@@ -1,0 +1,155 @@
+{
+  "trip": {
+    "id": "trip_bkk_nov",
+    "name": "Bangkok · November",
+    "destination": "Bangkok, Thailand",
+    "from": "Nov 12",
+    "to": "Nov 19",
+    "nights": 7,
+    "confirmed": 3,
+    "pending": 2
+  },
+  "outreach": {
+    "id": "outreach_bkk_nov",
+    "name": "Bangkok · November outreach",
+    "hotels": 8,
+    "prepared": 3,
+    "contacted": 5,
+    "responses": 1
+  },
+  "hotels": [
+    {
+      "id": "siam",
+      "name": "Siam Canopy House",
+      "location": "Bangkok · Thailand",
+      "type": "Boutique hotel",
+      "initials": "SC",
+      "activity": "Medium",
+      "reply": "42%",
+      "time": "1–3 days",
+      "contact": "Named professional contact available"
+    },
+    {
+      "id": "atelier",
+      "name": "Atelier Sukhumvit",
+      "location": "Bangkok · Thailand",
+      "type": "Design hotel",
+      "initials": "AS",
+      "activity": "Emerging",
+      "reply": "—",
+      "time": "Insufficient data",
+      "contact": "Department contact available"
+    },
+    {
+      "id": "lumphini",
+      "name": "Lumphini Studio Stay",
+      "location": "Bangkok · Thailand",
+      "type": "Lifestyle hotel",
+      "initials": "LS",
+      "activity": "Medium",
+      "reply": "33%",
+      "time": "3–7 days",
+      "contact": "Contact available"
+    },
+    {
+      "id": "lantern",
+      "name": "Lantern Heritage Riverside",
+      "location": "Bangkok · Thailand",
+      "type": "Heritage residence",
+      "initials": "LH",
+      "activity": "Emerging",
+      "reply": "29%",
+      "time": "3–7 days",
+      "contact": "Department contact available"
+    },
+    {
+      "id": "garden",
+      "name": "Garden House Ari",
+      "location": "Bangkok · Thailand",
+      "type": "Guesthouse",
+      "initials": "GH",
+      "activity": "Emerging",
+      "reply": "—",
+      "time": "Insufficient data",
+      "contact": "Department contact available"
+    },
+    {
+      "id": "river",
+      "name": "Riverline Retreat",
+      "location": "Chiang Mai · Thailand",
+      "type": "Resort",
+      "initials": "RR",
+      "activity": "High",
+      "reply": "57%",
+      "time": "1–3 days",
+      "contact": "Named professional contact available"
+    },
+    {
+      "id": "palm",
+      "name": "Palm Terrace Residence",
+      "location": "Bali · Indonesia",
+      "type": "Resort",
+      "initials": "PT",
+      "activity": "Emerging",
+      "reply": "—",
+      "time": "Insufficient data",
+      "contact": "Research pending"
+    }
+  ],
+  "opportunities": [
+    {
+      "id": "OP-1042",
+      "hotel": "siam",
+      "trip": "Bangkok · November",
+      "outreach": "Bangkok · November outreach",
+      "status": "Replied",
+      "next": "Send hotel work examples",
+      "source": "Sample only"
+    },
+    {
+      "id": "OP-1084",
+      "hotel": "siam",
+      "trip": "No trip yet",
+      "outreach": "Spring destination content",
+      "status": "Pitch ready",
+      "next": "Review initial draft",
+      "source": "Sample only"
+    },
+    {
+      "id": "OP-1054",
+      "hotel": "atelier",
+      "trip": "Bangkok · November",
+      "outreach": "Bangkok · November outreach",
+      "status": "Sent",
+      "next": "Review follow-up",
+      "source": "Sample only"
+    },
+    {
+      "id": "OP-1038",
+      "hotel": "lumphini",
+      "trip": "Bangkok · November",
+      "outreach": "Bangkok · November outreach",
+      "status": "Agreed",
+      "next": "Deliver first draft · Nov 17",
+      "source": "Sample only"
+    },
+    {
+      "id": "OP-1051",
+      "hotel": "river",
+      "trip": "Chiang Mai · flexible",
+      "outreach": "Chiang Mai · winter",
+      "status": "Replied",
+      "next": "Confirm proposed dates",
+      "source": "Sample only"
+    },
+    {
+      "id": "OP-1079",
+      "hotel": "palm",
+      "trip": "No trip yet",
+      "outreach": "Bali · exploratory",
+      "status": "Saved",
+      "next": "Research partnerships",
+      "source": "Sample only"
+    }
+  ]
+}

@@ -135,12 +135,12 @@ export function pipelineQueryStatus(
 
 export function pipelineSurfaces(): { id: PipelineSurface; href: string; label: string }[] {
   return [
-    { id: "all", href: "/app/pipeline", label: "Todos los ciclos" },
-    { id: "inbox", href: "/app/pipeline?surface=inbox", label: "Inbox · con mails" },
+    { id: "all", href: "/app/pipeline", label: "All" },
+    { id: "inbox", href: "/app/pipeline?surface=inbox", label: "Inbox" },
     {
       id: "collaborations",
       href: "/app/pipeline?surface=collaborations",
-      label: "Colaboraciones · ganados",
+      label: "Collaborations",
     },
   ];
 }
@@ -205,6 +205,17 @@ export function isHotelSection(value: string): value is HotelSectionId {
   return HOTEL_SECTIONS.some((section) => section.id === value);
 }
 
+/** Writes the allowlisted origin onto a query. Discover adds nothing. */
+export function applyHotelOrigin(params: URLSearchParams, origin: HotelOrigin): void {
+  if (origin.kind === "pipeline") params.set("from", "pipeline");
+  else if (origin.kind === "inbox") params.set("from", "inbox");
+  else if (origin.kind === "collaboration") params.set("from", "collaboration");
+  else if (origin.kind === "trip") {
+    params.set("from", "trip");
+    params.set("trip", origin.tripId);
+  }
+}
+
 export function hotelHref(
   hotelId: string,
   origin: HotelOrigin,
@@ -213,13 +224,7 @@ export function hotelHref(
   if (!isUuid(hotelId)) return null;
   if (origin.kind === "trip" && !isUuid(origin.tripId)) return null;
   const params = new URLSearchParams();
-  if (origin.kind === "pipeline") params.set("from", "pipeline");
-  else if (origin.kind === "inbox") params.set("from", "inbox");
-  else if (origin.kind === "collaboration") params.set("from", "collaboration");
-  else if (origin.kind === "trip") {
-    params.set("from", "trip");
-    params.set("trip", origin.tripId);
-  }
+  applyHotelOrigin(params, origin);
   const query = params.toString();
   const path = `/app/hotels/${hotelId}${query ? `?${query}` : ""}`;
   return section ? `${path}#${section}` : path;
@@ -230,12 +235,24 @@ export function tripHotelHref(tripId: string, hotelId: string): string | null {
   return hotelHref(hotelId, { kind: "trip", tripId });
 }
 
-/** Pitch draft for one hotel. An optional trip must be a UUID. It does not authorize the read. */
-export function pitchHref(hotelId: string, tripId?: string | null): string | null {
+/**
+ * Pitch draft for one hotel. An optional trip must be a UUID. It does not
+ * authorize the read. A trip id with no explicit origin is a trip origin, so
+ * the trail can link that trip. Inbox and collaboration stay pipeline surfaces.
+ */
+export function pitchHref(
+  hotelId: string,
+  tripId?: string | null,
+  origin?: HotelOrigin,
+): string | null {
   if (!isUuid(hotelId)) return null;
   if (tripId && !isUuid(tripId)) return null;
+  const resolved: HotelOrigin =
+    origin ?? (tripId ? { kind: "trip", tripId } : { kind: "discover" });
+  if (resolved.kind === "trip" && !isUuid(resolved.tripId)) return null;
   const params = new URLSearchParams();
-  if (tripId) params.set("trip", tripId);
+  applyHotelOrigin(params, resolved);
+  if (tripId && resolved.kind !== "trip") params.set("trip", tripId);
   const query = params.toString();
   return `/app/hotels/${hotelId}/pitch${query ? `?${query}` : ""}`;
 }
@@ -328,4 +345,172 @@ export function listCrumbs(current: string, parent?: { href: string; label: stri
   const home: Crumb = { label: "Home", href: "/app" };
   if (!parent) return [home, { label: current }];
   return [home, parent, { label: current }];
+}
+
+/** Live routes only. Outreach, Plans, and Contract Review are later blocks. */
+export const SIDEBAR_NAV = [
+  {
+    label: "Your workspace",
+    items: [
+      { href: "/app", label: "Home", icon: "home" },
+      { href: "/app/discover", label: "Discover", icon: "discover" },
+      { href: "/app/trips", label: "My Trips", icon: "trips" },
+    ],
+  },
+  {
+    label: "Outreach & relationships",
+    items: [
+      { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
+      { href: "/app/inbox", label: "Inbox", icon: "inbox" },
+    ],
+  },
+  {
+    label: "Your business",
+    items: [
+      { href: "/app/collaborations", label: "Collaborations", icon: "collaborations" },
+      { href: "/app/profile", label: "My Profile", icon: "profile" },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { href: "/app/billing", label: "Billing & Activity", icon: "billing" },
+      { href: "/app/onboarding", label: "Getting Started", icon: "start" },
+      { href: "/app/account", label: "Account", icon: "account" },
+    ],
+  },
+] as const;
+
+export const MOBILE_NAV = [
+  { href: "/app", label: "Home", icon: "home" },
+  { href: "/app/discover", label: "Explore", icon: "discover" },
+  { href: "/app/trips", label: "Trips", icon: "trips" },
+  { href: "/app/inbox", label: "Inbox", icon: "inbox" },
+  { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
+] as const;
+
+export const SHELL_ICONS = [
+  "home",
+  "discover",
+  "trips",
+  "pipeline",
+  "inbox",
+  "collaborations",
+  "profile",
+  "billing",
+  "start",
+  "account",
+] as const;
+
+export type ShellIcon = (typeof SHELL_ICONS)[number];
+
+export function shellHeading(pathname: string): { title: string; subtle: string } {
+  if (pathname === "/app") return { title: "Home", subtle: "Your daily priorities" };
+  if (isUnder(pathname, "/app/discover"))
+    return { title: "Discover", subtle: "Hotels worth a closer look" };
+  if (isUnder(pathname, "/app/trips"))
+    return { title: "My Trips", subtle: "Dates, shortlist, and nights" };
+  if (isUnder(pathname, "/app/pipeline"))
+    return { title: "Pipeline", subtle: "Each commercial attempt" };
+  if (isUnder(pathname, "/app/inbox"))
+    return { title: "Inbox", subtle: "Replies that need a decision" };
+  if (isUnder(pathname, "/app/collaborations")) {
+    return { title: "Collaborations", subtle: "Deliverables and deadlines" };
+  }
+  if (isUnder(pathname, "/app/profile"))
+    return { title: "My Profile", subtle: "How hotels see your work" };
+  if (isUnder(pathname, "/app/billing"))
+    return { title: "Billing & Activity", subtle: "Credits and plan activity" };
+  if (isUnder(pathname, "/app/account"))
+    return { title: "Account", subtle: "Sign-in and connected email" };
+  if (isUnder(pathname, "/app/onboarding"))
+    return { title: "Getting Started", subtle: "Your first useful step" };
+  if (isUnder(pathname, "/app/design")) return { title: "UI guide", subtle: "Midnight components" };
+  if (isUnder(pathname, "/app/hotels")) return { title: "Hotel", subtle: "Detail" };
+  return { title: "theugc.life", subtle: "Creator workspace" };
+}
+
+export function shellCrumbs(pathname: string, origin: HotelOrigin | null): Crumb[] {
+  const root: Crumb = { label: "Workspace", href: "/app" };
+  if (pathname === "/app") return [{ label: "Workspace" }];
+  if (isUnder(pathname, "/app/trips/") && pathname !== "/app/trips") {
+    return [root, { label: "My Trips", href: "/app/trips" }, { label: "Trip" }];
+  }
+  if (pathname === "/app/profile/portfolio") {
+    return [root, { label: "My Profile", href: "/app/profile" }, { label: "Portfolio" }];
+  }
+  if (pathname === "/app/profile/pitches") {
+    return [root, { label: "My Profile", href: "/app/profile" }, { label: "Pitch templates" }];
+  }
+  if (isUnder(pathname, "/app/onboarding/hotels")) {
+    return [root, { label: "Getting Started", href: "/app/onboarding" }, { label: "Hotels" }];
+  }
+  if (isUnder(pathname, "/app/hotels")) {
+    const hotelId = pathname.match(/^\/app\/hotels\/([^/]+)/)?.[1] ?? null;
+    const pitching = pathname.includes("/pitch");
+    const resolved = origin ?? { kind: "discover" as const };
+    const hotelLink = hotelId && isUuid(hotelId) ? hotelHref(hotelId, resolved) : null;
+    const hotelCrumb: Crumb = pitching
+      ? { label: "Hotel", href: hotelLink ?? undefined }
+      : { label: "Hotel" };
+    const tail: Crumb[] = pitching ? [hotelCrumb, { label: "Pitch" }] : [hotelCrumb];
+    if (resolved.kind === "trip") {
+      return [
+        root,
+        { label: "My Trips", href: "/app/trips" },
+        { label: "Trip", href: `/app/trips/${resolved.tripId}` },
+        ...tail,
+      ];
+    }
+    if (resolved.kind === "inbox") {
+      return [
+        root,
+        { label: "Pipeline", href: "/app/pipeline" },
+        { label: "Inbox", href: pipelineReturnHref(resolved) },
+        ...tail,
+      ];
+    }
+    if (resolved.kind === "collaboration") {
+      return [
+        root,
+        { label: "Pipeline", href: "/app/pipeline" },
+        { label: "Collaborations", href: pipelineReturnHref(resolved) },
+        ...tail,
+      ];
+    }
+    if (resolved.kind === "pipeline") {
+      return [root, { label: "Pipeline", href: pipelineReturnHref(resolved) }, ...tail];
+    }
+    return [root, { label: "Discover", href: "/app/discover" }, ...tail];
+  }
+  return [root, { label: shellHeading(pathname).title }];
+}
+
+/** Longest matching sidebar href. Home is only the exact /app path. */
+export function activeSidebarHref(pathname: string, origin: HotelOrigin | null): string | null {
+  if (pathname === "/app") return "/app";
+  if (isUnder(pathname, "/app/discover")) return "/app/discover";
+  if (isUnder(pathname, "/app/trips")) return "/app/trips";
+  if (isUnder(pathname, "/app/pipeline")) return "/app/pipeline";
+  if (isUnder(pathname, "/app/inbox")) return "/app/inbox";
+  if (isUnder(pathname, "/app/collaborations")) return "/app/collaborations";
+  if (isUnder(pathname, "/app/profile")) return "/app/profile";
+  if (isUnder(pathname, "/app/billing")) return "/app/billing";
+  if (isUnder(pathname, "/app/account")) return "/app/account";
+  if (isUnder(pathname, "/app/onboarding")) return "/app/onboarding";
+  if (isUnder(pathname, "/app/hotels")) {
+    if (origin?.kind === "trip") return "/app/trips";
+    if (origin?.kind === "inbox") return "/app/inbox";
+    if (origin?.kind === "collaboration") return "/app/collaborations";
+    if (origin && origin.kind !== "discover") return "/app/pipeline";
+    return "/app/discover";
+  }
+  return null;
+}
+
+export function workspaceInitials(email: string | null): string {
+  const local = (email ?? "").split("@")[0]?.replace(/[^a-zA-Z0-9]/g, "") ?? "";
+  if (local.length >= 2) return local.slice(0, 2).toUpperCase();
+  if (local.length === 1) return local.toUpperCase();
+  return "·";
 }

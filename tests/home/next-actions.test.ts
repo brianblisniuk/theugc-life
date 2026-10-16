@@ -133,12 +133,12 @@ describe("prioritizeNextActions", () => {
       "pipeline",
     ]);
     expect(board.actions.map((action) => action.title)).toEqual([
-      "Seguimiento a Ada Due",
-      "Entrega pendiente en Ada Delivery",
-      "Respuesta humana de Ada Reply",
-      "Pitch detectado a Ada House",
-      "Sugerencia de colaboración con Ada Deal",
-      "Hotel guardado: Ada Later",
+      "Follow up with Ada Due",
+      "Deliverable due at Ada Delivery",
+      "Human reply from Ada Reply",
+      "Pitch detected to Ada House",
+      "Collaboration suggestion with Ada Deal",
+      "Saved hotel: Ada Later",
     ]);
     expect(board.followUpsDue).toBe(1);
     expect(board.actions[0]?.href).toBe(`/app/hotels/${HOTEL_A}?from=pipeline`);
@@ -178,8 +178,8 @@ describe("prioritizeNextActions", () => {
 
     expect(board.followUpsDue).toBe(0);
     expect(board.actions.map((action) => action.title)).toEqual([
-      "Negociación abierta con Ada Open",
-      "Ada Future está en seguimiento",
+      "Open negotiation with Ada Open",
+      "Ada Future is in follow-up",
     ]);
     expect(JSON.stringify(board)).not.toContain("Ada Closed");
   });
@@ -322,7 +322,7 @@ describe("prioritizeNextActions", () => {
     );
 
     expect(board.actions.map((action) => action.title)).toEqual([
-      "Entrega pendiente en Ada Rejected",
+      "Deliverable due at Ada Rejected",
     ]);
     expect(JSON.stringify(board)).not.toContain("Ada Sent");
     expect(JSON.stringify(board)).not.toContain("Ada Tomorrow");
@@ -365,7 +365,7 @@ describe("prioritizeNextActions", () => {
     expect(board.actions).toHaveLength(HOME_NEXT_ACTION_CAP);
     expect(board.actions.every((action) => action.kind === "follow_up_due")).toBe(true);
     expect(board.hiddenCount).toBe(2);
-    expect(board.actions[0]?.title).toBe("Seguimiento a Ada 0");
+    expect(board.actions[0]?.title).toBe("Follow up with Ada 0");
     expect(JSON.stringify(board.actions)).not.toContain(SUGGEST_PITCH);
   });
 
@@ -399,9 +399,9 @@ describe("prioritizeNextActions", () => {
       }),
     );
     expect(ordered.actions.map((action) => action.title)).toEqual([
-      "Hotel guardado: Ada Old",
-      "Hotel guardado: Ada New",
-      "Hotel guardado: Ada Undated",
+      "Saved hotel: Ada Old",
+      "Saved hotel: Ada New",
+      "Saved hotel: Ada Undated",
     ]);
 
     const unknown = prioritizeNextActions(

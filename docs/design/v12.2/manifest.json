@@ -1,0 +1,26 @@
+{
+  "name": "theugc.life \u00b7 UX/UI V12.2 Midnight Studio",
+  "theme": "dark",
+  "primary_color": "#D1FF02",
+  "files": [
+    "billing.html",
+    "collaborations.html",
+    "contracts.html",
+    "design-system.html",
+    "discover.html",
+    "home.html",
+    "hotel-detail.html",
+    "inbox.html",
+    "index.html",
+    "onboarding.html",
+    "outreach.html",
+    "pipeline.html",
+    "pitch-op-1042.html",
+    "pitch.html",
+    "plans.html",
+    "profile.html",
+    "trips.html"
+  ],
+  "mode": "visual-only",
+  "note": "Backend functionality is for Cursor"
+}

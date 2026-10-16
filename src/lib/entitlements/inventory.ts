@@ -1015,6 +1015,20 @@ export const INVENTORY: readonly InventoryEntry[] = [
     enforcement: { kind: "staff_write" },
     sources: ["PERMISSIONS.md §11", "PRD §4.6"],
   },
+  {
+    id: "ui.guide",
+    module: "Shell",
+    summary:
+      "The Midnight component guide is staff-only. A creator plan does not open it. It reads no private records and grants nothing.",
+    routes: ["/app/design"],
+    sourceFiles: ["src/app/(app)/app/design/page.tsx"],
+    serverActions: [],
+    rpcs: [],
+    rule: { kind: "staff_role" },
+    anon: "deny",
+    enforcement: { kind: "staff_write" },
+    sources: ["D098", "V12.2 Midnight"],
+  },
 ];
 
 const byId = new Map<string, InventoryEntry>();

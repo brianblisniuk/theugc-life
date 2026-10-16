@@ -1,86 +1,74 @@
 @import "tailwindcss";
 
 /*
- * UX02 tokens. Dark is the default. Light uses the same names on
- * [data-theme="light"]. Accent #DFFF4F is a fill. Text on it is #17191B.
- * The accent is never a text or icon color. Tailwind aliases point at these
- * names so existing utilities follow the active theme.
+ * V12.2 Midnight Studio. One theme. No light palette and no toggle.
+ * Brand #D1FF02 is the primary action fill. Text on it is #111507.
+ * Values match styles.css, THEME_SPEC.md, and design-system.html.
  */
-:root,
-[data-theme="dark"] {
+:root {
   color-scheme: dark;
-  --bg: #121416;
-  --surface: #1c1f22;
-  --text: #f4f5f3;
-  --text-secondary: #c8cdd1;
-  --muted: #a8afb4;
-  --border: #34393d;
-  --control-border: #8b9196;
-  --accent: #dfff4f;
-  --accent-ink: #17191b;
-  --accent-edge: #5e6c00;
-  --success: #3ebe78;
-  --warning: #e39a4a;
-  --danger: #f08a84;
-  --focus: #8eb4ff;
-  --process: #8eb4ff;
-  --success-soft: #13261c;
-  --warning-soft: #2a2116;
-  --danger-soft: #2c181c;
-  --process-soft: #172033;
-  --neutral-soft: #24282b;
-  --private-bg: #262c33;
-  --private-text: #d5dce3;
-  --placeholder: #2c3130;
-  --skeleton: #2a2e32;
-  --map-land: #2a2f2c;
-  --map-water: #16191c;
-  --map-line: #3e4540;
-  --pin: #f4f5f3;
-  --pin-ring: #121416;
-  --hover: #22262a;
-  --header-h: 64px;
-  --subnav-h: 48px;
-  --bottom-nav-h: 56px;
-  --background: var(--bg);
-  --accent-contrast: var(--accent-ink);
-  --radius: 8px;
-}
+  --ink: #f5f8f6;
+  --muted: #c7d0cc;
+  --soft: #93a19b;
+  --bg: #0c1110;
+  --paper: #121918;
+  --card: #151d1b;
+  --stroke: #23302d;
+  --stroke2: #1d2926;
+  --nav: #0a0e0d;
+  --nav2: #121918;
+  --lime: #d1ff02;
+  --lime-ink: #111507;
+  --lime-hover: #b9e700;
+  --lime-tint: #25320f;
+  --green: #8ee7b0;
+  --amber: #ffce79;
+  --amber-bg: #342918;
+  --blue: #91d5f5;
+  --blue-bg: #132c35;
+  --red: #ffa7a7;
+  --red-bg: #321b20;
+  --radius: 13px;
+  --radius-control: 8px;
+  --shade: 0 16px 36px rgba(0, 0, 0, 0.24);
+  --topbar: #101715;
+  --topbar-h: 69px;
+  --sidebar-w: 253px;
+  --bottom-nav-h: 64px;
 
-[data-theme="light"] {
-  color-scheme: light;
-  --bg: #fafaf8;
-  --surface: #ffffff;
-  --text: #17191b;
-  --text-secondary: #52585e;
-  --muted: #6c7379;
-  --border: #e3e6e7;
-  --control-border: #8a9094;
-  --accent: #dfff4f;
-  --accent-ink: #17191b;
-  --accent-edge: #5e6c00;
-  --success: #177245;
-  --warning: #a45113;
-  --danger: #b42332;
-  --focus: #225fcc;
-  --process: #225fcc;
-  --success-soft: #e5f4ec;
-  --warning-soft: #f8ede4;
-  --danger-soft: #f8e6e8;
-  --process-soft: #e7eef8;
-  --neutral-soft: #f3f4f2;
-  --private-bg: #e6ebf0;
-  --private-text: #243040;
-  --placeholder: #e4e6e2;
-  --skeleton: #e8ebe8;
-  --map-land: #e4e7e2;
-  --map-water: #f7f8f6;
-  --map-line: #c5cac3;
-  --pin: #17191b;
-  --pin-ring: #ffffff;
-  --hover: #f3f4f1;
+  /* Aliases the existing screens still read. */
+  --surface: var(--paper);
+  --text: var(--ink);
+  --text-secondary: var(--muted);
+  --border: var(--stroke);
+  --control-border: #35483c;
+  --accent: var(--lime);
+  --accent-ink: var(--lime-ink);
+  --accent-edge: var(--lime);
+  --success: var(--green);
+  --warning: var(--amber);
+  --danger: var(--red);
+  --focus: var(--lime);
+  --process: var(--blue);
+  --success-soft: #163429;
+  --warning-soft: #3b2e1d;
+  --danger-soft: #391f23;
+  --process-soft: #17313d;
+  --neutral-soft: #232d29;
+  --private-bg: #1b2622;
+  --private-text: #d8e6dc;
+  --placeholder: #1d2926;
+  --skeleton: #2a3931;
+  --map-land: #1b2b26;
+  --map-water: #101715;
+  --map-line: #304038;
+  --pin: var(--lime);
+  --pin-ring: var(--nav);
+  --hover: #18221f;
+  --header-h: var(--topbar-h);
+  --subnav-h: 48px;
   --background: var(--bg);
-  --accent-contrast: var(--accent-ink);
+  --accent-contrast: var(--lime-ink);
 }
 
 @theme inline {
@@ -94,31 +82,32 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --radius-app: var(--radius);
+  --radius-app: var(--radius-control);
 }
 
 body {
   background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-archivo), Archivo, "Segoe UI", sans-serif;
-  font-size: 14px;
-  line-height: 22px;
+  color: var(--ink);
+  font-family: var(--font-archivo), Archivo, Inter, Arial, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
-/*
- * Focus is the token ring, not the accent. #DFFF4F on paper is 1.08:1.
- */
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+::selection {
+  background: #d1ff02;
+  color: #111507;
 }
 
-@media (max-width: 1023px) {
-  :root,
-  [data-theme="dark"],
-  [data-theme="light"] {
-    --header-h: 56px;
+:focus-visible {
+  outline: 2px solid #d1ff02;
+  outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --topbar-h: 61px;
+    --header-h: 61px;
   }
 }
 
@@ -128,5 +117,6 @@ body {
   *::after {
     animation: none !important;
     transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

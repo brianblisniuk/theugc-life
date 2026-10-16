@@ -9,9 +9,9 @@ import {
 } from "@/lib/hotels/card-signal";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import type { HotelSummary } from "@/lib/hotels/queries";
-import { initialsFromName } from "@/lib/ux02/initials";
-import { ON_TRIP } from "@/lib/ux02/copy";
-import { pipelineChipLabel } from "@/lib/ux02/next-step";
+import { initialsFromName } from "@/lib/screens/initials";
+import { ON_TRIP } from "@/lib/screens/copy";
+import { pipelineChipLabel } from "@/lib/screens/next-step";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 
 const CLOSED_LABEL: Record<string, string> = {

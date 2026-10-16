@@ -11,9 +11,9 @@ import {
   type MetricId,
   type RankingLoad,
 } from "@/lib/metrics/contract";
-import { VIEW_PLANS } from "@/lib/ux02/copy";
-import { rankingPanel } from "@/lib/ux02/metric-state";
-import { sortOptionLabel } from "@/lib/ux02/discover-sort";
+import { VIEW_PLANS } from "@/lib/screens/copy";
+import { rankingPanel } from "@/lib/screens/metric-state";
+import { sortOptionLabel } from "@/lib/screens/discover-sort";
 
 /** One ranking at a time. A locked metric shows the lock, not a blurred list. */
 export function RankingPicker({

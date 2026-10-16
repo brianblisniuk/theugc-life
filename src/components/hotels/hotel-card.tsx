@@ -57,7 +57,7 @@ export function HotelCard({
   const onTrip = shouldShowTripBadge(badge);
 
   return (
-    <article className="grid grid-cols-1 gap-3 border-b border-[#ececec] py-3 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+    <article className="grid grid-cols-1 gap-3 border-b border-border py-3 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4">
       <NoPhoto name={hotel.name} />
       <div className="min-w-0 space-y-1">
         <h3 className="text-lg font-extrabold tracking-tight text-text">
@@ -66,7 +66,7 @@ export function HotelCard({
           </Link>
         </h3>
         {location || type ? (
-          <p className="text-[13px] text-[#555]">{[location, type].filter(Boolean).join(" · ")}</p>
+          <p className="text-[13px] text-muted">{[location, type].filter(Boolean).join(" · ")}</p>
         ) : null}
         <StarRating rating={hotel.starRating} />
         {CLOSED_LABEL[hotel.activeStatus] ? (
@@ -83,7 +83,7 @@ export function HotelCard({
           </p>
         ) : null}
         {showSignal && signal ? (
-          <p className="text-sm font-semibold text-[#0b6b4b]">
+          <p className="text-sm font-semibold text-success">
             {[
               signal.activity,
               signal.recency,
@@ -94,7 +94,7 @@ export function HotelCard({
           </p>
         ) : null}
         {pipeline || onTrip ? (
-          <p className="text-xs text-[#555]">
+          <p className="text-xs text-muted">
             {[pipeline, onTrip ? "On a trip" : null].filter(Boolean).join(" · ")}
           </p>
         ) : null}
@@ -105,10 +105,10 @@ export function HotelCard({
             href={`${href}?from=pipeline`}
             className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
           >
-            Guardado
+            Saved
           </Link>
         ) : (
-          <SaveHotelButton hotelId={hotel.id} idle="Guardar" pendingLabel="Guardando…" />
+          <SaveHotelButton hotelId={hotel.id} idle="Save" pendingLabel="Saving…" />
         )}
       </div>
     </article>

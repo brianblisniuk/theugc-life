@@ -6,38 +6,38 @@
  * insufficient band does not become a precise metric.
  */
 
-export const GMAIL_CONFIRM_PROMPT = "¿Esto pasó así?";
+export const GMAIL_CONFIRM_PROMPT = "Did this happen this way?";
 
 export const NETWORK_BUILDING_COPY = {
-  title: "Todavía no hay un dato de red",
+  title: "No network fact yet",
   description:
-    "La red anónima aparece cuando al menos tres creadoras distintas dejaron hechos confirmados. Mientras tanto, no hay una cifra.",
+    "The anonymous network appears after at least three different creators leave confirmed facts. Until then, there is no figure.",
 } as const;
 
 export const NETWORK_INSUFFICIENT_COPY = {
-  title: "Hay actividad, pero no alcanza",
+  title: "There is activity, but not enough",
   description:
-    "Menos de cinco hechos confirmados no se muestran como un número. Insuficiente no es cero y no es un hotel malo.",
+    "Fewer than five confirmed facts are not shown as a number. Insufficient data is not zero and not a bad hotel.",
 } as const;
 
 export const NETWORK_ERROR_COPY = {
-  title: "La red anónima no se pudo cargar",
-  description: "Recargá la página para intentar de nuevo. Esto no dice que el hotel no tenga datos.",
+  title: "The anonymous network could not be loaded",
+  description: "Reload the page to try again. This does not say the hotel has no data.",
 } as const;
 
 export const GMAIL_CONFIRMED_ADMITTED =
-  "Confirmaste que sí. Quedó como dato de Gmail, separado de lo que registraste a mano.";
+  "You confirmed this. It stays as a Gmail fact, separate from what you recorded by hand.";
 
 export const GMAIL_CONFIRMED_NOT_ADMITTED =
-  "Confirmaste que sí. No entró a la red: no hay un hotel canónico único para este correo.";
+  "You confirmed this. It did not enter the network: there is no single canonical hotel for this email.";
 
-export const GMAIL_DISMISSED = "Dijiste que no. Esta lectura no entra a la red.";
+export const GMAIL_DISMISSED = "You said no. This reading does not enter the network.";
 
 export const GMAIL_STALE =
-  "Esta lectura está desactualizada y no entra a la red hasta que vuelva a estar vigente.";
+  "This reading is out of date and does not enter the network until it is current again.";
 
 export const PRIORITY_SAVED =
-  "Marcaste este hotel como prioridad. Eso no cambia el dato de la red.";
+  "You marked this hotel as a priority. That does not change the network fact.";
 
 export interface NetworkPublicRow {
   confidenceLevel: "insufficient" | "emerging" | "moderate" | "strong" | null;
@@ -76,49 +76,49 @@ export function networkPanelState(
 }
 
 export function activityLabel(level: string | null): string | null {
-  if (level === "emerging") return "Actividad emergente";
-  if (level === "medium") return "Actividad moderada";
-  if (level === "high") return "Actividad fuerte";
+  if (level === "emerging") return "Emerging activity";
+  if (level === "medium") return "Moderate activity";
+  if (level === "high") return "Strong activity";
   return null;
 }
 
 export function recencyLabel(band: string | null): string | null {
-  if (band === "past_month") return "Actividad en el último mes";
-  if (band === "past_quarter") return "Actividad en el último trimestre";
-  if (band === "older") return "Actividad anterior";
+  if (band === "past_month") return "Activity in the past month";
+  if (band === "past_quarter") return "Activity in the past quarter";
+  if (band === "older") return "Older activity";
   return null;
 }
 
 export function responseTimeBandLabel(band: string | null): string | null {
-  if (band === "under_24h") return "Menos de 24 h";
-  if (band === "1_3_days") return "1–3 días";
-  if (band === "3_7_days") return "3–7 días";
-  if (band === "1_2_weeks") return "1–2 semanas";
-  if (band === "2_plus_weeks") return "2 semanas o más";
+  if (band === "under_24h") return "Under 24 hours";
+  if (band === "1_3_days") return "1–3 days";
+  if (band === "3_7_days") return "3–7 days";
+  if (band === "1_2_weeks") return "1–2 weeks";
+  if (band === "2_plus_weeks") return "2 weeks or more";
   return null;
 }
 
 const FACT_LABEL: Record<string, string> = {
-  pitch_sent: "Pitch enviado",
-  followup_sent: "Seguimiento enviado",
-  reply_received: "Respuesta recibida",
-  positive_reply: "Respuesta positiva",
-  negative_reply: "Respuesta negativa",
-  offer_received: "Oferta recibida",
-  negotiation_started: "Negociación iniciada",
-  deal_won: "Acuerdo registrado",
-  deal_lost: "Cierre sin acuerdo",
-  collaboration_started: "Colaboración iniciada",
-  collaboration_completed: "Colaboración completada",
-  creator_closed_pipeline: "Ciclo cerrado",
-  collaboration_type_observed: "Tipo de colaboración",
-  gmail_thread_commercial_state: "Lectura del hilo",
-  gmail_human_reply_observed: "Respuesta humana observada",
-  gmail_reply_latency: "Tiempo de respuesta observado",
+  pitch_sent: "Pitch sent",
+  followup_sent: "Follow-up sent",
+  reply_received: "Reply received",
+  positive_reply: "Positive reply",
+  negative_reply: "Negative reply",
+  offer_received: "Offer received",
+  negotiation_started: "Negotiation started",
+  deal_won: "Agreement recorded",
+  deal_lost: "Closed without an agreement",
+  collaboration_started: "Collaboration started",
+  collaboration_completed: "Collaboration completed",
+  creator_closed_pipeline: "Cycle closed",
+  collaboration_type_observed: "Collaboration type",
+  gmail_thread_commercial_state: "Thread reading",
+  gmail_human_reply_observed: "Human reply observed",
+  gmail_reply_latency: "Observed response time",
 };
 
 export function factTypeLabel(factType: string): string {
-  return FACT_LABEL[factType] ?? "Hecho confirmado";
+  return FACT_LABEL[factType] ?? "Confirmed fact";
 }
 
 export function parseConfidence(value: unknown): NetworkPublicRow["confidenceLevel"] {

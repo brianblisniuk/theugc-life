@@ -2,9 +2,9 @@ import { AppShell } from "@/components/shell/app-shell";
 import { requireUser } from "@/lib/auth/guards";
 import { loadBillingAccess } from "@/lib/billing/queries";
 import { getOwnCreditBalance } from "@/lib/credits/queries";
-import { creditsAvailableLabel } from "@/lib/ux02/next-step";
-import { CREDITS_UNAVAILABLE } from "@/lib/ux02/copy";
-import { planChipFromAccess } from "@/lib/ux02/plan-chip";
+import { creditsAvailableLabel } from "@/lib/screens/next-step";
+import { CREDITS_UNAVAILABLE } from "@/lib/screens/copy";
+import { planChipFromAccess } from "@/lib/screens/plan-chip";
 
 /**
  * Authenticated app shell. Route-group middleware already gates authentication;
@@ -23,7 +23,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const planLabel = planChipFromAccess(billing);
 
   return (
-    <AppShell isStaff={isStaff} creditLabel={creditLabel} planLabel={planLabel}>
+    <AppShell
+      isStaff={isStaff}
+      creditLabel={creditLabel}
+      planLabel={planLabel}
+      email={session.email}
+    >
       {children}
     </AppShell>
   );

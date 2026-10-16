@@ -10,19 +10,19 @@ function source(path: string): string {
   return readFileSync(path, "utf8");
 }
 
-describe("UX02 tokens and shell", () => {
-  it("defaults to dark, shares token names with light, and keeps the accent a fill", () => {
+describe("Midnight tokens", () => {
+  it("is dark only, uses #D1FF02 as the action fill, and keeps Archivo", () => {
     const css = source("src/app/globals.css");
     const layout = source("src/app/layout.tsx");
-    expect(css).toContain("[data-theme=\"dark\"]");
-    expect(css).toContain("[data-theme=\"light\"]");
-    expect(css).toContain("--accent: #dfff4f");
-    expect(css).toContain("--accent-ink: #17191b");
+    expect(css).toContain("--lime: #d1ff02");
+    expect(css).toContain("--lime-ink: #111507");
+    expect(css).toContain("--bg: #0c1110");
+    expect(css).not.toContain('[data-theme="light"]');
+    expect(css).not.toMatch(/#dfff4f/i);
     expect(css).toMatch(/font-family:[^;]*Archivo/);
-    expect(layout).toContain('data-theme="dark"');
     expect(layout).toContain("Archivo");
-    expect(layout).toContain("THEME_BOOT_SCRIPT");
-    expect(css).not.toMatch(/--accent:\s*#ffe01b/i);
+    expect(layout).not.toContain("THEME_BOOT_SCRIPT");
+    expect(layout).not.toContain("data-theme");
   });
 });
 
@@ -30,7 +30,7 @@ describe("Discover screen", () => {
   it("keeps one layout, keyword chips, and this page's pins", () => {
     const page = source("src/app/(app)/app/discover/page.tsx");
     const filters = source("src/components/hotels/discover-filters.tsx");
-    const copy = source("src/lib/ux02/copy.ts");
+    const copy = source("src/lib/screens/copy.ts");
     expect(page).toContain("result.pins");
     expect(page).toContain("discoverFilterChips");
     expect(page).toContain("discoverSortGate");
@@ -59,12 +59,14 @@ describe("Hotel Detail screen", () => {
     expect(page).not.toMatch(/unsplash|placeholder\.com|stock/i);
     expect(panel).toContain('aria-label="Your next step"');
     expect(panel).toContain("model.primaryLabel");
-    expect(source("src/lib/ux02/copy.ts")).toContain('export const GENERATE_PITCH = "Generate pitch"');
+    expect(source("src/lib/screens/copy.ts")).toContain(
+      'export const GENERATE_PITCH = "Generate pitch"',
+    );
     expect(source("src/lib/credits/config.ts")).toContain("chargeOnNotFound: false");
     expect(source("src/components/contacts/report-contact.tsx")).toContain(
       "Report incorrect contact",
     );
-    expect(source("src/lib/ux02/copy.ts")).toContain('export const ON_TRIP = "On trip"');
+    expect(source("src/lib/screens/copy.ts")).toContain('export const ON_TRIP = "On trip"');
     expect(source("src/components/hotels/hotel-row.tsx")).toContain("ON_TRIP");
   });
 });

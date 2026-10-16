@@ -50,56 +50,56 @@ const DUE_DELIVERABLE_STATUSES: readonly DeliverableStatus[] = ["pending", "reje
 const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export const HOME_NEXT_COPY = {
-  blocked: "No pudimos revisar tus próximas acciones. Esto no es una lista vacía.",
-  followUps: "No pudimos revisar seguimientos. Esto no es que no haya nada pendiente.",
-  deliverables: "No pudimos revisar entregas. Esto no es que no haya nada pendiente.",
-  gmail: "No pudimos revisar sugerencias de Gmail. Esto no es que no haya ninguna.",
-  pipeline: "No pudimos revisar tu pipeline. Esto no es un pipeline vacío.",
+  blocked: "We could not review your next actions. This is not an empty list.",
+  followUps: "We could not review follow-ups. This does not mean nothing is due.",
+  deliverables: "We could not review deliverables. This does not mean nothing is due.",
+  gmail: "We could not review Gmail suggestions. This does not mean there are none.",
+  pipeline: "We could not review your pipeline. This is not an empty pipeline.",
   pipelineCapped:
-    "La lista de pipeline que leímos tiene un tope. El conteo de seguimientos de esta página no es el total de la base.",
-  deliverablesCapped: "La lista de entregas que leímos tiene un tope. No es el total de la base.",
+    "The pipeline list we read is capped. The follow-up count on this page is not the database total.",
+  deliverablesCapped: "The deliverable list we read is capped. It is not the database total.",
   gmailTruncated:
-    "Hay más sugerencias de Gmail que las que esta página lista. Esto no dice cuántas.",
-  credits: "No pudimos leer tus créditos. Esto no es cero.",
-  empty: "No hay una acción pendiente con los datos que pudimos leer.",
-  open: "Abrir",
-  followUpTitle: (name: string) => `Seguimiento a ${name}`,
-  followUpDetail: (when: string) => `Venció el ${when}. El silencio no es ghosting.`,
-  deliverableTitle: (name: string) => `Entrega pendiente en ${name}`,
-  deliverableDetail: (when: string) => `La fecha era ${when}.`,
+    "There are more Gmail suggestions than this page lists. It does not say how many.",
+  credits: "We could not read your credits. This is not zero.",
+  empty: "No pending action in the data we could read.",
+  open: "Open",
+  followUpTitle: (name: string) => `Follow up with ${name}`,
+  followUpDetail: (when: string) => `Due ${when}. Silence is not ghosting.`,
+  deliverableTitle: (name: string) => `Deliverable due at ${name}`,
+  deliverableDetail: (when: string) => `The date was ${when}.`,
   gmailTitle: {
-    human_reply: (name: string) => `Respuesta humana de ${name}`,
-    pitch_sent: (name: string) => `Pitch detectado a ${name}`,
-    collaboration: (name: string) => `Sugerencia de colaboración con ${name}`,
+    human_reply: (name: string) => `Human reply from ${name}`,
+    pitch_sent: (name: string) => `Pitch detected to ${name}`,
+    collaboration: (name: string) => `Collaboration suggestion with ${name}`,
   },
   gmailDetail: {
     human_reply:
-      "Es una sugerencia. Confirmala con tu lectura. Un auto-responder no cuenta. No se envía ningún mail.",
-    pitch_sent: "Es una sugerencia. Confirmar lo anota en tu pipeline. No se envía ningún mail.",
+      "This is a suggestion. Confirm it with your own reading. An auto-reply does not count. No email is sent.",
+    pitch_sent: "This is a suggestion. Confirming records it on your pipeline. No email is sent.",
     collaboration:
-      "Confirmar no crea la colaboración ni un hecho del hotel. No se envía ningún mail.",
+      "Confirming does not create the collaboration or a hotel fact. No email is sent.",
   },
   pipelineTitle: {
-    negotiating: (name: string) => `Negociación abierta con ${name}`,
-    replied: (name: string) => `${name} respondió`,
-    follow_up: (name: string) => `${name} está en seguimiento`,
-    pitched: (name: string) => `Pitch enviado a ${name}`,
-    won: (name: string) => `Acuerdo con ${name}`,
-    planned: (name: string) => `Pitch planificado a ${name}`,
-    saved: (name: string) => `Hotel guardado: ${name}`,
+    negotiating: (name: string) => `Open negotiation with ${name}`,
+    replied: (name: string) => `${name} replied`,
+    follow_up: (name: string) => `${name} is in follow-up`,
+    pitched: (name: string) => `Pitch sent to ${name}`,
+    won: (name: string) => `Agreement with ${name}`,
+    planned: (name: string) => `Pitch planned for ${name}`,
+    saved: (name: string) => `Saved hotel: ${name}`,
   } satisfies Record<Exclude<PipelineStatus, "closed">, (name: string) => string>,
-  pipelineDetail: "Abrí el ciclo y elegí el próximo paso. Esta página no cambia el estado.",
-  catalogTrip: "Hoteles de tu próximo viaje",
-  catalogOnboarding: "Descubrimiento recomendado",
-  catalogNote: "Del catálogo publicado. Sin ranking y sin un modelo.",
+  pipelineDetail: "Open the cycle and choose the next step. This page does not change the status.",
+  catalogTrip: "Hotels from your next trip",
+  catalogOnboarding: "Recommended discovery",
+  catalogNote: "From the published catalog. No ranking and no model.",
   hidden: (count: number) =>
-    count === 1 ? "Hay 1 acción más en tus datos." : `Hay ${count} acciones más en tus datos.`,
+    count === 1 ? "1 more action is in your data." : `${count} more actions are in your data.`,
   followUpCount: (count: number) =>
-    count === 1 ? "1 seguimiento vencido." : `${count} seguimientos vencidos.`,
+    count === 1 ? "1 follow-up is due." : `${count} follow-ups are due.`,
   creditAvailable: (cost: number) =>
     cost === 1
-      ? "Desbloquear un contacto nuevo cuesta 1 crédito."
-      : `Desbloquear un contacto nuevo cuesta ${cost} créditos.`,
+      ? "Unlocking a new contact costs 1 credit."
+      : `Unlocking a new contact costs ${cost} credits.`,
 } as const;
 
 export interface NextAction {

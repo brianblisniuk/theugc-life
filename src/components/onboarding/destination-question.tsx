@@ -22,27 +22,27 @@ export function DestinationQuestion({ destinations }: { destinations: Destinatio
     <form action={action} className="space-y-5">
       <div>
         <h1 className="text-3xl font-extrabold tracking-tight">
-          ¿A qué destino estás apuntando ahora?
+          Which destination are you aiming at now?
         </h1>
-        <p className="mt-2 text-sm text-[#555]">
-          Solo lo usamos para mostrarte hoteles relevantes. Podés cambiarlo después.
+        <p className="mt-2 text-sm text-muted">
+          We only use it to show relevant hotels. You can change it later.
         </p>
       </div>
       <label className="block text-sm font-semibold" htmlFor="destination-search">
-        Buscar destino
+        Search destination
         <input
           id="destination-search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="mt-1 w-full rounded-md border border-[#ccc] px-3 py-2 text-sm"
-          placeholder="Bali, México, Japón…"
+          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
+          placeholder="Bali, Mexico, Japan"
         />
       </label>
       <div className="flex flex-wrap gap-2">
         {choices.map((destination) => (
           <label
             key={destination.id}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[#ccc] px-3 py-1.5 text-sm font-semibold has-[:checked]:border-[#111] has-[:checked]:bg-[#111] has-[:checked]:text-accent"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-semibold has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-accent-contrast"
           >
             <input type="radio" name="destinationId" value={destination.id} className="sr-only" />
             {destination.name}
@@ -50,7 +50,7 @@ export function DestinationQuestion({ destinations }: { destinations: Destinatio
         ))}
       </div>
       {choices.length === 0 ? (
-        <p className="text-sm text-[#555]">No hay un destino con ese nombre en nuestra base.</p>
+        <p className="text-sm text-muted">No destination in our catalog matches that name.</p>
       ) : null}
       {state && "error" in state ? (
         <p className="text-sm" role="alert">
@@ -63,10 +63,10 @@ export function DestinationQuestion({ destinations }: { destinations: Destinatio
           disabled={pending}
           className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
         >
-          {pending ? "Guardando…" : "Ver hoteles"}
+          {pending ? "Saving…" : "View hotels"}
         </button>
-        <Link href="/app" className="text-sm text-[#555] underline">
-          Ir al inicio
+        <Link href="/app" className="text-sm text-muted underline">
+          Back to home
         </Link>
       </div>
     </form>
