@@ -1,10 +1,18 @@
 /**
  * The send dispatcher. Gmail is a mock. No test opens a socket.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { GoogleOAuthAdapter } from "@/lib/gmail/google.server";
-import { authorizeDispatch, handleDispatchPost, runScheduledDispatch } from "@/lib/gmail/send/dispatch-auth";
+import {
+  authorizeDispatch,
+  handleDispatchPost,
+  runScheduledDispatch,
+} from "@/lib/gmail/send/dispatch-auth";
 import { dispatchDueGmailSends } from "@/lib/gmail/send/dispatch";
 import type { SendDeps } from "@/lib/gmail/send/service.server";
 
@@ -50,28 +58,27 @@ describe("dispatch auth", () => {
     expect(allowed.body).toMatchObject({ result: "ok", sent: 1 });
   });
 
-  it("the scheduled function posts to the app route and does not import a provider", async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ result: "ok" }), { status: 200 }));
-    const missing = await runScheduledDispatch({
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      siteUrl: null,
-      secret: SECRET,
-    });
+  it("the schedule runs in-process and does not send when the secret is absent", async () => {
+    const run = vi.fn(async () => ({ sent: 1, deferred: 0, failed: 0, paused: 0 }));
+    const missing = await runScheduledDispatch({ secret: null, run });
     expect(missing.statusCode).toBe(500);
-    expect(fetchImpl).not.toHaveBeenCalled();
-    const posted = await runScheduledDispatch({
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      siteUrl: "https://app.example/",
-      secret: SECRET,
-    });
-    expect(posted.statusCode).toBe(200);
-    expect(fetchImpl).toHaveBeenCalledWith(
-      "https://app.example/api/internal/gmail-send-dispatch",
-      expect.objectContaining({
-        method: "POST",
-        headers: { authorization: `Bearer ${SECRET}` },
-      }),
+    expect(JSON.parse(missing.body)).toEqual({ result: "not_configured" });
+    const short = await runScheduledDispatch({ secret: "short-secret", run });
+    expect(short.statusCode).toBe(500);
+    expect(run).not.toHaveBeenCalled();
+    const ran = await runScheduledDispatch({ secret: SECRET, run });
+    expect(ran.statusCode).toBe(200);
+    expect(JSON.parse(ran.body)).toMatchObject({ result: "ok", sent: 1 });
+    expect(ran.body).not.toContain(SECRET);
+    expect(run).toHaveBeenCalledTimes(1);
+    const source = readFileSync(
+      path.join(
+        path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."),
+        "src/lib/gmail/send/dispatch-auth.ts",
+      ),
+      "utf8",
     );
+    expect(source).not.toMatch(/google\.server|claude\.server|@anthropic|googleapis|fetchImpl/);
   });
 });
 
@@ -174,7 +181,12 @@ describe("dispatch due sends", () => {
         return { result: "failed", failure_code: args.p_code, attempt_id: ATTEMPT };
       },
     });
-    sendDeps.env = { nodeEnv: "production", sendEnv: "production", disabled: "true", allowlist: null };
+    sendDeps.env = {
+      nodeEnv: "production",
+      sendEnv: "production",
+      disabled: "true",
+      allowlist: null,
+    };
     const summary = await dispatchDueGmailSends(sendDeps, { random: () => 0 });
     expect(sends).not.toHaveBeenCalled();
     expect(codes).toEqual(["kill_switch"]);

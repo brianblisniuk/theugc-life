@@ -1,13 +1,17 @@
-import { INBOX_SYNC_PATH, runScheduledPost } from "../../src/lib/jobs/scheduled-post";
+import { runProductionInboxSync } from "../../src/lib/gmail/sync/scheduled.server";
+import { runScheduledJob } from "../../src/lib/jobs/scheduled-post";
 
 /**
- * Netlify schedule. The cron is declared once, in netlify.toml.
- * This file does not import the Gmail or Claude clients.
+ * Netlify schedule. The cron and the background flag are in netlify.toml.
+ * The sync runs in this process. It does not POST to the public site and it
+ * does not construct a Claude client. A missing or short GMAIL_SYNC_SECRET
+ * does not sync. A caller-supplied Authorization header is ignored.
  */
-export const handler = async (): Promise<{ statusCode: number; body: string }> =>
-  runScheduledPost({
-    fetchImpl: fetch,
-    siteUrl: process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
+export const handler = async (_event?: unknown): Promise<{ statusCode: number; body: string }> =>
+  runScheduledJob({
     secret: process.env.GMAIL_SYNC_SECRET ?? null,
-    path: INBOX_SYNC_PATH,
+    run: async () => {
+      const summary = await runProductionInboxSync();
+      return { accounts: summary.accounts, results: summary.results };
+    },
   });

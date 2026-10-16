@@ -6,8 +6,9 @@ import { runProductionInboxSync } from "@/lib/gmail/sync/scheduled.server";
 export const dynamic = "force-dynamic";
 
 /**
- * B08 inbox sync. The bearer secret is required. Tests mock Gmail at the
- * worker boundary. This route does not construct a Claude client.
+ * B08 inbox sync. The bearer secret is required. The Netlify schedule runs
+ * the same job in-process and does not call this route. Tests mock Gmail at
+ * the worker boundary. This route does not construct a Claude client.
  */
 export async function POST(request: Request): Promise<Response> {
   const result = await handleDispatchPost(

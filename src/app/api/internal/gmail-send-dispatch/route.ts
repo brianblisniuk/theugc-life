@@ -7,9 +7,10 @@ import { productionSendDeps } from "@/lib/gmail/send/dispatch.server";
 export const dynamic = "force-dynamic";
 
 /**
- * Scheduled send dispatcher (D168). The bearer secret is required. Claude
- * is not called. Gmail is called only for a claimed row, and the test
- * adapter throws before any network call.
+ * Scheduled send dispatcher (D168). The bearer secret is required. The
+ * Netlify schedule runs the same job in-process and does not call this
+ * route. Claude is not called. Gmail is called only for a claimed row, and
+ * the test adapter throws before any network call.
  */
 export async function POST(request: Request): Promise<Response> {
   const result = await handleDispatchPost(
