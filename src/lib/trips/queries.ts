@@ -16,11 +16,17 @@ import { createClient } from "@/lib/supabase/server";
 
 import {
   mapLinkResult,
+  mapNightCoverage,
   mapShortlistResult,
+  mapStayWriteResult,
+  mapSuggestionDecision,
   mapTripSummary,
   mapTripWriteResult,
   type LinkResult,
+  type NightCoverageRead,
   type ShortlistResult,
+  type StayWriteResult,
+  type SuggestionDecision,
   type TripStatus,
   type TripSummaryResult,
   type TripWriteResult,
@@ -45,6 +51,33 @@ export interface TripRecord {
 }
 
 export interface ShortlistHotel {
+  tripHotelId: string;
+  id: string;
+  name: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  nightStatus: "pending" | "confirmed";
+}
+
+export interface TripOpportunity {
+  id: string;
+  hotelId: string;
+  hotelName: string;
+  displayRef: string;
+  status: string;
+  stayStart: string | null;
+  stayEnd: string | null;
+}
+
+export interface StaySuggestion {
+  id: string;
+  tripHotelId: string | null;
+  pipelineItemId: string | null;
+  checkIn: string;
+  checkOut: string;
+}
+
+export interface TripCampaignLink {
   id: string;
   name: string;
 }
@@ -198,19 +231,42 @@ export async function listShortlist(
     const supabase = await clientOrInjected(injected);
     const { data, error } = await supabase
       .from("trip_hotels")
-      .select("hotel_id, hotel:hotels(id, name)")
+      .select("id, check_in, check_out, night_status, hotel:hotels(id, name)")
       .eq("trip_id", tripId)
       .order("created_at", { ascending: true });
     if (error) return { status: "error" };
     const hotels: ShortlistHotel[] = [];
     for (const row of data ?? []) {
-      const hotel = (
-        row as { hotel?: { id?: unknown; name?: unknown } | { id?: unknown; name?: unknown }[] }
-      ).hotel;
-      const one = Array.isArray(hotel) ? hotel[0] : hotel;
-      if (one && typeof one.id === "string" && typeof one.name === "string") {
-        hotels.push({ id: one.id, name: one.name });
+      const record = row as {
+        id?: unknown;
+        check_in?: unknown;
+        check_out?: unknown;
+        night_status?: unknown;
+        hotel?: { id?: unknown; name?: unknown } | { id?: unknown; name?: unknown }[];
+      };
+      const hotel = Array.isArray(record.hotel) ? record.hotel[0] : record.hotel;
+      const checkIn = record.check_in === null ? null : record.check_in;
+      const checkOut = record.check_out === null ? null : record.check_out;
+      if (
+        typeof record.id !== "string" ||
+        !hotel ||
+        typeof hotel.id !== "string" ||
+        typeof hotel.name !== "string" ||
+        (checkIn !== null && typeof checkIn !== "string") ||
+        (checkOut !== null && typeof checkOut !== "string") ||
+        (record.night_status !== "pending" && record.night_status !== "confirmed") ||
+        (checkIn === null) !== (checkOut === null)
+      ) {
+        return { status: "error" };
       }
+      hotels.push({
+        tripHotelId: record.id,
+        id: hotel.id,
+        name: hotel.name,
+        checkIn,
+        checkOut,
+        nightStatus: record.night_status,
+      });
     }
     return { status: "ok", hotels };
   } catch {
@@ -412,4 +468,221 @@ export async function linkPipelineItem(
   });
   if (data === null) return { result: "error" };
   return mapLinkResult(data);
+}
+
+const OP_REF = /^OP-[1-9][0-9]{3,}$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function dayOrNull(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value === "string" && DAY.test(value)) return value;
+  return undefined;
+}
+
+export async function readNightCoverage(
+  tripId: string,
+  injected?: TripQueryClient,
+): Promise<NightCoverageRead> {
+  if (!isUuid(tripId)) return { status: "not_found" };
+  try {
+    const supabase = await clientOrInjected(injected);
+    const { data, error } = await supabase.rpc("trip_night_coverage", { p_trip_id: tripId });
+    if (error) return { status: "error" };
+    return mapNightCoverage(data);
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export async function listTripOpportunities(
+  tripId: string,
+  injected?: TripQueryClient,
+): Promise<{ status: "ok"; opportunities: TripOpportunity[] } | { status: "error" }> {
+  if (!isUuid(tripId)) return { status: "ok", opportunities: [] };
+  try {
+    const supabase = await clientOrInjected(injected);
+    const { data, error } = await supabase
+      .from("pipeline_items")
+      .select("id, hotel_id, display_ref, status, stay_start, stay_end, hotel:hotels(name)")
+      .eq("trip_id", tripId)
+      .order("display_ref", { ascending: true });
+    if (error) return { status: "error" };
+    const opportunities: TripOpportunity[] = [];
+    for (const row of data ?? []) {
+      const record = row as {
+        id?: unknown;
+        hotel_id?: unknown;
+        display_ref?: unknown;
+        status?: unknown;
+        stay_start?: unknown;
+        stay_end?: unknown;
+        hotel?: { name?: unknown } | { name?: unknown }[];
+      };
+      const hotel = Array.isArray(record.hotel) ? record.hotel[0] : record.hotel;
+      const stayStart = dayOrNull(record.stay_start);
+      const stayEnd = dayOrNull(record.stay_end);
+      if (
+        typeof record.id !== "string" ||
+        typeof record.hotel_id !== "string" ||
+        typeof record.display_ref !== "string" ||
+        !OP_REF.test(record.display_ref) ||
+        typeof record.status !== "string" ||
+        stayStart === undefined ||
+        stayEnd === undefined ||
+        (stayStart === null) !== (stayEnd === null) ||
+        !hotel ||
+        typeof hotel.name !== "string" ||
+        hotel.name.trim().length === 0
+      ) {
+        return { status: "error" };
+      }
+      opportunities.push({
+        id: record.id,
+        hotelId: record.hotel_id,
+        hotelName: hotel.name,
+        displayRef: record.display_ref,
+        status: record.status,
+        stayStart,
+        stayEnd,
+      });
+    }
+    return { status: "ok", opportunities };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export async function listStaySuggestions(
+  input: { tripHotelIds: string[]; pipelineItemIds: string[] },
+  injected?: TripQueryClient,
+): Promise<{ status: "ok"; suggestions: StaySuggestion[] } | { status: "error" }> {
+  const tripHotelIds = input.tripHotelIds.filter(isUuid);
+  const pipelineItemIds = input.pipelineItemIds.filter(isUuid);
+  if (tripHotelIds.length === 0 && pipelineItemIds.length === 0) {
+    return { status: "ok", suggestions: [] };
+  }
+  try {
+    const supabase = await clientOrInjected(injected);
+    const { data, error } = await supabase
+      .from("stay_date_suggestions")
+      .select(
+        "id, trip_hotel_id, pipeline_item_id, suggested_check_in, suggested_check_out, status",
+      )
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(100);
+    if (error) return { status: "error" };
+    const hotelSet = new Set(tripHotelIds);
+    const itemSet = new Set(pipelineItemIds);
+    const suggestions: StaySuggestion[] = [];
+    for (const row of data ?? []) {
+      const record = row as {
+        id?: unknown;
+        trip_hotel_id?: unknown;
+        pipeline_item_id?: unknown;
+        suggested_check_in?: unknown;
+        suggested_check_out?: unknown;
+      };
+      const tripHotelId = record.trip_hotel_id === null ? null : record.trip_hotel_id;
+      const pipelineItemId = record.pipeline_item_id === null ? null : record.pipeline_item_id;
+      if (
+        typeof record.id !== "string" ||
+        (tripHotelId !== null && typeof tripHotelId !== "string") ||
+        (pipelineItemId !== null && typeof pipelineItemId !== "string") ||
+        typeof record.suggested_check_in !== "string" ||
+        typeof record.suggested_check_out !== "string" ||
+        !DAY.test(record.suggested_check_in) ||
+        !DAY.test(record.suggested_check_out)
+      ) {
+        return { status: "error" };
+      }
+      const onTrip =
+        (typeof tripHotelId === "string" && hotelSet.has(tripHotelId)) ||
+        (typeof pipelineItemId === "string" && itemSet.has(pipelineItemId));
+      if (!onTrip) continue;
+      suggestions.push({
+        id: record.id,
+        tripHotelId: typeof tripHotelId === "string" ? tripHotelId : null,
+        pipelineItemId: typeof pipelineItemId === "string" ? pipelineItemId : null,
+        checkIn: record.suggested_check_in,
+        checkOut: record.suggested_check_out,
+      });
+    }
+    return { status: "ok", suggestions };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export async function listTripCampaigns(
+  tripId: string,
+  injected?: TripQueryClient,
+): Promise<{ status: "ok"; campaigns: TripCampaignLink[] } | { status: "error" }> {
+  if (!isUuid(tripId)) return { status: "ok", campaigns: [] };
+  try {
+    const supabase = await clientOrInjected(injected);
+    const { data, error } = await supabase
+      .from("outreach_initiatives")
+      .select("id, name")
+      .eq("trip_id", tripId)
+      .order("updated_at", { ascending: false })
+      .limit(20);
+    if (error) return { status: "error" };
+    const campaigns: TripCampaignLink[] = [];
+    for (const row of data ?? []) {
+      const record = row as { id?: unknown; name?: unknown };
+      if (typeof record.id !== "string" || typeof record.name !== "string" || !record.name.trim()) {
+        return { status: "error" };
+      }
+      campaigns.push({ id: record.id, name: record.name });
+    }
+    return { status: "ok", campaigns };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export async function setTripHotelStay(
+  userId: string,
+  tripId: string,
+  hotelId: string,
+  input: { checkIn: string | null; checkOut: string | null; nightStatus: "pending" | "confirmed" },
+): Promise<StayWriteResult> {
+  if (!isUuid(userId) || !isUuid(tripId) || !isUuid(hotelId)) return { result: "invalid_input" };
+  const data = await write("set_trip_hotel_stay", {
+    p_user_id: userId,
+    p_trip_id: tripId,
+    p_hotel_id: hotelId,
+    p_check_in: input.checkIn,
+    p_check_out: input.checkOut,
+    p_night_status: input.nightStatus,
+  });
+  if (data === null) return { result: "error" };
+  return mapStayWriteResult(data);
+}
+
+export async function acceptStaySuggestion(
+  userId: string,
+  suggestionId: string,
+): Promise<SuggestionDecision> {
+  if (!isUuid(userId) || !isUuid(suggestionId)) return { result: "invalid_input" };
+  const data = await write("accept_stay_date_suggestion", {
+    p_user_id: userId,
+    p_suggestion_id: suggestionId,
+  });
+  if (data === null) return { result: "error" };
+  return mapSuggestionDecision(data);
+}
+
+export async function rejectStaySuggestion(
+  userId: string,
+  suggestionId: string,
+): Promise<SuggestionDecision> {
+  if (!isUuid(userId) || !isUuid(suggestionId)) return { result: "invalid_input" };
+  const data = await write("reject_stay_date_suggestion", {
+    p_user_id: userId,
+    p_suggestion_id: suggestionId,
+  });
+  if (data === null) return { result: "error" };
+  return mapSuggestionDecision(data);
 }

@@ -24,6 +24,7 @@ import * as gmailSendActions from "@/lib/gmail/send/actions";
 import * as inboxActions from "@/lib/inbox-pipeline/actions";
 import * as stayDateActions from "@/lib/inbox/date-actions";
 import * as onboardingActions from "@/lib/onboarding/actions";
+import * as outreachActions from "@/lib/outreach/actions";
 import * as pipelineActions from "@/lib/pipeline/actions";
 import * as profileActions from "@/lib/profile/actions";
 import * as portfolioActions from "@/lib/profile/portfolio-actions";
@@ -113,6 +114,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(inboxActions),
       ...exportedFunctions(stayDateActions),
       ...exportedFunctions(onboardingActions),
+      ...exportedFunctions(outreachActions),
       ...exportedFunctions(pipelineActions),
       ...exportedFunctions(profileActions),
       ...exportedFunctions(portfolioActions),

@@ -122,7 +122,13 @@ Recommended query params:
 Trip list.
 
 ### `/app/trips/[id]`
-Trip workspace. Ownership required.
+Trip workspace. Ownership required. The creator sets stay nights. A Gmail date suggestion is accepted or rejected here and does not mark the stay confirmed by itself.
+
+### `/app/outreach`
+The creator's outreach campaigns. An empty list and a failed read stay distinct.
+
+### `/app/outreach/[id]`
+One campaign. Hotels on the campaign, their opportunities, and date suggestions the creator still has to decide. Ownership required. Another creator's campaign is not found.
 
 ### `/app/profile`
 The signed-in creator’s private profile, personal counts, and past
