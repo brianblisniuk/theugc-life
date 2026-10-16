@@ -57,6 +57,14 @@ function Icon({ name }: { name: ShellIcon }) {
       </svg>
     );
   }
+  if (name === "pitch") {
+    return (
+      <svg {...common}>
+        <path d="M5 19h14M7 16V6h10v10" />
+        <path d="M9 9h6M9 12h4" />
+      </svg>
+    );
+  }
   if (name === "inbox") {
     return (
       <svg {...common}>

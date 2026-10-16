@@ -1,11 +1,9 @@
 /**
- * Pipeline — the creator's private CRM list (PRD §7.4).
+ * Pipeline — the creator's private opportunities (D182, D187, V2-S3).
  *
- * The list is paginated server-side: the page states how many relationships the
- * creator actually has (an exact database count) and how many of them are on
- * screen, so a large pipeline is never silently truncated. Rows are
- * creator-owned by RLS (`pipeline_items_all`). An unlocked contact email is
- * read for this caller only and shown on the card (D108).
+ * The list is paginated. Counts are exact database counts. A failed count is
+ * not shown as zero. Rows are creator-owned by RLS. An unlocked contact email
+ * is read for this caller only.
  */
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -13,15 +11,21 @@ import type { Metadata } from "next";
 import { DeliverableReminders } from "@/components/collaboration/deliverable-reminders";
 import { EmptyState } from "@/components/empty-state";
 import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
-import { PipelineBoard } from "@/components/pipeline/pipeline-board";
 import { PipelineStatusFilter } from "@/components/pipeline/pipeline-status-filter";
+import {
+  PipelineAttentionList,
+  PipelineCommand,
+  PipelineDense,
+  PipelineViewSwitch,
+  attentionFromRows,
+} from "@/components/pipeline/pipeline-workspace";
 import { PageHeader } from "@/components/shell/page-header";
 import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
-import { PrivateNotesEditor } from "@/components/pipeline/private-notes-editor";
 import { requireUser } from "@/lib/auth/guards";
 import { DEADLINE_COPY } from "@/lib/collaboration/deadlines";
 import { loadDeliverableDeadlineBoard } from "@/lib/collaboration/deadline-queries";
 import { readUnlockedContactEmails } from "@/lib/credits/queries";
+import type { IntelligenceResult } from "@/lib/hotels/intelligence";
 import {
   LOCKED_METRIC_COPY,
   METRIC_TITLES,
@@ -30,14 +34,17 @@ import {
 } from "@/lib/metrics/contract";
 import { parseMetricRank } from "@/lib/metrics/order";
 import {
+  countPipelineStatuses,
+  listOpenPipelineForAttention,
   listPipelineItems,
+  listPublicIntelligence,
   normalizePageParam,
   type PipelineListItem,
   type PipelinePage,
 } from "@/lib/pipeline/queries";
-import { pipelineStatusLabel } from "@/lib/pipeline/types";
 import {
   PIPELINE_COPY,
+  normalizePipelineView,
   normalizeStatusFilter,
   pipelineContactEmail,
   pipelineListState,
@@ -47,7 +54,6 @@ import {
   listCrumbs,
   normalizePipelineSurface,
   pipelineQueryStatus,
-  pipelineRowLinks,
   pipelineSurfaceHeading,
 } from "@/lib/shell/navigation";
 
@@ -60,81 +66,6 @@ export async function generateMetadata({
   return { title: pipelineSurfaceHeading(surface).title };
 }
 
-function formatDate(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-}
-
-function Row({
-  item,
-  surface,
-}: {
-  item: PipelineListItem;
-  surface: ReturnType<typeof normalizePipelineSurface>;
-}) {
-  const location = [item.hotel?.destinationName, item.hotel?.countryCode]
-    .filter(Boolean)
-    .join(" · ");
-  const saved = formatDate(item.savedAt);
-  const followUp = formatDate(item.nextFollowupAt);
-
-  return (
-    <li className="flex flex-wrap items-start justify-between gap-3 rounded-[var(--radius-app)] border border-border bg-surface p-4">
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold text-text">{item.hotel?.name ?? "Unknown hotel"}</h3>
-        {location ? <p className="text-sm text-muted">{location}</p> : null}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-          <span className="rounded-[var(--radius-app)] border border-border px-2 py-0.5 font-medium text-text">
-            {pipelineStatusLabel(item.status)}
-          </span>
-          {saved ? <span>Saved {saved}</span> : null}
-          {followUp ? <span>Follow-up due {followUp}</span> : null}
-          {item.deadlineLabel ? (
-            <span className="font-medium text-text" data-testid="pipeline-deadline">
-              {item.deadlineLabel}
-            </span>
-          ) : null}
-          {item.metricValue ? (
-            <span className="text-text" data-testid="pipeline-rank">
-              {item.metricRank}. {item.metricValue}
-              {item.metricSample ? (
-                <span className="text-muted"> · {item.metricSample}</span>
-              ) : null}
-            </span>
-          ) : null}
-          {item.contactEmail ? (
-            <a
-              className="text-text underline"
-              href={`mailto:${item.contactEmail}`}
-              data-testid="pipeline-contact"
-            >
-              {item.contactEmail}
-            </a>
-          ) : null}
-        </div>
-        <PrivateNotesEditor pipelineItemId={item.id} />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {pipelineRowLinks(
-          { status: item.status, hotelId: item.hotel?.id ?? null, hotelName: item.hotel?.name },
-          surface,
-        ).map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            aria-label={link.ariaLabel}
-            className="inline-flex min-h-11 items-center rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-background"
-          >
-            {link.label}
-          </Link>
-        ))}
-      </div>
-    </li>
-  );
-}
-
 export default async function PipelinePage({
   searchParams,
 }: {
@@ -142,10 +73,12 @@ export default async function PipelinePage({
 }) {
   const raw = await searchParams;
   const session = await requireUser("/app/pipeline");
-  const deadlines = await loadDeliverableDeadlineBoard(session.userId, new Date().toISOString());
+  const asOf = new Date().toISOString();
+  const deadlines = await loadDeliverableDeadlineBoard(session.userId, asOf);
   const surface = normalizePipelineSurface(raw.surface);
   const status = pipelineQueryStatus(surface, normalizeStatusFilter(raw.status));
   const rank = parseMetricRank(raw.rank);
+  const view = normalizePipelineView(raw.view);
   const requestedPage = normalizePageParam(raw.page);
   const heading = pipelineSurfaceHeading(surface);
   const crumbs =
@@ -158,18 +91,21 @@ export default async function PipelinePage({
   let loaded: PipelinePage | null = null;
   let failed = false;
   let rankHold: "locked" | "not_enough_data" | null = null;
-  try {
-    const result = await listPipelineItems(status, requestedPage, undefined, rank);
-    if (result.status === "ok") loaded = result.page;
-    else if (result.status === "locked") rankHold = "locked";
-    else if (result.status === "not_enough_data") rankHold = "not_enough_data";
-    else failed = true;
-  } catch {
-    failed = true;
-  }
+  const [listResult, countsResult, attentionResult] = await Promise.all([
+    listPipelineItems(status, requestedPage, undefined, rank).catch(() => ({
+      status: "error" as const,
+    })),
+    countPipelineStatuses().catch(() => ({ status: "error" as const })),
+    listOpenPipelineForAttention().catch(() => ({ status: "error" as const })),
+  ]);
 
-  const state = pipelineListState({ failed, page: loaded, status, surface, rank });
-  const unrankedHref = pipelinePageHref(status, 1, surface);
+  if (listResult.status === "ok") loaded = listResult.page;
+  else if (listResult.status === "locked") rankHold = "locked";
+  else if (listResult.status === "not_enough_data") rankHold = "not_enough_data";
+  else failed = true;
+
+  const state = pipelineListState({ failed, page: loaded, status, surface, rank, view });
+  const unrankedHref = pipelinePageHref(status, 1, surface, null, view);
   const loadedItems: PipelineListItem[] = loaded?.items ?? [];
   const contactEmails =
     loadedItems.length > 0
@@ -185,6 +121,44 @@ export default async function PipelinePage({
         ? DEADLINE_COPY[deadlines.indicators[item.id]!]
         : null,
   }));
+
+  const intelligence = await listPublicIntelligence(
+    items.flatMap((item) => (item.hotel?.id ? [item.hotel.id] : [])),
+  ).catch(() => ({ status: "error" as const }));
+  const intelligenceForCards:
+    { status: "error" } | { status: "ok"; byHotel: Map<string, IntelligenceResult> } =
+    intelligence.status === "error"
+      ? { status: "error" }
+      : {
+          status: "ok",
+          byHotel: new Map(
+            [...intelligence.byHotel.entries()].map(([id, signal]) => [
+              id,
+              { status: "ok" as const, signal },
+            ]),
+          ),
+        };
+
+  const attention = attentionFromRows({
+    rows: attentionResult.status === "ok" ? attentionResult.items : [],
+    rowsFailed: attentionResult.status !== "ok",
+    rowsCapped: attentionResult.status === "ok" ? attentionResult.capped : false,
+    deadlines:
+      deadlines.kind === "ok"
+        ? [...deadlines.reminders].map((item) => ({
+            pipelineItemId: item.pipelineItemId,
+            hotelId: item.hotelId,
+            hotelName: item.hotelName,
+            state: item.state,
+            dueOn: item.dueOn,
+            href: item.href,
+          }))
+        : [],
+    deadlineRead: deadlines.kind === "ok" ? "ok" : "error",
+    asOf,
+  });
+
+  const counts = countsResult.status === "ok" ? countsResult.counts : null;
 
   return (
     <div className="space-y-6">
@@ -208,13 +182,15 @@ export default async function PipelinePage({
       />
 
       <PipelineSurfaceNav surface={surface} />
-
       <DeliverableReminders board={deadlines} />
+      <PipelineCommand counts={counts} />
+      <PipelineAttentionList board={attention} />
 
       <PipelineStatusFilter
         status={status}
         surface={surface}
         rank={rank}
+        view={view}
         showStatus={surface !== "collaborations"}
       />
 
@@ -250,35 +226,30 @@ export default async function PipelinePage({
           title={state.title}
           description="Something went wrong on our side. Reload the page to try again."
         />
-      ) : state.kind === "items" && surface === "all" && !status && !rank ? (
-        <div className="space-y-3">
-          <p className="text-sm text-muted">
-            {state.summary}
-            {loaded ? ` · ${loaded.total} cycles` : ""}
-          </p>
-          <p className="text-sm text-muted">
-            A Gmail reading is a suggestion. You confirm the status.
-          </p>
-          <PipelineBoard items={items} surface={surface} />
-          {state.pagination ? <PipelinePagination state={state.pagination} /> : null}
-        </div>
       ) : state.kind === "items" ? (
         <div className="space-y-3">
           <p className="text-sm text-muted" role="status" aria-live="polite">
             {state.summary}
             {state.range ? <span className="ml-2">· {state.range}</span> : null}
           </p>
-          <ul className="space-y-3">
-            {items.map((item) => (
-              <Row key={item.id} item={item} surface={surface} />
-            ))}
-          </ul>
+          <p className="text-sm text-muted">
+            The board shows this page. A Gmail reading is a suggestion. You confirm the status.
+          </p>
+          <PipelineViewSwitch view={view} status={status} surface={surface} rank={rank} />
+          <PipelineDense
+            items={items}
+            surface={surface}
+            view={view}
+            asOf={asOf}
+            counts={counts}
+            intelligence={intelligenceForCards}
+          />
           {state.pagination ? <PipelinePagination state={state.pagination} /> : null}
         </div>
       ) : state.kind === "empty_filtered" ? (
         <EmptyState title={state.title} description="Try a different status, or clear the filter.">
           <Link
-            href={surface === "inbox" ? "/app/pipeline?surface=inbox" : "/app/pipeline"}
+            href={pipelinePageHref(null, 1, surface, null, view)}
             className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
           >
             Clear filter

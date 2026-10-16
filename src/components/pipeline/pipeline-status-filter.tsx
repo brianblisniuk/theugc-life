@@ -7,21 +7,23 @@
 import Link from "next/link";
 
 import { METRIC_IDS, METRIC_TITLES, type MetricId } from "@/lib/metrics/contract";
-import { pipelinePageHref, type PipelineSurface } from "@/lib/pipeline/view";
+import { pipelinePageHref, type PipelineSurface, type PipelineView } from "@/lib/pipeline/view";
 import { PIPELINE_STATUSES, pipelineStatusLabel } from "@/lib/pipeline/types";
 
 export function PipelineStatusFilter({
   status,
   surface = "all",
   rank = null,
+  view = null,
   showStatus = true,
 }: {
   status: string | null;
   surface?: PipelineSurface;
   rank?: MetricId | null;
+  view?: PipelineView | null;
   showStatus?: boolean;
 }) {
-  const clearHref = pipelinePageHref(null, 1, surface);
+  const clearHref = pipelinePageHref(null, 1, surface, null, view);
   return (
     <form
       action="/app/pipeline"
@@ -30,6 +32,9 @@ export function PipelineStatusFilter({
     >
       {surface === "inbox" || surface === "collaborations" ? (
         <input type="hidden" name="surface" value={surface} />
+      ) : null}
+      {view === "list" || view === "timeline" ? (
+        <input type="hidden" name="view" value={view} />
       ) : null}
       {showStatus ? (
         <div className="space-y-1">

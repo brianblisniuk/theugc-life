@@ -136,8 +136,16 @@ async function draftAssistant(
     destinationName: hotel.hotel.destination?.name ?? null,
     requestedTripId: tripId || null,
     preferDraftTrip: false,
+    requestedPipelineItemId: readField(formData, "pipelineItemId") || null,
   });
   if (context.status !== "ok") return { result: "error" };
+  const pipelineItemId = readField(formData, "pipelineItemId");
+  if (pipelineItemId && !isUuid(pipelineItemId)) {
+    return { result: "invalid_input", message: "Choose one of your opportunities." };
+  }
+  if (pipelineItemId && context.selectedOpportunity?.id !== pipelineItemId) {
+    return { result: "invalid_input", message: "Choose one of your opportunities." };
+  }
   if (tripId && context.selectedTripId !== tripId) {
     return { result: "invalid_input", message: "Choose one of your trips." };
   }

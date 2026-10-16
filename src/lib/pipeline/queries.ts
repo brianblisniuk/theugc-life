@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/hotels/ids";
 import { workspaceLimit } from "@/lib/entitlements/inventory";
 import type { BillingAccessResult } from "@/lib/billing/queries";
+import type { IntelligenceSignal } from "@/lib/hotels/intelligence";
 import { rankOwnedHotels } from "@/lib/metrics/pipeline-rank";
 import type { MetricId } from "@/lib/metrics/contract";
 
@@ -60,6 +61,11 @@ export interface PipelineListItem {
   contactEmail?: string | null;
   /** Most urgent deliverable deadline on this cycle. Absent when the read failed or none apply. */
   deadlineLabel?: string | null;
+  /** Per-creator display id. Null when the row did not include a well-formed value. */
+  displayRef: string | null;
+  stayStart: string | null;
+  stayEnd: string | null;
+  tripName: string | null;
   hotel: {
     id: string;
     name: string;
@@ -146,10 +152,10 @@ export interface PipelineRankAuth {
 }
 
 const RANK_SELECT =
-  "id, status, saved_at, last_activity_at, next_followup_at, hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
 
 const SELECT_COLUMNS =
-  "id, status, saved_at, last_activity_at, next_followup_at, hotel:hotels(id, name, country_code, destination:destinations(name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
 
 /**
  * Normalize a `?page=` value. Anything that is not a positive whole number —
@@ -166,22 +172,33 @@ export function normalizePageParam(raw: string | string[] | undefined | null): n
   return parsed;
 }
 
-function mapRankRow(raw: unknown): PipelineListItem & { destinationId: string | null } {
+function oneRecord(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return first && typeof first === "object" ? (first as Record<string, unknown>) : null;
+  }
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function mapPipelineRow(raw: unknown): PipelineListItem & { destinationId: string | null } {
   const row = raw as Record<string, unknown>;
-  const hotelRaw = row.hotel as Record<string, unknown> | Record<string, unknown>[] | null;
-  const hotel = Array.isArray(hotelRaw) ? hotelRaw[0] : hotelRaw;
-  const destRaw = hotel?.destination as
-    Record<string, unknown> | Record<string, unknown>[] | null | undefined;
-  const dest = Array.isArray(destRaw) ? destRaw[0] : destRaw;
+  const hotel = oneRecord(row.hotel);
+  const dest = oneRecord(hotel?.destination);
+  const trip = oneRecord(row.trip);
   const destinationId =
     typeof hotel?.destination_id === "string"
       ? hotel.destination_id
       : typeof dest?.id === "string"
         ? dest.id
         : null;
+  const displayRef = typeof row.display_ref === "string" ? row.display_ref : null;
   return {
     id: String(row.id),
     status: row.status as PipelineStatus,
+    displayRef,
+    stayStart: typeof row.stay_start === "string" ? row.stay_start : null,
+    stayEnd: typeof row.stay_end === "string" ? row.stay_end : null,
+    tripName: typeof trip?.name === "string" ? trip.name : null,
     savedAt: (row.saved_at as string | null) ?? null,
     lastActivityAt: (row.last_activity_at as string | null) ?? null,
     nextFollowupAt: (row.next_followup_at as string | null) ?? null,
@@ -230,7 +247,7 @@ async function listRankedPipelineItems(
   const { data, error } = await builder.order("id", { ascending: true }).range(0, count - 1);
   if (error) return { status: "error" };
 
-  const mapped = (data ?? []).map((raw) => mapRankRow(raw));
+  const mapped = (data ?? []).map((raw) => mapPipelineRow(raw));
   const auth = rankAuth ?? { session: await resolveSession() };
   const ranked = await rankOwnedHotels(
     supabase as never,
@@ -338,28 +355,8 @@ export async function listPipelineItems(
   if (error) return { status: "error" };
 
   const items = (data ?? []).map((raw) => {
-    const row = raw as unknown as Record<string, unknown>;
-    const hotelRaw = row.hotel as Record<string, unknown> | Record<string, unknown>[] | null;
-    const hotel = Array.isArray(hotelRaw) ? hotelRaw[0] : hotelRaw;
-    const destRaw = hotel?.destination as
-      Record<string, unknown> | Record<string, unknown>[] | null | undefined;
-    const dest = Array.isArray(destRaw) ? destRaw[0] : destRaw;
-
-    return {
-      id: String(row.id),
-      status: row.status as PipelineStatus,
-      savedAt: (row.saved_at as string | null) ?? null,
-      lastActivityAt: (row.last_activity_at as string | null) ?? null,
-      nextFollowupAt: (row.next_followup_at as string | null) ?? null,
-      hotel: hotel
-        ? {
-            id: String(hotel.id),
-            name: String(hotel.name),
-            destinationName: (dest?.name as string | null) ?? null,
-            countryCode: (hotel.country_code as string | null) ?? null,
-          }
-        : null,
-    } satisfies PipelineListItem;
+    const { destinationId: _destinationId, ...item } = mapPipelineRow(raw);
+    return item;
   });
 
   return {
@@ -374,6 +371,90 @@ export async function listPipelineItems(
       hasNext: page < totalPages,
     },
   };
+}
+
+/** Exact per-status counts. A failed count is an error, not a zero. */
+export async function countPipelineStatuses(
+  injectedClient?: PipelineQueryClient,
+): Promise<{ status: "ok"; counts: Record<PipelineStatus, number> } | { status: "error" }> {
+  const supabase = injectedClient ?? (await createClient());
+  const counts = {} as Record<PipelineStatus, number>;
+  for (const status of [
+    "saved",
+    "planned",
+    "pitched",
+    "replied",
+    "follow_up",
+    "negotiating",
+    "won",
+    "closed",
+  ] as const) {
+    const { count, error } = await supabase
+      .from("pipeline_items")
+      .select("id", { count: "exact", head: true })
+      .eq("status", status);
+    if (error || count === null || count === undefined) return { status: "error" };
+    counts[status] = count;
+  }
+  return { status: "ok", counts };
+}
+
+/** Open opportunities for the attention list. One extra row means the read is capped. */
+export const PIPELINE_ATTENTION_READ = 80;
+
+export async function listOpenPipelineForAttention(
+  injectedClient?: PipelineQueryClient,
+): Promise<{ status: "ok"; items: PipelineListItem[]; capped: boolean } | { status: "error" }> {
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await supabase
+    .from("pipeline_items")
+    .select(SELECT_COLUMNS)
+    .neq("status", "closed")
+    .order("last_activity_at", { ascending: false })
+    .order("id", { ascending: true })
+    .limit(PIPELINE_ATTENTION_READ + 1);
+  if (error) return { status: "error" };
+  const rows = data ?? [];
+  const capped = rows.length > PIPELINE_ATTENTION_READ;
+  return {
+    status: "ok",
+    capped,
+    items: rows.slice(0, PIPELINE_ATTENTION_READ).map((raw) => {
+      const { destinationId: _destinationId, ...item } = mapPipelineRow(raw);
+      return item;
+    }),
+  };
+}
+
+/**
+ * Public intelligence for the hotels on this page. One failed query is
+ * unavailable for every card, not "insufficient data".
+ */
+export async function listPublicIntelligence(
+  hotelIds: readonly string[],
+  injectedClient?: PipelineQueryClient,
+): Promise<{ status: "ok"; byHotel: Map<string, IntelligenceSignal> } | { status: "error" }> {
+  const ids = [...new Set(hotelIds.filter((id) => isUuid(id)))];
+  if (ids.length === 0) return { status: "ok", byHotel: new Map() };
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await supabase
+    .from("hotel_public_intelligence")
+    .select("hotel_id, activity_level, confidence_level, has_observed_collaboration, recency_band")
+    .in("hotel_id", ids);
+  if (error) return { status: "error" };
+  const byHotel = new Map<string, IntelligenceSignal>();
+  for (const raw of data ?? []) {
+    const row = raw as Record<string, unknown>;
+    if (typeof row.hotel_id !== "string") continue;
+    byHotel.set(row.hotel_id, {
+      activityLevel: typeof row.activity_level === "string" ? row.activity_level : null,
+      confidenceLevel: typeof row.confidence_level === "string" ? row.confidence_level : null,
+      hasObservedCollaboration:
+        typeof row.has_observed_collaboration === "boolean" ? row.has_observed_collaboration : null,
+      recencyBand: typeof row.recency_band === "string" ? row.recency_band : null,
+    });
+  }
+  return { status: "ok", byHotel };
 }
 
 /**

@@ -52,6 +52,7 @@ export function PitchComposer({
   canSend = false,
   mailAccountId = null,
   hasSendScope = false,
+  pipelineItemId = null,
 }: {
   hotelId: string;
   hotelName: string;
@@ -73,6 +74,7 @@ export function PitchComposer({
   canSend?: boolean;
   mailAccountId?: string | null;
   hasSendScope?: boolean;
+  pipelineItemId?: string | null;
 }) {
   const router = useRouter();
   const [subjectValue, setSubjectValue] = useState(subject);
@@ -192,6 +194,7 @@ export function PitchComposer({
     const data = new FormData();
     data.set("hotelId", hotelId);
     data.set("tripId", tripId ?? "");
+    if (pipelineItemId) data.set("pipelineItemId", pipelineItemId);
     data.set("tone", tone);
     data.set("language", language);
     for (const point of points) data.append("keyPoint", point);
@@ -220,7 +223,9 @@ export function PitchComposer({
     } else if (result.result === "rate_limited") {
       setNote("Wait a moment before another AI draft.");
     } else if (result.result === "paused") {
-      setNote(`AI and sending are paused on this account. Email ${SUPPORT_EMAIL} and we'll review it.`);
+      setNote(
+        `AI and sending are paused on this account. Email ${SUPPORT_EMAIL} and we'll review it.`,
+      );
     } else if (result.result === "off_topic") {
       setNote("That draft wasn't about a collaboration with this hotel, so it wasn't saved.");
     } else if (result.result === "invalid_input") {
@@ -256,14 +261,18 @@ export function PitchComposer({
         <div className="space-y-3 rounded-[var(--radius-app)] border border-border p-3">
           <p className="max-w-prose text-sm text-text">
             Draft with AI from your profile, this hotel, and your pipeline.
-            {assistant.priority ? " Priority AI uses a fuller note." : ""} Choose a tone, a language,
-            and the points to include. The first draft for a hotel uses {creditLabel}. The next three
-            drafts for that hotel this month do not. Later drafts use {creditLabel}. This does not send
-            the email.
+            {assistant.priority ? " Priority AI uses a fuller note." : ""} Choose a tone, a
+            language, and the points to include. The first draft for a hotel uses {creditLabel}. The
+            next three drafts for that hotel this month do not. Later drafts use {creditLabel}. This
+            does not send the email.
           </p>
           <label className="block space-y-1 text-xs font-medium text-muted">
             Tone
-            <select className={FIELD} value={tone} onChange={(event) => setTone(event.target.value as (typeof PITCH_TONES)[number])}>
+            <select
+              className={FIELD}
+              value={tone}
+              onChange={(event) => setTone(event.target.value as (typeof PITCH_TONES)[number])}
+            >
               {PITCH_TONES.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -276,7 +285,9 @@ export function PitchComposer({
             <select
               className={FIELD}
               value={language}
-              onChange={(event) => setLanguage(event.target.value as (typeof PITCH_LANGUAGES)[number])}
+              onChange={(event) =>
+                setLanguage(event.target.value as (typeof PITCH_LANGUAGES)[number])
+              }
             >
               {PITCH_LANGUAGES.map((option) => (
                 <option key={option} value={option}>
@@ -460,8 +471,8 @@ export function PitchComposer({
       </div>
       <p className="max-w-prose text-sm text-muted">
         Copy and the mail draft stay on your device. Neither sends the message, and neither marks{" "}
-        {hotelName} as pitched. Send is a separate action from your connected Gmail, and it does
-        not mark {hotelName} as pitched either.{" "}
+        {hotelName} as pitched. Send is a separate action from your connected Gmail, and it does not
+        mark {hotelName} as pitched either.{" "}
         <a className="underline" href={suggestionHref}>
           Start again from the suggestion
         </a>

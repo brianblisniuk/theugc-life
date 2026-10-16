@@ -18,6 +18,7 @@ import { getHotelContactsIfAuthorized, getHotelIntelligence } from "@/lib/hotels
 import { getOwnProfile } from "@/lib/profile/queries";
 import { listTrips } from "@/lib/trips/queries";
 
+import { chooseOpportunity, shownDisplayRef, type StudioOpportunity } from "./studio";
 import {
   httpsUrl,
   instagramHandle,
@@ -54,6 +55,11 @@ export interface PitchDraftRow {
   delivery: PitchDelivery;
 }
 
+export interface PitchOtherDraft {
+  hotelId: string;
+  hotelName: string;
+}
+
 export type PitchContextLoad =
   | {
       status: "ok";
@@ -68,6 +74,11 @@ export type PitchContextLoad =
       relationshipStatus: string | null;
       selectedTripId: string | null;
       primaryLanguage: string | null;
+      opportunities: StudioOpportunity[];
+      opportunityChoice: ReturnType<typeof chooseOpportunity>["choice"];
+      selectedOpportunity: StudioOpportunity | null;
+      otherDraft: PitchOtherDraft | null;
+      otherDraftUnread: boolean;
     }
   | { status: "error" };
 
@@ -102,9 +113,14 @@ export async function loadPitchContext(input: {
   requestedTripId: string | null;
   /** When the URL does not name a trip, a saved draft's trip fills the suggestion. */
   preferDraftTrip: boolean;
+  /** Pipeline row id. A display id is not accepted. */
+  requestedPipelineItemId?: string | null;
 }): Promise<PitchContextLoad> {
   if (!isUuid(input.userId) || !isUuid(input.hotelId)) return { status: "error" };
   if (input.requestedTripId && !isUuid(input.requestedTripId)) return { status: "error" };
+  if (input.requestedPipelineItemId && !isUuid(input.requestedPipelineItemId)) {
+    return { status: "error" };
+  }
 
   try {
     const supabase = await createClient();
@@ -133,10 +149,11 @@ export async function loadPitchContext(input: {
       getHotelContactsIfAuthorized(input.hotelId),
       supabase
         .from("pipeline_items")
-        .select("status")
+        .select("id, status, display_ref, stay_start, stay_end, trip_id")
         .eq("hotel_id", input.hotelId)
         .neq("status", "closed")
-        .limit(1),
+        .order("last_activity_at", { ascending: false })
+        .limit(20),
       supabase
         .from("collaborations")
         .select("status, collaboration_type")
@@ -245,8 +262,21 @@ export async function loadPitchContext(input: {
       recipientEmail = email;
     }
 
-    const statusRow = (pipeline.data ?? [])[0] as { status?: unknown } | undefined;
-    const relationshipStatus = asText(statusRow?.status);
+    const opportunities: StudioOpportunity[] = [];
+    for (const raw of pipeline.data ?? []) {
+      const record = raw as Record<string, unknown>;
+      if (typeof record.id !== "string") return { status: "error" };
+      opportunities.push({
+        id: record.id,
+        displayRef: shownDisplayRef(asText(record.display_ref)),
+        status: asText(record.status),
+        stayStart: asText(record.stay_start),
+        stayEnd: asText(record.stay_end),
+        tripId: asText(record.trip_id),
+      });
+    }
+    const chosen = chooseOpportunity(opportunities, input.requestedPipelineItemId ?? null);
+    const relationshipStatus = chosen.selected?.status ?? null;
 
     const templateRows: PitchTemplateRow[] = [];
     for (const row of templates.data ?? []) {
@@ -308,6 +338,26 @@ export async function loadPitchContext(input: {
       };
     }
 
+    let otherDraft: PitchOtherDraft | null = null;
+    let otherDraftUnread = false;
+    const other = await supabase
+      .from("pitch_drafts")
+      .select("hotel_id, hotel:hotels(name)")
+      .neq("hotel_id", input.hotelId)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (other.error) {
+      otherDraftUnread = true;
+    } else {
+      const otherRow = (other.data ?? [])[0] as
+        | { hotel_id?: unknown; hotel?: { name?: unknown } | { name?: unknown }[] | null }
+        | undefined;
+      const otherHotel = Array.isArray(otherRow?.hotel) ? otherRow?.hotel[0] : otherRow?.hotel;
+      if (typeof otherRow?.hotel_id === "string" && typeof otherHotel?.name === "string") {
+        otherDraft = { hotelId: otherRow.hotel_id, hotelName: otherHotel.name };
+      }
+    }
+
     return {
       status: "ok",
       facts,
@@ -320,6 +370,11 @@ export async function loadPitchContext(input: {
       intelligenceUnavailable,
       relationshipStatus,
       selectedTripId: selected?.id ?? null,
+      opportunities,
+      opportunityChoice: chosen.choice,
+      selectedOpportunity: chosen.selected,
+      otherDraft,
+      otherDraftUnread,
       primaryLanguage: profile.profile.primaryLanguage,
     };
   } catch {

@@ -58,6 +58,7 @@ describe("Midnight shell", () => {
       "Discover",
       "My Trips",
       "Pipeline",
+      "Pitch Studio",
       "Inbox",
       "Collaborations",
       "My Profile",

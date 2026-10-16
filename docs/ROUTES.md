@@ -87,11 +87,18 @@ Includes entitlement-aware contact section and private creator relationship.
 `from` and `trip` choose the breadcrumb only (D081, Accepted). They do not
 authorize the read. The map marker and Discover cards omit them.
 
+### `/app/pitch`
+Pitch Studio index. The caller's open opportunities only. Each link uses the
+pipeline row id. It does not call a model and it does not send mail.
+
 ### `/app/hotels/[id]/pitch`
 Pitch draft for one hotel. Copy and a mailto link stay on the device.
 Send is a separate explicit action through the creator's connected Gmail
 (D156). It does not mark the hotel as pitched. Pro and Max can send. Free
-and a Destination Pass cannot. The server enforces that.
+and a Destination Pass cannot. The server enforces that. `item` selects one
+open opportunity by row id. A display id is not accepted. When more than one
+opportunity is open and `item` is absent, the page asks for a choice and does
+not guess. AI drafting stays on the existing Claude Sonnet path.
 
 ### `/api/integrations/gmail/oauth/start`
 `purpose=connect` and `purpose=reconnect` ask for the B02 scopes only.
@@ -111,7 +118,7 @@ workspace and is not listed here. Not a primary navigation item. D081's
 collaborations are `/app/pipeline?surface=collaborations`.
 
 Recommended query params:
-- `view=list|board`
+- `view=list|timeline`. Absent, the page is the board. `follow_up` is an event, not a stage column.
 - filters may use URL search params.
 - `surface=inbox` frames the same list as the inbox (D081, Accepted). It is not a new route.
 - `surface=collaborations` lists won cycles. It is not a new route.
