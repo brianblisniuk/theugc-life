@@ -392,7 +392,7 @@ Started, and Collaborations, no migration). PR #108 is merged
 (`b0e0a732ec1b2069bbdde91c6ded51b1466da80e`, V2-S2 Trips and Outreach, no new migration).
 PR #106 is merged (`0f7074625abcab32ef02d56cc94bf34a9c6ee0b1`, V2-S4 Inbox and Home, no new migration).
 Sending stays gated. A failed read is not zero.
-PR #105 is the open V2-S3 draft. Migration `0098` binds a pitch draft to one opportunity.
+PR #105 is merged (`9e02100cef8b1be127ba05689771630f9f0d8893`, V2-S3, migration `0098`). A pitch draft belongs to one opportunity. V2-S1 is draft PR #107. Do not merge #107.
 `HUNTER_API_KEY` stays unset in CI. UX02 design
 (PR #91) is merged as `dbfd2472b00d49590c17f416a10f6dbef371781b`. UX02 screens
 (PR #95) are merged as `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`. Draft PRs #88
@@ -440,7 +440,8 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | V2-S6 | **DONE — PR #104**, merge `a70c143f9bdc80ba39ce8e3974c84bbd237ac32a`. No migration. Midnight screens for Plans & Credits, Billing & Activity, My Profile, Getting Started, and Collaborations. Wired to existing Rebill checkout, D131 prices, D140 refunds, the 30-day deletion clock, and Gmail connect. Contract Review stays out (D185). | Creator account and collaboration execution | real rows only; `revision_requested`; barter, payment, or both |
 | V2-S2 | **DONE — PR #108**, merge `b0e0a732ec1b2069bbdde91c6ded51b1466da80e`. No new migration. Trips and Outreach on Midnight, wired to migration `0097` (D182–D184). | Trip nights, Gmail date decisions, outreach campaigns, `OP-` ids | counts match `trip_night_coverage`; User B cannot read User A’s campaign |
 | V2-S4 | **DONE — PR #106**, merge `0f7074625abcab32ef02d56cc94bf34a9c6ee0b1`. No new migration. Inbox and Home on the Midnight shell, using the V2-D1 opportunity model. Linked Gmail threads, commercial classifications, collaboration suggestions, and stay-date accept/reject. Home next actions, trip nights, and recorded counts. Sending stays gated. Insufficient data is not zero. | Inbox + Home | real rows only; User A cannot read User B; gmail.send is not called |
-| V2-S3 | **OPEN DRAFT — PR #105**. Migration `0098` binds a pitch draft to one opportunity. Pipeline and Pitch Studio on the Midnight shell, using migration `0097` (D182–D187). PR #102, PR #104, PR #108, and PR #106 are merged. | Dense pipeline and pitch | real next actions and public signals; Claude path unchanged; no send |
+| V2-S1 | **DRAFT — PR #107**. No migration. Discover and Hotel Detail on the merged Midnight shell. Do not merge #107. Pitch Studio uses merged PR #105. Contract Review stays out (D185). Photography stays the D064 no-photo state. | Midnight Discover + Hotel Detail | real catalog, map, filters, unlock, pipeline save, separate OP display ids, insufficient data |
+| V2-S3 | **DONE — PR #105**, merge `9e02100cef8b1be127ba05689771630f9f0d8893`. Migration `0098` binds a pitch draft to one opportunity. Pipeline and Pitch Studio on the Midnight shell, using migration `0097` (D182–D187). | Dense pipeline and pitch | real next actions and public signals; Claude path unchanged; no send |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -638,6 +639,7 @@ After every 5–8 merged base rounds:
 # 9. Immediate next move
 
 **Current frontier (16 Oct 2026).** Recorded main is
+`9e02100cef8b1be127ba05689771630f9f0d8893` (merge of PR #105, V2-S3, migration `0098`). It includes
 `0f7074625abcab32ef02d56cc94bf34a9c6ee0b1` (merge of PR #106, V2-S4 Inbox and Home, no new migration).
 It includes PR #108 (`b0e0a732ec1b2069bbdde91c6ded51b1466da80e`, V2-S2 Trips and Outreach, no new migration),
 PR #104 (`a70c143f9bdc80ba39ce8e3974c84bbd237ac32a`, V2-S6), PR #102
@@ -651,7 +653,7 @@ PR #97 merged the Hunter adapter
 (`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
 V2-F1 is **DONE — PR #102**. V2-S6 is **DONE — PR #104**. V2-S2 is **DONE — PR #108**.
 V2-S4 is **DONE — PR #106**. Sending stays gated. A failed read is not zero.
-V2-S3 is the open draft PR #105. Migration `0098` binds a pitch draft to one opportunity.
+V2-S3 is **DONE — PR #105** (`9e02100cef8b1be127ba05689771630f9f0d8893`). Migration `0098` binds a pitch draft to one opportunity. V2-S1 is draft PR #107. Do not merge #107. Hotel Detail shows stored verification after unlock. A locked contact has no name or email.
 PREPROD-1b (PR #93, `9c50400c104b6f5aa036eea3ea798f269aeffe5e`) and PREPROD-1
 (PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`) stay
 merged. D05 is merged (PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`).

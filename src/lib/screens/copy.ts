@@ -4,10 +4,13 @@
  * They do not add a metric, a price, or a masked email.
  */
 
-export const DISCOVER_TITLE = "Discover";
+export const DISCOVER_TITLE = "Find hotels worth your time.";
 
 export const DISCOVER_LEDE =
-  "Find hotels, explore creator activity, and build your next collaboration.";
+  "Compare creator-relevant signals before opening each property. No invented opportunity scores.";
+
+export const DISCOVER_FREE_NOTE =
+  "Free can browse hotels and their public activity. Reply rates, typical reply times, and those sorts are premium where the sample meets the publication floor. An unavailable metric is Insufficient data. It is not 0%.";
 
 export const DISCOVER_SEARCH_LABEL = "Search";
 

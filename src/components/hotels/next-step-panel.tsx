@@ -8,20 +8,19 @@ function Primary({ model }: { model: NextStepModel }) {
   if (model.primaryDisabled || !model.primaryHref) {
     if (model.creditsUnknown || model.kind === "relationship_unknown" || model.kind === "contact_error") {
       return (
-        <a className="ux-btn ux-btn-primary" href="">
+        <a className="v12-btn v12-btn-primary" href="">
           Retry
         </a>
       );
     }
     return (
-      <button type="button" className="ux-btn" disabled>
+      <button type="button" className="v12-btn" disabled>
         {model.primaryLabel}
       </button>
     );
   }
-  const primary = model.kind === "generate_pitch" || model.kind === "unlock";
   return (
-    <Link className={primary ? "ux-btn ux-btn-primary" : "ux-btn ux-btn-primary"} href={model.primaryHref}>
+    <Link className="v12-btn v12-btn-primary v12-btn-block" href={model.primaryHref}>
       {model.primaryLabel}
     </Link>
   );
@@ -38,7 +37,7 @@ export function NextStepPanel({
 }) {
   return (
     <>
-      <aside className="ux-side" aria-label="Your next step">
+      <aside className="s1-panel s1-side" aria-label="Your next step">
         <p className="ux-eyebrow">Your next step</p>
         <h2 className="ux-name">{model.title}</h2>
         <Primary model={model} />

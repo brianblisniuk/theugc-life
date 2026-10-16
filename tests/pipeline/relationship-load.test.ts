@@ -21,6 +21,8 @@ function fakeClient(outcome: Outcome): PipelineQueryClient {
     select: () => chain,
     eq: () => chain,
     neq: () => chain,
+    order: () => chain,
+    limit: () => chain,
     maybeSingle: () => Promise.resolve(outcome),
   };
   return { from: () => chain } as unknown as PipelineQueryClient;

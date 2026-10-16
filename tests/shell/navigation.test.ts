@@ -290,6 +290,12 @@ describe("pitch href", () => {
     expect(pitchHref(HOTEL, null, { kind: "pipeline" })).toBe(
       `/app/hotels/${HOTEL}/pitch?from=pipeline`,
     );
+    const opportunity = "55555555-5555-4555-8555-555555555555";
+    const selected = pitchHref(HOTEL, TRIP, { kind: "inbox" }, opportunity);
+    expect(selected).toContain("from=inbox");
+    expect(selected).toContain(`trip=${TRIP}`);
+    expect(selected).toContain(`opportunity=${opportunity}`);
+    expect(pitchHref(HOTEL, null, { kind: "pipeline" }, "not-an-opportunity")).toBeNull();
     expect(pitchHref(HOTEL, "not-a-trip")).toBeNull();
     expect(pitchHref("not-a-hotel", TRIP)).toBeNull();
     expect(pitchHref(`${HOTEL}/admin`)).toBeNull();
