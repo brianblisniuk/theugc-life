@@ -228,7 +228,7 @@ document.addEventListener('input',function(e){if(e.target.id==='search'){state.s
 document.addEventListener('click',function(e){if(e.target&&e.target.id==='more-filters'){el('more-options').classList.toggle('open');e.target.setAttribute('aria-expanded',el('more-options').classList.contains('open'))}if(e.target&&e.target.id==='clear-search'){state.search='';state.type='';state.activity='';state.collab=false;state.sort='name';el('search').value='';saveState();renderDiscover();el('more-options')?.classList.remove('open')}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(el('modal-root')&&el('modal-root').classList.contains('open'))closeModal();else el('sidebar')&&el('sidebar').classList.remove('open')}});
 document.addEventListener('click',function(e){if(e.target&&e.target.id==='modal-root')closeModal()});
-document.addEventListener('DOMContentLoaded',function(){if(state.plan==='free'&&(state.sort==='rate'||state.sort==='reply'))state.sort='name';featureNav();render();});
+document.addEventListener('DOMContentLoaded',function(){if(document.body.dataset.page==='discover'){var requested=new URLSearchParams(location.search).get('trip');if(requested&&tripById(requested)){state.trip=requested;state.city=tripById(requested).city;saveState();}}if(state.plan==='free'&&(state.sort==='rate'||state.sort==='reply'))state.sort='name';featureNav();render();});
 window.UXApp={state:state,H:H,saveState:saveState,render:render,renderResults:renderResults,renderHotel:renderHotel,showSaveModal:showSaveModal,tripById:tripById,currentTrip:currentTrip,tripForm:tripForm,closeModal:closeModal,modal:modal,toast:toast,upgrade:upgrade,ic:ic,esc:esc};
 })();
 </script><script>
@@ -348,7 +348,7 @@ function renderTrips(){
 }
 function renderContracts(){
  let root=$('contract-documents');if(!root)return;
- if($('contract-hotel')){const selected=$('contract-hotel').value||qs().get('hotel')||st.lastHotel||'';$('contract-hotel').innerHTML='<option value="">Select associated hotel</option>'+a().H.map(h=>'<option value="'+html(h.id)+'" '+(h.id===selected?'selected':'')+'>'+html(h.name)+'</option>').join('')}
+ if($('contract-opportunity')){const opportunityId=qs().get('opp')||$('contract-opportunity').value||'';const related=(function(){try{return JSON.parse(localStorage.getItem('ugc_v6_opportunities')||'[]')}catch(e){return []}})().find(o=>o.id===opportunityId);$('contract-opportunity').value=related?related.id:'';if($('contract-context-text'))$('contract-context-text').textContent=related?'Linked to opportunity #'+related.id.slice(-8)+' · independent contract record':'Not linked to a particular opportunity';}if($('contract-hotel')){const selected=$('contract-hotel').value||qs().get('hotel')||st.lastHotel||'';$('contract-hotel').innerHTML='<option value="">Select associated hotel</option>'+a().H.map(h=>'<option value="'+html(h.id)+'" '+(h.id===selected?'selected':'')+'>'+html(h.name)+'</option>').join('')}
  root.innerHTML=st.contracts.length?st.contracts.slice().reverse().map(c=>'<div class="draft-row"><div><strong>'+html(c.title||'Untitled contract')+'</strong><div class="fine">'+html(findHotel(c.hotelId)?.name||'Unassigned hotel')+' · Saved '+html(new Date(c.savedAt).toLocaleDateString())+' · '+c.content.length+' characters</div></div><button class="btn small" data-contract-load="'+html(c.id)+'">Open</button></div>').join(''):'<p>No contract excerpts saved yet. Paste contract text to review.</p>';
 }
 function contractHeuristics(text){
@@ -431,14 +431,14 @@ document.addEventListener('click',e=>{
  if(b.dataset.v4==='confirm-manual-send'){a().closeModal();saveDraft(true)}
  if(b.dataset.pitchCopy){const data=inputValue('pitch-subject')+'\n\n'+inputValue('pitch-body');if(!inputValue('pitch-body'))return a().toast('No email body to copy');navigator.clipboard?.writeText(data).then(()=>a().toast('Email copied')).catch(()=>a().toast('Clipboard unavailable')); }
  if(b.dataset.useTrip){a().state.trip=b.dataset.useTrip;const t=a().tripById(b.dataset.useTrip);if(t)a().state.city=t.city;a().saveState();location.href='discover-standalone.html'}
- if(b.dataset.contractLoad){const c=st.contracts.find(x=>x.id===b.dataset.contractLoad);if(c){$('contract-title').value=c.title;if($('contract-hotel'))$('contract-hotel').value=c.hotelId||'';$('contract-text').value=c.content;$('contract-notes').innerHTML=contractHeuristics(c.content);a().toast('Saved excerpt loaded')}}
+ if(b.dataset.contractLoad){const c=st.contracts.find(x=>x.id===b.dataset.contractLoad);if(c){$('contract-title').value=c.title;if($('contract-hotel'))$('contract-hotel').value=c.hotelId||'';if($('contract-opportunity')){$('contract-opportunity').value=c.opportunityId||'';if($('contract-context-text'))$('contract-context-text').textContent=c.opportunityId?'Linked to opportunity #'+c.opportunityId.slice(-8):'Not linked to a particular opportunity';}$('contract-text').value=c.content;$('contract-notes').innerHTML=contractHeuristics(c.content);a().toast('Saved excerpt loaded')}}
  if(b.dataset.searchSave)saveSearch();
  if(b.hasAttribute('data-saved-searches'))savedSearchModal();
  if(b.dataset.searchRestore)restoreSearch(st.savedSearches.find(x=>x.id===b.dataset.searchRestore));
  if(b.hasAttribute('data-restore-search')){a().render();discoverEnhancement();a().toast('Search context restored')}
  if(b.dataset.v4==='contract-review'){let text=inputValue('contract-text');if(!text){a().toast('Paste a contract excerpt first');return}if(text.length<25){a().toast('Add a longer excerpt so there is text to review');return}
  $('contract-notes').innerHTML=contractHeuristics(text);a().toast('Checklist generated from text keywords; not an AI or legal review')}
- if(b.dataset.v4==='contract-save'){let text=inputValue('contract-text');if(!text)return a().toast('Paste contract text first');st.contracts.push({id:newId('contract'),hotelId:inputValue('contract-hotel')||null,title:inputValue('contract-title')||'Untitled excerpt',content:text,savedAt:new Date().toISOString()});persist();renderContracts();a().toast('Contract excerpt saved locally')}
+ if(b.dataset.v4==='contract-save'){let text=inputValue('contract-text');if(!text)return a().toast('Paste contract text first');st.contracts.push({id:newId('contract'),hotelId:inputValue('contract-hotel')||null,opportunityId:inputValue('contract-opportunity')||null,title:inputValue('contract-title')||'Untitled excerpt',content:text,savedAt:new Date().toISOString()});persist();renderContracts();a().toast('Contract excerpt saved locally')}
  if(b.dataset.v4==='campaign-from-trip'){location.href='campaigns-standalone.html'}
 });
 document.addEventListener('click',e=>{const x=e.target.closest('[data-confirm-bounce]');if(!x)return;const id=x.dataset.confirmBounce;st.events.push({id:newId('event'),hotelId:id,type:'stage',value:'bounced',source:'manual',at:new Date().toISOString()});persist();a().closeModal();renderInbox();a().toast('Manual bounce recorded · contact flagged for review');});
@@ -466,7 +466,7 @@ document.addEventListener('submit',e=>{
 <div class="nav-head">OUTREACH</div><a href="pitch-standalone.html" class="nav-item"><span class="nav-icon" data-icon="mail"></span><span><strong>Pitch Studio</strong><small>Write, save & resume drafts</small></span></a>
 <a href="pipeline-standalone.html" class="nav-item"><span class="nav-icon" data-icon="layers"></span><span><strong>Pipeline</strong><small>Track hotels & pitches</small></span></a>
 <a href="inbox-standalone.html" class="nav-item"><span class="nav-icon" data-icon="mail"></span><span><strong>Inbox</strong><small>Gmail conversations</small></span></a>
-<a href="campaigns-standalone.html" class="nav-item"><span class="nav-icon" data-icon="briefcase"></span><span><strong>Outreach Campaigns</strong><small>Manage hotel lead lists</small></span></a>
+<a href="campaigns-standalone.html" class="nav-item"><span class="nav-icon" data-icon="briefcase"></span><span><strong>Outreach</strong><small>Run focused initiatives</small></span></a>
 <div class="nav-head">LEGAL & IDENTITY</div><a href="contract-review-standalone.html" class="nav-item"><span class="nav-icon" data-icon="briefcase"></span><span><strong>Contract Review</strong><small>Understand deal terms</small></span></a><div class="nav-head">ACCOUNT</div>
 <a href="#" class="nav-item" data-feature="portfolio"><span class="nav-icon" data-icon="user"></span><span><strong>My Profile</strong><small>Creator portfolio</small></span></a>
 <a href="#" class="nav-item" data-feature="billing"><span class="nav-icon" data-icon="spark"></span><span><strong>Plans & Credits</strong><small>Membership & balance</small></span></a>
