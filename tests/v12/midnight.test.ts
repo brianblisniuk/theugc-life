@@ -96,6 +96,7 @@ describe("Midnight shell", () => {
       "My Trips",
       "Outreach",
       "Pipeline",
+      "Pitch Studio",
       "Inbox",
       "Collaborations",
       "My Profile",

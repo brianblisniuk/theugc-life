@@ -339,6 +339,7 @@ export type PitchDraftInput = {
   systemKey: SystemTemplateKey | null;
   subject: string;
   body: string;
+  opportunityId: string | null;
 };
 
 function requiredText(
@@ -384,12 +385,15 @@ export function parsePitchDraftFields(fields: {
   systemKey: string;
   subject: string;
   body: string;
+  opportunityId?: string;
 }): PitchDraftInput | PitchFieldError {
   const hotelId = optionalUuid(fields.hotelId);
   if (!hotelId.ok) return hotelId;
   if (!hotelId.value) return { ok: false, message: "Hotel is required." };
   const draftId = optionalUuid(fields.draftId);
   if (!draftId.ok) return draftId;
+  const opportunityId = optionalUuid(fields.opportunityId ?? "");
+  if (!opportunityId.ok) return opportunityId;
   const tripId = optionalUuid(fields.tripId);
   if (!tripId.ok) return tripId;
   const templateId = optionalUuid(fields.templateId);
@@ -414,6 +418,7 @@ export function parsePitchDraftFields(fields: {
     systemKey: systemRaw ? (systemRaw as SystemTemplateKey) : null,
     subject: subject.value,
     body: body.value,
+    opportunityId: opportunityId.value,
   };
 }
 

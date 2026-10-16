@@ -25,6 +25,7 @@ import {
   pipelineReturnHref,
   pipelineRowLinks,
   pipelineSurfaceHeading,
+  opportunityPitchHref,
   pitchHref,
   shellCrumbs,
   tripHotelHref,
@@ -89,6 +90,11 @@ describe("primary navigation stays the approved five", () => {
       "/app/trips",
     );
     expect(activePrimaryHref(`/app/hotels/${HOTEL}/pitch`, null)).toBe("/app/discover");
+    expect(opportunityPitchHref(HOTEL, TRIP)).toBe(
+      `/app/hotels/${HOTEL}/pitch?opportunity=${TRIP}&from=pipeline`,
+    );
+    expect(opportunityPitchHref(HOTEL, "OP-1042")).toBeNull();
+    expect(opportunityPitchHref("OP-1042", TRIP)).toBeNull();
     expect(PRIMARY_NAV.map((item) => item.href)).not.toContain("/app/hotels");
   });
 });

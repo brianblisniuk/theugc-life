@@ -1034,8 +1034,9 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Pitch",
     summary:
       "Pitch templates and drafts are the creator's, at every tier, including Free manual copy. An assistant draft is still a draft: copy and a mailto link do not send it. Another creator's Pro or Max row does not reveal them.",
-    routes: ["/app/hotels/[id]/pitch", "/app/profile/pitches"],
+    routes: ["/app/pitch", "/app/hotels/[id]/pitch", "/app/profile/pitches"],
     sourceFiles: [
+      "src/app/(app)/app/pitch/page.tsx",
       "src/app/(app)/app/hotels/[id]/pitch/page.tsx",
       "src/app/(app)/app/profile/pitches/page.tsx",
       "src/lib/pitch/actions.ts",
