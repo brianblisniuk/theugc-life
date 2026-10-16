@@ -5577,7 +5577,7 @@ stored follow-up has `delay_days` from 1 to 30.
 
 ## D178 — Production schedules discharge the operator jobs
 
-Status: **Proposed**.
+Status: **Accepted** (owner Brian, 16 Oct 2026).
 
 D076 said this repository has no production scheduler for inbox sync.
 D168 later scheduled the Gmail send dispatcher. This block schedules the
