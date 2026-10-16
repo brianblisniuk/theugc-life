@@ -16,6 +16,9 @@ import {
   PIPELINE_STATUSES,
   isSaveSuccessful,
   mapSaveResult,
+  isPipelineStage,
+  pipelineStageLabel,
+  pipelineStatusKind,
   pipelineStatusLabel,
   saveResultMessage,
   type SaveResult,
@@ -118,14 +121,30 @@ describe("Hotel Detail — already-saved state", () => {
   it("labels every status in human words", () => {
     expect(PIPELINE_STATUSES.map(pipelineStatusLabel)).toEqual([
       "Saved",
-      "Planned",
-      "Pitched",
+      "Pitch ready",
+      "Sent",
       "Replied",
       "Follow-up",
       "Negotiating",
-      "Won",
+      "Agreed",
       "Closed",
     ]);
+  });
+
+  it("maps the seven V12.1 stages and keeps follow-up as an event", () => {
+    expect(PIPELINE_STATUSES.filter(isPipelineStage).map(pipelineStageLabel)).toEqual([
+      "Saved",
+      "Pitch ready",
+      "Sent",
+      "Replied",
+      "Negotiating",
+      "Agreed",
+      "Closed",
+    ]);
+    expect(pipelineStageLabel("follow_up")).toBeNull();
+    expect(pipelineStatusKind("follow_up")).toBe("event");
+    expect(pipelineStatusKind("won")).toBe("stage");
+    expect(pipelineStatusLabel("follow_up")).toBe("Follow-up");
   });
 
   it("treats already_saved as success, exactly like a first save", () => {
@@ -340,7 +359,7 @@ describe("Pipeline list state", () => {
       status: "pitched",
     });
     if (state.kind !== "items") throw new Error("unreachable");
-    expect(state.summary).toBe("120 hotels with status Pitched");
+    expect(state.summary).toBe("120 hotels with status Sent");
     expect(state.pagination?.previousHref).toBe("/app/pipeline?status=pitched");
     expect(state.pagination?.nextHref).toBe("/app/pipeline?status=pitched&page=3");
   });
