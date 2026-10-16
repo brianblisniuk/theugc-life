@@ -13,6 +13,7 @@ import {
 
 export function DestinationQuestion({ destinations }: { destinations: DestinationChoice[] }) {
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState("");
   const [state, action, pending] = useActionState(chooseOnboardingDestination, null);
   const chips = useMemo(() => suggestedChips(destinations), [destinations]);
   const matches = useMemo(() => filterDestinations(destinations, query), [destinations, query]);
@@ -35,8 +36,18 @@ export function DestinationQuestion({ destinations }: { destinations: Destinatio
       </label>
       <div className="s6-actions">
         {choices.map((destination) => (
-          <label key={destination.id} className="v12-chip">
-            <input type="radio" name="destinationId" value={destination.id} />
+          <label
+            key={destination.id}
+            className="v12-chip"
+            aria-pressed={selected === destination.id}
+          >
+            <input
+              type="radio"
+              name="destinationId"
+              value={destination.id}
+              checked={selected === destination.id}
+              onChange={() => setSelected(destination.id)}
+            />
             {destination.name}
           </label>
         ))}

@@ -396,7 +396,8 @@
 }
 
 .v12-chip[aria-pressed="true"],
-.v12-chip[aria-current="true"] {
+.v12-chip[aria-current="true"],
+.v12-chip:has(input:checked) {
   border-color: #d1ff02;
   background: #d1ff02;
   color: #111507;

@@ -66,12 +66,13 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
       .from("collaboration_deliverables")
       .select(DELIVERABLE_COLUMNS)
       .eq("creator_id", profile.profileId)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(BOARD_READ_LIMIT);
     const compensations = await supabase
       .from("collaboration_agreed_compensations")
       .select(COMPENSATION_COLUMNS)
       .eq("creator_id", profile.profileId)
+      .order("created_at", { ascending: false })
       .limit(BOARD_READ_LIMIT);
     const failed =
       counted.error !== null ||

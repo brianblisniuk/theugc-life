@@ -89,6 +89,14 @@ describe("Midnight shell", () => {
     expect(existsSync("src/app/(app)/app/contracts/page.tsx")).toBe(false);
     expect(existsSync("src/app/(app)/app/plans/page.tsx")).toBe(true);
   });
+
+  it("renders the page once, outside the search-params fallback", () => {
+    const shell = source("src/components/shell/app-shell.tsx");
+    const boundary = shell.slice(shell.indexOf("<Suspense"), shell.indexOf("</Suspense>"));
+    expect(boundary).toContain("fallback={null}");
+    expect(boundary).not.toContain("{children}");
+    expect(shell.match(/\{children\}/g)).toHaveLength(2);
+  });
 });
 
 describe("required states and source badges", () => {

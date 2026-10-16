@@ -110,6 +110,7 @@ export default async function ProfilePage({
           configured={configured}
           callbackStatus={typeof gmailStatus === "string" ? gmailStatus : null}
           deletionPending={deletion?.status === "scheduled"}
+          deletionReadable={deletion == null || deletion.status !== "error"}
         />
       </section>
 

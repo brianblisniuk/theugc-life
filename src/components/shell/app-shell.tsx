@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -144,24 +144,29 @@ function Crumbs({ pathname, origin }: { pathname: string; origin: HotelOrigin | 
   );
 }
 
-function ShellHeader(props: {
-  isStaff: boolean;
-  creditLabel: string;
-  planLabel: string | null;
-  email: string | null;
+function hotelOrigin(pathname: string, search: URLSearchParams): HotelOrigin | null {
+  if (!pathname.startsWith("/app/hotels/") && pathname !== "/app/hotels") return null;
+  const raw: Record<string, string> = {};
+  search.forEach((value, key) => {
+    raw[key] = value;
+  });
+  return parseHotelOrigin(raw);
+}
+
+/** Search params suspend. This node renders nothing, so the page is not in the fallback. */
+function HotelOriginSync({
+  pathname,
+  onOrigin,
+}: {
   pathname: string;
-  children: React.ReactNode;
+  onOrigin: (origin: HotelOrigin | null) => void;
 }) {
   const search = useSearchParams();
-  const origin = useMemo(() => {
-    if (!props.pathname.startsWith("/app/hotels/") && props.pathname !== "/app/hotels") return null;
-    const raw: Record<string, string> = {};
-    search.forEach((value, key) => {
-      raw[key] = value;
-    });
-    return parseHotelOrigin(raw);
-  }, [props.pathname, search]);
-  return <ShellBody {...props} origin={origin} />;
+  const origin = useMemo(() => hotelOrigin(pathname, search), [pathname, search]);
+  useEffect(() => {
+    onOrigin(origin);
+  }, [onOrigin, origin]);
+  return null;
 }
 
 function ShellBody({
@@ -333,30 +338,23 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || "/app";
+  const [origin, setOrigin] = useState<HotelOrigin | null>(null);
+  const onOrigin = useCallback((next: HotelOrigin | null) => {
+    setOrigin(next);
+  }, []);
   return (
-    <Suspense
-      fallback={
-        <ShellBody
-          isStaff={isStaff}
-          creditLabel={creditLabel}
-          planLabel={planLabel}
-          email={email}
-          pathname={pathname}
-          origin={null}
-        >
-          {children}
-        </ShellBody>
-      }
+    <ShellBody
+      isStaff={isStaff}
+      creditLabel={creditLabel}
+      planLabel={planLabel}
+      email={email}
+      pathname={pathname}
+      origin={origin}
     >
-      <ShellHeader
-        isStaff={isStaff}
-        creditLabel={creditLabel}
-        planLabel={planLabel}
-        email={email}
-        pathname={pathname}
-      >
-        {children}
-      </ShellHeader>
-    </Suspense>
+      <Suspense fallback={null}>
+        <HotelOriginSync pathname={pathname} onOrigin={onOrigin} />
+      </Suspense>
+      {children}
+    </ShellBody>
   );
 }

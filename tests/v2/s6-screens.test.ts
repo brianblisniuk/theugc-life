@@ -439,7 +439,13 @@ describe("profile and getting started", () => {
     expect(profile).toContain("GmailConnectionPanel");
     expect(profile).toContain("30 days");
     expect(profile).toContain("DeleteAccountPanel");
+    expect(profile).toContain("deletionReadable");
     expect(profile).not.toMatch(/12\.4k|follower count of/);
+    const chips = source("src/components/onboarding/destination-question.tsx");
+    expect(chips).toContain("aria-pressed");
+    const board = source("src/lib/collaboration/board-queries.ts");
+    expect(board).toContain('.order("created_at", { ascending: false })');
+    expect(board).not.toContain("ascending: true");
     const onboarding = source("src/app/(app)/app/onboarding/page.tsx");
     expect(onboarding).toContain("Skip to Discover");
     expect(onboarding).toContain("ONBOARDING_GOALS");
