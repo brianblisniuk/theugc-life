@@ -6,7 +6,7 @@
   "last_recorded_main": "4001a628a347c0588fcc402d03fadb40302b8b6a",
   "active_block": "V2-S1",
   "branch": "cursor/v2-s1-discover-hotel-44c6",
-  "pr": null,
+  "pr": 107,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [],
@@ -15,5 +15,5 @@
     "verify": "success"
   },
   "required_human_action": "CREDENTIAL REQUIRED — set HUNTER_API_KEY and CONTACT_PROVIDER=hunter only on the host that should call Hunter. Leave both unset in CI. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
-  "next_dependency": "Recorded main is PR #100 (4001a628a347c0588fcc402d03fadb40302b8b6a, migration 0097, D182-D187). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). V2-S1 rebuilds Discover and Hotel Detail on the V12.2 Midnight shell from open PR #102. Contract Review stays out (D185). A locked contact still has no name or email. Fake stays the local and CI provider. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
+  "next_dependency": "Recorded main is PR #100 (4001a628a347c0588fcc402d03fadb40302b8b6a, migration 0097, D182-D187). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). V2-S1 is draft PR #107 on the V12.2 Midnight shell from open PR #102. Do not merge #107 before #102. Contract Review stays out (D185). A locked contact still has no name or email. Fake stays the local and CI provider. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
 }

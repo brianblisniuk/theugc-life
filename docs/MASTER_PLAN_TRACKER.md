@@ -429,7 +429,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E05 | **DONE** — PR #64, merge `621bc557762a70242b08a02afca94bca6c08f08d`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 stay Proposed. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 | UX01 | **DONE** — PR #65, merge `9a449239df1ebd859d4876c35e83e35007cf41af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. PR #102 replaces this visual system with V12.2 Midnight. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
 | V2-F1 | **OPEN — PR #102**. No migration. V12.2 Midnight is the single theme (dark only, accent `#D1FF02`). Shell, base components, and a minimal re-skin of existing pages. `contracts.html` is design reference only. The merge SHA is recorded when the PR merges. | Midnight shell and theme | existing pages compile on the new shell; contrast AA |
-| V2-S1 | **IN PROGRESS**. No migration. Discover and Hotel Detail on the Midnight shell. Depends on PR #102. Contract Review stays out (D185). Photography stays the D064 no-photo state. | Midnight Discover + Hotel Detail | real catalog, map, filters, unlock, pipeline save, separate OP display ids, insufficient data |
+| V2-S1 | **DRAFT — PR #107**. No migration. Discover and Hotel Detail on the Midnight shell. Depends on open PR #102. Do not merge #107 before #102. Contract Review stays out (D185). Photography stays the D064 no-photo state. | Midnight Discover + Hotel Detail | real catalog, map, filters, unlock, pipeline save, separate OP display ids, insufficient data |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -636,8 +636,8 @@ merged. D05 is merged (PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`).
 UX02 design is merged (PR #91, `dbfd2472b00d49590c17f416a10f6dbef371781b`).
 UX02 screens are merged (PR #95, `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`)
 and re-skinned onto Midnight. V2-F1 is open as PR #102 (V12.2 Midnight shell
-and theme, no migration). V2-S1 rebuilds Discover and Hotel Detail on that
-shell. D02 Contact Hub is not finished. PR #97 merged the Hunter adapter
+and theme, no migration). V2-S1 is draft PR #107 and rebuilds Discover and Hotel Detail on that
+shell. Do not merge #107 before #102. D02 Contact Hub is not finished. PR #97 merged the Hunter adapter
 (`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
 Hotel Detail shows stored verification after unlock. D178 is Accepted
 (owner Brian, 16 Oct 2026). Draft PRs #88 and #90 await the owner. Do not
