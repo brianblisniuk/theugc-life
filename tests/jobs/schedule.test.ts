@@ -82,22 +82,72 @@ describe("scheduled job gate", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it("does not log the secret when the job throws", async () => {
-    const error = new Error("job failed");
+  it("returns 500 and logs only the error name and code when the job throws", async () => {
+    const leaked = "user@example.com ya29.access-token sk-ant-secret";
+    const error = new Error(leaked);
+    error.name = "GoogleAdapterError";
+    (error as Error & { code: string }).code = "invalid_grant";
     const spies = (["error", "warn", "log", "info"] as const).map((method) =>
       vi.spyOn(console, method).mockImplementation(() => undefined),
     );
-    await expect(
-      runScheduledJob({
+    try {
+      const result = await runScheduledJob({
         secret: SECRET,
         run: async () => {
           throw error;
         },
-      }),
-    ).rejects.toBe(error);
-    const dumped = spies.flatMap((spy) => spy.mock.calls.flat().map((part) => String(part)));
-    expect(dumped.join("\n")).not.toContain(SECRET);
-    for (const spy of spies) spy.mockRestore();
+      });
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body)).toEqual({ result: "error", code: "invalid_grant" });
+      expect(result.body).not.toContain(SECRET);
+      expect(result.body).not.toContain("user@example.com");
+      expect(result.body).not.toContain("ya29");
+      expect(result.body).not.toContain("sk-ant");
+      const dumped = spies.flatMap((spy) =>
+        spy.mock.calls.map((call) => call.map(String).join(" ")),
+      );
+      const line = dumped.join("\n");
+      expect(line).toContain("[job] scheduled run failed GoogleAdapterError invalid_grant");
+      expect(line).not.toContain(SECRET);
+      expect(line).not.toContain("user@example.com");
+      expect(line).not.toContain("ya29");
+      expect(line).not.toContain("sk-ant");
+      expect(line).not.toContain(leaked);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it("drops an unsafe name, code, and message", async () => {
+    const leaked = "user@example.com Bearer ya29.secret";
+    const error = new Error(leaked);
+    error.name = "ya29.secret";
+    (error as Error & { code: string }).code = leaked;
+    const spies = (["error", "warn", "log", "info"] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => undefined),
+    );
+    try {
+      const result = await runScheduledJob({
+        secret: SECRET,
+        run: async () => {
+          throw error;
+        },
+      });
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body)).toEqual({ result: "error", code: "Error" });
+      const line = spies
+        .flatMap((spy) => spy.mock.calls.map((call) => call.map(String).join(" ")))
+        .join("\n");
+      expect(line).toContain("[job] scheduled run failed Error Error");
+      expect(line).not.toContain(SECRET);
+      expect(line).not.toContain("user@example.com");
+      expect(line).not.toContain("ya29");
+      expect(line).not.toContain("Bearer");
+      expect(result.body).not.toContain("user@example.com");
+      expect(result.body).not.toContain("ya29");
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 });
 
@@ -250,7 +300,39 @@ describe("netlify handlers", () => {
     expect(worker).not.toMatch(/sendMessage|messages\/send/);
   });
 
-  it("declares background schedules and keeps the bearer routes", () => {
+  it("returns 500 from every handler when that job throws, without the message", async () => {
+    const leaked = "user@example.com ya29.access-token";
+    const spies = (["error", "warn", "log", "info"] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => undefined),
+    );
+    try {
+      for (const item of handlers) {
+        process.env[item.secret] = SECRET;
+        const error = new Error(leaked);
+        error.name = "TypeError";
+        (error as Error & { code: string }).code = leaked;
+        item.run.mockRejectedValueOnce(error);
+        const result = await item.handler();
+        expect(result.statusCode).toBe(500);
+        expect(JSON.parse(result.body)).toEqual({ result: "error", code: "TypeError" });
+        expect(result.body).not.toContain(SECRET);
+        expect(result.body).not.toContain("user@example.com");
+        expect(result.body).not.toContain("ya29");
+        delete process.env[item.secret];
+      }
+      const line = spies
+        .flatMap((spy) => spy.mock.calls.map((call) => call.map(String).join(" ")))
+        .join("\n");
+      expect(line).toContain("[job] scheduled run failed TypeError TypeError");
+      expect(line).not.toContain(SECRET);
+      expect(line).not.toContain("user@example.com");
+      expect(line).not.toContain("ya29");
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it("declares synchronous schedules and keeps the bearer routes", () => {
     const toml = readFileSync(path.join(ROOT, "netlify.toml"), "utf8");
     expect(toml).toContain('directory = "netlify/functions-built"');
     expect(toml).toContain('[functions."gmail-send-dispatch"]');
@@ -273,7 +355,7 @@ describe("netlify handlers", () => {
       const block = toml.slice(toml.indexOf(`[functions."${name}"]`));
       const next = block.indexOf("\n[", 1);
       const section = next === -1 ? block : block.slice(0, next);
-      expect(section).toContain("background = true");
+      expect(section).not.toMatch(/^\s*background\s*=/m);
       expect(section).toContain('node_bundler = "none"');
     }
     expect(INBOX_SYNC_PATH).toBe("/api/internal/gmail-inbox-sync");
