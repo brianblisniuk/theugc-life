@@ -76,6 +76,9 @@ export function addedToPipelineToast(
 export const OUT_OF_CREDITS_COPY =
   "You're out of credits. Pack purchases are not open yet. An admin can grant credits.";
 
+/** Hunter budget, kill switch, or an in-flight lookup. Not a missing contact. */
+export const CONTACT_LOOKUP_UNAVAILABLE = "Contact lookup temporarily unavailable";
+
 export function creditsLeftLabel(balance: number): string {
   const unit = balance === 1 ? "credit" : "credits";
   return `${balance} ${unit} left`;

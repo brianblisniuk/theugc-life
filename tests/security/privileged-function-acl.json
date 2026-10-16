@@ -1680,6 +1680,46 @@
     "public": false
   },
   {
+    "schema": "public",
+    "name": "abandon_contact_provider_lookup",
+    "args": "p_cache_key text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "apply_contact_provider_budget",
+    "args": "p_bucket text, p_op text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "claim_contact_provider_lookup",
+    "args": "p_cache_key text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "complete_contact_provider_lookup",
+    "args": "p_cache_key text, p_status text, p_email text, p_raw jsonb",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
     "schema": "private",
     "name": "gmail_collab_is_paid",
     "args": "p_user_id uuid",

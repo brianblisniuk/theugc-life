@@ -83,6 +83,9 @@ const CONTRACT: Record<string, Expected> = {
   credit_config: { anon: "", authenticated: "", serviceRole: "S" },
   credit_ledger: { anon: "", authenticated: "S", serviceRole: "S" },
   contact_cache: { anon: "", authenticated: "", serviceRole: "all" },
+  // D180 (0095). Hunter domain cache and the monthly budget. No client role.
+  contact_provider_lookups: { anon: "", authenticated: "", serviceRole: "all" },
+  contact_provider_budget: { anon: "", authenticated: "", serviceRole: "all" },
   contact_unlocks: { anon: "", authenticated: "S", serviceRole: "S" },
   contact_reports: { anon: "", authenticated: "SIU", serviceRole: "all" },
 
@@ -1172,6 +1175,8 @@ d("the contract behaves as intended for real callers", () => {
       "credit_config",
       "credit_ledger",
       "contact_cache",
+      "contact_provider_lookups",
+      "contact_provider_budget",
       "contact_unlocks",
       "contact_reports",
       "hotel_intelligence",

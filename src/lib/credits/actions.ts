@@ -5,12 +5,13 @@
  *
  * The browser posts a hotel id. The session is the user. A forged user id is
  * not read. The service-role client writes the cache only after the database
- * has asked for a provider, and only the fake provider is called.
+ * has asked for a provider. A provider error or a paused lookup is not cached
+ * and is not charged.
  */
 import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
-import { domainFromWebsite, getContactProvider } from "@/lib/contacts/provider";
+import { domainFromWebsite, getContactProvider, unlockFollowUp } from "@/lib/contacts/provider";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 import { isUuid } from "@/lib/hotels/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -101,12 +102,14 @@ export async function unlockHotelContactAction(formData: FormData): Promise<Unlo
       name: row.name ?? "",
       domain: domainFromWebsite(row.website_url),
     });
+    const follow = unlockFollowUp(found);
+    if (follow.kind === "stop") return { status: follow.status, email: null };
     const admin = createAdminClient();
     const written = await admin.rpc("upsert_contact_cache", {
       p_hotel_id: hotelId,
-      p_email: found.email,
-      p_status: found.status,
-      p_raw: found.raw,
+      p_email: follow.email,
+      p_status: follow.status,
+      p_raw: follow.raw,
     });
     if (written.error) return { status: "error", email: null };
     const second = await supabase.rpc("unlock_hotel_contact", {
