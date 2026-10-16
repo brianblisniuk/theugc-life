@@ -15,7 +15,6 @@ import { EmptyState } from "@/components/empty-state";
 import { OpenOpportunityForm } from "@/components/outreach/campaign-forms";
 import { PitchComposer } from "@/components/pitch/composer";
 import { FollowUpPanel } from "@/components/pitch/follow-up-panel";
-import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
 import { hasSendScope } from "@/lib/gmail/contract";
 import { listGmailAccounts } from "@/lib/gmail/connection.server";
@@ -37,9 +36,9 @@ import { createPitchPersonalizer } from "@/lib/pitch/personalizer";
 import { loadPitchContext } from "@/lib/pitch/queries";
 import { loadHotelFollowUps } from "@/lib/gmail/followup/queries";
 import { discoverReturnHref } from "@/lib/screens/discover-return";
+import { initialsFromName } from "@/lib/screens/initials";
 import {
   chooserPitchParams,
-  hotelCrumbs,
   hotelHref,
   parseHotelOrigin,
   pitchContextParams,
@@ -170,9 +169,6 @@ export default async function HotelPitchPage({
     back && discoverBack
       ? `${back}${back.includes("?") ? "&" : "?"}back=${encodeURIComponent(discoverBack)}`
       : back;
-  const crumbs = hotelCrumbs(origin, hotel.name).map((crumb) =>
-    crumb.label === "Discover" && discoverBack ? { ...crumb, href: discoverBack } : crumb,
-  );
   const note = omissionNote({
     facts: context.facts,
     intelligenceUnavailable: context.intelligenceUnavailable,
@@ -210,18 +206,30 @@ export default async function HotelPitchPage({
     ? pipelineStatusLabel(context.selectedOpportunity.status)
     : null;
 
+  const place = [hotel.destination?.name, stage].filter(Boolean).join(" · ");
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={`Pitch ${hotel.name}`}
-        crumbs={[
-          ...crumbs.slice(0, -1),
-          { label: hotel.name, href: backWithDiscover ?? undefined },
-          { label: "Pitch" },
-        ]}
-        back={backWithDiscover ? { href: backWithDiscover, label: hotel.name } : null}
-        description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched. AI drafts use the same Claude path, budget, and rate limit."
-      />
+    <div className="v12-stack">
+      <header className="v12-pagehead">
+        <div>
+          <p className="v12-eyebrow">PITCH STUDIO / CREATOR WORKSPACE</p>
+          <h1>A better pitch starts with context.</h1>
+          <p>
+            Make a thoughtful proposal without rewriting what the product already knows about your
+            hotel, trip, or portfolio.
+          </p>
+        </div>
+        <div className="v12-head-actions">
+          {backWithDiscover ? (
+            <Link href={backWithDiscover} className="v12-btn">
+              Back to hotel
+            </Link>
+          ) : null}
+          <Link href="/app/inbox" className="v12-btn">
+            View Inbox
+          </Link>
+        </div>
+      </header>
       {context.opportunityChoice === "trip_empty" ? (
         <EmptyState
           title="No opportunity on this trip"
@@ -270,175 +278,220 @@ export default async function HotelPitchPage({
         </section>
       ) : (
         <>
-          <section className="v12-card v12-card-pad space-y-2" aria-label="What we know">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">What we know</p>
-            <h2 className="text-xl font-semibold text-text">{hotel.name}</h2>
-            <p className="text-sm text-muted">
-              {displayRef ?? "No open opportunity"}
-              {stage ? ` · ${stage}` : ""}
-            </p>
-            <p className="text-sm text-text">
-              Travel window: {stay.label}
-              {stay.source === "trip" ? " · From the selected trip" : ""}
-              {stay.source === "opportunity" ? " · On this opportunity" : ""}
-              {stay.source === "unconfirmed" ? ". Don’t invent dates." : ""}
-            </p>
-            <p className="text-sm text-text">
-              Recipient:{" "}
-              {recipientLine({
-                email: context.recipientEmail,
-                locked: context.contactLocked,
-                unchecked: context.contactUnchecked,
-              })}
-            </p>
-            <p className="text-sm text-text">
-              Portfolio: {portfolioLine(context.facts.portfolio_title)}
-            </p>
-            {context.facts.intelligence_note ? (
-              <p className="text-sm text-text">{context.facts.intelligence_note}</p>
-            ) : (
-              <p className="text-sm text-muted">
-                {context.intelligenceUnavailable
-                  ? "Creator intelligence is temporarily unavailable."
-                  : "Insufficient data"}
+          <div className="v12-context">
+            <div>
+              <strong>
+                {hotel.name}
+                {displayRef ? ` · ${displayRef}` : ""}
+              </strong>
+              <p>
+                {[place, stay.label].filter(Boolean).join(" · ") || "No open opportunity"}
+                {showSaved ? " · Saved draft, not sent" : " · Not sent"}
               </p>
-            )}
-            {context.opportunitiesCapped ? (
-              <p className="text-sm text-muted">
-                This list is capped. It is not every open opportunity.
-              </p>
-            ) : null}
-            {context.selectedOpportunity?.status === "closed" ? (
-              <p className="text-sm text-muted">This opportunity is closed. Its draft stays on it.</p>
-            ) : null}
-            {scopeNote ? <p className="text-sm text-muted">{scopeNote}</p> : null}
-            {context.opportunityChoice === "none" ? (
-              <p className="text-sm text-muted">
-                No open opportunity. Saving a draft does not create one and does not mark a pitch.
-              </p>
-            ) : null}
-          </section>
-          <p className="max-w-prose text-sm text-muted">{note}</p>
-          <div className="flex flex-wrap gap-2 text-sm">
-            {(["introduction", "stay", "follow_up", "return_visit"] as const).map((key) => {
-              const params = new URLSearchParams(suggestionParams);
-              params.set("template", key);
-              params.set("fresh", "1");
-              const label =
-                key === "return_visit"
-                  ? "Return"
-                  : key === "follow_up"
-                    ? "Follow-up"
-                    : key[0]!.toUpperCase() + key.slice(1);
-              return (
-                <Link
-                  key={key}
-                  href={`/app/hotels/${hotel.id}/pitch?${params.toString()}`}
-                  className="rounded-[var(--radius-app)] border border-border px-3 py-1 text-text"
-                >
-                  {label}
-                </Link>
-              );
-            })}
-            {context.templates.map((template) => {
-              const params = pitchContextParams({
-                origin,
-                tripId,
-                opportunityId: context.selectedOpportunity?.id ?? null,
-                back: first(raw.back),
-              });
-              params.set("template", template.id);
-              params.set("fresh", "1");
-              return (
-                <Link
-                  key={template.id}
-                  href={`/app/hotels/${hotel.id}/pitch?${params.toString()}`}
-                  className="rounded-[var(--radius-app)] border border-border px-3 py-1 text-text"
-                >
-                  {template.name}
-                </Link>
-              );
-            })}
-            <Link href="/app/profile/pitches" className="px-3 py-1 text-muted underline">
-              Templates
-            </Link>
+            </div>
+            <span className="v12-badge v12-badge-blue">
+              {showSaved ? "Saved draft" : "Draft ready"}
+            </span>
           </div>
-          {suggestion.body.trim().length === 0 && !showSaved && assistant.status !== "on" ? (
-            <p className="text-sm text-muted">This template has nothing to fill in yet.</p>
-          ) : (
-            <PitchComposer
-              key={`${draftId ?? "new"}-${tripId ?? "none"}-${templateId ?? activeSystemKey ?? "auto"}-${fresh ? "fresh" : "kept"}`}
-              hotelId={hotel.id}
-              hotelName={hotel.name}
-              draftId={draftId}
-              oauthReturnPath={oauthReturnPath}
-              tripId={tripId}
-              trips={context.trips}
-              templateId={templateId}
-              systemKey={activeSystemKey}
-              subject={subject}
-              body={body}
-              recipientEmail={context.recipientEmail}
-              suggestionHref={`/app/hotels/${hotel.id}/pitch?${suggestionParams.toString()}`}
-              assistant={assistant}
-              budgetWarning={budget.warning}
-              accountPaused={budget.paused}
-              sendsPaused={budget.sendsPaused}
-              canSend={assistant.status === "on" && !budget.paused && !budget.sendsPaused}
-              mailAccountId={sender?.mailAccountId ?? null}
-              hasSendScope={sender ? hasSendScope(sender.grantedScopes) : false}
-              pipelineItemId={context.selectedOpportunity?.id ?? null}
-            />
-          )}
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <FollowUps
-              userId={session.userId}
-              hotelId={hotel.id}
-              hotelName={hotel.name}
-              assistantOn={assistant.status === "on"}
-              canSchedule={assistant.status === "on" && !budget.paused}
-            />
-            <aside className="space-y-4">
-              <section className="v12-card v12-card-pad space-y-2">
-                <h2 className="text-base font-semibold text-text">Check before you continue</h2>
-                <ul className="space-y-1 text-sm text-text">
+          <div className="v12-pitch">
+            <aside className="v12-stack">
+              <section className="v12-panel v12-panel-pad" aria-label="What we know">
+                <p className="v12-eyebrow">WHAT WE KNOW</p>
+                <div className="v12-row">
+                  <span className="v12-mark">{initialsFromName(hotel.name)}</span>
+                  <div>
+                    <strong>{hotel.name}</strong>
+                    <p>{place || "Destination not recorded"}</p>
+                  </div>
+                </div>
+                <div className="v12-list-item">
+                  <strong>Opportunity</strong>
+                  <p>
+                    {displayRef ?? "No open opportunity"}
+                    {stage ? ` · ${stage}` : ""}
+                  </p>
+                </div>
+                <div className="v12-list-item">
+                  <strong>Travel window</strong>
+                  <p>
+                    {stay.label}
+                    {stay.source === "trip" ? " · From the selected trip" : ""}
+                    {stay.source === "opportunity" ? " · On this opportunity" : ""}
+                    {stay.source === "unconfirmed" ? ". Don’t invent dates." : ""}
+                  </p>
+                </div>
+                <div className="v12-list-item">
+                  <strong>Recipient</strong>
+                  <p>
+                    {recipientLine({
+                      email: context.recipientEmail,
+                      locked: context.contactLocked,
+                      unchecked: context.contactUnchecked,
+                    })}
+                  </p>
+                </div>
+                <div className="v12-list-item">
+                  <strong>Portfolio</strong>
+                  <p>{portfolioLine(context.facts.portfolio_title)}</p>
+                </div>
+                {context.facts.intelligence_note ? (
+                  <p>{context.facts.intelligence_note}</p>
+                ) : (
+                  <p>
+                    {context.intelligenceUnavailable
+                      ? "Creator intelligence is temporarily unavailable."
+                      : "Insufficient data"}
+                  </p>
+                )}
+                {context.opportunitiesCapped ? (
+                  <p>This list is capped. It is not every open opportunity.</p>
+                ) : null}
+                {context.selectedOpportunity?.status === "closed" ? (
+                  <p>This opportunity is closed. Its draft stays on it.</p>
+                ) : null}
+                {scopeNote ? <p>{scopeNote}</p> : null}
+                {context.opportunityChoice === "none" ? (
+                  <p>
+                    No open opportunity. Saving a draft does not create one and does not mark a
+                    pitch.
+                  </p>
+                ) : null}
+                {backWithDiscover ? (
+                  <Link href={backWithDiscover} className="v12-btn v12-btn-small">
+                    See Hotel Detail
+                  </Link>
+                ) : null}
+              </section>
+              <section className="v12-panel v12-panel-pad">
+                <p className="v12-eyebrow">YOUR CREATIVE DIRECTION</p>
+                <h3>Choose the right angle</h3>
+                <div className="v12-chips">
+                  {(["introduction", "stay", "follow_up", "return_visit"] as const).map((key) => {
+                    const params = new URLSearchParams(suggestionParams);
+                    params.set("template", key);
+                    params.set("fresh", "1");
+                    const label =
+                      key === "return_visit"
+                        ? "Return"
+                        : key === "follow_up"
+                          ? "Follow-up"
+                          : key[0]!.toUpperCase() + key.slice(1);
+                    return (
+                      <Link
+                        key={key}
+                        href={`/app/hotels/${hotel.id}/pitch?${params.toString()}`}
+                        className="v12-chip"
+                        aria-current={activeSystemKey === key ? "true" : undefined}
+                      >
+                        {label}
+                      </Link>
+                    );
+                  })}
+                  {context.templates.map((template) => {
+                    const params = pitchContextParams({
+                      origin,
+                      tripId,
+                      opportunityId: context.selectedOpportunity?.id ?? null,
+                      back: first(raw.back),
+                    });
+                    params.set("template", template.id);
+                    params.set("fresh", "1");
+                    return (
+                      <Link
+                        key={template.id}
+                        href={`/app/hotels/${hotel.id}/pitch?${params.toString()}`}
+                        className="v12-chip"
+                        aria-current={templateId === template.id ? "page" : undefined}
+                      >
+                        {template.name}
+                      </Link>
+                    );
+                  })}
+                </div>
+                <Link href="/app/profile/pitches" className="v12-btn v12-btn-small">
+                  Templates
+                </Link>
+              </section>
+            </aside>
+            <section className="v12-panel v12-panel-pad">
+              <div className="v12-panel-head">
+                <div>
+                  <p className="v12-eyebrow">EMAIL COMPOSER</p>
+                  <h2>A proposal worth reading</h2>
+                  <p>Every specific claim should come from your own verified information.</p>
+                </div>
+              </div>
+              <p>{note}</p>
+              {suggestion.body.trim().length === 0 && !showSaved && assistant.status !== "on" ? (
+                <p>This template has nothing to fill in yet.</p>
+              ) : (
+                <PitchComposer
+                  key={`${draftId ?? "new"}-${tripId ?? "none"}-${templateId ?? activeSystemKey ?? "auto"}-${fresh ? "fresh" : "kept"}`}
+                  hotelId={hotel.id}
+                  hotelName={hotel.name}
+                  draftId={draftId}
+                  oauthReturnPath={oauthReturnPath}
+                  tripId={tripId}
+                  trips={context.trips}
+                  templateId={templateId}
+                  systemKey={activeSystemKey}
+                  subject={subject}
+                  body={body}
+                  recipientEmail={context.recipientEmail}
+                  suggestionHref={`/app/hotels/${hotel.id}/pitch?${suggestionParams.toString()}`}
+                  assistant={assistant}
+                  budgetWarning={budget.warning}
+                  accountPaused={budget.paused}
+                  sendsPaused={budget.sendsPaused}
+                  canSend={assistant.status === "on" && !budget.paused && !budget.sendsPaused}
+                  mailAccountId={sender?.mailAccountId ?? null}
+                  hasSendScope={sender ? hasSendScope(sender.grantedScopes) : false}
+                  pipelineItemId={context.selectedOpportunity?.id ?? null}
+                />
+              )}
+            </section>
+            <aside className="v12-stack">
+              <section className="v12-panel v12-panel-pad">
+                <p className="v12-eyebrow">FINAL REVIEW</p>
+                <h2>Check before you send</h2>
+                <ul className="v12-checklist">
                   {checks.map((check) => (
                     <li key={check.id}>
-                      {check.ok ? "Ready" : "Check"}: {check.label}
+                      {check.ok ? "Ready" : "Check"} · {check.label}
                     </li>
                   ))}
                 </ul>
-                <p className="text-sm text-muted">{note}</p>
+                <p className="v12-callout">{note}</p>
               </section>
-              <section className="v12-card v12-card-pad space-y-2">
-                <h2 className="text-base font-semibold text-text">How this pitch continues</h2>
+              <section className="v12-panel v12-panel-pad">
+                <p className="v12-eyebrow">YOU&rsquo;RE IN CONTROL</p>
+                <h3>How this pitch continues</h3>
                 {assistant.status === "on" ? (
-                  <p className="text-sm text-text">
+                  <p>
                     AI drafting is on for this account. It uses Claude Sonnet, the monthly budget,
                     the shared pool, and {AI_LIMITS.generationsPerMinute} generations a minute. A
                     draft is not a send.
                   </p>
                 ) : (
-                  <p className="text-sm text-text">
+                  <p>
                     This account prepares templates, saves drafts, and copies them. AI drafting is
                     not on.
                   </p>
                 )}
-                <Link href="/app/billing" className="text-sm font-semibold text-text underline">
-                  Billing
+                <Link href="/app/billing" className="v12-btn v12-btn-small">
+                  Open Plans
                 </Link>
               </section>
               {context.otherDraftUnread ? (
-                <p className="text-sm text-muted" role="status">
-                  Another draft couldn’t be read. This is not an empty list.
-                </p>
+                <p role="status">Another draft couldn’t be read. This is not an empty list.</p>
               ) : context.otherDraft ? (
-                <section className="v12-card v12-card-pad space-y-2">
-                  <h2 className="text-base font-semibold text-text">Another open draft</h2>
-                  <p className="text-sm text-text">{context.otherDraft.hotelName}</p>
+                <section className="v12-panel v12-panel-pad">
+                  <p className="v12-eyebrow">ANOTHER OPEN DRAFT</p>
+                  <strong>{context.otherDraft.hotelName}</strong>
+                  <p>Its draft stays on that hotel.</p>
                   <Link
                     href={`/app/hotels/${context.otherDraft.hotelId}/pitch?from=pipeline`}
-                    className="text-sm font-semibold text-text underline"
+                    className="v12-btn v12-btn-small"
                   >
                     Open
                   </Link>
@@ -446,6 +499,13 @@ export default async function HotelPitchPage({
               ) : null}
             </aside>
           </div>
+          <FollowUps
+            userId={session.userId}
+            hotelId={hotel.id}
+            hotelName={hotel.name}
+            assistantOn={assistant.status === "on"}
+            canSchedule={assistant.status === "on" && !budget.paused}
+          />
         </>
       )}
     </div>

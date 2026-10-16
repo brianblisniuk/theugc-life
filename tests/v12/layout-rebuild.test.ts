@@ -3,7 +3,11 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { approvalProgress, deliverablePillClass, inPreparationCount } from "@/lib/collaboration/board";
+import {
+  approvalProgress,
+  deliverablePillClass,
+  inPreparationCount,
+} from "@/lib/collaboration/board";
 import { parseContactFlags } from "@/lib/hotels/contact-exists";
 import { outreachProgress } from "@/lib/home/dashboard";
 import { firstPitchMarks } from "@/lib/onboarding/path";
@@ -60,9 +64,9 @@ describe("V12.2 layout rebuild", () => {
       percentLabel: "63%",
       width: 62.5,
     });
-    expect(outreachProgress({ id: "c", name: "Empty", hotelCount: 0, contactedCount: 0 }).kind).toBe(
-      "empty",
-    );
+    expect(
+      outreachProgress({ id: "c", name: "Empty", hotelCount: 0, contactedCount: 0 }).kind,
+    ).toBe("empty");
   });
 
   it("places profile editors inside the portfolio layout", () => {
@@ -102,7 +106,7 @@ describe("V12.2 layout rebuild", () => {
     expect(board).toContain("v12-context");
     expect(board).toContain("v12-stats");
     expect(board).toContain("Activity timeline");
-    expect(board).toContain("aria-label=\"Other collaborations\"");
+    expect(board).toContain('aria-label="Other collaborations"');
     expect(deliverablePillClass("approved")).toContain("green");
     expect(deliverablePillClass("pending")).not.toContain("lime");
     expect(inPreparationCount([{ status: "pending" }, { status: "approved" }])).toBe(1);
@@ -131,6 +135,24 @@ describe("V12.2 layout rebuild", () => {
     const row = source("src/components/hotels/hotel-row.tsx");
     expect(row).toContain("Contact available");
     expect(row).toContain("contactAvailable");
+  });
+
+  it("restyles Pitch Studio without changing draft or send actions", () => {
+    const page = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
+    const composer = source("src/components/pitch/composer.tsx");
+    expect(page).toContain("v12-pitch");
+    expect(page).toContain("WHAT WE KNOW");
+    expect(page).toContain("EMAIL COMPOSER");
+    expect(page).toContain("visiblePitchDraft");
+    expect(page).toContain("pipelineItemId={context.selectedOpportunity?.id ?? null}");
+    expect(composer).toContain("v12-btn-dark");
+    expect(composer).toContain("Copy email");
+    expect(composer).toContain("savePitchDraftAction");
+    expect(composer).toContain("sendPitchFromGmailAction");
+    expect(composer).not.toContain("bg-accent");
+    expect(source("supabase/migrations/0102_inbox_gmail_suggestion_scope.sql")).toContain(
+      "list_own_pending_gmail_collaboration_suggestions",
+    );
   });
 
   it("keeps the three hotel cards ahead of a collapsible section", () => {

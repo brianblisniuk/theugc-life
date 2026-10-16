@@ -49,6 +49,7 @@ function thread(overrides: Partial<InboxThreadRow> = {}): InboxThreadRow {
     hasHumanReply: false,
     hasRedirect: false,
     ...overrides,
+    tripId: overrides.tripId ?? null,
   };
 }
 
@@ -228,6 +229,7 @@ describe("trip and home findings", () => {
             hotelName: "North House",
             nextFollowupAt: "2026-10-17T02:00:00.000Z",
             lastActivityAt: "2026-10-16T00:00:00.000Z",
+            tripId: null,
           },
         ],
       },

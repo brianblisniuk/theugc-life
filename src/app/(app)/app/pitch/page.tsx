@@ -8,7 +8,6 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/shell/page-header";
 import { requireUser } from "@/lib/auth/guards";
 import { listOpenPipelineForAttention } from "@/lib/pipeline/queries";
 import { nextStep, shownDisplayRef, type DensityRow } from "@/lib/pipeline/density";
@@ -23,12 +22,22 @@ export default async function PitchStudioPage() {
   const loaded = await listOpenPipelineForAttention().catch(() => ({ status: "error" as const }));
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Pitch Studio"
-        crumbs={[{ label: "Home", href: "/app" }, { label: "Pitch Studio" }]}
-        description="Open one of your opportunities and review a draft. Generation stays on the hotel pitch page. Nothing on this page is sent."
-      />
+    <div className="v12-stack">
+      <header className="v12-pagehead">
+        <div>
+          <p className="v12-eyebrow">PITCH STUDIO / CREATOR WORKSPACE</p>
+          <h1>A better pitch starts with context.</h1>
+          <p>
+            Open one of your opportunities and review a draft. Generation stays on the hotel pitch
+            page. Nothing on this page is sent.
+          </p>
+        </div>
+        <div className="v12-head-actions">
+          <Link href="/app/inbox" className="v12-btn">
+            View Inbox
+          </Link>
+        </div>
+      </header>
       {loaded.status !== "ok" ? (
         <EmptyState
           title="We couldn’t load your opportunities"
@@ -39,10 +48,7 @@ export default async function PitchStudioPage() {
           title="No open opportunity"
           description="Save a hotel from Discover. A pitch draft does not create an opportunity."
         >
-          <Link
-            href="/app/discover"
-            className="inline-flex rounded-[var(--radius-app)] bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
-          >
+          <Link href="/app/discover" className="v12-btn v12-btn-primary">
             Discover hotels
           </Link>
         </EmptyState>
@@ -80,21 +86,26 @@ export default async function PitchStudioPage() {
             const ref = shownDisplayRef(item.displayRef);
             const step = nextStep(row, asOf);
             return (
-              <li key={item.id} className="v12-card px-4 py-3">
+              <li key={item.id}>
                 {href ? (
-                  <Link href={href} className="font-semibold text-text hover:underline">
-                    {item.hotel?.name ?? "Unknown hotel"}
+                  <Link href={href} className="v12-navtile">
+                    <span>
+                      <strong>{item.hotel?.name ?? "Unknown hotel"}</strong>
+                      <p>
+                        {ref ?? "Opportunity"} · {pipelineStatusLabel(item.status)}
+                        {item.hotel?.destinationName ? ` · ${item.hotel.destinationName}` : ""}
+                      </p>
+                      <p>{step.detail}</p>
+                    </span>
                   </Link>
                 ) : (
-                  <span className="font-semibold text-text">
-                    {item.hotel?.name ?? "Unknown hotel"}
-                  </span>
+                  <div className="v12-navtile">
+                    <span>
+                      <strong>{item.hotel?.name ?? "Unknown hotel"}</strong>
+                      <p>{step.detail}</p>
+                    </span>
+                  </div>
                 )}
-                <p className="text-sm text-muted">
-                  {ref ?? "Opportunity"} · {pipelineStatusLabel(item.status)}
-                  {item.hotel?.destinationName ? ` · ${item.hotel.destinationName}` : ""}
-                </p>
-                <p className="text-sm text-text">{step.detail}</p>
               </li>
             );
           })}
