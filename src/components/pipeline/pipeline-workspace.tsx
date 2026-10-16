@@ -38,6 +38,7 @@ export function toDensityRow(item: PipelineListItem): DensityRow {
     stayStart: item.stayStart,
     stayEnd: item.stayEnd,
     tripName: item.tripName,
+    tripId: item.tripId,
     nextFollowupAt: item.nextFollowupAt,
     lastActivityAt: item.lastActivityAt,
     deadlineLabel: item.deadlineLabel ?? null,
@@ -198,7 +199,13 @@ function OpportunityCard({
   const ref = shownDisplayRef(row.displayRef);
   const context = contextLine(row);
   const links = pipelineRowLinks(
-    { status: row.status, hotelId: row.hotelId, hotelName: row.hotelName },
+    {
+      status: row.status,
+      hotelId: row.hotelId,
+      hotelName: row.hotelName,
+      id: row.id,
+      tripId: row.tripId,
+    },
     surface,
   );
   const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id) : null;

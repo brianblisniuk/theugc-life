@@ -183,6 +183,55 @@ export function pitchTripToStore(input: {
   return { ok: true, tripId: ownTrip && input.ownedTripId === ownTrip ? ownTrip : null };
 }
 
+/** Open opportunities loaded for one pitch. One extra row means the list is capped. */
+export const PITCH_OPPORTUNITY_CAP = 20;
+
+export function takeOpportunityPage<T>(
+  rows: readonly T[],
+  cap = PITCH_OPPORTUNITY_CAP,
+): { rows: T[]; capped: boolean } {
+  return { rows: rows.slice(0, cap), capped: rows.length > cap };
+}
+
+/** A named row stays on the page even when it was not in the capped list. */
+export function mergeNamedOpportunity<T extends { id: string }>(
+  page: readonly T[],
+  named: T | null,
+): T[] {
+  if (!named) return [...page];
+  if (page.some((row) => row.id === named.id)) return [...page];
+  return [...page, named];
+}
+
+/**
+ * A draft bound to a closed opportunity is still that draft. An open or
+ * missing row is not treated as closed.
+ */
+export function closedRowDraft<T extends { pipelineItemId: string | null }>(
+  draft: T | null,
+  itemStatus: string | null,
+): T | null {
+  if (!draft?.pipelineItemId || itemStatus !== "closed") return null;
+  return draft;
+}
+
+/**
+ * The composer shows the saved draft unless the creator asked to start over.
+ * A trip on the URL is context. It does not hide the draft or let a template
+ * overwrite that row.
+ */
+export function visiblePitchDraft(input: {
+  draft: { id: string; subject: string; body: string } | null;
+  fresh: boolean;
+  templateRequested: boolean;
+  suggestion: { subject: string; body: string };
+}): { subject: string; body: string; draftId: string | null } {
+  if (input.draft && !input.fresh && !input.templateRequested) {
+    return { subject: input.draft.subject, body: input.draft.body, draftId: input.draft.id };
+  }
+  return { subject: input.suggestion.subject, body: input.suggestion.body, draftId: null };
+}
+
 export function chooseOpportunity(
   opportunities: readonly StudioOpportunity[],
   requestedId: string | null,

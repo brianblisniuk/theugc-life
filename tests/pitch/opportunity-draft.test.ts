@@ -14,6 +14,10 @@ const migration = readFileSync(
   path.join(process.cwd(), "supabase/migrations/0098_pitch_draft_opportunity.sql"),
   "utf8",
 );
+const guards = readFileSync(
+  path.join(process.cwd(), "supabase/migrations/0099_pitch_opportunity_guards.sql"),
+  "utf8",
+);
 
 describe("pitch draft opportunity migration", () => {
   it("assigns a draft only when one open opportunity exists", () => {
@@ -22,6 +26,14 @@ describe("pitch draft opportunity migration", () => {
     expect(migration).toMatch(/pitch draft opportunity cannot change/);
     expect(migration).toMatch(/same creator and hotel/);
     expect(migration).not.toMatch(/order by updated_at[\s\S]{0,80}limit 1/i);
+    expect(guards).toMatch(/old\.pipeline_item_id is not null/);
+    expect(guards).toMatch(/new\.pipeline_item_id is distinct from old\.pipeline_item_id/);
+    expect(guards).not.toMatch(
+      /old\.pipeline_item_id is not null\s+and new\.pipeline_item_id is not null/,
+    );
+    expect(guards).toMatch(/v_open_count > 1/);
+    expect(guards).toMatch(/'result', 'invalid_input'/);
+    expect(guards).not.toMatch(/status <> 'closed'\s+limit 1/);
   });
 });
 
@@ -136,6 +148,17 @@ d("pitch draft stays on its opportunity", () => {
       [draft[0]!.id],
     );
     expect(kept[0]?.pipeline_item_id).toBe(only[0]!.id);
+
+    const unbound = adminQuery(
+      "update public.pitch_drafts set pipeline_item_id = null where id = $1",
+      [draft[0]!.id],
+    );
+    await expect(unbound).rejects.toMatchObject({ code: "23514" });
+    const stillBound = await adminQuery<{ pipeline_item_id: string }>(
+      "select pipeline_item_id from public.pitch_drafts where id = $1",
+      [draft[0]!.id],
+    );
+    expect(stillBound[0]?.pipeline_item_id).toBe(only[0]!.id);
 
     const foreign = await adminQuery<{ id: string }>(
       `insert into public.pipeline_items (creator_id, hotel_id, status)

@@ -24,9 +24,14 @@ import {
   nextStepPitchHref,
   opportunityCards,
   opportunityTitle,
+  outreachPrepareHref,
   relationshipFromOpportunities,
+  relationshipFromSelection,
+  selectHotelOpportunity,
+  shortlistPitchHref,
   type HotelOpportunity,
 } from "@/lib/screens/hotel-opportunities";
+import { AddToTrip } from "@/components/hotels/add-to-trip";
 import { eligibleHotelPhotos, presentHotelPhotos } from "@/lib/screens/hotel-photos";
 
 vi.mock("next/link", () => ({
@@ -316,13 +321,50 @@ describe("opportunity history", () => {
       relationship: { pipelineItemId: OPP_B, status: "planned" },
     });
     expect(relationshipFromOpportunities({ status: "ok", opportunities: [openA, closed] }, closed)).toEqual({
-      status: "open",
-      relationship: { pipelineItemId: OPP_A, status: "replied" },
+      status: "not_open",
     });
     expect(relationshipFromOpportunities({ status: "ok", opportunities: [closed] }, closed)).toEqual({
-      status: "none",
+      status: "not_open",
     });
     expect(relationshipFromOpportunities({ status: "error" }, openA)).toEqual({ status: "error" });
+  });
+
+  it("uses a named opportunity or reports it not open, and matches a trip origin", () => {
+    const originTrip = "55555555-5555-4555-8555-555555555555";
+    const older = opportunity({ id: OPP_A, status: "saved", tripId: null });
+    const onTrip = opportunity({ id: OPP_B, status: "planned", tripId: TRIP });
+    expect(selectHotelOpportunity([older, onTrip], OPP_B, originTrip)).toEqual({
+      status: "open",
+      row: onTrip,
+    });
+    expect(selectHotelOpportunity([older, onTrip], OPP_A, originTrip).status).toBe("open");
+    expect(selectHotelOpportunity([older, onTrip], "not-a-row", originTrip).status).toBe("not_open");
+    expect(
+      relationshipFromSelection(selectHotelOpportunity([older, closed], closed.id, null)),
+    ).toEqual({ status: "not_open" });
+    expect(selectHotelOpportunity([older, onTrip], null, TRIP)).toEqual({
+      status: "open",
+      row: onTrip,
+    });
+    expect(selectHotelOpportunity([older, onTrip], null, originTrip).status).toBe("not_open");
+    expect(selectHotelOpportunity([closed], null, originTrip).status).toBe("none");
+  });
+
+  it("names the shortlist row and the outreach row, each with its own trip", () => {
+    const campaignTrip = "55555555-5555-4555-8555-555555555555";
+    const href = shortlistPitchHref(HOTEL, campaignTrip, [
+      { id: OPP_B, status: "planned", tripId: TRIP },
+    ]);
+    expect(href).toContain(`opportunity=${OPP_B}`);
+    expect(new URL(href ?? "/", "http://local").searchParams.get("trip")).toBe(TRIP);
+    expect(href).not.toContain(campaignTrip);
+    const prepare = outreachPrepareHref(HOTEL, "saved", OPP_B, TRIP);
+    expect(prepare).toContain(`opportunity=${OPP_B}`);
+    expect(new URL(prepare ?? "/", "http://local").searchParams.get("trip")).toBe(TRIP);
+    expect(prepare).not.toContain(campaignTrip);
+    const unopened = outreachPrepareHref(HOTEL, "", null, campaignTrip);
+    expect(unopened).not.toContain("opportunity=");
+    expect(new URL(unopened ?? "/", "http://local").searchParams.get("trip")).toBe(campaignTrip);
   });
 });
 
@@ -482,6 +524,27 @@ describe("locked contact and metric markup", () => {
   });
 });
 
+describe("add to trip", () => {
+  it("defaults to the trip already in context", () => {
+    const early = "55555555-5555-4555-8555-555555555555";
+    const current = TRIP;
+    const html = renderToStaticMarkup(
+      createElement(AddToTrip, {
+        hotelId: HOTEL,
+        tripsLoad: "ok",
+        alreadyOn: [],
+        preferredTripId: current,
+        trips: [
+          { id: early, label: "Earlier" },
+          { id: current, label: "This trip" },
+        ],
+      }),
+    );
+    expect(html).toContain(`value="${current}" selected`);
+    expect(html).not.toContain(`value="${early}" selected`);
+  });
+});
+
 describe("screen source", () => {
   it("wires Discover and Hotel Detail to the real panels without a fabricated photo", () => {
     const discover = source("src/app/(app)/app/discover/page.tsx");
@@ -497,7 +560,20 @@ describe("screen source", () => {
     expect(hotel).toContain("OpportunityHistory");
     expect(hotel).toContain("eligibleHotelPhotos");
     expect(hotel).toContain("nextStepPitchHref(hotel.id, origin, openRow)");
+    expect(hotel).toContain("selectHotelOpportunity");
+    expect(hotel).toContain("preferredTripId");
     expect(hotel).not.toContain("pitchTripId");
+    const pitchPage = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
+    expect(pitchPage).toContain("visiblePitchDraft");
+    expect(pitchPage).toContain("chooserPitchParams");
+    expect(pitchPage).toContain("oauthReturnPath");
+    expect(pitchPage).toContain("visiblePitchDraft");
+    const composer = source("src/components/pitch/composer.tsx");
+    expect(composer).toContain('data.set("pipelineItemId", pipelineItemId)');
+    expect(composer).toContain("oauthReturnPath");
+    expect(source("src/lib/gmail/send/actions.ts")).toContain(
+      'pipelineItemId: optionalId(readField(formData, "pipelineItemId"))',
+    );
     expect(hotel).not.toContain("withOpportunity");
     const pitch = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
     expect(pitch).toContain("readOpportunityParam");

@@ -22,7 +22,6 @@ import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { isSystemTemplateKey, omissionNote } from "@/lib/pitch/contract";
 import {
-  assignOpportunity,
   draftScopeNote,
   portfolioLine,
   readOpportunityParam,
@@ -30,12 +29,21 @@ import {
   reviewChecks,
   shownDisplayRef,
   travelWindow,
+  visiblePitchDraft,
 } from "@/lib/pitch/studio";
 import { pipelineStatusLabel } from "@/lib/pipeline/types";
 import { createPitchPersonalizer } from "@/lib/pitch/personalizer";
 import { loadPitchContext } from "@/lib/pitch/queries";
 import { loadHotelFollowUps } from "@/lib/gmail/followup/queries";
-import { applyHotelOrigin, hotelCrumbs, hotelHref, parseHotelOrigin } from "@/lib/shell/navigation";
+import { discoverReturnHref } from "@/lib/screens/discover-return";
+import {
+  chooserPitchParams,
+  hotelCrumbs,
+  hotelHref,
+  parseHotelOrigin,
+  pitchContextParams,
+  withOpportunityQuery,
+} from "@/lib/shell/navigation";
 
 export const metadata: Metadata = { title: "Pitch" };
 
@@ -125,10 +133,16 @@ export default async function HotelPitchPage({
       : null,
   });
 
-  const showSaved = Boolean(context.draft) && !fresh && !templateParam && !requestedTrip;
-  const subject = showSaved && context.draft ? context.draft.subject : suggestion.subject;
-  const body = showSaved && context.draft ? context.draft.body : suggestion.body;
-  const draftId = context.draft?.id ?? null;
+  const visible = visiblePitchDraft({
+    draft: context.draft,
+    fresh,
+    templateRequested: Boolean(templateParam),
+    suggestion,
+  });
+  const showSaved = visible.draftId !== null;
+  const subject = visible.subject;
+  const body = visible.body;
+  const draftId = visible.draftId;
   const tripId = context.selectedTripId;
   const savedTemplateId =
     showSaved &&
@@ -145,8 +159,18 @@ export default async function HotelPitchPage({
         ? (context.draft?.systemTemplateKey ?? null)
         : suggestion.systemKey;
 
-  const back = hotelHref(hotel.id, origin);
-  const crumbs = hotelCrumbs(origin, hotel.name);
+  const discoverBack = origin.kind === "discover" ? discoverReturnHref(first(raw.back)) : null;
+  const hotelBack = hotelHref(hotel.id, origin);
+  const back = hotelBack
+    ? withOpportunityQuery(hotelBack, context.selectedOpportunity?.id ?? null, tripId)
+    : null;
+  const backWithDiscover =
+    back && discoverBack
+      ? `${back}${back.includes("?") ? "&" : "?"}back=${encodeURIComponent(discoverBack)}`
+      : back;
+  const crumbs = hotelCrumbs(origin, hotel.name).map((crumb) =>
+    crumb.label === "Discover" && discoverBack ? { ...crumb, href: discoverBack } : crumb,
+  );
   const note = omissionNote({
     facts: context.facts,
     intelligenceUnavailable: context.intelligenceUnavailable,
@@ -154,13 +178,21 @@ export default async function HotelPitchPage({
     contactLocked: context.contactLocked,
   });
 
-  const suggestionParams = new URLSearchParams();
-  applyHotelOrigin(suggestionParams, origin);
-  if (tripId && origin.kind !== "trip") suggestionParams.set("trip", tripId);
+  const suggestionParams = pitchContextParams({
+    origin,
+    tripId,
+    opportunityId: context.selectedOpportunity?.id ?? null,
+    back: first(raw.back),
+  });
   suggestionParams.set("fresh", "1");
   if (explicitSystem) suggestionParams.set("template", explicitSystem);
   if (creatorTemplate) suggestionParams.set("template", creatorTemplate.id);
-  assignOpportunity(suggestionParams, context.selectedOpportunity?.id ?? null);
+  const oauthReturnPath = `/app/hotels/${hotel.id}/pitch?${pitchContextParams({
+    origin,
+    tripId,
+    opportunityId: context.selectedOpportunity?.id ?? null,
+    back: first(raw.back),
+  }).toString()}`;
 
   const selectedTrip = context.trips.find((trip) => trip.id === tripId) ?? null;
   const stay = travelWindow({
@@ -182,10 +214,10 @@ export default async function HotelPitchPage({
         title={`Pitch ${hotel.name}`}
         crumbs={[
           ...crumbs.slice(0, -1),
-          { label: hotel.name, href: back ?? undefined },
+          { label: hotel.name, href: backWithDiscover ?? undefined },
           { label: "Pitch" },
         ]}
-        back={back ? { href: back, label: hotel.name } : null}
+        back={backWithDiscover ? { href: backWithDiscover, label: hotel.name } : null}
         description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched. AI drafts use the same Claude path, budget, and rate limit."
       />
       {context.opportunityChoice === "missing" ? (
@@ -201,11 +233,13 @@ export default async function HotelPitchPage({
             does not replace another opportunity.
           </p>
           <ul className="space-y-2">
+            {context.opportunitiesCapped ? (
+              <li className="text-sm text-muted">
+                This list is capped. It is not every open opportunity.
+              </li>
+            ) : null}
             {context.opportunities.map((opportunity) => {
-              const params = new URLSearchParams();
-              applyHotelOrigin(params, origin);
-              if (tripId && origin.kind !== "trip") params.set("trip", tripId);
-              assignOpportunity(params, opportunity.id);
+              const params = chooserPitchParams(origin, opportunity, first(raw.back));
               const ref = shownDisplayRef(opportunity.displayRef);
               return (
                 <li key={opportunity.id} className="v12-card px-4 py-3">
@@ -255,6 +289,14 @@ export default async function HotelPitchPage({
                   : "Insufficient data"}
               </p>
             )}
+            {context.opportunitiesCapped ? (
+              <p className="text-sm text-muted">
+                This list is capped. It is not every open opportunity.
+              </p>
+            ) : null}
+            {context.selectedOpportunity?.status === "closed" ? (
+              <p className="text-sm text-muted">This opportunity is closed. Its draft stays on it.</p>
+            ) : null}
             {scopeNote ? <p className="text-sm text-muted">{scopeNote}</p> : null}
             {context.opportunityChoice === "none" ? (
               <p className="text-sm text-muted">
@@ -285,10 +327,12 @@ export default async function HotelPitchPage({
               );
             })}
             {context.templates.map((template) => {
-              const params = new URLSearchParams();
-              applyHotelOrigin(params, origin);
-              if (tripId && origin.kind !== "trip") params.set("trip", tripId);
-              assignOpportunity(params, context.selectedOpportunity?.id ?? null);
+              const params = pitchContextParams({
+                origin,
+                tripId,
+                opportunityId: context.selectedOpportunity?.id ?? null,
+                back: first(raw.back),
+              });
               params.set("template", template.id);
               params.set("fresh", "1");
               return (
@@ -312,7 +356,8 @@ export default async function HotelPitchPage({
               key={`${draftId ?? "new"}-${tripId ?? "none"}-${templateId ?? activeSystemKey ?? "auto"}-${fresh ? "fresh" : "kept"}`}
               hotelId={hotel.id}
               hotelName={hotel.name}
-              draftId={showSaved ? draftId : draftId}
+              draftId={draftId}
+              oauthReturnPath={oauthReturnPath}
               tripId={tripId}
               trips={context.trips}
               templateId={templateId}

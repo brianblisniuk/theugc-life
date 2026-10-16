@@ -12,9 +12,14 @@ import {
   chooseOpportunity,
   draftScopeNote,
   portfolioLine,
+  PITCH_OPPORTUNITY_CAP,
+  closedRowDraft,
+  mergeNamedOpportunity,
   opportunityDraftTrip,
   pitchTripToStore,
   readOpportunityParam,
+  takeOpportunityPage,
+  visiblePitchDraft,
   recipientLine,
   reviewChecks,
   selectBoundDraft,
@@ -121,6 +126,46 @@ describe("opportunity trip", () => {
         ownedTripId: null,
       }),
     ).toEqual({ ok: false, message: "Choose one of your trips." });
+  });
+});
+
+describe("visible pitch draft", () => {
+  const draft = { id: "draft-1", subject: "Saved subject", body: "Saved body that is not the template" };
+  const suggestion = { subject: "Template subject", body: "Template body" };
+
+  it("keeps the saved draft when the URL also names a trip", () => {
+    expect(
+      visiblePitchDraft({ draft, fresh: false, templateRequested: false, suggestion }),
+    ).toEqual({ subject: draft.subject, body: draft.body, draftId: draft.id });
+  });
+
+  it("hides the draft id when the creator starts over or picks a template", () => {
+    expect(visiblePitchDraft({ draft, fresh: true, templateRequested: false, suggestion }).draftId).toBeNull();
+    expect(
+      visiblePitchDraft({ draft, fresh: false, templateRequested: true, suggestion }),
+    ).toEqual({ subject: suggestion.subject, body: suggestion.body, draftId: null });
+  });
+});
+
+describe("pitch opportunity page", () => {
+  it("caps the list and still keeps a named row from outside the page", () => {
+    const rows = Array.from({ length: PITCH_OPPORTUNITY_CAP + 1 }, (_, index) => ({
+      id: `row-${index}`,
+    }));
+    const page = takeOpportunityPage(rows);
+    expect(page.capped).toBe(true);
+    expect(page.rows).toHaveLength(PITCH_OPPORTUNITY_CAP);
+    expect(page.rows.some((row) => row.id === "row-20")).toBe(false);
+    const merged = mergeNamedOpportunity(page.rows, { id: "row-20" });
+    expect(merged.some((row) => row.id === "row-20")).toBe(true);
+    expect(merged).toHaveLength(PITCH_OPPORTUNITY_CAP + 1);
+  });
+
+  it("shows a draft bound to a closed row as that closed row", () => {
+    const draft = { id: "draft-closed", pipelineItemId: SECOND.id };
+    expect(closedRowDraft(draft, "closed")).toEqual(draft);
+    expect(closedRowDraft(draft, "saved")).toBeNull();
+    expect(closedRowDraft({ id: "loose", pipelineItemId: null }, "closed")).toBeNull();
   });
 });
 

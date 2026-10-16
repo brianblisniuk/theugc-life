@@ -53,6 +53,7 @@ export function PitchComposer({
   mailAccountId = null,
   hasSendScope = false,
   pipelineItemId = null,
+  oauthReturnPath,
 }: {
   hotelId: string;
   hotelName: string;
@@ -75,6 +76,7 @@ export function PitchComposer({
   mailAccountId?: string | null;
   hasSendScope?: boolean;
   pipelineItemId?: string | null;
+  oauthReturnPath: string;
 }) {
   const router = useRouter();
   const [subjectValue, setSubjectValue] = useState(subject);
@@ -170,6 +172,7 @@ export function PitchComposer({
     data.set("body", bodyValue);
     data.set("tripId", tripId ?? "");
     data.set("draftId", savedId ?? "");
+    if (pipelineItemId) data.set("pipelineItemId", pipelineItemId);
     const result = await sendPitchFromGmailAction(data);
     if (result.result === "sent" || result.result === "unknown") locked.current = true;
     else if (result.retry) idempotencyKey.current = mintKey();
@@ -178,11 +181,7 @@ export function PitchComposer({
     setPending(false);
   }
 
-  const returnTo = encodeURIComponent(
-    pipelineItemId
-      ? `/app/hotels/${hotelId}/pitch?opportunity=${pipelineItemId}`
-      : `/app/hotels/${hotelId}/pitch`,
-  );
+  const returnTo = encodeURIComponent(oauthReturnPath);
   const connectHref = `/api/integrations/gmail/oauth/start?return_to=${returnTo}`;
   const allowSendHref = mailAccountId
     ? `/api/integrations/gmail/oauth/start?purpose=grant_send&mail_account_id=${mailAccountId}&return_to=${returnTo}`

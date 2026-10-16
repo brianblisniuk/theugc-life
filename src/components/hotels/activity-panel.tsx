@@ -61,7 +61,7 @@ export function ActivityPanel({
   pipelineHref,
 }: {
   hotelId: string;
-  relationship: OpenRelationshipResult;
+  relationship: OpenRelationshipResult | { status: "not_open" };
   /** Only read for a `won` cycle; `none` elsewhere. */
   collaboration: CollaborationLoad;
   /** Deliverables and agreed compensation for that collaboration. */
@@ -76,6 +76,21 @@ export function ActivityPanel({
   /** Where "View in Pipeline" returns. Defaults to the full pipeline list. */
   pipelineHref?: string;
 }) {
+  if (relationship.status === "not_open") {
+    return (
+      <Panel>
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold text-text">That opportunity isn’t open</h3>
+          <p className="max-w-prose text-sm text-muted">
+            This page did not switch to another opportunity.
+          </p>
+        </div>
+        <div id="inbox" className="scroll-mt-24" />
+        <div id="collaboration" className="scroll-mt-24" />
+      </Panel>
+    );
+  }
+
   const state = activityPanelState(relationship);
 
   if (state.kind === "load_error") {

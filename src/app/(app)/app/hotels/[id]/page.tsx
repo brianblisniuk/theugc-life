@@ -77,14 +77,15 @@ import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
 import { getCycleCollaboration, listHotelOpportunities } from "@/lib/pipeline/queries";
 import { isOpenCycle } from "@/lib/pipeline/types";
 import { discoverFigures } from "@/lib/screens/discover-figures";
-import { discoverReturnHref } from "@/lib/screens/discover-return";
+import { discoverReturnHref, parseDiscoverTrip } from "@/lib/screens/discover-return";
 import { eligibleHotelPhotos } from "@/lib/screens/hotel-photos";
 import {
   nextStepPitchHref,
   opportunityCards,
-  pickHotelOpportunity,
-  relationshipFromOpportunities,
+  relationshipFromSelection,
+  selectHotelOpportunity,
   type HotelOpportunity,
+  type OpportunityRelationship,
 } from "@/lib/screens/hotel-opportunities";
 import {
   hotelCrumbs,
@@ -150,16 +151,13 @@ export default async function HotelDetailPage({
     opportunityLoad.status === "ok"
       ? opportunityLoad.opportunities.map((row) => ({ ...row, tripName: null }))
       : [];
-  const selectedOpportunity =
+  const originTripId = origin.kind === "trip" ? origin.tripId : null;
+  const relationship: OpportunityRelationship =
     opportunityLoad.status === "ok"
-      ? pickHotelOpportunity(bareOpportunities, requestedOpportunity ?? null)
-      : null;
-  const relationship = relationshipFromOpportunities(
-    opportunityLoad.status === "ok"
-      ? { status: "ok", opportunities: bareOpportunities }
-      : { status: "error" },
-    selectedOpportunity,
-  );
+      ? relationshipFromSelection(
+          selectHotelOpportunity(bareOpportunities, requestedOpportunity ?? null, originTripId),
+        )
+      : { status: "error" };
   const { access, contacts, failed: contactsFailed, via, cacheEmail, balance, cost } = contactPanel;
 
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
@@ -293,9 +291,11 @@ export default async function HotelDetailPage({
   const relationshipFact: RelationshipFact =
     relationship.status === "error"
       ? { status: "error" }
-      : relationship.status === "none"
-        ? { status: "none" }
-        : { status: "open", stage: relationship.relationship.status };
+      : relationship.status === "not_open"
+        ? { status: "not_open" }
+        : relationship.status === "none"
+          ? { status: "none" }
+          : { status: "open", stage: relationship.relationship.status };
   const billing =
     session.status === "authenticated"
       ? await loadBillingAccess(session.session.userId)
@@ -473,6 +473,15 @@ export default async function HotelDetailPage({
                 trips={tripChoices}
                 tripsLoad={trips.status === "ok" ? "ok" : "error"}
                 alreadyOn={alreadyOn}
+                preferredTripId={
+                  origin.kind === "trip"
+                    ? origin.tripId
+                    : parseDiscoverTrip(
+                        discoverBack
+                          ? new URL(discoverBack, "http://local").searchParams.get("trip")
+                          : null,
+                      )
+                }
               />
             </div>
           </section>

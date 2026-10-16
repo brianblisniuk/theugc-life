@@ -64,6 +64,7 @@ export default async function PitchStudioPage() {
               stayStart: item.stayStart,
               stayEnd: item.stayEnd,
               tripName: item.tripName,
+              tripId: item.tripId,
               nextFollowupAt: item.nextFollowupAt,
               lastActivityAt: item.lastActivityAt,
               deadlineLabel: null,

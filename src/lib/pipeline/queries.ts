@@ -66,6 +66,7 @@ export interface PipelineListItem {
   stayStart: string | null;
   stayEnd: string | null;
   tripName: string | null;
+  tripId: string | null;
   hotel: {
     id: string;
     name: string;
@@ -207,10 +208,10 @@ export interface PipelineRankAuth {
 }
 
 const RANK_SELECT =
-  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip_id, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
 
 const SELECT_COLUMNS =
-  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip_id, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
 
 /**
  * Normalize a `?page=` value. Anything that is not a positive whole number —
@@ -254,6 +255,7 @@ function mapPipelineRow(raw: unknown): PipelineListItem & { destinationId: strin
     stayStart: typeof row.stay_start === "string" ? row.stay_start : null,
     stayEnd: typeof row.stay_end === "string" ? row.stay_end : null,
     tripName: typeof trip?.name === "string" ? trip.name : null,
+    tripId: typeof row.trip_id === "string" && isUuid(row.trip_id) ? row.trip_id : null,
     savedAt: (row.saved_at as string | null) ?? null,
     lastActivityAt: (row.last_activity_at as string | null) ?? null,
     nextFollowupAt: (row.next_followup_at as string | null) ?? null,

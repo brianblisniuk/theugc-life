@@ -10,12 +10,18 @@ import {
   pipelineStatusLabel,
   type PipelineStatus,
 } from "@/lib/pipeline/types";
-import { hotelHref, pitchHref, type HotelOrigin } from "@/lib/shell/navigation";
+import { hotelHref, pitchHref, withOpportunityQuery, type HotelOrigin } from "@/lib/shell/navigation";
 
 export type OpportunityRelationship =
   | { status: "open"; relationship: { pipelineItemId: string; status: PipelineStatus } }
   | { status: "none" }
+  | { status: "not_open" }
   | { status: "error" };
+
+export type HotelOpportunitySelection =
+  | { status: "open"; row: HotelOpportunity }
+  | { status: "not_open" }
+  | { status: "none" };
 
 const DISPLAY_REF = /^OP-[1-9][0-9]{3,}$/;
 
@@ -154,15 +160,48 @@ export function opportunityCards(
   });
 }
 
-export function pickHotelOpportunity(
+/**
+ * The URL's opportunity is that row, or not open. Another row is not a
+ * substitute. A trip origin with no named row uses the open row on that trip.
+ * Several matches, or none while another row is open, leave the workflow empty.
+ */
+export function selectHotelOpportunity(
   rows: readonly HotelOpportunity[],
-  requestedId: string | null,
-): HotelOpportunity | null {
-  if (requestedId && isUuid(requestedId)) {
-    const match = rows.find((row) => row.id === requestedId);
-    if (match) return match;
+  requestedId: string | null | undefined,
+  originTripId: string | null,
+): HotelOpportunitySelection {
+  const named = typeof requestedId === "string" ? requestedId.trim() : "";
+  if (named) {
+    if (!isUuid(named)) return { status: "not_open" };
+    const match = rows.find((row) => row.id === named) ?? null;
+    if (!match || !isOpenCycle(match.status)) return { status: "not_open" };
+    return { status: "open", row: match };
   }
-  return rows.find((row) => isOpenCycle(row.status)) ?? null;
+  const open = rows.filter((row) => isOpenCycle(row.status));
+  if (originTripId && isUuid(originTripId)) {
+    const matches = open.filter((row) => row.tripId === originTripId);
+    if (matches.length === 1) return { status: "open", row: matches[0]! };
+    if (open.length === 0) return { status: "none" };
+    return { status: "not_open" };
+  }
+  const first = open[0] ?? null;
+  return first ? { status: "open", row: first } : { status: "none" };
+}
+
+export function relationshipFromSelection(
+  selection: HotelOpportunitySelection,
+): OpportunityRelationship {
+  if (selection.status === "open") {
+    return {
+      status: "open",
+      relationship: {
+        pipelineItemId: selection.row.id,
+        status: selection.row.status as PipelineStatus,
+      },
+    };
+  }
+  if (selection.status === "not_open") return { status: "not_open" };
+  return { status: "none" };
 }
 
 export function relationshipFromOpportunities(
@@ -170,14 +209,60 @@ export function relationshipFromOpportunities(
   selected: HotelOpportunity | null,
 ): OpportunityRelationship {
   if (load.status === "error") return { status: "error" };
-  const open = load.opportunities.filter((row) => isOpenCycle(row.status));
-  const chosen = selected && isOpenCycle(selected.status) ? selected : (open[0] ?? null);
-  if (!chosen) return { status: "none" };
-  return {
-    status: "open",
-    relationship: {
-      pipelineItemId: chosen.id,
-      status: chosen.status as PipelineStatus,
-    },
-  };
+  if (selected && !isOpenCycle(selected.status)) return { status: "not_open" };
+  if (selected) {
+    return {
+      status: "open",
+      relationship: {
+        pipelineItemId: selected.id,
+        status: selected.status as PipelineStatus,
+      },
+    };
+  }
+  return relationshipFromSelection(selectHotelOpportunity(load.opportunities, null, null));
+}
+
+/** Trip shortlist Pitch. The link names the row and that row's trip. */
+export function shortlistPitchHref(
+  hotelId: string,
+  tripId: string,
+  rows: readonly { id: string; status: string; tripId: string | null }[],
+): string | null {
+  if (!isUuid(hotelId) || !isUuid(tripId)) return null;
+  const open = rows.filter((row) => isOpenCycle(row.status) && isUuid(row.id));
+  const onTrip = open.filter((row) => row.tripId === tripId);
+  const target = onTrip.length === 1 ? onTrip[0]! : open.length === 1 ? open[0]! : null;
+  if (!target) return pitchHref(hotelId, tripId, { kind: "trip", tripId }, null);
+  const rowTrip = target.tripId && isUuid(target.tripId) ? target.tripId : null;
+  const origin: HotelOrigin = rowTrip ? { kind: "trip", tripId: rowTrip } : { kind: "discover" };
+  return pitchHref(hotelId, rowTrip, origin, target.id);
+}
+
+/** Outreach Prepare. A campaign trip is not substituted for the row's trip. */
+export function outreachPrepareHref(
+  hotelId: string,
+  status: string,
+  pipelineItemId: string | null,
+  tripId: string | null,
+): string | null {
+  const rowId = pipelineItemId && isUuid(pipelineItemId) ? pipelineItemId : null;
+  const rowTrip = tripId && isUuid(tripId) ? tripId : null;
+  if (status === "replied" || status === "negotiating") {
+    const href = hotelHref(hotelId, { kind: "inbox" }, "inbox");
+    return href ? withOpportunityQuery(href, rowId, rowTrip) : null;
+  }
+  if (status === "won") {
+    const href = hotelHref(hotelId, { kind: "collaboration" }, "collaboration");
+    return href ? withOpportunityQuery(href, rowId, rowTrip) : null;
+  }
+  if (status === "saved" || status === "planned" || !status) {
+    const origin: HotelOrigin = rowTrip
+      ? { kind: "trip", tripId: rowTrip }
+      : rowId
+        ? { kind: "pipeline" }
+        : { kind: "discover" };
+    return pitchHref(hotelId, rowTrip, origin, rowId);
+  }
+  const href = hotelHref(hotelId, { kind: "pipeline" }, "work");
+  return href ? withOpportunityQuery(href, rowId, rowTrip) : null;
 }

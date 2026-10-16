@@ -112,6 +112,7 @@ export interface InboxThreadRow {
   stale: boolean;
   hasHumanReply: boolean;
   hasRedirect: boolean;
+  tripId: string | null;
 }
 
 export interface InboxDateRow {
@@ -457,7 +458,7 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
       attention,
       attentionLabel: attentionLabel(attention, row.status),
       source: "gmail",
-      pitchHref: pitchHref(row.hotelId, null, { kind: "inbox" }),
+      pitchHref: pitchHref(row.hotelId, row.tripId, { kind: "inbox" }, row.pipelineItemId),
       pipelineHref: hotelHref(row.hotelId, { kind: "pipeline" }),
       stale: row.stale,
       suggestions,

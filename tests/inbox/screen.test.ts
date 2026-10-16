@@ -54,6 +54,7 @@ function thread(overrides: Partial<InboxThreadRow> = {}): InboxThreadRow {
     stale: false,
     hasHumanReply: true,
     hasRedirect: false,
+    tripId: null,
     ...overrides,
   };
 }
@@ -235,6 +236,32 @@ describe("inbox screen", () => {
     expect(revokedEmptyInbox(kept)).toBeNull();
     expect(kept.threads[0]?.hotelName).toBe("North House");
     expect(kept.threads[0]?.pitchHref).toContain("from=inbox");
+    expect(kept.threads[0]?.pitchHref).toContain(`opportunity=${ITEM_A}`);
+    const trip = "55555555-5555-4555-8555-555555555555";
+    const other = "66666666-6666-4666-8666-666666666666";
+    const named = buildInboxScreen({
+      profileId: PROFILE_A,
+      asOf: "2026-10-16T15:00:00.000Z",
+      filter: "all",
+      selectedId: null,
+      mailbox: { kind: "reauth" },
+      threads: [thread({ tripId: trip })],
+      suggestions: [],
+      collaborations: [],
+      collaborationStatus: "ok",
+      dates: [],
+      threadsCapped: false,
+      datesCapped: false,
+      suggestionsCapped: false,
+      suggestionsFailed: false,
+      datesFailed: false,
+      collaborationsFailed: false,
+      foreign: false,
+    });
+    if (named.kind !== "ready") throw new Error("unreachable");
+    expect(named.threads[0]?.pitchHref).toContain(`trip=${trip}`);
+    expect(named.threads[0]?.pitchHref).toContain(`opportunity=${ITEM_A}`);
+    expect(named.threads[0]?.pitchHref).not.toContain(other);
   });
 
   it("keeps a pending stay-date decision when the mailbox is revoked and no thread is linked", () => {
