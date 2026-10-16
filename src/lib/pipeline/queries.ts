@@ -100,6 +100,8 @@ export async function getOpenRelationship(
     .select("id, status")
     .eq("hotel_id", hotelId)
     .neq("status", "closed")
+    .order("last_activity_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) return { status: "error" };
@@ -110,6 +112,57 @@ export async function getOpenRelationship(
     status: "open",
     relationship: { pipelineItemId: row.id, status: row.status as PipelineStatus },
   };
+}
+
+export interface HotelOpportunityRow {
+  id: string;
+  displayRef: string | null;
+  status: PipelineStatus;
+  stayStart: string | null;
+  stayEnd: string | null;
+  tripId: string | null;
+}
+
+export type HotelOpportunityList =
+  | { status: "ok"; opportunities: HotelOpportunityRow[] }
+  | { status: "error" };
+
+const DISPLAY_REF = /^OP-[1-9][0-9]{3,}$/;
+
+/**
+ * Every pipeline row this creator has for one hotel, including closed.
+ * RLS scopes the read. A display id that fails the OP- shape is omitted.
+ */
+export async function listHotelOpportunities(
+  hotelId: string,
+  injectedClient?: PipelineQueryClient,
+): Promise<HotelOpportunityList> {
+  if (!isUuid(hotelId)) return { status: "ok", opportunities: [] };
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await supabase
+    .from("pipeline_items")
+    .select("id, display_ref, status, stay_start, stay_end, trip_id, created_at")
+    .eq("hotel_id", hotelId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  if (error) return { status: "error" };
+  const opportunities: HotelOpportunityRow[] = [];
+  for (const raw of data ?? []) {
+    const row = raw as Record<string, unknown>;
+    if (typeof row.id !== "string" || !isUuid(row.id)) continue;
+    if (typeof row.status !== "string") continue;
+    const displayRef = typeof row.display_ref === "string" ? row.display_ref : null;
+    opportunities.push({
+      id: row.id,
+      displayRef: displayRef && DISPLAY_REF.test(displayRef) ? displayRef : null,
+      status: row.status as PipelineStatus,
+      stayStart: typeof row.stay_start === "string" ? row.stay_start : null,
+      stayEnd: typeof row.stay_end === "string" ? row.stay_end : null,
+      tripId: typeof row.trip_id === "string" && isUuid(row.trip_id) ? row.trip_id : null,
+    });
+  }
+  return { status: "ok", opportunities };
 }
 
 /** One page of the creator's pipeline. 50 keeps the page useful without paging forever. */

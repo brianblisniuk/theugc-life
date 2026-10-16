@@ -17,14 +17,32 @@ import { saveHotelAction } from "@/lib/pipeline/actions";
 import type { SaveResult } from "@/lib/pipeline/types";
 import { saveControlState, shouldOfferUpgrade } from "@/lib/pipeline/view";
 
-function SubmitButton({ idle, pendingLabel }: { idle: string; pendingLabel: string }) {
+function SubmitButton({
+  idle,
+  pendingLabel,
+  appearance,
+}: {
+  idle: string;
+  pendingLabel: string;
+  appearance: "text" | "icon";
+}) {
   const { pending } = useFormStatus();
+  if (appearance === "icon") {
+    return (
+      <button
+        type="submit"
+        disabled={pending}
+        className="s1-icon-save"
+        aria-label={pending ? pendingLabel : idle}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7">
+          <path d="M6 3h12v18l-6-4-6 4z" />
+        </svg>
+      </button>
+    );
+  }
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="ux-btn"
-    >
+    <button type="submit" disabled={pending} className="v12-btn">
       {pending ? pendingLabel : idle}
     </button>
   );
@@ -34,10 +52,12 @@ export function SaveHotelButton({
   hotelId,
   idle = "Save to Pipeline",
   pendingLabel = "Saving…",
+  appearance = "text",
 }: {
   hotelId: string;
   idle?: string;
   pendingLabel?: string;
+  appearance?: "text" | "icon";
 }) {
   const [result, setResult] = useState<SaveResult | null>(null);
 
@@ -74,7 +94,7 @@ export function SaveHotelButton({
     <div className="space-y-2">
       <form action={onSubmit}>
         <input type="hidden" name="hotelId" value={hotelId} />
-        <SubmitButton idle={idle} pendingLabel={pendingLabel} />
+        <SubmitButton idle={idle} pendingLabel={pendingLabel} appearance={appearance} />
       </form>
 
       {state.kind === "limit" || state.kind === "problem" ? (

@@ -7,6 +7,7 @@ import { assertContactProvider } from "@/lib/contacts/provider";
 import "./globals.css";
 import "./midnight.css";
 import "./screens.css";
+import "./v2-screens.css";
 
 /** Archivo is the product face. next/font self-hosts it at build time. */
 const archivo = Archivo({

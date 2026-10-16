@@ -22,11 +22,13 @@ export function DiscoverFilters({
   destinations,
   countries,
   catalogFailed,
+  tripId = null,
 }: {
   query: DiscoverQuery;
   destinations: readonly DiscoverDestinationOption[];
   countries: readonly DiscoverCountryOption[];
   catalogFailed: boolean;
+  tripId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const destinationKnown = destinations.some((destination) => destination.slug === query.destination);
@@ -43,6 +45,7 @@ export function DiscoverFilters({
 
   return (
     <form action="/app/discover" method="get" role="search" className="ux-stack">
+      {tripId ? <input type="hidden" name="trip" value={tripId} /> : null}
       {catalogFailed ? (
         <p className="ux-meta" role="status">
           The destination list couldn’t be loaded. You can still search by name.

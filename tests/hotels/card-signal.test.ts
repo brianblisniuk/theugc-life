@@ -67,7 +67,7 @@ describe("creator badges — viewer isolation", () => {
       ],
     });
     const badge = badges.get(HOTEL)!;
-    expect(badge.pipeline).toEqual({ kind: "status", label: "Pitched" });
+    expect(badge.pipeline).toEqual({ kind: "status", label: "Sent" });
     expect(badge.tripIds).toEqual(["trip-viewer"]);
     expect(shouldShowPipelineBadge(badge)).toBe(true);
     expect(shouldShowTripBadge(badge)).toBe(true);
@@ -75,7 +75,7 @@ describe("creator badges — viewer isolation", () => {
     expect(JSON.stringify(badge)).not.toContain("trip-other");
   });
 
-  it("does not show a closed cycle as saved, and does not label a conflict", () => {
+  it("does not show a closed cycle as saved, and counts several open opportunities", () => {
     const closed = assembleCreatorBadges({
       hotelIds: [HOTEL],
       viewerId: VIEWER,
@@ -94,8 +94,9 @@ describe("creator badges — viewer isolation", () => {
       ],
       tripRows: [],
     });
-    expect(conflict.get(HOTEL)!.pipeline).toEqual({ kind: "unknown" });
-    expect(shouldShowPipelineBadge(conflict.get(HOTEL)!)).toBe(false);
+    expect(conflict.get(HOTEL)!.pipeline).toEqual({ kind: "several", count: 2 });
+    expect(shouldShowPipelineBadge(conflict.get(HOTEL)!)).toBe(true);
+    expect(JSON.stringify(conflict.get(HOTEL)!.pipeline)).not.toMatch(/Saved|Sent/);
   });
 
   it("a null badge is not a claim that the hotel is unsaved", () => {

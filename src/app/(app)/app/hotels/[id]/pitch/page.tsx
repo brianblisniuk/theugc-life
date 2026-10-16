@@ -78,6 +78,10 @@ export default async function HotelPitchPage({
     destinationName: hotel.destination?.name ?? null,
     requestedTripId: requestedTrip && isUuid(requestedTrip) ? requestedTrip : null,
     preferDraftTrip: !fresh && !requestedTrip,
+    opportunityId: (() => {
+      const value = first(raw.opportunity);
+      return value && isUuid(value) ? value : null;
+    })(),
   });
 
   if (context.status !== "ok") {

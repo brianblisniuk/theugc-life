@@ -86,9 +86,8 @@ let cycleSeq = 0;
  * with a collaboration record.
  *
  * Cycles are created `closed` by default so a single creator may hold several
- * against the same hotel — `pipeline_items_single_active_cycle_uidx` allows
- * only one non-closed cycle per (creator, hotel), and the distinct-creator
- * thresholds are exactly what these tests need to vary independently of volume.
+ * against the same hotel. D182 keeps closed rows outside the stay overlap
+ * rule. The distinct-creator thresholds are what these tests vary.
  */
 async function seedCycle(spec: {
   hotel: string;

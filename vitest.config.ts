@@ -12,6 +12,9 @@ import { fileURLToPath } from "node:url";
  *   sets it.
  */
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],

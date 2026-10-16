@@ -18,10 +18,12 @@ import type { Metadata } from "next";
 import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
 import { AddToTrip } from "@/components/hotels/add-to-trip";
-import { ReportContact } from "@/components/contacts/report-contact";
-import { UnlockContact } from "@/components/contacts/unlock-contact";
-import { ContactCard } from "@/components/hotels/contact-card";
+import { ContactFeature } from "@/components/hotels/contact-feature";
 import { HotelMap } from "@/components/hotels/hotel-map";
+import { HotelPhotos } from "@/components/hotels/hotel-photos";
+import { MetricRing, MetricValue } from "@/components/hotels/metric-ring";
+import { OpportunityHistory } from "@/components/hotels/opportunity-history";
+import { ButtonLink } from "@/components/ui/button";
 import { NetworkIntelligencePanel, PersonalFacts } from "@/components/intelligence/network-panel";
 import {
   IntelligencePanel,
@@ -72,7 +74,17 @@ import {
 import { getDestinationMetricRankings, getHotelMetricSignals } from "@/lib/metrics/queries";
 import { getPastCollaborations } from "@/lib/profile/queries";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
-import { getCycleCollaboration, getOpenRelationship } from "@/lib/pipeline/queries";
+import { getCycleCollaboration, listHotelOpportunities } from "@/lib/pipeline/queries";
+import { isOpenCycle } from "@/lib/pipeline/types";
+import { discoverFigures } from "@/lib/screens/discover-figures";
+import { discoverReturnHref } from "@/lib/screens/discover-return";
+import { eligibleHotelPhotos } from "@/lib/screens/hotel-photos";
+import {
+  opportunityCards,
+  pickHotelOpportunity,
+  relationshipFromOpportunities,
+  type HotelOpportunity,
+} from "@/lib/screens/hotel-opportunities";
 import {
   hotelCrumbs,
   parseHotelOrigin,
@@ -82,9 +94,6 @@ import {
 import { tripLimitMessage } from "@/lib/trips/display";
 import { listTrips } from "@/lib/trips/queries";
 import {
-  CONTACT_ERROR_BODY,
-  CONTACT_ERROR_TITLE,
-  NO_CONTACT_TITLE,
   NO_RELATIONSHIP,
 } from "@/lib/screens/copy";
 import { initialsFromName } from "@/lib/screens/initials";
@@ -108,27 +117,17 @@ export async function generateMetadata({
   }
 }
 
-function Section({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section id={id} className="scroll-mt-24 space-y-3">
-      <h2 className="text-lg font-semibold text-text">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
 const ACTIVE_STATUS_LABEL: Record<string, string> = {
   temporarily_closed: "Temporarily closed",
   closed: "Closed",
 };
+
+function withOpportunity(href: string, opportunityId: string): string {
+  if (href.startsWith("#")) return href;
+  const url = new URL(href, "http://local");
+  url.searchParams.set("opportunity", opportunityId);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
 
 export default async function HotelDetailPage({
   params,
@@ -147,12 +146,27 @@ export default async function HotelDetailPage({
   const hotel = loaded.hotel;
 
   // Contacts follow unlock ownership. Intelligence keeps the Pass/Pro gate.
-  const [contactPanel, intelligenceAccess, intelligence, relationship] = await Promise.all([
+  const [contactPanel, intelligenceAccess, intelligence, opportunityLoad] = await Promise.all([
     getHotelContactsIfAuthorized(hotel.id),
     enforcePremiumHotelAccess(hotel.id),
     getHotelIntelligence(hotel.id),
-    getOpenRelationship(hotel.id),
+    listHotelOpportunities(hotel.id),
   ]);
+  const requestedOpportunity = Array.isArray(raw.opportunity) ? raw.opportunity[0] : raw.opportunity;
+  const bareOpportunities: HotelOpportunity[] =
+    opportunityLoad.status === "ok"
+      ? opportunityLoad.opportunities.map((row) => ({ ...row, tripName: null }))
+      : [];
+  const selectedOpportunity =
+    opportunityLoad.status === "ok"
+      ? pickHotelOpportunity(bareOpportunities, requestedOpportunity ?? null)
+      : null;
+  const relationship = relationshipFromOpportunities(
+    opportunityLoad.status === "ok"
+      ? { status: "ok", opportunities: bareOpportunities }
+      : { status: "error" },
+    selectedOpportunity,
+  );
   const { access, contacts, failed: contactsFailed, via, cacheEmail, balance, cost } = contactPanel;
 
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
@@ -247,7 +261,34 @@ export default async function HotelDetailPage({
         }))
       : [];
 
-  const trail = hotelCrumbs(origin, hotel.name);
+  const tripNameById = new Map(
+    trips.status === "ok"
+      ? trips.trips.map((trip) => [trip.id, trip.name?.trim() || trip.destinationName] as const)
+      : [],
+  );
+  const opportunities: HotelOpportunity[] = bareOpportunities.map((row) => ({
+    ...row,
+    tripName: row.tripId ? (tripNameById.get(row.tripId) ?? null) : null,
+  }));
+  const backParam = Array.isArray(raw.back) ? raw.back[0] : raw.back;
+  const discoverBack = origin.kind === "discover" ? discoverReturnHref(backParam) : null;
+  const trail = hotelCrumbs(origin, hotel.name).map((crumb) =>
+    crumb.label === "Discover" && discoverBack ? { ...crumb, href: discoverBack } : crumb,
+  );
+  const back =
+    origin.kind === "discover"
+      ? { href: discoverBack ?? "/app/discover", label: "Back to Discover" }
+      : origin.kind === "pipeline"
+        ? { href: "/app/pipeline", label: "Back to Pipeline" }
+        : origin.kind === "inbox"
+          ? { href: "/app/pipeline?surface=inbox", label: "Back to Inbox" }
+          : origin.kind === "collaboration"
+            ? { href: "/app/pipeline?surface=collaborations", label: "Back to Collaborations" }
+            : { href: `/app/trips/${origin.tripId}`, label: "Back to trip" };
+  const cards = opportunityCards(opportunities, hotel.id, discoverBack);
+  const openCount = opportunities.filter((row) => isOpenCycle(row.status)).length;
+  const figures = discoverFigures(metricSignals);
+  const photos = eligibleHotelPhotos();
   const contactFact: ContactFact =
     contactState === "locked"
       ? "locked"
@@ -267,7 +308,12 @@ export default async function HotelDetailPage({
       ? await loadBillingAccess(session.session.userId)
       : ({ status: "error" } as const);
   const plan = session.status === "authenticated" ? planChipFromAccess(billing) : null;
-  const pitch = pitchHref(hotel.id) ?? "#work";
+  const openRow =
+    relationship.status === "open"
+      ? (opportunities.find((row) => row.id === relationship.relationship.pipelineItemId) ?? null)
+      : null;
+  const pitchBase = pitchHref(hotel.id, openRow?.tripId ?? null) ?? "#work";
+  const pitch = openRow ? withOpportunity(pitchBase, openRow.id) : pitchBase;
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,
@@ -283,198 +329,179 @@ export default async function HotelDetailPage({
   const initials = initialsFromName(hotel.name);
 
   return (
-    <div className="ux-hotel">
-      <div className="ux-hotel-main">
+    <div className="s1-hotel">
       <AnalyticsPageView event="hotel_viewed" />
 
-      <header className="ux-stack" id="overview">
-        <p className="ux-eyebrow">Hotel information</p>
-        <nav className="ux-wrap ux-meta" aria-label="Breadcrumb">
-          {trail.map((crumb, index) =>
-            crumb.href ? (
-              <a key={crumb.href} href={crumb.href}>
-                {crumb.label}
-                {index < trail.length - 1 ? <span aria-hidden="true"> / </span> : null}
+      <header className="s1-pagehead" id="overview">
+        <div>
+          <p className="s1-eyebrow">HOTEL DETAIL</p>
+          <nav className="ux-wrap ux-meta" aria-label="Breadcrumb">
+            {trail.map((crumb, index) =>
+              crumb.href ? (
+                <a key={crumb.href} href={crumb.href}>
+                  {crumb.label}
+                  {index < trail.length - 1 ? <span aria-hidden="true"> / </span> : null}
+                </a>
+              ) : (
+                <span key={crumb.label} aria-current="page">
+                  {crumb.label}
+                </span>
+              ),
+            )}
+          </nav>
+          <h1>{hotel.name}</h1>
+          {location || type ? (
+            <p className="s1-lede">{[location, type].filter(Boolean).join(" · ")}</p>
+          ) : null}
+          <div className="s1-actions">
+            {classification ? <span className="v12-badge">{classification}</span> : null}
+            <VerificationBadge status={hotel.verificationStatus} />
+            {hotel.activeStatus === "active" ? <span className="v12-badge v12-badge-green">Open</span> : null}
+            {statusNote ? <span className="v12-badge v12-badge-amber">{statusNote}</span> : null}
+          </div>
+          {hotel.address ? <p className="s1-muted">{hotel.address}</p> : null}
+          <div className="s1-actions">
+            {hotel.websiteUrl ? (
+              <a className="s1-muted" href={hotel.websiteUrl} target="_blank" rel="noreferrer noopener">
+                Website
               </a>
-            ) : (
-              <span key={crumb.label} aria-current="page">
-                {crumb.label}
-              </span>
-            ),
-          )}
-        </nav>
-        <h1 className="ux-h1">{hotel.name}</h1>
-        {location || type ? <p className="ux-lede">{[location, type].filter(Boolean).join(" · ")}</p> : null}
-        <div className="ux-hero" id="identity">
-          <strong>{initials}</strong>
-          <span>No verified photograph on file.</span>
-          <span className="sr-only">No photograph</span>
-        </div>
-        <div className="ux-wrap">
-          {classification ? <span className="ux-tag">{classification}</span> : null}
-          <VerificationBadge status={hotel.verificationStatus} />
-          {hotel.activeStatus === "active" ? <span className="ux-tag">Open</span> : null}
-          {statusNote ? <span className="ux-tag ux-tag-warning">{statusNote}</span> : null}
-        </div>
-        {hotel.address ? <p className="ux-meta">{hotel.address}</p> : null}
-        <div className="ux-wrap">
-          {hotel.websiteUrl ? (
-            <a className="ux-meta" href={hotel.websiteUrl} target="_blank" rel="noreferrer noopener">
-              Website
-            </a>
-          ) : null}
-          {hotel.instagramUrl ? (
-            <a className="ux-meta" href={hotel.instagramUrl} target="_blank" rel="noreferrer noopener">
-              Instagram
-            </a>
+            ) : null}
+            {hotel.instagramUrl ? (
+              <a className="s1-muted" href={hotel.instagramUrl} target="_blank" rel="noreferrer noopener">
+                Instagram
+              </a>
+            ) : null}
+          </div>
+          {firstHotelNotice && relationship.status === "open" ? (
+            <p className="ux-notice" role="status">
+              {FIRST_RUN_COPY.savedToast}
+            </p>
           ) : null}
         </div>
-        {firstHotelNotice && relationship.status === "open" ? (
-          <p className="ux-notice" role="status">
-            {FIRST_RUN_COPY.savedToast}
-          </p>
-        ) : null}
+        <div className="s1-actions">
+          <ButtonLink href={back.href}>{back.label}</ButtonLink>
+          <a className="v12-btn v12-btn-primary" href="#trip">
+            Add to My Trip
+          </a>
+        </div>
       </header>
       <HotelSectionNav />
 
-      <div id="map" className="scroll-mt-24">
-        <HotelMap pins={[loaded.mapPin]} variant="section" />
-      </div>
-
-      {/* 2. Creator intelligence — public layer, then the premium layer */}
-      <section className="ux-stack" id="intelligence">
-        <div className="ux-results">
-          <div className="ux-stack-sm">
-            <p className="ux-eyebrow">Creator network</p>
-            <h2 className="ux-name">Creator intelligence</h2>
-            <p className="ux-meta">Signals based on confirmed creator activity.</p>
-          </div>
-          <Methodology />
-        </div>
-        <MetricCells signals={metricSignals} strength={strength} />
-        <IntelligencePanel result={intelligence} />
-        <PremiumIntelligencePanel state={premiumState} result={premium} />
-        <NetworkIntelligencePanel
-          hotelId={hotel.id}
-          network={network}
-          rank={rank}
-          prioritized={prioritized}
-        />
-        <PersonalFacts load={ownFacts} />
-        <RankingBoards destinationName={hotel.destination?.name ?? null} rankings={metricRankings} />
-        <DecisionIntelligence
-          hotelId={hotel.id}
-          strength={strength}
-          personal={personal}
-          fit={fit}
-          decision={fitDecision}
-        />
-      </section>
-
-      {/* 3. Premium contact */}
-      <Section id="contact" title="Hotel contact">
-        {contactState === "contacts" ? (
-          <div className="space-y-4">
-            {via === "unlock" ? (
-              <p className="text-sm font-semibold text-text">Already unlocked</p>
-            ) : null}
-            <div className="grid gap-4 md:grid-cols-2">
-              {contacts.map((contact) => (
-                <ContactCard key={contact.id} contact={contact} />
-              ))}
+      <div className="s1-detail">
+        <div>
+          <section className="s1-panel" id="intelligence">
+            <div className="s1-panel-head">
+              <div>
+                <p className="s1-eyebrow">CREATOR INTELLIGENCE</p>
+                <h2>Creator intelligence</h2>
+                <p>Signals based on confirmed creator activity.</p>
+              </div>
+              <Methodology />
             </div>
-            {contacts.length === 0 && cacheEmail ? (
-              <p className="text-sm text-text">
-                <a className="underline" href={`mailto:${cacheEmail}`}>
-                  {cacheEmail}
-                </a>
-              </p>
-            ) : null}
-            {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
-          </div>
-        ) : contactState === "locked" ? (
-          <div className="space-y-4">
-            <UnlockContact
+            <div className="s1-intel">
+              <article>
+                <p className="s1-eyebrow">CREATOR REPLY RATE</p>
+                <MetricRing figure={figures.replyRate} label="Observed replies" />
+              </article>
+              <article>
+                <p className="s1-eyebrow">TYPICAL REPLY TIME</p>
+                <MetricValue figure={figures.replyTime} label="Reported reply window" />
+              </article>
+              <article>
+                <p className="s1-eyebrow">CREATOR ACTIVITY</p>
+                <MetricValue figure={figures.activity} label="Aggregated public signal" />
+              </article>
+            </div>
+            <MetricCells signals={metricSignals} strength={strength} />
+            <IntelligencePanel result={intelligence} />
+            <PremiumIntelligencePanel state={premiumState} result={premium} />
+            <NetworkIntelligencePanel
               hotelId={hotel.id}
-              unlocked={false}
-              balance={balance}
-              cost={cost}
-              showEmail
+              network={network}
+              rank={rank}
+              prioritized={prioritized}
             />
-          </div>
-        ) : contactState === "access-error" ? (
-          // The entitlement CHECK failed. We did not learn that this creator
-          // lacks access, so we must not imply it — no upgrade CTA here (F1).
-          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            <h3 className="text-base font-semibold text-text">
-              Contact access couldn&rsquo;t be checked
-            </h3>
-            <p className="mt-2 max-w-prose text-sm text-muted">
-              We couldn&rsquo;t verify your access right now. Reload the page to try again.
-            </p>
-          </div>
-        ) : contactState === "fetch-error" ? (
-          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            <h3 className="text-base font-semibold text-text">{CONTACT_ERROR_TITLE}</h3>
-            <p className="mt-2 max-w-prose text-sm text-muted">{CONTACT_ERROR_BODY}</p>
-            <a className="ux-btn" href="">
-              Retry
-            </a>
-          </div>
-        ) : (
-          <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            {via === "unlock" ? (
-              <p className="text-sm font-semibold text-text">Already unlocked</p>
-            ) : null}
-            <h3 className="text-base font-semibold text-text">{NO_CONTACT_TITLE}</h3>
-            <p className="max-w-prose text-sm text-muted">
-              {via === "unlock"
-                ? "This unlock did not return an email. Reporting it is how a courtesy credit starts."
-                : "We haven’t published a verified contact for this hotel yet."}
-            </p>
-            {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
-          </div>
-        )}
-      </Section>
+            <PersonalFacts load={ownFacts} />
+            <RankingBoards destinationName={hotel.destination?.name ?? null} rankings={metricRankings} />
+            <DecisionIntelligence
+              hotelId={hotel.id}
+              strength={strength}
+              personal={personal}
+              fit={fit}
+              decision={fitDecision}
+            />
+          </section>
 
-      {/* 4. The creator's private relationship */}
-      <section className="ux-stack" id="work">
-        <p className="ux-eyebrow">Your history</p>
-        <h2 className="ux-name">Your work with this hotel</h2>
-        {relationship.status === "none" ? <p>{NO_RELATIONSHIP}</p> : null}
-        <PastCollaborations
-          load={pastCollaborations}
-          heading="Past collaborations with this hotel"
-          linkToHotel={false}
-          hideWhenEmpty
-        />
-        <ActivityPanel
-          hotelId={hotel.id}
-          relationship={relationship}
-          collaboration={collaboration}
-          workspace={workspace}
-          contracts={contracts}
-          inbox={inbox}
-          mailboxes={mailboxes}
-          gmailPrompt={gmailPrompt}
-          collaborationSuggestions={collaborationSuggestions}
-          pipelineHref={pipelineReturnHref(origin)}
-        />
-        <div id="trip" className="scroll-mt-24">
-          <AddToTrip
+          <section className="s1-panel" id="identity">
+            <div className="s1-panel-head">
+              <h2>Get to know the property</h2>
+            </div>
+            <HotelPhotos name={hotel.name} initials={initials} photos={photos} />
+            {photos.length === 0 ? (
+              <p className="s1-caption">No verified photograph on file.</p>
+            ) : null}
+            <div id="map" className="scroll-mt-24">
+              <HotelMap pins={[loaded.mapPin]} variant="section" />
+            </div>
+          </section>
+
+          <section className="s1-panel" id="work">
+            <div className="s1-panel-head">
+              <div>
+                <p className="s1-eyebrow">Your history</p>
+                <h2>Your history with this hotel</h2>
+              </div>
+              {openCount > 1 ? (
+                <span className="v12-badge v12-badge-amber">{openCount} separate opportunities</span>
+              ) : null}
+            </div>
+            {relationship.status === "none" ? <p>{NO_RELATIONSHIP}</p> : null}
+            <OpportunityHistory cards={cards} failed={opportunityLoad.status === "error"} />
+            <PastCollaborations
+              load={pastCollaborations}
+              heading="Past collaborations with this hotel"
+              linkToHotel={false}
+              hideWhenEmpty
+            />
+            <ActivityPanel
+              hotelId={hotel.id}
+              relationship={relationship}
+              collaboration={collaboration}
+              workspace={workspace}
+              contracts={contracts}
+              inbox={inbox}
+              mailboxes={mailboxes}
+              gmailPrompt={gmailPrompt}
+              collaborationSuggestions={collaborationSuggestions}
+              pipelineHref={pipelineReturnHref(origin)}
+            />
+            <div id="trip" className="scroll-mt-24">
+              <AddToTrip
+                hotelId={hotel.id}
+                trips={tripChoices}
+                tripsLoad={trips.status === "ok" ? "ok" : "error"}
+                alreadyOn={alreadyOn}
+              />
+            </div>
+          </section>
+        </div>
+        <div className="s1-side">
+          <ContactFeature
             hotelId={hotel.id}
-            trips={tripChoices}
-            tripsLoad={trips.status === "ok" ? "ok" : "error"}
-            alreadyOn={alreadyOn}
+            state={contactState}
+            contacts={contacts}
+            cacheEmail={cacheEmail}
+            via={via}
+            balance={balance}
+            cost={cost}
+          />
+          <NextStepPanel
+            model={step}
+            hotelId={hotel.id}
+            tripNote={plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null}
           />
         </div>
-      </section>
       </div>
-      <NextStepPanel
-        model={step}
-        hotelId={hotel.id}
-        tripNote={plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null}
-      />
     </div>
   );
 }
