@@ -32,6 +32,9 @@ describe("pitch draft opportunity migration", () => {
       /old\.pipeline_item_id is not null\s+and new\.pipeline_item_id is not null/,
     );
     expect(guards).toMatch(/v_open_count > 1/);
+    expect(guards).toMatch(/for update/);
+    expect(guards).toMatch(/case when stats\.n = 1 then stats\.only_id/);
+    expect(guards).toMatch(/d\.pipeline_item_id is distinct from p_pipeline_item_id/);
     expect(guards).toMatch(/'result', 'invalid_input'/);
     expect(guards).not.toMatch(/status <> 'closed'\s+limit 1/);
     expect(guards).toMatch(/pitch_drafts_one_current_opportunity_idx/);

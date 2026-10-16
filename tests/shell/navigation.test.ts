@@ -95,6 +95,10 @@ describe("primary navigation stays the approved five", () => {
     expect(opportunityPitchHref(HOTEL, TRIP)).toBe(
       `/app/hotels/${HOTEL}/pitch?opportunity=${TRIP}&from=pipeline`,
     );
+    const row = "33333333-3333-4333-8333-333333333333";
+    expect(opportunityPitchHref(HOTEL, row, TRIP)).toBe(
+      `/app/hotels/${HOTEL}/pitch?opportunity=${row}&from=pipeline&trip=${TRIP}`,
+    );
     expect(opportunityPitchHref(HOTEL, "OP-1042")).toBeNull();
     expect(opportunityPitchHref("OP-1042", TRIP)).toBeNull();
     expect(PRIMARY_NAV.map((item) => item.href)).not.toContain("/app/hotels");

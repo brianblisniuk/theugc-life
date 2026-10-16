@@ -46,6 +46,7 @@ import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/quer
 import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
+import { isUuid } from "@/lib/hotels/ids";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
 import {
@@ -74,7 +75,11 @@ import {
 import { getDestinationMetricRankings, getHotelMetricSignals } from "@/lib/metrics/queries";
 import { getPastCollaborations } from "@/lib/profile/queries";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
-import { getCycleCollaboration, listHotelOpportunities } from "@/lib/pipeline/queries";
+import {
+  findHotelOpportunity,
+  getCycleCollaboration,
+  listHotelOpportunities,
+} from "@/lib/pipeline/queries";
 import { isOpenCycle } from "@/lib/pipeline/types";
 import { discoverFigures } from "@/lib/screens/discover-figures";
 import { discoverReturnHref, parseDiscoverTrip } from "@/lib/screens/discover-return";
@@ -151,9 +156,23 @@ export default async function HotelDetailPage({
     opportunityLoad.status === "ok"
       ? opportunityLoad.opportunities.map((row) => ({ ...row, tripName: null }))
       : [];
+  const namedId =
+    typeof requestedOpportunity === "string" && isUuid(requestedOpportunity)
+      ? requestedOpportunity
+      : null;
+  let namedLookupFailed = false;
+  if (
+    opportunityLoad.status === "ok" &&
+    namedId &&
+    !bareOpportunities.some((row) => row.id === namedId)
+  ) {
+    const named = await findHotelOpportunity(hotel.id, namedId);
+    if (named.status === "error") namedLookupFailed = true;
+    else if (named.row) bareOpportunities.push({ ...named.row, tripName: null });
+  }
   const originTripId = origin.kind === "trip" ? origin.tripId : null;
   const relationship: OpportunityRelationship =
-    opportunityLoad.status === "ok"
+    opportunityLoad.status === "ok" && !namedLookupFailed
       ? relationshipFromSelection(
           selectHotelOpportunity(bareOpportunities, requestedOpportunity ?? null, originTripId),
         )

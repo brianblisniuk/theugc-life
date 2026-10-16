@@ -139,6 +139,8 @@ export async function loadPitchContext(input: {
   preferDraftTrip: boolean;
   /** Pipeline row id. A display id is not accepted. */
   requestedPipelineItemId?: string | null;
+  /** Set only when the page origin is a trip. A trip on a pipeline link is not this. */
+  originTripId?: string | null;
 }): Promise<PitchContextLoad> {
   if (!isUuid(input.userId) || !isUuid(input.hotelId)) return { status: "error" };
   if (input.requestedTripId && !isUuid(input.requestedTripId)) return { status: "error" };
@@ -285,7 +287,11 @@ export async function loadPitchContext(input: {
       }
     }
     const opportunities = mergeNamedOpportunity(page.rows, named);
-    let chosen = chooseOpportunity(opportunities, input.requestedPipelineItemId ?? null);
+    let chosen = chooseOpportunity(
+      opportunities,
+      input.requestedPipelineItemId ?? null,
+      input.originTripId ?? null,
+    );
     let relationshipStatus = chosen.selected?.status ?? null;
 
     const templateRows: PitchTemplateRow[] = [];
@@ -309,7 +315,11 @@ export async function loadPitchContext(input: {
 
     const boundOpportunityId = chosen.selected?.id ?? null;
     let draft: PitchDraftRow | null = null;
-    if (chosen.choice !== "many" && chosen.choice !== "missing") {
+    if (
+      chosen.choice !== "many" &&
+      chosen.choice !== "missing" &&
+      chosen.choice !== "trip_empty"
+    ) {
       let draftQuery = supabase
         .from("pitch_drafts")
         .select(

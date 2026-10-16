@@ -237,8 +237,8 @@ export function shortlistPitchHref(
   if (!isUuid(hotelId) || !isUuid(tripId)) return null;
   const open = rows.filter((row) => isOpenCycle(row.status) && isUuid(row.id));
   const onTrip = open.filter((row) => row.tripId === tripId);
-  const target = onTrip.length === 1 ? onTrip[0]! : open.length === 1 ? open[0]! : null;
-  if (!target) return pitchHref(hotelId, tripId, { kind: "trip", tripId }, null);
+  const target = onTrip.length === 1 ? onTrip[0]! : null;
+  if (!target) return null;
   const rowTrip = target.tripId && isUuid(target.tripId) ? target.tripId : null;
   const origin: HotelOrigin = rowTrip ? { kind: "trip", tripId: rowTrip } : { kind: "discover" };
   return pitchHref(hotelId, rowTrip, origin, target.id);

@@ -318,20 +318,30 @@ begin
     end if;
     p_hotel_id := coalesce(p_hotel_id, v_item_hotel);
   elsif p_kind = 'pitch' then
-    select count(*)::integer into v_open_count
-      from public.pipeline_items pi
-     where pi.creator_id = v_creator
-       and pi.hotel_id = p_hotel_id
-       and pi.status <> 'closed';
+    -- One statement. The locked rows and the count share a snapshot, so a
+    -- second open row cannot appear between a count and a later select.
+    -- The id is returned only when that count is 1.
+    select
+      case when stats.n = 1 then stats.only_id else null end,
+      case when stats.n = 1 then stats.only_trip else null end,
+      stats.n
+      into p_pipeline_item_id, v_item_trip, v_open_count
+      from (
+        select count(*)::integer as n,
+               (array_agg(locked.id))[1] as only_id,
+               (array_agg(locked.trip_id))[1] as only_trip
+          from (
+            select pi.id, pi.trip_id
+              from public.pipeline_items pi
+             where pi.creator_id = v_creator
+               and pi.hotel_id = p_hotel_id
+               and pi.status <> 'closed'
+             for update
+          ) locked
+      ) stats;
     if v_open_count > 1 then
+      p_pipeline_item_id := null;
       return jsonb_build_object('result', 'invalid_input', 'call_provider', false);
-    end if;
-    if v_open_count = 1 then
-      select pi.id, pi.trip_id into p_pipeline_item_id, v_item_trip
-        from public.pipeline_items pi
-       where pi.creator_id = v_creator
-         and pi.hotel_id = p_hotel_id
-         and pi.status <> 'closed';
     end if;
   end if;
 
@@ -354,6 +364,20 @@ begin
        and (p_hotel_id is null or d.hotel_id = p_hotel_id)
   ) then
     return jsonb_build_object('result', 'not_found', 'call_provider', false);
+  end if;
+  if p_pitch_draft_id is not null
+     and p_pipeline_item_id is not null
+     and exists (
+       select 1
+         from public.pitch_drafts d
+         join public.creator_profiles cp on cp.id = d.creator_id
+        where d.id = p_pitch_draft_id
+          and cp.user_id = p_user_id
+          and d.pipeline_item_id is not null
+          and d.pipeline_item_id is distinct from p_pipeline_item_id
+     )
+  then
+    return jsonb_build_object('result', 'invalid_input', 'call_provider', false);
   end if;
 
   v_thread := null;

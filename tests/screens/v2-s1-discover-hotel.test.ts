@@ -12,7 +12,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { THRESHOLD_RULES, type HotelSignalsLoad, type MetricSignal } from "@/lib/metrics/contract";
-import { listHotelOpportunities, type PipelineQueryClient } from "@/lib/pipeline/queries";
+import {
+  findHotelOpportunity,
+  listHotelOpportunities,
+  type PipelineQueryClient,
+} from "@/lib/pipeline/queries";
 import {
   activityTag,
   discoverFigures,
@@ -380,11 +384,20 @@ describe("opportunity history", () => {
   it("names the shortlist row and the outreach row, each with its own trip", () => {
     const campaignTrip = "55555555-5555-4555-8555-555555555555";
     const href = shortlistPitchHref(HOTEL, campaignTrip, [
-      { id: OPP_B, status: "planned", tripId: TRIP },
+      { id: OPP_B, status: "planned", tripId: campaignTrip },
     ]);
     expect(href).toContain(`opportunity=${OPP_B}`);
-    expect(new URL(href ?? "/", "http://local").searchParams.get("trip")).toBe(TRIP);
-    expect(href).not.toContain(campaignTrip);
+    expect(new URL(href ?? "/", "http://local").searchParams.get("trip")).toBe(campaignTrip);
+    expect(shortlistPitchHref(HOTEL, campaignTrip, [
+      { id: OPP_B, status: "planned", tripId: TRIP },
+    ])).toBeNull();
+    expect(shortlistPitchHref(HOTEL, campaignTrip, [])).toBeNull();
+    expect(
+      shortlistPitchHref(HOTEL, campaignTrip, [
+        { id: OPP_A, status: "saved", tripId: campaignTrip },
+        { id: OPP_B, status: "planned", tripId: campaignTrip },
+      ]),
+    ).toBeNull();
     const prepare = outreachPrepareHref(HOTEL, "saved", OPP_B, TRIP);
     expect(prepare).toContain(`opportunity=${OPP_B}`);
     expect(new URL(prepare ?? "/", "http://local").searchParams.get("trip")).toBe(TRIP);
@@ -455,6 +468,48 @@ describe("listHotelOpportunities", () => {
           tripId: null,
         },
       ],
+    });
+  });
+
+  it("looks up a named opportunity that is not on the 50-row page", async () => {
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      maybeSingle: () =>
+        Promise.resolve({
+          error: null,
+          data: {
+            id: OPP_B,
+            display_ref: "OP-1099",
+            status: "planned",
+            stay_start: null,
+            stay_end: null,
+            trip_id: TRIP,
+          },
+        }),
+    };
+    const result = await findHotelOpportunity(
+      HOTEL,
+      OPP_B,
+      { from: () => chain } as unknown as PipelineQueryClient,
+    );
+    expect(result).toEqual({
+      status: "ok",
+      row: {
+        id: OPP_B,
+        displayRef: "OP-1099",
+        status: "planned",
+        stayStart: null,
+        stayEnd: null,
+        tripId: TRIP,
+      },
+    });
+    const page = [opportunity({ id: OPP_A, status: "saved" })];
+    const named = result.status === "ok" ? result.row : null;
+    const rows = named ? [...page, { ...named, tripName: null }] : page;
+    expect(selectHotelOpportunity(rows, OPP_B, null)).toEqual({
+      status: "open",
+      row: expect.objectContaining({ id: OPP_B }),
     });
   });
 
@@ -588,6 +643,7 @@ describe("screen source", () => {
     expect(hotel).toContain("eligibleHotelPhotos");
     expect(hotel).toContain("nextStepPitchHref(hotel.id, origin, openRow)");
     expect(hotel).toContain("selectHotelOpportunity");
+    expect(hotel).toContain("findHotelOpportunity");
     expect(hotel).toContain("preferredTripId");
     expect(hotel).not.toContain("pitchTripId");
     const pitchPage = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
@@ -605,6 +661,9 @@ describe("screen source", () => {
     const pitch = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
     expect(pitch).toContain("readOpportunityParam");
     expect(pitch).toContain("requestedPipelineItemId");
+    expect(pitch).toContain("originTripId: origin.kind === \"trip\" ? origin.tripId : null");
+    expect(pitch).toContain("opportunityChoice === \"trip_empty\"");
+    expect(pitch).toContain("Open opportunity for this trip");
     expect(hotel).toContain("No verified photograph on file.");
     expect(hotel).not.toMatch(/<img[\s>]/);
     expect(hotel).not.toMatch(/unsplash|placeholder\.com|stock|hotelbeds|forbes/i);

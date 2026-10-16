@@ -265,9 +265,18 @@ export function pitchHref(
 }
 
 /** Pitch Studio for one opportunity. The id is the row id, not the display id. */
-export function opportunityPitchHref(hotelId: string, pipelineItemId: string): string | null {
+export function opportunityPitchHref(
+  hotelId: string,
+  pipelineItemId: string,
+  tripId?: string | null,
+): string | null {
   if (!isUuid(hotelId) || !isUuid(pipelineItemId)) return null;
-  return `/app/hotels/${hotelId}/pitch?opportunity=${pipelineItemId}&from=pipeline`;
+  if (tripId && !isUuid(tripId)) return null;
+  const params = new URLSearchParams();
+  params.set("opportunity", pipelineItemId);
+  params.set("from", "pipeline");
+  if (tripId) params.set("trip", tripId);
+  return `/app/hotels/${hotelId}/pitch?${params.toString()}`;
 }
 
 /** Adds the row id and, when the href does not already name a trip, that row's trip. */

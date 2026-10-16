@@ -140,7 +140,11 @@ async function draftAssistant(
     requestedPipelineItemId: readField(formData, "pipelineItemId") || null,
   });
   if (context.status !== "ok") return { result: "error" };
-  if (context.opportunityChoice === "many" || context.opportunityChoice === "missing") {
+  if (
+    context.opportunityChoice === "many" ||
+    context.opportunityChoice === "missing" ||
+    context.opportunityChoice === "trip_empty"
+  ) {
     return { result: "invalid_input", message: "Choose one of your opportunities." };
   }
   const boundOpportunityId = context.selectedOpportunity?.id ?? null;

@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 import { AI_LIMITS } from "@/lib/ai/limits";
 import { loadAssistantChrome, loadOwnAiBudget } from "@/lib/ai/queries";
 import { EmptyState } from "@/components/empty-state";
+import { OpenOpportunityForm } from "@/components/outreach/campaign-forms";
 import { PitchComposer } from "@/components/pitch/composer";
 import { FollowUpPanel } from "@/components/pitch/follow-up-panel";
 import { PageHeader } from "@/components/shell/page-header";
@@ -100,6 +101,7 @@ export default async function HotelPitchPage({
     requestedTripId: requestedTrip && isUuid(requestedTrip) ? requestedTrip : null,
     preferDraftTrip: !fresh && !requestedTrip,
     requestedPipelineItemId: requestedItem && isUuid(requestedItem) ? requestedItem : null,
+    originTripId: origin.kind === "trip" ? origin.tripId : null,
   });
 
   if (requestedItem && !isUuid(requestedItem)) {
@@ -220,7 +222,19 @@ export default async function HotelPitchPage({
         back={backWithDiscover ? { href: backWithDiscover, label: hotel.name } : null}
         description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched. AI drafts use the same Claude path, budget, and rate limit."
       />
-      {context.opportunityChoice === "missing" ? (
+      {context.opportunityChoice === "trip_empty" ? (
+        <EmptyState
+          title="No opportunity on this trip"
+          description="Start an opportunity for this trip. Another trip’s row was not opened."
+        >
+          <OpenOpportunityForm
+            hotelId={hotel.id}
+            tripId={origin.kind === "trip" ? origin.tripId : null}
+            initiativeId={null}
+            label="Open opportunity for this trip"
+          />
+        </EmptyState>
+      ) : context.opportunityChoice === "missing" ? (
         <EmptyState
           title="That opportunity isn’t open on this hotel"
           description="Choose one of your open opportunities from Pipeline. A display id is not a link."

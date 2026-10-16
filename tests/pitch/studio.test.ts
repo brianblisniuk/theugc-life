@@ -64,6 +64,26 @@ describe("opportunity choice", () => {
     expect(chooseOpportunity([FIRST], null)).toEqual({ choice: "one", selected: FIRST });
     expect(chooseOpportunity([], null).choice).toBe("none");
   });
+
+  it("uses only the open row on a trip origin, and does not open another trip", () => {
+    const otherTrip = "55555555-5555-4555-8555-555555555555";
+    expect(chooseOpportunity([FIRST, SECOND], null, FIRST.tripId)).toEqual({
+      choice: "one",
+      selected: FIRST,
+    });
+    expect(chooseOpportunity([SECOND], null, FIRST.tripId)).toEqual({
+      choice: "trip_empty",
+      selected: null,
+    });
+    expect(chooseOpportunity([FIRST], null, otherTrip)).toEqual({
+      choice: "trip_empty",
+      selected: null,
+    });
+    const also = { ...FIRST, id: SECOND.id, displayRef: "OP-1084" };
+    expect(chooseOpportunity([FIRST, also], null, FIRST.tripId).choice).toBe("trip_empty");
+    expect(chooseOpportunity([FIRST, SECOND], null, null).choice).toBe("many");
+    expect(chooseOpportunity([SECOND], SECOND.id, FIRST.tripId).choice).toBe("selected");
+  });
 });
 
 describe("opportunity trip", () => {

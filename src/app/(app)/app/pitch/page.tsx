@@ -74,7 +74,9 @@ export default async function PitchStudioPage() {
               metricValue: null,
               metricSample: null,
             };
-            const href = item.hotel?.id ? opportunityPitchHref(item.hotel.id, item.id) : null;
+            const href = item.hotel?.id
+              ? opportunityPitchHref(item.hotel.id, item.id, item.tripId)
+              : null;
             const ref = shownDisplayRef(item.displayRef);
             const step = nextStep(row, asOf);
             return (

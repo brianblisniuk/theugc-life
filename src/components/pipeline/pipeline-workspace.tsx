@@ -208,7 +208,7 @@ function OpportunityCard({
     },
     surface,
   );
-  const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id) : null;
+  const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id, row.tripId) : null;
   return (
     <article className="mt-2 rounded-md border border-border bg-surface p-3 text-sm text-text">
       <h3 className="font-semibold">{row.hotelName}</h3>
@@ -418,6 +418,6 @@ export function attentionFromRows(input: {
     deadlines: input.deadlines,
     deadlineRead: input.deadlineRead,
     asOf: input.asOf,
-    hrefFor: (row) => (row.hotelId ? opportunityPitchHref(row.hotelId, row.id) : null),
+    hrefFor: (row) => (row.hotelId ? opportunityPitchHref(row.hotelId, row.id, row.tripId) : null),
   });
 }

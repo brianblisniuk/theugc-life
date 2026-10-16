@@ -5,6 +5,9 @@
  * not a trip date. A draft is shown only for the opportunity it is bound to.
  */
 
+import { isUuid } from "@/lib/hotels/ids";
+import { isOpenCycle } from "@/lib/pipeline/types";
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface StudioOpportunity {
@@ -106,9 +109,9 @@ export interface BoundDraftRef {
 export function selectBoundDraft<T extends BoundDraftRef>(
   drafts: readonly T[],
   opportunityId: string | null,
-  choice: "none" | "one" | "many" | "selected" | "missing",
+  choice: "none" | "one" | "many" | "selected" | "missing" | "trip_empty",
 ): T | null {
-  if (choice === "many" || choice === "missing") return null;
+  if (choice === "many" || choice === "missing" || choice === "trip_empty") return null;
   if (choice === "selected" || choice === "one") {
     if (!opportunityId) return null;
     return drafts.find((draft) => draft.pipelineItemId === opportunityId) ?? null;
@@ -255,15 +258,24 @@ export function visiblePitchDraft(input: {
 export function chooseOpportunity(
   opportunities: readonly StudioOpportunity[],
   requestedId: string | null,
+  originTripId: string | null = null,
 ):
   | { choice: "none"; selected: null }
   | { choice: "one"; selected: StudioOpportunity }
   | { choice: "many"; selected: null }
   | { choice: "selected"; selected: StudioOpportunity }
-  | { choice: "missing"; selected: null } {
+  | { choice: "missing"; selected: null }
+  | { choice: "trip_empty"; selected: null } {
   if (requestedId) {
     const match = opportunities.find((row) => row.id === requestedId) ?? null;
     return match ? { choice: "selected", selected: match } : { choice: "missing", selected: null };
+  }
+  if (originTripId && isUuid(originTripId)) {
+    const onTrip = opportunities.filter(
+      (row) => isOpenCycle(row.status) && row.tripId === originTripId,
+    );
+    if (onTrip.length === 1) return { choice: "one", selected: onTrip[0]! };
+    return { choice: "trip_empty", selected: null };
   }
   if (opportunities.length === 1) return { choice: "one", selected: opportunities[0]! };
   if (opportunities.length > 1) return { choice: "many", selected: null };
