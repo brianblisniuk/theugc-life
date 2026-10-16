@@ -131,7 +131,9 @@ in the schedule calls them:
 
 | Name | Owner step |
 | --- | --- |
-| `CONTACT_PROVIDER` | Leave unset. `fake` is the only approved provider. |
+| `CONTACT_PROVIDER` | Leave unset in CI and on any host that must not call Hunter. `fake` stays the local and CI provider. `hunter` calls Hunter.io. Any other value refuses to start. |
+| `HUNTER_API_KEY` | Server only. Empty placeholder in `.env.example`. Never commit a real key and never prefix it with `NEXT_PUBLIC_`. Set it only on the host that should call Hunter. |
+| `HUNTER_DISABLED` | `true`, `1`, or `yes` fails closed before any Hunter call. Leave unset when that host should look up contacts. |
 | `GMAIL_COLLAB_CLASSIFIER` | Leave unset. `heuristic` is the only approved classifier. |
 | `PITCH_PERSONALIZER` | Leave unset unless a wired adapter is deployed. |
 
@@ -151,10 +153,11 @@ specific script is being run there.
 
 ## Go-live order
 
-1. Apply migrations through `0093_preprod_jobs.sql` on the production database.
+1. Apply migrations through `0095_hunter_contact_provider.sql` on the production database.
 2. Set the application, Rebill, Anthropic, and Gmail variables above.
 3. Confirm the Google OAuth client lists `gmail.readonly` for connect and `gmail.send` only on the incremental send grant.
 4. Set `REBILL_WEBHOOK_SIGNING_SECRET` to the secret Rebill uses for `POST /api/billing/webhook`, and set `REBILL_LIVE` only when the organization should take live charges.
 5. Set the five job secrets to distinct values of at least 16 characters, and confirm the five schedules in `netlify.toml` are the ones Netlify registered.
 6. Leave `GMAIL_SEND_ENV` unset until a real recipient outside `hello@theugc.life` must be allowed. `GMAIL_SEND_DISABLED=true` is the kill switch.
 7. Send one allowed message on a non-production deploy first. Production sending stays closed until `GMAIL_SEND_ENV` is exactly `production`.
+8. Hunter smoke, only after `HUNTER_API_KEY` and `CONTACT_PROVIDER=hunter` are set on a non-CI server: unlock at most three hotels that have no `contact_cache` row and three different website domains. A second hotel on a domain already looked up must not call Hunter. Then unset `CONTACT_PROVIDER`. Do not run this from CI.

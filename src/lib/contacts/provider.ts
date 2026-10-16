@@ -1,35 +1,30 @@
 import "server-only";
 
 /**
- * Contact provider boundary (D100).
+ * Contact provider boundary (D100, D180).
  *
- * Only the fake provider is wired. Any other CONTACT_PROVIDER value refuses
- * to start. This module does not call a network, a vendor, or a payment API.
+ * Unset, blank, or `fake` is the local and CI provider. It does not use the
+ * network. `hunter` is the Hunter adapter. Any other CONTACT_PROVIDER value
+ * refuses to start. The Hunter key is read only inside the Hunter adapter.
  */
 
-export interface ContactLookup {
-  hotelId: string;
-  name: string;
-  domain: string | null;
-}
+import { createHunterProvider } from "./hunter.server";
+import type { ContactLookup, ContactLookupResult, ContactProvider } from "./types";
 
-export interface ContactLookupResult {
-  status: "found" | "not_found";
-  email: string | null;
-  raw: { provider: "fake"; status: "found" | "not_found" };
-}
-
-export interface ContactProvider {
-  findHotelEmail(input: ContactLookup): Promise<ContactLookupResult>;
-}
+export type { ContactLookup, ContactLookupResult, ContactProvider } from "./types";
+export { unlockFollowUp } from "./types";
 
 const FAKE = "fake";
+const HUNTER = "hunter";
 
-/** Unset means fake. Anything else is not approved. */
-export function contactProviderName(raw: string | undefined): typeof FAKE {
-  const value = raw === undefined ? FAKE : raw.trim();
+export type ContactProviderName = typeof FAKE | typeof HUNTER;
+
+/** Unset means fake. hunter is the approved network provider. */
+export function contactProviderName(raw: string | undefined): ContactProviderName {
+  const value = (raw === undefined ? FAKE : raw).trim().toLowerCase();
   if (value === "" || value === FAKE) return FAKE;
-  throw new Error("CONTACT_PROVIDER is not approved. Only the fake provider is wired.");
+  if (value === HUNTER) return HUNTER;
+  throw new Error("CONTACT_PROVIDER is not approved. Approved providers are fake and hunter.");
 }
 
 export function assertContactProvider(): void {
@@ -57,7 +52,8 @@ class FakeContactProvider implements ContactProvider {
 }
 
 export function getContactProvider(): ContactProvider {
-  assertContactProvider();
+  const name = contactProviderName(process.env.CONTACT_PROVIDER);
+  if (name === HUNTER) return createHunterProvider();
   return new FakeContactProvider();
 }
 

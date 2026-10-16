@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import { capture } from "@/lib/analytics";
 import {
   ALREADY_UNLOCKED_LABEL,
+  CONTACT_LOOKUP_UNAVAILABLE,
   OUT_OF_CREDITS_COPY,
   addedToPipelineToast,
   unlockChrome,
@@ -19,11 +20,7 @@ import { PIPELINE_COPY, freeLimitExplanation } from "@/lib/pipeline/view";
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="ux-btn ux-btn-primary"
-    >
+    <button type="submit" disabled={pending} className="ux-btn ux-btn-primary">
       {pending ? "Unlocking…" : label}
     </button>
   );
@@ -129,6 +126,11 @@ export function UnlockContact({
       {result?.status === "not_found" ? (
         <p className="text-sm text-muted" role="status">
           Contact not available yet. This did not use a credit.
+        </p>
+      ) : null}
+      {result?.status === "unavailable" ? (
+        <p className="text-sm text-muted" role="status">
+          {CONTACT_LOOKUP_UNAVAILABLE}
         </p>
       ) : null}
       {result?.status === "pipeline_limit" ? (

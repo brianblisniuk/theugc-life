@@ -310,6 +310,8 @@ The balance is `sum(credit_ledger.delta)`. There is no mutable balance column.
 - `contact_cache` — one row per hotel. Source `owner_import`, `provider`, or `admin`. Status `found`, `not_found`, or `invalid`. `raw_provider_response` stays on this table. No client select. Existing `hotel_contacts` emails are seeded as `owner_import` (D103).
 - `contact_unlocks` — unique `(user_id, hotel_id)`. Owner select. Admin select.
 - `contact_reports` — owner insert and select. Admin update. One pending report per user and hotel.
+- `contact_provider_lookups` (0095, D180) — one row per normalized domain, or per named person when Email Finder runs. Status `pending`, `found`, `not_found`, or `unverified`. No client privilege. A second hotel on the same domain reads this row and does not call Hunter. A found or not_found row is not replaced.
+- `contact_provider_budget` (0095, D180) — one row per UTC month. `searches_used` and `verifications_used` are separate and each stop at 50. An exhausted flag sticks for that month. No client privilege.
 
 ### Assistant usage (migration 0082)
 
@@ -319,6 +321,8 @@ and no completion. The owner may select their rows. `service_role` may insert.
 A trigger rejects update and delete. Deleting the user deletes the rows.
 
 `unlock_hotel_contact(hotel_id, idempotency_key)` is security definer with an empty search path. It locks per user, returns the cached email when this user already owns the hotel and the cache is a found address, returns `needs_provider` without a debit only when the hotel has no cache row, and debits `credit_config.unlock_cost` for a stored found email at any age. An invalid cache returns no email and does not debit a new user. `upsert_contact_cache` does not replace an existing row. `own_credit_balance()` is the client read. `credit_balance(uuid)` is not granted to `authenticated`.
+
+Migration `0095` (D180) does not edit `0057`, `0058`, `0062`, or `unlock_hotel_contact`. `claim_contact_provider_lookup`, `complete_contact_provider_lookup`, `abandon_contact_provider_lookup`, and `apply_contact_provider_budget` are security definer with an empty search path and execute for `service_role` only. The month key is `statement_timestamp()` in UTC. A search reserve and a verification reserve do not share a counter.
 
 Migration `0062` (D108) makes a revealed unlock call `save_hotel_to_pipeline` in that same transaction. A new row is `saved`. An open cycle is not duplicated and its status is not reset. The Free allowance is `FREE_LIMITS.savedHotels`, not a client argument. `pipeline_limit` debits nothing and returns no email. `read_own_unlocked_contacts(uuid[])` returns cache emails for hotels this caller unlocked, or for admin/editor. A pipeline item still does not require a trip.
 
@@ -3147,5 +3151,9 @@ At minimum:
     `0056`, `0071`, and `0072` are not edited. `0081` is the merged P03b
     refund ledger fix and is not edited here. `0082` and `0083` are the merged
     D03 assistant and are not edited here.
+41. Hunter contact provider (`0095`, D180) — lookup cache and the monthly
+    search and verification budgets. No client privilege. `0057`, `0058`,
+    and `0062` are not edited. Migrations `0088` through `0094` stay as
+    merged and are not edited here.
 
 Every migration must be reproducible from an empty database.

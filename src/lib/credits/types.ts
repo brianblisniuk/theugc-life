@@ -18,7 +18,7 @@ export type UnlockActionResult =
       balance: number | null;
       limit: number | null;
     }
-  | { status: "unauthenticated" | "error" | "hotel_missing"; email: null };
+  | { status: "unauthenticated" | "error" | "hotel_missing" | "unavailable"; email: null };
 
 export type ReportActionResult = { status: "reported" | "unauthenticated" | "error" };
 

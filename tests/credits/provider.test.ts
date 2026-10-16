@@ -1,6 +1,6 @@
 /**
- * Only the fake contact provider is wired. A different name refuses to start.
- * The fake result is deterministic and does not use the network.
+ * Unset or fake stays the local provider. hunter is the only other approved
+ * name. The fake result is deterministic and does not use the network.
  */
 import { afterEach, describe, expect, it } from "vitest";
 

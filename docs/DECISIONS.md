@@ -4038,10 +4038,10 @@ provider runs only when that hotel has no cache row. Access is
 the ledger and the unlock row. A payment, a subscription, or a webhook body
 is not an unlock (D007).
 
-The provider sits behind `ContactProvider`. Only the fake provider is
-wired. `CONTACT_PROVIDER` unset or `fake` starts. Any other value refuses
-to start. This block performs no real provider call, no real charge, and
-no payment integration. The provider runs only when the hotel has no cache
+The provider sits behind `ContactProvider`. D180 supersedes the sentence
+that only the fake provider is wired. `CONTACT_PROVIDER` unset or `fake`
+starts. Any other value refuses to start. This block performs no real
+provider call, no real charge, and no payment integration. The provider runs only when the hotel has no cache
 row. A stored found email stays a cache hit after the configured TTL. A
 provider write does not replace an address already stored. An accepted
 bounce leaves that cache invalid and unreadable, including to a user who
@@ -5647,3 +5647,56 @@ already exists. A null expiry stays allowed. An expiry equal to
 The function stays `SECURITY DEFINER`, with `search_path = public,
 pg_temp`, and execute granted to `service_role` only. Migrations `0043`,
 `0075`, and `0088` through `0093` are not edited.
+
+## D180 — Hunter is the contact provider
+
+Status: **Accepted** for this block (owner instruction, 16 Oct 2026). It
+supersedes only the D100 sentence that only the fake provider is wired.
+The unlock, the ledger, row-level security, charge-on-not-found, and the
+rule that a provider write does not replace an existing row stay as D100
+and D108 wrote them. Billing is unchanged. The unlock screen is unchanged
+except for one existing status line.
+
+`CONTACT_PROVIDER` unset or `fake` is the local and CI provider. `hunter`
+calls Hunter.io. Any other value refuses to start. `HUNTER_API_KEY` is
+read on the server and sent only as the `X-API-KEY` header. It is not a
+`NEXT_PUBLIC_` variable, it is not committed, and `.env.example` keeps an
+empty placeholder. A missing key, or a key shorter than 8 characters,
+fails closed before a request. `HUNTER_DISABLED` set to `true`, `1`, or
+`yes` fails closed before a request.
+
+The hotel unlock passes the hotel name and the website host. It does not
+pass a person name, a creator id, a Gmail address, or a ledger row. Domain
+Search uses that host after one leading `www.` is removed, with `limit`
+10. Email Finder runs only when there is no website domain and both a
+first name and a last name are present. The Email Verifier runs only when
+the chosen address is not already `valid` or `accept_all`. A verification
+does not spend a search credit.
+
+The Free plan allows 50 search credits in a UTC month. The verifier has a
+separate fail-closed ceiling of 50 in that same month. The month is
+`statement_timestamp()` in UTC, not a caller argument. The same domain,
+including a `www` alias, is one lookup row. The same hotel is the existing
+`contact_cache` row. A second call reads the stored row and does not call
+Hunter.
+
+A found address is stored, and the unlock then charges `unlock_cost` (1).
+A miss is stored as `not_found` and is not charged (`charge_on_not_found`
+stays false). An error, a missing key, the kill switch, or an exhausted
+budget does not write `contact_cache` and does not charge. The exhausted
+budget and the kill switch use the sentence “Contact lookup temporarily
+unavailable”. HTTP 401, HTTP 429, and a quota error use the existing error
+state. They are not a missing contact.
+
+The stored provider note is the chosen address’s operation, domain,
+confidence, department, position, verification, and decision-maker flag.
+It does not store the API key, sibling addresses, or source URIs. The
+address itself stays on the email column.
+
+Migration `0095` adds `contact_provider_lookups` and
+`contact_provider_budget`. Both have row-level security enabled and no
+policy. `anon` and `authenticated` have no privilege. `service_role` has
+select, insert, update, and delete. The four functions are
+`SECURITY DEFINER` with an empty search path and execute for
+`service_role` only. Automated tests mock Hunter. CI does not call
+`api.hunter.io`. The fake provider stays for local and CI.
