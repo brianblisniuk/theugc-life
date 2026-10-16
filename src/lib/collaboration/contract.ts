@@ -44,7 +44,13 @@ export const DELIVERABLE_TYPES = [
 ] as const;
 export type DeliverableType = (typeof DELIVERABLE_TYPES)[number];
 
-export const DELIVERABLE_STATUSES = ["pending", "submitted", "approved", "rejected"] as const;
+export const DELIVERABLE_STATUSES = [
+  "pending",
+  "submitted",
+  "revision_requested",
+  "approved",
+  "rejected",
+] as const;
 export type DeliverableStatus = (typeof DELIVERABLE_STATUSES)[number];
 
 export const PROOF_URL = /^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\/[^\s]*)?$/;

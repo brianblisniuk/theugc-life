@@ -73,8 +73,10 @@ Do not build an oversized component framework before these are needed.
 
 ## 5. Status language
 
-Pipeline labels should be human-readable:
-Saved, Planned, Pitched, Follow-up, Replied, Negotiating, Won, Closed.
+Pipeline labels should be human-readable (D187). Stored statuses stay
+`saved`, `planned`, `pitched`, `replied`, `follow_up`, `negotiating`, `won`,
+`closed`. The stage words are Saved, Pitch ready, Sent, Replied, Negotiating,
+Agreed, Closed. Follow-up is an event; its sentence label stays Follow-up.
 
 Intelligence avoids false precision:
 - insufficient → “Creator activity detected” / “Not enough data yet”
