@@ -662,9 +662,9 @@ begin
     end if;
 
     -- A second refund is a no-op. A chargeback after that refund still
-    -- revokes the whole subscription (D140).
-    if v_effect.effect = 'revoked'
-       and not (v_status = 'chargeback' and v_effect.entitlement_id is not null) then
+    -- revokes the whole subscription, and a pack chargeback still reverses
+    -- the full grant even after a partial refund (D140).
+    if v_effect.effect = 'revoked' and v_status <> 'chargeback' then
       insert into public.rebill_webhook_events (log_id, event_name, payment_id, result)
       values (v_log, v_event, v_payment, 'already_revoked');
       return pg_catalog.jsonb_build_object('result', 'already_revoked');
@@ -796,7 +796,7 @@ begin
              and e.user_id = v_effect.user_id;
           update public.subscriptions s
              set status = case
-                   when s.status = 'canceled' then 'canceled'
+                   when s.status in ('canceled', 'past_due') then s.status
                    when exists (
                      select 1 from public.access_entitlements e
                       where e.id = v_effect.entitlement_id and e.status = 'revoked'
@@ -826,7 +826,7 @@ begin
              and e.user_id = v_effect.user_id;
           update public.subscriptions s
              set status = case
-                   when s.status = 'canceled' then 'canceled'
+                   when s.status in ('canceled', 'past_due') then s.status
                    when exists (
                      select 1 from public.access_entitlements e
                       where e.id = v_effect.entitlement_id and e.status = 'revoked'
@@ -904,12 +904,26 @@ begin
         select coalesce(sum(delta), 0)::int into v_reversed
           from public.credit_ledger
          where user_id = v_effect.user_id
-           and idempotency_key = 'rebill_revoke:' || v_payment;
+           and (
+             idempotency_key = 'rebill_revoke:' || v_payment
+             or idempotency_key = 'rebill_revoke:' || v_payment || ':chargeback'
+           );
         if v_granted + v_reversed > 0 then
           insert into public.credit_ledger (user_id, delta, reason, ref_id, idempotency_key)
           values (
-            v_effect.user_id, -(v_granted + v_reversed), 'reversal', v_payment,
-            'rebill_revoke:' || v_payment
+            v_effect.user_id,
+            -(v_granted + v_reversed),
+            'reversal',
+            v_payment,
+            case
+              when exists (
+                select 1
+                  from public.credit_ledger existing
+                 where existing.user_id = v_effect.user_id
+                   and existing.idempotency_key = 'rebill_revoke:' || v_payment
+              ) then 'rebill_revoke:' || v_payment || ':chargeback'
+              else 'rebill_revoke:' || v_payment
+            end
           )
           on conflict (user_id, idempotency_key) do nothing;
         end if;
