@@ -44,8 +44,9 @@ const CONTRACT: Record<string, Expected> = {
   // Identity. Own row only, and role/status are trigger-protected.
   users: { anon: "", authenticated: "SU", serviceRole: "all" },
 
-  // Creator identity and portfolio. Public rows are anonymously readable.
-  creator_profiles: { anon: "S", authenticated: "SIU", serviceRole: "all" },
+  // Creator identity. The owner reads the row. Public cards use
+  // read_public_creator_card. Anon has no table privilege.
+  creator_profiles: { anon: "", authenticated: "SIU", serviceRole: "all" },
   // D095 (0055). Owner-only destination choice. Anon has no privilege.
   // Authenticated may select, insert, and update their own row. Delete is
   // the cascade from the profile, which the trusted role can run.
@@ -451,8 +452,10 @@ d("explicit ACL contract (0024)", () => {
              has_function_privilege('anon', p.oid, 'EXECUTE')         as anon,
              has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
              has_function_privilege('service_role', p.oid, 'EXECUTE')  as svc,
-             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, pg_temp%'
-               as pinned
+             case
+               when p.prosecdef then coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""'
+               else coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, pg_temp%'
+             end as pinned
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname in (
@@ -518,7 +521,7 @@ d("explicit ACL contract (0024)", () => {
              has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
              has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
              has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
-             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, private, pg_temp%'
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""'
                as pinned,
              p.prosecdef as definer
         from pg_proc p
@@ -568,7 +571,7 @@ d("explicit ACL contract (0024)", () => {
              has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth,
              has_function_privilege('service_role', p.oid, 'EXECUTE') as svc,
              has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
-             coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, private, pg_temp%'
+             coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""'
                as pinned,
              p.prosecdef as definer
         from pg_proc p
@@ -1167,6 +1170,7 @@ d("the contract behaves as intended for real callers", () => {
 
     for (const table of [
       "users",
+      "creator_profiles",
       "pipeline_items",
       "trips",
       "trip_hotels",

@@ -81,7 +81,11 @@ async function rpc(
   args: Record<string, unknown>,
 ): Promise<ClaimBody> {
   const { data, error } = await deps.db.rpc(name, args);
-  if (error) throw new Error(`${name} failed: ${error.message}`);
+  if (error) {
+    const failure = new Error(`${name} failed`);
+    failure.name = "SyncRpcError";
+    throw failure;
+  }
   return asClaim(data);
 }
 

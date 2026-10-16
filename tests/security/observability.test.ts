@@ -96,7 +96,14 @@ describe("security headers", () => {
     expect(csp).toContain("ws://127.0.0.1:54321");
     expect(headers["Referrer-Policy"]).toBe(REFERRER_POLICY);
     expect(headers["X-Frame-Options"]).toBe("DENY");
+    expect(headers["Permissions-Policy"]).toContain("geolocation=()");
+    expect(headers["Permissions-Policy"]).toContain("camera=()");
+    expect(headers["Permissions-Policy"]).toContain("microphone=()");
+    expect(headers["Strict-Transport-Security"]).toBeUndefined();
     expect(contentSecurityPolicy("not a url")).not.toContain("not a url");
+    const https = securityHeaders("https://example.supabase.co", { https: true });
+    expect(https["Strict-Transport-Security"]).toBe("max-age=63072000; includeSubDomains");
+    expect(https["Permissions-Policy"]).toContain("payment=()");
   });
 });
 

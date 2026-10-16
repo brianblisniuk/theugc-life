@@ -131,7 +131,9 @@ describe("share expiry", () => {
 describe("share link rate limit", () => {
   it("stops the 31st request in the window without using the token as the key", () => {
     resetShareLinkRateLimit();
-    const key = shareLinkClientKey("203.0.113.5, 10.0.0.1", null);
+    expect(shareLinkClientKey(null)).toBe("unknown");
+    expect(shareLinkClientKey("  ")).toBe("unknown");
+    const key = shareLinkClientKey("203.0.113.5");
     expect(key).toBe("203.0.113.5");
     for (let i = 0; i < 30; i += 1) {
       expect(consumeShareLinkRequest(key, 1_000).allowed).toBe(true);

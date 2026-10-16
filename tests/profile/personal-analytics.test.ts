@@ -404,7 +404,7 @@ d("D08 profile and count isolation", () => {
       [USER_B],
     );
     expect(read.error).toBeNull();
-    expect(read.rows.map((row) => row.display_name)).toEqual(["Owner B"]);
+    expect(read.rows).toEqual([]);
 
     await adminQuery(
       "update public.creator_profiles set public_profile_enabled = false where id = $1",
@@ -422,7 +422,7 @@ d("D08 profile and count isolation", () => {
       "select display_name from public.creator_profiles where user_id = $1",
       [USER_B],
     );
-    expect(anon.error).toBeNull();
+    expect(anon.error?.code).toBe("42501");
     expect(anon.rows).toEqual([]);
 
     const updated = await queryAs(

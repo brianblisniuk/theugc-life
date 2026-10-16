@@ -81,6 +81,9 @@ describe("rebill webhook signature", () => {
     expect(rebillSignatureValid(raw, sign("{}").slice(0, -1) + "0", SIGNING)).toBe(false);
     expect(rebillSignatureValid(raw, sign("{}"), SIGNING)).toBe(true);
     expect(rebillSignatureValid(raw, sign("{}").toUpperCase(), SIGNING)).toBe(true);
+    const short = "short-secret";
+    expect(short.length).toBeLessThan(16);
+    expect(rebillSignatureValid(raw, sign("{}", short), short)).toBe(false);
   });
 
   it("does not treat the retired billing secret as a signature", () => {

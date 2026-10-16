@@ -4,8 +4,8 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { getClientEnv } from "@/env";
+import { safeRedirect } from "@/lib/auth/safe-redirect";
 import { bindServerActions } from "@/lib/entitlements/inventory";
-import { redactString } from "@/lib/log/redact";
 import { logger } from "@/lib/logger";
 import { POST_ONBOARDING_PATH } from "@/lib/onboarding/activation";
 import { createClient } from "@/lib/supabase/server";
@@ -21,24 +21,13 @@ export interface AuthActionState {
   redirectTo?: string;
 }
 
-/** Form-safe failure text. Emails and tokens are stripped. */
-function shownAuthError(error: unknown, fallback: string): string {
-  const message = error instanceof Error && error.message ? error.message : fallback;
-  const redacted = redactString(message).replace(/\s+/g, " ").trim();
-  return (redacted || fallback).slice(0, 180);
-}
+const SIGNUP_ERROR = "Could not create the account.";
+const PASSWORD_UPDATE_ERROR = "Could not update the password.";
 
 const credentials = z.object({
   email: z.string().email("Enter a valid email."),
   password: z.string().min(8, "Password must be at least 8 characters."),
 });
-
-/** Only allow same-origin relative redirect targets (avoid open redirects). */
-function safeRedirect(target: FormDataEntryValue | null): string {
-  const value = typeof target === "string" ? target : "";
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/app";
-}
 
 export async function signIn(_prev: AuthActionState, formData: FormData): Promise<AuthActionState> {
   const parsed = credentials.safeParse({
@@ -68,7 +57,7 @@ export async function signIn(_prev: AuthActionState, formData: FormData): Promis
       });
     }
   }
-  redirect(safeRedirect(formData.get("redirect")));
+  redirect(safeRedirect(formData.get("redirect"), getClientEnv().NEXT_PUBLIC_SITE_URL));
 }
 
 export async function signUp(_prev: AuthActionState, formData: FormData): Promise<AuthActionState> {
@@ -94,7 +83,7 @@ export async function signUp(_prev: AuthActionState, formData: FormData): Promis
       logger.warn("signup rejected", {
         code: String(error.code || error.name || error.status || "signup_rejected"),
       });
-      return { error: shownAuthError(error, "Could not create the account.") };
+      return { error: SIGNUP_ERROR };
     }
 
     // With email confirmations enabled the user must confirm first; otherwise a
@@ -112,7 +101,7 @@ export async function signUp(_prev: AuthActionState, formData: FormData): Promis
     logger.error("signup failed", {
       code: error instanceof Error ? error.name : "signup_failed",
     });
-    return { error: shownAuthError(error, "Could not create the account.") };
+    return { error: SIGNUP_ERROR };
   }
 }
 
@@ -162,7 +151,10 @@ export async function updatePassword(
 
   const { error } = await supabase.auth.updateUser({ password: password.data });
   if (error) {
-    return { error: error.message };
+    logger.warn("password update failed", {
+      code: String(error.code || error.name || "password_update_failed"),
+    });
+    return { error: PASSWORD_UPDATE_ERROR };
   }
   redirect("/app");
 }

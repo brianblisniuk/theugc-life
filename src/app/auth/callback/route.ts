@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getClientEnv } from "@/env";
+import { safeSameOriginPath } from "@/lib/auth/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -8,10 +10,10 @@ import { createClient } from "@/lib/supabase/server";
  * same-origin relative `next` targets are honored (no open redirect).
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const site = getClientEnv().NEXT_PUBLIC_SITE_URL;
   const code = searchParams.get("code");
-  const nextParam = searchParams.get("next") ?? "/app";
-  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/app";
+  const next = safeSameOriginPath(searchParams.get("next") ?? "/app", site) ?? "/app";
 
   if (code) {
     const supabase = await createClient();
@@ -28,9 +30,9 @@ export async function GET(request: NextRequest) {
           // A mailbox sync must not block session establishment.
         }
       }
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(new URL(next, site));
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback`);
+  return NextResponse.redirect(new URL("/login?error=auth_callback", site));
 }

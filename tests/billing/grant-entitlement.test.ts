@@ -263,8 +263,7 @@ d("grant_access_entitlement — BASE-N9 null reference and expiry", () => {
     const source = `null-ref-${randomUUID()}`;
     const s1 = await openSession("service_role");
     const s2 = await openSession("service_role");
-    const sql =
-      "select public.grant_access_entitlement($1, $2, $3, $4, $5, now(), null) as res";
+    const sql = "select public.grant_access_entitlement($1, $2, $3, $4, $5, now(), null) as res";
     const args = [USERS.free, "destination", DEST.bali, source, null];
     try {
       const r1 = await s1.query<{ res: Res }>(sql, args);
@@ -399,9 +398,9 @@ d("grant_access_entitlement — BASE-N9 null reference and expiry", () => {
     expect(await rowsFor("manual_or_webhook", ref)).toHaveLength(1);
 
     const maxRef = `ref-${randomUUID()}`;
-    expect(
-      (await grant([USERS.free, "max", null, "manual_or_webhook", maxRef])).result,
-    ).toBe("granted");
+    expect((await grant([USERS.free, "max", null, "manual_or_webhook", maxRef])).result).toBe(
+      "granted",
+    );
     expect(
       (await grant([USERS.free, "max", DEST.bali, "manual_or_webhook", `ref-${randomUUID()}`]))
         .result,
@@ -421,7 +420,7 @@ d("grant_access_entitlement — privileges", () => {
       `select has_function_privilege('anon', $1, 'EXECUTE') as anon,
               has_function_privilege('authenticated', $1, 'EXECUTE') as auth,
               has_function_privilege('service_role', $1, 'EXECUTE') as svc,
-              coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=public, pg_temp%' as pinned,
+              coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=""' as pinned,
               p.prosecdef as definer
          from pg_proc p where p.oid = $1::regprocedure`,
       [SIG],

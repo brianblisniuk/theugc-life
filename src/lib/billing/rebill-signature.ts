@@ -9,12 +9,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  *
  * https://docs.rebill.com/guides/webhooks
  */
+const MIN_SIGNING_SECRET_LENGTH = 16;
+
 export function rebillSignatureValid(
   rawBody: Uint8Array | string,
   header: string | null,
   secret: string | undefined,
 ): boolean {
-  if (!secret || !header) return false;
+  if (!secret || secret.length < MIN_SIGNING_SECRET_LENGTH || !header) return false;
   if (!/^[0-9a-fA-F]+$/.test(header) || header.length % 2 !== 0) return false;
 
   const expected = createHmac("sha256", secret).update(rawBody).digest();
