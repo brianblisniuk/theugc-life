@@ -93,6 +93,12 @@ describe("V12.2 layout rebuild", () => {
     expect(page).toContain("PROFILE READINESS");
     expect(page).toContain('href="/app/profile/edit"');
     expect(page).not.toContain("ProfileEditor");
+    const journey = source("e2e/journey.spec.ts");
+    const editClick = journey.indexOf('name: "Edit profile"');
+    const bioFill = journey.indexOf('name: "Bio"');
+    expect(editClick).toBeGreaterThan(0);
+    expect(bioFill).toBeGreaterThan(editClick);
+    expect(journey).toContain('"/app/profile/edit"');
     const edit = source("src/app/(app)/app/profile/edit/page.tsx");
     expect(edit).toContain("ProfileEditor");
     expect(edit).toContain("ShareLinkPanel");

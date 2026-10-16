@@ -293,6 +293,8 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
 
   await ada.getByRole("link", { name: "My Profile", exact: true }).click();
   await ada.waitForURL("**/app/profile");
+  await ada.getByRole("link", { name: "Edit profile" }).click();
+  await ada.waitForURL("**/app/profile/edit");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
   await expect(ada.getByRole("textbox", { name: "Bio" })).toHaveValue(BIO);
@@ -424,7 +426,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByText("On a trip")).toHaveCount(0);
   await expect(bea.getByText("On trip")).toHaveCount(0);
 
-  await bea.goto("/app/profile");
+  await bea.goto("/app/profile/edit");
   await expect(bea.getByLabel("Display name")).toHaveValue(BEA_NAME);
   await expect(bea.getByText(ADA_NAME)).toHaveCount(0);
   await expect(bea.getByText(BIO)).toHaveCount(0);
