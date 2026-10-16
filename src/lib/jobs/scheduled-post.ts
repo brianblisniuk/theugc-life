@@ -3,13 +3,19 @@
  *
  * The function runs the job in this process. It does not POST to the public
  * site: password protection answers that request with 401 before the app
- * route runs, so the job never starts. A missing secret, or a secret shorter
- * than 16 characters, fails closed and does not call the job. The secret is
- * not logged and is not copied into the result.
+ * route runs, so the job never starts. It also does not invent a bearer.
+ * Netlify's scheduler posts `{ "next_run": "<ISO-8601>" }` and does not sign
+ * that body. `User-Agent: Netlify Clockwork` and `X-NF-Event: schedule` are
+ * forgeable. A caller must send `Authorization: Bearer <secret>`. The
+ * compare is SHA-256 of both sides, then `timingSafeEqual` on the digests.
+ * A missing secret, or a secret shorter than 16 characters, is 500 and does
+ * not run the job. Any other caller is 401 and does not run the job.
  *
  * The path constants are the bearer-gated HTTP routes. Those routes stay.
  * The schedule does not call them.
  */
+
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export const INBOX_SYNC_PATH = "/api/internal/gmail-inbox-sync";
 export const ACCOUNT_ERASURE_PATH = "/api/internal/account-erasure";
@@ -29,6 +35,35 @@ const SAFE_ERROR_NUMBER = /^\d{1,6}$/;
 
 export function scheduledSecretConfigured(secret: string | null | undefined): secret is string {
   return typeof secret === "string" && secret.length >= MIN_SECRET_LENGTH;
+}
+
+/**
+ * The Authorization header from a Netlify function event. Header names are
+ * matched without regard to case. An empty value is treated as absent.
+ */
+export function authorizationFromEvent(
+  event?: { headers?: Record<string, string | undefined> | null } | null,
+): string | null {
+  const headers = event?.headers;
+  if (!headers) return null;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== "authorization") continue;
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+  return null;
+}
+
+/**
+ * Constant-time bearer check. Both sides are hashed before compare, so a
+ * different header length does not return early and does not throw.
+ */
+export function bearerMatches(header: string | null, secret: string): boolean {
+  const expected = `Bearer ${secret}`;
+  const left = createHash("sha256")
+    .update(header ?? "", "utf8")
+    .digest();
+  const right = createHash("sha256").update(expected, "utf8").digest();
+  return timingSafeEqual(left, right);
 }
 
 function safeErrorToken(value: unknown): string | null {
@@ -51,10 +86,14 @@ function scheduledFailure(error: unknown): { name: string; code: string } {
 
 export async function runScheduledJob(options: {
   secret: string | null;
+  authorization?: string | null;
   run: () => Promise<object>;
 }): Promise<{ statusCode: number; body: string }> {
   if (!scheduledSecretConfigured(options.secret)) {
     return { statusCode: 500, body: JSON.stringify({ result: "not_configured" }) };
+  }
+  if (!bearerMatches(options.authorization ?? null, options.secret)) {
+    return { statusCode: 401, body: JSON.stringify({ result: "forbidden" }) };
   }
   try {
     const summary = await options.run();

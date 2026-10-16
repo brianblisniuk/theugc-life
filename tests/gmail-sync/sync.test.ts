@@ -697,6 +697,33 @@ d("B08 incremental sync", () => {
     expect(await rawCount(client, mail.mailAccountId)).toBe(0);
   });
 
+  it("does not advance history_id when threads.get is gone for an unstored sent id", async () => {
+    const { mail } = await ready("b08-gone-sent", "100");
+    const gmail = createFakeIncremental({
+      historyPages: [
+        {
+          historyId: "250",
+          nextPageToken: null,
+          threads: [{ providerThreadId: "t-gone", labelIds: ["SENT"], messageIds: ["m-gone"] }],
+        },
+      ],
+      missingThreads: ["t-gone"],
+    });
+    const outcome = await runAccountSync(mail, depsFor(client, gmail));
+    expect(outcome.result).toBe("not_due");
+    expect(gmail.calls.threadIds).toContain("t-gone");
+    expect(await rawCount(client, mail.mailAccountId)).toBe(0);
+    const thread = await client.query<{ status: string; snapshot_sent_message_ids: string[] }>(
+      `select status, snapshot_sent_message_ids
+         from private.gmail_sync_threads
+        where mail_account_id = $1 and provider_thread_id = 't-gone'`,
+      [mail.mailAccountId],
+    );
+    expect(thread.rows[0]?.status).toBe("gone");
+    expect(thread.rows[0]?.snapshot_sent_message_ids).toContain("m-gone");
+    expect((await cursorOf(client, mail.mailAccountId)).history_id).toBe("100");
+  });
+
   it("picks up mail that arrives during a historyId 404 re-scan on the next poll", async () => {
     await mailArrivingDuringRescan(
       "b08-gap-404",

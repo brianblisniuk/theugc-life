@@ -6,7 +6,8 @@ this file or in git.
 Set every variable in the host (Netlify for the app and the scheduled
 functions, Supabase for `DATABASE_URL` when an operator runs a script).
 A scheduled job with an unset secret, or a secret shorter than 16
-characters, fails closed and does not call the route.
+characters, fails closed and does not run. A caller that does not present
+that job's bearer is refused and does not run.
 
 ## Application
 
@@ -22,7 +23,7 @@ characters, fails closed and does not call the route.
 | `DATABASE_URL` | Operator scripts and migrations. Not required by the Next server for ordinary requests. |
 | `NODE_ENV` | `production` on the live Node process. This value does not open Gmail sending. |
 | `BILLING_WEBHOOK_SECRET` | The server schema reads it. It does not authorize `POST /api/billing/webhook`. |
-| `URL` | Set by Netlify to the site origin. The scheduled functions post here. |
+| `URL` | Set by Netlify to the site origin. The scheduled functions do not post here. |
 
 ## Rebill
 
@@ -87,17 +88,25 @@ connect.
 | `GMAIL_SEND_ALLOWLIST` | Comma-separated addresses. When `GMAIL_SEND_ENV` is not `production` and this is unset, only `hello@theugc.life` can be a recipient. |
 | `GMAIL_SEND_PRO_DAILY_CAP` | Optional. Unset means 120. |
 | `GMAIL_SEND_MAX_DAILY_CAP` | Optional. Unset means 300. |
-| `GMAIL_DISPATCH_SECRET` | Bearer for `POST /api/internal/gmail-send-dispatch`, and the schedule's fail-closed switch. At least 16 characters. The schedule does not send when this is missing or shorter. |
+| `GMAIL_DISPATCH_SECRET` | Bearer for `POST /api/internal/gmail-send-dispatch` and for the scheduled function. At least 16 characters. Missing or shorter is 500 and does not send. A caller without this bearer is 401 and does not send. |
 
 The send schedule is every minute: `* * * * *` on `gmail-send-dispatch`.
 
 ## Scheduled jobs
 
-Each function runs its job in this process after a secret check. It does
-not POST to the public site. Password protection would answer that POST
-with 401 before the route ran. Give each secret its own value of at least
-16 characters. A missing or shorter secret does not run the job. The
-public routes stay bearer-gated for a caller that can reach them.
+Each function runs its job in this process only after the caller presents
+`Authorization: Bearer <secret>`. The compare is SHA-256 of both sides,
+then a constant-time compare of the digests. It does not POST to the
+public site. Password protection would answer that POST with 401 before
+the route ran. Give each secret its own value of at least 16 characters.
+A missing or shorter secret is 500 and does not run the job. Any other
+caller is 401 and does not run the job.
+
+Netlify's scheduler sends `{ "next_run": "<ISO-8601>" }` and no bearer, so
+a scheduled invocation returns 401 and does not discharge the job. The
+authenticated discharge is the internal route with the same bearer. The
+cron entries stay so the functions remain deployed. The public routes stay
+bearer-gated for a caller that can reach them.
 
 The functions are synchronous scheduled functions. Netlify does not run a
 function that is both scheduled and background, and answers that
@@ -106,8 +115,8 @@ combination with a bare 502 and no function log. A thrown job returns
 Locking and idempotency stay in the same database functions the routes call.
 The scheduled limit is 30 seconds. Send dispatch claims one queued row,
 delivers it, then claims the next, and stops claiming at 25 seconds. A
-kill cannot leave a batch of unsent reservations. A row already handed to
-Gmail is not claimed again.
+kill cannot leave a batch of unsent reservations. A stored provider message
+id is committed again and is not sent again.
 
 | Function | Schedule | Secret | In-process job |
 | --- | --- | --- | --- |

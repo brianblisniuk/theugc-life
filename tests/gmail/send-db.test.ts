@@ -247,6 +247,7 @@ d("D04 Gmail send", () => {
         order by p.proname`,
     );
     expect(rows.map((row) => row.proname)).toEqual([
+      "gmail_send_arm_provider",
       "gmail_send_bind_pending",
       "gmail_send_claim_due",
       "gmail_send_commit",
@@ -258,6 +259,7 @@ d("D04 Gmail send", () => {
       "gmail_send_purge_for_deletion",
       "gmail_send_record_bounce",
       "gmail_send_record_thread_bounces",
+      "gmail_send_remember_provider",
       "gmail_send_reserve",
       "gmail_send_scope_persist",
     ]);
@@ -332,6 +334,11 @@ d("D04 Gmail send", () => {
       [MAX, first.attempt_id],
     );
     expect(marked[0]!.r).toMatchObject({ result: "ok", call_provider: true, daily_cap: 1 });
+    const committed = await asService<{ r: { result: string } }>(
+      "select public.gmail_send_commit($1::uuid, $2::uuid, $3, $4) as r",
+      [MAX, first.attempt_id, "msg-cap-0001", "thread-cap-0001"],
+    );
+    expect(committed[0]!.r.result).toBe("sent");
 
     await adminQuery(
       "update private.gmail_send_schedule set next_eligible_at = clock_timestamp() - interval '1 minute' where user_id = $1",

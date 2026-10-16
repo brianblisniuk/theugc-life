@@ -13,7 +13,9 @@ export interface DispatchSummary {
 /**
  * Stop claiming before Netlify's 30s scheduled limit. A kill at 30s can
  * still interrupt the one send already in progress. That row stays reserved
- * and is not claimed again. Rows not yet claimed stay queued.
+ * until the 15-minute sweep, or provider_called when the provider mark
+ * already committed. A stored provider message id is committed again and
+ * is not sent again. Rows not yet claimed stay queued.
  */
 export const DISPATCH_CLAIM_BUDGET_MS = 25_000;
 

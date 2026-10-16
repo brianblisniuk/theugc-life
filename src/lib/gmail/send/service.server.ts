@@ -175,7 +175,8 @@ export async function sendGmailMessage(
 /**
  * The provider call for one already-reserved attempt. The queue claim is the
  * only path that sets call_provider. A repeated idempotency key never reaches
- * this function.
+ * this function. A claim that already has a provider message id commits that
+ * id and does not call Gmail.
  */
 export async function deliverReservedSend(
   reserved: RpcRow,
@@ -186,9 +187,15 @@ export async function deliverReservedSend(
   const attemptId = str(reserved, "attempt_id");
   if (!attemptId) return { result: "unknown", attemptId: null };
 
+  if (reserved.retry_commit === true) {
+    return commitStored(deps, userId, attemptId, reserved);
+  }
+
   const gate = await followUpGate(deps, userId, attemptId);
-  if (gate === "stopped") return failAttempt(deps, userId, attemptId, "followup_stopped");
-  if (gate === "unknown" && str(reserved, "kind") === "follow_up") {
+  if (gate.kind === "stopped") return failAttempt(deps, userId, attemptId, "followup_stopped");
+  if (gate.kind === "commit") return commitStored(deps, userId, attemptId, gate.row);
+  if (gate.kind === "in_progress") return { result: "unknown", attemptId };
+  if (gate.kind === "unknown" && str(reserved, "kind") === "follow_up") {
     return { result: "unknown", attemptId };
   }
 
@@ -233,11 +240,19 @@ export async function deliverReservedSend(
     return failAttempt(deps, userId, attemptId, tokenFailure(token));
   }
 
-  const gateAgain = await followUpGate(deps, userId, attemptId);
-  if (gateAgain === "stopped") return failAttempt(deps, userId, attemptId, "followup_stopped");
-  if (gateAgain === "unknown" && str(reserved, "kind") === "follow_up") {
-    return { result: "unknown", attemptId };
+  let armed: RpcRow;
+  try {
+    armed = await callRpc(deps.db, "gmail_send_arm_provider", {
+      p_user_id: userId,
+      p_attempt_id: attemptId,
+    });
+  } catch {
+    return failAttempt(deps, userId, attemptId, "unknown");
   }
+  if (armed.retry_commit === true || armed.result === "commit") {
+    return commitStored(deps, userId, attemptId, armed);
+  }
+  if (armed.call_provider !== true) return storedOutcome(armed);
 
   let sent: { id: string; threadId: string };
   try {
@@ -248,7 +263,6 @@ export async function deliverReservedSend(
     });
   } catch (error) {
     const code = providerFailure(error);
-    if (code === "unknown") return failAttempt(deps, userId, attemptId, "unknown");
     return failAttempt(deps, userId, attemptId, code);
   }
 
@@ -257,32 +271,70 @@ export async function deliverReservedSend(
   }
 
   try {
-    const committed = await callRpc(deps.db, "gmail_send_commit", {
+    const remembered = await callRpc(deps.db, "gmail_send_remember_provider", {
       p_user_id: userId,
       p_attempt_id: attemptId,
       p_provider_message_id: sent.id,
       p_provider_thread_id: sent.threadId,
     });
-    if (committed.result === "sent") return storedOutcome(committed);
-    return failAttempt(deps, userId, attemptId, "unknown");
+    if (remembered.result !== "ok") return failAttempt(deps, userId, attemptId, "unknown");
   } catch {
     return failAttempt(deps, userId, attemptId, "unknown");
   }
+
+  return commitStored(deps, userId, attemptId, {
+    provider_message_id: sent.id,
+    provider_thread_id: sent.threadId,
+  });
 }
+
+type FollowUpGate =
+  | { kind: "send" }
+  | { kind: "stopped" }
+  | { kind: "commit"; row: RpcRow }
+  | { kind: "in_progress" }
+  | { kind: "unknown" };
 
 async function followUpGate(
   deps: SendDeps,
   userId: string,
   attemptId: string,
-): Promise<"send" | "stopped" | "unknown"> {
+): Promise<FollowUpGate> {
   try {
     const blocked = await callRpc(deps.db, "gmail_followup_block_send", {
       p_user_id: userId,
       p_attempt_id: attemptId,
     });
-    return str(blocked, "result") === "stopped" ? "stopped" : "send";
+    const result = str(blocked, "result");
+    if (result === "stopped") return { kind: "stopped" };
+    if (result === "commit") return { kind: "commit", row: blocked };
+    if (result === "in_progress") return { kind: "in_progress" };
+    return { kind: "send" };
   } catch {
-    return "unknown";
+    return { kind: "unknown" };
+  }
+}
+
+async function commitStored(
+  deps: SendDeps,
+  userId: string,
+  attemptId: string,
+  row: RpcRow,
+): Promise<GmailSendOutcome> {
+  const messageId = str(row, "provider_message_id");
+  const threadId = str(row, "provider_thread_id");
+  if (!messageId || !threadId) return failAttempt(deps, userId, attemptId, "unknown");
+  try {
+    const committed = await callRpc(deps.db, "gmail_send_commit", {
+      p_user_id: userId,
+      p_attempt_id: attemptId,
+      p_provider_message_id: messageId,
+      p_provider_thread_id: threadId,
+    });
+    if (committed.result === "sent") return storedOutcome(committed);
+    return failAttempt(deps, userId, attemptId, "unknown");
+  } catch {
+    return failAttempt(deps, userId, attemptId, "unknown");
   }
 }
 

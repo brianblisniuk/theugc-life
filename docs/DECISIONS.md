@@ -5666,6 +5666,35 @@ leave a batch of unsent reservations. A reserved row is not returned to
 be interrupted; that row stays `reserved` and becomes `unknown` after 15
 minutes (D168). The public route uses the same dispatcher.
 
+### Amendment (16 Oct 2026) — a scheduled invocation is not a credential
+
+Netlify's scheduler invokes a scheduled function with a JSON body
+`{ "next_run": "<ISO-8601>" }`. That timestamp is not a secret. The local
+CLI may also set `User-Agent: Netlify Clockwork` and `X-NF-Event: schedule`.
+Those values are forgeable. Event-triggered functions receive a
+platform-signed token before they run. Scheduled functions do not expose a
+signature the handler can verify.
+
+The five handlers therefore refuse every caller that does not present
+`Authorization: Bearer <that job's secret>`. The compare is SHA-256 of the
+header and of the expected bearer, then `crypto.timingSafeEqual` on the
+32-byte digests. A different length does not return early. A missing
+secret, or a secret shorter than 16 characters, is still 500
+`{ "result": "not_configured" }` and does not run the job. Any other
+caller is 401 `{ "result": "forbidden" }` and does not run the job.
+
+The handler does not invent a bearer, and it does not POST to the public
+site. Password protection would answer that POST with 401 before the route
+ran. Netlify's scheduler cannot present the bearer, so a scheduled
+invocation returns 401 and does not discharge the job. The authenticated
+discharge remains `POST /api/internal/gmail-inbox-sync`,
+`POST /api/internal/gmail-send-dispatch`,
+`POST /api/internal/gmail-followup-housekeeping`,
+`POST /api/internal/account-erasure`, and
+`POST /api/internal/credit-period-refresh`. The cron entries in
+`netlify.toml` stay. This replaces the earlier sentence that the secret
+is not taken from the request.
+
 ## D179 — A null entitlement reference is one logical grant
 
 Status: **Accepted**. Records the BASE-N9 bugfix. It does not change who

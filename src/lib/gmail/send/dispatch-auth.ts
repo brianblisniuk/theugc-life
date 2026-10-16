@@ -3,20 +3,15 @@
  * argument so a test can pass one without reading the environment.
  *
  * The schedule runs the dispatcher in-process. It does not POST to the
- * public site. The HTTP route still requires the bearer.
+ * public site. The HTTP route and the schedule both require the bearer.
+ * The compare hashes both sides before `timingSafeEqual`.
  */
 
-import { runScheduledJob } from "@/lib/jobs/scheduled-post";
+import { bearerMatches, runScheduledJob } from "@/lib/jobs/scheduled-post";
 
 export function authorizeDispatch(header: string | null, secret: string | undefined): boolean {
   if (!secret || secret.length < 16) return false;
-  const expected = `Bearer ${secret}`;
-  if (!header || header.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    mismatch |= header.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
+  return bearerMatches(header, secret);
 }
 
 export async function handleDispatchPost(
@@ -33,6 +28,7 @@ export async function handleDispatchPost(
 
 export async function runScheduledDispatch(options: {
   secret: string | null;
+  authorization?: string | null;
   run: () => Promise<object>;
 }): Promise<{ statusCode: number; body: string }> {
   return runScheduledJob(options);

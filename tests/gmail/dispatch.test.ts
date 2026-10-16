@@ -35,7 +35,16 @@ function deps(handlers: Record<string, (args: Record<string, unknown>) => unknow
       db: {
         rpc: async (fn: string, args: Record<string, unknown>) => {
           const handler = handlers[fn];
-          if (!handler) return { data: { result: "not_found" }, error: null };
+          if (!handler) {
+            if (fn === "gmail_followup_block_send")
+              return { data: { result: "send" }, error: null };
+            if (fn === "gmail_send_arm_provider") {
+              return { data: { result: "ok", call_provider: true }, error: null };
+            }
+            if (fn === "gmail_send_remember_provider")
+              return { data: { result: "ok" }, error: null };
+            return { data: { result: "not_found" }, error: null };
+          }
           return { data: handler(args), error: null };
         },
       } as unknown as SendDeps["db"],
@@ -66,7 +75,18 @@ describe("dispatch auth", () => {
     const short = await runScheduledDispatch({ secret: "short-secret", run });
     expect(short.statusCode).toBe(500);
     expect(run).not.toHaveBeenCalled();
-    const ran = await runScheduledDispatch({ secret: SECRET, run });
+    const denied = await runScheduledDispatch({
+      secret: SECRET,
+      authorization: `Bearer ${SECRET}x`,
+      run,
+    });
+    expect(denied.statusCode).toBe(401);
+    expect(run).not.toHaveBeenCalled();
+    const ran = await runScheduledDispatch({
+      secret: SECRET,
+      authorization: `Bearer ${SECRET}`,
+      run,
+    });
     expect(ran.statusCode).toBe(200);
     expect(JSON.parse(ran.body)).toMatchObject({ result: "ok", sent: 1 });
     expect(ran.body).not.toContain(SECRET);
@@ -79,6 +99,18 @@ describe("dispatch auth", () => {
       "utf8",
     );
     expect(source).not.toMatch(/google\.server|claude\.server|@anthropic|googleapis|fetchImpl/);
+    expect(source).not.toMatch(/header\.length\s*!==/);
+    const gate = readFileSync(
+      path.join(
+        path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."),
+        "src/lib/jobs/scheduled-post.ts",
+      ),
+      "utf8",
+    );
+    expect(gate).toContain("timingSafeEqual");
+    expect(gate).not.toMatch(/header\.length\s*!==/);
+    expect(authorizeDispatch("Bearer short", SECRET)).toBe(false);
+    expect(authorizeDispatch(`Bearer ${SECRET}`, `${SECRET}extra-extra`)).toBe(false);
   });
 });
 

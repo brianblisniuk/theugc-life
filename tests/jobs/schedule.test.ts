@@ -75,7 +75,11 @@ describe("scheduled job gate", () => {
 
   it("runs once when the secret is configured and keeps the job result", async () => {
     const run = vi.fn(async () => ({ result: "error", erased: 0 }));
-    const result = await runScheduledJob({ secret: SECRET, run });
+    const result = await runScheduledJob({
+      secret: SECRET,
+      authorization: `Bearer ${SECRET}`,
+      run,
+    });
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body)).toEqual({ result: "error", erased: 0 });
     expect(result.body).not.toContain(SECRET);
@@ -93,6 +97,7 @@ describe("scheduled job gate", () => {
     try {
       const result = await runScheduledJob({
         secret: SECRET,
+        authorization: `Bearer ${SECRET}`,
         run: async () => {
           throw error;
         },
@@ -129,6 +134,7 @@ describe("scheduled job gate", () => {
     try {
       const result = await runScheduledJob({
         secret: SECRET,
+        authorization: `Bearer ${SECRET}`,
         run: async () => {
           throw error;
         },
@@ -207,16 +213,25 @@ describe("netlify handlers", () => {
     );
   });
 
-  it("each handler runs its own job and ignores a caller bearer", async () => {
+  it("refuses a caller that does not present this job's bearer", async () => {
     for (const item of handlers) {
       process.env[item.secret] = SECRET;
-      const result = await item.handler({
+      const anonymous = await item.handler();
+      expect(anonymous.statusCode).toBe(401);
+      expect(JSON.parse(anonymous.body)).toEqual({ result: "forbidden" });
+      const forged = await item.handler({
         headers: { authorization: "Bearer attacker-supplied-secret-value" },
+      } as never);
+      expect(forged.statusCode).toBe(401);
+      expect(forged.body).not.toContain(SECRET);
+      expect(forged.body).not.toContain("attacker-supplied");
+      expect(item.run).not.toHaveBeenCalled();
+      const result = await item.handler({
+        headers: { authorization: `Bearer ${SECRET}` },
       } as never);
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body)).toEqual(item.body);
       expect(result.body).not.toContain(SECRET);
-      expect(result.body).not.toContain("attacker-supplied");
       expect(item.run).toHaveBeenCalledTimes(1);
       for (const other of handlers) {
         if (other.run !== item.run) expect(other.run).not.toHaveBeenCalled();
@@ -244,7 +259,7 @@ describe("netlify handlers", () => {
 
   it("a configured follow-up does not dispatch a send", async () => {
     process.env.GMAIL_FOLLOWUP_SECRET = SECRET;
-    await followupHandler();
+    await followupHandler({ headers: { authorization: `Bearer ${SECRET}` } });
     expect(runs.followup).toHaveBeenCalledTimes(1);
     expect(runs.dispatch).not.toHaveBeenCalled();
     expect(runs.sendDeps).not.toHaveBeenCalled();
@@ -253,7 +268,7 @@ describe("netlify handlers", () => {
 
   it("a configured dispatch does not run inbox sync", async () => {
     process.env.GMAIL_DISPATCH_SECRET = SECRET;
-    await dispatchHandler();
+    await dispatchHandler({ headers: { authorization: `Bearer ${SECRET}` } });
     expect(runs.dispatch).toHaveBeenCalledTimes(1);
     expect(runs.sendDeps).toHaveBeenCalledTimes(1);
     expect(runs.inbox).not.toHaveBeenCalled();
@@ -312,7 +327,9 @@ describe("netlify handlers", () => {
         error.name = "TypeError";
         (error as Error & { code: string }).code = leaked;
         item.run.mockRejectedValueOnce(error);
-        const result = await item.handler();
+        const result = await item.handler({
+          headers: { authorization: `Bearer ${SECRET}` },
+        } as never);
         expect(result.statusCode).toBe(500);
         expect(JSON.parse(result.body)).toEqual({ result: "error", code: "TypeError" });
         expect(result.body).not.toContain(SECRET);

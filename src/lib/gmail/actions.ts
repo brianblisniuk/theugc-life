@@ -34,12 +34,20 @@ export async function grantGmailConsentAction(
   const session = await requireUser("/app/account");
   const mailAccountId = String(formData.get("mail_account_id") ?? "");
   if (!mailAccountId) return { status: "error", message: "Missing mailbox." };
+  const shownPolicyVersion = String(formData.get("policy_version") ?? "");
+  const shownConsentTextDigest = String(formData.get("consent_text_digest") ?? "");
+  if (!shownPolicyVersion || !shownConsentTextDigest) {
+    return {
+      status: "error",
+      message: "That permission screen is out of date. Review it and allow again.",
+    };
+  }
 
-  // The policy version, consent text and digest are server constants. Nothing
-  // about WHAT was consented to comes from this form — only that it was.
   const outcome = await grantPrivateProcessingConsent({
     userId: session.userId,
     mailAccountId,
+    shownPolicyVersion,
+    shownConsentTextDigest,
   });
 
   revalidatePath("/app/account");
@@ -56,6 +64,11 @@ export async function grantGmailConsentAction(
       return {
         status: "error",
         message: "That mailbox was deleted. Connect the Google account again to start fresh.",
+      };
+    case "consent_stale":
+      return {
+        status: "error",
+        message: "That permission screen is out of date. Review it and allow again.",
       };
     case "consent_not_applicable":
       // The mailbox is not waiting on this decision any more — most often
