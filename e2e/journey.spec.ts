@@ -224,9 +224,9 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.locator("#add-to-trip option:checked")).toContainText("already on this trip");
 
   await ada.goto("/app/pipeline");
-  await expect(ada.getByTestId("pipeline-contact")).toHaveText(
-    "found-222222222222@fake-provider.test",
-  );
+  const pipelineContact = ada.getByTestId("pipeline-contact");
+  await expect(pipelineContact).toHaveCount(1);
+  await expect(pipelineContact).toHaveText("found-222222222222@fake-provider.test");
   await ada.goto(HOTEL_PATH);
 
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
@@ -284,7 +284,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
-  await ada.getByRole("link", { name: "Profile" }).click();
+  await ada.getByRole("link", { name: "My Profile", exact: true }).click();
   await ada.waitForURL("**/app/profile");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
