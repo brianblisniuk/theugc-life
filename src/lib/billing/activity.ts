@@ -85,7 +85,27 @@ export function formatActivityWhen(value: string): string | null {
   return DAY.format(date);
 }
 
-export function ledgerLabel(reason: CreditReason, idempotencyKey: string): string {
+const REVOKE_PLAN = "rebill_revoke_plan:";
+const REVOKE_PAYMENT = "rebill_revoke:";
+const MONTHLY_PLANS = new Set(["pro_monthly", "max_monthly"]);
+const ANNUAL_PLANS = new Set(["pro_annual", "max_annual"]);
+
+/** Payment facts for one ledger reversal. A missing fact is not a guess. */
+export interface ReversalEvidence {
+  packGrant: number | null;
+  purchase: {
+    status: string;
+    productType: string;
+    productReference: string;
+  } | null;
+}
+
+export function ledgerLabel(
+  reason: CreditReason,
+  idempotencyKey: string,
+  delta = 0,
+  evidence: ReversalEvidence = { packGrant: null, purchase: null },
+): string {
   if (reason === "unlock") return "Hotel contact unlock";
   if (reason === "ai_draft") return "AI pitch draft";
   if (reason === "plan_grant") return "Plan credits";
@@ -96,20 +116,74 @@ export function ledgerLabel(reason: CreditReason, idempotencyKey: string): strin
     return "Weekly Free credits";
   }
   if (reason === "free_grant") return "Free credits";
-  if (reason === "reversal" && idempotencyKey.startsWith("rebill_revoke_plan:")) {
-    return "Plan credits reversed for a refunded payment";
-  }
-  if (reason === "reversal" && idempotencyKey.startsWith("rebill_revoke:")) {
-    return "Unused pack credits reversed";
-  }
   if (reason === "reversal" && idempotencyKey.startsWith("plan_expire:")) {
     return "Plan credits expired";
   }
   if (reason === "reversal" && idempotencyKey.startsWith("free_weekly_expire:")) {
     return "Weekly credits expired";
   }
-  if (reason === "reversal") return "Credit reversal";
+  if (reason === "reversal") return reversalLabel(idempotencyKey, delta, evidence);
   return "Credit movement";
+}
+
+/**
+ * `rebill_revoke:` is a monthly plan refund or a pack chargeback (or a pack
+ * refund of unused credits). `rebill_revoke_plan:` is a plan chargeback or an
+ * annual refund. The prefix alone does not choose the label (0081, D140).
+ */
+function reversalLabel(key: string, delta: number, evidence: ReversalEvidence): string {
+  const parsed = revokePayment(key);
+  if (!parsed) return "Credit reversal";
+  const purchase = evidence.purchase;
+  const reference = purchase?.productReference ?? "";
+  const productType = purchase?.productType ?? "";
+  const status = purchase?.status ?? "";
+  const pack = productType === "credit_pack" || reference.startsWith("pack_");
+  const monthly = MONTHLY_PLANS.has(reference);
+  const annual = ANNUAL_PLANS.has(reference);
+  const plan = productType === "plan" || monthly || annual;
+  const refund = status === "refunded" || status === "partially_refunded";
+
+  if (parsed.kind === "payment") {
+    if (pack && status === "chargeback") {
+      if (
+        evidence.packGrant !== null &&
+        evidence.packGrant > 0 &&
+        Math.abs(delta) < evidence.packGrant
+      ) {
+        return "Unused pack credits reversed";
+      }
+      return "Pack credits reversed for a chargeback";
+    }
+    if (pack && refund) return "Unused pack credits reversed";
+    if (monthly && refund) return "Unused plan credits reversed for that payment";
+    if (
+      !plan &&
+      evidence.packGrant !== null &&
+      evidence.packGrant > 0 &&
+      Math.abs(delta) < evidence.packGrant
+    ) {
+      return "Unused pack credits reversed";
+    }
+    return "Credit reversal";
+  }
+
+  if (plan && status === "chargeback") return "Plan credits reversed for a chargeback";
+  if (annual && refund) return "Unused plan credits reversed for a refunded annual payment";
+  if (monthly && refund) return "Unused plan credits reversed for a refunded payment";
+  return "Credit reversal";
+}
+
+function revokePayment(key: string): { kind: "plan" | "payment"; paymentId: string } | null {
+  if (key.startsWith(REVOKE_PLAN)) {
+    const paymentId = key.slice(REVOKE_PLAN.length);
+    return paymentId.length > 0 ? { kind: "plan", paymentId } : null;
+  }
+  if (key.startsWith(REVOKE_PAYMENT)) {
+    const paymentId = key.slice(REVOKE_PAYMENT.length);
+    return paymentId.length > 0 ? { kind: "payment", paymentId } : null;
+  }
+  return null;
 }
 
 export function ledgerOutcome(reason: CreditReason, delta: number): string {
@@ -145,16 +219,79 @@ export function creditsUsed(movements: readonly LedgerMovement[]): number {
   }, 0);
 }
 
+interface ParsedLedgerRow {
+  id: string;
+  reason: CreditReason;
+  idempotencyKey: string;
+  when: string;
+  delta: number;
+}
+
+interface PaymentFact {
+  status: string;
+  productType: string;
+  productReference: string;
+}
+
+function packGrant(rows: readonly ParsedLedgerRow[], paymentId: string): number | null {
+  let grant = 0;
+  let found = false;
+  for (const row of rows) {
+    if (row.idempotencyKey === `pack:${paymentId}` && row.delta > 0) {
+      grant += row.delta;
+      found = true;
+    }
+  }
+  return found ? grant : null;
+}
+
+function paymentFacts(
+  purchases: readonly unknown[],
+  viewerId: string,
+): Map<string, PaymentFact> | null {
+  const facts = new Map<string, PaymentFact>();
+  for (const raw of purchases) {
+    const row = asRecord(raw);
+    if (!row || row.user_id !== viewerId) return null;
+    if (
+      typeof row.provider_transaction_id !== "string" ||
+      row.provider_transaction_id.length === 0
+    ) {
+      return null;
+    }
+    if (typeof row.status !== "string" || row.status.trim() === "") return null;
+    const next: PaymentFact = {
+      status: row.status.trim(),
+      productType: typeof row.product_type === "string" ? row.product_type : "",
+      productReference: typeof row.product_reference === "string" ? row.product_reference : "",
+    };
+    const existing = facts.get(row.provider_transaction_id);
+    if (
+      existing &&
+      (existing.status !== next.status ||
+        existing.productType !== next.productType ||
+        existing.productReference !== next.productReference)
+    ) {
+      return null;
+    }
+    facts.set(row.provider_transaction_id, next);
+  }
+  return facts;
+}
+
 export function ledgerActivity(
   rows: readonly unknown[],
   viewerId: string,
   total: number | null,
   limit: number,
+  purchases: readonly unknown[] = [],
 ): LedgerActivity {
   if (!viewerId || total === null || !Number.isInteger(total) || total < 0)
     return { kind: "error" };
   if (rows.length > limit) return { kind: "error" };
-  const movements: LedgerMovement[] = [];
+  const facts = paymentFacts(purchases, viewerId);
+  if (!facts) return { kind: "error" };
+  const parsed: ParsedLedgerRow[] = [];
   for (const raw of rows) {
     const row = asRecord(raw);
     if (!row) return { kind: "error" };
@@ -168,13 +305,28 @@ export function ledgerActivity(
     const when = formatActivityWhen(row.created_at);
     const delta = integerDelta(row.delta);
     if (!when || delta === null) return { kind: "error" };
+    parsed.push({
+      id: row.id,
+      reason: row.reason,
+      idempotencyKey: row.idempotency_key,
+      when,
+      delta,
+    });
+  }
+  const movements: LedgerMovement[] = [];
+  for (const row of parsed) {
+    const payment = revokePayment(row.idempotencyKey);
+    const purchase = payment ? (facts.get(payment.paymentId) ?? null) : null;
     movements.push({
       id: row.id,
-      when,
-      label: ledgerLabel(row.reason, row.idempotency_key),
+      when: row.when,
+      label: ledgerLabel(row.reason, row.idempotencyKey, row.delta, {
+        packGrant: payment ? packGrant(parsed, payment.paymentId) : null,
+        purchase,
+      }),
       reason: row.reason,
-      delta,
-      outcome: ledgerOutcome(row.reason, delta),
+      delta: row.delta,
+      outcome: ledgerOutcome(row.reason, row.delta),
     });
   }
   if (total > 0 && movements.length === 0) return { kind: "error" };

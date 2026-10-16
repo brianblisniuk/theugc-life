@@ -115,7 +115,8 @@ describe("billing activity", () => {
     expect(own.kind).toBe("ok");
     if (own.kind !== "ok") return;
     expect(own.used).toBe(1);
-    expect(own.movements[1]?.label).toBe("Unused pack credits reversed");
+    expect(own.movements[1]?.label).toBe("Credit reversal");
+    expect(own.movements[1]?.label).not.toBe("Unused pack credits reversed");
     expect(
       ledgerActivity(
         [
@@ -134,6 +135,127 @@ describe("billing activity", () => {
       ).kind,
     ).toBe("error");
     expect(ledgerActivity([], USER, null, 50).kind).toBe("error");
+  });
+
+  it("names a reversal from the payment and the pack grant, not the key prefix", () => {
+    const at = "2026-10-16T13:00:00.000Z";
+    function reversal(
+      id: string,
+      key: string,
+      delta: number,
+      purchase: {
+        product_type: string;
+        product_reference: string;
+        status: string;
+      } | null,
+      packGrant: number | null,
+    ) {
+      const paymentId = key.slice(key.indexOf(":") + 1);
+      const rows = [
+        ...(packGrant === null
+          ? []
+          : [
+              {
+                id: `${id}-grant`,
+                user_id: USER,
+                delta: packGrant,
+                reason: "pack_purchase",
+                idempotency_key: `pack:${paymentId}`,
+                created_at: "2026-10-01T00:00:00.000Z",
+              },
+            ]),
+        {
+          id,
+          user_id: USER,
+          delta,
+          reason: "reversal",
+          idempotency_key: key,
+          created_at: at,
+        },
+      ];
+      const purchases = purchase
+        ? [
+            {
+              id: `purchase-${id}`,
+              user_id: USER,
+              provider_transaction_id: paymentId,
+              product_type: purchase.product_type,
+              product_reference: purchase.product_reference,
+              status: purchase.status,
+            },
+          ]
+        : [];
+      const activity = ledgerActivity(rows, USER, rows.length, 50, purchases);
+      expect(activity.kind).toBe("ok");
+      if (activity.kind !== "ok") return "";
+      return activity.movements.find((movement) => movement.id === id)?.label ?? "";
+    }
+
+    expect(
+      reversal("monthly", "rebill_revoke:pay_month", -20, {
+        product_type: "plan",
+        product_reference: "pro_monthly",
+        status: "refunded",
+      }, null),
+    ).toBe("Unused plan credits reversed for that payment");
+    expect(
+      reversal("pack-cb", "rebill_revoke:pay_pack", -50, {
+        product_type: "credit_pack",
+        product_reference: "pack_50",
+        status: "chargeback",
+      }, 50),
+    ).toBe("Pack credits reversed for a chargeback");
+    expect(
+      reversal("pack-refund", "rebill_revoke:pay_pack_refund", -12, {
+        product_type: "credit_pack",
+        product_reference: "pack_50",
+        status: "refunded",
+      }, 50),
+    ).toBe("Unused pack credits reversed");
+    expect(
+      reversal("plan-cb", "rebill_revoke_plan:pay_cb", -150, {
+        product_type: "plan",
+        product_reference: "max_monthly",
+        status: "chargeback",
+      }, null),
+    ).toBe("Plan credits reversed for a chargeback");
+    expect(
+      reversal("annual", "rebill_revoke_plan:pay_year", -400, {
+        product_type: "plan",
+        product_reference: "pro_annual",
+        status: "refunded",
+      }, null),
+    ).toBe("Unused plan credits reversed for a refunded annual payment");
+    expect(reversal("bare-plan", "rebill_revoke_plan:pay_bare", -10, null, null)).toBe(
+      "Credit reversal",
+    );
+    expect(
+      ledgerActivity(
+        [
+          {
+            id: "1",
+            user_id: USER,
+            delta: -50,
+            reason: "reversal",
+            idempotency_key: "rebill_revoke:pay_x",
+            created_at: at,
+          },
+        ],
+        USER,
+        1,
+        50,
+        [
+          {
+            id: "p",
+            user_id: OTHER,
+            provider_transaction_id: "pay_x",
+            product_type: "credit_pack",
+            product_reference: "pack_50",
+            status: "chargeback",
+          },
+        ],
+      ).kind,
+    ).toBe("error");
   });
 
   it("keeps a purchase from being access and states the D140 rules", () => {

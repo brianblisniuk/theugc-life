@@ -39,7 +39,23 @@ export async function loadOwnLedger(userId: string): Promise<LedgerActivity> {
     ) {
       return { kind: "error" };
     }
-    return ledgerActivity(listed.data, userId, counted.count, LEDGER_LIMIT);
+    const paymentIds = listed.data.flatMap((row) => {
+      const key = typeof row.idempotency_key === "string" ? row.idempotency_key : "";
+      if (key.startsWith("rebill_revoke_plan:")) return [key.slice("rebill_revoke_plan:".length)];
+      if (key.startsWith("rebill_revoke:")) return [key.slice("rebill_revoke:".length)];
+      return [];
+    });
+    let purchases: unknown[] = [];
+    if (paymentIds.length > 0) {
+      const matched = await supabase
+        .from("purchases")
+        .select("id, user_id, provider_transaction_id, product_type, product_reference, status")
+        .eq("user_id", userId)
+        .in("provider_transaction_id", paymentIds);
+      if (matched.error || !Array.isArray(matched.data)) return { kind: "error" };
+      purchases = matched.data;
+    }
+    return ledgerActivity(listed.data, userId, counted.count, LEDGER_LIMIT, purchases);
   } catch {
     return { kind: "error" };
   }
