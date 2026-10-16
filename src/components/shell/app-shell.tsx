@@ -1,34 +1,32 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { SignOutButton } from "@/components/sign-out-button";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { BreadcrumbTrail } from "@/components/shell/breadcrumbs";
+import { BreadcrumbProvider, useBreadcrumbs } from "@/components/shell/breadcrumb-context";
+import { NavIcon } from "@/components/shell/nav-icon";
 import {
-  PRIMARY_NAV,
-  UTILITY_NAV,
+  MOBILE_NAV,
+  SIDEBAR_SECTIONS,
   activePrimaryHref,
-  activeUtilityHref,
   parseHotelOrigin,
+  shellCrumbs,
+  shellSectionLabel,
+  type ShellNavItem,
 } from "@/lib/shell/navigation";
 
-function Icon({ d }: { d: string }) {
+function ItemLink({ item, current }: { item: ShellNavItem; current: string | null }) {
+  const active = item.href === current;
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d={d} />
-    </svg>
+    <Link href={item.href} className="v12-nav-link" aria-current={active ? "page" : undefined}>
+      <NavIcon name={item.icon} />
+      <span>{item.label}</span>
+    </Link>
   );
 }
-
-const ICONS = [
-  "M2 7.5 8 2l6 5.5V14H10V9H6v5H2z",
-  "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2",
-  "M2 4h12M2 8h12M2 12h8",
-  "M2 12h12M4 12V7l4-3 4 3v5",
-  "M8 6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 13c1.2-2 2.8-3 5-3s3.8 1 5 3",
-] as const;
 
 function ShellChrome({
   isStaff,
@@ -36,98 +34,165 @@ function ShellChrome({
   planLabel,
   pathname,
   origin,
-  navKey,
+  children,
 }: {
   isStaff: boolean;
   creditLabel: string;
   planLabel: string | null;
   pathname: string;
   origin: ReturnType<typeof parseHotelOrigin> | null;
-  navKey: string;
+  children: React.ReactNode;
 }) {
-  const primary = activePrimaryHref(pathname, origin);
-  const utility = activeUtilityHref(pathname);
+  const current = activePrimaryHref(pathname, origin);
+  const section = shellSectionLabel(current);
+  const registered = useBreadcrumbs();
+  const crumbs = registered && registered.length > 0 ? registered : shellCrumbs(pathname);
+  const location = crumbs[crumbs.length - 1]?.label ?? "Workspace";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [narrow, setNarrow] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const apply = () => setNarrow(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  const sidebarHidden = narrow && !menuOpen;
 
   return (
-    <>
-      <a className="ux-btn ux-skip" href="#main">
+    <div className="v12-shell">
+      <a className="v12-skip" href="#main">
         Skip to content
       </a>
-      <header className="ux-header">
-        <Link href="/app" className="ux-wordmark">
-          theugc<span>.life</span>
+      <button
+        type="button"
+        className={menuOpen ? "v12-scrim is-open" : "v12-scrim"}
+        aria-label="Close navigation"
+        tabIndex={menuOpen && narrow ? 0 : -1}
+        onClick={() => setMenuOpen(false)}
+      />
+      <aside
+        className={menuOpen ? "v12-sidebar is-open" : "v12-sidebar"}
+        aria-label="Main navigation"
+        aria-hidden={sidebarHidden || undefined}
+        inert={sidebarHidden ? true : undefined}
+      >
+        <Link href="/app" className="v12-brand">
+          <span>theugc</span>
+          <span className="v12-dot" aria-hidden="true" />
+          <span>life</span>
         </Link>
-        <nav className="ux-nav" aria-label="Primary">
-          {PRIMARY_NAV.map((item) => {
-            const active = item.href === primary;
-            return (
-              <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="ux-tools">
-          {planLabel ? <span className="ux-plan">{planLabel}</span> : null}
-          <p data-testid="credit-balance" className="ux-credit">
-            {creditLabel}
-          </p>
-          <ThemeToggle />
-          <div className="ux-desktop-tools">
-            {UTILITY_NAV.map((item) => {
-              const active = item.href === utility;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className="ux-credit"
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-            {isStaff ? (
-              <Link href="/admin" className="ux-credit">
-                Admin
-              </Link>
-            ) : null}
-            <SignOutButton />
+        {SIDEBAR_SECTIONS.map((group) => (
+          <div key={group.id}>
+            <div className="v12-nav-section">{group.label}</div>
+            <nav aria-label={group.label}>
+              {group.items.map((item) => (
+                <ItemLink key={item.href} item={item} current={current} />
+              ))}
+            </nav>
           </div>
+        ))}
+        <div className="v12-nav-spacer" />
+        <div className="v12-sidebar-bottom">
+          {isStaff ? (
+            <nav aria-label="Staff">
+              <Link
+                className="v12-nav-link"
+                href="/app/ui-guide"
+                aria-current={
+                  pathname === "/app/ui-guide" || pathname.startsWith("/app/ui-guide/")
+                    ? "page"
+                    : undefined
+                }
+              >
+                <span>UI guide</span>
+              </Link>
+              <Link className="v12-nav-link" href="/admin">
+                <span>Admin</span>
+              </Link>
+            </nav>
+          ) : null}
+          <div className="v12-profile">
+            <span className="v12-avatar" aria-hidden="true">
+              Y
+            </span>
+            <span>
+              <strong>Your workspace</strong>
+              <small>{planLabel ?? "Plan unavailable"}</small>
+            </span>
+          </div>
+          <p className="v12-motto">
+            Verified contacts.
+            <br />
+            Real creator signals.
+            <br />
+            Smarter outreach.
+          </p>
+          <SignOutButton className="v12-signout" />
+        </div>
+      </aside>
+      <div className="v12-maincol">
+        <header className="v12-topbar">
           <button
             type="button"
-            className="ux-btn ux-view-toggle"
+            className="v12-menu"
+            aria-label={menuOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
           >
-            Account
+            <NavIcon name="menu" />
           </button>
-        </div>
-      </header>
-      {menuOpen ? (
-        <div key={navKey} className="ux-lock" style={{ margin: "8px 16px" }}>
-          {UTILITY_NAV.map((item) => (
-            <Link key={item.href} href={item.href}>
-              {item.label}
+          <strong className="v12-location">{location}</strong>
+          {section ? (
+            <>
+              <span className="v12-dotsep" aria-hidden="true">
+                /
+              </span>
+              <span className="v12-subtle">{section}</span>
+            </>
+          ) : null}
+          <div className="v12-topbar-right">
+            {planLabel ? <span className="v12-top-pill">{planLabel}</span> : null}
+            <p data-testid="credit-balance" className="v12-top-pill is-lime">
+              {creditLabel}
+            </p>
+            <Link href="/app/profile" className="v12-top-icon" aria-label="Open your profile">
+              <NavIcon name="profile" />
             </Link>
-          ))}
-          {isStaff ? <Link href="/admin">Admin</Link> : null}
-          <SignOutButton />
-        </div>
-      ) : null}
-      <nav className="ux-bottom" aria-label="Primary mobile">
-        {PRIMARY_NAV.map((item, index) => {
-          const active = item.href === primary;
+          </div>
+        </header>
+        <main id="main" tabIndex={-1} className="v12-content">
+          <BreadcrumbTrail crumbs={crumbs} />
+          {children}
+        </main>
+      </div>
+      <nav className="v12-mobile" aria-label="Quick navigation">
+        {MOBILE_NAV.map((item) => {
+          const active = item.href === current;
           return (
             <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
-              <Icon d={ICONS[index] ?? ICONS[0]} />
-              {item.label}
+              <NavIcon name={item.icon} />
+              <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
-    </>
+    </div>
   );
 }
 
@@ -136,56 +201,37 @@ function ShellHeader(props: {
   creditLabel: string;
   planLabel: string | null;
   pathname: string;
+  children: React.ReactNode;
 }) {
   const search = useSearchParams();
   const origin = useMemo(() => {
-    if (!props.pathname.startsWith("/app/hotels/") && props.pathname !== "/app/hotels") return null;
+    if (!props.pathname.startsWith("/app/hotels/")) return null;
     const raw: Record<string, string> = {};
     search.forEach((value, key) => {
       raw[key] = value;
     });
     return parseHotelOrigin(raw);
   }, [props.pathname, search]);
-  const navKey = `${props.pathname}?${search.toString()}`;
-  return <ShellChrome {...props} origin={origin} navKey={navKey} />;
+  return <ShellChrome {...props} origin={origin} />;
 }
 
-function ShellFrame({
-  isStaff,
-  creditLabel,
-  planLabel,
-}: {
+function ShellFrame(props: {
   isStaff: boolean;
   creditLabel: string;
   planLabel: string | null;
+  children: React.ReactNode;
 }) {
   const pathname = usePathname() || "/app";
   return (
-    <Suspense
-      fallback={
-        <ShellChrome
-          isStaff={isStaff}
-          creditLabel={creditLabel}
-          planLabel={planLabel}
-          pathname={pathname}
-          origin={null}
-          navKey={pathname}
-        />
-      }
-    >
-      <ShellHeader
-        isStaff={isStaff}
-        creditLabel={creditLabel}
-        planLabel={planLabel}
-        pathname={pathname}
-      />
+    <Suspense fallback={<ShellChrome {...props} pathname={pathname} origin={null} />}>
+      <ShellHeader {...props} pathname={pathname} />
     </Suspense>
   );
 }
 
 /**
- * UX02 shell. Desktop keeps one row. Narrow screens pin the five primary
- * items, each with an icon and a label. The underline is ink, not the accent.
+ * V12.1 shell (D182). Light canvas, dark sidebar, lime accent on the
+ * active item and the credit pill. One theme. No theme toggle.
  */
 export function AppShell({
   isStaff,
@@ -199,11 +245,10 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col" style={{ background: "var(--bg)", color: "var(--text)" }}>
-      <ShellFrame isStaff={isStaff} creditLabel={creditLabel} planLabel={planLabel} />
-      <main id="main" tabIndex={-1} className="ux-main flex-1">
+    <BreadcrumbProvider>
+      <ShellFrame isStaff={isStaff} creditLabel={creditLabel} planLabel={planLabel}>
         {children}
-      </main>
-    </div>
+      </ShellFrame>
+    </BreadcrumbProvider>
   );
 }

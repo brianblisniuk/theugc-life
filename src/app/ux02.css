@@ -1,88 +1,6 @@
-/* UX02 layout for Discover, Hotel Detail, and the shared shell.
+/* Discover and Hotel Detail layout on the V12.1 tokens (D182).
+   The shell lives in v12.css. This file is not a second theme.
    Spacing is 4/8/12/16/24/32/40/48/64. Skeletons do not shimmer. */
-
-.ux-header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  height: var(--header-h);
-  padding: 0 32px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.ux-wordmark {
-  color: var(--text);
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  text-decoration: none;
-}
-
-.ux-wordmark span {
-  font-weight: 500;
-}
-
-.ux-nav {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-
-.ux-nav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.ux-nav a[aria-current="page"] {
-  color: var(--text);
-  box-shadow: inset 0 -2px 0 var(--text);
-}
-
-.ux-tools {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ux-plan {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--control-border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-}
-
-.ux-credit {
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 600;
-}
-
-.ux-main {
-  width: min(1520px, 100%);
-  margin: 0 auto;
-  padding: 24px 32px 64px;
-}
 
 .ux-btn {
   display: inline-flex;
@@ -545,28 +463,6 @@
   position: relative;
 }
 
-.ux-skip {
-  position: absolute;
-  left: 16px;
-  top: 8px;
-  z-index: 50;
-  transform: translateY(-160%);
-}
-
-.ux-skip:focus {
-  transform: none;
-}
-
-.ux-desktop-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ux-bottom {
-  display: none;
-}
-
 .ux-view-toggle,
 .ux-action {
   display: none;
@@ -624,23 +520,6 @@
 }
 
 @media (max-width: 1023px) {
-  .ux-header {
-    height: 56px;
-    padding: 0 16px;
-    gap: 12px;
-  }
-
-  .ux-nav,
-  .ux-plan,
-  .ux-credit,
-  .ux-desktop-tools {
-    display: none;
-  }
-
-  .ux-main {
-    padding: 16px 16px calc(var(--bottom-nav-h) + 80px);
-  }
-
   .ux-discover,
   .ux-hotel {
     grid-template-columns: 1fr;
@@ -666,49 +545,8 @@
   }
 
   .ux-view-toggle,
-  .ux-action,
-  .ux-bottom {
+  .ux-action {
     display: flex;
-  }
-
-  .ux-bottom {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 35;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    height: var(--bottom-nav-h);
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-  }
-
-  .ux-bottom a {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    min-height: 44px;
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 12px;
-    line-height: 16px;
-    font-weight: 600;
-  }
-
-  .ux-bottom a[aria-current="page"] {
-    color: var(--text);
-    box-shadow: inset 0 2px 0 var(--text);
-  }
-
-  .ux-bottom svg {
-    width: 16px;
-    height: 16px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 1.5;
   }
 
   .ux-action {

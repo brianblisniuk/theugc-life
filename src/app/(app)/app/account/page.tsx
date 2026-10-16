@@ -55,7 +55,7 @@ export default async function AccountPage({
 
       <p className="text-sm text-muted">
         Need to change your password?{" "}
-        <Link href="/forgot-password" className="text-accent">
+        <Link href="/forgot-password" className="text-text underline">
           Reset it
         </Link>
         .

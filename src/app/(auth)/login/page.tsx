@@ -20,7 +20,7 @@ export default async function LoginPage({
       <LoginForm redirectTo={redirect} />
       <p className="text-sm text-muted">
         New here?{" "}
-        <Link href="/signup" className="text-accent">
+        <Link href="/signup" className="text-text underline">
           Create an account
         </Link>
       </p>

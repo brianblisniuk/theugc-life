@@ -1015,6 +1015,20 @@ export const INVENTORY: readonly InventoryEntry[] = [
     enforcement: { kind: "staff_write" },
     sources: ["PERMISSIONS.md §11", "PRD §4.6"],
   },
+  {
+    id: "design.guide",
+    module: "UI guide",
+    summary:
+      "Staff-only V12.1 component guide. A creator plan does not open it. The page does not read another creator's rows and it does not write.",
+    routes: ["/app/ui-guide"],
+    sourceFiles: ["src/app/(app)/app/ui-guide/page.tsx"],
+    serverActions: [],
+    rpcs: [],
+    rule: { kind: "staff_role" },
+    anon: "deny",
+    enforcement: { kind: "staff_write" },
+    sources: ["D182", "PERMISSIONS.md §11"],
+  },
 ];
 
 const byId = new Map<string, InventoryEntry>();

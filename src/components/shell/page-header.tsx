@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { RegisterCrumbs } from "@/components/shell/breadcrumb-context";
 import type { Crumb } from "@/lib/shell/navigation";
 
 /**
@@ -21,29 +22,7 @@ export function PageHeader({
 }) {
   return (
     <header className="space-y-2">
-      {crumbs && crumbs.length > 0 ? (
-        <nav aria-label="Breadcrumb">
-          <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-muted">
-            {crumbs.map((crumb, index) => {
-              const isLast = index === crumbs.length - 1;
-              return (
-                <li key={`${crumb.label}-${index}`} className="flex items-center gap-1">
-                  {index > 0 ? <span aria-hidden="true">/</span> : null}
-                  {isLast || !crumb.href ? (
-                    <span className="text-text" aria-current={isLast ? "page" : undefined}>
-                      {crumb.label}
-                    </span>
-                  ) : (
-                    <Link href={crumb.href} className="underline hover:text-text">
-                      {crumb.label}
-                    </Link>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </nav>
-      ) : null}
+      {crumbs && crumbs.length > 0 ? <RegisterCrumbs crumbs={crumbs} /> : null}
       {back ? (
         <p className="text-sm">
           <Link href={back.href} className="text-muted underline hover:text-text">

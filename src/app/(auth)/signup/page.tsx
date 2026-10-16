@@ -20,7 +20,7 @@ export default async function SignupPage({
       <SignupForm redirectTo={redirect} />
       <p className="text-sm text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="text-accent">
+        <Link href="/login" className="text-text underline">
           Sign in
         </Link>
       </p>

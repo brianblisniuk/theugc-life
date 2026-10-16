@@ -1,20 +1,92 @@
 /**
- * Authenticated shell routes (PRD §6, D081 Accepted).
+ * Authenticated shell routes (D081 surfaces, D182 chrome).
  *
- * Primary navigation stays Home, Discover, Pipeline, Trips, and Profile.
- * Inbox and Collaborations are pipeline surfaces, not new primary items and
- * not new records. Hotel Detail is a child page. `from` and `trip` choose
- * the breadcrumb only. They do not authorize a read.
+ * D182 draws the V12.1 sidebar, top bar, breadcrumbs, and mobile bar.
+ * Inbox and Collaborations keep their existing routes and the pipeline
+ * `surface` query. Outreach has no route in this block. Contract Review
+ * is out of MVP and is not a nav item. Hotel Detail is a child page.
+ * `from` and `trip` choose the breadcrumb and the active item only.
+ * They do not authorize a read.
  */
 import { isUuid } from "@/lib/hotels/ids";
 
-export const PRIMARY_NAV = [
-  { href: "/app", label: "Home" },
-  { href: "/app/discover", label: "Discover" },
-  { href: "/app/pipeline", label: "Pipeline" },
-  { href: "/app/trips", label: "Trips" },
-  { href: "/app/profile", label: "Profile" },
+export const SHELL_ICONS = [
+  "home",
+  "discover",
+  "trips",
+  "pipeline",
+  "inbox",
+  "collaborations",
+  "profile",
+  "account",
+  "billing",
+  "start",
 ] as const;
+
+export type ShellIcon = (typeof SHELL_ICONS)[number];
+
+export interface ShellNavItem {
+  href: string;
+  label: string;
+  icon: ShellIcon;
+}
+
+export const SIDEBAR_SECTIONS: readonly {
+  id: string;
+  label: string;
+  items: readonly ShellNavItem[];
+}[] = [
+  {
+    id: "workspace",
+    label: "Your workspace",
+    items: [
+      { href: "/app", label: "Home", icon: "home" },
+      { href: "/app/discover", label: "Discover", icon: "discover" },
+      { href: "/app/trips", label: "My Trips", icon: "trips" },
+    ],
+  },
+  {
+    id: "outreach",
+    label: "Outreach and relationships",
+    items: [
+      { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
+      { href: "/app/inbox", label: "Inbox", icon: "inbox" },
+    ],
+  },
+  {
+    id: "business",
+    label: "Your business",
+    items: [
+      { href: "/app/collaborations", label: "Collaborations", icon: "collaborations" },
+      { href: "/app/profile", label: "My Profile", icon: "profile" },
+    ],
+  },
+  {
+    id: "account",
+    label: "Account",
+    items: [
+      { href: "/app/account", label: "Account", icon: "account" },
+      { href: "/app/billing", label: "Billing and activity", icon: "billing" },
+      { href: "/app/onboarding", label: "Getting Started", icon: "start" },
+    ],
+  },
+];
+
+/** Mobile bar labels match V12.1. Explore is Discover. */
+export const MOBILE_NAV: readonly ShellNavItem[] = [
+  { href: "/app", label: "Home", icon: "home" },
+  { href: "/app/discover", label: "Explore", icon: "discover" },
+  { href: "/app/trips", label: "Trips", icon: "trips" },
+  { href: "/app/inbox", label: "Inbox", icon: "inbox" },
+  { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
+];
+
+export function sidebarItems(): readonly ShellNavItem[] {
+  return SIDEBAR_SECTIONS.flatMap((section) => section.items);
+}
+
+/** Flat sidebar hrefs. The grouped source is SIDEBAR_SECTIONS. */
+export const PRIMARY_NAV = sidebarItems();
 
 export const UTILITY_NAV = [
   { href: "/app/account", label: "Account" },
@@ -185,14 +257,41 @@ export function activePrimaryHref(pathname: string, origin: HotelOrigin | null):
   if (pathname === "/app") return "/app";
   if (isUnder(pathname, "/app/discover")) return "/app/discover";
   if (isUnder(pathname, "/app/pipeline")) return "/app/pipeline";
+  if (isUnder(pathname, "/app/inbox")) return "/app/inbox";
+  if (isUnder(pathname, "/app/collaborations")) return "/app/collaborations";
   if (isUnder(pathname, "/app/trips")) return "/app/trips";
   if (isUnder(pathname, "/app/profile")) return "/app/profile";
+  if (isUnder(pathname, "/app/account")) return "/app/account";
+  if (isUnder(pathname, "/app/billing")) return "/app/billing";
+  if (isUnder(pathname, "/app/onboarding")) return "/app/onboarding";
   if (isUnder(pathname, "/app/hotels")) {
     if (origin?.kind === "trip") return "/app/trips";
-    if (origin && origin.kind !== "discover") return "/app/pipeline";
+    if (origin?.kind === "inbox") return "/app/inbox";
+    if (origin?.kind === "collaboration") return "/app/collaborations";
+    if (origin?.kind === "pipeline") return "/app/pipeline";
     return "/app/discover";
   }
   return null;
+}
+
+export function shellSectionLabel(href: string | null): string | null {
+  if (!href) return null;
+  for (const section of SIDEBAR_SECTIONS) {
+    if (section.items.some((item) => item.href === href)) return section.label;
+  }
+  return null;
+}
+
+/** Path-only crumbs used until a page registers its own trail. */
+export function shellCrumbs(pathname: string): Crumb[] {
+  if (pathname === "/app") return [{ label: "Home" }];
+  const home: Crumb = { label: "Home", href: "/app" };
+  if (isUnder(pathname, "/app/ui-guide")) return [home, { label: "UI guide" }];
+  const href = activePrimaryHref(pathname, null);
+  const item = sidebarItems().find((entry) => entry.href === href);
+  if (item && item.href !== "/app") return [home, { label: item.label }];
+  if (isUnder(pathname, "/app/hotels")) return [home, { label: "Hotel" }];
+  return [home, { label: "Workspace" }];
 }
 
 export function activeUtilityHref(pathname: string): string | null {

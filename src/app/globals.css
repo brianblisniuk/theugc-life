@@ -1,86 +1,73 @@
 @import "tailwindcss";
 
 /*
- * UX02 tokens. Dark is the default. Light uses the same names on
- * [data-theme="light"]. Accent #DFFF4F is a fill. Text on it is #17191B.
- * The accent is never a text or icon color. Tailwind aliases point at these
- * names so existing utilities follow the active theme.
+ * V12.1 tokens (D182). One light theme. The sidebar is the dark surface.
+ * Accent #DFFF4F is a fill. Text on it is --lime-ink. The accent is not a
+ * text or icon color on the light canvas. Legacy names (--text, --surface,
+ * --accent, and the rest) point at these tokens so existing screens follow
+ * the same theme without a second palette.
  */
-:root,
-[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #121416;
-  --surface: #1c1f22;
-  --text: #f4f5f3;
-  --text-secondary: #c8cdd1;
-  --muted: #a8afb4;
-  --border: #34393d;
-  --control-border: #8b9196;
-  --accent: #dfff4f;
-  --accent-ink: #17191b;
-  --accent-edge: #5e6c00;
-  --success: #3ebe78;
-  --warning: #e39a4a;
-  --danger: #f08a84;
-  --focus: #8eb4ff;
-  --process: #8eb4ff;
-  --success-soft: #13261c;
-  --warning-soft: #2a2116;
-  --danger-soft: #2c181c;
-  --process-soft: #172033;
-  --neutral-soft: #24282b;
-  --private-bg: #262c33;
-  --private-text: #d5dce3;
-  --placeholder: #2c3130;
-  --skeleton: #2a2e32;
-  --map-land: #2a2f2c;
-  --map-water: #16191c;
-  --map-line: #3e4540;
-  --pin: #f4f5f3;
-  --pin-ring: #121416;
-  --hover: #22262a;
-  --header-h: 64px;
-  --subnav-h: 48px;
-  --bottom-nav-h: 56px;
-  --background: var(--bg);
-  --accent-contrast: var(--accent-ink);
-  --radius: 8px;
-}
-
-[data-theme="light"] {
+:root {
   color-scheme: light;
-  --bg: #fafaf8;
-  --surface: #ffffff;
-  --text: #17191b;
-  --text-secondary: #52585e;
-  --muted: #6c7379;
-  --border: #e3e6e7;
-  --control-border: #8a9094;
-  --accent: #dfff4f;
-  --accent-ink: #17191b;
-  --accent-edge: #5e6c00;
-  --success: #177245;
-  --warning: #a45113;
-  --danger: #b42332;
-  --focus: #225fcc;
-  --process: #225fcc;
-  --success-soft: #e5f4ec;
-  --warning-soft: #f8ede4;
-  --danger-soft: #f8e6e8;
-  --process-soft: #e7eef8;
-  --neutral-soft: #f3f4f2;
+  --ink: #1b281f;
+  --muted: #637366;
+  --soft: #859187;
+  --bg: #f6f8f4;
+  --paper: #ffffff;
+  --stroke: #dfe8dd;
+  --stroke2: #e9eee8;
+  --nav: #182920;
+  --nav2: #21372a;
+  --lime: #dfff4f;
+  --lime-ink: #1d3018;
+  --lime-tint: #f0f8d6;
+  --mint: #eaf4e5;
+  --green: #38794a;
+  --amber: #9e722d;
+  --amber-bg: #fcf3e3;
+  /* Small amber text on the tint. One step darker than the swatch so 11px type clears WCAG AA. */
+  --amber-ink: #926621;
+  --blue: #4b7889;
+  --blue-bg: #eaf3f7;
+  --red: #ad5b4e;
+  --red-bg: #faeeeb;
+  --radius: 13px;
+  --shade: 0 4px 22px rgba(25, 51, 30, 0.055);
+  --sidebar-w: 253px;
+  --topbar-h: 69px;
+  --focus: #1b281f;
+  --header-h: var(--topbar-h);
+  --subnav-h: 48px;
+  --bottom-nav-h: 64px;
+  --background: var(--bg);
+  --surface: var(--paper);
+  --text: var(--ink);
+  --text-secondary: var(--muted);
+  --border: var(--stroke);
+  --control-border: #8a9a88;
+  --accent: var(--lime);
+  --accent-ink: var(--lime-ink);
+  --accent-edge: #c5d84a;
+  --accent-contrast: var(--lime-ink);
+  --success: var(--green);
+  --warning: var(--amber);
+  --danger: var(--red);
+  --process: var(--blue);
+  --success-soft: var(--mint);
+  --warning-soft: var(--amber-bg);
+  --danger-soft: var(--red-bg);
+  --process-soft: var(--blue-bg);
+  --neutral-soft: #f0f2f0;
   --private-bg: #e6ebf0;
   --private-text: #243040;
   --placeholder: #e4e6e2;
-  --skeleton: #e8ebe8;
+  --skeleton: #d9e5d7;
   --map-land: #e4e7e2;
   --map-water: #f7f8f6;
   --map-line: #c5cac3;
-  --pin: #17191b;
+  --pin: var(--ink);
   --pin-ring: #ffffff;
-  --hover: #f3f4f1;
-  --background: var(--bg);
-  --accent-contrast: var(--accent-ink);
+  --hover: #f3f7ef;
 }
 
 @theme inline {
@@ -94,31 +81,34 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-nav: var(--nav);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --font-sans: var(--font-archivo), Archivo, "Segoe UI", sans-serif;
   --radius-app: var(--radius);
 }
 
 body {
   background: var(--bg);
-  color: var(--text);
+  color: var(--ink);
   font-family: var(--font-archivo), Archivo, "Segoe UI", sans-serif;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
 /*
- * Focus is the token ring, not the accent. #DFFF4F on paper is 1.08:1.
+ * Focus is the ink ring, not the accent. #DFFF4F on the canvas is about 1.06:1.
  */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-@media (max-width: 1023px) {
-  :root,
-  [data-theme="dark"],
-  [data-theme="light"] {
-    --header-h: 56px;
+@media (max-width: 760px) {
+  :root {
+    --topbar-h: 61px;
+    --header-h: 61px;
   }
 }
 

@@ -77,6 +77,7 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `ops.health` | Operations | public page. The body is status ok and nothing else |
 | `pitch.drafts` | Pitch | owner, every tier (D098, D110). Copy and a mailto draft are not a sent pitch |
 | `admin.staff` | Admin | staff role. Pro does not grant it |
+| `design.guide` | UI guide | staff role. The V12.1 component guide does not write (D182) |
 
 ## Enforcement
 

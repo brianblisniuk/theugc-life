@@ -5787,3 +5787,38 @@ the lookup result (`tier`).
 Email Finder is not a cascade. An excluded role is not stored. A named
 person who matches a tier records that tier. Otherwise `tier` is null
 and the address is still returned.
+
+## D182 — V12.1 is the only product theme
+
+Status: **Accepted** (owner, 16 Oct 2026).
+
+The V12.1 prototype replaces the product chrome. The canvas is `#F6F8F4`,
+paper is `#FFFFFF`, ink is `#1B281F`, the sidebar is `#182920`, and the
+accent is `#DFFF4F` as a fill. Text on the accent is `#1D3018`. Archivo
+stays the typeface (D053). There is one theme. The light/dark toggle and
+the UX02 dark default are retired. `data-theme` is not a switch.
+
+The accent is not a text or icon color on the light canvas. On the dark
+sidebar the motto may use the accent, where the contrast holds.
+
+The authenticated shell is a sidebar, a top bar, breadcrumbs, and a
+mobile bottom bar. Sidebar sections follow V12.1 for routes that already
+exist: Home, Discover, My Trips, Pipeline, Inbox, Collaborations, My
+Profile, Account, Billing and activity, and Getting Started. Outreach has
+no route in this block. Contract Review is out of MVP and is not a route
+or a nav item. Pitch Studio stays the existing hotel pitch route.
+
+This supersedes only the chrome sentence in D081 that kept five primary
+items in one row. D081 pipeline surfaces stay: `/app/pipeline?surface=inbox`
+and `/app/pipeline?surface=collaborations` still mean what they meant.
+Hotel `from` and `trip` still only choose the breadcrumb and the active
+item. They do not authorize a read. A hotel opened from Inbox highlights
+Inbox. A hotel opened from Collaborations highlights Collaborations.
+
+The staff UI guide is `/app/ui-guide`. A folder named `_design` would be
+private to the App Router and would not be a route.
+
+Discover, Hotel Detail, and Pipeline screen re-skins are later blocks.
+This decision does not change credits, Gmail, Hunter, RLS, pipeline
+status, or billing. No migration. `design/ux02` static frames are an
+archive. The app does not load them.

@@ -3,12 +3,15 @@
 import { signOut } from "@/lib/auth/actions";
 
 /** Sign-out control. Posts to the signOut server action (clears the session). */
-export function SignOutButton() {
+export function SignOutButton({ className }: { className?: string }) {
   return (
     <form action={signOut}>
       <button
         type="submit"
-        className="rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm text-text hover:bg-surface"
+        className={
+          className ??
+          "rounded-[var(--radius-app)] border border-border px-3 py-1.5 text-sm text-text hover:bg-surface"
+        }
       >
         Sign out
       </button>

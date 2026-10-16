@@ -80,7 +80,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
         {pending ? "Signing in…" : "Sign in"}
       </button>
       <p className="text-sm text-muted">
-        <Link href="/forgot-password" className="text-accent">
+        <Link href="/forgot-password" className="text-text underline">
           Forgot your password?
         </Link>
       </p>

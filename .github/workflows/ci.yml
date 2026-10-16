@@ -55,6 +55,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Install Chromium for shell viewport tests
+        run: npx playwright install --with-deps chromium
+
       - name: Test (unit + RLS)
         run: npm test
 

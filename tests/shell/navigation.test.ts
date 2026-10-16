@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
 import { pipelineListState, pipelinePageHref, type PipelinePageInput } from "@/lib/pipeline/view";
 import {
   HOTEL_TABS,
+  MOBILE_NAV,
   PRIMARY_NAV,
+  SIDEBAR_SECTIONS,
   WORKSPACES,
   activePrimaryHref,
   activeUtilityHref,
@@ -26,6 +28,7 @@ import {
   pipelineRowLinks,
   pipelineSurfaceHeading,
   pitchHref,
+  shellCrumbs,
   tripHotelHref,
 } from "@/lib/shell/navigation";
 
@@ -53,14 +56,36 @@ function assertAppPath(href: string) {
   expect(href).not.toMatch(/[?#].*(\.\.|javascript:|user_id|email|mailbox)/i);
 }
 
-describe("primary navigation stays the approved five", () => {
-  it("names Home, Discover, Pipeline, Trips, and Profile", () => {
+describe("V12.1 sidebar", () => {
+  it("groups the routes that exist and leaves Outreach and Contract Review out", () => {
+    expect(SIDEBAR_SECTIONS.map((section) => section.label)).toEqual([
+      "Your workspace",
+      "Outreach and relationships",
+      "Your business",
+      "Account",
+    ]);
     expect(PRIMARY_NAV.map((item) => item.label)).toEqual([
       "Home",
       "Discover",
+      "My Trips",
       "Pipeline",
+      "Inbox",
+      "Collaborations",
+      "My Profile",
+      "Account",
+      "Billing and activity",
+      "Getting Started",
+    ]);
+    const hrefs = PRIMARY_NAV.map((item) => item.href).join(" ");
+    expect(hrefs).not.toContain("/app/outreach");
+    expect(hrefs).not.toContain("/app/contracts");
+    expect(hrefs).not.toContain("/app/hotels");
+    expect(MOBILE_NAV.map((item) => item.label)).toEqual([
+      "Home",
+      "Explore",
       "Trips",
-      "Profile",
+      "Inbox",
+      "Pipeline",
     ]);
   });
 
@@ -71,18 +96,29 @@ describe("primary navigation stays the approved five", () => {
     expect(activePrimaryHref("/app/discover-extra", null)).toBeNull();
     expect(activePrimaryHref("/app/profile/portfolio", null)).toBe("/app/profile");
     expect(activePrimaryHref("/app/profile/pitches", null)).toBe("/app/profile");
-    expect(activePrimaryHref("/app/account", null)).toBeNull();
+    expect(activePrimaryHref("/app/inbox", null)).toBe("/app/inbox");
+    expect(activePrimaryHref("/app/inbox-extra", null)).toBeNull();
+    expect(activePrimaryHref("/app/collaborations", null)).toBe("/app/collaborations");
+    expect(activePrimaryHref("/app/onboarding/hotels", null)).toBe("/app/onboarding");
+    expect(activePrimaryHref("/app/account", null)).toBe("/app/account");
+    expect(activePrimaryHref("/app/ui-guide", null)).toBeNull();
+    expect(shellCrumbs("/app/ui-guide").map((crumb) => crumb.label)).toEqual(["Home", "UI guide"]);
     expect(activeUtilityHref("/app/account")).toBe("/app/account");
     expect(activeUtilityHref("/app/billing")).toBe("/app/billing");
     expect(activeUtilityHref("/app/billing-extra")).toBeNull();
+    expect(shellCrumbs("/app")).toEqual([{ label: "Home" }]);
+    expect(shellCrumbs("/app/trips/not-a-page").map((crumb) => crumb.label)).toEqual([
+      "Home",
+      "My Trips",
+    ]);
   });
 
-  it("highlights the parent of a hotel, never a new primary item", () => {
+  it("highlights the parent of a hotel, never a hotel item", () => {
     expect(activePrimaryHref(`/app/hotels/${HOTEL}`, null)).toBe("/app/discover");
     expect(activePrimaryHref(`/app/hotels/${HOTEL}`, { kind: "pipeline" })).toBe("/app/pipeline");
-    expect(activePrimaryHref(`/app/hotels/${HOTEL}`, { kind: "inbox" })).toBe("/app/pipeline");
+    expect(activePrimaryHref(`/app/hotels/${HOTEL}`, { kind: "inbox" })).toBe("/app/inbox");
     expect(activePrimaryHref(`/app/hotels/${HOTEL}`, { kind: "collaboration" })).toBe(
-      "/app/pipeline",
+      "/app/collaborations",
     );
     expect(activePrimaryHref(`/app/hotels/${HOTEL}`, { kind: "trip", tripId: TRIP })).toBe(
       "/app/trips",

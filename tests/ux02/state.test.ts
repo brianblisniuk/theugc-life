@@ -27,8 +27,11 @@ import { initialsFromName } from "@/lib/ux02/initials";
 import { mapPresence } from "@/lib/ux02/map-presence";
 import { metricCells, rankingPanel } from "@/lib/ux02/metric-state";
 import { creditsAvailableLabel, nextStep, pipelineChipLabel } from "@/lib/ux02/next-step";
-import { planChipFromAccess, planChipFromBillingState, planChipFromEntitlements } from "@/lib/ux02/plan-chip";
-import { DEFAULT_THEME, THEME_BOOT_SCRIPT, parseTheme, themeLabel } from "@/lib/ux02/theme";
+import {
+  planChipFromAccess,
+  planChipFromBillingState,
+  planChipFromEntitlements,
+} from "@/lib/ux02/plan-chip";
 
 const NOW = new Date("2026-10-15T12:00:00.000Z");
 
@@ -90,22 +93,6 @@ describe("initials stand in for a missing photograph", () => {
   });
 });
 
-describe("theme", () => {
-  it("stays dark unless the stored value is exactly light", () => {
-    expect(DEFAULT_THEME).toBe("dark");
-    expect(parseTheme(null)).toBe("dark");
-    expect(parseTheme("")).toBe("dark");
-    expect(parseTheme("LIGHT")).toBe("dark");
-    expect(parseTheme("dark")).toBe("dark");
-    expect(parseTheme("light")).toBe("light");
-    expect(themeLabel("dark")).toBe("Theme: Dark");
-    expect(themeLabel("light")).toBe("Theme: Light");
-    expect(THEME_BOOT_SCRIPT).toContain('"ugc-theme"');
-    expect(THEME_BOOT_SCRIPT).toContain('t==="light"||t==="dark"');
-    expect(THEME_BOOT_SCRIPT).not.toMatch(/eval|document\.write|innerHTML/);
-  });
-});
-
 describe("plan chip", () => {
   it("does not turn a failed entitlement read into Free", () => {
     expect(planChipFromAccess({ status: "error" }, NOW)).toBeNull();
@@ -132,13 +119,16 @@ describe("plan chip", () => {
     expect(planChipFromEntitlements([], NOW)).toBe("Free");
     expect(
       planChipFromEntitlements(
-        [entitlement("max", { status: "revoked" }), entitlement("destination", { expiresAt: "2020-01-01T00:00:00.000Z" })],
+        [
+          entitlement("max", { status: "revoked" }),
+          entitlement("destination", { expiresAt: "2020-01-01T00:00:00.000Z" }),
+        ],
         NOW,
       ),
     ).toBe("Free");
-    expect(
-      planChipFromAccess({ status: "ok", entitlements: [entitlement("pro")] }, NOW),
-    ).toBe("Pro");
+    expect(planChipFromAccess({ status: "ok", entitlements: [entitlement("pro")] }, NOW)).toBe(
+      "Pro",
+    );
   });
 });
 
@@ -332,9 +322,9 @@ describe("ranking panel", () => {
       thresholdRule: THRESHOLD_RULES.creator_activity,
       hotels: [],
     };
-    expect(rankingPanel(empty, "No hotel in this destination has enough confirmed data.").state).toBe(
-      "empty",
-    );
+    expect(
+      rankingPanel(empty, "No hotel in this destination has enough confirmed data.").state,
+    ).toBe("empty");
 
     const listed = rankingPanel(
       {
