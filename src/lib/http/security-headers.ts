@@ -52,11 +52,31 @@ export function contentSecurityPolicy(supabaseUrl: string | null | undefined): s
   ].join("; ");
 }
 
-export function securityHeaders(supabaseUrl: string | null | undefined): Record<string, string> {
-  return {
+export const PERMISSIONS_POLICY = [
+  "accelerometer=()",
+  "camera=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "magnetometer=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+  "interest-cohort=()",
+].join(", ");
+
+export const HSTS_VALUE = "max-age=63072000; includeSubDomains";
+
+export function securityHeaders(
+  supabaseUrl: string | null | undefined,
+  options?: { https?: boolean },
+): Record<string, string> {
+  const headers: Record<string, string> = {
     "Content-Security-Policy": contentSecurityPolicy(supabaseUrl),
+    "Permissions-Policy": PERMISSIONS_POLICY,
     "Referrer-Policy": REFERRER_POLICY,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
   };
+  if (options?.https) headers["Strict-Transport-Security"] = HSTS_VALUE;
+  return headers;
 }

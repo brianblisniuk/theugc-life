@@ -65,6 +65,15 @@ describe("dispatch auth", () => {
     const allowed = await handleDispatchPost(`Bearer ${SECRET}`, SECRET, run);
     expect(allowed.status).toBe(200);
     expect(allowed.body).toMatchObject({ result: "ok", sent: 1 });
+    const leaked = "mailbox-token-should-not-leak";
+    const thrown = await handleDispatchPost(`Bearer ${SECRET}`, SECRET, async () => {
+      const error = new Error(`dispatch exploded: ${leaked}`);
+      error.name = "SyncRpcError";
+      throw error;
+    });
+    expect(thrown.status).toBe(500);
+    expect(thrown.body).toEqual({ result: "error", code: "SyncRpcError" });
+    expect(JSON.stringify(thrown.body)).not.toContain(leaked);
   });
 
   it("the schedule runs in-process and does not send when the secret is absent", async () => {

@@ -31,6 +31,21 @@ describe("client bundle secret scan", () => {
     expect(JSON.stringify(findings)).not.toContain("GOCSPX-");
   });
 
+  it("flags internal job secret names", () => {
+    const findings = scanClientBundle(
+      fixture(
+        `const a = "GMAIL_DISPATCH_SECRET"; const b = "GMAIL_SYNC_SECRET"; const c = "GMAIL_FOLLOWUP_SECRET"; const d = "ACCOUNT_ERASURE_SECRET"; const e = "CREDIT_PERIOD_SECRET";`,
+      ),
+    );
+    expect(findings.map((finding) => finding.identifier).sort()).toEqual([
+      "ACCOUNT_ERASURE_SECRET",
+      "CREDIT_PERIOD_SECRET",
+      "GMAIL_DISPATCH_SECRET",
+      "GMAIL_FOLLOWUP_SECRET",
+      "GMAIL_SYNC_SECRET",
+    ]);
+  });
+
   it("flags the CI service-role sentinel and an extra forbidden value", () => {
     const extra = "service-role-jwt-value-0123456789";
     const findings = scanClientBundle(
