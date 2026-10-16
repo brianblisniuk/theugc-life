@@ -1,6 +1,8 @@
 -- 0101 — Gmail send in-flight, sync withhold, and consent receipt.
 --
--- 0099 and 0100 are reserved by other PRs. Applied migrations are not edited.
+-- Applied migrations are not edited. 0100 does not define a function this
+-- file replaces. 0099 replaces gmail_send_reserve; this file replaces it
+-- again and keeps that function's two opportunity guards.
 --
 -- unknown and provider_called stay in flight: cancel and schedule do not open
 -- another follow-up, and reserve does not call the provider again for the
@@ -304,6 +306,7 @@ declare
   v_account public.mail_accounts%rowtype;
   v_item_hotel uuid;
   v_item_trip uuid;
+  v_open_count integer;
   v_thread text;
   v_paid boolean;
   v_failure text;
@@ -480,12 +483,31 @@ begin
     end if;
     p_hotel_id := coalesce(p_hotel_id, v_item_hotel);
   elsif p_kind = 'pitch' then
-    select pi.id, pi.trip_id into p_pipeline_item_id, v_item_trip
-      from public.pipeline_items pi
-     where pi.creator_id = v_creator
-       and pi.hotel_id = p_hotel_id
-       and pi.status <> 'closed'
-     limit 1;
+    -- One statement. The locked rows and the count share a snapshot, so a
+    -- second open row cannot appear between a count and a later select.
+    -- The id is returned only when that count is 1.
+    select
+      case when stats.n = 1 then stats.only_id else null end,
+      case when stats.n = 1 then stats.only_trip else null end,
+      stats.n
+      into p_pipeline_item_id, v_item_trip, v_open_count
+      from (
+        select count(*)::integer as n,
+               (array_agg(locked.id))[1] as only_id,
+               (array_agg(locked.trip_id))[1] as only_trip
+          from (
+            select pi.id, pi.trip_id
+              from public.pipeline_items pi
+             where pi.creator_id = v_creator
+               and pi.hotel_id = p_hotel_id
+               and pi.status <> 'closed'
+             for update
+          ) locked
+      ) stats;
+    if v_open_count > 1 then
+      p_pipeline_item_id := null;
+      return jsonb_build_object('result', 'invalid_input', 'call_provider', false);
+    end if;
   end if;
 
   if p_trip_id is not null and not exists (
@@ -507,6 +529,20 @@ begin
        and (p_hotel_id is null or d.hotel_id = p_hotel_id)
   ) then
     return jsonb_build_object('result', 'not_found', 'call_provider', false);
+  end if;
+  if p_pitch_draft_id is not null
+     and p_pipeline_item_id is not null
+     and exists (
+       select 1
+         from public.pitch_drafts d
+         join public.creator_profiles cp on cp.id = d.creator_id
+        where d.id = p_pitch_draft_id
+          and cp.user_id = p_user_id
+          and d.pipeline_item_id is not null
+          and d.pipeline_item_id is distinct from p_pipeline_item_id
+     )
+  then
+    return jsonb_build_object('result', 'invalid_input', 'call_provider', false);
   end if;
 
   v_thread := null;
@@ -611,6 +647,9 @@ begin
   );
 end;
 $$;
+
+comment on function public.gmail_send_reserve(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid, text) is
+  'D157, D168, and D182. Service role only. Omitting the pipeline item is invalid when more than one open row exists for that hotel. A single open row may still be resolved. A draft bound to a different pipeline item is invalid. An in-flight unknown or provider_called attempt for the same creator, hotel, and recipient is not sent again.';
 
 create or replace function public.gmail_send_claim_due(
   p_now timestamptz,
