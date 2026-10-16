@@ -25,6 +25,7 @@ import {
   pipelineReturnHref,
   pipelineRowLinks,
   pipelineSurfaceHeading,
+  opportunityPitchHref,
   pitchHref,
   shellCrumbs,
   tripHotelHref,
@@ -89,6 +90,11 @@ describe("primary navigation stays the approved five", () => {
       "/app/trips",
     );
     expect(activePrimaryHref(`/app/hotels/${HOTEL}/pitch`, null)).toBe("/app/discover");
+    expect(opportunityPitchHref(HOTEL, TRIP)).toBe(
+      `/app/hotels/${HOTEL}/pitch?opportunity=${TRIP}&from=pipeline`,
+    );
+    expect(opportunityPitchHref(HOTEL, "OP-1042")).toBeNull();
+    expect(opportunityPitchHref("OP-1042", TRIP)).toBeNull();
     expect(PRIMARY_NAV.map((item) => item.href)).not.toContain("/app/hotels");
   });
 });
@@ -289,9 +295,7 @@ describe("pitch href", () => {
     expect(selected).toContain("from=inbox");
     expect(selected).toContain(`trip=${TRIP}`);
     expect(selected).toContain(`opportunity=${opportunity}`);
-    expect(pitchHref(HOTEL, null, { kind: "pipeline" }, "not-an-opportunity")).toBe(
-      `/app/hotels/${HOTEL}/pitch?from=pipeline`,
-    );
+    expect(pitchHref(HOTEL, null, { kind: "pipeline" }, "not-an-opportunity")).toBeNull();
     expect(pitchHref(HOTEL, "not-a-trip")).toBeNull();
     expect(pitchHref("not-a-hotel", TRIP)).toBeNull();
     expect(pitchHref(`${HOTEL}/admin`)).toBeNull();

@@ -198,16 +198,28 @@ export type PipelineSurface = "all" | "inbox" | "collaborations";
  * one spelling. The collaborations surface is won cycles and does not also
  * write `status`, so that list has one spelling too.
  */
+export const PIPELINE_VIEWS = ["board", "list", "timeline"] as const;
+export type PipelineView = (typeof PIPELINE_VIEWS)[number];
+
+/** Board is the canonical URL. List and timeline are explicit. */
+export function normalizePipelineView(raw: string | string[] | undefined | null): PipelineView {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === "list" || value === "timeline") return value;
+  return "board";
+}
+
 export function pipelinePageHref(
   status: string | null,
   page: number,
   surface: PipelineSurface = "all",
   rank: MetricId | null = null,
+  view: PipelineView | null = null,
 ): string {
   const params = new URLSearchParams();
   if (surface === "inbox" || surface === "collaborations") params.set("surface", surface);
   if (surface !== "collaborations" && status) params.set("status", status);
   if (rank) params.set("rank", rank);
+  if (view === "list" || view === "timeline") params.set("view", view);
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/app/pipeline?${query}` : "/app/pipeline";
@@ -218,9 +230,8 @@ export function pipelinePageHref(
  * which would be a lie the creator might act on.
  *
  * The summary counts the creator's WHOLE pipeline, not the current page. A
- * creator with 243 relationships sees "243 hotels" and "Showing 1–50"; they
- * never see "50 hotels", which is what the old unpaginated list asserted once a
- * pipeline outgrew its silent 200-row cap.
+ * creator with 243 opportunities sees "243 opportunities" and "Showing 1–50";
+ * they never see "50 opportunities". One hotel can have more than one row.
  */
 export function pipelineListState(input: {
   failed: boolean;
@@ -228,6 +239,7 @@ export function pipelineListState(input: {
   status: string | null;
   surface?: PipelineSurface;
   rank?: MetricId | null;
+  view?: PipelineView | null;
 }): PipelineListState {
   if (input.failed || input.page === null) {
     return { kind: "error", title: PIPELINE_COPY.errorTitle };
@@ -247,7 +259,7 @@ export function pipelineListState(input: {
       kind: "items",
       visible,
       total,
-      summary: `${total} hotel${total === 1 ? "" : "s"}${suffix}`,
+      summary: `${total} opportunit${total === 1 ? "y" : "ies"}${suffix}`,
       range: multiPage && visible > 0 ? `Showing ${first}–${last}` : null,
       pagination: multiPage
         ? {
@@ -256,10 +268,10 @@ export function pipelineListState(input: {
             hasPrevious,
             hasNext,
             previousHref: hasPrevious
-              ? pipelinePageHref(input.status, page - 1, surface, input.rank)
+              ? pipelinePageHref(input.status, page - 1, surface, input.rank, input.view)
               : null,
             nextHref: hasNext
-              ? pipelinePageHref(input.status, page + 1, surface, input.rank)
+              ? pipelinePageHref(input.status, page + 1, surface, input.rank, input.view)
               : null,
             label: `Page ${page} of ${totalPages}`,
           }

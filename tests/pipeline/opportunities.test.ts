@@ -7,6 +7,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { coverNights } from "@/lib/trips/nights";
 import {
   adminQuery,
   commitAs,
@@ -304,6 +305,23 @@ d("D183 — nights and Gmail suggestions", () => {
       pending_nights: 2,
       gap_nights: 2,
     });
+    const calendar = coverNights("2026-11-12", "2026-11-19", [
+      { checkIn: "2026-11-12", checkOut: "2026-11-15", nightStatus: "confirmed" },
+      { checkIn: "2026-11-14", checkOut: "2026-11-17", nightStatus: "pending" },
+    ]);
+    expect(calendar.tripNights).toBe(coverage.trip_nights);
+    expect(calendar.confirmedNights).toBe(coverage.confirmed_nights);
+    expect(calendar.pendingNights).toBe(coverage.pending_nights);
+    expect(calendar.gapNights).toBe(coverage.gap_nights);
+    expect(calendar.nights.map((night) => night.mark)).toEqual([
+      "confirmed",
+      "confirmed",
+      "confirmed",
+      "pending",
+      "pending",
+      "gap",
+      "gap",
+    ]);
 
     const sameDay = await createTrip(U.a, "2026-11-12", "2026-11-12");
     const zero = await call("select public.trip_night_coverage($1) as r", [sameDay.trip_id]);
@@ -456,6 +474,20 @@ d("D184 — outreach campaigns", () => {
     ]);
     expect(created.result).toBe("created");
     expect(created.hotel_count).toBe(2);
+    const hiddenCampaign = await queryAs(
+      { role: "authenticated", sub: U.b },
+      "select id from public.outreach_initiatives where id = $1",
+      [created.initiative_id],
+    );
+    expect(hiddenCampaign.error).toBeNull();
+    expect(hiddenCampaign.rows).toEqual([]);
+    const hiddenHotels = await queryAs(
+      { role: "authenticated", sub: U.b },
+      "select id from public.outreach_initiative_hotels where initiative_id = $1",
+      [created.initiative_id],
+    );
+    expect(hiddenHotels.error).toBeNull();
+    expect(hiddenHotels.rows).toEqual([]);
 
     const linked = await adminQuery<{ pipeline_item_id: string | null; source: string }>(
       `select pipeline_item_id, source

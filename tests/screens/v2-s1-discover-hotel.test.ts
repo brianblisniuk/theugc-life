@@ -468,7 +468,9 @@ describe("screen source", () => {
     expect(hotel).toContain("eligibleHotelPhotos");
     expect(hotel).toContain("pitchHref(hotel.id, pitchTripId, origin, openRow?.id ?? null)");
     expect(hotel).not.toContain("withOpportunity");
-    expect(source("src/app/(app)/app/hotels/[id]/pitch/page.tsx")).not.toContain("opportunityId");
+    const pitch = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
+    expect(pitch).toContain("readOpportunityParam");
+    expect(pitch).toContain("requestedPipelineItemId");
     expect(hotel).toContain("No verified photograph on file.");
     expect(hotel).not.toMatch(/<img[\s>]/);
     expect(hotel).not.toMatch(/unsplash|placeholder\.com|stock|hotelbeds|forbes/i);

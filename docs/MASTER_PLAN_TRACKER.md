@@ -361,7 +361,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
-| D02 | **IN PROGRESS** — PR #97 merged the Hunter adapter (migration `0095`, D180, merge `9658a451a09e2543a36184ae47562cb4dde59241`). PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181 email cascade). Fake stays the local and CI provider. One credit still charges only on a found address. Hotel Detail shows the stored verification status and verified date after a successful unlock. A locked contact has no name or email. Hunter confidence and tier stay off the locked screen. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
+| D02 | **IN PROGRESS** — PR #97 merged the Hunter adapter (migration `0095`, D180, merge `9658a451a09e2543a36184ae47562cb4dde59241`). PR #98 merged the audit fix (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181 email cascade). Fake stays the local and CI provider. One credit still charges only on a found address. The unlock screen is one status line. Confidence, verification, and tier are not shown, so provenance and freshness on screen are not done. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | **DONE** — PR #84, merge `b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Drafts are not sent. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | **DONE** — PR #86, merge `3e11ded390a2845603b207433af90bb846d4670e`. Migration `0089`. D156–D161. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D04b | **DONE** — PR #87, merge `f892d6e37cd7b606e4b5c663dc002e0503d0145b`. Migrations `0090` and `0091`. D162–D170. Monthly USD AI budget, account pause, structured generation, queued sends, bounce pause. Sends still cost no credits. | AI cost and anti-abuse | per-user budget before the global pool; queued sends; deletion cascades |
@@ -380,14 +380,19 @@ adds no migration. PREPROD-1 (PR #92) stays merged as
 `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration
 `0093_preprod_jobs.sql`. D178 is Accepted (owner Brian, 16 Oct 2026). D02 Contact Hub
 is not finished: PR #97 merged the Hunter adapter (`9658a451a09e2543a36184ae47562cb4dde59241`,
-migration `0095`, D180). PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`,
-migration `0096`, D181 email cascade). Hotel Detail shows stored verification
-and the verified date after unlock. PR #100 is merged
+migration `0095`, D180). PR #98 merged the audit fix (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`,
+migration `0096`, D181 email cascade). The unlock
+screen still does not show provenance or freshness. PR #100 is merged
 (`4001a628a347c0588fcc402d03fadb40302b8b6a`, migration `0097`, D182–D187).
 Contract Review stays out of MVP (D185). PR #102 is merged
-(`ebf4681a214be89b0246f45f709b98c4b7b00432`, V2-F1 Midnight shell). PR #109 is
-merged (`cc1b6cbfaed4457bf501113687c58e9f32921ebb`). PR #104 is merged
-(`a70c143f9bdc80ba39ce8e3974c84bbd237ac32a`, V2-S6).
+(`ebf4681a214be89b0246f45f709b98c4b7b00432`, V12.2 Midnight shell and theme, no migration).
+PR #109 is merged (`cc1b6cbfaed4457bf501113687c58e9f32921ebb`, no migration).
+PR #104 is merged (`a70c143f9bdc80ba39ce8e3974c84bbd237ac32a`, V2-S6 Plans, Billing, Profile, Getting
+Started, and Collaborations, no migration). PR #108 is merged
+(`b0e0a732ec1b2069bbdde91c6ded51b1466da80e`, V2-S2 Trips and Outreach, no new migration).
+PR #106 is merged (`0f7074625abcab32ef02d56cc94bf34a9c6ee0b1`, V2-S4 Inbox and Home, no new migration).
+Sending stays gated. A failed read is not zero.
+PR #105 is merged (`9e02100cef8b1be127ba05689771630f9f0d8893`, V2-S3, migration `0098`). A pitch draft belongs to one opportunity. V2-S1 is draft PR #107. Do not merge #107.
 `HUNTER_API_KEY` stays unset in CI. UX02 design
 (PR #91) is merged as `dbfd2472b00d49590c17f416a10f6dbef371781b`. UX02 screens
 (PR #95) are merged as `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`. Draft PRs #88
@@ -430,10 +435,13 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E04 | **DONE** — PR #62, merge `dc5979eed799d1724eb36482eb0067d3e9f0fe55`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
 | E05 | **DONE** — PR #64, merge `621bc557762a70242b08a02afca94bca6c08f08d`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 stay Proposed. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 | UX01 | **DONE** — PR #65, merge `9a449239df1ebd859d4876c35e83e35007cf41af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. PR #102 replaces this visual system with V12.2 Midnight. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
-| V2-D1 | **DONE — PR #100**, merge `4001a628a347c0588fcc402d03fadb40302b8b6a`. Migration `0097`. D182–D187. Several opportunities per hotel, per-creator `OP-` display ids, creator-set trip nights, Gmail date suggestions that do not auto-apply, and outreach campaigns. Contract Review stays out of MVP (D185). | Opportunity, nights, and campaign data model | one hotel can hold several opportunities; Contract Review is not a product screen |
+| V2-D1 | **DONE — PR #100**, merge `4001a628a347c0588fcc402d03fadb40302b8b6a`. Migration `0097`. D182–D187. Several opportunities per hotel, per-creator `OP-` display ids, creator-set trip nights, Gmail date suggestions that do not auto-apply, and outreach campaigns. Contract Review stays out of MVP (D185). | Opportunity, nights, and campaign data model | User A cannot read User B; a suggestion does not write dates until accept; Contract Review is not a product screen |
 | V2-F1 | **DONE — PR #102**, merge `ebf4681a214be89b0246f45f709b98c4b7b00432`. No migration. V12.2 Midnight is the single theme (dark only, accent `#D1FF02`). Shell, base components, and a minimal re-skin of existing pages. `contracts.html` is design reference only. | Midnight shell and theme | existing pages compile on the new shell; contrast AA |
-| V2-S1 | **DRAFT — PR #107**. No migration. Discover and Hotel Detail on the merged Midnight shell. Do not merge #107. Pitch Studio draft binding stays with S3 (PR #105). Contract Review stays out (D185). Photography stays the D064 no-photo state. | Midnight Discover + Hotel Detail | real catalog, map, filters, unlock, pipeline save, separate OP display ids, insufficient data |
 | V2-S6 | **DONE — PR #104**, merge `a70c143f9bdc80ba39ce8e3974c84bbd237ac32a`. No migration. Midnight screens for Plans & Credits, Billing & Activity, My Profile, Getting Started, and Collaborations. Wired to existing Rebill checkout, D131 prices, D140 refunds, the 30-day deletion clock, and Gmail connect. Contract Review stays out (D185). | Creator account and collaboration execution | real rows only; `revision_requested`; barter, payment, or both |
+| V2-S2 | **DONE — PR #108**, merge `b0e0a732ec1b2069bbdde91c6ded51b1466da80e`. No new migration. Trips and Outreach on Midnight, wired to migration `0097` (D182–D184). | Trip nights, Gmail date decisions, outreach campaigns, `OP-` ids | counts match `trip_night_coverage`; User B cannot read User A’s campaign |
+| V2-S4 | **DONE — PR #106**, merge `0f7074625abcab32ef02d56cc94bf34a9c6ee0b1`. No new migration. Inbox and Home on the Midnight shell, using the V2-D1 opportunity model. Linked Gmail threads, commercial classifications, collaboration suggestions, and stay-date accept/reject. Home next actions, trip nights, and recorded counts. Sending stays gated. Insufficient data is not zero. | Inbox + Home | real rows only; User A cannot read User B; gmail.send is not called |
+| V2-S1 | **DRAFT — PR #107**. No migration. Discover and Hotel Detail on the merged Midnight shell. Do not merge #107. Pitch Studio uses merged PR #105. Contract Review stays out (D185). Photography stays the D064 no-photo state. | Midnight Discover + Hotel Detail | real catalog, map, filters, unlock, pipeline save, separate OP display ids, insufficient data |
+| V2-S3 | **DONE — PR #105**, merge `9e02100cef8b1be127ba05689771630f9f0d8893`. Migration `0098` binds a pitch draft to one opportunity. Pipeline and Pitch Studio on the Midnight shell, using migration `0097` (D182–D187). | Dense pipeline and pitch | real next actions and public signals; Claude path unchanged; no send |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -630,28 +638,32 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #104,
-`a70c143f9bdc80ba39ce8e3974c84bbd237ac32a` (V2-S6). It includes PR #102
-(`ebf4681a214be89b0246f45f709b98c4b7b00432`) and PR #109
-(`cc1b6cbfaed4457bf501113687c58e9f32921ebb`). PR #103 stays
-`b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50`. PR #100 stays
-`4001a628a347c0588fcc402d03fadb40302b8b6a` (V2-D1, migration `0097`,
-D182–D187). Contract Review stays out of MVP (D185). PR #98 is merged
-(`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181).
+**Current frontier (16 Oct 2026).** Recorded main is
+`9e02100cef8b1be127ba05689771630f9f0d8893` (merge of PR #105, V2-S3, migration `0098`). It includes
+`0f7074625abcab32ef02d56cc94bf34a9c6ee0b1` (merge of PR #106, V2-S4 Inbox and Home, no new migration).
+It includes PR #108 (`b0e0a732ec1b2069bbdde91c6ded51b1466da80e`, V2-S2 Trips and Outreach, no new migration),
+PR #104 (`a70c143f9bdc80ba39ce8e3974c84bbd237ac32a`, V2-S6), PR #102
+(`ebf4681a214be89b0246f45f709b98c4b7b00432`, V2-F1 Midnight shell), and PR #109
+(`cc1b6cbfaed4457bf501113687c58e9f32921ebb`, scheduled job failures are caught instead of a bare 502, no migration).
+PR #103 stays merged (`b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50`, in-process scheduled jobs, no migration).
+PR #100 stays merged (`4001a628a347c0588fcc402d03fadb40302b8b6a`, migration `0097`, D182–D187).
+Contract Review stays out of MVP (D185). PR #98 merged the D02 audit fix
+(`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181 email cascade).
+PR #97 merged the Hunter adapter
+(`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
+V2-F1 is **DONE — PR #102**. V2-S6 is **DONE — PR #104**. V2-S2 is **DONE — PR #108**.
+V2-S4 is **DONE — PR #106**. Sending stays gated. A failed read is not zero.
+V2-S3 is **DONE — PR #105** (`9e02100cef8b1be127ba05689771630f9f0d8893`). Migration `0098` binds a pitch draft to one opportunity. V2-S1 is draft PR #107. Do not merge #107. Hotel Detail shows stored verification after unlock. A locked contact has no name or email.
 PREPROD-1b (PR #93, `9c50400c104b6f5aa036eea3ea798f269aeffe5e`) and PREPROD-1
 (PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`) stay
 merged. D05 is merged (PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`).
 UX02 design is merged (PR #91, `dbfd2472b00d49590c17f416a10f6dbef371781b`).
 UX02 screens are merged (PR #95, `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`)
-and re-skinned onto Midnight. V2-F1 is merged as PR #102. V2-S6 is merged as
-PR #104. V2-S1 is draft PR #107 and rebuilds Discover and Hotel Detail on that
-shell. Do not merge #107. Pitch Studio draft binding stays with S3 (PR #105).
-D02 Contact Hub is not finished. PR #97 merged the Hunter adapter
-(`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
-Hotel Detail shows stored verification after unlock. D178 is Accepted
-(owner Brian, 16 Oct 2026). Draft PRs #88 and #90 await the owner. Do not
-merge them. BASE-N9 is closed by migration `0094` (D179) and is not the
-frontier. The human frontier stays CREDENTIAL REQUIRED for the Hunter key.
+and re-skinned onto Midnight. D02 Contact Hub is not finished. Provenance and
+freshness are not on the unlock screen. D178 is Accepted (owner Brian, 16 Oct 2026).
+Draft PRs #88 and #90 await the owner. Do not merge them. BASE-N9 is closed by
+migration `0094` (D179) and is not the frontier. The human frontier stays
+CREDENTIAL REQUIRED for the Hunter key.
 
 At this baseline, Phase A is closed at the code gate:
 

@@ -284,13 +284,13 @@ describe("Pipeline list state", () => {
   it("summarizes the rows, pluralizing and naming the active filter", () => {
     expect(
       pipelineListState({ failed: false, page: page({ items: [item] }), status: null }),
-    ).toMatchObject({ kind: "items", visible: 1, total: 1, summary: "1 hotel" });
+    ).toMatchObject({ kind: "items", visible: 1, total: 1, summary: "1 opportunity" });
     expect(
       pipelineListState({ failed: false, page: page({ items: [item, item] }), status: null }),
-    ).toMatchObject({ kind: "items", visible: 2, total: 2, summary: "2 hotels" });
+    ).toMatchObject({ kind: "items", visible: 2, total: 2, summary: "2 opportunities" });
     expect(
       pipelineListState({ failed: false, page: page({ items: [item] }), status: "follow_up" }),
-    ).toMatchObject({ summary: "1 hotel with status Follow-up" });
+    ).toMatchObject({ summary: "1 opportunity with status Follow-up" });
   });
 
   it("a single page needs no range line and no pagination controls", () => {
@@ -302,15 +302,15 @@ describe("Pipeline list state", () => {
     expect(state).toMatchObject({ kind: "items", range: null, pagination: null });
   });
 
-  it("states the WHOLE pipeline, not the page — 243 hotels showing 1-50", () => {
+  it("states the WHOLE pipeline, not the page — 243 opportunities showing 1-50", () => {
     const state = pipelineListState({
       failed: false,
       page: page({ items: Array.from({ length: 50 }, () => item), total: 243 }),
       status: null,
     });
     if (state.kind !== "items") throw new Error("unreachable");
-    expect(state.summary).toBe("243 hotels");
-    expect(state.summary).not.toBe("50 hotels");
+    expect(state.summary).toBe("243 opportunities");
+    expect(state.summary).not.toBe("50 opportunities");
     expect(state.visible).toBe(50);
     expect(state.total).toBe(243);
     expect(state.range).toBe("Showing 1\u201350");
@@ -359,7 +359,7 @@ describe("Pipeline list state", () => {
       status: "pitched",
     });
     if (state.kind !== "items") throw new Error("unreachable");
-    expect(state.summary).toBe("120 hotels with status Sent");
+    expect(state.summary).toBe("120 opportunities with status Sent");
     expect(state.pagination?.previousHref).toBe("/app/pipeline?status=pitched");
     expect(state.pagination?.nextHref).toBe("/app/pipeline?status=pitched&page=3");
   });

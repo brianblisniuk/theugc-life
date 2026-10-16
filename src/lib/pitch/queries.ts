@@ -19,6 +19,12 @@ import { getOwnProfile } from "@/lib/profile/queries";
 import { listTrips } from "@/lib/trips/queries";
 
 import {
+  chooseOpportunity,
+  selectBoundDraft,
+  shownDisplayRef,
+  type StudioOpportunity,
+} from "./studio";
+import {
   httpsUrl,
   instagramHandle,
   pastCollaborationSentence,
@@ -52,6 +58,13 @@ export interface PitchDraftRow {
   templateId: string | null;
   systemTemplateKey: SystemTemplateKey | null;
   delivery: PitchDelivery;
+  /** Null only when no opportunity is open. Never another opportunity's id. */
+  pipelineItemId: string | null;
+}
+
+export interface PitchOtherDraft {
+  hotelId: string;
+  hotelName: string;
 }
 
 export type PitchContextLoad =
@@ -68,6 +81,11 @@ export type PitchContextLoad =
       relationshipStatus: string | null;
       selectedTripId: string | null;
       primaryLanguage: string | null;
+      opportunities: StudioOpportunity[];
+      opportunityChoice: ReturnType<typeof chooseOpportunity>["choice"];
+      selectedOpportunity: StudioOpportunity | null;
+      otherDraft: PitchOtherDraft | null;
+      otherDraftUnread: boolean;
     }
   | { status: "error" };
 
@@ -102,9 +120,14 @@ export async function loadPitchContext(input: {
   requestedTripId: string | null;
   /** When the URL does not name a trip, a saved draft's trip fills the suggestion. */
   preferDraftTrip: boolean;
+  /** Pipeline row id. A display id is not accepted. */
+  requestedPipelineItemId?: string | null;
 }): Promise<PitchContextLoad> {
   if (!isUuid(input.userId) || !isUuid(input.hotelId)) return { status: "error" };
   if (input.requestedTripId && !isUuid(input.requestedTripId)) return { status: "error" };
+  if (input.requestedPipelineItemId && !isUuid(input.requestedPipelineItemId)) {
+    return { status: "error" };
+  }
 
   try {
     const supabase = await createClient();
@@ -116,63 +139,43 @@ export async function loadPitchContext(input: {
     if (owner.error || typeof owner.data?.id !== "string") return { status: "error" };
     const creatorId = owner.data.id;
 
-    const [
-      profile,
-      trips,
-      intelligence,
-      contacts,
-      pipeline,
-      collaboration,
-      portfolio,
-      templates,
-      drafts,
-    ] = await Promise.all([
-      getOwnProfile(input.userId),
-      listTrips(),
-      getHotelIntelligence(input.hotelId),
-      getHotelContactsIfAuthorized(input.hotelId),
-      supabase
-        .from("pipeline_items")
-        .select("status")
-        .eq("hotel_id", input.hotelId)
-        .neq("status", "closed")
-        .limit(1),
-      supabase
-        .from("collaborations")
-        .select("status, collaboration_type")
-        .eq("hotel_id", input.hotelId)
-        .in("status", ["agreed", "scheduled", "active", "completed"])
-        .order("updated_at", { ascending: false })
-        .limit(1),
-      supabase
-        .from("portfolio_assets")
-        .select("title, external_url")
-        .eq("creator_id", creatorId)
-        .order("sort_order", { ascending: true })
-        .order("id", { ascending: true })
-        .limit(1),
-      supabase
-        .from("pitch_templates")
-        .select("id, name, subject, body")
-        .is("archived_at", null)
-        .order("updated_at", { ascending: false })
-        .limit(50),
-      supabase
-        .from("pitch_drafts")
-        .select("id, subject, body, trip_id, template_id, system_template_key, delivery")
-        .eq("hotel_id", input.hotelId)
-        .order("updated_at", { ascending: false })
-        .limit(1),
-    ]);
+    const [profile, trips, intelligence, contacts, pipeline, collaboration, portfolio, templates] =
+      await Promise.all([
+        getOwnProfile(input.userId),
+        listTrips(),
+        getHotelIntelligence(input.hotelId),
+        getHotelContactsIfAuthorized(input.hotelId),
+        supabase
+          .from("pipeline_items")
+          .select("id, status, display_ref, stay_start, stay_end, trip_id")
+          .eq("hotel_id", input.hotelId)
+          .neq("status", "closed")
+          .order("last_activity_at", { ascending: false })
+          .limit(20),
+        supabase
+          .from("collaborations")
+          .select("status, collaboration_type")
+          .eq("hotel_id", input.hotelId)
+          .in("status", ["agreed", "scheduled", "active", "completed"])
+          .order("updated_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("portfolio_assets")
+          .select("title, external_url")
+          .eq("creator_id", creatorId)
+          .order("sort_order", { ascending: true })
+          .order("id", { ascending: true })
+          .limit(1),
+        supabase
+          .from("pitch_templates")
+          .select("id, name, subject, body")
+          .is("archived_at", null)
+          .order("updated_at", { ascending: false })
+          .limit(50),
+      ]);
 
     if (profile.status === "error" || trips.status === "error") return { status: "error" };
-    if (
-      pipeline.error ||
-      collaboration.error ||
-      portfolio.error ||
-      templates.error ||
-      drafts.error
-    ) {
+    if (pipeline.error || collaboration.error || portfolio.error || templates.error) {
       return { status: "error" };
     }
     if (profile.status !== "ok") return { status: "error" };
@@ -184,13 +187,8 @@ export async function loadPitchContext(input: {
       endDate: trip.endDate,
       name: trip.name,
     }));
-    const draftTripId = asText((drafts.data?.[0] as { trip_id?: unknown } | undefined)?.trip_id);
     const requested = tripChoices.find((trip) => trip.id === input.requestedTripId) ?? null;
-    const fromDraft =
-      input.preferDraftTrip && draftTripId
-        ? (tripChoices.find((trip) => trip.id === draftTripId) ?? null)
-        : null;
-    const selected = requested ?? fromDraft;
+    let selected = requested;
 
     const facts: PitchFacts = {};
     const put = (key: FactKey, value: string | null) => {
@@ -245,8 +243,21 @@ export async function loadPitchContext(input: {
       recipientEmail = email;
     }
 
-    const statusRow = (pipeline.data ?? [])[0] as { status?: unknown } | undefined;
-    const relationshipStatus = asText(statusRow?.status);
+    const opportunities: StudioOpportunity[] = [];
+    for (const raw of pipeline.data ?? []) {
+      const record = raw as Record<string, unknown>;
+      if (typeof record.id !== "string") return { status: "error" };
+      opportunities.push({
+        id: record.id,
+        displayRef: shownDisplayRef(asText(record.display_ref)),
+        status: asText(record.status),
+        stayStart: asText(record.stay_start),
+        stayEnd: asText(record.stay_end),
+        tripId: asText(record.trip_id),
+      });
+    }
+    const chosen = chooseOpportunity(opportunities, input.requestedPipelineItemId ?? null);
+    const relationshipStatus = chosen.selected?.status ?? null;
 
     const templateRows: PitchTemplateRow[] = [];
     for (const row of templates.data ?? []) {
@@ -267,45 +278,92 @@ export async function loadPitchContext(input: {
       });
     }
 
-    const draftRaw = (drafts.data ?? [])[0] as
-      | {
-          id?: unknown;
-          subject?: unknown;
-          body?: unknown;
-          trip_id?: unknown;
-          template_id?: unknown;
-          system_template_key?: unknown;
-          delivery?: unknown;
-        }
-      | undefined;
+    const boundOpportunityId = chosen.selected?.id ?? null;
     let draft: PitchDraftRow | null = null;
-    if (draftRaw) {
-      if (
-        typeof draftRaw.id !== "string" ||
-        typeof draftRaw.subject !== "string" ||
-        typeof draftRaw.body !== "string" ||
-        (draftRaw.delivery !== "unsent" &&
-          draftRaw.delivery !== "copied" &&
-          draftRaw.delivery !== "mailto_opened")
-      ) {
-        return { status: "error" };
+    if (chosen.choice !== "many" && chosen.choice !== "missing") {
+      let draftQuery = supabase
+        .from("pitch_drafts")
+        .select(
+          "id, subject, body, trip_id, template_id, system_template_key, delivery, pipeline_item_id",
+        )
+        .eq("hotel_id", input.hotelId);
+      draftQuery = boundOpportunityId
+        ? draftQuery.eq("pipeline_item_id", boundOpportunityId)
+        : draftQuery.is("pipeline_item_id", null);
+      const drafts = await draftQuery.order("updated_at", { ascending: false }).limit(1);
+      if (drafts.error) return { status: "error" };
+      const draftRaw = (drafts.data ?? [])[0] as
+        | {
+            id?: unknown;
+            subject?: unknown;
+            body?: unknown;
+            trip_id?: unknown;
+            template_id?: unknown;
+            system_template_key?: unknown;
+            delivery?: unknown;
+            pipeline_item_id?: unknown;
+          }
+        | undefined;
+      if (draftRaw) {
+        if (
+          typeof draftRaw.id !== "string" ||
+          typeof draftRaw.subject !== "string" ||
+          typeof draftRaw.body !== "string" ||
+          (draftRaw.delivery !== "unsent" &&
+            draftRaw.delivery !== "copied" &&
+            draftRaw.delivery !== "mailto_opened")
+        ) {
+          return { status: "error" };
+        }
+        const systemKey = asText(draftRaw.system_template_key);
+        const candidate: PitchDraftRow = {
+          id: draftRaw.id,
+          subject: draftRaw.subject,
+          body: draftRaw.body,
+          tripId: asText(draftRaw.trip_id),
+          templateId: asText(draftRaw.template_id),
+          systemTemplateKey:
+            systemKey === "introduction" ||
+            systemKey === "stay" ||
+            systemKey === "follow_up" ||
+            systemKey === "return_visit"
+              ? systemKey
+              : null,
+          delivery: draftRaw.delivery,
+          pipelineItemId: asText(draftRaw.pipeline_item_id),
+        };
+        draft = selectBoundDraft([candidate], boundOpportunityId, chosen.choice);
       }
-      const systemKey = asText(draftRaw.system_template_key);
-      draft = {
-        id: draftRaw.id,
-        subject: draftRaw.subject,
-        body: draftRaw.body,
-        tripId: asText(draftRaw.trip_id),
-        templateId: asText(draftRaw.template_id),
-        systemTemplateKey:
-          systemKey === "introduction" ||
-          systemKey === "stay" ||
-          systemKey === "follow_up" ||
-          systemKey === "return_visit"
-            ? systemKey
-            : null,
-        delivery: draftRaw.delivery,
-      };
+    }
+
+    if (!selected && input.preferDraftTrip) {
+      const fromBound = draft?.tripId ?? chosen.selected?.tripId ?? null;
+      selected = fromBound ? (tripChoices.find((trip) => trip.id === fromBound) ?? null) : null;
+      if (selected) {
+        put("trip_name", pitchFact(selected.name, 120));
+        put("trip_start", pitchFact(selected.startDate, 20));
+        put("trip_end", pitchFact(selected.endDate, 20));
+      }
+    }
+
+    let otherDraft: PitchOtherDraft | null = null;
+    let otherDraftUnread = false;
+    const other = await supabase
+      .from("pitch_drafts")
+      .select("hotel_id, hotel:hotels(name)")
+      .neq("hotel_id", input.hotelId)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (other.error) {
+      otherDraftUnread = true;
+    } else {
+      const otherRow = (other.data ?? [])[0] as
+        | { hotel_id?: unknown; hotel?: { name?: unknown } | { name?: unknown }[] | null }
+        | undefined;
+      const otherHotel = Array.isArray(otherRow?.hotel) ? otherRow?.hotel[0] : otherRow?.hotel;
+      if (typeof otherRow?.hotel_id === "string" && typeof otherHotel?.name === "string") {
+        otherDraft = { hotelId: otherRow.hotel_id, hotelName: otherHotel.name };
+      }
     }
 
     return {
@@ -320,6 +378,11 @@ export async function loadPitchContext(input: {
       intelligenceUnavailable,
       relationshipStatus,
       selectedTripId: selected?.id ?? null,
+      opportunities,
+      opportunityChoice: chosen.choice,
+      selectedOpportunity: chosen.selected,
+      otherDraft,
+      otherDraftUnread,
       primaryLanguage: profile.profile.primaryLanguage,
     };
   } catch {

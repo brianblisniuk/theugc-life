@@ -70,6 +70,8 @@ let outsideHotel = "";
 let extraOutside: string[] = [];
 let otherPipeline = "";
 let otherTrip = "";
+let otherOutreach = "";
+let otherOutreachHotel = "";
 let otherMail = "";
 let otherBinding = "";
 let otherCollaboration = "";
@@ -228,6 +230,20 @@ d("E04 entitlement inventory enforcement", () => {
       [creators.other, DEST.bali],
     );
     otherTrip = tripRows[0]!.id;
+
+    const outreach = await adminQuery<{ id: string }>(
+      `insert into public.outreach_initiatives (creator_id, trip_id, destination_id, name)
+       values ($1, $2, $3, $4) returning id`,
+      [creators.other, otherTrip, DEST.bali, SECRET],
+    );
+    otherOutreach = outreach[0]!.id;
+    const outreachHotel = await adminQuery<{ id: string }>(
+      `insert into public.outreach_initiative_hotels
+         (initiative_id, creator_id, hotel_id, source)
+       values ($1, $2, $3, 'manual') returning id`,
+      [otherOutreach, creators.other, baliHotels[0]],
+    );
+    otherOutreachHotel = outreachHotel[0]!.id;
 
     const collab = await adminQuery<{ id: string }>(
       `insert into public.collaborations
@@ -650,6 +666,16 @@ d("E04 entitlement inventory enforcement", () => {
           sql: "select id from public.trips where id = $1",
           params: [otherTrip],
           marker: otherTrip,
+        },
+        outreach_initiatives: {
+          sql: "select name from public.outreach_initiatives where id = $1",
+          params: [otherOutreach],
+          marker: SECRET,
+        },
+        outreach_initiative_hotels: {
+          sql: "select id from public.outreach_initiative_hotels where id = $1",
+          params: [otherOutreachHotel],
+          marker: otherOutreachHotel,
         },
         collaborations: {
           sql: "select id from public.collaborations where id = $1",

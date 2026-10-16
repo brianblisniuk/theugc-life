@@ -50,10 +50,25 @@ function Icon({ name }: { name: ShellIcon }) {
       </svg>
     );
   }
+  if (name === "outreach") {
+    return (
+      <svg {...common}>
+        <path d="m22 2-7 20-4-9-9-4zM22 2 11 13" />
+      </svg>
+    );
+  }
   if (name === "pipeline") {
     return (
       <svg {...common}>
         <path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z" />
+      </svg>
+    );
+  }
+  if (name === "pitch") {
+    return (
+      <svg {...common}>
+        <path d="M5 19h14M7 16V6h10v10" />
+        <path d="M9 9h6M9 12h4" />
       </svg>
     );
   }
