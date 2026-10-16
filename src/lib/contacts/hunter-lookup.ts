@@ -27,7 +27,12 @@
  * for a finished found or not_found row.
  */
 
-import type { ContactLookup, ContactLookupResult, ContactProviderRaw } from "./types";
+import type {
+  ContactLookup,
+  ContactLookupResult,
+  ContactProviderRaw,
+  ContactSelectionTier,
+} from "./types";
 
 export const HUNTER_ORIGIN = "https://api.hunter.io";
 export const HUNTER_SEARCH_BUDGET = 50;
@@ -176,12 +181,13 @@ export function memoryLookupStore(now: () => number = Date.now): LookupStore {
 
 const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
-/** Generic routes named in the D180 amendment. Other locals are not this tier. */
-const GENERIC_LOCALS = new Set(["marketing", "pr", "sales", "info"]);
+/** D181 tier 4. Other local parts are not a generic hotel address. */
+const GENERIC_LOCALS = new Set(["info", "reservations", "hello", "contact"]);
 
-const OUTREACH_ROLE =
-  /\b(?:marketing|partnerships?|public relations|pr|press|communications?|comms|social media|social|sales)\b/i;
-const GUEST_ROLE = /\b(?:guest relations?|guest experience)\b/i;
+const TIER_1 =
+  /\b(?:creators?|marketing|partnerships?|public relations|pr|press|communications?|comms|social media|social|branding|brand)\b/i;
+const TIER_2 = /\b(?:sales|guest relations?|reservations manager)\b/i;
+const TIER_3 = /\b(?:general manager|hotel manager|gm)\b/i;
 
 export type HunterVerification =
   "valid" | "accept_all" | "unknown" | "invalid" | "webmail" | "disposable";
@@ -233,38 +239,54 @@ function roleText(candidate: HunterCandidate): string {
   return `${candidate.department ?? ""} ${candidate.position ?? ""}`.toLowerCase();
 }
 
-/** Executives and back-of-house roles lose to an outreach, guest, or generic route. */
-function isPenalized(candidate: HunterCandidate): boolean {
+/** F&B, culinary, engineering, HR/recruiting, finance, and IT are never a candidate. */
+export function isExcludedRole(candidate: HunterCandidate): boolean {
   const department = candidate.department?.toLowerCase() ?? "";
   const text = roleText(candidate);
-  if (department === "executive") return true;
-  if (/\bmanaging director\b/.test(text)) return true;
-  if (/\bgeneral manager\b/.test(text)) return true;
-  if (/\bgm\b/.test(text)) return true;
-  if (/\b(?:kitchen|housekeeping|housekeeper|engineering|engineers?)\b/.test(text)) return true;
-  if (/\bf\s*&\s*b\b/.test(text)) return true;
-  if (/\bfood\s+(?:and|&)\s+beverage\b/.test(text)) return true;
+  if (
+    department === "it" ||
+    department === "hr" ||
+    department === "finance" ||
+    department === "engineering"
+  ) {
+    return true;
+  }
+  if (/\bf\s*&\s*b\b/.test(text) || /\bfood\s+(?:and|&)\s+beverage\b/.test(text)) return true;
+  if (/\b(?:culinary|chefs?|kitchen|cooks?)\b/.test(text)) return true;
+  if (/\b(?:engineering|engineers?)\b/.test(text)) return true;
+  if (
+    /\bhr\b/.test(text) ||
+    /\b(?:human resources|recruit(?:er|ing|ment)?|talent acquisition)\b/.test(text)
+  ) {
+    return true;
+  }
+  if (/\b(?:finance|accounting|accountants?)\b/.test(text)) return true;
+  if (/\bit\b/.test(text) || /\binformation technology\b/.test(text)) return true;
   return false;
 }
 
 /**
- * 4 outreach, 3 guest relations, 2 generic marketing@/pr@/sales@/info@,
- * 1 anything else, 0 penalized. Confidence is not part of the tier.
+ * D181 cascade. 1 is best. Null is not a candidate: excluded, or no tier.
+ * Confidence is not part of the tier.
  */
-export function outreachTier(candidate: HunterCandidate): number {
-  if (isPenalized(candidate)) return 0;
-  if (OUTREACH_ROLE.test(roleText(candidate))) return 4;
-  if (GUEST_ROLE.test(roleText(candidate))) return 3;
+export function selectionTier(candidate: HunterCandidate): ContactSelectionTier | null {
+  if (isExcludedRole(candidate)) return null;
+  const text = roleText(candidate);
+  if (TIER_1.test(text)) return 1;
+  if (TIER_2.test(text)) return 2;
+  if (TIER_3.test(text)) return 3;
   const local = candidate.email.split("@")[0] ?? "";
-  if (GENERIC_LOCALS.has(local)) return 2;
-  return 1;
+  if (GENERIC_LOCALS.has(local)) return 4;
+  return null;
 }
 
-/** Best outreach role, then guest relations, then a generic route. Invalid is skipped. */
+/** Best D181 tier. Invalid, excluded, and uncategorized addresses are skipped. */
 export function chooseHotelEmail(candidates: readonly HunterCandidate[]): HunterCandidate | null {
-  const usable = candidates.filter((candidate) => candidate.verification !== "invalid");
+  const usable = candidates.filter(
+    (candidate) => candidate.verification !== "invalid" && selectionTier(candidate) !== null,
+  );
   usable.sort((a, b) => {
-    const tier = outreachTier(b) - outreachTier(a);
+    const tier = (selectionTier(a) ?? 4) - (selectionTier(b) ?? 4);
     if (tier !== 0) return tier;
     if (a.confidence !== b.confidence) return b.confidence - a.confidence;
     return a.email < b.email ? -1 : a.email > b.email ? 1 : 0;
@@ -335,6 +357,7 @@ function rawFor(
     position: candidate?.position ?? null,
     verification,
     decisionMaker: candidate?.decisionMaker ?? null,
+    tier: candidate ? selectionTier(candidate) : null,
   };
 }
 
@@ -646,9 +669,11 @@ function fromHit(hit: LookupHit, domain: string | null): ContactLookupResult {
       raw: hit.raw ?? rawFor("cache", domain, "not_found", null, null),
     };
   }
+  const tier = hit.raw?.tier;
   return {
     status: "found",
     email: hit.email,
+    tier: tier === 1 || tier === 2 || tier === 3 || tier === 4 ? tier : null,
     raw: hit.raw ?? rawFor("cache", domain, "found", null, "valid"),
   };
 }
@@ -692,10 +717,12 @@ export async function findWithHunter(
     candidate: HunterCandidate,
     verification: string,
   ): Promise<ContactLookupResult> {
+    const raw = rawFor(operation, domain, "found", candidate, verification);
     const found: ContactLookupResult = {
       status: "found",
       email: candidate.email,
-      raw: rawFor(operation, domain, "found", candidate, verification),
+      tier: raw.tier ?? null,
+      raw,
     };
     await deps.store.complete(cacheKey, "found", candidate.email, found.raw);
     return found;
@@ -848,7 +875,7 @@ export async function findWithHunter(
         await releaseBudget(deps.store, "search", 1);
         return storeMiss();
       }
-      if (parsed.verification === "invalid") return storeMiss();
+      if (parsed.verification === "invalid" || isExcludedRole(parsed)) return storeMiss();
       candidate = parsed;
     }
   } else {

@@ -1,10 +1,15 @@
 /**
- * Contact provider boundary (D100, D180).
+ * Contact provider boundary (D100, D180, D181).
  *
  * `found` and `not_found` are cacheable provider outcomes. `error` and
  * `unavailable` are not: they must not be stored as a missing contact, and
  * they must not debit a credit.
+ *
+ * D181 tier 1 is the best fallback. A found Hunter address carries that tier
+ * on the result and on the stored provider note.
  */
+
+export type ContactSelectionTier = 1 | 2 | 3 | 4;
 
 export interface ContactLookup {
   hotelId: string;
@@ -28,10 +33,12 @@ export interface ContactProviderRaw {
   position?: string | null;
   verification?: string | null;
   decisionMaker?: boolean | null;
+  /** D181 fallback tier. Null when no tier was chosen. */
+  tier?: ContactSelectionTier | null;
 }
 
 export type ContactLookupResult =
-  | { status: "found"; email: string; raw: ContactProviderRaw }
+  | { status: "found"; email: string; tier?: ContactSelectionTier | null; raw: ContactProviderRaw }
   | { status: "not_found"; email: null; raw: ContactProviderRaw }
   | { status: "error"; email: null }
   | { status: "unavailable"; email: null };

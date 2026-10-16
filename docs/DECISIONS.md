@@ -5753,3 +5753,37 @@ Migration `0096` redefines `complete_contact_provider_lookup` and
 `pg_catalog` functions. `COALESCE` and `NULLIF` are SQL expressions, not
 `pg_catalog` functions, so the email trim calls `pg_catalog.btrim` and
 then treats a null or empty result as no address. `0095` is not edited.
+
+## D181 — Contact email fallback cascade
+
+Status: **Accepted** (owner, 16 Oct 2026). This replaces the outreach
+ranking added in the D02 audit fix. D180 charge, cache, verifier, and
+budget rules stay. The unlock screen stays the existing status line.
+
+Domain Search stores one address. The lowest tier number wins. Inside a
+tier, the higher confidence wins, then the alphabetical address.
+
+1. The department or position handles creators, marketing, PR (including
+   press), partnerships, social media, communications, or brand.
+2. Sales, guest relations, or reservations manager.
+3. General manager or hotel manager, including the title GM.
+4. A generic hotel address whose local part is exactly `info`,
+   `reservations`, `hello`, or `contact`.
+
+These roles are never candidates, even when they are the only addresses
+and even when a tier word is also present: F&B and food and beverage;
+culinary, including chef, kitchen, and cook; engineering and engineer;
+HR, human resources, recruiting, and talent acquisition; finance and
+accounting; IT and information technology. An address that matches no
+tier is not a candidate. Housekeeping, guest experience, and a managing
+director with no tier word are in that group. `marketing@`, `pr@`, and
+`sales@` are not tier 4. A reservations manager is tier 2 and beats
+`reservations@`. If none remain, the lookup is `not_found` and is not
+charged. Hunter is not called again for that domain.
+
+The chosen tier is stored on the provider note (`tier`) and returned on
+the lookup result (`tier`).
+
+Email Finder is not a cascade. An excluded role is not stored. A named
+person who matches a tier records that tier. Otherwise `tier` is null
+and the address is still returned.

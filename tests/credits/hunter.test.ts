@@ -15,6 +15,7 @@ import {
   HUNTER_VERIFICATION_BUDGET,
   chooseHotelEmail,
   domainSearchVerificationCount,
+  selectionTier,
   findWithHunter,
   lookupCacheKey,
   memoryLookupStore,
@@ -159,22 +160,21 @@ describe("Hunter contact lookup", () => {
     expect(lookupCacheKey(lookup({ domain: "https://nope" }))).toBeNull();
   });
 
-  it("ranks outreach roles, then guest relations, then generic routes, and penalizes the rest", () => {
-    const marketing = person({
+  it("returns the best D181 tier and skips excluded and uncategorized addresses", () => {
+    const creator = person({
       email: "ada@casa-lucia.test",
-      department: "marketing",
-      position: "Marketing Manager",
-      confidence: 10,
-      decisionMaker: false,
-    });
-    const partnerships = person({
-      email: "pia@casa-lucia.test",
       department: null,
-      position: "Partnerships",
+      position: "Creator Partnerships",
+      confidence: 10,
+    });
+    const marketing = person({
+      email: "mia@casa-lucia.test",
+      department: "marketing",
+      position: "Managing Director",
       confidence: 11,
     });
     const pr = person({
-      email: "press@casa-lucia.test",
+      email: "pia@casa-lucia.test",
       department: "communication",
       position: "PR Manager",
       confidence: 12,
@@ -185,11 +185,17 @@ describe("Hunter contact lookup", () => {
       position: "Social Media Manager",
       confidence: 13,
     });
+    const brand = person({
+      email: "bea@casa-lucia.test",
+      department: null,
+      position: "Brand Manager",
+      confidence: 14,
+    });
     const sales = person({
       email: "sal@casa-lucia.test",
       department: "sales",
       position: "Sales",
-      confidence: 14,
+      confidence: 40,
     });
     const guest = person({
       email: "gia@casa-lucia.test",
@@ -197,58 +203,80 @@ describe("Hunter contact lookup", () => {
       position: "Guest Relations Manager",
       confidence: 80,
     });
-    const experience = person({
-      email: "eve@casa-lucia.test",
+    const reservationsManager = person({
+      email: "rea@casa-lucia.test",
       department: null,
-      position: "Guest Experience",
+      position: "Reservations Manager",
       confidence: 70,
+    });
+    const gm = person({
+      email: "lee@casa-lucia.test",
+      department: null,
+      position: "General Manager",
+      confidence: 20,
+    });
+    const hotelManager = person({
+      email: "hm@casa-lucia.test",
+      department: "executive",
+      position: "Hotel Manager",
+      confidence: 30,
+    });
+    const gmShort = person({
+      email: "boss@casa-lucia.test",
+      department: null,
+      position: "GM",
+      confidence: 10,
     });
     const info = person({
       email: "info@casa-lucia.test",
       type: "generic",
       department: null,
       position: null,
-      confidence: 99,
+      confidence: 100,
       decisionMaker: false,
     });
-    const desk = person({
-      email: "desk@casa-lucia.test",
+    const reservations = person({
+      email: "reservations@casa-lucia.test",
       type: "generic",
       department: null,
       position: null,
       confidence: 100,
       decisionMaker: false,
     });
+    const hello = person({
+      email: "hello@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 5,
+      decisionMaker: false,
+    });
+    const contact = person({
+      email: "contact@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 4,
+      decisionMaker: false,
+    });
+    const mailbox = person({
+      email: "marketing@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 100,
+      decisionMaker: false,
+    });
+    const experience = person({
+      email: "eve@casa-lucia.test",
+      department: null,
+      position: "Guest Experience",
+      confidence: 100,
+    });
     const director = person({
       email: "md@casa-lucia.test",
-      department: "marketing",
+      department: null,
       position: "Managing Director",
-      confidence: 100,
-      decisionMaker: true,
-    });
-    const gm = person({
-      email: "gm@casa-lucia.test",
-      department: null,
-      position: "General Manager",
-      confidence: 100,
-      decisionMaker: true,
-    });
-    const gmShort = person({
-      email: "boss@casa-lucia.test",
-      department: "executive",
-      position: "GM",
-      confidence: 100,
-    });
-    const kitchen = person({
-      email: "chef@casa-lucia.test",
-      department: "kitchen",
-      position: "Head Chef",
-      confidence: 100,
-    });
-    const food = person({
-      email: "fb@casa-lucia.test",
-      department: null,
-      position: "F&B Manager",
       confidence: 100,
     });
     const rooms = person({
@@ -257,37 +285,63 @@ describe("Hunter contact lookup", () => {
       position: "Housekeeping Supervisor",
       confidence: 100,
     });
-    const plant = person({
-      email: "eng@casa-lucia.test",
-      department: "engineering",
-      position: "Chief Engineer",
-      confidence: 100,
-    });
+    const excluded = [
+      person({ email: "fb@casa-lucia.test", department: null, position: "F&B Manager" }),
+      person({
+        email: "food@casa-lucia.test",
+        department: null,
+        position: "Food and Beverage Director",
+      }),
+      person({ email: "chef@casa-lucia.test", department: "kitchen", position: "Head Chef" }),
+      person({
+        email: "cul@casa-lucia.test",
+        department: "culinary",
+        position: "Culinary Director",
+      }),
+      person({
+        email: "eng@casa-lucia.test",
+        department: "engineering",
+        position: "Chief Engineer",
+      }),
+      person({ email: "hr@casa-lucia.test", department: "hr", position: "HR Communications" }),
+      person({ email: "rec@casa-lucia.test", department: null, position: "Recruiter" }),
+      person({ email: "tal@casa-lucia.test", department: null, position: "Talent Acquisition" }),
+      person({ email: "fin@casa-lucia.test", department: "finance", position: "Finance Manager" }),
+      person({ email: "acc@casa-lucia.test", department: null, position: "Accountant" }),
+      person({ email: "it@casa-lucia.test", department: "it", position: "IT Manager" }),
+    ].map((candidate) => person({ ...candidate, confidence: 100 }));
 
-    const prefer = (winner: HunterCandidate, loser: HunterCandidate) => {
-      expect(chooseHotelEmail([loser, winner])?.email).toBe(winner.email);
-      expect(chooseHotelEmail([winner, loser])?.email).toBe(winner.email);
-    };
+    expect(selectionTier(creator)).toBe(1);
+    expect(selectionTier(marketing)).toBe(1);
+    expect(selectionTier(pr)).toBe(1);
+    expect(selectionTier(social)).toBe(1);
+    expect(selectionTier(brand)).toBe(1);
+    expect(selectionTier(sales)).toBe(2);
+    expect(selectionTier(guest)).toBe(2);
+    expect(selectionTier(reservationsManager)).toBe(2);
+    expect(selectionTier(gm)).toBe(3);
+    expect(selectionTier(hotelManager)).toBe(3);
+    expect(selectionTier(gmShort)).toBe(3);
+    expect(selectionTier(info)).toBe(4);
+    expect(selectionTier(reservations)).toBe(4);
+    expect(selectionTier(hello)).toBe(4);
+    expect(selectionTier(contact)).toBe(4);
+    expect(selectionTier(mailbox)).toBeNull();
+    expect(selectionTier(experience)).toBeNull();
+    expect(selectionTier(director)).toBeNull();
+    expect(selectionTier(rooms)).toBeNull();
+    for (const candidate of excluded) expect(selectionTier(candidate)).toBeNull();
 
-    for (const outreach of [marketing, partnerships, pr, social, sales]) {
-      prefer(outreach, guest);
-      prefer(outreach, info);
-      prefer(outreach, desk);
-      prefer(outreach, director);
-    }
-    prefer(guest, experience);
-    prefer(guest, info);
-    prefer(experience, info);
-    prefer(info, desk);
-    prefer(info, director);
-    prefer(info, gm);
-    prefer(desk, gmShort);
-    prefer(desk, kitchen);
-    prefer(desk, food);
-    prefer(desk, rooms);
-    prefer(desk, plant);
-    prefer(marketing, director);
-
+    const pool = [info, gm, sales, creator, ...excluded, rooms, experience, director, mailbox];
+    expect(chooseHotelEmail(pool)?.email).toBe(creator.email);
+    expect(chooseHotelEmail([sales, guest, gm, info])?.email).toBe(guest.email);
+    expect(chooseHotelEmail([gm, hotelManager, info, hello])?.email).toBe(hotelManager.email);
+    expect(chooseHotelEmail([info, reservations, hello, contact])?.email).toBe(info.email);
+    expect(chooseHotelEmail([reservationsManager, reservations])?.email).toBe(
+      reservationsManager.email,
+    );
+    expect(chooseHotelEmail([mailbox, info])?.email).toBe(info.email);
+    expect(chooseHotelEmail([gmShort, info])?.email).toBe(gmShort.email);
     expect(
       chooseHotelEmail([
         person({
@@ -316,16 +370,147 @@ describe("Hunter contact lookup", () => {
           email: "high@casa-lucia.test",
           department: "sales",
           position: "Sales Manager",
-          confidence: 70,
+          confidence: 99,
         }),
       ])?.email,
-    ).toBe("high@casa-lucia.test");
+    ).toBe("low@casa-lucia.test");
     expect(
       chooseHotelEmail([
         person({ email: "bad@casa-lucia.test", verification: "invalid", confidence: 100 }),
         info,
       ])?.email,
-    ).toBe("info@casa-lucia.test");
+    ).toBe(info.email);
+    expect(chooseHotelEmail([...excluded, rooms, experience, director, mailbox])).toBeNull();
+  });
+
+  it("records the chosen D181 tier on the lookup and does not call Hunter for an excluded list", async () => {
+    const http = mockFetch((url) => {
+      if (url.includes("email-verifier")) return { status: 500, body: {} };
+      if (url.includes("email-finder")) {
+        const company = new URL(url).searchParams.get("company");
+        if (company === "Excluded Hotel") {
+          return {
+            status: 200,
+            body: {
+              data: {
+                email: "chef@excluded.test",
+                score: 99,
+                position: "Head Chef",
+                verification: { status: "valid" },
+              },
+            },
+          };
+        }
+        return {
+          status: 200,
+          body: {
+            data: {
+              email: "ada@named.test",
+              score: 70,
+              verification: { status: "valid" },
+            },
+          },
+        };
+      }
+      const domain = new URL(url).searchParams.get("domain");
+      if (domain === "excluded.test") {
+        return {
+          status: 200,
+          body: domainBody([
+            {
+              value: "chef@excluded.test",
+              type: "personal",
+              confidence: 100,
+              position: "Head Chef",
+              verification: { status: "valid" },
+            },
+            {
+              value: "desk@excluded.test",
+              type: "generic",
+              confidence: 100,
+              verification: { status: "valid" },
+            },
+          ]),
+        };
+      }
+      return {
+        status: 200,
+        body: domainBody([
+          {
+            value: "info@cascade.test",
+            type: "generic",
+            confidence: 100,
+            verification: { status: "valid" },
+          },
+          {
+            value: "gm@cascade.test",
+            type: "personal",
+            confidence: 99,
+            position: "General Manager",
+            verification: { status: "valid" },
+          },
+          {
+            value: "sal@cascade.test",
+            type: "personal",
+            confidence: 90,
+            department: "sales",
+            verification: { status: "valid" },
+          },
+          {
+            value: "ada@cascade.test",
+            type: "personal",
+            confidence: 10,
+            department: "marketing",
+            position: "Creator Partnerships",
+            verification: { status: "valid" },
+          },
+        ]),
+      };
+    });
+    const watched = watching(memoryLookupStore());
+    const found = await findWithHunter(lookup({ domain: "cascade.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(found).toMatchObject({
+      status: "found",
+      email: "ada@cascade.test",
+      tier: 1,
+    });
+    if (found.status === "found") expect(found.raw.tier).toBe(1);
+    const again = await findWithHunter(lookup({ domain: "cascade.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(again).toMatchObject({ status: "found", email: "ada@cascade.test", tier: 1 });
+    if (again.status === "found") expect(again.raw.tier).toBe(1);
+
+    const missed = await findWithHunter(lookup({ domain: "excluded.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(missed.status).toBe("not_found");
+    expect(JSON.stringify(missed)).not.toContain("chef@");
+    expect(JSON.stringify(missed)).not.toContain("desk@");
+    expect(http.calls.some((call) => call.url.includes("email-verifier"))).toBe(false);
+    expect(net(watched.ops, "search")).toBe(2);
+
+    const chef = await findWithHunter(
+      lookup({ domain: null, name: "Excluded Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: watched.store, fetchImpl: http.fetchImpl },
+    );
+    expect(chef.status).toBe("not_found");
+    expect(JSON.stringify(chef)).not.toContain("chef@");
+
+    const named = await findWithHunter(
+      lookup({ domain: null, name: "Named Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: memoryLookupStore(), fetchImpl: http.fetchImpl },
+    );
+    expect(named).toMatchObject({ status: "found", email: "ada@named.test", tier: null });
+    if (named.status === "found") expect(named.raw.tier).toBeNull();
   });
 
   it("uses Domain Search for a website and does not call Hunter again for that domain", async () => {
@@ -357,8 +542,10 @@ describe("Hunter contact lookup", () => {
         fetchImpl: http.fetchImpl,
       },
     );
-    expect(first).toMatchObject({ status: "found", email: "ada@casa-lucia.test" });
-    expect(second).toMatchObject({ status: "found", email: "ada@casa-lucia.test" });
+    expect(first).toMatchObject({ status: "found", email: "ada@casa-lucia.test", tier: 1 });
+    expect(second).toMatchObject({ status: "found", email: "ada@casa-lucia.test", tier: 1 });
+    if (first.status === "found") expect(first.raw.tier).toBe(1);
+    if (second.status === "found") expect(second.raw.tier).toBe(1);
     expect(http.calls).toHaveLength(1);
     expect(http.calls[0]!.url).toBe(
       `${HUNTER_ORIGIN}/v2/domain-search?domain=casa-lucia.test&limit=10`,
@@ -422,7 +609,8 @@ describe("Hunter contact lookup", () => {
       lookup({ domain: null, firstName: "Ada", lastName: "Lovelace" }),
       { env: env(), store: memoryLookupStore(), fetchImpl: http.fetchImpl },
     );
-    expect(found.status).toBe("found");
+    expect(found).toMatchObject({ status: "found", tier: null });
+    if (found.status === "found") expect(found.raw.tier).toBeNull();
     expect(http.calls[0]!.url).toContain("/v2/email-finder?");
     expect(http.calls[0]!.url).not.toContain("api_key");
     const domainWins = mockFetch(() => ({
@@ -534,7 +722,8 @@ describe("Hunter contact lookup", () => {
       store: watched.store,
       fetchImpl: http.fetchImpl,
     });
-    expect(first).toMatchObject({ status: "found", email: "ada@ranked.test" });
+    expect(first).toMatchObject({ status: "found", email: "ada@ranked.test", tier: 1 });
+    if (first.status === "found") expect(first.raw.tier).toBe(1);
     expect(net(watched.ops, "verification")).toBe(2);
     expect(http.calls).toHaveLength(1);
 
@@ -653,6 +842,7 @@ describe("Hunter contact lookup", () => {
             value: "ada@next.test",
             type: "personal",
             confidence: 10,
+            department: "marketing",
             verification: { status: "valid" },
           },
         ]),
@@ -738,6 +928,7 @@ describe("Hunter contact lookup", () => {
               value: "ada@ready.test",
               type: "personal",
               confidence: 70,
+              department: "marketing",
               verification: { status: "valid" },
             },
           ]),
@@ -745,7 +936,14 @@ describe("Hunter contact lookup", () => {
       }
       return {
         status: 200,
-        body: domainBody([{ value: "ada@casa-lucia.test", type: "personal", confidence: 70 }]),
+        body: domainBody([
+          {
+            value: "ada@casa-lucia.test",
+            type: "personal",
+            confidence: 70,
+            department: "marketing",
+          },
+        ]),
       };
     });
     const watched = watching(memoryLookupStore());
@@ -800,6 +998,7 @@ describe("Hunter contact lookup", () => {
           value: "ada@casa-lucia.test",
           type: "personal",
           confidence: 10,
+          department: "marketing",
           verification: { status: "valid" },
         },
       ]),
@@ -816,7 +1015,9 @@ describe("Hunter contact lookup", () => {
         return { status: 451, body: { errors: [{ id: "claimed_email" }] } };
       return {
         status: 200,
-        body: domainBody([{ value: address, type: "personal", confidence: 70 }]),
+        body: domainBody([
+          { value: address, type: "personal", confidence: 70, department: "marketing" },
+        ]),
       };
     });
     const store = memoryLookupStore();
@@ -869,7 +1070,9 @@ describe("Hunter contact lookup", () => {
         }
         return {
           status: 200,
-          body: domainBody([{ value: item.email, type: "personal", confidence: 60 }]),
+          body: domainBody([
+            { value: item.email, type: "personal", confidence: 60, department: "marketing" },
+          ]),
         };
       });
       const store = memoryLookupStore();
@@ -959,7 +1162,14 @@ describe("Hunter contact lookup", () => {
         return { status: 403, body: { errors: [{ id: "usage_limit" }] } };
       return {
         status: 200,
-        body: domainBody([{ value: "ada@verify-usage.test", type: "personal", confidence: 10 }]),
+        body: domainBody([
+          {
+            value: "ada@verify-usage.test",
+            type: "personal",
+            confidence: 10,
+            department: "marketing",
+          },
+        ]),
       };
     });
     const verifierStore = memoryLookupStore();
@@ -1006,6 +1216,7 @@ describe("Hunter contact lookup", () => {
           value: "ada@slow-body.test",
           type: "personal",
           confidence: 20,
+          department: "marketing",
           verification: { status: "valid" },
         },
       ]),
@@ -1043,6 +1254,7 @@ describe("Hunter contact lookup", () => {
           value: "ada@bad.test",
           type: "personal",
           confidence: 20,
+          department: "marketing",
           verification: { status: "valid" },
         },
       ]),
@@ -1099,6 +1311,7 @@ describe("Hunter contact lookup", () => {
           value: "ada@thrown.test",
           type: "personal",
           confidence: 15,
+          department: "marketing",
           verification: { status: "valid" },
         },
       ]),

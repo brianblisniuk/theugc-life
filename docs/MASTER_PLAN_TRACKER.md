@@ -361,7 +361,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
-| D02 | **IN PROGRESS** — PR #97 merged the Hunter adapter (migration `0095`, D180, merge `9658a451a09e2543a36184ae47562cb4dde59241`). PR #98 is the audit fix (migration `0096`). Fake stays the local and CI provider. One credit still charges only on a found address. The unlock screen is one status line. Confidence and verification are not shown, so provenance and freshness on screen are not done. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
+| D02 | **IN PROGRESS** — PR #97 merged the Hunter adapter (migration `0095`, D180, merge `9658a451a09e2543a36184ae47562cb4dde59241`). PR #98 is the audit fix (migration `0096`) and the D181 email cascade. Fake stays the local and CI provider. One credit still charges only on a found address. The unlock screen is one status line. Confidence, verification, and tier are not shown, so provenance and freshness on screen are not done. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | **DONE** — PR #84, merge `b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Drafts are not sent. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | **DONE** — PR #86, merge `3e11ded390a2845603b207433af90bb846d4670e`. Migration `0089`. D156–D161. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D04b | **DONE** — PR #87, merge `f892d6e37cd7b606e4b5c663dc002e0503d0145b`. Migrations `0090` and `0091`. D162–D170. Monthly USD AI budget, account pause, structured generation, queued sends, bounce pause. Sends still cost no credits. | AI cost and anti-abuse | per-user budget before the global pool; queued sends; deletion cascades |
@@ -380,7 +380,8 @@ adds no migration. PREPROD-1 (PR #92) stays merged as
 `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration
 `0093_preprod_jobs.sql`. D178 is Accepted (owner Brian, 16 Oct 2026). D02 Contact Hub
 is not finished: PR #97 merged the Hunter adapter (`9658a451a09e2543a36184ae47562cb4dde59241`,
-migration `0095`, D180). PR #98 is the audit fix (migration `0096`). The unlock
+migration `0095`, D180). PR #98 is the audit fix (migration `0096`) and the
+D181 email cascade. The unlock
 screen still does not show provenance or freshness.
 `HUNTER_API_KEY` stays unset in CI. UX02 design
 (PR #91) is merged as `dbfd2472b00d49590c17f416a10f6dbef371781b`. UX02 screens
@@ -629,7 +630,8 @@ design is merged (PR #91, `dbfd2472b00d49590c17f416a10f6dbef371781b`). UX02
 screens are merged (PR #95, `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`).
 D02 Contact Hub is not finished. PR #97 merged the Hunter adapter
 (`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
-PR #98 is the audit fix (migration `0096`). Provenance and freshness are
+PR #98 is the audit fix (migration `0096`) and the D181 email cascade.
+Provenance and freshness are
 not on the unlock screen. D178 is Accepted
 (owner Brian, 16 Oct 2026). Draft PRs #88 and #90 await the owner. Do not
 merge them. BASE-N9 is closed by migration `0094` (D179) and is not the
