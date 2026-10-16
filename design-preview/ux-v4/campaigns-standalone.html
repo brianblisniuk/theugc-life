@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1C241F"><title>Outreach Campaigns · theugc.life UX V5</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1C241F"><title>Outreach · theugc.life UX V6</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><style>
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap');
 :root{font-family:Archivo,Inter,Arial,sans-serif;color-scheme:light;--lime:#DFFF4F;--ink:#181C1A;--mute:#606B64;--faint:#88938B;--bg:#F7F8F5;--paper:#FFFFFF;--paper2:#F2F4F0;--border:#E1E7DE;--deep:#1C241F;--green:#246F48;--greenwash:#E8F4E8;--orange:#986520;--shadow:0 12px 40px rgba(31,44,35,.06)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:3px solid #4470FF;outline-offset:2px}button,select,input{color:var(--ink)}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.skip{position:fixed;top:-99px;left:20px;background:var(--lime);z-index:200;padding:12px}.skip:focus{top:12px}
@@ -290,7 +290,75 @@ svg{display:block}.icon{width:17px;height:17px;flex:none;stroke:currentColor;str
 
 .ops-wrap [hidden]{display:none!important}
 
-</style><script>
+</style><style>
+
+/* theugc.life V6 — a connected trip, outreach and opportunity design layer */
+.v6-context-strip{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:15px 17px;border:1px solid #DCE8CE;background:#F1F8E7;border-radius:10px;margin-bottom:20px;flex-wrap:wrap}
+.v6-context-strip strong{font-size:14px}.v6-context-strip small{font-size:12px;color:#61735C}
+.v6-context-strip .btn{font-size:12px}
+.v6-explainer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:22px}
+.v6-explainer>div{background:#fff;border:1px solid var(--ops-line);border-radius:10px;padding:15px 17px}
+.v6-explainer strong{display:block;font-size:14px}
+.v6-explainer p{font-size:12px;margin:6px 0 0}
+.v6-trip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:20px}
+.v6-trip-card{background:#fff;border:1px solid #DDE7DD;border-radius:13px;overflow:hidden;box-shadow:0 4px 18px #1B32210A}
+.v6-trip-cover{background:#26392C;position:relative;color:#F8FFF1;padding:22px 23px;min-height:151px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+.v6-trip-cover:after{position:absolute;right:-60px;bottom:-110px;content:"";width:260px;height:260px;border-radius:50%;border:1px solid #97BD7B50;box-shadow:0 0 0 35px #A7C2890F,0 0 0 80px #C7DD8F0A;pointer-events:none}
+.v6-trip-cover small{color:#C5D6C1;font-size:12px}
+.v6-trip-cover h3{font-size:26px;line-height:1.2;letter-spacing:-1px;margin:7px 0 0;color:#F8FFF6}
+.v6-trip-cover .ops-pill{width:max-content;z-index:1}
+.v6-trip-body{padding:19px 21px}
+.v6-trip-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.v6-trip-stat{background:#F5F8F2;border-radius:7px;padding:10px 12px}
+.v6-trip-stat strong{display:block;font-size:22px;font-weight:800;letter-spacing:-.8px}
+.v6-trip-stat small{font-size:11px;color:#677767}
+.v6-trip-actions{display:flex;gap:9px;align-items:center;margin-top:18px;flex-wrap:wrap}
+.v6-trip-actions a,.v6-trip-actions button{font-size:12px}
+.v6-trip-preview{padding:12px 0;margin-top:13px;border-top:1px solid var(--ops-line);font-size:12px;color:#617063}
+.v6-trip-preview strong{color:#2A3F2B}
+.v6-additional{padding:17px 20px;border-radius:10px;border:1px dashed #C6D7BF;background:#F9FCF6;display:flex;justify-content:space-between;align-items:center;gap:15px;margin-top:17px}
+.v6-note-tag{font-size:11px;color:#567052;border-radius:6px;padding:6px 8px;background:#E7F2DF}
+.v6-origin{font-size:11px;color:#69796A;margin-top:6px}
+.v6-opp-scope{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.v6-opp-scope button{border:1px solid #D9E5D8;background:white;border-radius:7px;padding:9px 12px;font-weight:700;font-size:12px}
+.v6-opp-scope button.active{background:#DFFF4F;border-color:#DFFF4F}
+.v6-opp-filter{height:40px;background:white;border:1px solid #DFE9DE;border-radius:8px;padding:0 11px;font-size:12px}
+.v6-opp-filters{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:white;border:1px solid #DDE6DB;border-radius:10px;padding:14px;margin-bottom:15px}
+.v6-opp-filters .ops-search{max-width:300px}
+.v6-opp-filters .ops-hint{margin-left:auto}
+.v6-opp-card-identity{display:flex;gap:9px;align-items:center}
+.v6-opp-card-name{font-size:14px;line-height:1.4}
+.v6-opp-context{font-size:11.5px;color:#6F806E;margin-top:5px;line-height:1.5}
+.v6-opp-tag{font-size:10.5px;background:#F0F4EB;border-radius:5px;padding:5px 7px;color:#48634A;font-weight:700}
+.v6-opp-board-note{font-size:11px;color:#748577}
+.v6-mini-flow{display:flex;flex-wrap:wrap;gap:8px;margin:13px 0}
+.v6-mini-step{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#F2F7EC;border-radius:7px;font-size:11.5px;color:#546B52;font-weight:700}
+.v6-mini-step span{display:grid;place-items:center;background:#E2EFCF;color:#314E30;border-radius:50%;width:19px;height:19px;font-size:10px}
+.v6-campaign-tag{display:inline-flex;align-items:center;gap:6px;color:#D9ECCF;border:1px solid #647E65;padding:6px 9px;border-radius:6px;font-size:11.5px}
+.v6-segment{display:flex;gap:6px;padding:4px;border-radius:9px;background:#ECF2EA;width:max-content}
+.v6-segment button{border:0;background:transparent;padding:9px 13px;border-radius:7px;color:#546651;font-weight:700;font-size:12px}
+.v6-segment button.active{background:white;color:#1C2920;box-shadow:0 2px 9px #00000010}
+.v6-related-row{display:flex;justify-content:space-between;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--ops-line)}
+.v6-related-row:last-child{border-bottom:0}
+.v6-related-row strong{font-size:13px}
+.v6-related-row small{font-size:11px;color:#647562;display:block;margin-top:5px}
+.v6-panel-highlight{background:#EFF8E0;border:1px solid #D7E6C3;padding:13px 14px;border-radius:9px;color:#456044;font-size:12px;line-height:1.6}
+.v6-inline-status{font-size:11px;color:#536E55}
+.v6-warning{background:#FFF9E9;border:1px solid #E8DEB7;border-radius:8px;padding:12px 14px;font-size:11.5px;color:#806333}
+.v6-campaign-card-action{margin-top:12px}
+.v6-stat-number{font-weight:800;font-size:24px;letter-spacing:-.7px}
+.v6-card-save{display:flex;align-items:center;gap:8px;border-top:1px solid #E6EDE2;padding-top:10px;margin-top:12px}
+.v6-status-select{width:100%;height:40px;border-radius:8px;border:1px solid #D6E1D2;background:white;font-size:13px;padding:0 10px}
+.v6-panel-title{font-size:13px;letter-spacing:.2px;font-weight:800}
+.v6-board-sub{font-size:11px;color:#738473;margin-top:5px}
+.v6-link{border:0;background:transparent;color:#426F3E;font-size:12px;font-weight:700;text-decoration:underline;padding:3px;cursor:pointer}
+.v6-eyebrow-note{font-size:11px;font-weight:700;color:#5A7455;letter-spacing:.3px}
+.v6-trip-empty{color:#76877A;font-size:12px;margin-top:15px;line-height:1.6}
+.v6-hero-summary{font-size:12px;color:#BFD2C0;margin-top:12px}
+@media(max-width:1000px){.v6-trip-grid{grid-template-columns:1fr}.v6-explainer{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.v6-explainer{grid-template-columns:1fr}.v6-trip-cover{padding:18px}.v6-trip-body{padding:16px}.v6-trip-stats{gap:6px}.v6-trip-stat{padding:9px}.v6-trip-actions{align-items:stretch}.v6-trip-actions .btn{flex:1}.v6-opp-scope{gap:5px}.v6-opp-scope button{font-size:11px;padding:8px}.v6-opp-filters{padding:11px}.v6-additional{flex-direction:column;align-items:start}.v6-context-strip{padding:12px}}
+
+</style><link rel="stylesheet" href="./ops-v5.css"><script>
 /* theugc.life UX V3 — browser-only demonstrator. No backend, no real hotel claims. */
 (function(){
 'use strict';
@@ -416,205 +484,238 @@ document.addEventListener('input',function(e){if(e.target.id==='search'){state.s
 document.addEventListener('click',function(e){if(e.target&&e.target.id==='more-filters'){el('more-options').classList.toggle('open');e.target.setAttribute('aria-expanded',el('more-options').classList.contains('open'))}if(e.target&&e.target.id==='clear-search'){state.search='';state.type='';state.activity='';state.collab=false;state.sort='name';el('search').value='';saveState();renderDiscover();el('more-options')?.classList.remove('open')}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(el('modal-root')&&el('modal-root').classList.contains('open'))closeModal();else el('sidebar')&&el('sidebar').classList.remove('open')}});
 document.addEventListener('click',function(e){if(e.target&&e.target.id==='modal-root')closeModal()});
-document.addEventListener('DOMContentLoaded',function(){if(state.plan==='free'&&(state.sort==='rate'||state.sort==='reply'))state.sort='name';featureNav();render();});
+document.addEventListener('DOMContentLoaded',function(){if(document.body.dataset.page==='discover'){var requested=new URLSearchParams(location.search).get('trip');if(requested&&tripById(requested)){state.trip=requested;state.city=tripById(requested).city;saveState();}}if(state.plan==='free'&&(state.sort==='rate'||state.sort==='reply'))state.sort='name';featureNav();render();});
 window.UXApp={state:state,H:H,saveState:saveState,render:render,renderResults:renderResults,renderHotel:renderHotel,showSaveModal:showSaveModal,tripById:tripById,currentTrip:currentTrip,tripForm:tripForm,closeModal:closeModal,modal:modal,toast:toast,upgrade:upgrade,ic:ic,esc:esc};
 })();
 </script><script>
-(function client(){
+(function V6(){
 "use strict";
-const A=()=>window.UXApp, E=id=>document.getElementById(id), esc=x=>A().esc(x==null?"":String(x)), ic=n=>A().ic(n);
-const read=(key,fallback)=>{try{let s=localStorage.getItem(key);return s?JSON.parse(s):fallback}catch(_){return fallback}},write=(key,v)=>{try{localStorage.setItem(key,JSON.stringify(v))}catch(_){}};
-const G=(k,def)=>read("ugc_v4_"+k,def),W=(k,v)=>write("ugc_v4_"+k,v),hotel=id=>A().H.find(h=>h.id===id),uid=s=>s+"-"+Date.now()+"-"+Math.floor(Math.random()*100000);
-const nowDays=d=>new Date(Date.now()-86400000*d).toISOString(),when=iso=>iso?new Date(iso).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"—";
-let data={},ui={campaign:null,search:"",stage:"all",view:"board",drawer:null,closed:false};
-const steps=[["saved","Saved"],["draft","Pitch ready"],["sent","Outreach sent"],["replied","In conversation"],["won","Confirmed"]];
-function refresh(){data.campaigns=G("campaigns",[]);data.events=G("events",[]);data.drafts=G("drafts",[]);data.contracts=G("contracts",[]);data.notes=read("ugc_v5_notes",[])}
-function persist(){["campaigns","events","drafts","contracts"].forEach(k=>W(k,data[k]));write("ugc_v5_notes",data.notes)}
-function bootstrap(){
-if(read("ugc_v5_demo_seeded",false))return;
-if(data.campaigns.length||data.events.length||data.drafts.length||A().state.pipeline.length)return;
-const trip=A().state.trips.find(t=>t.city==="Bangkok");
-data.campaigns=[
-{id:"demo-bangkok",name:"Bangkok · November outreach",tripId:trip?.id||"",city:"Bangkok",hotelIds:["canopy","riverline","atelier","garden","lumphini","lantern"],createdAt:nowDays(10),sample:true},
-{id:"demo-bali",name:"Bali · January opportunities",tripId:"",city:"Bali",hotelIds:["island"],createdAt:nowDays(3),sample:true}
-];
-data.drafts=[
-{id:"demo-draft-atelier",hotelId:"atelier",campaignId:"demo-bangkok",subject:"Content collaboration · Atelier",body:"Sample draft. This email was not sent.",updatedAt:nowDays(1),sample:true},
-{id:"demo-draft-river",hotelId:"riverline",campaignId:"demo-bangkok",subject:"Social-first UGC proposal",body:"Sample draft. This email was not sent.",updatedAt:nowDays(8),sample:true}];
-data.events=[
-{id:"demo-1",hotelId:"riverline",campaignId:"demo-bangkok",type:"stage",value:"sent",at:nowDays(6),source:"sample"},
-{id:"demo-2",hotelId:"canopy",campaignId:"demo-bangkok",type:"stage",value:"sent",at:nowDays(8),source:"sample"},
-{id:"demo-3",hotelId:"canopy",campaignId:"demo-bangkok",type:"stage",value:"replied",at:nowDays(2),source:"sample"},
-{id:"demo-4",hotelId:"lumphini",campaignId:"demo-bangkok",type:"stage",value:"sent",at:nowDays(7),source:"sample"},
-{id:"demo-5",hotelId:"lumphini",campaignId:"demo-bangkok",type:"stage",value:"negotiating",at:nowDays(1),source:"sample"}
-];
-data.notes=[{id:"demo-note",hotelId:"lumphini",text:"Example: Review deliverables and usage rights before agreeing.",at:nowDays(1)}];
-for(const id of ["canopy","riverline","atelier","garden","lumphini","lantern","island"]){if(!A().state.pipeline.includes(id))A().state.pipeline.push(id)}
-A().saveState();persist();write("ugc_v5_demo_seeded",true);write("ugc_v5_demo_active",true);
+const A=()=>window.UXApp,E=id=>document.getElementById(id),esc=v=>A().esc(v==null?"":String(v)),ic=n=>A().ic(n);
+const get=(k,d)=>{try{let v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},put=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const hotel=id=>A().H.find(h=>h.id===id),trip=id=>A().tripById(id),uid=p=>p+"-"+Date.now()+"-"+Math.floor(Math.random()*1e6),date=s=>s?new Date(s).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"—";
+const labels={saved:"Saved",draft:"Pitch ready",sent:"Outreach sent",replied:"Hotel replied",negotiating:"Negotiating",won:"Agreement reached",bounced:"Bounce reported",closed:"Closed"};
+const group=s=>s==="negotiating"?"replied":s==="bounced"?"sent":s;
+let db={campaigns:[],opportunities:[],events:[],notes:[],drafts:[]};
+let ui={campaign:"",scope:"all",trip:"",stage:"all",search:"",view:"board",drawer:"",closed:false};
+function load(){
+ db.campaigns=get("ugc_v4_campaigns",[]);db.opportunities=get("ugc_v6_opportunities",[]);db.events=get("ugc_v6_events",[]);db.notes=get("ugc_v6_notes",[]);db.drafts=get("ugc_v4_drafts",[]);
 }
-function stage(id){
-const ev=data.events.filter(e=>e.hotelId===id&&e.type==="stage").sort((x,y)=>x.at.localeCompare(y.at)).at(-1);
-if(ev)return ev.value;
-return data.drafts.some(d=>d.hotelId===id)?"draft":"saved";
+function save(){put("ugc_v4_campaigns",db.campaigns);put("ugc_v6_opportunities",db.opportunities);put("ugc_v6_events",db.events);put("ugc_v6_notes",db.notes)}
+function reconcileLegacy(){
+ let changed=false;
+ for(const draft of db.drafts){
+   if(!hotel(draft.hotelId))continue;
+   const cid=draft.campaignId||"";
+   const matching=db.opportunities.filter(o=>o.hotelId===draft.hotelId&&(cid?o.campaignId===cid:!o.campaignId));
+   const found=matching[0]||(cid?ensure(draft.hotelId,cid,db.campaigns.find(c=>c.id===cid)?.tripId||""):ensure(draft.hotelId,"",""));
+   if(found&&found.status==="saved"){found.status="draft";found.updatedAt=draft.updatedAt||new Date().toISOString();changed=true}
+ }
+ const seen=new Set(get("ugc_v6_seen_legacy_events",[]));
+ const legacy=get("ugc_v4_events",[]);
+ for(const e of legacy){
+   if(!e.id||seen.has(e.id)||e.type!=="stage")continue;
+   if(e.source==="sample"||e.source==="demo"){seen.add(e.id);continue}
+   const matches=db.opportunities.filter(o=>o.hotelId===e.hotelId&&(e.opportunityId?o.id===e.opportunityId:e.campaignId?o.campaignId===e.campaignId:!o.campaignId));
+   if(matches.length!==1){if(!matches.length&&e.hotelId&&!e.campaignId){matches.push(ensure(e.hotelId,"",""))}else continue}
+   const o=matches[0];
+   if(o&&labels[e.value]){o.status=e.value;o.updatedAt=e.at||new Date().toISOString();db.events.push({id:uid("legacy"),opportunityId:o.id,value:e.value,type:"stage",at:o.updatedAt,source:"manual-import"});changed=true}
+   seen.add(e.id);
+ }
+ put("ugc_v6_seen_legacy_events",[...seen]);if(changed)save();
 }
-function laneFor(id){const s=stage(id);return s==="negotiating"?"replied":s==="bounced"?"sent":s==="not-started"?"saved":s}
-const title=s=>({saved:"Saved",draft:"Pitch drafted",sent:"Sent · manual",replied:"Replied · manual",negotiating:"Negotiating · manual",bounced:"Bounce reported",won:"Agreed · manual",closed:"Closed"}[s]||"Saved");
-function pill(id){const s=stage(id),c=["replied","won"].includes(s)?"lime":["negotiating","bounced"].includes(s)?"amber":s==="sent"?"blue":"";return `<span class="ops-pill ${c}">${esc(title(s))}</span>`}
-function initials(h){return h.name.split(" ").slice(0,2).map(x=>x[0]).join("").toUpperCase()}
-function m(ids){const count=s=>ids.filter(id=>stage(id)===s).length;return {leads:ids.length,drafts:ids.filter(id=>data.drafts.some(d=>d.hotelId===id)).length,contacted:ids.filter(id=>["sent","replied","negotiating","won","bounced"].includes(stage(id))).length,conversations:ids.filter(id=>["replied","negotiating","won"].includes(stage(id))).length,count}}
-function stats(ids){const x=m(ids);return [["Selected hotels",x.leads,"Shared hotel records"],["Drafts prepared",x.drafts,"Individualized pitches"],["Sent logged",x.contacted,"Manual / sample events"],["Conversations",x.conversations,"Reported by creator"]].map(([name,n,sub],i)=>`<div class="ops-stat ${i===3?"highlight":""}"><span class="k">${ic(["building","mail","arrow","check"][i])} ${name}</span><strong>${n}</strong><small>${sub}</small></div>`).join("")}
-function savedIDs(){return [...new Set([...A().state.pipeline,...data.events.map(e=>e.hotelId),...data.drafts.map(e=>e.hotelId)])].filter(id=>hotel(id))}
-function related(id){return data.campaigns.filter(c=>c.hotelIds.includes(id))}
-function openHotel(id){location.href="hotel-standalone.html?id="+encodeURIComponent(id)}
-function showCampaigns(){
-if(document.body.dataset.page!=="campaigns")return;
-refresh();
-if(!data.campaigns.some(c=>c.id===ui.campaign))ui.campaign=data.campaigns[0]?.id||"";
-E("ops-campaign-pills").innerHTML=data.campaigns.length?data.campaigns.map(c=>{const x=m(c.hotelIds.filter(id=>hotel(id))),sel=c.id===ui.campaign;return `<button class="ops-chooser-card ${sel?"active":""}" aria-pressed="${sel}" data-op-campaign="${esc(c.id)}"><div class="ops-chooser-title"><span class="ops-chooser-pin">${ic("pin")}</span>${c.sample?'<span class="ops-pill amber">Sample data</span>':`<span class="ops-pill">${sel?"Selected":"Open"}</span>`}</div><strong>${esc(c.name)}</strong><small>${esc(c.city)} · ${x.leads} hotels</small><div class="ops-track" style="height:5px;background:#DFE9DB;margin-top:15px"><div class="ops-fill" style="width:${x.leads?x.contacted/x.leads*100:0}%"></div></div></button>`}).join(""):`<div class="ops-emptybox"><h3>Start your first campaign</h3><p>Organize hotel outreach around a destination or Trip.</p><button class="btn lime" data-op="create">Create a campaign</button></div>`;
-let c=data.campaigns.find(c=>c.id===ui.campaign);
-E("ops-campaign-workspace").hidden=!c;E("ops-campaign-none").hidden=!!c;if(!c)return;
-let ids=c.hotelIds.filter(id=>hotel(id)),x=m(ids),trip=A().tripById(c.tripId);
-E("ops-campaign-city").textContent=c.city.toUpperCase()+" / "+(trip?trip.name:"INDEPENDENT CAMPAIGN");
-E("ops-campaign-title").textContent=c.name;E("ops-campaign-desc").textContent=trip?"Linked to "+trip.name+" · Organized around your journey.":"A focused destination campaign with individual hotel pitches.";
-E("ops-campaign-progress").style.width=(x.leads?x.contacted/x.leads*100:0)+"%";
-E("ops-campaign-progress-title").textContent=x.contacted+" / "+x.leads;
-E("ops-progress-percent").textContent=(x.leads?Math.round(x.contacted/x.leads*100):0)+"%";
-E("ops-stat-grid").innerHTML=stats(ids);
-E("ops-campaign-id").textContent=ids.length+" selected hotels"+(c.sample?" · Illustrative":"");
-const recommendation=x.conversations?["Keep the conversation moving","Review replies and negotiations before pitching new hotels.","pipeline-standalone.html?filter=conversation","Open conversations"]:x.drafts?["Finish pitches already started","Review drafts, verify recipients and avoid sending generic emails.","pipeline-standalone.html?filter=draft","Review drafts"]:["Start with a strong proposal","Prepare a useful, personalized pitch for one hotel.","pitch-standalone.html?hotel="+encodeURIComponent(ids[0]||"canopy"),"Start pitching"];
-E("ops-focus-card").innerHTML=`<div class="eyebrow">YOUR NEXT MOVE</div><h3>${recommendation[0]}</h3><p>${recommendation[1]}</p><a class="btn lime" href="${recommendation[2]}">${recommendation[3]} ${ic("arrow")}</a>`;
-showLeads();
-let events=data.events.filter(e=>c.hotelIds.includes(e.hotelId)).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,5);
-E("ops-campaign-events").innerHTML=events.length?events.map(e=>`<div class="ops-event"><strong>${esc(hotel(e.hotelId)?.name||"Hotel")}</strong><p>${esc(title(e.value))} · ${e.source==="sample"?"Illustrative":e.source==="manual"?"Manual":"Not verified"}</p><small>${when(e.at)}</small></div>`).join(""):'<div class="ops-no-data">No activity yet. Drafts and updates appear here.</div>';
+function opportunity(id){return db.opportunities.find(o=>o.id===id)}
+function ensure(hotelId,campaignId="",tripId=""){
+ if(!hotel(hotelId))return null;
+ const o=db.opportunities.find(o=>o.hotelId===hotelId&&o.campaignId===campaignId);
+ if(o)return o;
+ const v={id:uid("opp"),hotelId,campaignId,tripId,status:"saved",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};db.opportunities.push(v);return v;
 }
-function showLeads(){
-const c=data.campaigns.find(c=>c.id===ui.campaign);if(!c)return;
-let ids=c.hotelIds.filter(id=>hotel(id));
-if(ui.search)ids=ids.filter(id=>hotel(id).name.toLowerCase().includes(ui.search.toLowerCase()));
-if(ui.stage!=="all")ids=ids.filter(id=>laneFor(id)===ui.stage);
-E("ops-lead-count").textContent=ids.length+" visible";
-E("ops-campaign-rows").innerHTML=ids.length?ids.map(id=>{const h=hotel(id),d=data.drafts.find(d=>d.hotelId===id&&d.campaignId===c.id);
-const s=stage(id),onward=["sent","replied","negotiating","won","bounced"].includes(s),href=onward?"pipeline-standalone.html?hotel="+encodeURIComponent(id):"pitch-standalone.html?hotel="+encodeURIComponent(id)+"&campaign="+encodeURIComponent(c.id);
-return `<tr><td><div class="ops-lead-ident"><span class="ops-ident-mark">${esc(initials(h))}</span><div><strong>${esc(h.name)}</strong><small>${esc(h.city)} · ${esc(h.type)}</small></div></div></td><td>${pill(id)}</td><td><span class="ops-pill">${esc(h.activity)} activity</span></td><td><strong>${d?"Draft saved":"Not drafted"}</strong><small style="display:block;color:#758476;margin-top:6px">${A().state.unlocks.includes(id)?"Demo contact unlocked":"Contact locked"}</small></td><td><div class="ops-lead-right"><a class="btn small" href="${href}">${onward?"Open deal":"Prepare pitch"} ${ic("arrow")}</a><button class="btn small" data-op-hotel="${esc(id)}" title="Hotel details">${ic("building")}</button></div></td></tr>`;
-}).join(""):`<tr><td colspan="5"><div class="ops-no-data"><strong>No matching hotels</strong><p>Adjust filters or add hotels to this campaign.</p></div></td></tr>`;
+function forCampaign(id){return db.opportunities.filter(o=>o.campaignId===id&&hotel(o.hotelId))}
+function campaignsForTrip(id){return db.campaigns.filter(c=>c.tripId===id)}
+function seedOrMigrate(){
+ if(get("ugc_v6_initialized",false))return;
+ if(!db.campaigns.length&&!A().state.pipeline.length){
+   const t=A().state.trips.find(t=>t.city==="Bangkok");
+   db.campaigns=[{id:"demo-trip",name:"Bangkok · November outreach",city:"Bangkok",tripId:t?.id||"",hotelIds:["canopy","riverline","atelier","garden"],sample:true},{id:"demo-independent",name:"Bangkok · Luxury storytelling",city:"Bangkok",tripId:"",hotelIds:["canopy","lantern"],sample:true}];
+   [["canopy","demo-trip","replied"],["riverline","demo-trip","sent"],["atelier","demo-trip","draft"],["garden","demo-trip","saved"],["canopy","demo-independent","draft"],["lantern","demo-independent","saved"]].forEach(([h,c,s])=>{const o=ensure(h,c,c==="demo-trip"?t?.id||"":"");o.status=s;o.sample=true});
+   if(t){if(!A().state.shortlists[t.id])A().state.shortlists[t.id]=[];for(const id of ["canopy","riverline","atelier","garden"]){if(!A().state.shortlists[t.id].includes(id))A().state.shortlists[t.id].push(id)}}
+   for(const id of ["canopy","riverline","atelier","garden","lantern"]){if(!A().state.pipeline.includes(id))A().state.pipeline.push(id)}
+   A().saveState();
+   const drafts=[
+    {id:"v6-demo-draft-1",hotelId:"atelier",campaignId:"demo-trip",subject:"UGC content collaboration · Atelier Sukhumvit",body:"Illustrative draft only. No email was sent. Please personalize before using.",updatedAt:new Date().toISOString(),sample:true},
+    {id:"v6-demo-draft-2",hotelId:"canopy",campaignId:"demo-independent",subject:"Luxury storytelling idea · Siam Canopy",body:"Illustrative draft only. No email was sent. Please personalize before using.",updatedAt:new Date().toISOString(),sample:true}
+   ];
+   db.drafts.push(...drafts);put("ugc_v4_drafts",db.drafts);
+   put("ugc_v6_sample",true);
+ }else{
+   const events=get("ugc_v4_events",[]);
+   db.campaigns.forEach(c=>(c.hotelIds||[]).forEach(h=>{
+     const o=ensure(h,c.id,c.tripId||"");
+     const isOnlyCampaign=db.campaigns.filter(x=>(x.hotelIds||[]).includes(h)).length===1;
+     const ev=events.filter(e=>e.hotelId===h&&e.type==="stage"&&(e.campaignId?e.campaignId===c.id:isOnlyCampaign)).at(-1);
+     if(ev&&labels[ev.value])o.status=ev.value;
+     else if(db.drafts.some(d=>d.hotelId===h&&(d.campaignId||"")===c.id))o.status="draft";
+   }));
+   const used=new Set(db.opportunities.map(o=>o.hotelId));
+   A().state.pipeline.forEach(id=>{if(!used.has(id)){ensure(id);used.add(id)}});
+ }
+ save();put("ugc_v6_initialized",true);
 }
-function newCampaign(){
-const tripOptions=A().state.trips.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
-const cities=[...new Set(A().H.map(h=>h.city))].map(city=>`<option>${esc(city)}</option>`).join("");
-A().modal("New outreach campaign",`<p>Bring target hotels together before preparing individual pitches. Campaigns are not bulk-email tools.</p><form id="ops-new-form"><div class="field" style="margin-top:16px"><label for="ops-name">CAMPAIGN NAME</label><input id="ops-name" required maxlength="100" placeholder="e.g. Bali February outreach"></div><div class="modal-fields"><div class="field"><label for="ops-city">DESTINATION</label><select id="ops-city">${cities}</select></div><div class="field"><label for="ops-trip">RELATED TRIP</label><select id="ops-trip"><option value="">No trip</option>${tripOptions}</select></div></div><p class="fine">When linked, the campaign can use hotels already shortlisted in that Trip.</p><div class="modal-bottom"><button class="btn" type="button" data-close>Cancel</button><button class="btn lime" type="submit">Create campaign</button></div></form>`);
+function count(items){return {total:items.length,prepared:items.filter(o=>db.drafts.some(d=>d.hotelId===o.hotelId&&(!o.campaignId||d.campaignId===o.campaignId))).length,sent:items.filter(o=>["sent","replied","negotiating","won","bounced"].includes(o.status)).length,replies:items.filter(o=>["replied","negotiating","won"].includes(o.status)).length}}
+function stats(items){
+ const n=count(items);return [["Opportunities",n.total,"Separate commercial attempts"],["Pitches saved",n.prepared,"Drafts linked by hotel"],["Outreach logged",n.sent,"Manual or demo events"],["Conversations",n.replies,"Manual or demo outcomes"]].map(([name,num,sub],i)=>`<div class="ops-stat ${i===3?"highlight":""}"><span class="k">${name}</span><strong>${num}</strong><small>${sub}</small></div>`).join("")
+}
+function badge(s){return `<span class="ops-pill ${["replied","won"].includes(s)?"lime":s==="sent"?"blue":s==="negotiating"?"amber":""}">${esc(labels[s]||"Saved")}</span>`}
+function fromTrip(id,importNew=false){
+ const t=trip(id);if(!t)return;
+ let c=campaignsForTrip(id)[0],existing=Boolean(c);
+ if(!c){c={id:uid("outreach"),name:t.city+" · Outreach",city:t.city,tripId:id,hotelIds:[],createdAt:new Date().toISOString()};db.campaigns.unshift(c)}
+ if(!existing||importNew){for(const hid of A().state.shortlists[id]||[]){if(!c.hotelIds.includes(hid))c.hotelIds.push(hid);ensure(hid,c.id,id)}}
+ save();return c;
+}
+function tripCard(t){
+ const hs=(A().state.shortlists[t.id]||[]).filter(h=>hotel(h)),os=db.opportunities.filter(o=>o.tripId===t.id),n=count(os),campaigns=campaignsForTrip(t.id);
+ return `<article class="v6-trip-card"><div class="v6-trip-cover"><span class="ops-pill dark">${ic("calendar")} ${esc(date(t.start))} – ${esc(date(t.end))}</span><div><small>MY TRIP · ${esc(t.city).toUpperCase()}</small><h3>${esc(t.name)}</h3></div></div><div class="v6-trip-body"><div class="v6-trip-stats"><div class="v6-trip-stat"><strong>${hs.length}</strong><small>Shortlisted</small></div><div class="v6-trip-stat"><strong>${n.sent}</strong><small>Outreach logged</small></div><div class="v6-trip-stat"><strong>${n.replies}</strong><small>Conversations</small></div></div><div class="v6-trip-preview">${campaigns.length?`<strong>${campaigns.length} linked outreach ${campaigns.length===1?"initiative":"initiatives"}</strong>`:"Organize hotels now; start outreach when you're ready."}</div><div class="v6-trip-actions"><button class="btn lime" data-v6-start-trip="${esc(t.id)}">${campaigns.length?"Continue outreach":"Start outreach"} ${ic("arrow")}</button><a class="btn" href="discover-standalone.html?trip=${encodeURIComponent(t.id)}">Explore hotels</a></div>${hs.length?`<div class="v6-trip-preview"><strong>Shortlisted:</strong> ${hs.slice(0,3).map(id=>esc(hotel(id)?.name)).join(" · ")}${hs.length>3?` +${hs.length-3} more`:""}</div>`:""}</div></article>`;
+}
+function renderTrips(){
+ if(document.body.dataset.page!=="trips")return;
+ load();E("v6-trips-count").textContent=A().state.trips.length+" trips";
+ E("trips-view").innerHTML=A().state.trips.length?`<div class="v6-trip-grid">${A().state.trips.map(tripCard).join("")}</div>`:`<div class="ops-emptybox"><h3>No trips yet</h3><p>Create a trip to plan dates and build a shortlist.</p><button class="btn lime" data-create-trip>Create trip</button></div>`;
+}
+function createOutreachModal(){
+ A().modal("Start outreach",`<p>Choose a destination or select an existing Trip. A Trip's shortlisted hotels will be included automatically.</p><form id="v6-new-outreach"><div class="field" style="margin:14px 0"><label for="v6-new-name">OUTREACH NAME</label><input id="v6-new-name" required maxlength="100" placeholder="e.g. Bali January outreach"></div><div class="modal-fields"><div class="field"><label for="v6-new-trip">TRIP (OPTIONAL)</label><select id="v6-new-trip"><option value="">No trip</option>${A().state.trips.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("")}</select></div><div class="field"><label for="v6-new-city">DESTINATION</label><select id="v6-new-city">${[...new Set(A().H.map(h=>h.city))].map(c=>`<option>${esc(c)}</option>`).join("")}</select></div></div><p class="fine">Hotel details stay shared. An attempt to collaborate with a hotel belongs to this initiative.</p><div class="modal-bottom"><button class="btn" type="button" data-close>Cancel</button><button type="submit" class="btn lime">Start outreach</button></div></form>`);
 }
 function addLeads(){
-const c=data.campaigns.find(x=>x.id===ui.campaign);if(!c)return;
-const saved=new Set([...A().state.pipeline,...Object.values(A().state.shortlists).flat()]);
-const options=A().H.filter(h=>h.city===c.city&&!c.hotelIds.includes(h.id)).sort((x,y)=>Number(saved.has(y.id))-Number(saved.has(x.id)));
-A().modal("Add hotels to "+esc(c.name),`<p>Select hotels from the same catalog used by Discover and My Trips.</p><form id="ops-add-form"><div style="max-height:320px;overflow:auto">${options.length?options.map(h=>`<label class="choice-card"><input name="hotel" type="checkbox" value="${esc(h.id)}"><span><strong>${esc(h.name)}</strong><small>${esc(h.city)} · ${esc(h.type)}${saved.has(h.id)?" · Saved":""}</small></span></label>`).join(""):'<p class="fine">All available hotels in this destination are in the campaign.</p>'}</div><div class="modal-bottom"><button type="button" class="btn" data-close>Cancel</button><button class="btn lime" type="submit">Add selected</button></div></form>`);
+ const c=db.campaigns.find(c=>c.id===ui.campaign);if(!c)return;
+ const others=A().H.filter(h=>h.city===c.city&&!(c.hotelIds||[]).includes(h.id));
+ A().modal("Add hotels",`<p>Select from the same hotel catalog used by Discover and My Trips.</p><form id="v6-add-leads"><div style="max-height:300px;overflow:auto">${others.length?others.map(h=>`<label class="choice-card"><input type="checkbox" name="hotel" value="${esc(h.id)}"><span><strong>${esc(h.name)}</strong><small>${esc(h.type)} · ${esc(h.city)}</small></span></label>`).join(""):"<p>No more hotels in this destination.</p>"}</div><div class="modal-bottom"><button class="btn" type="button" data-close>Cancel</button><button class="btn lime" type="submit">Add selected</button></div></form>`);
 }
-function focused(){
-const ids=savedIDs();let r=[];
-for(const id of ids.filter(id=>["replied","negotiating"].includes(stage(id))).slice(0,2))r.push({id,label:"Continue conversation",text:hotel(id).name+" · reply/negotiation logged",category:"CONVERSATION"});
-for(const id of ids.filter(id=>stage(id)==="sent").slice(0,2))r.push({id,label:"Review follow-up",text:hotel(id).name+" · check your real inbox",category:"FOLLOW-UP CHECK"});
-for(const id of ids.filter(id=>stage(id)==="draft").slice(0,2))r.push({id,label:"Review saved pitch",text:hotel(id).name+" · ready for editing",category:"PITCH READY"});
-for(const id of ids.filter(id=>stage(id)==="saved").slice(0,2))r.push({id,label:"Prepare an opportunity",text:hotel(id).name+" · no pitch yet",category:"NEXT START"});
-return r.slice(0,3);
+function renderLeadTable(c){
+ const os=forCampaign(c.id).filter(o=>(!ui.search||hotel(o.hotelId).name.toLowerCase().includes(ui.search.toLowerCase()))&&(ui.stage==="all"||group(o.status)===ui.stage));
+ E("ops-lead-count").textContent=os.length+" visible";
+ E("ops-campaign-rows").innerHTML=os.length?os.map(o=>{
+ const h=hotel(o.hotelId);
+ return `<tr><td><div class="ops-lead-ident"><span class="ops-ident-mark">${esc(h.name.split(" ").slice(0,2).map(w=>w[0]).join(""))}</span><div><strong>${esc(h.name)}</strong><small>${esc(h.city)} · ${esc(h.type)}</small><small>Opportunity #${esc(o.id.slice(-6))}</small></div></div></td><td>${badge(o.status)}</td><td><span class="ops-pill">${esc(h.activity)} activity</span></td><td><strong>${db.drafts.some(d=>d.hotelId===o.hotelId)?"Draft available":"No pitch yet"}</strong><small style="display:block;margin-top:5px;color:#778477">${A().state.unlocks.includes(h.id)?"Contact unlocked (demo)":"Contact locked"}</small></td><td><button class="btn small" data-v6-open="${esc(o.id)}">Work on it ${ic("arrow")}</button></td></tr>`;
+ }).join(""):'<tr><td colspan="5" class="ops-no-data">No leads match this filter.</td></tr>';
 }
-function showPipeline(){
-if(document.body.dataset.page!=="pipeline")return;refresh();
-let ids=savedIDs().filter(id=>ui.closed||stage(id)!=="closed");
-const x=m(ids);
-E("ops-pipeline-count").textContent=ids.length;
-E("ops-pipeline-summary").textContent=ids.length+" tracked hotels · "+x.conversations+" conversations";
-E("ops-pipeline-stats").innerHTML=stats(ids);E("ops-pipeline-progress").style.width=(x.leads?Math.round(100*x.contacted/x.leads):0)+"%";
-E("ops-pipeline-hero-action").textContent=x.conversations?x.conversations+" conversations in motion":"Build your next opportunity";
-E("ops-priority-cards").innerHTML=focused().length?focused().map((r,i)=>`<button class="ops-task" data-op-deal="${esc(r.id)}"><span class="ops-pill ${i===0?"lime":""}">${esc(r.category)}</span><strong>${esc(r.label)}</strong><small>${esc(r.text)} ${ic("arrow")}</small></button>`).join(""):'<div class="ops-emptybox"><h3>All clear for now</h3><p>Explore hotels and start a conversation.</p></div>';
-if(ui.search)ids=ids.filter(id=>hotel(id).name.toLowerCase().includes(ui.search.toLowerCase())||hotel(id).city.toLowerCase().includes(ui.search.toLowerCase()));
-if(ui.stage!=="all")ids=ids.filter(id=>ui.stage==="conversation"?["replied","negotiating"].includes(stage(id)):laneFor(id)===ui.stage);
-for(const v of ["board","list","timeline"])E("ops-deal-"+v).hidden=ui.view!==v;
-document.querySelectorAll("[data-op-view]").forEach(x=>{x.classList.toggle("active",x.dataset.opView===ui.view);x.setAttribute("aria-pressed",String(x.dataset.opView===ui.view))});
-if(ui.view==="board")showBoard(ids);if(ui.view==="list")showList(ids);if(ui.view==="timeline")showTimeline(ids);
+function renderCampaign(){
+ if(document.body.dataset.page!=="campaigns")return;load();
+ const params=new URLSearchParams(location.search);
+ let c=db.campaigns.find(c=>c.id===(params.get("campaign")||ui.campaign))||db.campaigns[0];
+ ui.campaign=c?.id||"";
+ E("ops-campaign-pills").innerHTML=db.campaigns.length?db.campaigns.map(x=>{const n=count(forCampaign(x.id)),active=x.id===ui.campaign;
+ return `<button class="ops-chooser-card ${active?"active":""}" data-v6-campaign="${esc(x.id)}" aria-pressed="${active}"><div class="ops-chooser-title"><span class="ops-chooser-pin">${ic("pin")}</span><span class="ops-pill">${x.tripId?"Linked trip":"Independent"}</span></div><strong>${esc(x.name)}</strong><small>${esc(x.city)} · ${n.total} opportunities</small><div class="ops-track" style="height:5px;margin-top:15px;background:#E2ECDD"><div class="ops-fill" style="width:${n.total?n.sent/n.total*100:0}%"></div></div></button>`;
+ }).join(""):'<div class="ops-emptybox"><h3>Your first outreach starts here.</h3><p>Choose a destination or start from My Trips.</p><button class="btn lime" data-v6-new>Start outreach</button></div>';
+ E("ops-campaign-workspace").hidden=!c;E("ops-campaign-none").hidden=!!c;if(!c)return;
+ const os=forCampaign(c.id),n=count(os),t=trip(c.tripId);
+ E("ops-campaign-city").textContent=c.city.toUpperCase()+(t?" / "+t.name:" / INDEPENDENT OUTREACH");
+ E("ops-campaign-title").textContent=c.name;
+ E("ops-campaign-desc").textContent=t?"Linked to "+t.name+". Shortlisted hotels are imported without re-entering them.":"No dates required. Organize your commercial outreach before confirming a trip.";
+ E("ops-campaign-progress-title").textContent=n.sent+" / "+n.total;E("ops-progress-percent").textContent=(n.total?Math.round(n.sent/n.total*100):0)+"%";
+ E("ops-campaign-progress").style.width=(n.total?n.sent/n.total*100:0)+"%";
+ E("ops-stat-grid").innerHTML=stats(os);E("ops-campaign-id").textContent=os.length+" opportunities";
+ const next=os.find(o=>["replied","negotiating"].includes(o.status))||os.find(o=>o.status==="draft")||os[0];
+ E("ops-focus-card").innerHTML=next?`<div class="eyebrow">NEXT BEST ACTION</div><h3>${["replied","negotiating"].includes(next.status)?"Continue the conversation":next.status==="draft"?"Review the saved pitch":"Prepare your next proposal"}</h3><p>${esc(hotel(next.hotelId).name)} · ${esc(labels[next.status])}</p><a class="btn lime" href="pipeline-standalone.html?opp=${encodeURIComponent(next.id)}">Open opportunity ${ic("arrow")}</a>`:'<div class="eyebrow">GET STARTED</div><h3>Add hotel leads</h3><p>Select hotels from Discover or import from your Trip.</p><button class="btn lime" data-v6-add>Add hotels</button>';
+ const queued=t?(A().state.shortlists[t.id]||[]).filter(id=>!(c.hotelIds||[]).includes(id)):[];
+ E("v6-campaign-trip-context").hidden=!t;
+ if(t)E("v6-campaign-trip-context").innerHTML=`<div><strong>${esc(t.name)} is linked.</strong><br><small>New Trip hotels are optional until imported.</small></div><div class="ops-controls"><span class="ops-pill">${queued.length} new hotels</span><button class="btn small" data-v6-import="${esc(t.id)}">Import from Trip</button><a class="btn small" href="my-trips-standalone.html">View Trip →</a></div>`;
+ renderLeadTable(c);
+ const events=db.events.filter(e=>os.some(o=>o.id===e.opportunityId)).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,6);
+ E("ops-campaign-events").innerHTML=events.length?events.map(e=>{let o=opportunity(e.opportunityId);return `<div class="ops-event"><strong>${esc(hotel(o?.hotelId)?.name||"Hotel")}</strong><p>${esc(labels[e.value])} · manual local event</p><small>${date(e.at)}</small></div>`}).join(""):'<div class="ops-no-data">No outreach events yet.</div>';
 }
-function dealCard(id){
-const h=hotel(id),campaign=data.campaigns.find(c=>c.hotelIds.includes(id));
-return `<article class="ops-deal" data-op-deal="${esc(id)}" draggable="true" role="button" tabindex="0" aria-label="Open ${esc(h.name)}"><div class="ops-deal-top"><span class="ops-initial">${esc(initials(h))}</span>${pill(id)}</div><h3>${esc(h.name)}</h3><p>${esc(h.city)} · ${esc(campaign?.name||"Independent")}</p><div class="ops-deal-foot"><span>${data.drafts.some(d=>d.hotelId===id)?"Pitch saved":"No pitch yet"}</span><button class="action" data-op-deal="${esc(id)}">Open ${ic("arrow")}</button></div></article>`;
+function visible(){
+ return db.opportunities.filter(o=>hotel(o.hotelId)).filter(o=>(ui.closed||o.status!=="closed")&&(ui.scope!=="trips"||o.tripId)&&(ui.scope!=="independent"||!o.tripId)&&(!ui.trip||o.tripId===ui.trip)&&(ui.stage==="all"||(ui.stage==="conversation"?["replied","negotiating"].includes(o.status):group(o.status)===ui.stage))&&(!ui.search||hotel(o.hotelId).name.toLowerCase().includes(ui.search.toLowerCase())));
 }
-function showBoard(ids){
-E("ops-deal-board").innerHTML=[...steps,...(ui.closed?[["closed","Closed / archived"]]:[])].map(([id,name])=>`<section class="ops-lane" data-stage="${id}"><div class="ops-lane-head"><strong><span class="ops-dot ${id==="sent"?"blue":id==="draft"?"amber":"gray"}"></span> ${name}</strong><small>${ids.filter(x=>laneFor(x)===id).length}</small></div><div class="ops-lane-stack">${ids.filter(x=>laneFor(x)===id).map(dealCard).join("")}</div></section>`).join("");
-}
-function showList(ids){E("ops-deal-list").innerHTML=ids.length?ids.map(id=>{const h=hotel(id),c=data.campaigns.find(c=>c.hotelIds.includes(id));return `<div class="ops-list-item"><div><strong>${esc(h.name)}</strong><br><small>${esc(h.city)}</small></div><div>${pill(id)}</div><div><small>${esc(c?.name||"No campaign")}</small></div><div><small>${data.drafts.some(d=>d.hotelId===id)?"Pitch saved":"No draft"}</small></div><button class="btn small" data-op-deal="${esc(id)}">Details ${ic("arrow")}</button></div>`}).join(""):'<div class="ops-no-data">No deals match this view.</div>'}
-function showTimeline(ids){
-const events=data.events.filter(e=>ids.includes(e.hotelId)).sort((a,b)=>b.at.localeCompare(a.at));
-E("ops-deal-timeline").innerHTML=events.length?events.map(e=>`<div class="ops-event"><strong>${esc(hotel(e.hotelId)?.name||"Hotel")} · ${esc(title(e.value))}</strong><p>${e.source==="sample"?"Illustrative scenario":"Manually logged · unverified event"}</p><small>${when(e.at)} <button class="ops-quietlink" data-op-deal="${esc(e.hotelId)}">View relationship →</button></small></div>`).join(""):'<div class="ops-no-data">No activity recorded in this view.</div>';
-}
-function dealHistory(id){
-const events=data.events.filter(e=>e.hotelId===id).map(e=>({type:"event",text:title(e.value),at:e.at,source:e.source}));
-const notes=data.notes.filter(n=>n.hotelId===id).map(n=>({type:"note",text:n.text,at:n.at,source:"manual"}));
-return [...events,...notes].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,12).map(e=>`<div class="ops-event"><strong>${e.type==="note"?"Your note":esc(e.text)}</strong><p>${e.type==="note"?esc(e.text):e.source==="sample"?"Illustrative event":"Manual · not Gmail verified"}</p><small>${when(e.at)}</small></div>`).join("")||'<p class="ops-micro">No activity logged yet.</p>';
+function renderPipeline(){
+ if(document.body.dataset.page!=="pipeline")return;load();
+ const os=visible(),n=count(os);
+ E("ops-pipeline-count").textContent=os.length;E("ops-pipeline-summary").textContent=os.length+" commercial opportunities · "+n.replies+" conversations";
+ E("ops-pipeline-hero-action").textContent=n.replies?n.replies+" conversations in motion":"Make every outreach count.";
+ E("ops-pipeline-progress").style.width=(n.total?n.sent/n.total*100:0)+"%";
+ E("ops-pipeline-stats").innerHTML=stats(os);
+ const priorities=[...os.filter(o=>["replied","negotiating"].includes(o.status)),...os.filter(o=>o.status==="sent"),...os.filter(o=>o.status==="draft"),...os.filter(o=>o.status==="saved")].slice(0,3);
+ E("ops-priority-cards").innerHTML=priorities.length?priorities.map(o=>`<button class="ops-task" data-v6-open="${esc(o.id)}"><span class="ops-pill">${esc(labels[o.status])}</span><strong>${esc(hotel(o.hotelId).name)}</strong><small>${esc(db.campaigns.find(c=>c.id===o.campaignId)?.name||"Independent")} · Open next step →</small></button>`).join(""):'<div class="ops-emptybox"><h3>All clear for now</h3><p>Start with Discover or My Trips.</p></div>';
+ for(const v of ["board","list","timeline"]){E("ops-deal-"+v).hidden=ui.view!==v;document.querySelectorAll('[data-op-view="'+v+'"]').forEach(b=>b.classList.toggle("active",ui.view===v))}
+ const lanes=[["saved","Saved"],["draft","Pitch ready"],["sent","Outreach sent"],["replied","In conversation"],["won","Agreed"],...(ui.closed?[["closed","Closed"]]:[])];
+ E("ops-deal-board").innerHTML=lanes.map(([stage,label])=>`<section class="ops-lane" data-v6-stage="${stage}"><div class="ops-lane-head"><strong>${label}</strong><small>${os.filter(o=>group(o.status)===stage).length}</small></div><div class="ops-lane-stack">${os.filter(o=>group(o.status)===stage).map(o=>{
+ let h=hotel(o.hotelId),c=db.campaigns.find(c=>c.id===o.campaignId);
+ return `<article class="ops-deal" data-v6-open="${esc(o.id)}" draggable="true" tabindex="0" role="button"><div class="ops-deal-top"><span class="ops-initial">${esc(h.name.slice(0,2).toUpperCase())}</span>${badge(o.status)}</div><h3>${esc(h.name)}</h3><p>${esc(h.city)} · ${esc(c?.name||"Independent")}</p><div class="v6-opp-scope"><span class="v6-opp-tag">${esc(trip(o.tripId)?.name||"No trip")}</span><span class="v6-opp-tag">#${esc(o.id.slice(-6))}</span></div><div class="ops-deal-foot"><span>Open opportunity</span>${ic("arrow")}</div></article>`;
+ }).join("")}</div></section>`).join("");
+ E("ops-deal-list").innerHTML=os.length?os.map(o=>{const h=hotel(o.hotelId),c=db.campaigns.find(c=>c.id===o.campaignId);return `<div class="ops-list-item"><div><strong>${esc(h.name)}</strong><br><small>${esc(c?.name||"Independent")}</small></div><div>${badge(o.status)}</div><div><small>${esc(trip(o.tripId)?.name||"No trip")}</small></div><div><small>#${esc(o.id.slice(-6))}</small></div><button class="btn small" data-v6-open="${esc(o.id)}">Details</button></div>`}).join(""):'<div class="ops-no-data">No opportunities in this view.</div>';
+ const events=db.events.filter(e=>os.some(o=>o.id===e.opportunityId)).sort((a,b)=>b.at.localeCompare(a.at));
+ E("ops-deal-timeline").innerHTML=events.length?events.map(e=>{const o=opportunity(e.opportunityId);return `<div class="ops-event"><strong>${esc(hotel(o?.hotelId)?.name)} · ${esc(labels[e.value])}</strong><p>${esc(db.campaigns.find(c=>c.id===o?.campaignId)?.name||"Independent")} · manual event</p><small>${date(e.at)} <button class="v6-link" data-v6-open="${esc(o.id)}">Open →</button></small></div>`}).join(""):'<div class="ops-no-data">No timeline events yet.</div>';
+ E("v6-scope-trip").innerHTML='<option value="">All trips</option>'+A().state.trips.map(t=>`<option value="${esc(t.id)}" ${ui.trip===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
+ document.querySelectorAll("[data-v6-scope]").forEach(b=>b.classList.toggle("active",b.dataset.v6Scope===ui.scope));
 }
 function drawerOpen(id){
-if(!hotel(id))return;ui.drawer=id;E("ops-drawer").classList.add("open");E("ops-drawer").setAttribute("aria-hidden","false");E("ops-drawer-shade").classList.add("visible");document.body.style.overflow="hidden";drawerRender();E("ops-drawer-close").focus();
+ if(!opportunity(id))return;ui.drawer=id;E("ops-drawer").inert=false;E("ops-drawer").classList.add("open");E("ops-drawer").setAttribute("aria-hidden","false");E("ops-drawer-shade").classList.add("visible");document.body.style.overflow="hidden";drawerRender();E("ops-drawer-close")?.focus();
 }
+function drawerClose(){ui.drawer="";E("ops-drawer").classList.remove("open");E("ops-drawer").inert=true;E("ops-drawer").setAttribute("aria-hidden","true");E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow=""}
 function drawerRender(){
-const id=ui.drawer,h=hotel(id),c=data.campaigns.find(c=>c.hotelIds.includes(id));
-E("ops-drawer-content").innerHTML=`<div class="eyebrow">RELATIONSHIP COCKPIT</div><h2>${esc(h.name)}</h2><p class="ops-micro">${esc(h.city)} · ${esc(h.type)} · ${esc(h.activity)} sample activity</p>
-<div class="ops-drawer-info"><div class="side-row"><span>Stage</span><b>${esc(title(stage(id)))}</b></div><div class="side-row"><span>Campaign</span><b>${esc(c?.name||"Independent")}</b></div><div class="side-row"><span>Contact</span><b>${A().state.unlocks.includes(id)?"Unlocked in demo":"Locked"}</b></div><div class="side-row"><span>Draft</span><b>${data.drafts.some(d=>d.hotelId===id)?"Available":"Not started"}</b></div><div class="side-row"><span>Contract reviews</span><b>${data.contracts.filter(c=>c.hotelId===id).length}</b></div></div>
-<div class="field"><label for="ops-drawer-stage">UPDATE STAGE MANUALLY</label><select id="ops-drawer-stage">${[["saved","Saved"],["draft","Pitch drafted"],["sent","Outreach sent"],["replied","Hotel replied"],["negotiating","Negotiating"],["won","Agreement reached"],["bounced","Bounce reported"],["closed","Closed"]].map(([v,t])=>`<option value="${v}" ${stage(id)===v?"selected":""}>${t}</option>`).join("")}</select><button class="btn lime wide" data-op="stage-update" style="margin-top:9px">Save manual stage</button><p class="ops-micro">Changes aren't verified email or collaboration events. They will never train Creator Intelligence.</p></div>
-<div class="ops-divider"></div><h3>Continue this relationship</h3><div class="ops-drawer-actions"><a class="btn dark" href="pitch-standalone.html?hotel=${encodeURIComponent(id)}${c?"&campaign="+encodeURIComponent(c.id):""}">Open pitch studio</a><a class="btn" href="hotel-standalone.html?id=${encodeURIComponent(id)}">Hotel detail</a><a class="btn" href="contract-review-standalone.html?hotel=${encodeURIComponent(id)}">Contract review</a><a class="btn" href="inbox-standalone.html">Inbox</a></div>
-<div class="ops-divider"></div><h3>Private notes</h3><p class="ops-micro">Keep context without creating a new data record for the same hotel.</p><textarea id="ops-note" placeholder="What matters for the next response?"></textarea><button class="btn small" data-op="note-add" style="margin-top:9px">Add note</button>
-<div class="ops-divider"></div><h3>Activity</h3>${dealHistory(id)}`;
+ const o=opportunity(ui.drawer);if(!o)return;const h=hotel(o.hotelId),c=db.campaigns.find(c=>c.id===o.campaignId),others=db.opportunities.filter(x=>x.hotelId===h.id&&x.id!==o.id);
+ const activity=db.events.filter(x=>x.opportunityId===o.id).map(x=>({at:x.at,label:labels[x.value]})).concat(db.notes.filter(x=>x.opportunityId===o.id).map(x=>({at:x.at,label:x.text}))).sort((x,y)=>y.at.localeCompare(x.at));
+ E("ops-drawer-content").innerHTML=`<div class="eyebrow">ONE HOTEL · SEPARATE OPPORTUNITIES</div><h2>${esc(h.name)}</h2><p>${esc(h.city)} · ${esc(h.type)}</p><div class="ops-drawer-info"><div class="side-row"><span>Outreach</span><b>${esc(c?.name||"Independent")}</b></div><div class="side-row"><span>Trip</span><b>${esc(trip(o.tripId)?.name||"None")}</b></div><div class="side-row"><span>Stage</span><b>${esc(labels[o.status])}</b></div><div class="side-row"><span>Contact</span><b>${A().state.unlocks.includes(h.id)?"Unlocked for this hotel (demo)":"Locked"}</b></div><div class="side-row"><span>Opportunity</span><b>#${esc(o.id.slice(-8))}</b></div></div><div class="v6-panel-highlight">The hotel's identity and unlocked contact are shared. This opportunity has its own history and stage.</div><div class="field"><label for="v6-stage">CHANGE STAGE</label><select id="v6-stage" class="v6-status-select">${Object.entries(labels).map(([k,v])=>`<option value="${k}" ${k===o.status?"selected":""}>${v}</option>`).join("")}</select></div><button class="btn lime wide" data-v6-stage-save>Save stage update</button><p class="ops-micro">Manual status updates are not verified network signals.</p><div class="ops-divider"></div><h3>Next steps</h3><div class="ops-drawer-actions"><a href="pitch-standalone.html?hotel=${encodeURIComponent(h.id)}&campaign=${encodeURIComponent(c?.id||"")}" class="btn dark">Pitch Studio</a><a href="hotel-standalone.html?id=${encodeURIComponent(h.id)}" class="btn">Hotel Detail</a><a href="contract-review-standalone.html?hotel=${encodeURIComponent(h.id)}" class="btn">Contract Review</a><a href="inbox-standalone.html" class="btn">Inbox</a></div><div class="ops-divider"></div><h3>Notes for this opportunity</h3><textarea id="v6-note" placeholder="What happened and what comes next?"></textarea><button class="btn small" data-v6-note-add style="margin-top:9px">Add note</button>${others.length?`<div class="ops-divider"></div><h3>Other attempts with this hotel</h3>${others.map(x=>`<div class="v6-related-row"><div><strong>${esc(db.campaigns.find(c=>c.id===x.campaignId)?.name||"Independent")}</strong><small>${esc(labels[x.status])}</small></div><button class="btn small" data-v6-open="${esc(x.id)}">Open</button></div>`).join("")}`:""}<div class="ops-divider"></div><h3>Activity</h3>${activity.length?activity.map(x=>`<div class="ops-event"><strong>${esc(x.label)}</strong><small>${date(x.at)}</small></div>`).join(""):'<p class="fine">No activity yet.</p>'}`;
 }
-function drawerClose(){ui.drawer=null;E("ops-drawer").classList.remove("open");E("ops-drawer").setAttribute("aria-hidden","true");E("ops-drawer").inert=true;E("ops-drawer-shade").classList.remove("visible");document.body.style.overflow="";E("ops-pipeline-focus")?.focus()}
-function stageChange(id,v){
-if(stage(id)===v){A().toast("Already in that stage");return}
-if(A().state.plan==="free"&&["draft","sent","replied","negotiating","won","bounced"].includes(v)){
-const count=savedIDs().filter(x=>x!==id&&["draft","sent","replied","negotiating","won","bounced"].includes(stage(x))).length;
-if(count>=5&&!["draft","sent","replied","negotiating","won","bounced"].includes(stage(id))){A().upgrade("Free allows up to five relationships past saved. Pro unlocks a larger working pipeline.");return}
+function stageChange(o,v){
+ if(!o||o.status===v)return;
+ if(A().state.plan==="free"&&["draft","sent","replied","negotiating","won","bounced"].includes(v)&&!["draft","sent","replied","negotiating","won","bounced"].includes(o.status)){
+ const active=db.opportunities.filter(x=>x.id!==o.id&&["draft","sent","replied","negotiating","won","bounced"].includes(x.status)).length;
+ if(active>=5){A().upgrade("Free allows up to five active outreach opportunities. Upgrade for a larger working Pipeline.");return}
+ }
+ if(["sent","replied","negotiating","won","bounced"].includes(v)){A().modal("Confirm manual update",`<p>Record <strong>${esc(hotel(o.hotelId).name)}</strong> as <strong>${esc(labels[v])}</strong>? This does not verify a Gmail message or confirm a collaboration.</p><div class="modal-bottom"><button class="btn" data-close>Cancel</button><button class="btn lime" data-v6-confirm="${esc(o.id)}" data-v6-next="${esc(v)}">Confirm</button></div>`)}
+ else stageApply(o,v);
 }
-if(["sent","replied","won","bounced"].includes(v)){A().modal("Confirm manual status",`<p>Record <b>${esc(hotel(id).name)}</b> as <b>${esc(v)}</b>? This is a manual statement, not a verified Gmail event or confirmed hotel agreement.</p><div class="modal-bottom"><button class="btn" data-close>Cancel</button><button class="btn lime" data-op-stage-confirm="${esc(id)}" data-stage="${esc(v)}">Confirm manual update</button></div>`)}
-else applyStage(id,v);
+function stageApply(o,v){
+ o.status=v;o.updatedAt=new Date().toISOString();db.events.push({id:uid("event"),opportunityId:o.id,value:v,type:"stage",at:o.updatedAt,source:"manual"});
+ if(["sent","replied","won","bounced"].includes(v)){const ev={id:uid("op-event"),opportunityId:o.id,hotelId:o.hotelId,campaignId:o.campaignId||"",type:"stage",value:v,at:o.updatedAt,source:"manual"};const old=get("ugc_v4_events",[]);old.push(ev);put("ugc_v4_events",old);const seen=get("ugc_v6_seen_legacy_events",[]);seen.push(ev.id);put("ugc_v6_seen_legacy_events",seen)}
+ save();A().closeModal();renderPipeline();if(ui.drawer){document.body.style.overflow="hidden";drawerRender()}A().toast("Manual stage updated");
 }
-function applyStage(id,v){data.events.push({id:uid("event"),hotelId:id,type:"stage",value:v,at:new Date().toISOString(),source:"manual"});if(!A().state.pipeline.includes(id))A().state.pipeline.push(id);persist();A().saveState();A().closeModal();A().toast("Stage saved locally · "+v);showPipeline();if(ui.drawer===id){document.body.style.overflow="hidden";drawerRender()}}
-function init(){
-if(!["campaigns","pipeline"].includes(document.body.dataset.page))return;
-refresh();bootstrap();refresh();let q=new URLSearchParams(location.search);
-if(document.body.dataset.page==="campaigns"){ui.campaign=q.get("campaign")||data.campaigns[0]?.id||"";showCampaigns()}
-else{ui.stage=q.get("filter")==="conversation"?"conversation":q.get("filter")||"all";showPipeline();let id=q.get("hotel");if(id)setTimeout(()=>drawerOpen(id),200)}
+function boot(){
+ if(!["trips","campaigns","pipeline"].includes(document.body.dataset.page))return;
+ load();seedOrMigrate();load();reconcileLegacy();
+ if(document.body.dataset.page==="trips")renderTrips();
+ if(document.body.dataset.page==="campaigns"){const p=new URLSearchParams(location.search);if(p.get("trip")&&p.get("start")==="1"){const c=fromTrip(p.get("trip"));if(c){history.replaceState({},'',location.pathname+"?campaign="+encodeURIComponent(c.id))}}renderCampaign()}
+ if(document.body.dataset.page==="pipeline"){const p=new URLSearchParams(location.search);ui.stage=p.get("filter")==="conversation"?"conversation":p.get("filter")||"all";renderPipeline();if(p.get("opp"))setTimeout(()=>drawerOpen(p.get("opp")),130)}
 }
-document.addEventListener("DOMContentLoaded",init);
+document.addEventListener("DOMContentLoaded",boot);
 document.addEventListener("click",e=>{
-const b=e.target.closest("[data-op],[data-op-campaign],[data-op-deal],[data-op-view],[data-op-hotel],[data-op-stage-confirm]");if(!b)return;
-if(b.dataset.opCampaign){ui.campaign=b.dataset.opCampaign;ui.search="";ui.stage="all";E("ops-lead-search").value="";E("ops-lead-stage").value="all";history.replaceState({},'',location.pathname+"?campaign="+encodeURIComponent(ui.campaign));showCampaigns();return}
-if(b.dataset.opHotel){openHotel(b.dataset.opHotel);return}
-if(b.dataset.opView){ui.view=b.dataset.opView;showPipeline();return}
-if(b.dataset.opDeal){if(e.target.closest("a"))return;drawerOpen(b.dataset.opDeal);return}
-if(b.dataset.opStageConfirm){applyStage(b.dataset.opStageConfirm,b.dataset.stage);return}
-const op=b.dataset.op;
-if(op==="create")newCampaign();
-if(op==="add-leads")addLeads();
-if(op==="stage-update")stageChange(ui.drawer,E("ops-drawer-stage").value);
-if(op==="note-add"){const text=E("ops-note").value.trim();if(!text)return A().toast("Write a note first");data.notes.push({id:uid("note"),hotelId:ui.drawer,text,at:new Date().toISOString()});persist();drawerRender();A().toast("Note saved")}
-if(op==="drawer-close")drawerClose();
-if(op==="toggle-closed"){ui.closed=!ui.closed;b.setAttribute("aria-pressed",String(ui.closed));b.textContent=ui.closed?"Hide closed":"Include closed";showPipeline()}
+ const b=e.target.closest("[data-v6-start-trip],[data-v6-campaign],[data-v6-new],[data-v6-import],[data-v6-add],[data-v6-open],[data-v6-scope],[data-v6-stage-save],[data-v6-confirm],[data-v6-note-add],[data-v6-closed],[data-v6-drawer-close],[data-op-view]");
+ if(!b)return;
+ if(b.dataset.v6StartTrip){const c=fromTrip(b.dataset.v6StartTrip);if(c)location.href="campaigns-standalone.html?campaign="+encodeURIComponent(c.id)}
+ if(b.dataset.v6Campaign){ui.campaign=b.dataset.v6Campaign;ui.search="";ui.stage="all";history.replaceState({},'',location.pathname+"?campaign="+encodeURIComponent(ui.campaign));E("ops-lead-search").value="";E("ops-lead-stage").value="all";renderCampaign()}
+ if(b.hasAttribute("data-v6-new"))createOutreachModal();
+ if(b.dataset.v6Import){fromTrip(b.dataset.v6Import,true);renderCampaign();A().toast("New Trip hotels imported")}
+ if(b.hasAttribute("data-v6-add"))addLeads();
+ if(b.dataset.v6Open){if(document.body.dataset.page==="campaigns")location.href="pipeline-standalone.html?opp="+encodeURIComponent(b.dataset.v6Open);else drawerOpen(b.dataset.v6Open)}
+ if(b.dataset.v6Scope){ui.scope=b.dataset.v6Scope;if(ui.scope!=="trips")ui.trip="";renderPipeline()}
+ if(b.dataset.opView){ui.view=b.dataset.opView;renderPipeline()}
+ if(b.hasAttribute("data-v6-stage-save"))stageChange(opportunity(ui.drawer),E("v6-stage").value);
+ if(b.dataset.v6Confirm)stageApply(opportunity(b.dataset.v6Confirm),b.dataset.v6Next);
+ if(b.hasAttribute("data-v6-note-add")){const text=E("v6-note")?.value.trim();if(!text)return A().toast("Write a note first");db.notes.push({id:uid("note"),opportunityId:ui.drawer,text,at:new Date().toISOString()});save();drawerRender();A().toast("Note saved")}
+ if(b.hasAttribute("data-v6-closed")){ui.closed=!ui.closed;b.textContent=ui.closed?"Hide closed":"Include closed";renderPipeline()}
+ if(b.hasAttribute("data-v6-drawer-close"))drawerClose();
 });
 document.addEventListener("change",e=>{
-if(e.target.id==="ops-lead-stage"){ui.stage=e.target.value;showLeads()}
-if(e.target.id==="ops-pipeline-stage"){ui.stage=e.target.value;showPipeline()}
-if(e.target.id==="ops-trip"){const t=A().tripById(e.target.value);if(t)E("ops-city").value=t.city}
+ if(e.target.id==="ops-lead-stage"){ui.stage=e.target.value;renderCampaign()}
+ if(e.target.id==="ops-pipeline-stage"){ui.stage=e.target.value;renderPipeline()}
+ if(e.target.id==="v6-scope-trip"){ui.trip=e.target.value;ui.scope="trips";renderPipeline()}
+ if(e.target.id==="v6-new-trip"){let t=trip(e.target.value);if(t)E("v6-new-city").value=t.city}
 });
 document.addEventListener("input",e=>{
-if(e.target.id==="ops-lead-search"){ui.search=e.target.value;showLeads()}
-if(e.target.id==="ops-pipeline-search"){ui.search=e.target.value;showPipeline()}
+ if(e.target.id==="ops-lead-search"){ui.search=e.target.value;renderCampaign()}
+ if(e.target.id==="ops-pipeline-search"){ui.search=e.target.value;renderPipeline()}
 });
 document.addEventListener("submit",e=>{
-if(e.target.id==="ops-new-form"){e.preventDefault();const name=E("ops-name").value.trim(),tripId=E("ops-trip").value,t=A().tripById(tripId),city=t?t.city:E("ops-city").value;if(!name)return;const c={id:uid("campaign"),name,tripId,city,hotelIds:t?[...(A().state.shortlists[t.id]||[])]:[],createdAt:new Date().toISOString()};data.campaigns.unshift(c);persist();A().closeModal();ui.campaign=c.id;showCampaigns();A().toast("Campaign created")}
-if(e.target.id==="ops-add-form"){e.preventDefault();const c=data.campaigns.find(c=>c.id===ui.campaign);for(const input of e.target.querySelectorAll('input[name="hotel"]:checked'))if(!c.hotelIds.includes(input.value))c.hotelIds.push(input.value);persist();A().closeModal();showCampaigns();A().toast("Hotels added")}
+ if(e.target.id==="v6-new-outreach"){e.preventDefault();const name=E("v6-new-name").value.trim(),tid=E("v6-new-trip").value,t=trip(tid),city=t?t.city:E("v6-new-city").value;if(!name)return;const c={id:uid("outreach"),name,tripId:tid,city,hotelIds:t?[...(A().state.shortlists[tid]||[])]:[]};db.campaigns.unshift(c);c.hotelIds.forEach(h=>ensure(h,c.id,tid));save();A().closeModal();location.href="campaigns-standalone.html?campaign="+encodeURIComponent(c.id)}
+ if(e.target.id==="v6-add-leads"){e.preventDefault();const c=db.campaigns.find(c=>c.id===ui.campaign);for(const x of e.target.querySelectorAll("input[name=hotel]:checked")){if(!c.hotelIds.includes(x.value))c.hotelIds.push(x.value);ensure(x.value,c.id,c.tripId||"")}save();A().closeModal();renderCampaign();A().toast("Hotels added")}
+ if(e.target.id==="create-trip-form")setTimeout(renderTrips,0);
 });
-document.addEventListener("keydown",e=>{
-if(e.key==="Escape"&&ui.drawer&&!E("modal-root")?.classList.contains("open"))drawerClose();
-if((e.key==="Enter"||e.key===" ")&&e.target.classList.contains("ops-deal")){e.preventDefault();drawerOpen(e.target.dataset.opDeal)}
-});
-document.addEventListener("dragstart",e=>{const c=e.target.closest(".ops-deal");if(c)e.dataTransfer.setData("text/plain",c.dataset.opDeal)});
-document.addEventListener("dragover",e=>{const lane=e.target.closest(".ops-lane");if(lane){e.preventDefault();lane.classList.add("over")}});
-document.addEventListener("dragleave",e=>{const lane=e.target.closest(".ops-lane");if(lane)lane.classList.remove("over")});
-document.addEventListener("drop",e=>{const lane=e.target.closest(".ops-lane");if(!lane)return;e.preventDefault();lane.classList.remove("over");const id=e.dataTransfer.getData("text/plain");if(hotel(id))stageChange(id,lane.dataset.stage)});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ui.drawer&&!E("modal-root")?.classList.contains("open"))drawerClose();if((e.key==="Enter"||e.key===" ")&&e.target.matches(".ops-deal")){e.preventDefault();drawerOpen(e.target.dataset.v6Open)}});
+document.addEventListener("click",e=>{if(e.target.id==="ops-drawer-shade")drawerClose()});
+document.addEventListener("dragstart",e=>{const card=e.target.closest(".ops-deal");if(card)e.dataTransfer?.setData("text/plain",card.dataset.v6Open)});
+document.addEventListener("dragover",e=>{const lane=e.target.closest("[data-v6-stage]");if(lane){e.preventDefault();lane.classList.add("over")}});
+document.addEventListener("dragleave",e=>{const lane=e.target.closest("[data-v6-stage]");if(lane)lane.classList.remove("over")});
+document.addEventListener("drop",e=>{const lane=e.target.closest("[data-v6-stage]");if(lane){e.preventDefault();lane.classList.remove("over");const id=e.dataTransfer?.getData("text/plain");if(id)stageChange(opportunity(id),lane.dataset.v6Stage)}});
 })();
 </script></head><body data-page="campaigns"><a class="skip" href="#main">Skip to main content</a><aside class="sidebar" id="sidebar" aria-label="Product navigation">
 <a class="brand" href="./discover-standalone.html"><span class="brand-mark">u.</span><span><span class="brand-name">theugc<span>.life</span></span><span class="brand-kicker" style="display:block">Creator operating system</span></span></a>
@@ -626,31 +727,31 @@ document.addEventListener("drop",e=>{const lane=e.target.closest(".ops-lane");if
 <div class="nav-head">OUTREACH</div><a href="pitch-standalone.html" class="nav-item"><span class="nav-icon" data-icon="mail"></span><span><strong>Pitch Studio</strong><small>Write, save & resume drafts</small></span></a>
 <a href="pipeline-standalone.html" class="nav-item"><span class="nav-icon" data-icon="layers"></span><span><strong>Pipeline</strong><small>Track hotels & pitches</small></span></a>
 <a href="inbox-standalone.html" class="nav-item"><span class="nav-icon" data-icon="mail"></span><span><strong>Inbox</strong><small>Gmail conversations</small></span></a>
-<a href="campaigns-standalone.html" class="nav-item active"><span class="nav-icon" data-icon="briefcase"></span><span><strong>Outreach Campaigns</strong><small>Manage hotel lead lists</small></span></a>
+<a href="campaigns-standalone.html" class="nav-item active"><span class="nav-icon" data-icon="briefcase"></span><span><strong>Outreach</strong><small>Run focused initiatives</small></span></a>
 <div class="nav-head">LEGAL & IDENTITY</div><a href="contract-review-standalone.html" class="nav-item"><span class="nav-icon" data-icon="briefcase"></span><span><strong>Contract Review</strong><small>Understand deal terms</small></span></a><div class="nav-head">ACCOUNT</div>
 <a href="#" class="nav-item" data-feature="portfolio"><span class="nav-icon" data-icon="user"></span><span><strong>My Profile</strong><small>Creator portfolio</small></span></a>
 <a href="#" class="nav-item" data-feature="billing"><span class="nav-icon" data-icon="spark"></span><span><strong>Plans & Credits</strong><small>Membership & balance</small></span></a>
 </div><div class="sidebar-bottom"><div class="user-mini"><span class="avatar">BC</span><div><strong>Creator account</strong><small>Demo workspace · sample data</small></div></div></div>
-</aside><div class="workspace"><header class="topbar"><div class="top-left"><button class="menu-btn" aria-label="Open navigation" data-open-menu><span data-icon="menu"></span></button><span>Workspace</span><span class="slash">/</span><strong data-page-label>Outreach Campaigns</strong></div><div class="top-right"><span class="sample-flag">DESIGN PREVIEW</span><span class="credits"><b data-credit-count>5</b> sample credits</span><label class="sr-only" for="plan-select">Preview plan</label><select class="plan-select" data-plan-select id="plan-select"><option value="free">FREE</option><option value="pro">PRO</option><option value="max">MAX</option></select><span class="top-avatar">BC</span></div></header><main class="ops-wrap" id="main">
-<div class="breadcrumbs"><a href="home-standalone.html">Workspace</a><span>/</span><strong style="color:var(--ink)">Outreach Campaigns</strong></div>
-<header class="ops-head"><div><div class="eyebrow">THE CREATOR'S OUTREACH DESK</div><h1>Turn destinations into conversations.</h1><p>Build thoughtful campaigns, prepare individualized pitches and keep every hotel in the loop.</p></div>
-<div class="ops-controls"><span class="ops-demo">ILLUSTRATIVE WORKSPACE</span><button class="btn lime" data-op="create"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New campaign</button></div></header>
-<div class="ops-section-head"><div><h2>Your campaigns</h2><p>Each campaign brings hotels, pitches and next steps together.</p></div><a class="ops-quietlink" href="my-trips-standalone.html">View My Trips →</a></div>
+</aside><div class="workspace"><header class="topbar"><div class="top-left"><button class="menu-btn" aria-label="Open navigation" data-open-menu><span data-icon="menu"></span></button><span>Workspace</span><span class="slash">/</span><strong data-page-label>Outreach</strong></div><div class="top-right"><span class="sample-flag">DESIGN PREVIEW</span><span class="credits"><b data-credit-count>5</b> sample credits</span><label class="sr-only" for="plan-select">Preview plan</label><select class="plan-select" data-plan-select id="plan-select"><option value="free">FREE</option><option value="pro">PRO</option><option value="max">MAX</option></select><span class="top-avatar">BC</span></div></header><main class="ops-wrap" id="main">
+<div class="breadcrumbs"><a href="home-standalone.html">Workspace</a><span>/</span><strong style="color:var(--ink)">Outreach</strong></div>
+<header class="ops-head"><div><div class="eyebrow">THE CREATOR'S OUTREACH DESK</div><h1>Turn destinations into conversations.</h1><p>Plan focused outreach, prepare individualized pitches and keep every hotel in the loop.</p></div>
+<div class="ops-controls"><span class="ops-demo">ILLUSTRATIVE WORKSPACE</span><button class="btn lime" data-v6-new><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New outreach</button></div></header>
+<div class="ops-section-head"><div><h2>Your outreach</h2><p>Each campaign brings hotels, pitches and next steps together.</p></div><a class="ops-quietlink" href="my-trips-standalone.html">View My Trips →</a></div>
 <div class="ops-chooser" id="ops-campaign-pills"></div>
-<div id="ops-campaign-none" class="ops-emptybox" hidden><h3>Plan your next opportunity.</h3><p>Connect a destination or Trip and build a list of hotels worth approaching.</p><button class="btn lime" data-op="create">Create a campaign</button></div>
-<div id="ops-campaign-workspace" hidden>
+<div id="ops-campaign-none" class="ops-emptybox" hidden><h3>Plan your next opportunity.</h3><p>Connect a destination or Trip and build a list of hotels worth approaching.</p><button class="btn lime" data-v6-new>Create a campaign</button></div>
+<div id="ops-campaign-workspace" hidden><div id="v6-campaign-trip-context" class="v6-context-strip" hidden></div>
 <section class="ops-hero">
 <div><div class="eyebrow" id="ops-campaign-city">CAMPAIGN · DESTINATION</div><h2 id="ops-campaign-title">Loading campaign…</h2><p id="ops-campaign-desc">Your outreach, organized around real opportunities.</p>
-<div style="margin-top:20px;display:flex;flex-wrap:wrap;gap:7px"><span class="ops-pill dark">ONE HOTEL · ONE RELATIONSHIP</span><span class="ops-pill dark">NO BULK SEND</span><span class="ops-pill dark">PITCHES SAVED</span></div>
+<div style="margin-top:20px;display:flex;flex-wrap:wrap;gap:7px"><span class="ops-pill dark">ONE HOTEL · MULTIPLE OPPORTUNITIES</span><span class="ops-pill dark">NO BULK SEND</span><span class="ops-pill dark">PITCHES SAVED</span></div>
 </div>
-<div class="ops-hero-right"><div class="ops-hero-actions"><button class="btn outline-dark" data-op="add-leads"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add hotels</button><a class="btn lime" href="pipeline-standalone.html">View Pipeline →</a></div>
+<div class="ops-hero-right"><div class="ops-hero-actions"><button class="btn outline-dark" data-v6-add><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add hotels</button><a class="btn lime" href="pipeline-standalone.html">See opportunities →</a></div>
 <div class="ops-progress"><div class="ops-progress-top"><div><strong id="ops-campaign-progress-title">0 / 0</strong><small style="display:block">Leads with logged outreach</small></div><small id="ops-progress-percent">0%</small></div>
 <div class="ops-track"><div class="ops-fill" id="ops-campaign-progress" style="width:0%"></div></div></div></div>
 </section>
 <div class="ops-stats" id="ops-stat-grid"></div>
 <div class="ops-section-head"><div><h2>Campaign workspace</h2><p>One practical list. No duplicated hotel records, no mystery scores.</p></div><span class="ops-pill" id="ops-campaign-id">0 hotels</span></div>
 <div class="ops-card-grid">
-<section class="ops-panel table-scroller"><header class="ops-panel-header"><div><strong>Hotel leads</strong><p>Select a hotel to continue its individual outreach.</p></div><button class="btn small" data-op="add-leads">+ Add leads</button></header>
+<section class="ops-panel table-scroller"><header class="ops-panel-header"><div><strong>Hotel opportunities</strong><p>Select a hotel to continue its individual outreach.</p></div><button class="btn small" data-v6-add>+ Add leads</button></header>
 <div class="ops-filterbar"><div class="ops-search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="ops-lead-search" placeholder="Find a hotel in this campaign" aria-label="Find hotel"></div>
 <label class="sr-only" for="ops-lead-stage">Filter leads by stage</label><select id="ops-lead-stage"><option value="all">All stages</option><option value="saved">Saved</option><option value="draft">Pitch ready</option><option value="sent">Outreach sent</option><option value="replied">Conversation</option><option value="won">Agreement reached</option></select>
 <span class="ops-pill" id="ops-lead-count">0 visible</span></div>
