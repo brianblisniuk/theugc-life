@@ -99,8 +99,15 @@ with 401 before the route ran. Give each secret its own value of at least
 16 characters. A missing or shorter secret does not run the job. The
 public routes stay bearer-gated for a caller that can reach them.
 
-The functions are background functions. Locking and idempotency stay in
-the same database functions the routes call.
+The functions are synchronous scheduled functions. Netlify does not run a
+function that is both scheduled and background, and answers that
+combination with a bare 502 and no function log. A thrown job returns
+500 `{ "result": "error", "code" }` and logs only the error name and code.
+Locking and idempotency stay in the same database functions the routes call.
+The scheduled limit is 30 seconds. Send dispatch claims one queued row,
+delivers it, then claims the next, and stops claiming at 25 seconds. A
+kill cannot leave a batch of unsent reservations. A row already handed to
+Gmail is not claimed again.
 
 | Function | Schedule | Secret | In-process job |
 | --- | --- | --- | --- |
