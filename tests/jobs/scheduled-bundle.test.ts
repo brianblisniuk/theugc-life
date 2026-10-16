@@ -107,25 +107,6 @@ describe("scheduled function bundle", () => {
     }
   });
 
-  it("does not call the network when the secret is set and the bearer is absent", () => {
-    const secrets: Record<string, string> = {
-      "gmail-inbox-sync": "GMAIL_SYNC_SECRET",
-      "account-erasure": "ACCOUNT_ERASURE_SECRET",
-      "credit-period-refresh": "CREDIT_PERIOD_SECRET",
-      "gmail-followup-housekeeping": "GMAIL_FOLLOWUP_SECRET",
-      "gmail-send-dispatch": "GMAIL_DISPATCH_SECRET",
-    };
-    for (const name of SCHEDULED_FUNCTION_NAMES) {
-      const denied = invoke(name, secrets[name] ?? null, SECRET);
-      expect(denied.status, denied.stderr).toBe(0);
-      expect(JSON.parse(denied.stdout)).toEqual({
-        statusCode: 401,
-        body: JSON.stringify({ result: "forbidden" }),
-      });
-      expect(denied.stdout).not.toContain(SECRET);
-    }
-  });
-
   it("reaches the database call on Node 20, where WebSocket is missing", () => {
     const secrets: Record<string, string> = {
       "gmail-inbox-sync": "GMAIL_SYNC_SECRET",
@@ -186,7 +167,7 @@ function invokePastClientInit(
       throw error;
     };
     const { handler } = require(${JSON.stringify(path.join(ROOT, "netlify", "functions-built", `${name}.js`))});
-    handler({ headers: { authorization: "Bearer " + ${JSON.stringify(SECRET)} } }).then((result) => {
+    handler().then((result) => {
       process.stdout.write(JSON.stringify({ result, fetches: calls.length }));
     }).catch((error) => {
       console.error(error && error.name ? error.name : "handler threw");

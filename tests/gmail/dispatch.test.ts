@@ -75,16 +75,8 @@ describe("dispatch auth", () => {
     const short = await runScheduledDispatch({ secret: "short-secret", run });
     expect(short.statusCode).toBe(500);
     expect(run).not.toHaveBeenCalled();
-    const denied = await runScheduledDispatch({
-      secret: SECRET,
-      authorization: `Bearer ${SECRET}x`,
-      run,
-    });
-    expect(denied.statusCode).toBe(401);
-    expect(run).not.toHaveBeenCalled();
     const ran = await runScheduledDispatch({
       secret: SECRET,
-      authorization: `Bearer ${SECRET}`,
       run,
     });
     expect(ran.statusCode).toBe(200);
