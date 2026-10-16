@@ -627,7 +627,8 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #100,
+**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #103,
+`b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50` (verify green). PR #100 stays
 `4001a628a347c0588fcc402d03fadb40302b8b6a` (V2-D1, migration `0097`,
 D182–D187). Contract Review stays out of MVP (D185). PR #98 is merged
 (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181).

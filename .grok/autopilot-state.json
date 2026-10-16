@@ -1,9 +1,9 @@
 {
-  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last recorded main is 4001a628a347c0588fcc402d03fadb40302b8b6a (merge of PR #100, V2-D1, migration 0097, D182-D187). Contract Review stays out of MVP (D185). PR #102 is the open V2-F1 Midnight shell this block depends on; its merge SHA is not recorded because it is not merged. D02 is not finished as a provider rollout: the unlock screen shows stored verification and the verified date only after a successful unlock, and a locked contact has no name or email. Fake stays the local and CI provider. Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository. Leave HUNTER_API_KEY unset in CI.",
+  "$comment": "Machine-readable autopilot state. Live GitHub ALWAYS outranks this file. Last recorded main is b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50 (merge of PR #103, verify green). PR #100 is merged (4001a628a347c0588fcc402d03fadb40302b8b6a, migration 0097, D182-D187). Contract Review stays out of MVP (D185). PR #102 is the open V2-F1 Midnight shell this block depends on; its merge SHA is not recorded because it is not merged. D02 is not finished as a provider rollout: the unlock screen shows stored verification and the verified date only after a successful unlock, and a locked contact has no name or email. Fake stays the local and CI provider. Open drafts #88 and #90 are UX01 mockups awaiting the owner. Do not merge them. expected_head stays null. Do not set GMAIL_SEND_ENV=production from this repository. Leave HUNTER_API_KEY unset in CI.",
   "schema_version": 1,
   "as_of": "2026-10-16",
   "state": "HUMAN_FRONTIER",
-  "last_recorded_main": "4001a628a347c0588fcc402d03fadb40302b8b6a",
+  "last_recorded_main": "b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50",
   "active_block": "V2-S1",
   "branch": "cursor/v2-s1-discover-hotel-44c6",
   "pr": 107,
@@ -11,9 +11,9 @@
   "pending_jobs": [],
   "unresolved_findings": [],
   "ci_status": {
-    "ref": "4001a628a347c0588fcc402d03fadb40302b8b6a",
+    "ref": "b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50",
     "verify": "success"
   },
   "required_human_action": "CREDENTIAL REQUIRED — set HUNTER_API_KEY and CONTACT_PROVIDER=hunter only on the host that should call Hunter. Leave both unset in CI. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
-  "next_dependency": "Recorded main is PR #100 (4001a628a347c0588fcc402d03fadb40302b8b6a, migration 0097, D182-D187). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). V2-S1 is draft PR #107 on the V12.2 Midnight shell from open PR #102. Do not merge #107 before #102. Contract Review stays out (D185). A locked contact still has no name or email. Fake stays the local and CI provider. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
+  "next_dependency": "Recorded main is PR #103 (b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50, verify green). PR #100 is merged (4001a628a347c0588fcc402d03fadb40302b8b6a, migration 0097, D182-D187). PR #98 is merged (dc04d09369c5d2574755c970b3a3e3b7b95c3cc1, migration 0096, D181). V2-S1 is draft PR #107 on the V12.2 Midnight shell from open PR #102 (b509be1). Do not merge #107 before #102. Pitch Studio draft binding stays with S3. Contract Review stays out (D185). A locked contact still has no name or email. Fake stays the local and CI provider. The next human step is the Hunter credential on the host that should call Hunter, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
 }
