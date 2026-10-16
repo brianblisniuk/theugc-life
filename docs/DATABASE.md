@@ -2718,8 +2718,14 @@ Constraint: `end_date >= start_date`.
 - `trip_id uuid FK trips(id) ON DELETE CASCADE`
 - `hotel_id uuid FK hotels(id)`
 - `priority text NULL`
+- `check_in date NULL` (D183)
+- `check_out date NULL` (D183)
+- `night_status text NOT NULL DEFAULT 'pending'` — `pending` or `confirmed`
 - `created_at timestamptz`
 Unique `(trip_id, hotel_id)`.
+The dates are a pair. `confirmed` requires both dates. Checkout is after
+check-in. The creator sets them. A Gmail suggestion never writes them until
+the creator accepts it, and accepting does not change `night_status`.
 
 ### pipeline_items
 Represents one creator↔hotel relationship cycle.
@@ -2735,13 +2741,71 @@ Represents one creator↔hotel relationship cycle.
 - `first_pitched_at timestamptz NULL`
 - `last_activity_at timestamptz`
 - `cycle_number integer NOT NULL DEFAULT 1`
+- `stay_start date NULL` (D182, D183)
+- `stay_end date NULL`
+- `display_ref text NOT NULL` — per-creator `OP-1001` upward (D182)
+- `outreach_initiative_id uuid NULL` — campaign, `ON DELETE SET NULL` (D184)
 - timestamps
 
 Statuses: saved, planned, pitched, replied, follow_up, negotiating, won, closed.
 
-Multiple historical cycles per `(creator_id, hotel_id)` are allowed. Multiple simultaneously active cycles are prevented by a partial unique index. The active definition is finalized (see DECISIONS D023): a cycle is active in every status except `closed` (so `won` is still active), and only `closed` frees the pair for a new cycle:
+A cycle is open in every status except `closed` (D023). `won` stays open.
+D182 replaces `pipeline_items_single_active_cycle_uidx`. Two open rows for
+the same creator and hotel are allowed when they are on different trips or
+their half-open stay ranges do not overlap. A row with no trip is its own
+bucket. A row with no dates occupies that whole bucket. Closed rows are
+outside the exclusion constraints. `display_ref` is unique per creator,
+assigned on insert, and cannot change.
 
-`pipeline_items_single_active_cycle_uidx (creator_id, hotel_id) WHERE status <> 'closed'`.
+Stage words (D187), without renaming the stored values: Saved, Pitch ready,
+Sent, Replied, Negotiating, Agreed, Closed. `follow_up` is an event, not a
+stage.
+
+### outreach_initiatives
+D184. A campaign, with or without a trip.
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `trip_id uuid NULL FK trips(id) ON DELETE SET NULL`
+- `destination_id uuid NULL FK destinations(id)`
+- `name text NOT NULL`
+- timestamps
+
+A linked trip copies its destination. The name is 1–120 characters after trim.
+
+### outreach_initiative_hotels
+- `id uuid PK`
+- `initiative_id uuid FK outreach_initiatives(id) ON DELETE CASCADE`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `hotel_id uuid FK hotels(id)`
+- `pipeline_item_id uuid NULL FK pipeline_items(id) ON DELETE SET NULL`
+- `source text NOT NULL` — `trip_shortlist`, `imported`, or `manual`
+- `created_at timestamptz`
+Unique `(initiative_id, hotel_id)`.
+Creating a campaign from a trip copies the current shortlist once. A later
+shortlist change is copied only by `import_outreach_shortlist`.
+
+### stay_date_suggestions
+D183. A Gmail date suggestion. It does not store a message body.
+- `id uuid PK`
+- `creator_id uuid FK creator_profiles(id) ON DELETE CASCADE`
+- `owner_user_id uuid NOT NULL` — the creator's `public.users` id
+- exactly one of `trip_hotel_id` or `pipeline_item_id`
+- `suggested_check_in date NOT NULL`
+- `suggested_check_out date NOT NULL`
+- `status text NOT NULL` — `pending`, `accepted`, or `rejected`
+- `source text NOT NULL` — `gmail`
+- `source_mail_account_id uuid NOT NULL`
+- composite FK `(source_mail_account_id, owner_user_id)` → `mail_accounts(id, user_id) ON DELETE CASCADE`
+- `source_ref text NULL`
+- `resolved_at timestamptz NULL` — set only when the status is not pending
+- timestamps
+
+### pipeline_opportunity_counters
+D182. One row per creator. `last_number` starts at 1001. `ON DELETE CASCADE`
+from `creator_profiles`. No client privilege.
+
+`collaboration_deliverables.status` includes `revision_requested` (D186).
+Deadline lists still return `pending` and `rejected` only.
 
 ### outreach_events
 Strategic append-oriented domain ledger.

@@ -67,7 +67,7 @@ describe("creator badges — viewer isolation", () => {
       ],
     });
     const badge = badges.get(HOTEL)!;
-    expect(badge.pipeline).toEqual({ kind: "status", label: "Pitched" });
+    expect(badge.pipeline).toEqual({ kind: "status", label: "Sent" });
     expect(badge.tripIds).toEqual(["trip-viewer"]);
     expect(shouldShowPipelineBadge(badge)).toBe(true);
     expect(shouldShowTripBadge(badge)).toBe(true);

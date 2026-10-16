@@ -130,6 +130,9 @@ browser may write them. The CRM tables are **read-only to the browser**:
 | `creator_share_links` | **select only** | `create_creator_share_link`, `rotate_creator_share_link`, `revoke_creator_share_link`. The raw token is not stored. |
 | `creator_collaboration_share_marks`, `creator_deliverable_share_marks` | select, insert, update, delete (own rows) | `set_collaboration_share_mark`, `set_deliverable_share_mark`. |
 | `pipeline_items` | **select only** | trusted RPC |
+| `outreach_initiatives`, `outreach_initiative_hotels` | **select only** | `create_outreach_initiative`, `import_outreach_shortlist`, `add_outreach_hotel`, `delete_outreach_initiative` |
+| `stay_date_suggestions` | **select only** | `propose_stay_date_suggestion`, `accept_stay_date_suggestion`, `reject_stay_date_suggestion` |
+| `pipeline_opportunity_counters` | **no privilege** | the display-id trigger. `service_role` may read and write. |
 | `outreach_events` | **select only** | trusted RPC |
 | `collaborations` | **select only** | trusted RPC |
 | `milestones`, `share_cards`, `referrals`, `public_creator_profile_views` | **select only** | no client write surface exists |

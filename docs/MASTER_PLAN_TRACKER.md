@@ -382,9 +382,10 @@ adds no migration. PREPROD-1 (PR #92) stays merged as
 is not finished: PR #97 merged the Hunter adapter (`9658a451a09e2543a36184ae47562cb4dde59241`,
 migration `0095`, D180). PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`,
 migration `0096`, D181 email cascade). The unlock
-screen still does not show provenance or freshness. PR #102 merges V2-F1
-(V12.2 Midnight shell and theme, no migration). The merge SHA of PR #102 is
-recorded by the next block.
+screen still does not show provenance or freshness. PR #100 merges V2-D1
+(migration `0097`, D182–D187). Contract Review stays out of MVP (D185).
+PR #102 merges V2-F1 (V12.2 Midnight shell and theme, no migration). The
+merge SHA of PR #102 is recorded by the next block.
 `HUNTER_API_KEY` stays unset in CI. UX02 design
 (PR #91) is merged as `dbfd2472b00d49590c17f416a10f6dbef371781b`. UX02 screens
 (PR #95) are merged as `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`. Draft PRs #88
@@ -627,7 +628,9 @@ After every 5–8 merged base rounds:
 **Current frontier (16 Oct 2026).** Recorded main is the merge of PR #99,
 `7041104f7fce3e9a8e0916621daa39d0799b2b22` (Gmail callback error log).
 PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration
-`0096`, D181). PREPROD-1b
+`0096`, D181). PR #100 merges V2-D1 (migration `0097`, D182–D187). The merge
+SHA is recorded by the next block. Contract Review stays out of MVP (D185).
+PREPROD-1b
 (PR #93, `9c50400c104b6f5aa036eea3ea798f269aeffe5e`) and PREPROD-1 (PR #92,
 `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`) stay merged.
 D05 is merged (PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`). UX02

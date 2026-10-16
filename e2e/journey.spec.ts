@@ -243,7 +243,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#pitch-channel").selectOption("email");
   await ada.locator("#pitch-date").fill(day(-1));
   await commitAction(ada, () => ada.getByRole("button", { name: "Mark as pitched" }).click());
-  await expect(ada.getByRole("heading", { name: "Pitched", exact: true })).toBeVisible();
+  await expect(ada.getByRole("heading", { name: "Sent", exact: true })).toBeVisible();
   const personal = ada.getByTestId("personal-intelligence");
   await expect(personal.getByText("Registrado a mano", { exact: true })).toBeVisible();
   await expect(personal.getByText("Pitch enviado", { exact: true })).toBeVisible();
@@ -263,7 +263,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#won-type").selectOption("stay");
   await ada.locator("#won-date").fill(day(0));
   await commitAction(ada, () => ada.getByRole("button", { name: "Mark as won" }).click());
-  await expect(ada.getByRole("heading", { name: "Won", exact: true })).toBeVisible();
+  await expect(ada.getByRole("heading", { name: "Agreed", exact: true })).toBeVisible();
   await expect(
     ada.getByRole("heading", { name: "Collaboration agreed", exact: true }),
   ).toBeVisible();
