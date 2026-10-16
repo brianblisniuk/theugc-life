@@ -76,12 +76,13 @@
 - PR #99 — Gmail callback error log, no migration — `7041104f7fce3e9a8e0916621daa39d0799b2b22`.
 - PR #100 — V2-D1 opportunity data model, migration `0097`, D182–D187. The merge SHA is recorded by the next block.
 - PR #102 — V2-F1 V12.2 Midnight shell and theme, no migration. The merge SHA is recorded by the next block.
+- PR #106 — V2-S4 Inbox and Home, no migration. Draft. Depends on PR #102. Do not merge.
 
 ## Next action
 - CREDENTIAL REQUIRED — set `HUNTER_API_KEY` and `CONTACT_PROVIDER=hunter` only on the host that should call Hunter. Leave both unset in CI. A manual smoke is at most three hotels with no contact cache row and three different website domains. Then unset `CONTACT_PROVIDER`.
 - PR #100 merges V2-D1 (migration `0097`, D182–D187). Contract Review stays out of MVP (D185). The merge SHA of PR #100 is recorded by the next block.
 - PR #102 merges V2-F1. Midnight is the single theme. Full screen rebuilds stay in later blocks. The merge SHA of PR #102 is recorded by the next block.
-- V2-S4 Inbox and Home is on `cursor/v2-s4-inbox-home-0099`. The draft PR into `main` depends on PR #102. Do not merge it. No new migration. Sending stays gated. A failed read is not zero.
+- PR #106 is the V2-S4 draft (`cursor/v2-s4-inbox-home-0099`). It depends on PR #102. Do not merge it. No new migration. Sending stays gated. A failed read is not zero.
 - D178 is Accepted (owner Brian, 16 Oct 2026). The code in PR #92 matches it.
 - Open drafts #88 (`design/ux01-mockups`) and #90 (`cursor/ux01-phase1-mockups-12bd`) are UX01 mockups awaiting the owner. Do not merge them.
 - EXTERNAL ACTION APPROVAL REQUIRED — Add `gmail.send` (sensitive) to the Google Cloud OAuth consent screen. Set `GMAIL_SEND_ENV=production` only on the production site. Leave it unset on staging and previews. Do not do either from this repository.
