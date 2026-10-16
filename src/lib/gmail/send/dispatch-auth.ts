@@ -1,9 +1,12 @@
 /**
  * Dispatch authorization. No secrets are imported here. The secret is an
  * argument so a test can pass one without reading the environment.
+ *
+ * The schedule runs the dispatcher in-process. It does not POST to the
+ * public site. The HTTP route still requires the bearer.
  */
 
-import { GMAIL_SEND_DISPATCH_PATH, runScheduledPost } from "@/lib/jobs/scheduled-post";
+import { runScheduledJob } from "@/lib/jobs/scheduled-post";
 
 export function authorizeDispatch(header: string | null, secret: string | undefined): boolean {
   if (!secret || secret.length < 16) return false;
@@ -29,9 +32,8 @@ export async function handleDispatchPost(
 }
 
 export async function runScheduledDispatch(options: {
-  fetchImpl: typeof fetch;
-  siteUrl: string | null;
   secret: string | null;
+  run: () => Promise<object>;
 }): Promise<{ statusCode: number; body: string }> {
-  return runScheduledPost({ ...options, path: GMAIL_SEND_DISPATCH_PATH });
+  return runScheduledJob(options);
 }

@@ -5624,6 +5624,20 @@ are not a due queue.
 
 Proposed because D076 and D135 named a different discharge path.
 
+### Amendment (16 Oct 2026) — the schedule does not POST to the public site
+
+Staging password protection answers the scheduled function's POST to the
+public site with 401 before the route runs, so a configured job never
+starts. The five scheduled functions now call the same job the route
+calls, in this process. A missing secret, or a secret shorter than 16
+characters, still fails closed and does not run the job. The site URL is
+not required. The secret is not logged and is not taken from the request.
+The public routes keep their bearer check. Follow-up housekeeping and
+send dispatch stay inert when their own secrets are absent. No new
+provider is added. The functions are background functions so the work is
+not cut off at the synchronous limit. Locking and idempotency stay in
+the same database functions.
+
 ## D179 — A null entitlement reference is one logical grant
 
 Status: **Accepted**. Records the BASE-N9 bugfix. It does not change who
