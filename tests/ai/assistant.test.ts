@@ -516,4 +516,15 @@ describe("assistant source", () => {
     );
     expect(table).not.toMatch(/prompt|completion|decoded_text|plain_text/);
   });
+
+  it("updates the opportunity draft instead of inserting a second one", () => {
+    const source = readFileSync(path.join(ROOT, "src/lib/ai/actions.ts"), "utf8");
+    expect(source).toContain("currentDraftWrite");
+    expect(source).toContain(".update(draftFields)");
+    const pitchBranch = source.slice(source.indexOf('if (purpose === "follow_up")'));
+    const updateAt = pitchBranch.indexOf(".update(draftFields)");
+    const insertAt = pitchBranch.indexOf(".insert(");
+    expect(updateAt).toBeGreaterThan(0);
+    expect(insertAt).toBeGreaterThan(updateAt);
+  });
 });

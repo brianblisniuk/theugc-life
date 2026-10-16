@@ -20,6 +20,7 @@ import {
   INSUFFICIENT_DATA,
 } from "@/lib/screens/discover-figures";
 import { discoverReturnHref, hotelFromDiscoverHref } from "@/lib/screens/discover-return";
+import { nextStep } from "@/lib/screens/next-step";
 import {
   nextStepPitchHref,
   opportunityCards,
@@ -348,6 +349,32 @@ describe("opportunity history", () => {
     });
     expect(selectHotelOpportunity([older, onTrip], null, originTrip).status).toBe("not_open");
     expect(selectHotelOpportunity([closed], null, originTrip).status).toBe("none");
+  });
+
+  it("does not fall back to the oldest open opportunity when no row is named", () => {
+    const older = opportunity({ id: OPP_A, status: "saved", tripId: null });
+    const newer = opportunity({ id: OPP_B, status: "planned", tripId: TRIP });
+    expect(selectHotelOpportunity([older, newer], null, null)).toEqual({ status: "choose" });
+    expect(selectHotelOpportunity([newer, older], null, null).status).toBe("choose");
+    expect(
+      relationshipFromSelection(selectHotelOpportunity([older, newer], null, null)),
+    ).toEqual({ status: "choose" });
+    expect(relationshipFromOpportunities({ status: "ok", opportunities: [older, newer] }, null)).toEqual({
+      status: "choose",
+    });
+    expect(selectHotelOpportunity([older], null, null)).toEqual({ status: "open", row: older });
+    expect(selectHotelOpportunity([closed], null, null).status).toBe("none");
+    const step = nextStep({
+      relationship: { status: "choose" },
+      contact: "ready",
+      balance: 5,
+      cost: 1,
+      pitchHref: `/app/hotels/${HOTEL}/pitch?opportunity=${OPP_A}`,
+      plan: "Pro",
+    });
+    expect(step.offerSave).toBe(false);
+    expect(step.primaryHref).toBe("#work");
+    expect(step.primaryHref).not.toContain(OPP_A);
   });
 
   it("names the shortlist row and the outreach row, each with its own trip", () => {

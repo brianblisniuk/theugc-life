@@ -293,7 +293,9 @@ export default async function HotelDetailPage({
       ? { status: "error" }
       : relationship.status === "not_open"
         ? { status: "not_open" }
-        : relationship.status === "none"
+        : relationship.status === "choose"
+          ? { status: "choose" }
+          : relationship.status === "none"
           ? { status: "none" }
           : { status: "open", stage: relationship.relationship.status };
   const billing =

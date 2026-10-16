@@ -220,6 +220,26 @@ export function closedRowDraft<T extends { pipelineItemId: string | null }>(
  * A trip on the URL is context. It does not hide the draft or let a template
  * overwrite that row.
  */
+/**
+ * One current draft per opportunity. A loaded draft already bound to that
+ * row is updated. A missing draft, or a draft for a different row, is inserted.
+ */
+export function currentDraftWrite(input: {
+  draftId: string | null | undefined;
+  draftOpportunityId: string | null | undefined;
+  boundOpportunityId: string | null;
+}): "update" | "insert" {
+  if (
+    typeof input.draftId === "string" &&
+    input.draftId.length > 0 &&
+    input.boundOpportunityId !== null &&
+    input.draftOpportunityId === input.boundOpportunityId
+  ) {
+    return "update";
+  }
+  return "insert";
+}
+
 export function visiblePitchDraft(input: {
   draft: { id: string; subject: string; body: string } | null;
   fresh: boolean;

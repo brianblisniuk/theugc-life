@@ -237,6 +237,8 @@ describe("inbox screen", () => {
     expect(kept.threads[0]?.hotelName).toBe("North House");
     expect(kept.threads[0]?.pitchHref).toContain("from=inbox");
     expect(kept.threads[0]?.pitchHref).toContain(`opportunity=${ITEM_A}`);
+    expect(kept.threads[0]?.pipelineHref).toContain("from=pipeline");
+    expect(kept.threads[0]?.pipelineHref).toContain(`opportunity=${ITEM_A}`);
     const trip = "55555555-5555-4555-8555-555555555555";
     const other = "66666666-6666-4666-8666-666666666666";
     const named = buildInboxScreen({
@@ -262,6 +264,9 @@ describe("inbox screen", () => {
     expect(named.threads[0]?.pitchHref).toContain(`trip=${trip}`);
     expect(named.threads[0]?.pitchHref).toContain(`opportunity=${ITEM_A}`);
     expect(named.threads[0]?.pitchHref).not.toContain(other);
+    expect(named.threads[0]?.pipelineHref).toContain(`opportunity=${ITEM_A}`);
+    expect(named.threads[0]?.pipelineHref).toContain(`trip=${trip}`);
+    expect(named.threads[0]?.pipelineHref).not.toContain(other);
   });
 
   it("keeps a pending stay-date decision when the mailbox is revoked and no thread is linked", () => {

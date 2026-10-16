@@ -16,11 +16,13 @@ export type OpportunityRelationship =
   | { status: "open"; relationship: { pipelineItemId: string; status: PipelineStatus } }
   | { status: "none" }
   | { status: "not_open" }
+  | { status: "choose" }
   | { status: "error" };
 
 export type HotelOpportunitySelection =
   | { status: "open"; row: HotelOpportunity }
   | { status: "not_open" }
+  | { status: "choose" }
   | { status: "none" };
 
 const DISPLAY_REF = /^OP-[1-9][0-9]{3,}$/;
@@ -164,6 +166,8 @@ export function opportunityCards(
  * The URL's opportunity is that row, or not open. Another row is not a
  * substitute. A trip origin with no named row uses the open row on that trip.
  * Several matches, or none while another row is open, leave the workflow empty.
+ * With no named row and no trip origin, the single open row is used. More
+ * than one open row is a choice, not the oldest row.
  */
 export function selectHotelOpportunity(
   rows: readonly HotelOpportunity[],
@@ -184,8 +188,9 @@ export function selectHotelOpportunity(
     if (open.length === 0) return { status: "none" };
     return { status: "not_open" };
   }
-  const first = open[0] ?? null;
-  return first ? { status: "open", row: first } : { status: "none" };
+  if (open.length === 1) return { status: "open", row: open[0]! };
+  if (open.length === 0) return { status: "none" };
+  return { status: "choose" };
 }
 
 export function relationshipFromSelection(
@@ -201,6 +206,7 @@ export function relationshipFromSelection(
     };
   }
   if (selection.status === "not_open") return { status: "not_open" };
+  if (selection.status === "choose") return { status: "choose" };
   return { status: "none" };
 }
 

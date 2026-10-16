@@ -3,6 +3,43 @@
 -- 0098 is not edited. A draft whose pipeline_item_id is already set cannot
 -- move, including a move to null. gmail_send_reserve no longer picks an
 -- arbitrary open row when the caller omits the id and more than one is open.
+--
+-- One current draft per opportunity. Older duplicates are deleted, then a
+-- partial unique index rejects a second bound row. Deleting the opportunity
+-- deletes that draft. ON DELETE SET NULL would update pipeline_item_id to
+-- null and the guard would abort the delete with 23514.
+
+delete from public.pitch_drafts as draft
+ using (
+   select id
+     from (
+       select id,
+              row_number() over (
+                partition by creator_id, pipeline_item_id
+                order by updated_at desc, id desc
+              ) as n
+         from public.pitch_drafts
+        where pipeline_item_id is not null
+     ) ranked
+    where n > 1
+ ) as extra
+ where draft.id = extra.id;
+
+create unique index pitch_drafts_one_current_opportunity_idx
+  on public.pitch_drafts (creator_id, pipeline_item_id)
+  where pipeline_item_id is not null;
+
+alter table public.pitch_drafts
+  drop constraint pitch_drafts_pipeline_item_fk;
+
+alter table public.pitch_drafts
+  add constraint pitch_drafts_pipeline_item_fk
+  foreign key (pipeline_item_id)
+  references public.pipeline_items (id)
+  on delete cascade;
+
+comment on constraint pitch_drafts_pipeline_item_fk on public.pitch_drafts is
+  'Deleting the opportunity deletes its draft. An update that clears pipeline_item_id is still rejected.';
 
 create or replace function public.pitch_owner_guard()
 returns trigger

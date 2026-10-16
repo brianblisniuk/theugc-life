@@ -14,6 +14,7 @@ import {
   portfolioLine,
   PITCH_OPPORTUNITY_CAP,
   closedRowDraft,
+  currentDraftWrite,
   mergeNamedOpportunity,
   opportunityDraftTrip,
   pitchTripToStore,
@@ -235,6 +236,41 @@ describe("recipient and portfolio", () => {
     expect(portfolioLine(null)).toBe("No portfolio item on this account.");
     expect(portfolioLine("  ")).toBe("No portfolio item on this account.");
     expect(portfolioLine("River film")).toBe("River film");
+  });
+});
+
+describe("one current draft", () => {
+  it("updates the draft already bound to the opportunity", () => {
+    const bound = "22222222-2222-4222-8222-222222222222";
+    const other = "33333333-3333-4333-8333-333333333333";
+    expect(
+      currentDraftWrite({
+        draftId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        draftOpportunityId: bound,
+        boundOpportunityId: bound,
+      }),
+    ).toBe("update");
+    expect(
+      currentDraftWrite({
+        draftId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        draftOpportunityId: other,
+        boundOpportunityId: bound,
+      }),
+    ).toBe("insert");
+    expect(
+      currentDraftWrite({
+        draftId: null,
+        draftOpportunityId: null,
+        boundOpportunityId: bound,
+      }),
+    ).toBe("insert");
+    expect(
+      currentDraftWrite({
+        draftId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        draftOpportunityId: null,
+        boundOpportunityId: null,
+      }),
+    ).toBe("insert");
   });
 });
 

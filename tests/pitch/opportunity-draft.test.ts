@@ -34,6 +34,14 @@ describe("pitch draft opportunity migration", () => {
     expect(guards).toMatch(/v_open_count > 1/);
     expect(guards).toMatch(/'result', 'invalid_input'/);
     expect(guards).not.toMatch(/status <> 'closed'\s+limit 1/);
+    expect(guards).toMatch(/pitch_drafts_one_current_opportunity_idx/);
+    expect(guards).toMatch(
+      /unique index pitch_drafts_one_current_opportunity_idx[\s\S]*where pipeline_item_id is not null/,
+    );
+    expect(guards).toMatch(/row_number\(\) over/);
+    expect(guards).toMatch(/where n > 1/);
+    expect(guards).toMatch(/on delete cascade/);
+    expect(guards).not.toMatch(/on delete set null/);
   });
 });
 
@@ -171,5 +179,19 @@ d("pitch draft stays on its opportunity", () => {
       [creatorA, HOTEL, foreign[0]!.id],
     );
     await expect(stolen).rejects.toMatchObject({ code: "23514" });
+
+    const secondDraft = adminQuery(
+      `insert into public.pitch_drafts (creator_id, hotel_id, pipeline_item_id, subject, body)
+       values ($1, $2, $3, 'Again', 'One draft already exists')`,
+      [creatorA, HOTEL, only[0]!.id],
+    );
+    await expect(secondDraft).rejects.toMatchObject({ code: "23505" });
+
+    await adminQuery("delete from public.pipeline_items where id = $1", [only[0]!.id]);
+    const removed = await adminQuery<{ id: string }>(
+      "select id from public.pitch_drafts where id = $1",
+      [draft[0]!.id],
+    );
+    expect(removed).toEqual([]);
   });
 });

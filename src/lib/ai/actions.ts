@@ -15,6 +15,7 @@ import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { FACT_KEYS, type FactKey } from "@/lib/pitch/contract";
 import { loadPitchContext } from "@/lib/pitch/queries";
+import { currentDraftWrite } from "@/lib/pitch/studio";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -313,22 +314,39 @@ async function draftAssistant(
     };
   }
 
-  const { data, error } = await supabase
-    .from("pitch_drafts")
-    .insert({
-      hotel_id: hotelId,
-      trip_id: tripId || null,
-      pipeline_item_id: boundOpportunityId,
-      template_id: null,
-      system_template_key: null,
-      subject: outcome.subject,
-      body: outcome.body,
-      variables_used: factKeys(facts),
-      delivery: "unsent",
-      origin: "assistant",
-    })
-    .select("id")
-    .single();
+  const draftFields = {
+    trip_id: tripId || null,
+    template_id: null,
+    system_template_key: null,
+    subject: outcome.subject,
+    body: outcome.body,
+    variables_used: factKeys(facts),
+    delivery: "unsent" as const,
+    origin: "assistant" as const,
+  };
+  const write = currentDraftWrite({
+    draftId: context.draft?.id,
+    draftOpportunityId: context.draft?.pipelineItemId,
+    boundOpportunityId,
+  });
+  const saved =
+    write === "update" && context.draft
+      ? await supabase
+          .from("pitch_drafts")
+          .update(draftFields)
+          .eq("id", context.draft.id)
+          .select("id")
+          .single()
+      : await supabase
+          .from("pitch_drafts")
+          .insert({
+            hotel_id: hotelId,
+            pipeline_item_id: boundOpportunityId,
+            ...draftFields,
+          })
+          .select("id")
+          .single();
+  const { data, error } = saved;
   revalidatePath(`/app/hotels/${hotelId}/pitch`);
   return {
     result: "drafted",
