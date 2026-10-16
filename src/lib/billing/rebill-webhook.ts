@@ -24,6 +24,30 @@ function json(body: Record<string, unknown>, status: number) {
 }
 
 /**
+ * Rebill retries a 503. `applied`, `duplicate`, `ignored`, and `revoked`
+ * are finished. `invalid` is a bad payload. An apply error is not finished.
+ */
+export function rebillWebhookHttpStatus(result: string | undefined): number {
+  if (result === "invalid") return 400;
+  if (!result || result === "error") return 503;
+  return 200;
+}
+
+async function appliedResponse(
+  apply: WebhookDeps["apply"],
+  event: Record<string, unknown>,
+): Promise<Response> {
+  let applied: ApplyResult;
+  try {
+    applied = await apply(event);
+  } catch {
+    return json({ result: "error" }, 503);
+  }
+  const result = applied.result ?? "error";
+  return json({ result }, rebillWebhookHttpStatus(result));
+}
+
+/**
  * Verified Rebill webhook. A bad signature does not apply. The account is not
  * taken from the body. Payment status comes from GET /v3/payments/:id.
  */
@@ -51,11 +75,10 @@ export async function handleRebillWebhook(request: Request, deps: WebhookDeps): 
     envelope.event === "payout.updated" ||
     envelope.event === "subscription.created"
   ) {
-    const ignored = await deps.apply({
+    return appliedResponse(deps.apply, {
       logId: envelope.logId,
       event: envelope.event,
     });
-    return json({ result: ignored.result ?? "ignored" }, 200);
   }
 
   if (!deps.env.secretKey) {
@@ -107,8 +130,5 @@ export async function handleRebillWebhook(request: Request, deps: WebhookDeps): 
     };
   }
 
-  const applied = await deps.apply(event);
-  const result = applied.result ?? "error";
-  if (result === "invalid") return json({ result }, 400);
-  return json({ result }, 200);
+  return appliedResponse(deps.apply, event);
 }

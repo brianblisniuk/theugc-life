@@ -3,8 +3,9 @@ import "server-only";
 /**
  * One assistant draft (D142–D145).
  *
- * Free never reaches the model. A failed call is not charged. The returned
- * text is a draft: this module does not send mail.
+ * Free never reaches the model. A failed call is not charged a credit.
+ * The usage row records the tokens the provider billed, or zero when it
+ * billed none. The returned text is a draft: this module does not send mail.
  * Logs carry token counts only.
  */
 
@@ -37,6 +38,7 @@ export type ComposeStatus =
   | "pool_exhausted"
   | "rate_limited"
   | "paused"
+  | "unavailable"
   | "not_unlocked"
   | "injection"
   | "off_topic"
@@ -130,7 +132,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
   if (!deps.hotelId || !deps.brief) return { status: "invalid_input" };
   if (briefLooksLikeInjection(deps.brief.keyPoints)) return { status: "injection" };
   const floor = poolFloorMicros();
-  if (floor === null || !deps.apiKey) return { status: "paused" };
+  if (floor === null || !deps.apiKey) return { status: "unavailable" };
 
   const tier = tierOf(deps.priority);
   const resolved = resolveAssistantModel(tier);
@@ -197,9 +199,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
 
   const inputTokens = result.inputTokens;
   const outputTokens = result.outputTokens;
-  const billed = result.ok
-    ? costMicros(inputTokens, outputTokens)
-    : Math.max(estimate.micros, costMicros(inputTokens, outputTokens));
+  const billed = costMicros(inputTokens, outputTokens);
   const draft = result.ok ? parseDraftText(result.text) : null;
   const onTopic =
     result.ok &&
@@ -215,7 +215,7 @@ export async function composePitch(deps: ComposeDeps): Promise<ComposeOutcome> {
     model,
     inputTokens,
     outputTokens,
-    costMicros: result.ok ? billed : estimate.micros,
+    costMicros: billed,
     status: finishStatus,
     poolFloorMicros: floor,
     poolPercentBps: poolPercentBps(),

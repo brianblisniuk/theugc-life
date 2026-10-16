@@ -39,6 +39,7 @@ export type AssistantActionResult =
   | { result: "pool_exhausted" }
   | { result: "rate_limited" }
   | { result: "paused" }
+  | { result: "unavailable" }
   | { result: "off_topic" }
   | { result: "invalid_input"; message: string }
   | { result: "not_found" }
@@ -294,6 +295,7 @@ async function draftAssistant(
     if (outcome.status === "pool_exhausted") return { result: "pool_exhausted" };
     if (outcome.status === "rate_limited") return { result: "rate_limited" };
     if (outcome.status === "paused") return { result: "paused" };
+    if (outcome.status === "unavailable") return { result: "unavailable" };
     if (outcome.status === "off_topic") return { result: "off_topic" };
     if (outcome.status === "not_unlocked") return { result: "not_found" };
     if (outcome.status === "invalid_input") {

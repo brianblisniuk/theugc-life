@@ -380,6 +380,37 @@ d("contact credit ledger", () => {
     expect(miss[0]).toEqual({ email: null, status: "not_found" });
   });
 
+  it("returns insufficient credits before needs_provider when the balance cannot pay", async () => {
+    const broke = "c05b0000-0000-4000-8000-0000000000d1";
+    const hotel = "c05f0000-0000-4000-8000-0000000000d1";
+    await makeUser(broke);
+    await makeHotel(hotel, "No Cache Broke");
+    await adminQuery(
+      `insert into public.credit_ledger (user_id, delta, reason, idempotency_key)
+       select $1, -bal.n, 'reversal', 'drain-empty'
+         from (
+           select coalesce(sum(delta), 0)::int as n
+             from public.credit_ledger
+            where user_id = $1
+         ) bal
+        where bal.n <> 0`,
+      [broke],
+    );
+    expect(await balanceOf(broke)).toBe(0);
+    const opened = await unlock(broke, hotel, "unlock-broke-empty");
+    expect(opened.rows[0]!.result).toMatchObject({
+      status: "insufficient_credits",
+      email: null,
+      balance: 0,
+    });
+    expect(opened.rows[0]!.result.status).not.toBe("needs_provider");
+    const cache = await adminQuery<{ n: string }>(
+      "select count(*)::text as n from public.contact_cache where hotel_id = $1",
+      [hotel],
+    );
+    expect(cache[0]!.n).toBe("0");
+  });
+
   it("asks for a provider and does not debit when the cache row is absent", async () => {
     const before = await balanceOf(A);
     const absent = await unlock(A, HOTEL.empty, "unlock-empty");

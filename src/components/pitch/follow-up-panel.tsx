@@ -10,6 +10,7 @@
 import { useState } from "react";
 
 import { draftFollowUpWithAssistantAction } from "@/lib/ai/actions";
+import { AI_FOLLOW_UP_PAUSED_COPY, AI_FOLLOW_UP_UNAVAILABLE_COPY } from "@/lib/ai/copy";
 import { PITCH_LANGUAGES, PITCH_TONES } from "@/lib/ai/structured";
 import { cancelFollowUpAction, scheduleFollowUpAction } from "@/lib/gmail/followup/actions";
 import {
@@ -22,8 +23,6 @@ import {
   type FollowUpItem,
   type FollowUpNext,
 } from "@/lib/gmail/followup/next-action";
-import { SUPPORT_EMAIL } from "@/lib/support";
-
 const FIELD =
   "w-full rounded-[var(--radius-app)] border border-border bg-background px-3 py-2 text-sm text-text";
 
@@ -119,7 +118,9 @@ export function FollowUpPanel({
         "That draft wasn't a follow-up about a collaboration with this hotel, so it wasn't used.",
       );
     } else if (result.result === "paused") {
-      setNote(`AI is paused on this account. Email ${SUPPORT_EMAIL} and we'll review it.`);
+      setNote(AI_FOLLOW_UP_PAUSED_COPY);
+    } else if (result.result === "unavailable") {
+      setNote(AI_FOLLOW_UP_UNAVAILABLE_COPY);
     } else if (result.result === "monthly_limit" || result.result === "pool_exhausted") {
       setNote("This month's AI budget is used up. You can still write the follow-up yourself.");
     } else if (result.result === "out_of_credits") {
