@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -144,7 +144,10 @@ function Crumbs({ pathname, origin }: { pathname: string; origin: HotelOrigin | 
   );
 }
 
-function hotelOrigin(pathname: string, search: URLSearchParams): HotelOrigin | null {
+function readHotelOrigin(
+  pathname: string,
+  search: { forEach: (fn: (value: string, key: string) => void) => void },
+): HotelOrigin | null {
   if (!pathname.startsWith("/app/hotels/") && pathname !== "/app/hotels") return null;
   const raw: Record<string, string> = {};
   search.forEach((value, key) => {
@@ -153,20 +156,17 @@ function hotelOrigin(pathname: string, search: URLSearchParams): HotelOrigin | n
   return parseHotelOrigin(raw);
 }
 
-/** Search params suspend. This node renders nothing, so the page is not in the fallback. */
-function HotelOriginSync({
-  pathname,
-  onOrigin,
-}: {
+function ShellHeader(props: {
+  isStaff: boolean;
+  creditLabel: string;
+  planLabel: string | null;
+  email: string | null;
   pathname: string;
-  onOrigin: (origin: HotelOrigin | null) => void;
+  children: React.ReactNode;
 }) {
   const search = useSearchParams();
-  const origin = useMemo(() => hotelOrigin(pathname, search), [pathname, search]);
-  useEffect(() => {
-    onOrigin(origin);
-  }, [onOrigin, origin]);
-  return null;
+  const origin = useMemo(() => readHotelOrigin(props.pathname, search), [props.pathname, search]);
+  return <ShellBody {...props} origin={origin} />;
 }
 
 function ShellBody({
@@ -184,7 +184,8 @@ function ShellBody({
   email: string | null;
   pathname: string;
   origin: HotelOrigin | null;
-  children: React.ReactNode;
+  /** Omitted on the Suspense fallback so the main stays empty of page body. */
+  children?: React.ReactNode;
 }) {
   const active = activeSidebarHref(pathname, origin);
   const heading = shellHeading(pathname);
@@ -323,6 +324,10 @@ function ShellBody({
 /**
  * Midnight shell. Sidebar, top bar, breadcrumbs, and the mobile bottom bar.
  * Dark only.
+ *
+ * Page body renders only in the resolved tree. The search-params fallback is
+ * the same chrome with an empty main, so a kept fallback cannot duplicate
+ * the page.
  */
 export function AppShell({
   isStaff,
@@ -338,23 +343,16 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || "/app";
-  const [origin, setOrigin] = useState<HotelOrigin | null>(null);
-  const onOrigin = useCallback((next: HotelOrigin | null) => {
-    setOrigin(next);
-  }, []);
+  const chrome = {
+    isStaff,
+    creditLabel,
+    planLabel,
+    email,
+    pathname,
+  };
   return (
-    <ShellBody
-      isStaff={isStaff}
-      creditLabel={creditLabel}
-      planLabel={planLabel}
-      email={email}
-      pathname={pathname}
-      origin={origin}
-    >
-      <Suspense fallback={null}>
-        <HotelOriginSync pathname={pathname} onOrigin={onOrigin} />
-      </Suspense>
-      {children}
-    </ShellBody>
+    <Suspense fallback={<ShellBody {...chrome} origin={null} />}>
+      <ShellHeader {...chrome}>{children}</ShellHeader>
+    </Suspense>
   );
 }

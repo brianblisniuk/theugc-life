@@ -57,6 +57,13 @@ describe("Midnight shell", () => {
     expect(shell).toContain("v12-topbar");
     expect(shell).toContain('aria-label="Breadcrumb"');
     expect(shell).toContain('aria-label="Quick navigation"');
+    const fallbackAt = shell.indexOf("fallback=");
+    const resolvedAt = shell.indexOf("<ShellHeader");
+    expect(resolvedAt).toBeGreaterThan(fallbackAt);
+    const fallback = shell.slice(fallbackAt, resolvedAt);
+    expect(fallback).toContain("<ShellBody");
+    expect(fallback).not.toContain("{children}");
+    expect(shell.slice(resolvedAt)).toContain("{children}");
     expect(shell).not.toContain("ThemeToggle");
     expect(shell).not.toContain("contracts.html");
     expect(css).toContain("@media (max-width: 760px)");
@@ -90,11 +97,15 @@ describe("Midnight shell", () => {
     expect(existsSync("src/app/(app)/app/plans/page.tsx")).toBe(true);
   });
 
-  it("renders the page once, outside the search-params fallback", () => {
+  it("renders the page body only in the resolved shell", () => {
     const shell = source("src/components/shell/app-shell.tsx");
-    const boundary = shell.slice(shell.indexOf("<Suspense"), shell.indexOf("</Suspense>"));
-    expect(boundary).toContain("fallback={null}");
-    expect(boundary).not.toContain("{children}");
+    const fallbackAt = shell.indexOf("fallback=");
+    const resolvedAt = shell.indexOf("<ShellHeader");
+    expect(resolvedAt).toBeGreaterThan(fallbackAt);
+    const fallback = shell.slice(fallbackAt, resolvedAt);
+    expect(fallback).toContain("<ShellBody");
+    expect(fallback).not.toContain("{children}");
+    expect(shell.slice(resolvedAt)).toContain("{children}");
     expect(shell.match(/\{children\}/g)).toHaveLength(2);
   });
 });

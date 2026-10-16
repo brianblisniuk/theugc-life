@@ -75,6 +75,7 @@ describe("network confidence and panel state", () => {
 
   it("labels a manual pitch and a confirmed Gmail reading as different families", () => {
     expect(factTypeLabel("pitch_sent")).toBe("Pitch sent");
+    expect(factTypeLabel("unknown_fact")).toBe("Confirmed fact");
     expect(factTypeLabel("gmail_thread_commercial_state")).toBe("Thread reading");
     expect(gmailPromptCopy("confirmed_not_admitted")).toContain("did not enter the network");
     expect(gmailPromptCopy("dismissed")).toContain("does not enter the network");
