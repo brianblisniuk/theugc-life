@@ -153,7 +153,7 @@ specific script is being run there.
 
 ## Go-live order
 
-1. Apply migrations through `0095_hunter_contact_provider.sql` on the production database.
+1. Apply migrations through `0096_hunter_lookup_catalog_qualifiers.sql` on the production database.
 2. Set the application, Rebill, Anthropic, and Gmail variables above.
 3. Confirm the Google OAuth client lists `gmail.readonly` for connect and `gmail.send` only on the incremental send grant.
 4. Set `REBILL_WEBHOOK_SIGNING_SECRET` to the secret Rebill uses for `POST /api/billing/webhook`, and set `REBILL_LIVE` only when the organization should take live charges.

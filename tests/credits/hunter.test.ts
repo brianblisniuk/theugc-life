@@ -9,9 +9,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { CONTACT_LOOKUP_UNAVAILABLE } from "@/lib/credits/config";
 import {
+  HUNTER_DOMAIN_SEARCH_VERIFICATION_HEADROOM,
   HUNTER_ORIGIN,
   HUNTER_SEARCH_BUDGET,
+  HUNTER_VERIFICATION_BUDGET,
   chooseHotelEmail,
+  domainSearchVerificationCount,
+  selectionTier,
   findWithHunter,
   lookupCacheKey,
   memoryLookupStore,
@@ -85,6 +89,13 @@ function person(over: Partial<HunterCandidate> = {}): HunterCandidate {
   };
 }
 
+function net(ops: readonly string[], bucket: "search" | "verification"): number {
+  return (
+    ops.filter((op) => op === `${bucket}:reserve`).length -
+    ops.filter((op) => op === `${bucket}:release`).length
+  );
+}
+
 function watching(store: LookupStore): { store: LookupStore; ops: string[] } {
   const ops: string[] = [];
   return {
@@ -149,6 +160,359 @@ describe("Hunter contact lookup", () => {
     expect(lookupCacheKey(lookup({ domain: "https://nope" }))).toBeNull();
   });
 
+  it("returns the best D181 tier and skips excluded and uncategorized addresses", () => {
+    const creator = person({
+      email: "ada@casa-lucia.test",
+      department: null,
+      position: "Creator Partnerships",
+      confidence: 10,
+    });
+    const marketing = person({
+      email: "mia@casa-lucia.test",
+      department: "marketing",
+      position: "Managing Director",
+      confidence: 11,
+    });
+    const pr = person({
+      email: "pia@casa-lucia.test",
+      department: "communication",
+      position: "PR Manager",
+      confidence: 12,
+    });
+    const social = person({
+      email: "sam@casa-lucia.test",
+      department: null,
+      position: "Social Media Manager",
+      confidence: 13,
+    });
+    const brand = person({
+      email: "bea@casa-lucia.test",
+      department: null,
+      position: "Brand Manager",
+      confidence: 14,
+    });
+    const sales = person({
+      email: "sal@casa-lucia.test",
+      department: "sales",
+      position: "Sales",
+      confidence: 40,
+    });
+    const guest = person({
+      email: "gia@casa-lucia.test",
+      department: null,
+      position: "Guest Relations Manager",
+      confidence: 80,
+    });
+    const reservationsManager = person({
+      email: "rea@casa-lucia.test",
+      department: null,
+      position: "Reservations Manager",
+      confidence: 70,
+    });
+    const gm = person({
+      email: "lee@casa-lucia.test",
+      department: null,
+      position: "General Manager",
+      confidence: 20,
+    });
+    const hotelManager = person({
+      email: "hm@casa-lucia.test",
+      department: "executive",
+      position: "Hotel Manager",
+      confidence: 30,
+    });
+    const gmShort = person({
+      email: "boss@casa-lucia.test",
+      department: null,
+      position: "GM",
+      confidence: 10,
+    });
+    const info = person({
+      email: "info@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 100,
+      decisionMaker: false,
+    });
+    const reservations = person({
+      email: "reservations@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 100,
+      decisionMaker: false,
+    });
+    const hello = person({
+      email: "hello@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 5,
+      decisionMaker: false,
+    });
+    const contact = person({
+      email: "contact@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 4,
+      decisionMaker: false,
+    });
+    const mailbox = person({
+      email: "marketing@casa-lucia.test",
+      type: "generic",
+      department: null,
+      position: null,
+      confidence: 100,
+      decisionMaker: false,
+    });
+    const experience = person({
+      email: "eve@casa-lucia.test",
+      department: null,
+      position: "Guest Experience",
+      confidence: 100,
+    });
+    const director = person({
+      email: "md@casa-lucia.test",
+      department: null,
+      position: "Managing Director",
+      confidence: 100,
+    });
+    const rooms = person({
+      email: "hk@casa-lucia.test",
+      department: null,
+      position: "Housekeeping Supervisor",
+      confidence: 100,
+    });
+    const excluded = [
+      person({ email: "fb@casa-lucia.test", department: null, position: "F&B Manager" }),
+      person({
+        email: "food@casa-lucia.test",
+        department: null,
+        position: "Food and Beverage Director",
+      }),
+      person({ email: "chef@casa-lucia.test", department: "kitchen", position: "Head Chef" }),
+      person({
+        email: "cul@casa-lucia.test",
+        department: "culinary",
+        position: "Culinary Director",
+      }),
+      person({
+        email: "eng@casa-lucia.test",
+        department: "engineering",
+        position: "Chief Engineer",
+      }),
+      person({ email: "hr@casa-lucia.test", department: "hr", position: "HR Communications" }),
+      person({ email: "rec@casa-lucia.test", department: null, position: "Recruiter" }),
+      person({ email: "tal@casa-lucia.test", department: null, position: "Talent Acquisition" }),
+      person({ email: "fin@casa-lucia.test", department: "finance", position: "Finance Manager" }),
+      person({ email: "acc@casa-lucia.test", department: null, position: "Accountant" }),
+      person({ email: "it@casa-lucia.test", department: "it", position: "IT Manager" }),
+    ].map((candidate) => person({ ...candidate, confidence: 100 }));
+
+    expect(selectionTier(creator)).toBe(1);
+    expect(selectionTier(marketing)).toBe(1);
+    expect(selectionTier(pr)).toBe(1);
+    expect(selectionTier(social)).toBe(1);
+    expect(selectionTier(brand)).toBe(1);
+    expect(selectionTier(sales)).toBe(2);
+    expect(selectionTier(guest)).toBe(2);
+    expect(selectionTier(reservationsManager)).toBe(2);
+    expect(selectionTier(gm)).toBe(3);
+    expect(selectionTier(hotelManager)).toBe(3);
+    expect(selectionTier(gmShort)).toBe(3);
+    expect(selectionTier(info)).toBe(4);
+    expect(selectionTier(reservations)).toBe(4);
+    expect(selectionTier(hello)).toBe(4);
+    expect(selectionTier(contact)).toBe(4);
+    expect(selectionTier(mailbox)).toBeNull();
+    expect(selectionTier(experience)).toBeNull();
+    expect(selectionTier(director)).toBeNull();
+    expect(selectionTier(rooms)).toBeNull();
+    for (const candidate of excluded) expect(selectionTier(candidate)).toBeNull();
+
+    const pool = [info, gm, sales, creator, ...excluded, rooms, experience, director, mailbox];
+    expect(chooseHotelEmail(pool)?.email).toBe(creator.email);
+    expect(chooseHotelEmail([sales, guest, gm, info])?.email).toBe(guest.email);
+    expect(chooseHotelEmail([gm, hotelManager, info, hello])?.email).toBe(hotelManager.email);
+    expect(chooseHotelEmail([info, reservations, hello, contact])?.email).toBe(info.email);
+    expect(chooseHotelEmail([reservationsManager, reservations])?.email).toBe(
+      reservationsManager.email,
+    );
+    expect(chooseHotelEmail([mailbox, info])?.email).toBe(info.email);
+    expect(chooseHotelEmail([gmShort, info])?.email).toBe(gmShort.email);
+    expect(
+      chooseHotelEmail([
+        person({
+          email: "zoe@casa-lucia.test",
+          department: "marketing",
+          position: "Marketing Manager",
+          confidence: 40,
+        }),
+        person({
+          email: "ada@casa-lucia.test",
+          department: "marketing",
+          position: "Marketing Manager",
+          confidence: 40,
+        }),
+      ])?.email,
+    ).toBe("ada@casa-lucia.test");
+    expect(
+      chooseHotelEmail([
+        person({
+          email: "low@casa-lucia.test",
+          department: "marketing",
+          position: "Marketing Coordinator",
+          confidence: 20,
+        }),
+        person({
+          email: "high@casa-lucia.test",
+          department: "sales",
+          position: "Sales Manager",
+          confidence: 99,
+        }),
+      ])?.email,
+    ).toBe("low@casa-lucia.test");
+    expect(
+      chooseHotelEmail([
+        person({ email: "bad@casa-lucia.test", verification: "invalid", confidence: 100 }),
+        info,
+      ])?.email,
+    ).toBe(info.email);
+    expect(chooseHotelEmail([...excluded, rooms, experience, director, mailbox])).toBeNull();
+  });
+
+  it("records the chosen D181 tier on the lookup and does not call Hunter for an excluded list", async () => {
+    const http = mockFetch((url) => {
+      if (url.includes("email-verifier")) return { status: 500, body: {} };
+      if (url.includes("email-finder")) {
+        const company = new URL(url).searchParams.get("company");
+        if (company === "Excluded Hotel") {
+          return {
+            status: 200,
+            body: {
+              data: {
+                email: "chef@excluded.test",
+                score: 99,
+                position: "Head Chef",
+                verification: { status: "valid" },
+              },
+            },
+          };
+        }
+        return {
+          status: 200,
+          body: {
+            data: {
+              email: "ada@named.test",
+              score: 70,
+              verification: { status: "valid" },
+            },
+          },
+        };
+      }
+      const domain = new URL(url).searchParams.get("domain");
+      if (domain === "excluded.test") {
+        return {
+          status: 200,
+          body: domainBody([
+            {
+              value: "chef@excluded.test",
+              type: "personal",
+              confidence: 100,
+              position: "Head Chef",
+              verification: { status: "valid" },
+            },
+            {
+              value: "desk@excluded.test",
+              type: "generic",
+              confidence: 100,
+              verification: { status: "valid" },
+            },
+          ]),
+        };
+      }
+      return {
+        status: 200,
+        body: domainBody([
+          {
+            value: "info@cascade.test",
+            type: "generic",
+            confidence: 100,
+            verification: { status: "valid" },
+          },
+          {
+            value: "gm@cascade.test",
+            type: "personal",
+            confidence: 99,
+            position: "General Manager",
+            verification: { status: "valid" },
+          },
+          {
+            value: "sal@cascade.test",
+            type: "personal",
+            confidence: 90,
+            department: "sales",
+            verification: { status: "valid" },
+          },
+          {
+            value: "ada@cascade.test",
+            type: "personal",
+            confidence: 10,
+            department: "marketing",
+            position: "Creator Partnerships",
+            verification: { status: "valid" },
+          },
+        ]),
+      };
+    });
+    const watched = watching(memoryLookupStore());
+    const found = await findWithHunter(lookup({ domain: "cascade.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(found).toMatchObject({
+      status: "found",
+      email: "ada@cascade.test",
+      tier: 1,
+    });
+    if (found.status === "found") expect(found.raw.tier).toBe(1);
+    const again = await findWithHunter(lookup({ domain: "cascade.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(again).toMatchObject({ status: "found", email: "ada@cascade.test", tier: 1 });
+    if (again.status === "found") expect(again.raw.tier).toBe(1);
+
+    const missed = await findWithHunter(lookup({ domain: "excluded.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(missed.status).toBe("not_found");
+    expect(JSON.stringify(missed)).not.toContain("chef@");
+    expect(JSON.stringify(missed)).not.toContain("desk@");
+    expect(http.calls.some((call) => call.url.includes("email-verifier"))).toBe(false);
+    expect(net(watched.ops, "search")).toBe(2);
+
+    const chef = await findWithHunter(
+      lookup({ domain: null, name: "Excluded Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: watched.store, fetchImpl: http.fetchImpl },
+    );
+    expect(chef.status).toBe("not_found");
+    expect(JSON.stringify(chef)).not.toContain("chef@");
+
+    const named = await findWithHunter(
+      lookup({ domain: null, name: "Named Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: memoryLookupStore(), fetchImpl: http.fetchImpl },
+    );
+    expect(named).toMatchObject({ status: "found", email: "ada@named.test", tier: null });
+    if (named.status === "found") expect(named.raw.tier).toBeNull();
+  });
+
   it("uses Domain Search for a website and does not call Hunter again for that domain", async () => {
     const http = mockFetch(() => ({
       status: 200,
@@ -178,8 +542,10 @@ describe("Hunter contact lookup", () => {
         fetchImpl: http.fetchImpl,
       },
     );
-    expect(first).toMatchObject({ status: "found", email: "ada@casa-lucia.test" });
-    expect(second).toMatchObject({ status: "found", email: "ada@casa-lucia.test" });
+    expect(first).toMatchObject({ status: "found", email: "ada@casa-lucia.test", tier: 1 });
+    expect(second).toMatchObject({ status: "found", email: "ada@casa-lucia.test", tier: 1 });
+    if (first.status === "found") expect(first.raw.tier).toBe(1);
+    if (second.status === "found") expect(second.raw.tier).toBe(1);
     expect(http.calls).toHaveLength(1);
     expect(http.calls[0]!.url).toBe(
       `${HUNTER_ORIGIN}/v2/domain-search?domain=casa-lucia.test&limit=10`,
@@ -187,7 +553,9 @@ describe("Hunter contact lookup", () => {
     expect(http.calls[0]!.url).not.toContain("api_key");
     expect(http.calls[0]!.url).not.toContain(KEY);
     expect(http.calls[0]!.key).toBe(KEY);
-    expect(watched.ops).toEqual(["search:reserve"]);
+    expect(net(watched.ops, "search")).toBe(1);
+    expect(net(watched.ops, "verification")).toBe(1);
+    expect(domainSearchVerificationCount(domainBody([]))).toBe(0);
     expect(JSON.stringify(first)).not.toContain(KEY);
     if (first.status === "found") {
       expect(first.raw).not.toHaveProperty("value");
@@ -241,7 +609,8 @@ describe("Hunter contact lookup", () => {
       lookup({ domain: null, firstName: "Ada", lastName: "Lovelace" }),
       { env: env(), store: memoryLookupStore(), fetchImpl: http.fetchImpl },
     );
-    expect(found.status).toBe("found");
+    expect(found).toMatchObject({ status: "found", tier: null });
+    if (found.status === "found") expect(found.raw.tier).toBeNull();
     expect(http.calls[0]!.url).toContain("/v2/email-finder?");
     expect(http.calls[0]!.url).not.toContain("api_key");
     const domainWins = mockFetch(() => ({
@@ -293,6 +662,38 @@ describe("Hunter contact lookup", () => {
 
   it("fails closed at 50 counted searches and does not call Hunter again", async () => {
     const http = mockFetch((url) => {
+      if (!url.includes("email-finder")) return { status: 500, body: {} };
+      return {
+        status: 200,
+        body: {
+          data: {
+            email: "ada@hotel.test",
+            score: 80,
+            verification: { status: "valid" },
+          },
+        },
+      };
+    });
+    const store = memoryLookupStore();
+    for (let i = 0; i < HUNTER_SEARCH_BUDGET; i += 1) {
+      const result = await findWithHunter(
+        lookup({ domain: null, name: `Hotel ${i}`, firstName: "Ada", lastName: "Lovelace" }),
+        { env: env(), store, fetchImpl: http.fetchImpl },
+      );
+      expect(result.status).toBe("found");
+    }
+    const blocked = await findWithHunter(
+      lookup({ domain: null, name: "Hotel extra", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store, fetchImpl: http.fetchImpl },
+    );
+    expect(blocked).toEqual({ status: "unavailable", email: null });
+    expect(http.calls).toHaveLength(HUNTER_SEARCH_BUDGET);
+    expect(http.calls.every((call) => call.url.includes("/v2/email-finder?"))).toBe(true);
+    expect(unlockFollowUp(blocked)).toEqual({ kind: "stop", status: "unavailable" });
+  });
+
+  it("debits domain-search verifications and stops before the next search can pass 50", async () => {
+    const http = mockFetch((url) => {
       const domain = new URL(url).searchParams.get("domain") ?? "hotel.test";
       return {
         status: 200,
@@ -301,27 +702,57 @@ describe("Hunter contact lookup", () => {
             value: `ada@${domain}`,
             type: "personal",
             confidence: 70,
+            department: "marketing",
+            position: "Marketing Manager",
+            verification: { status: "valid" },
+          },
+          {
+            value: `gm@${domain}`,
+            type: "personal",
+            confidence: 99,
+            position: "General Manager",
             verification: { status: "valid" },
           },
         ]),
       };
     });
+    const watched = watching(memoryLookupStore());
+    const first = await findWithHunter(lookup({ domain: "ranked.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(first).toMatchObject({ status: "found", email: "ada@ranked.test", tier: 1 });
+    if (first.status === "found") expect(first.raw.tier).toBe(1);
+    expect(net(watched.ops, "verification")).toBe(2);
+    expect(http.calls).toHaveLength(1);
+
     const store = memoryLookupStore();
-    for (let i = 0; i < HUNTER_SEARCH_BUDGET; i += 1) {
-      const result = await findWithHunter(lookup({ domain: `hotel-${i}.test` }), {
+    let accepted = 0;
+    for (let i = 0; i < HUNTER_VERIFICATION_BUDGET; i += 1) {
+      const result = await findWithHunter(lookup({ domain: `wall-${i}.test` }), {
         env: env(),
         store,
         fetchImpl: http.fetchImpl,
       });
-      expect(result.status).toBe("found");
+      if (result.status !== "found") break;
+      accepted += 1;
     }
-    const blocked = await findWithHunter(lookup({ domain: "hotel-extra.test" }), {
+    const callsAtWall = http.calls.length;
+    const blocked = await findWithHunter(lookup({ domain: "wall-extra.test" }), {
       env: env(),
       store,
       fetchImpl: http.fetchImpl,
     });
-    expect(blocked).toEqual({ status: "unavailable", email: null });
-    expect(http.calls).toHaveLength(HUNTER_SEARCH_BUDGET);
+    let used = 0;
+    let expected = 0;
+    while (used + HUNTER_DOMAIN_SEARCH_VERIFICATION_HEADROOM <= HUNTER_VERIFICATION_BUDGET) {
+      used += 2;
+      expected += 1;
+    }
+    expect(blocked.status).toBe("unavailable");
+    expect(http.calls).toHaveLength(callsAtWall);
+    expect(accepted).toBe(expected);
     expect(unlockFollowUp(blocked)).toEqual({ kind: "stop", status: "unavailable" });
   });
 
@@ -411,6 +842,7 @@ describe("Hunter contact lookup", () => {
             value: "ada@next.test",
             type: "personal",
             confidence: 10,
+            department: "marketing",
             verification: { status: "valid" },
           },
         ]),
@@ -461,7 +893,8 @@ describe("Hunter contact lookup", () => {
       "/v2/domain-search",
       "/v2/email-verifier",
     ]);
-    expect(watched.ops).toEqual(["search:reserve", "verification:reserve"]);
+    expect(net(watched.ops, "search")).toBe(1);
+    expect(net(watched.ops, "verification")).toBe(2);
     const again = await findWithHunter(
       lookup({ hotelId: "33333333-3333-4333-8333-333333333333" }),
       {
@@ -478,6 +911,14 @@ describe("Hunter contact lookup", () => {
     const http = mockFetch((url) => {
       if (url.includes("email-verifier"))
         return { status: 429, body: { errors: [{ id: "too_many_requests" }] } };
+      if (url.includes("email-finder")) {
+        return {
+          status: 200,
+          body: {
+            data: { email: "ada@ready-hotel.test", score: 80, verification: { status: "valid" } },
+          },
+        };
+      }
       const domain = new URL(url).searchParams.get("domain");
       if (domain === "ready.test") {
         return {
@@ -487,6 +928,7 @@ describe("Hunter contact lookup", () => {
               value: "ada@ready.test",
               type: "personal",
               confidence: 70,
+              department: "marketing",
               verification: { status: "valid" },
             },
           ]),
@@ -494,7 +936,14 @@ describe("Hunter contact lookup", () => {
       }
       return {
         status: 200,
-        body: domainBody([{ value: "ada@casa-lucia.test", type: "personal", confidence: 70 }]),
+        body: domainBody([
+          {
+            value: "ada@casa-lucia.test",
+            type: "personal",
+            confidence: 70,
+            department: "marketing",
+          },
+        ]),
       };
     });
     const watched = watching(memoryLookupStore());
@@ -515,11 +964,18 @@ describe("Hunter contact lookup", () => {
     });
     expect(failed.status).toBe("error");
     expect(other.status).toBe("unavailable");
-    expect(ready.status).toBe("found");
+    expect(ready.status).toBe("unavailable");
     expect(watched.ops).toContain("verification:exhaust");
-    expect(watched.ops.filter((op) => op === "search:reserve")).toHaveLength(3);
+    expect(net(watched.ops, "search")).toBe(1);
     expect(http.calls.filter((call) => call.url.includes("email-verifier"))).toHaveLength(1);
-    expect(unlockFollowUp(failed).kind).toBe("stop");
+    expect(http.calls.filter((call) => call.url.includes("ready.test"))).toHaveLength(0);
+    expect(unlockFollowUp(failed)).toEqual({ kind: "stop", status: "error" });
+    const finder = await findWithHunter(
+      lookup({ domain: null, name: "Ready Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: watched.store, fetchImpl: http.fetchImpl },
+    );
+    expect(finder).toMatchObject({ status: "found", email: "ada@ready-hotel.test" });
+    expect(http.calls.some((call) => call.url.includes("email-finder"))).toBe(true);
   });
 
   it("does not call Hunter while another claim for that domain is in flight", async () => {
@@ -542,6 +998,7 @@ describe("Hunter contact lookup", () => {
           value: "ada@casa-lucia.test",
           type: "personal",
           confidence: 10,
+          department: "marketing",
           verification: { status: "valid" },
         },
       ]),
@@ -549,6 +1006,374 @@ describe("Hunter contact lookup", () => {
     const found = await findWithHunter(lookup(), { env: env(), store, fetchImpl: http2.fetchImpl });
     expect(found.status).toBe("found");
     expect(http2.calls).toHaveLength(1);
+  });
+
+  it("finishes a verifier 451 as a miss with no address and does not ask again", async () => {
+    const address = "ada@claimed.test";
+    const http = mockFetch((url) => {
+      if (url.includes("email-verifier"))
+        return { status: 451, body: { errors: [{ id: "claimed_email" }] } };
+      return {
+        status: 200,
+        body: domainBody([
+          { value: address, type: "personal", confidence: 70, department: "marketing" },
+        ]),
+      };
+    });
+    const store = memoryLookupStore();
+    const missed = await findWithHunter(lookup({ domain: "claimed.test" }), {
+      env: env(),
+      store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(missed.status).toBe("not_found");
+    expect(missed.email).toBeNull();
+    expect(JSON.stringify(missed)).not.toContain(address);
+    expect(unlockFollowUp(missed)).toMatchObject({
+      kind: "cache",
+      status: "not_found",
+      email: null,
+    });
+    const stored = await store.claim("domain:claimed.test");
+    expect(stored).toMatchObject({ outcome: "hit", status: "not_found", email: null });
+    expect(JSON.stringify(stored)).not.toContain(address);
+    const again = await findWithHunter(lookup({ domain: "claimed.test" }), {
+      env: env(),
+      store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(again.status).toBe("not_found");
+    expect(http.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/v2/domain-search",
+      "/v2/email-verifier",
+    ]);
+  });
+
+  it("keeps invalid as an uncharged miss and does not cache unknown, webmail, or disposable off the hotel domain", async () => {
+    const cases = [
+      { status: "invalid", domain: "invalid.test", email: "ada@invalid.test", follow: "cache" },
+      { status: "unknown", domain: "unknown.test", email: "ada@unknown.test", follow: "stop" },
+      { status: "webmail", domain: "webmail.test", email: "ada@gmail.com", follow: "stop" },
+      { status: "disposable", domain: "burner.test", email: "ada@mailinator.com", follow: "stop" },
+      { status: "webmail", domain: "on-domain.test", email: "ada@on-domain.test", follow: "found" },
+      {
+        status: "disposable",
+        domain: "temp-hotel.test",
+        email: "ada@temp-hotel.test",
+        follow: "found",
+      },
+    ] as const;
+    for (const item of cases) {
+      const http = mockFetch((url) => {
+        if (url.includes("email-verifier")) {
+          return { status: 200, body: { data: { status: item.status, email: item.email } } };
+        }
+        return {
+          status: 200,
+          body: domainBody([
+            { value: item.email, type: "personal", confidence: 60, department: "marketing" },
+          ]),
+        };
+      });
+      const store = memoryLookupStore();
+      const result = await findWithHunter(lookup({ domain: item.domain }), {
+        env: env(),
+        store,
+        fetchImpl: http.fetchImpl,
+        delay: () => Promise.resolve(),
+      });
+      const before = http.calls.length;
+      const again = await findWithHunter(lookup({ domain: item.domain }), {
+        env: env(),
+        store,
+        fetchImpl: http.fetchImpl,
+      });
+      if (item.follow === "found") {
+        expect(result).toMatchObject({ status: "found", email: item.email });
+        expect(unlockFollowUp(result)).toMatchObject({ kind: "cache", status: "found" });
+        expect(again.status).toBe("found");
+        expect(http.calls).toHaveLength(before);
+      } else if (item.follow === "cache") {
+        expect(result.status).toBe("not_found");
+        expect(JSON.stringify(result)).not.toContain(item.email);
+        expect(unlockFollowUp(result)).toMatchObject({
+          kind: "cache",
+          status: "not_found",
+          email: null,
+        });
+        expect(again.status).toBe("not_found");
+        expect(http.calls).toHaveLength(before);
+      } else {
+        expect(result).toEqual({ status: "error", email: null });
+        expect(unlockFollowUp(result)).toEqual({ kind: "stop", status: "error" });
+        expect(again).toEqual({ status: "error", email: null });
+        if (item.status === "unknown") {
+          expect(http.calls.map((call) => new URL(call.url).pathname)).toEqual([
+            "/v2/domain-search",
+            "/v2/email-verifier",
+            "/v2/email-verifier",
+          ]);
+        } else {
+          expect(http.calls).toHaveLength(before);
+          const stored = await store.claim(`domain:${item.domain}`);
+          expect(JSON.stringify(result)).not.toContain(item.email);
+          expect(stored).toMatchObject({ outcome: "hit", status: "unverified" });
+          if (stored.outcome === "hit")
+            expect(JSON.stringify(stored.raw)).not.toContain(item.email);
+        }
+      }
+    }
+  });
+
+  it("treats a quota-like 403 the same on search and on the verifier", async () => {
+    const search = mockFetch((url) => {
+      const domain = new URL(url).searchParams.get("domain");
+      if (domain === "usage.test")
+        return { status: 403, body: { errors: [{ id: "usage_limit" }] } };
+      return {
+        status: 200,
+        body: domainBody([
+          {
+            value: "ada@later-usage.test",
+            type: "personal",
+            confidence: 10,
+            verification: { status: "valid" },
+          },
+        ]),
+      };
+    });
+    const searchStore = memoryLookupStore();
+    const usage = await findWithHunter(lookup({ domain: "usage.test" }), {
+      env: env(),
+      store: searchStore,
+      fetchImpl: search.fetchImpl,
+    });
+    const afterUsage = await findWithHunter(lookup({ domain: "later-usage.test" }), {
+      env: env(),
+      store: searchStore,
+      fetchImpl: search.fetchImpl,
+    });
+    expect(usage.status).toBe("error");
+    expect(afterUsage.status).toBe("unavailable");
+    expect(search.calls).toHaveLength(1);
+
+    const verifier = mockFetch((url) => {
+      if (url.includes("email-verifier"))
+        return { status: 403, body: { errors: [{ id: "usage_limit" }] } };
+      return {
+        status: 200,
+        body: domainBody([
+          {
+            value: "ada@verify-usage.test",
+            type: "personal",
+            confidence: 10,
+            department: "marketing",
+          },
+        ]),
+      };
+    });
+    const verifierStore = memoryLookupStore();
+    const failed = await findWithHunter(lookup({ domain: "verify-usage.test" }), {
+      env: env(),
+      store: verifierStore,
+      fetchImpl: verifier.fetchImpl,
+    });
+    const blocked = await findWithHunter(lookup({ domain: "verify-next.test" }), {
+      env: env(),
+      store: verifierStore,
+      fetchImpl: verifier.fetchImpl,
+    });
+    expect(failed.status).toBe("error");
+    expect(blocked.status).toBe("unavailable");
+    expect(verifier.calls.filter((call) => call.url.includes("verify-next.test"))).toHaveLength(0);
+    expect(unlockFollowUp(failed)).toEqual({ kind: "stop", status: "error" });
+  });
+
+  it("releases a timed-out or malformed search and does not leave the domain pending", async () => {
+    const slow: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    const store = memoryLookupStore();
+    const watched = watching(store);
+    const timedOut = await findWithHunter(lookup({ domain: "slow-body.test" }), {
+      env: env(),
+      store: watched.store,
+      fetchImpl: slow,
+      timeoutMs: 20,
+    });
+    expect(timedOut).toEqual({ status: "error", email: null });
+    expect(net(watched.ops, "search")).toBe(0);
+    expect(net(watched.ops, "verification")).toBe(0);
+    const http = mockFetch(() => ({
+      status: 200,
+      body: domainBody([
+        {
+          value: "ada@slow-body.test",
+          type: "personal",
+          confidence: 20,
+          department: "marketing",
+          verification: { status: "valid" },
+        },
+      ]),
+    }));
+    const recovered = await findWithHunter(lookup({ domain: "slow-body.test" }), {
+      env: env(),
+      store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(recovered.status).toBe("found");
+
+    const malformed = mockFetch((url) => {
+      if (url.includes("email-finder")) return { status: 200, body: { unexpected: true } };
+      return { status: 200, body: { data: { domain: "bad.test" } } };
+    });
+    const badStore = memoryLookupStore();
+    const badWatched = watching(badStore);
+    const broken = await findWithHunter(lookup({ domain: "bad.test" }), {
+      env: env(),
+      store: badWatched.store,
+      fetchImpl: malformed.fetchImpl,
+    });
+    expect(broken).toEqual({ status: "error", email: null });
+    expect(net(badWatched.ops, "search")).toBe(0);
+    expect(net(badWatched.ops, "verification")).toBe(0);
+    const finderBroken = await findWithHunter(
+      lookup({ domain: null, name: "Bad Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: badWatched.store, fetchImpl: malformed.fetchImpl },
+    );
+    expect(finderBroken).toEqual({ status: "error", email: null });
+    const domainAgain = mockFetch(() => ({
+      status: 200,
+      body: domainBody([
+        {
+          value: "ada@bad.test",
+          type: "personal",
+          confidence: 20,
+          department: "marketing",
+          verification: { status: "valid" },
+        },
+      ]),
+    }));
+    const domainFound = await findWithHunter(lookup({ domain: "bad.test" }), {
+      env: env(),
+      store: badStore,
+      fetchImpl: domainAgain.fetchImpl,
+    });
+    expect(domainFound.status).toBe("found");
+    const later = mockFetch(() => ({
+      status: 200,
+      body: {
+        data: { email: "ada@bad-hotel.test", score: 50, verification: { status: "valid" } },
+      },
+    }));
+    const found = await findWithHunter(
+      lookup({ domain: null, name: "Bad Hotel", firstName: "Ada", lastName: "Lovelace" }),
+      { env: env(), store: badStore, fetchImpl: later.fetchImpl },
+    );
+    expect(found.status).toBe("found");
+  });
+
+  it("abandons the claim when the budget call throws and does not keep the credit", async () => {
+    const inner = memoryLookupStore();
+    let throwBudget = true;
+    const ops: string[] = [];
+    const store: LookupStore = {
+      claim: (key) => inner.claim(key),
+      complete: (key, status, email, raw) => inner.complete(key, status, email, raw),
+      abandon: (key) => inner.abandon(key),
+      budget: (bucket, op) => {
+        ops.push(`${bucket}:${op}`);
+        if (throwBudget && bucket === "verification")
+          return Promise.reject(new Error("budget down"));
+        return inner.budget(bucket, op);
+      },
+    };
+    const http = mockFetch(() => ({ status: 500, body: {} }));
+    const failed = await findWithHunter(lookup({ domain: "thrown.test" }), {
+      env: env(),
+      store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(failed).toEqual({ status: "error", email: null });
+    expect(http.calls).toHaveLength(0);
+    expect(ops).toContain("search:reserve");
+    expect(ops).toContain("search:release");
+    throwBudget = false;
+    const ok = mockFetch(() => ({
+      status: 200,
+      body: domainBody([
+        {
+          value: "ada@thrown.test",
+          type: "personal",
+          confidence: 15,
+          department: "marketing",
+          verification: { status: "valid" },
+        },
+      ]),
+    }));
+    const found = await findWithHunter(lookup({ domain: "thrown.test" }), {
+      env: env(),
+      store,
+      fetchImpl: ok.fetchImpl,
+    });
+    expect(found.status).toBe("found");
+    expect(ok.calls).toHaveLength(1);
+  });
+
+  it("exhausts verifications when Domain Search reports fewer than the headroom remaining", async () => {
+    const http = mockFetch((url) => {
+      const domain = new URL(url).searchParams.get("domain");
+      if (domain === "low-quota.test") {
+        return {
+          status: 200,
+          body: {
+            data: {
+              domain,
+              emails: [
+                {
+                  value: "ada@low-quota.test",
+                  type: "personal",
+                  confidence: 80,
+                  department: "marketing",
+                  verification: { status: "valid" },
+                },
+              ],
+              requests: { verifications: { available: 3 } },
+            },
+          },
+        };
+      }
+      return {
+        status: 200,
+        body: domainBody([
+          {
+            value: "ada@next-quota.test",
+            type: "personal",
+            confidence: 80,
+            verification: { status: "valid" },
+          },
+        ]),
+      };
+    });
+    const store = memoryLookupStore();
+    const found = await findWithHunter(lookup({ domain: "low-quota.test" }), {
+      env: env(),
+      store,
+      fetchImpl: http.fetchImpl,
+    });
+    const blocked = await findWithHunter(lookup({ domain: "next-quota.test" }), {
+      env: env(),
+      store,
+      fetchImpl: http.fetchImpl,
+    });
+    expect(found).toMatchObject({ status: "found", email: "ada@low-quota.test" });
+    expect(blocked.status).toBe("unavailable");
+    expect(http.calls).toHaveLength(1);
   });
 
   it("refuses the real network from the test default fetch", async () => {
