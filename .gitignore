@@ -6,6 +6,9 @@
 # next.js
 /.next/
 /out/
+
+# Netlify scheduled functions, produced by `npm run build`
+/netlify/functions-built/
 next-env.d.ts
 
 # production
