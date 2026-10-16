@@ -13,6 +13,16 @@ import { rebillSignatureValid } from "@/lib/billing/rebill-signature";
 
 type ApplyResult = { result?: string };
 
+/** An RPC failure is result `error`. The handler answers 503 so Rebill retries. */
+export function applyResultFromRpc(
+  data: unknown,
+  error: { message?: string } | null,
+): { result: string } {
+  if (error || !data || typeof data !== "object") return { result: "error" };
+  const result = (data as { result?: unknown }).result;
+  return { result: typeof result === "string" ? result : "error" };
+}
+
 export type WebhookDeps = {
   env: RebillServerEnv;
   fetchImpl: typeof fetch;

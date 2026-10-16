@@ -6,9 +6,9 @@
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyResultFromRpc } from "@/app/api/billing/webhook/route";
 import { readWebhookEnvelope } from "@/lib/billing/rebill-confirm";
 import {
+  applyResultFromRpc,
   handleRebillWebhook,
   rebillWebhookHttpStatus,
   type WebhookDeps,
