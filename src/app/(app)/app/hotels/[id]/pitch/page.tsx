@@ -183,6 +183,7 @@ export default async function HotelPitchPage({
     back: first(raw.back),
   });
   suggestionParams.set("fresh", "1");
+  suggestionParams.set("replace", "1");
   if (explicitSystem) suggestionParams.set("template", explicitSystem);
   if (creatorTemplate) suggestionParams.set("template", creatorTemplate.id);
   const oauthReturnPath = `/app/hotels/${hotel.id}/pitch?${pitchContextParams({
@@ -247,12 +248,13 @@ export default async function HotelPitchPage({
           title="That opportunity isn’t open on this hotel"
           description="Choose one of your open opportunities from Pipeline. A display id is not a link."
         />
-      ) : context.opportunityChoice === "many" ? (
+      ) : context.opportunityChoice === "many" || context.opportunityChoice === "choose" ? (
         <section className="space-y-3" aria-label="Choose an opportunity">
           <h2 className="text-lg font-semibold text-text">Choose the opportunity</h2>
           <p className="max-w-prose text-sm text-muted">
-            This hotel has more than one open opportunity. Open one to see its draft. Saving here
-            does not replace another opportunity.
+            {context.opportunityChoice === "choose"
+              ? "This trip has more than one open opportunity. Open one to see its draft. Another trip’s row is not listed."
+              : "This hotel has more than one open opportunity. Open one to see its draft. Saving here does not replace another opportunity."}
           </p>
           <ul className="space-y-2">
             {context.opportunitiesCapped ? (
@@ -260,7 +262,10 @@ export default async function HotelPitchPage({
                 This list is capped. It is not every open opportunity.
               </li>
             ) : null}
-            {context.opportunities.map((opportunity) => {
+            {(context.opportunityChoice === "choose"
+              ? context.choiceOpportunities
+              : context.opportunities
+            ).map((opportunity) => {
               const params = chooserPitchParams(origin, opportunity, first(raw.back));
               const ref = shownDisplayRef(opportunity.displayRef);
               return (
@@ -438,6 +443,10 @@ export default async function HotelPitchPage({
                   subject={subject}
                   body={body}
                   recipientEmail={context.recipientEmail}
+                  contactLocked={context.contactLocked}
+                  contactUnchecked={context.contactUnchecked}
+                  templateRequested={Boolean(templateParam)}
+                  replaceRequested={first(raw.replace) === "1"}
                   suggestionHref={`/app/hotels/${hotel.id}/pitch?${suggestionParams.toString()}`}
                   assistant={assistant}
                   budgetWarning={budget.warning}

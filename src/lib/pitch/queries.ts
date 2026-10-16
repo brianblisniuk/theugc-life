@@ -24,6 +24,7 @@ import {
   closedRowDraft,
   mergeNamedOpportunity,
   opportunityDraftTrip,
+  opportunityNeedsChoice,
   selectBoundDraft,
   shownDisplayRef,
   takeOpportunityPage,
@@ -89,6 +90,8 @@ export type PitchContextLoad =
       opportunities: StudioOpportunity[];
       opportunitiesCapped: boolean;
       opportunityChoice: ReturnType<typeof chooseOpportunity>["choice"];
+      /** Open rows on the origin trip when the creator must choose one. */
+      choiceOpportunities: StudioOpportunity[];
       selectedOpportunity: StudioOpportunity | null;
       otherDraft: PitchOtherDraft | null;
       otherDraftUnread: boolean;
@@ -315,11 +318,7 @@ export async function loadPitchContext(input: {
 
     const boundOpportunityId = chosen.selected?.id ?? null;
     let draft: PitchDraftRow | null = null;
-    if (
-      chosen.choice !== "many" &&
-      chosen.choice !== "missing" &&
-      chosen.choice !== "trip_empty"
-    ) {
+    if (!opportunityNeedsChoice(chosen.choice)) {
       let draftQuery = supabase
         .from("pitch_drafts")
         .select(
@@ -435,7 +434,11 @@ export async function loadPitchContext(input: {
           delivery: closedRaw.delivery,
           pipelineItemId: closedItemId,
         };
-        if (closedRowDraft(candidate, closedStatus) && closedRecord && typeof closedRecord.id === "string") {
+        if (
+          closedRowDraft(candidate, closedStatus) &&
+          closedRecord &&
+          typeof closedRecord.id === "string"
+        ) {
           const closedOpportunity = opportunityFromRecord(closedRecord);
           opportunities.push(closedOpportunity);
           chosen = chooseOpportunity(opportunities, closedOpportunity.id);
@@ -503,6 +506,7 @@ export async function loadPitchContext(input: {
       opportunities,
       opportunitiesCapped: page.capped,
       opportunityChoice: chosen.choice,
+      choiceOpportunities: chosen.choice === "choose" ? [...chosen.opportunities] : [],
       selectedOpportunity: chosen.selected,
       otherDraft,
       otherDraftUnread,

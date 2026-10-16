@@ -15,7 +15,7 @@ import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { FACT_KEYS, type FactKey } from "@/lib/pitch/contract";
 import { loadPitchContext } from "@/lib/pitch/queries";
-import { resolveOpportunityDraftWrite } from "@/lib/pitch/studio";
+import { opportunityNeedsChoice, resolveOpportunityDraftWrite } from "@/lib/pitch/studio";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -141,11 +141,7 @@ async function draftAssistant(
     requestedPipelineItemId: readField(formData, "pipelineItemId") || null,
   });
   if (context.status !== "ok") return { result: "error" };
-  if (
-    context.opportunityChoice === "many" ||
-    context.opportunityChoice === "missing" ||
-    context.opportunityChoice === "trip_empty"
-  ) {
+  if (opportunityNeedsChoice(context.opportunityChoice)) {
     return { result: "invalid_input", message: "Choose one of your opportunities." };
   }
   const boundOpportunityId = context.selectedOpportunity?.id ?? null;

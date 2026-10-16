@@ -27,7 +27,7 @@ import { buildDiscoverHref, parseDiscoverQuery, sanitizeSearchTerm } from "@/lib
 import { searchHotels } from "@/lib/hotels/queries";
 import { stageTone, stageWord } from "@/lib/outreach/board";
 import { tripHotelHref } from "@/lib/shell/navigation";
-import { shortlistPitchHref } from "@/lib/screens/hotel-opportunities";
+import { shortlistPitchChoices, shortlistPitchHref } from "@/lib/screens/hotel-opportunities";
 import {
   coverNights,
   formatStay,
@@ -355,11 +355,14 @@ export default async function TripWorkspacePage({
                 opportunities.status === "ok"
                   ? opportunities.opportunities.filter((item) => item.hotelId === hotel.id)
                   : [];
-              const pitch = shortlistPitchHref(
-                hotel.id,
-                trip.id,
-                rows.map((row) => ({ id: row.id, status: row.status, tripId: trip.id })),
-              );
+              const pitchRows = rows.map((row) => ({
+                id: row.id,
+                status: row.status,
+                tripId: trip.id,
+                displayRef: row.displayRef,
+              }));
+              const pitch = shortlistPitchHref(hotel.id, trip.id, pitchRows);
+              const pitchChoices = shortlistPitchChoices(hotel.id, trip.id, pitchRows);
               return (
                 <li key={hotel.tripHotelId} className="v12-list-item">
                   <div className="v12-row">
@@ -380,7 +383,13 @@ export default async function TripWorkspacePage({
                       </p>
                     </div>
                     <span className="v12-row">
-                      {pitch ? (
+                      {pitchChoices.length > 1 ? (
+                        pitchChoices.map((choice) => (
+                          <ButtonLink key={choice.id} href={choice.href} size="small">
+                            {choice.label}
+                          </ButtonLink>
+                        ))
+                      ) : pitch ? (
                         <ButtonLink href={pitch} size="small">
                           Pitch
                         </ButtonLink>

@@ -106,12 +106,22 @@ export interface BoundDraftRef {
  * opportunity's row, and an unbound hotel draft is not treated as belonging
  * to one of several open opportunities.
  */
+export type OpportunityScreenChoice =
+  "none" | "one" | "many" | "selected" | "missing" | "trip_empty" | "choose";
+
+/** A pitch cannot save or draft until the creator picks one opportunity. */
+export function opportunityNeedsChoice(choice: OpportunityScreenChoice): boolean {
+  return (
+    choice === "many" || choice === "missing" || choice === "trip_empty" || choice === "choose"
+  );
+}
+
 export function selectBoundDraft<T extends BoundDraftRef>(
   drafts: readonly T[],
   opportunityId: string | null,
-  choice: "none" | "one" | "many" | "selected" | "missing" | "trip_empty",
+  choice: OpportunityScreenChoice,
 ): T | null {
-  if (choice === "many" || choice === "missing" || choice === "trip_empty") return null;
+  if (opportunityNeedsChoice(choice)) return null;
   if (choice === "selected" || choice === "one") {
     if (!opportunityId) return null;
     return drafts.find((draft) => draft.pipelineItemId === opportunityId) ?? null;
@@ -219,9 +229,7 @@ export function closedRowDraft<T extends { pipelineItemId: string | null }>(
 }
 
 export type OpportunityDraftWrite =
-  | { action: "update"; draftId: string }
-  | { action: "insert" }
-  | { action: "reject" };
+  { action: "update"; draftId: string } | { action: "insert" } | { action: "reject" };
 
 /**
  * One current draft per opportunity. The loaded row bound to that opportunity
@@ -273,8 +281,45 @@ export function currentDraftWrite(input: {
  * The composer shows the saved draft unless the creator asked to start over.
  * A trip on the URL is context. It does not hide the draft. A fresh start or
  * a template clears the posted id so the visible text is what gets saved.
- * The server still updates the opportunity's existing draft.
+ * Replacing the saved text still requires an edit or an explicit template.
  */
+
+export const UNTOUCHED_DRAFT_MESSAGE =
+  "Choose a template or edit the draft before replacing the saved text.";
+
+/**
+ * A saved draft stays until the creator edits it or chooses a template.
+ * Posting the untouched suggestion, including after a trip change, is not
+ * that choice. Identical text is not a replacement.
+ */
+export function mayReplaceSavedDraft(input: {
+  hasBoundDraft: boolean;
+  savedSubject: string;
+  savedBody: string;
+  postedSubject: string;
+  postedBody: string;
+  explicitTemplate: boolean;
+  edited: boolean;
+}): { ok: true } | { ok: false; message: string } {
+  if (!input.hasBoundDraft) return { ok: true };
+  if (input.savedSubject === input.postedSubject && input.savedBody === input.postedBody) {
+    return { ok: true };
+  }
+  if (input.explicitTemplate || input.edited) return { ok: true };
+  return { ok: false, message: UNTOUCHED_DRAFT_MESSAGE };
+}
+
+/**
+ * The trip on a selected opportunity is that row's trip. The menu must not
+ * start a fresh draft or navigate to another trip.
+ */
+export function tripChangeForOpportunity(input: {
+  opportunitySelected: boolean;
+  nextTripId: string | null;
+}): { kind: "disabled" } | { kind: "navigate"; tripId: string | null } {
+  if (input.opportunitySelected) return { kind: "disabled" };
+  return { kind: "navigate", tripId: input.nextTripId };
+}
 
 export function visiblePitchDraft(input: {
   draft: { id: string; subject: string; body: string } | null;
@@ -298,7 +343,8 @@ export function chooseOpportunity(
   | { choice: "many"; selected: null }
   | { choice: "selected"; selected: StudioOpportunity }
   | { choice: "missing"; selected: null }
-  | { choice: "trip_empty"; selected: null } {
+  | { choice: "trip_empty"; selected: null }
+  | { choice: "choose"; selected: null; opportunities: readonly StudioOpportunity[] } {
   if (requestedId) {
     const match = opportunities.find((row) => row.id === requestedId) ?? null;
     return match ? { choice: "selected", selected: match } : { choice: "missing", selected: null };
@@ -308,6 +354,7 @@ export function chooseOpportunity(
       (row) => isOpenCycle(row.status) && row.tripId === originTripId,
     );
     if (onTrip.length === 1) return { choice: "one", selected: onTrip[0]! };
+    if (onTrip.length > 1) return { choice: "choose", selected: null, opportunities: onTrip };
     return { choice: "trip_empty", selected: null };
   }
   if (opportunities.length === 1) return { choice: "one", selected: opportunities[0]! };
