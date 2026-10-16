@@ -271,16 +271,23 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
     ada.getByRole("heading", { name: "Collaboration agreed", exact: true }),
   ).toBeVisible();
 
-  await ada.locator("#compensation-structure").selectOption("in_kind");
-  await ada.locator("#in-kind-description").fill("E2E stay");
-  await commitAction(ada, () => ada.getByRole("button", { name: "Save compensation" }).click());
-  await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
-  const deliverableForm = ada.getByRole("form", { name: "Add deliverable" });
+  // A second copy of this control can sit outside #main. Use the page body.
+  const compensation = ada.locator("#main #compensation-structure");
+  await expect(compensation).toHaveCount(1);
+  await compensation.selectOption("in_kind");
+  const inKind = ada.locator("#main #in-kind-description");
+  await expect(inKind).toHaveCount(1);
+  await inKind.fill("E2E stay");
+  await commitAction(ada, () =>
+    ada.locator("#main").getByRole("button", { name: "Save compensation" }).click(),
+  );
+  await expect(ada.locator("#main #in-kind-description")).toHaveValue("E2E stay");
+  const deliverableForm = ada.locator("#main").getByRole("form", { name: "Add deliverable" });
   await deliverableForm.getByLabel("Platform").fill(PLATFORM);
   await commitAction(ada, () =>
     deliverableForm.getByRole("button", { name: "Add deliverable" }).click(),
   );
-  await expect(ada.locator("#in-kind-description")).toHaveValue("E2E stay");
+  await expect(ada.locator("#main #in-kind-description")).toHaveValue("E2E stay");
   await expect(ada.getByText(`· ${PLATFORM}`)).toBeVisible();
   await expect(ada.getByText("No deliverables yet")).toHaveCount(0);
 
