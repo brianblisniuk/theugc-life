@@ -1136,8 +1136,8 @@ d("AI/AJ/AK/AL — progressive disclosure, and NULL is not false", () => {
     // One creator, three collaborations — repetition is not diversity.
     const busy = await freshCreator();
     for (let i = 0; i < 3; i++) {
-      // `closed`, so one creator may legitimately hold three historical cycles
-      // with the same hotel (pipeline_items_single_active_cycle_uidx).
+      // `closed`, so one creator may hold three historical cycles with the
+      // same hotel. D182 still keeps closed rows outside the overlap rule.
       await cycle({
         creator: busy,
         status: "closed",

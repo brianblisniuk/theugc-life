@@ -61,6 +61,7 @@ describe("deliverable deadline states", () => {
 
   it("does not treat submitted, approved, or a missing date as due", () => {
     expect(classifyDeadline("submitted", "2026-10-01", CLOCK)).toBe("none");
+    expect(classifyDeadline("revision_requested", "2026-10-12", CLOCK)).toBe("none");
     expect(classifyDeadline("approved", "2026-10-13", CLOCK)).toBe("none");
     expect(classifyDeadline("pending", null, CLOCK)).toBe("none");
     expect(classifyDeadline("rejected", null, CLOCK)).toBe("none");
