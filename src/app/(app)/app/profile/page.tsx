@@ -1,8 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
-import { DeleteAccountPanel } from "@/components/account/delete-account-panel";
-import { GmailConnectionPanel } from "@/components/gmail/gmail-connection-panel";
 import { AudienceFields } from "@/components/profile/audience-fields";
 import { ContentExamples } from "@/components/profile/content-examples";
 import { PastCollaborations } from "@/components/profile/past-collaborations";
@@ -13,10 +11,7 @@ import { ShareLinkPanel } from "@/components/profile/share-link-panel";
 import { ShareOptIns } from "@/components/profile/share-opt-ins";
 import { ButtonLink } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
-import { getOwnAccountDeletion } from "@/lib/account/deletion";
 import { requireUser } from "@/lib/auth/guards";
-import { listGmailAccounts } from "@/lib/gmail/connection.server";
-import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
 import {
   getOwnProfile,
   getPastCollaborations,
@@ -33,22 +28,14 @@ export const metadata: Metadata = { title: "My Profile" };
  * them into a hotel share link. Gmail connect and the 30-day deletion clock
  * are the same account actions as Account.
  */
-export default async function ProfilePage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function ProfilePage() {
   const session = await requireUser("/app/profile");
-  const gmailStatus = (await searchParams).gmail;
-  const configured = isGmailOAuthConfigured();
-  const [profile, counts, past, share, visibility, gmailAccounts, deletion] = await Promise.all([
+  const [profile, counts, past, share, visibility] = await Promise.all([
     getOwnProfile(session.userId),
     getPersonalCounts(),
     getPastCollaborations(null),
     getShareSettings(),
     getProfileVisibility(session.userId),
-    configured ? listGmailAccounts(session.userId) : Promise.resolve([]),
-    session.role === "creator" ? getOwnAccountDeletion() : Promise.resolve(null),
   ]);
 
   return (
@@ -63,9 +50,9 @@ export default async function ProfilePage({
           </p>
         </div>
         <div className="s6-actions">
-          <ButtonLink href="/app/profile/portfolio">Portfolio</ButtonLink>
-          <ButtonLink href="/app/profile/pitches" variant="primary">
-            Pitch templates
+          <ButtonLink href="/app/profile/pitches">Pitch templates</ButtonLink>
+          <ButtonLink href="/app/pitch" variant="primary">
+            Open Pitch Studio
           </ButtonLink>
         </div>
       </header>
@@ -100,18 +87,11 @@ export default async function ProfilePage({
       )}
 
       <section className="v12-card v12-card-pad">
-        <h2>Connected email</h2>
+        <h2>Hotel-facing preview</h2>
         <p className="s6-muted">
-          Gmail is connected for this account only. The same connection is on{" "}
-          <Link href="/app/account">Account</Link>.
+          Selected work and the share link are the portfolio a hotel can open. Mailbox connection
+          and account deletion stay on <Link href="/app/account">Account</Link>.
         </p>
-        <GmailConnectionPanel
-          accounts={gmailAccounts}
-          configured={configured}
-          callbackStatus={typeof gmailStatus === "string" ? gmailStatus : null}
-          deletionPending={deletion?.status === "scheduled"}
-          deletionReadable={deletion == null || deletion.status !== "error"}
-        />
       </section>
 
       <section className="v12-card v12-card-pad">
@@ -134,32 +114,6 @@ export default async function ProfilePage({
         linkToHotel
         sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
       />
-
-      {deletion?.status === "error" ? (
-        <ErrorState
-          title="Deletion status"
-          description="We couldn’t load the deletion status. Try again. This is not “no request”."
-        />
-      ) : null}
-      {deletion && deletion.status !== "error" ? (
-        <section className="v12-card v12-card-pad">
-          <h2>Delete account</h2>
-          <p className="s6-muted">
-            Personal data is deleted within 30 days of a confirmed request. The same control is on
-            Account.
-          </p>
-          <DeleteAccountPanel
-            schedule={
-              deletion.status === "scheduled"
-                ? {
-                    deletionRequestedAt: deletion.deletionRequestedAt,
-                    deleteAfter: deletion.deleteAfter,
-                  }
-                : null
-            }
-          />
-        </section>
-      ) : null}
     </div>
   );
 }

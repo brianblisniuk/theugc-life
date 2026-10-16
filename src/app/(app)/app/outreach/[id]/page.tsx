@@ -42,7 +42,7 @@ import {
 } from "@/lib/outreach/queries";
 import { hotelHref, pitchHref } from "@/lib/shell/navigation";
 import { formatStay } from "@/lib/trips/nights";
-import { listStaySuggestions } from "@/lib/trips/queries";
+import { listStaySuggestions, staySuggestionNotice } from "@/lib/trips/queries";
 
 export const metadata: Metadata = { title: "Outreach" };
 
@@ -434,7 +434,7 @@ export default async function OutreachDetailPage({
 
       {suggestions.status === "error" ? (
         <ErrorState title="We couldn’t load date suggestions" description="Reload to try again." />
-      ) : suggestions.suggestions.length > 0 ? (
+      ) : suggestions.suggestions.length > 0 || suggestions.truncated ? (
         <section className="v12-card v12-card-pad">
           <h2>Gmail suggested other dates</h2>
           <ul className="v12-plain-list">
@@ -455,6 +455,7 @@ export default async function OutreachDetailPage({
               );
             })}
           </ul>
+          {suggestions.truncated ? <p>{staySuggestionNotice(true)}</p> : null}
         </section>
       ) : null}
 

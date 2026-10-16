@@ -28,7 +28,7 @@ export default async function CollaborationsPage() {
       <header className="s6-head">
         <div>
           <p className="s6-eyebrow">Collaborations</p>
-          <h1>Deliver what was agreed.</h1>
+          <h1>Deliver brilliantly. Get invited back.</h1>
           <p>
             Track deliverables, deadlines, and compensation for deals you already recorded. Barter,
             payment, or both is the compensation you enter. It is not a charge.

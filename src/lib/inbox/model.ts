@@ -50,6 +50,9 @@ export const INBOX_COPY = {
     "Inbox suggestions on this page are incomplete. This does not mean nothing needs a reply.",
   gmailError:
     "We could not review Gmail collaboration suggestions. This does not mean there are none.",
+  gmailTruncated:
+    "There are more Gmail suggestions than this page lists. It does not say how many.",
+  emptyNeedsReply: "None of the linked conversations need a reply.",
   gmailPaused:
     "Gmail detection stays paused on Free. An active Pro plan or Destination Pass resumes it. Nothing here was recorded.",
   truncated: "The conversation list is capped. It is not the database total.",
@@ -170,6 +173,10 @@ export interface InboxReady {
   notices: string[];
   collaborationStatus: "ok" | "paused" | "hidden" | "error";
   sendGate: string;
+  /** Linked conversations before the needs-reply filter. */
+  linkedCount: number;
+  /** Sentence for an empty thread list. Null when threads are shown. */
+  emptySentence: string | null;
 }
 
 export type InboxScreenModel = InboxReady | { kind: "error"; title: string; body: string };
@@ -199,6 +206,8 @@ export interface InboxBuildInput {
   suggestionsFailed: boolean;
   datesFailed: boolean;
   collaborationsFailed: boolean;
+  /** The scoped Gmail suggestion read returned more rows than its cap. */
+  collaborationsTruncated?: boolean;
   /** A row whose creator id is not the caller. The screen must not render it. */
   foreign: boolean;
 }
@@ -487,6 +496,15 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
       ? input.selectedId
       : (visible[0]?.id ?? null);
 
+  const emptySentence =
+    visible.length > 0
+      ? null
+      : built.length > 0
+        ? INBOX_COPY.emptyNeedsReply
+        : input.mailbox.kind === "connected" || input.mailbox.kind === "reauth"
+          ? INBOX_COPY.emptyConnected
+          : INBOX_COPY.emptyDisconnected;
+
   const threads: InboxThreadView[] = visible.map((row) => {
     const { updatedAt: _updatedAt, ...rest } = row;
     return {
@@ -507,9 +525,11 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
     notices.push(INBOX_COPY.gmailError);
   }
   if (input.collaborationStatus === "paused") notices.push(INBOX_COPY.gmailPaused);
+  if (input.collaborationsTruncated) notices.push(INBOX_COPY.gmailTruncated);
 
   const reviewFailed =
     input.suggestionsFailed || input.collaborationsFailed || input.collaborationStatus === "error";
+  const reviewIncomplete = input.suggestionsCapped || input.collaborationsTruncated === true;
   let heading = "Nothing in these conversations needs a reply.";
   if (built.length === 0) heading = "No linked conversations yet.";
   else if (counts.needsReply > 0) {
@@ -518,7 +538,7 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
         ? "One conversation needs a reply."
         : `${counts.needsReply} conversations need a reply.`;
   } else if (reviewFailed) heading = INBOX_COPY.reviewUnavailable;
-  else if (input.suggestionsCapped) heading = INBOX_COPY.suggestionsCappedHeading;
+  else if (reviewIncomplete) heading = INBOX_COPY.suggestionsCappedHeading;
   else if (counts.followUp > 0) {
     heading =
       counts.followUp === 1
@@ -540,6 +560,8 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
     notices,
     collaborationStatus: input.collaborationStatus,
     sendGate: INBOX_SEND_GATE,
+    linkedCount: built.length,
+    emptySentence,
   };
 }
 
@@ -557,9 +579,7 @@ export function datePanelState(input: {
  * It is not an empty inbox. The rest of the page, including date decisions, still renders.
  */
 export function revokedEmptyInbox(model: InboxReady): { title: string; body: string } | null {
-  if (model.mailbox.kind !== "reauth" || model.filter !== "all" || model.threads.length > 0) {
-    return null;
-  }
+  if (model.mailbox.kind !== "reauth" || model.linkedCount > 0) return null;
   return REVOKED_INBOX_COPY;
 }
 

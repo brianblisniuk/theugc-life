@@ -461,7 +461,7 @@ describe("screen source", () => {
     expect(discover).toContain("discoverFigures");
     expect(discover).toContain("result.pins");
     expect(discover).not.toMatch(/hotelbeds|forbestravelguide|unsplash|<img/i);
-    expect(hotel).toContain("HotelSectionNav");
+    expect(hotel).not.toContain("HotelSectionNav");
     expect(hotel).toContain("NextStepPanel");
     expect(hotel).toContain("ContactFeature");
     expect(hotel).toContain("OpportunityHistory");

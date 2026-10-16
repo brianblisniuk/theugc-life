@@ -54,6 +54,13 @@
   text-decoration: none;
 }
 
+.v12-brand-version {
+  margin-left: 8px;
+  color: #93a19b;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
 .v12-brand-dot {
   width: 10px;
   height: 10px;
@@ -764,7 +771,7 @@
   margin: 0;
   font-size: clamp(30px, 2.5vw, 41px);
   line-height: 1.1;
-  letter-spacing: -1.2px;
+  letter-spacing: -1.6px;
 }
 
 .v12-pagehead p,
@@ -1080,7 +1087,6 @@
     flex-wrap: wrap;
   }
 }
-
 
 /* Trips and Outreach layout. Dark only. Night marks carry a word, not color alone. */
 
@@ -1455,7 +1461,6 @@
   }
 }
 
-
 /* Shared class names keep both screens. Inbox and Home sit in .v12-workspace.
    Trips and Outreach sit in .v12-stack and keep the rules above. */
 
@@ -1488,9 +1493,9 @@
 
 .s6-page h1 {
   margin: 0;
-  font-size: clamp(28px, 4vw, 40px);
-  line-height: 1.05;
-  letter-spacing: -1.4px;
+  font-size: clamp(30px, 2.5vw, 41px);
+  line-height: 1.1;
+  letter-spacing: -1.6px;
 }
 
 .s6-page h2 {

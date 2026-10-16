@@ -7,6 +7,8 @@
  */
 import type { NextAction, NextActionBoard } from "@/lib/home/next-actions";
 import type { PersonalCountsLoad } from "@/lib/profile/contract";
+import { civilDate } from "@/lib/time/civil-date";
+import { selectFeaturedTrip } from "@/lib/trips/nights";
 
 export interface HomeTrip {
   id: string;
@@ -14,6 +16,7 @@ export interface HomeTrip {
   destinationName: string;
   startDate: string;
   endDate: string;
+  status: string;
 }
 
 export const CONTACTED_STATUSES = [
@@ -35,6 +38,7 @@ export const HOME_DASHBOARD_COPY = {
   noTrip: "No upcoming trip is recorded.",
   tripError: "We could not review your trips. This does not mean you have none.",
   nightsError: "We could not count nights. This is not zero.",
+  nightsNone: "No night count is stored for this trip. This is not a failed count.",
   sameDay: "This trip starts and ends on the same day, so it has no nights.",
   nightsNote: "Confirmed nights count once. Pending nights are not confirmed.",
   countsError: "We could not read the numbers you recorded. This is not zero.",
@@ -168,13 +172,19 @@ function taskPill(action: NextAction): string {
   return "Open";
 }
 
-export function upcomingTrip<T extends HomeTrip>(trips: readonly T[], asOf: string): T | null {
-  const today = asOf.slice(0, 10);
-  return (
-    trips
-      .filter((trip) => trip.endDate >= today)
-      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id))[0] ?? null
-  );
+/**
+ * The same trip My Trips leads with: planning, upcoming, or active, and a
+ * half-open end (`today < endDate`). `asOf` is an instant. The day is the
+ * creator's civil date in `timeZone`, not the UTC date.
+ */
+export function upcomingTrip<T extends HomeTrip>(
+  trips: readonly T[],
+  asOf: string,
+  timeZone: string | null = "UTC",
+): T | null {
+  const today = civilDate(asOf, timeZone);
+  if (!today) return null;
+  return selectFeaturedTrip(trips, today);
 }
 
 export function daysUntilTrip(start: string, asOf: string): number | null {
@@ -332,6 +342,8 @@ export function buildHomeDashboard(input: {
   coverage: NightCoverageLoad;
   outreach: OutreachLoad;
   asOf: string;
+  /** IANA zone for the creator's civil date. Blank means UTC. */
+  timeZone?: string | null;
   gmail:
     | { status: "ok"; count: number; truncated?: boolean }
     | { status: "paused" }
@@ -392,7 +404,8 @@ export function buildHomeDashboard(input: {
   if (input.trips.status === "error") {
     trip = { status: "error" };
   } else {
-    const next = upcomingTrip(input.trips.trips, input.asOf);
+    const today = civilDate(input.asOf, input.timeZone ?? "UTC");
+    const next = today ? selectFeaturedTrip(input.trips.trips, today) : null;
     if (!next) {
       trip = { status: "none" };
     } else {
@@ -402,7 +415,7 @@ export function buildHomeDashboard(input: {
         name: next.name,
         startDate: next.startDate,
         endDate: next.endDate,
-        daysUntil: daysUntilTrip(next.startDate, input.asOf),
+        daysUntil: today ? daysUntilTrip(next.startDate, today) : null,
         coverage: input.coverage,
       };
     }

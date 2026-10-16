@@ -6,11 +6,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { requireUser } from "@/lib/auth/guards";
 import { TripCreateForm } from "@/components/trips/trip-forms";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { stageTone, stageWord } from "@/lib/outreach/board";
+import { hotelHref } from "@/lib/shell/navigation";
 import { TRIP_LIST_COPY, tripListOutcome } from "@/lib/surfaces/list-outcome";
 import {
   coverNights,
@@ -30,11 +32,15 @@ import {
   type TripRecord,
 } from "@/lib/trips/queries";
 import { tripStatusLabel } from "@/lib/trips/types";
+import { civilDate } from "@/lib/time/civil-date";
+import { readOwnTimeZone } from "@/lib/time/zone.server";
 
 export const metadata: Metadata = { title: "My Trips" };
 
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+async function todayForCreator(): Promise<string> {
+  const session = await requireUser("/app/trips");
+  const zone = await readOwnTimeZone(session.userId);
+  return civilDate(new Date(), zone) ?? new Date().toISOString().slice(0, 10);
 }
 
 function tripTitle(trip: TripRecord): string {
@@ -47,7 +53,7 @@ export default async function TripsPage() {
   const trips = tripsResult.status === "ok" ? tripsResult.trips : [];
   const listOutcome = tripListOutcome({ failed, count: trips.length });
   const destinations = destinationsResult.status === "ok" ? destinationsResult.destinations : [];
-  const today = todayUtc();
+  const today = await todayForCreator();
   const featured = listOutcome === "items" ? selectFeaturedTrip(trips, today) : null;
 
   const [coverage, shortlist, opportunities, campaigns] = featured
@@ -127,14 +133,30 @@ export default async function TripsPage() {
                   : ""}
                 {campaigns.status === "ok" && campaigns.campaigns.length > 0
                   ? " · Outreach connected"
-                  : ""}
+                  : campaigns.status === "error"
+                    ? " · Outreach status unavailable"
+                    : ""}
               </p>
             </div>
-            <ButtonLink href={continueHref} variant="primary">
-              {campaigns.status === "ok" && campaigns.campaigns[0]
-                ? "Continue outreach"
-                : "Start outreach"}
-            </ButtonLink>
+            {campaigns.status === "error" ? (
+              <ErrorState
+                title="We couldn’t load outreach for this trip"
+                description="This is not an empty campaign list. Reload to try again."
+              />
+            ) : (
+              <ButtonLink href={continueHref} variant="primary">
+                {campaigns.campaigns[0] ? "Continue outreach" : "Start outreach"}
+              </ButtonLink>
+            )}
+            {campaigns.status === "ok" && campaigns.truncated ? (
+              <p>
+                {campaigns.total - campaigns.campaigns.length} more{" "}
+                {campaigns.total - campaigns.campaigns.length === 1
+                  ? "campaign is"
+                  : "campaigns are"}{" "}
+                not listed.
+              </p>
+            ) : null}
           </section>
 
           {coverage.status === "ok" ? (
@@ -230,6 +252,12 @@ export default async function TripsPage() {
                   Find more hotels
                 </ButtonLink>
               </div>
+              {opportunities.status === "error" ? (
+                <ErrorState
+                  title="We couldn’t load opportunities"
+                  description="This is not an empty opportunity list. Reload to try again."
+                />
+              ) : null}
               {shortlist.status === "error" ? (
                 <ErrorState
                   title="We couldn’t load the shortlist"
@@ -259,7 +287,14 @@ export default async function TripsPage() {
                           </span>
                           <div>
                             <strong>
-                              <Link href={`/app/trips/${featured.id}`}>{hotel.name}</Link>
+                              <Link
+                                href={
+                                  hotelHref(hotel.id, { kind: "trip", tripId: featured.id }) ??
+                                  `/app/hotels/${hotel.id}`
+                                }
+                              >
+                                {hotel.name}
+                              </Link>
                             </strong>
                             <p>
                               {stay ? `${stay} · ` : ""}
@@ -269,7 +304,7 @@ export default async function TripsPage() {
                                 : ""}
                             </p>
                           </div>
-                          {rows[0] ? (
+                          {opportunities.status !== "ok" ? null : rows[0] ? (
                             <Badge tone={stageTone(rows[0].status)}>
                               {stageWord(rows[0].status)}
                             </Badge>
@@ -282,8 +317,15 @@ export default async function TripsPage() {
                   })}
                 </ul>
               )}
-              <ButtonLink href={`/app/trips/${featured.id}`} variant="dark">
-                Open trip
+              <ButtonLink
+                href={
+                  campaigns.status === "ok" && campaigns.campaigns[0]
+                    ? `/app/outreach/${campaigns.campaigns[0].id}`
+                    : `/app/trips/${featured.id}#start-outreach`
+                }
+                variant="dark"
+              >
+                Open Outreach
               </ButtonLink>
             </section>
             <section className="v12-card v12-card-pad">

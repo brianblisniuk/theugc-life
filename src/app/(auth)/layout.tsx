@@ -4,11 +4,17 @@ import { Brand } from "@/components/brand";
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+      <a className="v12-skip" href="#auth-main">
+        Skip to content
+      </a>
       <div className="w-full max-w-sm">
         <div className="mb-6 flex justify-center">
           <Brand />
         </div>
-        <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+        <div
+          id="auth-main"
+          className="rounded-[var(--radius-app)] border border-border bg-surface p-6"
+        >
           {children}
         </div>
       </div>

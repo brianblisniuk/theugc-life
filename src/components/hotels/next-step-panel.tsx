@@ -1,17 +1,19 @@
 import Link from "next/link";
 
+import { RetryButton } from "@/components/ui/retry-button";
+
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
 import { GENERATE_PITCH, UNLOCK_ASSURANCE } from "@/lib/screens/copy";
 import { type NextStepModel } from "@/lib/screens/next-step";
 
 function Primary({ model }: { model: NextStepModel }) {
   if (model.primaryDisabled || !model.primaryHref) {
-    if (model.creditsUnknown || model.kind === "relationship_unknown" || model.kind === "contact_error") {
-      return (
-        <a className="v12-btn v12-btn-primary" href="">
-          Retry
-        </a>
-      );
+    if (
+      model.creditsUnknown ||
+      model.kind === "relationship_unknown" ||
+      model.kind === "contact_error"
+    ) {
+      return <RetryButton className="v12-btn v12-btn-primary" label="Retry" />;
     }
     return (
       <button type="button" className="v12-btn" disabled>
@@ -41,7 +43,9 @@ export function NextStepPanel({
         <p className="ux-eyebrow">Your next step</p>
         <h2 className="ux-name">{model.title}</h2>
         <Primary model={model} />
-        {model.offerSave ? <SaveHotelButton hotelId={hotelId} idle="Save hotel" pendingLabel="Saving…" /> : null}
+        {model.offerSave ? (
+          <SaveHotelButton hotelId={hotelId} idle="Save hotel" pendingLabel="Saving…" />
+        ) : null}
         {model.offerAddToTrip ? (
           <a className="ux-btn" href="#trip">
             Add to trip

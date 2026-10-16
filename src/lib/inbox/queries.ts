@@ -327,7 +327,9 @@ export async function loadInboxWorkspace(
         .eq("creator_id", profile.profileId)
         .eq("status", "pending")
         .limit(INBOX_DATE_CAP + 1),
-      supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC),
+      supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC, {
+        p_pipeline_item_ids: pipelineIds,
+      }),
     ]);
 
     if (readingResult.error) {
@@ -379,6 +381,7 @@ export async function loadInboxWorkspace(
     let collaborations: InboxCollaborationRef[] = [];
     let collaborationStatus: InboxBuildInput["collaborationStatus"] = "error";
     let collaborationsFailed = false;
+    let collaborationsTruncated = false;
     if (gmailResult.error) {
       collaborationsFailed = true;
       collaborationStatus = "error";
@@ -391,6 +394,7 @@ export async function loadInboxWorkspace(
         collaborationStatus = parsed.status;
       } else {
         collaborationStatus = "ok";
+        collaborationsTruncated = parsed.truncated;
         collaborations = parsed.suggestions.map((row) => ({
           id: row.id,
           creatorId: row.creatorId,
@@ -418,6 +422,7 @@ export async function loadInboxWorkspace(
       suggestionsFailed,
       datesFailed,
       collaborationsFailed,
+      collaborationsTruncated,
       foreign: false,
     });
   } catch {

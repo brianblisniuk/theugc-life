@@ -7,6 +7,7 @@
  */
 import { CREDITS_CONFIG, OUT_OF_CREDITS_COPY, creditsLeftLabel } from "@/lib/credits/config";
 import { isUuid } from "@/lib/hotels/ids";
+import { civilDate } from "@/lib/time/civil-date";
 import { PIPELINE_STATUSES, type PipelineStatus } from "@/lib/pipeline/types";
 import { hotelHref } from "@/lib/shell/navigation";
 
@@ -164,6 +165,8 @@ export type CreditSource = { status: "ok"; balance: number } | { status: "error"
 export interface NextActionInput {
   profileId: string;
   asOf: string;
+  /** IANA zone for the follow-up due label. Due detection still uses the instant. */
+  timeZone?: string | null;
   pipeline: { status: "ok"; items: OwnedPipelineItem[]; capped: boolean } | { status: "error" };
   deliverables: { status: "ok"; items: OwnedDeliverable[]; capped: boolean } | { status: "error" };
   gmail: GmailSource;
@@ -423,7 +426,9 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
       for (const row of due) {
         const href = pipelineHref(row.hotelId);
         const when = instantMs(row.nextFollowupAt!);
-        if (!href || when === null) {
+        const dueDay =
+          when === null ? null : civilDate(new Date(when).toISOString(), input.timeZone ?? "UTC");
+        if (!href || when === null || !dueDay) {
           dueOk = false;
           break;
         }
@@ -431,7 +436,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
           id: `follow-up:${row.id}`,
           kind: "follow_up_due",
           title: HOME_NEXT_COPY.followUpTitle(row.hotelName),
-          detail: HOME_NEXT_COPY.followUpDetail(new Date(when).toISOString().slice(0, 10)),
+          detail: HOME_NEXT_COPY.followUpDetail(dueDay),
           href,
         });
       }

@@ -27,8 +27,15 @@ import { buildDiscoverHref, parseDiscoverQuery, sanitizeSearchTerm } from "@/lib
 import { searchHotels } from "@/lib/hotels/queries";
 import { stageTone, stageWord } from "@/lib/outreach/board";
 import { pitchHref, tripHotelHref } from "@/lib/shell/navigation";
-import { coverNights, formatStay, monthName, nightCountsMatch } from "@/lib/trips/nights";
 import {
+  coverNights,
+  formatStay,
+  monthName,
+  nightCountsMatch,
+  nightDrawProblem,
+} from "@/lib/trips/nights";
+import {
+  campaignRemainderNotice,
   getTrip,
   getTripSummary,
   listDestinations,
@@ -36,6 +43,7 @@ import {
   listShortlist,
   listStaySuggestions,
   listTripCampaigns,
+  staySuggestionNotice,
   listTripOpportunities,
   listTrips,
   readNightCoverage,
@@ -189,7 +197,7 @@ export default async function TripWorkspacePage({
         </div>
         <div className="v12-head-actions">
           <ButtonLink href={discoverHref}>Explore hotels</ButtonLink>
-          {campaigns.status === "ok" && campaigns.campaigns[0] ? (
+          {campaigns.status === "error" ? null : campaigns.campaigns[0] ? (
             <ButtonLink href={`/app/outreach/${campaigns.campaigns[0].id}`} variant="primary">
               Continue outreach
             </ButtonLink>
@@ -260,10 +268,19 @@ export default async function TripWorkspacePage({
               </div>
             ))}
           </div>
+        ) : nightDrawProblem({
+            shortlistOk: shortlist.status === "ok",
+            coverageOk: coverage.status === "ok",
+            countsMatch: calendarMatches,
+          }) === "mismatch" ? (
+          <ErrorState
+            title="The night calendar didn’t match the saved stays"
+            description="Reload to try again. The counts above are the saved read."
+          />
         ) : (
           <ErrorState
             title="We couldn’t draw the nights"
-            description="The shortlist and the coverage read have to agree. Reload to try again."
+            description="The shortlist or the coverage read failed. This is not an empty stay."
           />
         )}
         {calendar && calendar.nights.length === 0 && calendarMatches ? (
@@ -276,7 +293,7 @@ export default async function TripWorkspacePage({
           title="We couldn’t load date suggestions"
           description="Reload to try again. A missing list is not a decision."
         />
-      ) : suggestions.suggestions.length > 0 ? (
+      ) : suggestions.suggestions.length > 0 || suggestions.truncated ? (
         <section className="v12-card v12-card-pad">
           <h2>Gmail suggested other dates</h2>
           <p>
@@ -313,6 +330,7 @@ export default async function TripWorkspacePage({
               );
             })}
           </ul>
+          {suggestions.truncated ? <p>{staySuggestionNotice(true)}</p> : null}
         </section>
       ) : null}
 
@@ -505,7 +523,7 @@ export default async function TripWorkspacePage({
             title="We couldn’t load your pipeline"
             description="Reload to try again. This is not an empty pipeline."
           />
-        ) : pipeline.items.length === 0 ? (
+        ) : pipeline.items.length === 0 && pipeline.withheld === 0 ? (
           <p>
             {pipeline.query
               ? "No pipeline hotels matched that search."
@@ -514,29 +532,45 @@ export default async function TripWorkspacePage({
                 : "You don’t have pipeline items to link yet. Save a hotel from Discover first."}
           </p>
         ) : (
-          <ul className="v12-plain-list">
-            {pipeline.items.map((item) => {
-              const linked = item.tripId === trip.id;
-              return (
-                <li key={item.id} className="v12-list-item">
-                  <div className="v12-row">
-                    <div>
-                      <strong>{item.hotelName}</strong>
-                      <p>
-                        {pipelineStatusLabel(item.status)}
-                        {linked
-                          ? " · Linked to this trip"
-                          : item.tripId
-                            ? " · Linked to another trip"
-                            : ""}
-                      </p>
+          <>
+            {pipeline.withheld > 0 ? (
+              <ErrorState
+                title="A hotel name is missing"
+                description={
+                  pipeline.withheld === 1
+                    ? "1 opportunity has no hotel name and is not listed. It is not called Hotel."
+                    : `${pipeline.withheld} opportunities have no hotel name and are not listed. They are not called Hotel.`
+                }
+              />
+            ) : null}
+            <ul className="v12-plain-list">
+              {pipeline.items.map((item) => {
+                const linked = item.tripId === trip.id;
+                return (
+                  <li key={item.id} className="v12-list-item">
+                    <div className="v12-row">
+                      <div>
+                        <strong>{item.hotelName}</strong>
+                        <p>
+                          {pipelineStatusLabel(item.status)}
+                          {linked
+                            ? " · Linked to this trip"
+                            : item.tripId
+                              ? " · Linked to another trip"
+                              : ""}
+                        </p>
+                      </div>
+                      <PipelineLinkButton
+                        tripId={trip.id}
+                        pipelineItemId={item.id}
+                        linked={linked}
+                      />
                     </div>
-                    <PipelineLinkButton tripId={trip.id} pipelineItemId={item.id} linked={linked} />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
         {pipeline.status === "ok" && (pipeline.hasPrevious || pipeline.hasNext) ? (
           <p className="v12-row">
@@ -570,14 +604,24 @@ export default async function TripWorkspacePage({
       <section className="v12-card v12-card-pad" id="start-outreach">
         <h2>Start outreach</h2>
         <p>Creating outreach copies the shortlist once. It does not create opportunities.</p>
-        {campaigns.status === "ok" && campaigns.campaigns.length > 0 ? (
-          <ul className="v12-plain-list">
-            {campaigns.campaigns.map((campaign) => (
-              <li key={campaign.id} className="v12-list-item">
-                <Link href={`/app/outreach/${campaign.id}`}>{campaign.name}</Link>
-              </li>
-            ))}
-          </ul>
+        {campaigns.status === "error" ? (
+          <ErrorState
+            title="We couldn’t load outreach for this trip"
+            description="This is not an empty campaign list. Reload to try again."
+          />
+        ) : campaigns.campaigns.length > 0 ? (
+          <>
+            <ul className="v12-plain-list">
+              {campaigns.campaigns.map((campaign) => (
+                <li key={campaign.id} className="v12-list-item">
+                  <Link href={`/app/outreach/${campaign.id}`}>{campaign.name}</Link>
+                </li>
+              ))}
+            </ul>
+            {campaigns.truncated ? (
+              <p>{campaignRemainderNotice(campaigns.total, campaigns.campaigns.length)}</p>
+            ) : null}
+          </>
         ) : null}
         {allTrips.status === "error" || destinations.status === "error" ? (
           <ErrorState

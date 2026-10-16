@@ -32,7 +32,7 @@ export default async function PlansPage() {
           <h1>Choose the capacity that fits your work.</h1>
           <p>
             Every plan can reach the catalog. A credit is spent only when a lookup or a draft
-            succeeds. Prices below are the current plan config.
+            succeeds. Prices below are the configured plan amounts.
           </p>
         </div>
         <ButtonLink href="/app/billing">Billing & Activity</ButtonLink>

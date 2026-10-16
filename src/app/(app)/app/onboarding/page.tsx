@@ -34,11 +34,15 @@ export default async function OnboardingDestinationPage() {
         <ButtonLink href="/app/discover">Skip to Discover</ButtonLink>
       </header>
 
-      <div className="s6-goals">
-        {ONBOARDING_GOALS.map((goal) => (
-          <Link key={goal.id} href={goal.href} className="v12-card v12-card-pad s6-goal">
-            <strong>{goal.title}</strong>
-            <span>{goal.detail}</span>
+      <div className="v12-stack">
+        {ONBOARDING_GOALS.map((goal, index) => (
+          <Link key={goal.id} href={goal.href} className="v12-navtile">
+            <div>
+              <strong>
+                {index + 1}. {goal.title}
+              </strong>
+              <p>{goal.detail}</p>
+            </div>
           </Link>
         ))}
       </div>

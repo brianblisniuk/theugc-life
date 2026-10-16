@@ -31,7 +31,9 @@ export function DiscoverFilters({
   tripId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const destinationKnown = destinations.some((destination) => destination.slug === query.destination);
+  const destinationKnown = destinations.some(
+    (destination) => destination.slug === query.destination,
+  );
   const countryKnown = countries.some((country) => country.code === query.country);
 
   useEffect(() => {
@@ -91,7 +93,12 @@ export function DiscoverFilters({
           <label className="ux-label" htmlFor="discover-type">
             Hotel type
           </label>
-          <select id="discover-type" name="type" defaultValue={query.type ?? ""} className="ux-control">
+          <select
+            id="discover-type"
+            name="type"
+            defaultValue={query.type ?? ""}
+            className="ux-control"
+          >
             <option value="">All types</option>
             {HOTEL_TYPE_FILTERS.map((type) => (
               <option key={type} value={type}>
@@ -188,7 +195,10 @@ export function DiscoverFilters({
                   ))}
                 </select>
               </div>
-              <label className="ux-meta" style={{ display: "flex", gap: 8, minHeight: 44, alignItems: "center" }}>
+              <label
+                className="ux-meta"
+                style={{ display: "flex", gap: 8, minHeight: 44, alignItems: "center" }}
+              >
                 <input
                   type="checkbox"
                   name="collaboration"
@@ -204,9 +214,15 @@ export function DiscoverFilters({
           ) : (
             <>
               {query.country ? <input type="hidden" name="country" value={query.country} /> : null}
-              {query.minStars ? <input type="hidden" name="stars" value={String(query.minStars)} /> : null}
-              {query.verification ? <input type="hidden" name="verified" value={query.verification} /> : null}
-              {query.activity ? <input type="hidden" name="activity" value={query.activity} /> : null}
+              {query.minStars ? (
+                <input type="hidden" name="stars" value={String(query.minStars)} />
+              ) : null}
+              {query.verification ? (
+                <input type="hidden" name="verified" value={query.verification} />
+              ) : null}
+              {query.activity ? (
+                <input type="hidden" name="activity" value={query.activity} />
+              ) : null}
               {query.collaboration ? (
                 <input type="hidden" name="collaboration" value={query.collaboration} />
               ) : null}
@@ -217,28 +233,47 @@ export function DiscoverFilters({
           Apply
         </button>
       </div>
-      <div className="ux-results">
-        <span />
-        <div className="ux-field" style={{ minWidth: 220 }}>
-          <label className="ux-label" htmlFor="discover-rank">
-            Sort by
-          </label>
-          <select
-            id="discover-rank"
-            name="rank"
-            defaultValue={query.rank ?? ""}
-            className="ux-control"
-            onChange={(event) => event.currentTarget.form?.requestSubmit()}
-          >
-            <option value="">Name</option>
-            {METRIC_IDS.map((metric) => (
-              <option key={metric} value={metric}>
-                {sortOptionLabel(metric, METRIC_TITLES[metric], METRIC_LAYERS[metric] === "premium")}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      {query.rank ? <input type="hidden" name="rank" value={query.rank} /> : null}
+    </form>
+  );
+}
+
+/** Sort sits beside the results heading. Changing it keeps the current filters. */
+export function DiscoverSort({ query, tripId }: { query: DiscoverQuery; tripId: string | null }) {
+  return (
+    <form action="/app/discover" className="v12-row">
+      {query.q ? <input type="hidden" name="q" value={query.q} /> : null}
+      {query.type ? <input type="hidden" name="type" value={query.type} /> : null}
+      {query.minStars ? <input type="hidden" name="stars" value={String(query.minStars)} /> : null}
+      {query.verification ? (
+        <input type="hidden" name="verified" value={query.verification} />
+      ) : null}
+      {query.country ? <input type="hidden" name="country" value={query.country} /> : null}
+      {query.destination ? (
+        <input type="hidden" name="destination" value={query.destination} />
+      ) : null}
+      {query.activity ? <input type="hidden" name="activity" value={query.activity} /> : null}
+      {query.collaboration ? (
+        <input type="hidden" name="collaboration" value={query.collaboration} />
+      ) : null}
+      {tripId ? <input type="hidden" name="trip" value={tripId} /> : null}
+      <label className="ux-label" htmlFor="discover-rank">
+        Sort
+      </label>
+      <select
+        id="discover-rank"
+        name="rank"
+        defaultValue={query.rank ?? ""}
+        className="ux-control"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        <option value="">Most relevant</option>
+        {METRIC_IDS.map((metric) => (
+          <option key={metric} value={metric}>
+            {sortOptionLabel(metric, METRIC_TITLES[metric], METRIC_LAYERS[metric] === "premium")}
+          </option>
+        ))}
+      </select>
     </form>
   );
 }
