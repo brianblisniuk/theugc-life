@@ -22,6 +22,7 @@ import {
   type PitchActionResult,
 } from "@/lib/pitch/actions";
 import { buildMailto, copyText, type SystemTemplateKey } from "@/lib/pitch/contract";
+import { recipientLine, tripChangeForOpportunity } from "@/lib/pitch/studio";
 
 const FIELD =
   "w-full rounded-[var(--radius-app)] border border-border bg-background px-3 py-2 text-sm text-text";
@@ -45,6 +46,10 @@ export function PitchComposer({
   subject,
   body,
   recipientEmail,
+  contactLocked = false,
+  contactUnchecked = false,
+  templateRequested = false,
+  replaceRequested = false,
   suggestionHref,
   assistant,
   budgetWarning = false,
@@ -66,6 +71,12 @@ export function PitchComposer({
   subject: string;
   body: string;
   recipientEmail: string | null;
+  contactLocked?: boolean;
+  contactUnchecked?: boolean;
+  /** A template chip. Saving may replace the draft with that template. */
+  templateRequested?: boolean;
+  /** Start again from the suggestion. A trip change does not set this. */
+  replaceRequested?: boolean;
   suggestionHref: string;
   assistant:
     | { status: "on"; priority: boolean; mail: readonly { id: string; subject: string }[] }
@@ -109,6 +120,8 @@ export function PitchComposer({
     data.set("subject", subjectValue);
     data.set("body", bodyValue);
     if (pipelineItemId) data.set("opportunityId", pipelineItemId);
+    if (templateRequested || replaceRequested) data.set("templateIntent", "1");
+    if (subjectValue !== subject || bodyValue !== body) data.set("edited", "1");
     return data;
   }
 
@@ -125,9 +138,9 @@ export function PitchComposer({
 
   async function onSave() {
     setPending(true);
-    await save();
+    const id = await save();
     setPending(false);
-    router.refresh();
+    if (id) router.refresh();
   }
 
   async function onCopy() {
@@ -373,11 +386,18 @@ export function PitchComposer({
           <select
             className={FIELD}
             value={tripId ?? ""}
+            disabled={Boolean(pipelineItemId)}
             onChange={(event) => {
+              const change = tripChangeForOpportunity({
+                opportunitySelected: Boolean(pipelineItemId),
+                nextTripId: event.target.value || null,
+              });
+              if (change.kind === "disabled") return;
               const params = new URLSearchParams(window.location.search);
-              if (event.target.value) params.set("trip", event.target.value);
+              if (change.tripId) params.set("trip", change.tripId);
               else params.delete("trip");
-              params.set("fresh", "1");
+              params.delete("fresh");
+              params.delete("replace");
               router.push(`/app/hotels/${hotelId}/pitch?${params.toString()}`);
             }}
           >
@@ -389,11 +409,23 @@ export function PitchComposer({
             ))}
           </select>
         </label>
+        {pipelineItemId ? (
+          <p className="max-w-prose text-sm text-muted">
+            This trip belongs to this opportunity. Choose another opportunity to pitch a different
+            trip.
+          </p>
+        ) : null}
       </div>
 
       <div className="v12-field">
         <span>To / contact</span>
-        <p>{recipientEmail ?? "Hotel recipient will appear after a successful unlock."}</p>
+        <p>
+          {recipientLine({
+            email: recipientEmail,
+            locked: contactLocked,
+            unchecked: contactUnchecked,
+          })}
+        </p>
       </div>
       <label className="v12-field">
         <span>Subject</span>

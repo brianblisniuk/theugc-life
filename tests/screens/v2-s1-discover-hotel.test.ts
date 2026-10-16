@@ -33,6 +33,7 @@ import {
   relationshipFromOpportunities,
   relationshipFromSelection,
   selectHotelOpportunity,
+  shortlistPitchChoices,
   shortlistPitchHref,
   type HotelOpportunity,
 } from "@/lib/screens/hotel-opportunities";
@@ -72,7 +73,9 @@ function source(path: string): string {
   return readFileSync(path, "utf8");
 }
 
-function signal(overrides: Partial<MetricSignal> & Pick<MetricSignal, "metric" | "state">): MetricSignal {
+function signal(
+  overrides: Partial<MetricSignal> & Pick<MetricSignal, "metric" | "state">,
+): MetricSignal {
   return {
     title: overrides.metric,
     layer: overrides.metric === "creator_activity" ? "public" : "premium",
@@ -83,7 +86,9 @@ function signal(overrides: Partial<MetricSignal> & Pick<MetricSignal, "metric" |
   };
 }
 
-function opportunity(overrides: Partial<HotelOpportunity> & Pick<HotelOpportunity, "id" | "status">): HotelOpportunity {
+function opportunity(
+  overrides: Partial<HotelOpportunity> & Pick<HotelOpportunity, "id" | "status">,
+): HotelOpportunity {
   return {
     displayRef: null,
     stayStart: null,
@@ -158,7 +163,10 @@ describe("metric figures", () => {
     expect(figures.activity.state).toBe("value");
     expect(discoverFigures({ status: "error", notice: "no" }).replyRate.state).toBe("error");
     expect(activityTag({ state: "error" }, "High").state).toBe("error");
-    expect(activityTag({ state: "insufficient" }, "High")).toEqual({ state: "value", text: "High" });
+    expect(activityTag({ state: "insufficient" }, "High")).toEqual({
+      state: "value",
+      text: "High",
+    });
   });
 
   it("shows 0% only when the published label is actually 0%", () => {
@@ -321,14 +329,20 @@ describe("opportunity history", () => {
   });
 
   it("does not offer a second save while another opportunity is open", () => {
-    expect(relationshipFromOpportunities({ status: "ok", opportunities: [openA, openB] }, openB)).toEqual({
+    expect(
+      relationshipFromOpportunities({ status: "ok", opportunities: [openA, openB] }, openB),
+    ).toEqual({
       status: "open",
       relationship: { pipelineItemId: OPP_B, status: "planned" },
     });
-    expect(relationshipFromOpportunities({ status: "ok", opportunities: [openA, closed] }, closed)).toEqual({
+    expect(
+      relationshipFromOpportunities({ status: "ok", opportunities: [openA, closed] }, closed),
+    ).toEqual({
       status: "not_open",
     });
-    expect(relationshipFromOpportunities({ status: "ok", opportunities: [closed] }, closed)).toEqual({
+    expect(
+      relationshipFromOpportunities({ status: "ok", opportunities: [closed] }, closed),
+    ).toEqual({
       status: "not_open",
     });
     expect(relationshipFromOpportunities({ status: "error" }, openA)).toEqual({ status: "error" });
@@ -343,7 +357,9 @@ describe("opportunity history", () => {
       row: onTrip,
     });
     expect(selectHotelOpportunity([older, onTrip], OPP_A, originTrip).status).toBe("open");
-    expect(selectHotelOpportunity([older, onTrip], "not-a-row", originTrip).status).toBe("not_open");
+    expect(selectHotelOpportunity([older, onTrip], "not-a-row", originTrip).status).toBe(
+      "not_open",
+    );
     expect(
       relationshipFromSelection(selectHotelOpportunity([older, closed], closed.id, null)),
     ).toEqual({ status: "not_open" });
@@ -360,10 +376,12 @@ describe("opportunity history", () => {
     const newer = opportunity({ id: OPP_B, status: "planned", tripId: TRIP });
     expect(selectHotelOpportunity([older, newer], null, null)).toEqual({ status: "choose" });
     expect(selectHotelOpportunity([newer, older], null, null).status).toBe("choose");
+    expect(relationshipFromSelection(selectHotelOpportunity([older, newer], null, null))).toEqual({
+      status: "choose",
+    });
     expect(
-      relationshipFromSelection(selectHotelOpportunity([older, newer], null, null)),
-    ).toEqual({ status: "choose" });
-    expect(relationshipFromOpportunities({ status: "ok", opportunities: [older, newer] }, null)).toEqual({
+      relationshipFromOpportunities({ status: "ok", opportunities: [older, newer] }, null),
+    ).toEqual({
       status: "choose",
     });
     expect(selectHotelOpportunity([older], null, null)).toEqual({ status: "open", row: older });
@@ -388,9 +406,9 @@ describe("opportunity history", () => {
     ]);
     expect(href).toContain(`opportunity=${OPP_B}`);
     expect(new URL(href ?? "/", "http://local").searchParams.get("trip")).toBe(campaignTrip);
-    expect(shortlistPitchHref(HOTEL, campaignTrip, [
-      { id: OPP_B, status: "planned", tripId: TRIP },
-    ])).toBeNull();
+    expect(
+      shortlistPitchHref(HOTEL, campaignTrip, [{ id: OPP_B, status: "planned", tripId: TRIP }]),
+    ).toBeNull();
     expect(shortlistPitchHref(HOTEL, campaignTrip, [])).toBeNull();
     expect(
       shortlistPitchHref(HOTEL, campaignTrip, [
@@ -398,6 +416,26 @@ describe("opportunity history", () => {
         { id: OPP_B, status: "planned", tripId: campaignTrip },
       ]),
     ).toBeNull();
+    const choices = shortlistPitchChoices(HOTEL, campaignTrip, [
+      { id: OPP_A, status: "saved", tripId: campaignTrip, displayRef: "OP-1042" },
+      { id: OPP_B, status: "planned", tripId: campaignTrip, displayRef: "OP-1084" },
+      { id: OPP_A, status: "saved", tripId: TRIP, displayRef: "OP-1042" },
+    ]);
+    expect(choices.map((choice) => choice.id)).toEqual([OPP_A, OPP_B]);
+    expect(choices[0]?.href).toContain(`opportunity=${OPP_A}`);
+    expect(choices[1]?.href).toContain(`opportunity=${OPP_B}`);
+    expect(
+      choices.every(
+        (choice) => new URL(choice.href, "http://local").searchParams.get("trip") === campaignTrip,
+      ),
+    ).toBe(true);
+    expect(choices.map((choice) => choice.label)).toEqual(["Pitch OP-1042", "Pitch OP-1084"]);
+    expect(shortlistPitchChoices(HOTEL, campaignTrip, [])).toEqual([]);
+    expect(
+      shortlistPitchChoices(HOTEL, campaignTrip, [
+        { id: OPP_B, status: "planned", tripId: TRIP, displayRef: "OP-1084" },
+      ]),
+    ).toEqual([]);
     const prepare = outreachPrepareHref(HOTEL, "saved", OPP_B, TRIP);
     expect(prepare).toContain(`opportunity=${OPP_B}`);
     expect(new URL(prepare ?? "/", "http://local").searchParams.get("trip")).toBe(TRIP);
@@ -488,11 +526,9 @@ describe("listHotelOpportunities", () => {
           },
         }),
     };
-    const result = await findHotelOpportunity(
-      HOTEL,
-      OPP_B,
-      { from: () => chain } as unknown as PipelineQueryClient,
-    );
+    const result = await findHotelOpportunity(HOTEL, OPP_B, {
+      from: () => chain,
+    } as unknown as PipelineQueryClient);
     expect(result).toEqual({
       status: "ok",
       row: {
@@ -590,7 +626,12 @@ describe("locked contact and metric markup", () => {
         failed: false,
         cards: opportunityCards(
           [
-            opportunity({ id: OPP_A, displayRef: "OP-1042", status: "replied", tripName: "Bangkok November" }),
+            opportunity({
+              id: OPP_A,
+              displayRef: "OP-1042",
+              status: "replied",
+              tripName: "Bangkok November",
+            }),
             opportunity({ id: OPP_B, displayRef: "OP-1084", status: "planned" }),
           ],
           HOTEL,
@@ -661,15 +702,24 @@ describe("screen source", () => {
     const pitch = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
     expect(pitch).toContain("readOpportunityParam");
     expect(pitch).toContain("requestedPipelineItemId");
-    expect(pitch).toContain("originTripId: origin.kind === \"trip\" ? origin.tripId : null");
-    expect(pitch).toContain("opportunityChoice === \"trip_empty\"");
+    expect(pitch).toContain('originTripId: origin.kind === "trip" ? origin.tripId : null');
+    expect(pitch).toContain('opportunityChoice === "trip_empty"');
+    expect(pitch).toContain('opportunityChoice === "choose"');
+    expect(pitch).toContain("choiceOpportunities");
     expect(pitch).toContain("Open opportunity for this trip");
+    expect(pitch).toContain("contactLocked={context.contactLocked}");
+    expect(pitch).toContain("contactUnchecked={context.contactUnchecked}");
+    expect(source("src/app/(app)/app/trips/[id]/page.tsx")).toContain("shortlistPitchChoices");
+    expect(composer).toContain("recipientLine");
+    expect(composer).not.toContain("Hotel recipient will appear after a successful unlock.");
     expect(hotel).toContain("No verified photograph on file.");
     expect(hotel).not.toMatch(/<img[\s>]/);
     expect(hotel).not.toMatch(/unsplash|placeholder\.com|stock|hotelbeds|forbes/i);
     expect(contact).toContain("Name and role");
     expect(contact).toContain("Professional email");
-    expect(source("src/lib/screens/copy.ts")).toContain('export const UNLOCK_BUTTON = "Unlock contact · 1 credit"');
+    expect(source("src/lib/screens/copy.ts")).toContain(
+      'export const UNLOCK_BUTTON = "Unlock contact · 1 credit"',
+    );
     expect(contact).not.toMatch(/anthropic|claude|hunter/i);
   });
 });

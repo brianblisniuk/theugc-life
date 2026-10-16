@@ -22,7 +22,12 @@ import {
   type FactKey,
 } from "./contract";
 import { loadPitchContext } from "./queries";
-import { pitchTripToStore, resolveOpportunityDraftWrite } from "./studio";
+import {
+  mayReplaceSavedDraft,
+  opportunityNeedsChoice,
+  pitchTripToStore,
+  resolveOpportunityDraftWrite,
+} from "./studio";
 
 bindServerActions(["pitch.drafts"]);
 
@@ -124,11 +129,7 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
     requestedPipelineItemId: parsed.opportunityId,
   });
   if (context.status !== "ok") return { result: "error" };
-  if (
-    context.opportunityChoice === "many" ||
-    context.opportunityChoice === "missing" ||
-    context.opportunityChoice === "trip_empty"
-  ) {
+  if (opportunityNeedsChoice(context.opportunityChoice)) {
     return { result: "invalid_input", message: "Choose one of your opportunities." };
   }
   const boundId = context.selectedOpportunity?.id ?? null;
@@ -170,6 +171,21 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
       message: "That draft belongs to a different opportunity.",
     };
   }
+  const replacement = mayReplaceSavedDraft({
+    hasBoundDraft: Boolean(
+      boundId &&
+      context.draft &&
+      context.draft.pipelineItemId === boundId &&
+      write.action === "update",
+    ),
+    savedSubject: context.draft?.subject ?? "",
+    savedBody: context.draft?.body ?? "",
+    postedSubject: parsed.subject,
+    postedBody: parsed.body,
+    explicitTemplate: readField(formData, "templateIntent") === "1",
+    edited: readField(formData, "edited") === "1",
+  });
+  if (!replacement.ok) return { result: "invalid_input", message: replacement.message };
 
   try {
     const supabase = await createClient();

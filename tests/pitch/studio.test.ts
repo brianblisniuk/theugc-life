@@ -18,12 +18,16 @@ import {
   PITCH_OPPORTUNITY_CAP,
   closedRowDraft,
   currentDraftWrite,
-  resolveOpportunityDraftWrite,
+  mayReplaceSavedDraft,
   mergeNamedOpportunity,
   opportunityDraftTrip,
+  opportunityNeedsChoice,
   pitchTripToStore,
   readOpportunityParam,
+  resolveOpportunityDraftWrite,
   takeOpportunityPage,
+  tripChangeForOpportunity,
+  UNTOUCHED_DRAFT_MESSAGE,
   visiblePitchDraft,
   recipientLine,
   reviewChecks,
@@ -84,9 +88,28 @@ describe("opportunity choice", () => {
       selected: null,
     });
     const also = { ...FIRST, id: SECOND.id, displayRef: "OP-1084" };
-    expect(chooseOpportunity([FIRST, also], null, FIRST.tripId).choice).toBe("trip_empty");
+    const chosen = chooseOpportunity([FIRST, also, SECOND], null, FIRST.tripId);
+    expect(chosen.choice).toBe("choose");
+    if (chosen.choice === "choose") {
+      expect(chosen.opportunities.map((row) => row.id)).toEqual([FIRST.id, also.id]);
+    }
+    const closed = {
+      ...FIRST,
+      id: "33333333-3333-4333-8333-333333333333",
+      status: "closed",
+      displayRef: "OP-2001",
+    };
+    expect(chooseOpportunity([FIRST, closed], null, FIRST.tripId)).toEqual({
+      choice: "one",
+      selected: FIRST,
+    });
     expect(chooseOpportunity([FIRST, SECOND], null, null).choice).toBe("many");
     expect(chooseOpportunity([SECOND], SECOND.id, FIRST.tripId).choice).toBe("selected");
+    expect(opportunityNeedsChoice("choose")).toBe(true);
+    expect(opportunityNeedsChoice("many")).toBe(true);
+    expect(opportunityNeedsChoice("trip_empty")).toBe(true);
+    expect(opportunityNeedsChoice("one")).toBe(false);
+    expect(opportunityNeedsChoice("selected")).toBe(false);
   });
 });
 
@@ -155,7 +178,11 @@ describe("opportunity trip", () => {
 });
 
 describe("visible pitch draft", () => {
-  const draft = { id: "draft-1", subject: "Saved subject", body: "Saved body that is not the template" };
+  const draft = {
+    id: "draft-1",
+    subject: "Saved subject",
+    body: "Saved body that is not the template",
+  };
   const suggestion = { subject: "Template subject", body: "Template body" };
 
   it("keeps the saved draft when the URL also names a trip", () => {
@@ -165,10 +192,12 @@ describe("visible pitch draft", () => {
   });
 
   it("hides the draft id when the creator starts over or picks a template", () => {
-    expect(visiblePitchDraft({ draft, fresh: true, templateRequested: false, suggestion }).draftId).toBeNull();
     expect(
-      visiblePitchDraft({ draft, fresh: false, templateRequested: true, suggestion }),
-    ).toEqual({ subject: suggestion.subject, body: suggestion.body, draftId: null });
+      visiblePitchDraft({ draft, fresh: true, templateRequested: false, suggestion }).draftId,
+    ).toBeNull();
+    expect(visiblePitchDraft({ draft, fresh: false, templateRequested: true, suggestion })).toEqual(
+      { subject: suggestion.subject, body: suggestion.body, draftId: null },
+    );
   });
 });
 
@@ -216,6 +245,7 @@ describe("draft binding", () => {
     expect(selectBoundDraft([draftB, draftA, unbound], SECOND.id, "selected")).toEqual(draftB);
     expect(selectBoundDraft([draftA, unbound], SECOND.id, "selected")).toBeNull();
     expect(selectBoundDraft([draftA, draftB, unbound], null, "many")).toBeNull();
+    expect(selectBoundDraft([draftA, draftB, unbound], null, "choose")).toBeNull();
     expect(selectBoundDraft([unbound, draftA], null, "none")).toEqual(unbound);
     expect(selectBoundDraft([draftA], FIRST.id, "one")).toEqual(draftA);
     expect(selectBoundDraft([draftB], FIRST.id, "one")).toBeNull();
@@ -256,6 +286,12 @@ describe("recipient and portfolio", () => {
     );
     expect(recipientLine({ email: "ada@hotel.test", locked: false, unchecked: false })).toBe(
       "ada@hotel.test",
+    );
+    expect(recipientLine({ email: null, locked: false, unchecked: false })).toBe(
+      "No unlocked email on this hotel.",
+    );
+    expect(recipientLine({ email: "ada@hotel.test", locked: false, unchecked: true })).toBe(
+      "The contact couldn’t be checked. No name is inferred.",
     );
     expect(portfolioLine(null)).toBe("No portfolio item on this account.");
     expect(portfolioLine("  ")).toBe("No portfolio item on this account.");
@@ -399,7 +435,88 @@ describe("one current draft", () => {
     const source = readFileSync(path.join(process.cwd(), "src/lib/pitch/actions.ts"), "utf8");
     const save = source.slice(source.indexOf("export async function savePitchDraftAction"));
     expect(save).toContain("resolveOpportunityDraftWrite");
+    expect(save).toContain("mayReplaceSavedDraft");
+    expect(save).toContain("opportunityNeedsChoice");
     expect(save.indexOf("resolveOpportunityDraftWrite")).toBeLessThan(save.indexOf(".insert("));
+    expect(save.indexOf("mayReplaceSavedDraft")).toBeLessThan(save.indexOf(".update("));
+    const ai = readFileSync(path.join(process.cwd(), "src/lib/ai/actions.ts"), "utf8");
+    expect(ai).toContain("opportunityNeedsChoice");
+  });
+
+  it("does not replace a saved draft with an untouched template", () => {
+    const saved = { savedSubject: "Saved subject", savedBody: "Saved body" };
+    expect(
+      mayReplaceSavedDraft({
+        hasBoundDraft: true,
+        ...saved,
+        postedSubject: "Template subject",
+        postedBody: "Template body",
+        explicitTemplate: false,
+        edited: false,
+      }),
+    ).toEqual({ ok: false, message: UNTOUCHED_DRAFT_MESSAGE });
+    expect(
+      mayReplaceSavedDraft({
+        hasBoundDraft: true,
+        ...saved,
+        postedSubject: "Template subject",
+        postedBody: "Template body",
+        explicitTemplate: true,
+        edited: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      mayReplaceSavedDraft({
+        hasBoundDraft: true,
+        ...saved,
+        postedSubject: "Saved subject",
+        postedBody: "Saved body with an edit",
+        explicitTemplate: false,
+        edited: true,
+      }).ok,
+    ).toBe(true);
+    expect(
+      mayReplaceSavedDraft({
+        hasBoundDraft: true,
+        ...saved,
+        postedSubject: saved.savedSubject,
+        postedBody: saved.savedBody,
+        explicitTemplate: false,
+        edited: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      mayReplaceSavedDraft({
+        hasBoundDraft: false,
+        ...saved,
+        postedSubject: "Template subject",
+        postedBody: "Template body",
+        explicitTemplate: false,
+        edited: false,
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("does not let a selected opportunity change trip into a fresh draft", () => {
+    const locked = tripChangeForOpportunity({
+      opportunitySelected: true,
+      nextTripId: SECOND.tripId,
+    });
+    expect(locked).toEqual({ kind: "disabled" });
+    expect(locked).not.toHaveProperty("fresh");
+    expect(
+      tripChangeForOpportunity({ opportunitySelected: false, nextTripId: FIRST.tripId }),
+    ).toEqual({ kind: "navigate", tripId: FIRST.tripId });
+    const composer = readFileSync(
+      path.join(process.cwd(), "src/components/pitch/composer.tsx"),
+      "utf8",
+    );
+    expect(composer).toContain("tripChangeForOpportunity");
+    expect(composer).toContain("recipientLine");
+    expect(composer).toContain("templateIntent");
+    expect(composer).not.toContain('params.set("fresh"');
+    expect(composer).not.toContain("Hotel recipient will appear after a successful unlock.");
+    expect(composer).toContain("disabled={Boolean(pipelineItemId)}");
   });
 
   it("updates the draft already bound to the opportunity", () => {

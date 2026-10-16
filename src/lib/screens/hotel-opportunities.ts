@@ -10,7 +10,12 @@ import {
   pipelineStatusLabel,
   type PipelineStatus,
 } from "@/lib/pipeline/types";
-import { hotelHref, pitchHref, withOpportunityQuery, type HotelOrigin } from "@/lib/shell/navigation";
+import {
+  hotelHref,
+  pitchHref,
+  withOpportunityQuery,
+  type HotelOrigin,
+} from "@/lib/shell/navigation";
 
 export type OpportunityRelationship =
   | { status: "open"; relationship: { pipelineItemId: string; status: PipelineStatus } }
@@ -226,6 +231,36 @@ export function relationshipFromOpportunities(
     };
   }
   return relationshipFromSelection(selectHotelOpportunity(load.opportunities, null, null));
+}
+
+/**
+ * Every open row on this trip. Zero rows is an empty list. One row is the
+ * single Pitch link. More than one is the chooser, and an off-trip row is
+ * left out.
+ */
+export function shortlistPitchChoices(
+  hotelId: string,
+  tripId: string,
+  rows: readonly {
+    id: string;
+    status: string;
+    tripId: string | null;
+    displayRef?: string | null;
+  }[],
+): { id: string; href: string; label: string }[] {
+  if (!isUuid(hotelId) || !isUuid(tripId)) return [];
+  const onTrip = rows.filter(
+    (row) => isOpenCycle(row.status) && isUuid(row.id) && row.tripId === tripId,
+  );
+  const choices: { id: string; href: string; label: string }[] = [];
+  for (const row of onTrip) {
+    const href = pitchHref(hotelId, tripId, { kind: "trip", tripId }, row.id);
+    if (!href) continue;
+    const ref =
+      row.displayRef && /^OP-[1-9][0-9]{3,}$/.test(row.displayRef) ? row.displayRef : null;
+    choices.push({ id: row.id, href, label: ref ? `Pitch ${ref}` : "Pitch" });
+  }
+  return choices;
 }
 
 /** Trip shortlist Pitch. The link names the row and that row's trip. */
