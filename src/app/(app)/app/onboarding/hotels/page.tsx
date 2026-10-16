@@ -98,13 +98,11 @@ export default async function OnboardingHotelsPage() {
       : [];
 
   return (
-    <div className="space-y-6">
+    <div className="s6-page">
       <div>
-        <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">
-          {progress.destinationName}
-        </p>
-        <h1 className="text-3xl font-extrabold tracking-tight">Hotels for your destination</h1>
-        <p className="mt-2 text-sm text-muted">{FIRST_RUN_COPY.databaseNote}</p>
+        <p className="s6-eyebrow">{progress.destinationName}</p>
+        <h1>Hotels for your destination</h1>
+        <p className="s6-muted">{FIRST_RUN_COPY.databaseNote}</p>
       </div>
 
       {failed ? (
@@ -128,10 +126,7 @@ export default async function OnboardingHotelsPage() {
               ))}
             </div>
           ) : null}
-          <Link
-            href="/app/discover"
-            className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
-          >
+          <Link href="/app/discover" className="v12-btn v12-btn-primary">
             Add the first hotel
           </Link>
         </div>

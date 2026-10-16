@@ -13,38 +13,41 @@ import {
 
 export function DestinationQuestion({ destinations }: { destinations: DestinationChoice[] }) {
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState("");
   const [state, action, pending] = useActionState(chooseOnboardingDestination, null);
   const chips = useMemo(() => suggestedChips(destinations), [destinations]);
   const matches = useMemo(() => filterDestinations(destinations, query), [destinations, query]);
   const choices = query.trim() ? matches : chips.length > 0 ? chips : matches;
 
   return (
-    <form action={action} className="space-y-5">
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight">
-          Which destination are you aiming at now?
-        </h1>
-        <p className="mt-2 text-sm text-muted">
-          We only use it to show relevant hotels. You can change it later.
-        </p>
-      </div>
-      <label className="block text-sm font-semibold" htmlFor="destination-search">
-        Search destination
+    <form action={action} className="s6-stack">
+      <p className="s6-muted">
+        Which destination are you aiming at now? We only use it to show relevant hotels. You can
+        change it later.
+      </p>
+      <label className="v12-field" htmlFor="destination-search">
+        <span>Search destination</span>
         <input
           id="destination-search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
           placeholder="Bali, Mexico, Japan"
         />
       </label>
-      <div className="flex flex-wrap gap-2">
+      <div className="s6-actions">
         {choices.map((destination) => (
           <label
             key={destination.id}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-semibold has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-accent-contrast"
+            className="v12-chip"
+            aria-pressed={selected === destination.id}
           >
-            <input type="radio" name="destinationId" value={destination.id} className="sr-only" />
+            <input
+              type="radio"
+              name="destinationId"
+              value={destination.id}
+              checked={selected === destination.id}
+              onChange={() => setSelected(destination.id)}
+            />
             {destination.name}
           </label>
         ))}
@@ -58,13 +61,12 @@ export function DestinationQuestion({ destinations }: { destinations: Destinatio
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-4">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
-        >
+        <button type="submit" disabled={pending} className="v12-btn v12-btn-primary">
           {pending ? "Saving…" : "View hotels"}
         </button>
+        <Link href="/app/onboarding/hotels" className="v12-btn">
+          Hotels for this destination
+        </Link>
         <Link href="/app" className="text-sm text-muted underline">
           Back to home
         </Link>
