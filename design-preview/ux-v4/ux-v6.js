@@ -11,6 +11,28 @@ function load(){
  db.campaigns=get("ugc_v4_campaigns",[]);db.opportunities=get("ugc_v6_opportunities",[]);db.events=get("ugc_v6_events",[]);db.notes=get("ugc_v6_notes",[]);db.drafts=get("ugc_v4_drafts",[]);
 }
 function save(){put("ugc_v4_campaigns",db.campaigns);put("ugc_v6_opportunities",db.opportunities);put("ugc_v6_events",db.events);put("ugc_v6_notes",db.notes)}
+function reconcileLegacy(){
+ let changed=false;
+ for(const draft of db.drafts){
+   if(!hotel(draft.hotelId))continue;
+   const cid=draft.campaignId||"";
+   const matching=db.opportunities.filter(o=>o.hotelId===draft.hotelId&&(cid?o.campaignId===cid:!o.campaignId));
+   const found=matching[0]||(cid?ensure(draft.hotelId,cid,db.campaigns.find(c=>c.id===cid)?.tripId||""):ensure(draft.hotelId,"",""));
+   if(found&&found.status==="saved"){found.status="draft";found.updatedAt=draft.updatedAt||new Date().toISOString();changed=true}
+ }
+ const seen=new Set(get("ugc_v6_seen_legacy_events",[]));
+ const legacy=get("ugc_v4_events",[]);
+ for(const e of legacy){
+   if(!e.id||seen.has(e.id)||e.type!=="stage")continue;
+   if(e.source==="sample"||e.source==="demo"){seen.add(e.id);continue}
+   const matches=db.opportunities.filter(o=>o.hotelId===e.hotelId&&(e.opportunityId?o.id===e.opportunityId:e.campaignId?o.campaignId===e.campaignId:!o.campaignId));
+   if(matches.length!==1){if(!matches.length&&e.hotelId&&!e.campaignId){matches.push(ensure(e.hotelId,"",""))}else continue}
+   const o=matches[0];
+   if(o&&labels[e.value]){o.status=e.value;o.updatedAt=e.at||new Date().toISOString();db.events.push({id:uid("legacy"),opportunityId:o.id,value:e.value,type:"stage",at:o.updatedAt,source:"manual-import"});changed=true}
+   seen.add(e.id);
+ }
+ put("ugc_v6_seen_legacy_events",[...seen]);if(changed)save();
+}
 function opportunity(id){return db.opportunities.find(o=>o.id===id)}
 function ensure(hotelId,campaignId="",tripId=""){
  if(!hotel(hotelId))return null;
@@ -141,11 +163,13 @@ function stageChange(o,v){
  else stageApply(o,v);
 }
 function stageApply(o,v){
- o.status=v;o.updatedAt=new Date().toISOString();db.events.push({id:uid("event"),opportunityId:o.id,value:v,type:"stage",at:o.updatedAt,source:"manual"});save();A().closeModal();renderPipeline();if(ui.drawer){document.body.style.overflow="hidden";drawerRender()}A().toast("Manual stage updated");
+ o.status=v;o.updatedAt=new Date().toISOString();db.events.push({id:uid("event"),opportunityId:o.id,value:v,type:"stage",at:o.updatedAt,source:"manual"});
+ if(["sent","replied","won","bounced"].includes(v)){const ev={id:uid("op-event"),opportunityId:o.id,hotelId:o.hotelId,campaignId:o.campaignId||"",type:"stage",value:v,at:o.updatedAt,source:"manual"};const old=get("ugc_v4_events",[]);old.push(ev);put("ugc_v4_events",old);const seen=get("ugc_v6_seen_legacy_events",[]);seen.push(ev.id);put("ugc_v6_seen_legacy_events",seen)}
+ save();A().closeModal();renderPipeline();if(ui.drawer){document.body.style.overflow="hidden";drawerRender()}A().toast("Manual stage updated");
 }
 function boot(){
  if(!["trips","campaigns","pipeline"].includes(document.body.dataset.page))return;
- load();seedOrMigrate();load();
+ load();seedOrMigrate();load();reconcileLegacy();
  if(document.body.dataset.page==="trips")renderTrips();
  if(document.body.dataset.page==="campaigns"){const p=new URLSearchParams(location.search);if(p.get("trip")&&p.get("start")==="1"){const c=fromTrip(p.get("trip"));if(c){history.replaceState({},'',location.pathname+"?campaign="+encodeURIComponent(c.id))}}renderCampaign()}
  if(document.body.dataset.page==="pipeline"){const p=new URLSearchParams(location.search);ui.stage=p.get("filter")==="conversation"?"conversation":p.get("filter")||"all";renderPipeline();if(p.get("opp"))setTimeout(()=>drawerOpen(p.get("opp")),130)}
