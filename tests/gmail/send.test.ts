@@ -11,7 +11,11 @@ import {
 } from "@/lib/gmail/google.server";
 import { assessSendGuard, planCapsFromEnv, sendGuardFromProcess, spacingSeconds } from "@/lib/gmail/send/guard";
 import { MimeRejected, buildPlainMessage, encodeRawMessage } from "@/lib/gmail/send/mime";
-import { sendGmailMessage, type SendDeps } from "@/lib/gmail/send/service.server";
+import {
+  deliverReservedSend,
+  sendGmailMessage,
+  type SendDeps,
+} from "@/lib/gmail/send/service.server";
 
 const USER = "d04a0000-0000-4000-8000-000000000001";
 const MAIL = "d04a0000-0000-4000-8000-000000000010";
@@ -222,7 +226,17 @@ function scripted(handlers: Record<string, (args: Record<string, unknown>) => un
       rpc: async (fn: string, args: Record<string, unknown>) => {
         calls.push({ fn });
         const handler = handlers[fn];
-        if (!handler) return { data: { result: "not_found", call_provider: false }, error: null };
+        if (!handler) {
+          if (fn === "gmail_followup_block_send") return { data: { result: "send" }, error: null };
+          if (fn === "gmail_send_arm_provider") {
+            return {
+              data: { result: "ok", call_provider: true, attempt_id: ATTEMPT },
+              error: null,
+            };
+          }
+          if (fn === "gmail_send_remember_provider") return { data: { result: "ok" }, error: null };
+          return { data: { result: "not_found", call_provider: false }, error: null };
+        }
         return { data: handler(args), error: null };
       },
     } as unknown as SendDeps["db"],
@@ -378,5 +392,58 @@ describe("send orchestration", () => {
     expect(fail).toHaveBeenCalled();
     const args = fail.mock.calls[0] as unknown as [Record<string, unknown>] | undefined;
     expect(args?.[0]?.p_code).toBe("unknown");
+  });
+
+  it("stores unknown when the last locked write throws after the mark", async () => {
+    const fail = vi.fn(() => ({ result: "unknown", attempt_id: ATTEMPT, failure_code: "unknown" }));
+    const { deps, sends, calls } = scripted({
+      gmail_send_reserve: () => reserved,
+      gmail_send_mark_provider: () => ({ result: "ok", call_provider: true, attempt_id: ATTEMPT }),
+      gmail_send_arm_provider: () => {
+        throw new Error("arm failed");
+      },
+      gmail_send_fail: fail,
+    });
+    const outcome = await sendGmailMessage(input, deps);
+    expect(outcome).toMatchObject({ result: "unknown", attemptId: ATTEMPT });
+    expect(sends).not.toHaveBeenCalled();
+    expect(calls.map((call) => call.fn)).toEqual([
+      "gmail_send_reserve",
+      "gmail_followup_block_send",
+      "gmail_send_mark_provider",
+      "gmail_send_arm_provider",
+      "gmail_send_fail",
+    ]);
+    const args = fail.mock.calls[0] as unknown as [Record<string, unknown>] | undefined;
+    expect(args?.[0]?.p_code).toBe("unknown");
+  });
+
+  it("commits a stored provider id and does not call Gmail", async () => {
+    const commit = vi.fn(() => ({
+      result: "sent",
+      attempt_id: ATTEMPT,
+      event_id: "event-1",
+      provider_message_id: "msg-kept",
+      provider_thread_id: "thread-kept",
+      binding_status: "not_requested",
+    }));
+    const { deps, sends, calls } = scripted({ gmail_send_commit: commit });
+    const outcome = await deliverReservedSend(
+      {
+        ...reserved,
+        retry_commit: true,
+        provider_message_id: "msg-kept",
+        provider_thread_id: "thread-kept",
+      },
+      USER,
+      deps,
+    );
+    expect(outcome).toMatchObject({
+      result: "sent",
+      providerMessageId: "msg-kept",
+      providerThreadId: "thread-kept",
+    });
+    expect(sends).not.toHaveBeenCalled();
+    expect(calls.map((call) => call.fn)).toEqual(["gmail_send_commit"]);
   });
 });

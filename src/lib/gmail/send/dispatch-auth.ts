@@ -2,21 +2,16 @@
  * Dispatch authorization. No secrets are imported here. The secret is an
  * argument so a test can pass one without reading the environment.
  *
- * The schedule runs the dispatcher in-process. It does not POST to the
- * public site. The HTTP route still requires the bearer.
+ * The schedule runs the dispatcher in-process and does not read a bearer.
+ * It does not POST to the public site. `POST /api/internal/*` still
+ * requires the bearer. The compare hashes both sides before `timingSafeEqual`.
  */
 
-import { runScheduledJob } from "@/lib/jobs/scheduled-post";
+import { bearerMatches, runScheduledJob } from "@/lib/jobs/scheduled-post";
 
 export function authorizeDispatch(header: string | null, secret: string | undefined): boolean {
   if (!secret || secret.length < 16) return false;
-  const expected = `Bearer ${secret}`;
-  if (!header || header.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    mismatch |= header.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
+  return bearerMatches(header, secret);
 }
 
 export async function handleDispatchPost(

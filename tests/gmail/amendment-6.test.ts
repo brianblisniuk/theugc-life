@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import {
   startGmailAuthorization,
   type GmailDeps,
 } from "@/lib/gmail/connection.server";
-import { B02_REQUESTED_SCOPES } from "@/lib/gmail/contract";
+import { B02_REQUESTED_SCOPES, privateProcessingConsent } from "@/lib/gmail/contract";
 import { resetGmailOAuthConfigCache } from "@/lib/gmail/env.server";
 import { GoogleAdapterError } from "@/lib/gmail/google.server";
 
@@ -597,13 +597,20 @@ d("amendment #6 — consent may only connect from `consent_required`", () => {
     const authorized = await authorize(userId, { project, subject });
     const mailAccountId = (authorized.outcome as { mailAccountId: string }).mailAccountId;
 
+    const shown = await client.query<{ granted_scopes: string[] | null }>(
+      "select granted_scopes from public.mail_accounts where id = $1",
+      [mailAccountId],
+    );
+    const consent = privateProcessingConsent(shown.rows[0]?.granted_scopes ?? []);
+    const consentDigest = createHash("sha256").update(consent.text).digest("hex");
+
     const consentSession = new Client({ connectionString: TEST_DB });
     await consentSession.connect();
     try {
       await consentSession.query("begin");
       const granted = await consentSession.query(
-        `select public.gmail_grant_private_processing_consent($1::uuid, $2::uuid, 'p/1', $3, $4) as r`,
-        [userId, mailAccountId, "a".repeat(64), "b".repeat(64)],
+        `select public.gmail_grant_private_processing_consent($1::uuid, $2::uuid, $3, $4, $5) as r`,
+        [userId, mailAccountId, consent.policyVersion, consentDigest, "b".repeat(64)],
       );
       expect((granted.rows[0].r as { result: string }).result).toBe("connected");
 
