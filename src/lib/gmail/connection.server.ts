@@ -769,28 +769,60 @@ export async function completeGmailAuthorization(
   }
 }
 
+export interface ConsentFormReceipt {
+  policyVersion: string;
+  consentTextDigest: string;
+}
+
+/** Version and digest of the consent text the server is about to render. */
+export function consentFormReceipt(scopes: readonly string[]): ConsentFormReceipt {
+  const consent = privateProcessingConsent(scopes);
+  return { policyVersion: consent.policyVersion, consentTextDigest: sha256(consent.text) };
+}
+
+export function consentReceiptsFor(
+  accounts: readonly { mailAccountId: string; grantedScopes: readonly string[] }[],
+): Record<string, ConsentFormReceipt> {
+  const receipts: Record<string, ConsentFormReceipt> = {};
+  for (const account of accounts) {
+    receipts[account.mailAccountId] = consentFormReceipt(account.grantedScopes);
+  }
+  return receipts;
+}
+
 /**
  * The product consent, granted explicitly and separately.
  *
- * The text and version come from the server constant; the digest is computed
- * from that text. The browser contributes the decision and nothing else, which
- * is what keeps the receipt evidence rather than an assertion.
+ * When the form supplies the version and digest it showed, those values are
+ * what the locked mailbox must match. A caller that omits them, such as a
+ * test that grants immediately after authorization, still sends the canonical
+ * text for the scopes currently listed.
  */
 export async function grantPrivateProcessingConsent(
-  input: { userId: string; mailAccountId: string },
+  input: {
+    userId: string;
+    mailAccountId: string;
+    shownPolicyVersion?: string;
+    shownConsentTextDigest?: string;
+  },
   deps: GmailDeps = defaultDeps(),
 ): Promise<{ result: string }> {
-  const accounts = await listGmailAccounts(input.userId, deps);
-  const held = accounts.find((account) => account.mailAccountId === input.mailAccountId);
-  const consent = privateProcessingConsent(held?.grantedScopes ?? []);
-  const consentTextDigest = sha256(consent.text);
+  let policyVersion = input.shownPolicyVersion;
+  let consentTextDigest = input.shownConsentTextDigest;
+  if (!policyVersion || !consentTextDigest) {
+    const accounts = await listGmailAccounts(input.userId, deps);
+    const held = accounts.find((account) => account.mailAccountId === input.mailAccountId);
+    const consent = privateProcessingConsent(held?.grantedScopes ?? []);
+    policyVersion = consent.policyVersion;
+    consentTextDigest = sha256(consent.text);
+  }
   const receiptDigest = sha256(
     [
       input.mailAccountId,
       input.userId,
       "private_gmail_processing",
       "granted",
-      consent.policyVersion,
+      policyVersion,
       consentTextDigest,
       new Date().toISOString(),
     ].join("|"),
@@ -799,7 +831,7 @@ export async function grantPrivateProcessingConsent(
   const { data, error } = await deps.db.rpc("gmail_grant_private_processing_consent", {
     p_user_id: input.userId,
     p_mail_account_id: input.mailAccountId,
-    p_policy_version: consent.policyVersion,
+    p_policy_version: policyVersion,
     p_consent_text_digest: consentTextDigest,
     p_receipt_digest: receiptDigest,
   });

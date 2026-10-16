@@ -15,7 +15,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { getOwnAccountDeletion } from "@/lib/account/deletion";
 import { requireUser } from "@/lib/auth/guards";
-import { listGmailAccounts } from "@/lib/gmail/connection.server";
+import { consentReceiptsFor, listGmailAccounts } from "@/lib/gmail/connection.server";
 import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
 import {
   getOwnProfile,
@@ -111,6 +111,7 @@ export default async function ProfilePage({
           callbackStatus={typeof gmailStatus === "string" ? gmailStatus : null}
           deletionPending={deletion?.status === "scheduled"}
           deletionReadable={deletion == null || deletion.status !== "error"}
+          consentReceipts={consentReceiptsFor(gmailAccounts)}
         />
       </section>
 

@@ -77,9 +77,11 @@ function StatusMessage({ state }: { state: GmailActionState }) {
 function ConsentPrompt({
   mailAccountId,
   grantedScopes,
+  receipt,
 }: {
   mailAccountId: string;
   grantedScopes: readonly string[];
+  receipt?: { policyVersion: string; consentTextDigest: string };
 }) {
   const [state, action, pending] = useActionState(grantGmailConsentAction, idle);
   const consent = privateProcessingConsent(grantedScopes);
@@ -89,6 +91,12 @@ function ConsentPrompt({
       className="space-y-3 rounded-[var(--radius-app)] border border-border p-4"
     >
       <input type="hidden" name="mail_account_id" value={mailAccountId} />
+      {receipt ? (
+        <>
+          <input type="hidden" name="policy_version" value={receipt.policyVersion} />
+          <input type="hidden" name="consent_text_digest" value={receipt.consentTextDigest} />
+        </>
+      ) : null}
       {/* The exact words the server hashes into the consent receipt. What is
           shown and what is recorded must be the same text. */}
       <p className="text-sm text-text">{consent.text}</p>
@@ -127,6 +135,7 @@ export function GmailConnectionPanel({
   callbackStatus,
   deletionPending = false,
   deletionReadable = true,
+  consentReceipts = {},
 }: {
   accounts: GmailAccountStatus[];
   configured: boolean;
@@ -136,6 +145,8 @@ export function GmailConnectionPanel({
   deletionPending?: boolean;
   /** A failed deletion read is not “no request”. Connect stays hidden. */
   deletionReadable?: boolean;
+  /** Policy version and digest of the consent text rendered for each mailbox. */
+  consentReceipts?: Record<string, { policyVersion: string; consentTextDigest: string }>;
 }) {
   const notice = disconnectNoticeFor(callbackStatus);
   const offered = gmailConnectionOffered(deletionPending, deletionReadable);
@@ -200,6 +211,7 @@ export function GmailConnectionPanel({
                   <ConsentPrompt
                     mailAccountId={account.mailAccountId}
                     grantedScopes={account.grantedScopes}
+                    receipt={consentReceipts[account.mailAccountId]}
                   />
                 ) : null}
 

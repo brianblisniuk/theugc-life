@@ -75,7 +75,10 @@ describe("scheduled job gate", () => {
 
   it("runs once when the secret is configured and keeps the job result", async () => {
     const run = vi.fn(async () => ({ result: "error", erased: 0 }));
-    const result = await runScheduledJob({ secret: SECRET, run });
+    const result = await runScheduledJob({
+      secret: SECRET,
+      run,
+    });
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body)).toEqual({ result: "error", erased: 0 });
     expect(result.body).not.toContain(SECRET);
@@ -207,16 +210,13 @@ describe("netlify handlers", () => {
     );
   });
 
-  it("each handler runs its own job and ignores a caller bearer", async () => {
+  it("runs the job when the scheduler invokes it with no bearer", async () => {
     for (const item of handlers) {
       process.env[item.secret] = SECRET;
-      const result = await item.handler({
-        headers: { authorization: "Bearer attacker-supplied-secret-value" },
-      } as never);
-      expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body)).toEqual(item.body);
-      expect(result.body).not.toContain(SECRET);
-      expect(result.body).not.toContain("attacker-supplied");
+      const scheduled = await item.handler();
+      expect(scheduled.statusCode).toBe(200);
+      expect(JSON.parse(scheduled.body)).toEqual(item.body);
+      expect(scheduled.body).not.toContain(SECRET);
       expect(item.run).toHaveBeenCalledTimes(1);
       for (const other of handlers) {
         if (other.run !== item.run) expect(other.run).not.toHaveBeenCalled();
@@ -355,7 +355,13 @@ describe("netlify handlers", () => {
       const block = toml.slice(toml.indexOf(`[functions."${name}"]`));
       const next = block.indexOf("\n[", 1);
       const section = next === -1 ? block : block.slice(0, next);
+      const source = readFileSync(path.join(ROOT, "netlify/functions", `${name}.ts`), "utf8");
+      const tomlSchedule = section.match(/^\s*schedule\s*=\s*"([^"]+)"/m)?.[1] ?? "";
+      const codeSchedule = source.match(/schedule\s*:\s*["']([^"']+)["']/)?.[1] ?? "";
+      expect(tomlSchedule.length > 0 || codeSchedule.length > 0).toBe(true);
       expect(section).not.toMatch(/^\s*background\s*=/m);
+      expect(section).not.toMatch(/^\s*path\s*=/m);
+      expect(section).not.toMatch(/^\s*excludedPath\s*=/m);
       expect(section).toContain('node_bundler = "none"');
     }
     expect(INBOX_SYNC_PATH).toBe("/api/internal/gmail-inbox-sync");

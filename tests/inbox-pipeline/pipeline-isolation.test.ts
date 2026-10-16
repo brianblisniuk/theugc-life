@@ -61,4 +61,43 @@ describe("stored Gmail pipeline isolates one thread", () => {
       error.mockRestore();
     }
   });
+
+  it("returns incomplete when commercial interpretation throws", async () => {
+    let commercialCalls = 0;
+    const db = {
+      rpc: vi.fn(async (name: string) => {
+        if (name === "gmail_normalize_list_candidates") {
+          return { data: { candidates: [] }, error: null };
+        }
+        if (name === "gmail_outreach_current_catalog_epoch") {
+          return { data: 1, error: null };
+        }
+        if (name === "gmail_outreach_list_candidates" || name === "gmail_reply_list_candidates") {
+          return { data: { result: "ok", candidates: [] }, error: null };
+        }
+        if (name === "gmail_incremental_sync_list_pipeline_threads") {
+          return {
+            data: { result: "ok", threads: [{ normalized_thread_id: THREAD_A }] },
+            error: null,
+          };
+        }
+        if (name === "gmail_commercial_get_thread_evidence") {
+          commercialCalls += 1;
+          throw new Error("commercial down");
+        }
+        return { data: { result: "ok" }, error: null };
+      }),
+    };
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const piped = await runStoredGmailPipeline(db as unknown as ImportDeps["db"], {
+        userId: "11111111-1111-4111-8111-111111111111",
+        mailAccountId: "22222222-2222-4222-8222-222222222222",
+      });
+      expect(piped.completed).toBe(false);
+      expect(commercialCalls).toBe(1);
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
