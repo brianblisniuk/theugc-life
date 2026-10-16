@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -136,24 +136,39 @@ function Crumbs({ pathname, origin }: { pathname: string; origin: HotelOrigin | 
   );
 }
 
-function ShellHeader(props: {
-  isStaff: boolean;
-  creditLabel: string;
-  planLabel: string | null;
-  email: string | null;
+function readHotelOrigin(
+  pathname: string,
+  search: { forEach: (fn: (value: string, key: string) => void) => void },
+): HotelOrigin | null {
+  if (!pathname.startsWith("/app/hotels/") && pathname !== "/app/hotels") return null;
+  const raw: Record<string, string> = {};
+  search.forEach((value, key) => {
+    raw[key] = value;
+  });
+  return parseHotelOrigin(raw);
+}
+
+/**
+ * Search params suspend the nearest boundary. This probe renders nothing, so a
+ * fallback and a resolved tree cannot each keep a copy of the page.
+ */
+function OriginProbe({
+  pathname,
+  onOrigin,
+}: {
   pathname: string;
-  children: React.ReactNode;
+  onOrigin: (origin: HotelOrigin | null) => void;
 }) {
   const search = useSearchParams();
-  const origin = useMemo(() => {
-    if (!props.pathname.startsWith("/app/hotels/") && props.pathname !== "/app/hotels") return null;
-    const raw: Record<string, string> = {};
-    search.forEach((value, key) => {
-      raw[key] = value;
-    });
-    return parseHotelOrigin(raw);
-  }, [props.pathname, search]);
-  return <ShellBody {...props} origin={origin} />;
+  const query = search.toString();
+  const origin = useMemo(
+    () => readHotelOrigin(pathname, new URLSearchParams(query)),
+    [pathname, query],
+  );
+  useEffect(() => {
+    onOrigin(origin);
+  }, [onOrigin, origin]);
+  return null;
 }
 
 function ShellBody({
@@ -309,7 +324,7 @@ function ShellBody({
 
 /**
  * Midnight shell. Sidebar, top bar, breadcrumbs, and the mobile bottom bar.
- * Dark only.
+ * Dark only. Page children mount once, outside the search-params boundary.
  */
 export function AppShell({
   isStaff,
@@ -325,30 +340,22 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || "/app";
+  const [origin, setOrigin] = useState<HotelOrigin | null>(null);
   return (
-    <Suspense
-      fallback={
-        <ShellBody
-          isStaff={isStaff}
-          creditLabel={creditLabel}
-          planLabel={planLabel}
-          email={email}
-          pathname={pathname}
-          origin={null}
-        >
-          {children}
-        </ShellBody>
-      }
-    >
-      <ShellHeader
+    <>
+      <Suspense fallback={null}>
+        <OriginProbe pathname={pathname} onOrigin={setOrigin} />
+      </Suspense>
+      <ShellBody
         isStaff={isStaff}
         creditLabel={creditLabel}
         planLabel={planLabel}
         email={email}
         pathname={pathname}
+        origin={origin}
       >
         {children}
-      </ShellHeader>
-    </Suspense>
+      </ShellBody>
+    </>
   );
 }
