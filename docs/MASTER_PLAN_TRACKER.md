@@ -384,10 +384,11 @@ migration `0095`, D180). PR #98 merged the audit fix (`dc04d09369c5d2574755c970b
 migration `0096`, D181 email cascade). The unlock
 screen still does not show provenance or freshness. PR #100 is merged
 (`4001a628a347c0588fcc402d03fadb40302b8b6a`, migration `0097`, D182–D187).
-Contract Review stays out of MVP (D185). PR #102 is the V12.2 Midnight shell
-and theme and is not merged. The merge SHA of PR #102 is recorded when it lands.
+Contract Review stays out of MVP (D185). PR #102 is merged
+(`ebf4681a214be89b0246f45f709b98c4b7b00432`, V12.2 Midnight shell and theme, no migration).
+PR #109 is merged (`cc1b6cbfaed4457bf501113687c58e9f32921ebb`, no migration).
 PR #104 is V2-S6 (Plans, Billing, Profile, Getting
-Started, and Collaborations) and is not merged. It depends on PR #102.
+Started, and Collaborations) and is not merged.
 `HUNTER_API_KEY` stays unset in CI. UX02 design
 (PR #91) is merged as `dbfd2472b00d49590c17f416a10f6dbef371781b`. UX02 screens
 (PR #95) are merged as `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`. Draft PRs #88
@@ -431,8 +432,8 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E05 | **DONE** — PR #64, merge `621bc557762a70242b08a02afca94bca6c08f08d`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 stay Proposed. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 | UX01 | **DONE** — PR #65, merge `9a449239df1ebd859d4876c35e83e35007cf41af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. PR #102 replaces this visual system with V12.2 Midnight. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
 | V2-D1 | **DONE — PR #100**, merge `4001a628a347c0588fcc402d03fadb40302b8b6a`. Migration `0097`. D182–D187. Several opportunities per hotel, per-creator `OP-` display ids, creator-set trip nights, Gmail date suggestions that do not auto-apply, and outreach campaigns. Contract Review stays out of MVP (D185). | Opportunity, nights, and campaign data model | one hotel can hold several opportunities; Contract Review is not a product screen |
-| V2-F1 | **OPEN — PR #102**. No migration. V12.2 Midnight is the single theme (dark only, accent `#D1FF02`). Shell, base components, and a minimal re-skin of existing pages. `contracts.html` is design reference only. Not merged. The merge SHA is recorded when it lands. | Midnight shell and theme | existing pages compile on the new shell; contrast AA |
-| V2-S6 | **OPEN — PR #104**. No migration. Midnight screens for Plans & Credits, Billing & Activity, My Profile, Getting Started, and Collaborations. Wired to existing Rebill checkout, D131 prices, D140 refunds, the 30-day deletion clock, and Gmail connect. Contract Review stays out (D185). Depends on PR #102. Not merged. | Creator account and collaboration execution | real rows only; `revision_requested`; barter, payment, or both |
+| V2-F1 | **DONE — PR #102**, merge `ebf4681a214be89b0246f45f709b98c4b7b00432`. No migration. V12.2 Midnight is the single theme (dark only, accent `#D1FF02`). Shell, base components, and a minimal re-skin of existing pages. `contracts.html` is design reference only. | Midnight shell and theme | existing pages compile on the new shell; contrast AA |
+| V2-S6 | **OPEN — PR #104**. No migration. Midnight screens for Plans & Credits, Billing & Activity, My Profile, Getting Started, and Collaborations. Wired to existing Rebill checkout, D131 prices, D140 refunds, the 30-day deletion clock, and Gmail connect. Contract Review stays out (D185). Not merged. | Creator account and collaboration execution | real rows only; `revision_requested`; barter, payment, or both |
 
 **Base rounds:** 5  
 **Cumulative future rounds:** 31
@@ -629,8 +630,11 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #103,
-`b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50` (in-process scheduled jobs, no
+**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #102,
+`ebf4681a214be89b0246f45f709b98c4b7b00432` (V12.2 Midnight shell, no migration).
+It includes PR #109 (`cc1b6cbfaed4457bf501113687c58e9f32921ebb`, scheduled job
+failures are caught instead of a bare 502, no migration). PR #103 stays merged
+(`b3cd11a9afe70d14351a1f0abdc4a4ce4d387c50`, in-process scheduled jobs, no
 migration). PR #100 stays merged (`4001a628a347c0588fcc402d03fadb40302b8b6a`,
 V2-D1, migration `0097`, D182–D187). Contract Review stays out of MVP (D185). PR #98 merged the D02
 audit fix (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181
@@ -640,10 +644,10 @@ and PREPROD-1 (PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration
 `2549b96836d90180b655a7d0893316e57e92a5f2`). UX02 design is merged (PR #91,
 `dbfd2472b00d49590c17f416a10f6dbef371781b`). UX02 screens are merged (PR #95,
 `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`) and re-skinned onto Midnight.
-V2-F1 is **open — PR #102** (V12.2 Midnight shell and theme, no migration).
-The merge SHA of PR #102 is recorded when it lands. V2-S6 is **open — PR #104**
+V2-F1 is **done — PR #102** (`ebf4681a214be89b0246f45f709b98c4b7b00432`, V12.2
+Midnight shell and theme, no migration). V2-S6 is **open — PR #104**
 (Plans, Billing, Profile, Getting Started, and Collaborations, no migration)
-and depends on PR #102. Neither is merged. D02 Contact Hub is not finished.
+and is not merged. D02 Contact Hub is not finished.
 PR #97 merged the Hunter adapter
 (`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
 Provenance and freshness are not on the unlock screen. D178 is Accepted
