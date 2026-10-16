@@ -323,12 +323,17 @@ export async function loadInboxWorkspace(
             .order("created_at", { ascending: false })
             .order("id", { ascending: true })
             .limit(INBOX_SUGGESTION_CAP + 1),
-      supabase
-        .from("stay_date_suggestions")
-        .select(DATE_COLUMNS)
-        .eq("creator_id", profile.profileId)
-        .eq("status", "pending")
-        .limit(INBOX_DATE_CAP + 1),
+      pipelineIds.length === 0
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("stay_date_suggestions")
+            .select(DATE_COLUMNS)
+            .eq("creator_id", profile.profileId)
+            .eq("status", "pending")
+            .in("pipeline_item_id", pipelineIds)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: true })
+            .limit(INBOX_DATE_CAP + 1),
       supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC, {
         p_pipeline_item_ids: pipelineIds,
       }),

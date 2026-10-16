@@ -85,9 +85,20 @@ describe("health", () => {
   });
 });
 
+const CSP_NONCE = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+function cspDirective(policy: string, name: string): string {
+  return (
+    policy
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name} `)) ?? ""
+  );
+}
+
 describe("security headers", () => {
   it("allows Maps origins, denies framing, and sets referrer-policy", () => {
-    const headers = securityHeaders("http://127.0.0.1:54321");
+    const headers = securityHeaders("http://127.0.0.1:54321", { nonce: CSP_NONCE });
     const csp = headers["Content-Security-Policy"] ?? "";
     expect(csp).toContain("https://maps.googleapis.com");
     expect(csp).toContain("https://maps.gstatic.com");
@@ -100,10 +111,30 @@ describe("security headers", () => {
     expect(headers["Permissions-Policy"]).toContain("camera=()");
     expect(headers["Permissions-Policy"]).toContain("microphone=()");
     expect(headers["Strict-Transport-Security"]).toBeUndefined();
-    expect(contentSecurityPolicy("not a url")).not.toContain("not a url");
-    const https = securityHeaders("https://example.supabase.co", { https: true });
+    expect(contentSecurityPolicy("not a url", CSP_NONCE)).not.toContain("not a url");
+    const https = securityHeaders("https://example.supabase.co", {
+      https: true,
+      nonce: CSP_NONCE,
+    });
     expect(https["Strict-Transport-Security"]).toBe("max-age=63072000; includeSubDomains");
     expect(https["Permissions-Policy"]).toContain("payment=()");
+  });
+
+  it("nonces script-src and keeps style-src inline for style attributes", () => {
+    const csp = contentSecurityPolicy("https://example.supabase.co", CSP_NONCE);
+    const script = cspDirective(csp, "script-src");
+    const style = cspDirective(csp, "style-src");
+    expect(script).toContain(`'nonce-${CSP_NONCE}'`);
+    expect(script).toContain("'strict-dynamic'");
+    expect(script).toContain("https://maps.googleapis.com");
+    expect(script).not.toContain("'unsafe-inline'");
+    expect(style).toBe("style-src 'self' 'unsafe-inline'");
+    const poisoned = contentSecurityPolicy(
+      "https://example.supabase.co",
+      "bad nonce; script-src *",
+    );
+    expect(cspDirective(poisoned, "script-src")).not.toContain("bad");
+    expect(cspDirective(poisoned, "script-src")).not.toContain("'unsafe-inline'");
   });
 });
 

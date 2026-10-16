@@ -333,6 +333,46 @@ describe("prioritizeNextActions", () => {
     expect(JSON.stringify(board)).not.toContain("Ada Tomorrow");
   });
 
+  it("uses the civil day in the creator zone for a deliverable due date", () => {
+    const asOf = "2026-10-17T03:00:00.000Z";
+    const losAngeles = prioritizeNextActions(
+      input({
+        asOf,
+        timeZone: "America/Los_Angeles",
+        deliverables: {
+          status: "ok",
+          capped: false,
+          items: [
+            deliverable({ dueOn: "2026-10-16", hotelName: "Ada Due" }),
+            deliverable({
+              id: "73000000-0000-4000-8000-000000000006",
+              dueOn: "2026-10-17",
+              hotelName: "Ada Not Yet",
+              hotelId: HOTEL_D,
+            }),
+          ],
+        },
+      }),
+    );
+    expect(losAngeles.actions.map((action) => action.title)).toEqual([
+      "Deliverable due at Ada Due",
+    ]);
+    expect(JSON.stringify(losAngeles)).not.toContain("Ada Not Yet");
+
+    const utc = prioritizeNextActions(
+      input({
+        asOf,
+        timeZone: "UTC",
+        deliverables: {
+          status: "ok",
+          capped: false,
+          items: [deliverable({ dueOn: "2026-10-17", hotelName: "Ada Utc Due" })],
+        },
+      }),
+    );
+    expect(utc.actions.map((action) => action.title)).toEqual(["Deliverable due at Ada Utc Due"]);
+  });
+
   it("says credits are unavailable instead of zero, and does not link an empty balance to billing", () => {
     const missing = prioritizeNextActions(input({ credits: { status: "error" } }));
     expect(JSON.stringify(missing)).not.toContain("0 credits");

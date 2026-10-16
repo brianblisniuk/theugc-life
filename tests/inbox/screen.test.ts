@@ -16,6 +16,7 @@ import {
 import { blockedNextActionBoard } from "@/lib/home/next-actions";
 import {
   INBOX_COPY,
+  INBOX_DATE_CAP,
   INBOX_SEND_GATE,
   INBOX_SUGGESTION_CAP,
   buildInboxScreen,
@@ -560,6 +561,241 @@ describe("inbox loader", () => {
     expect(screen.threads[0]?.summary).not.toBe(INBOX_COPY.noClassification);
     expect(screen.heading).toBe(INBOX_COPY.suggestionsCappedHeading);
     expect(screen.heading).not.toContain("Nothing in these conversations needs a reply");
+  });
+
+  it("keeps the open conversation's date suggestion when 51 other suggestions exist", async () => {
+    const otherItem = "abababab-abab-4bab-8bab-abababababab";
+    const openDateId = "12121212-1212-4212-8212-000000000099";
+    const binding = {
+      id: BIND_A,
+      creator_id: PROFILE_A,
+      pipeline_item_id: ITEM_A,
+      updated_at: "2026-10-16T12:00:00.000Z",
+      pipeline_item: {
+        id: ITEM_A,
+        creator_id: PROFILE_A,
+        status: "replied",
+        display_ref: "OP-1001",
+        hotel_id: HOTEL_A,
+        hotel: { id: HOTEL_A, name: "North House" },
+      },
+    };
+    const dateRow = (
+      id: string,
+      pipelineItemId: string,
+      createdAt: string,
+    ): Record<string, unknown> => ({
+      id,
+      creator_id: PROFILE_A,
+      pipeline_item_id: pipelineItemId,
+      trip_hotel_id: null,
+      suggested_check_in: "2026-11-02",
+      suggested_check_out: "2026-11-05",
+      source: "gmail",
+      status: "pending",
+      created_at: createdAt,
+      pipeline_item: { hotel: { name: "North House" } },
+    });
+    const offPage = Array.from({ length: INBOX_DATE_CAP + 1 }, (_, index) =>
+      dateRow(
+        `13131313-1313-4131-8131-${String(index).padStart(12, "0")}`,
+        otherItem,
+        "2026-10-16T00:00:00.000Z",
+      ),
+    );
+    const open = dateRow(openDateId, ITEM_A, "2026-01-01T00:00:00.000Z");
+    const tables: Record<string, unknown> = {
+      creator_profiles: { id: PROFILE_A, user_id: AUTH_A, display_name: "Ada" },
+      pipeline_inbox_bindings: [binding],
+      pipeline_inbox_readings: [],
+      pipeline_inbox_suggestions: [],
+      stay_date_suggestions: [...offPage, open],
+    };
+    const calls: { table: string; ops: string[] }[] = [];
+    const client = {
+      from(table: string) {
+        const ops: string[] = [];
+        const orders: { column: string; ascending: boolean }[] = [];
+        let allowedIds: readonly string[] | null = null;
+        let rowLimit: number | null = null;
+        const api = {
+          select() {
+            return api;
+          },
+          eq() {
+            return api;
+          },
+          in(column: string, values: readonly string[]) {
+            ops.push(`in:${column}:${values.join(",")}`);
+            if (column === "pipeline_item_id") allowedIds = values;
+            return api;
+          },
+          order(column: string, options?: { ascending?: boolean }) {
+            ops.push(`order:${column}`);
+            orders.push({ column, ascending: options?.ascending !== false });
+            return api;
+          },
+          limit(count: number) {
+            ops.push(`limit:${count}`);
+            rowLimit = count;
+            return api;
+          },
+          maybeSingle() {
+            calls.push({ table, ops: [...ops] });
+            return Promise.resolve({ data: tables[table] ?? null, error: null });
+          },
+          then(resolve: (value: unknown) => unknown) {
+            calls.push({ table, ops: [...ops] });
+            const stored = tables[table];
+            let data = Array.isArray(stored) ? [...stored] : stored;
+            if (table === "stay_date_suggestions" && Array.isArray(data)) {
+              let rows = data as Record<string, unknown>[];
+              if (allowedIds) {
+                const ids = new Set(allowedIds);
+                rows = rows.filter((row) => ids.has(String(row.pipeline_item_id)));
+              }
+              if (orders.length > 0) {
+                rows.sort((left, right) => {
+                  for (const order of orders) {
+                    const a = String(left[order.column] ?? "");
+                    const b = String(right[order.column] ?? "");
+                    if (a === b) continue;
+                    const cmp = a < b ? -1 : 1;
+                    return order.ascending ? cmp : -cmp;
+                  }
+                  return 0;
+                });
+              }
+              if (rowLimit !== null) rows = rows.slice(0, rowLimit);
+              data = rows;
+            }
+            return Promise.resolve({ data, error: null }).then(resolve);
+          },
+        };
+        return { select: () => api };
+      },
+      rpc: () => Promise.resolve({ data: { result: "paused" }, error: null }),
+    };
+    const screen = await loadInboxWorkspace(
+      AUTH_A,
+      {},
+      { client: client as InboxQueryClient, gmailConfigured: false },
+    );
+    const dateCall = calls.find((call) => call.table === "stay_date_suggestions");
+    expect(dateCall?.ops).toContain(`in:pipeline_item_id:${ITEM_A}`);
+    expect(dateCall?.ops).toContain("order:created_at");
+    expect(dateCall?.ops).toContain("order:id");
+    expect(dateCall?.ops).toContain(`limit:${INBOX_DATE_CAP + 1}`);
+    expect(screen.kind).toBe("ready");
+    if (screen.kind !== "ready") return;
+    expect(screen.selected?.dates.map((date) => date.id)).toEqual([openDateId]);
+    expect(screen.notices).not.toContain(INBOX_COPY.datesTruncated);
+    expect(JSON.stringify(screen)).not.toContain(otherItem);
+    expect(JSON.stringify(screen)).not.toContain("13131313-1313-4131-8131-");
+  });
+
+  it("still notices when the page's own date suggestions exceed the cap", async () => {
+    const binding = {
+      id: BIND_A,
+      creator_id: PROFILE_A,
+      pipeline_item_id: ITEM_A,
+      updated_at: "2026-10-16T12:00:00.000Z",
+      pipeline_item: {
+        id: ITEM_A,
+        creator_id: PROFILE_A,
+        status: "replied",
+        display_ref: "OP-1001",
+        hotel_id: HOTEL_A,
+        hotel: { id: HOTEL_A, name: "North House" },
+      },
+    };
+    const keptId = "14141414-1414-4141-8141-000000000000";
+    const droppedId = `14141414-1414-4141-8141-${String(INBOX_DATE_CAP).padStart(12, "0")}`;
+    const dates = Array.from({ length: INBOX_DATE_CAP + 1 }, (_, index) => ({
+      id: `14141414-1414-4141-8141-${String(index).padStart(12, "0")}`,
+      creator_id: PROFILE_A,
+      pipeline_item_id: ITEM_A,
+      trip_hotel_id: null,
+      suggested_check_in: "2026-11-02",
+      suggested_check_out: "2026-11-05",
+      source: "gmail",
+      status: "pending",
+      created_at: "2026-10-16T00:00:00.000Z",
+      pipeline_item: { hotel: { name: "North House" } },
+    }));
+    const tables: Record<string, unknown> = {
+      creator_profiles: { id: PROFILE_A, user_id: AUTH_A, display_name: "Ada" },
+      pipeline_inbox_bindings: [binding],
+      pipeline_inbox_readings: [],
+      pipeline_inbox_suggestions: [],
+      stay_date_suggestions: dates,
+    };
+    const client = {
+      from(table: string) {
+        const orders: { column: string; ascending: boolean }[] = [];
+        let allowedIds: readonly string[] | null = null;
+        let rowLimit: number | null = null;
+        const api = {
+          select() {
+            return api;
+          },
+          eq() {
+            return api;
+          },
+          in(_column: string, values: readonly string[]) {
+            allowedIds = values;
+            return api;
+          },
+          order(column: string, options?: { ascending?: boolean }) {
+            orders.push({ column, ascending: options?.ascending !== false });
+            return api;
+          },
+          limit(count: number) {
+            rowLimit = count;
+            return api;
+          },
+          maybeSingle() {
+            return Promise.resolve({ data: tables[table] ?? null, error: null });
+          },
+          then(resolve: (value: unknown) => unknown) {
+            const stored = tables[table];
+            let data = Array.isArray(stored) ? [...stored] : stored;
+            if (table === "stay_date_suggestions" && Array.isArray(data)) {
+              let rows = data as Record<string, unknown>[];
+              if (allowedIds) {
+                const ids = new Set(allowedIds);
+                rows = rows.filter((row) => ids.has(String(row.pipeline_item_id)));
+              }
+              rows.sort((left, right) => {
+                for (const order of orders) {
+                  const a = String(left[order.column] ?? "");
+                  const b = String(right[order.column] ?? "");
+                  if (a === b) continue;
+                  const cmp = a < b ? -1 : 1;
+                  return order.ascending ? cmp : -cmp;
+                }
+                return 0;
+              });
+              if (rowLimit !== null) rows = rows.slice(0, rowLimit);
+              data = rows;
+            }
+            return Promise.resolve({ data, error: null }).then(resolve);
+          },
+        };
+        return { select: () => api };
+      },
+      rpc: () => Promise.resolve({ data: { result: "paused" }, error: null }),
+    };
+    const screen = await loadInboxWorkspace(
+      AUTH_A,
+      {},
+      { client: client as InboxQueryClient, gmailConfigured: false },
+    );
+    expect(screen.kind).toBe("ready");
+    if (screen.kind !== "ready") return;
+    expect(screen.notices).toContain(INBOX_COPY.datesTruncated);
+    expect(screen.selected?.dates.map((date) => date.id)).toContain(keptId);
+    expect(screen.selected?.dates.map((date) => date.id)).not.toContain(droppedId);
   });
 
   it("selects no token, no message body, and no service credential", () => {

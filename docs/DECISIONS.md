@@ -3735,6 +3735,15 @@ DENY`. The policy allows script, image, connect, and frame from
 to the configured Supabase origin and its `ws` or `wss` counterpart.
 `frame-ancestors` is `'none'`.
 
+`script-src` is `'self'`, a per-request nonce, `'strict-dynamic'`, and the
+Maps origins. It does not include `'unsafe-inline'`. Middleware sets that
+policy on the forwarded request so Next.js can stamp the nonce on its
+scripts. `'strict-dynamic'` lets that script insert the Maps script; the
+host allowlist remains for browsers that ignore `'strict-dynamic'`.
+`style-src` stays `'self' 'unsafe-inline'` because React style attributes
+are not covered by a style nonce, and Next's inline style tags would need
+a root-layout change to carry one.
+
 The client bundle may contain the name `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 It may not contain the names of server secrets. A scan fails closed when
 it finds one. The scan does not print a secret value.
