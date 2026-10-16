@@ -32,7 +32,7 @@ describe("inbox unity parse", () => {
     expect(unity?.pipelineStatus).toBe("pitched");
     expect(unity?.reading?.commercialState).toBe("negotiating");
     expect(inboxPanelModel(unity!).title).toBe(INBOX_COPY.sectionTitle);
-    expect(inboxPanelModel(unity!).pipelineLabel).toBe("Pitched");
+    expect(inboxPanelModel(unity!).pipelineLabel).toBe("Sent");
   });
 
   it("rejects a machine label stored as the pipeline status", () => {
@@ -115,7 +115,7 @@ describe("inbox panel copy", () => {
       }),
     );
     const model = inboxPanelModel(unity!);
-    expect(model.pipelineLabel).toBe("Pitched");
+    expect(model.pipelineLabel).toBe("Sent");
     expect(model.title).not.toMatch(/reject/i);
     expect(model.notices).toContain(INBOX_COPY.redirectNotice);
     expect(model.body).toMatch(/does not change/);

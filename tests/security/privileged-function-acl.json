@@ -2328,5 +2328,165 @@
     "authenticated": false,
     "serviceRole": false,
     "public": false
+  },
+  {
+    "schema": "public",
+    "name": "accept_stay_date_suggestion",
+    "args": "p_user_id uuid, p_suggestion_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "add_outreach_hotel",
+    "args": "p_user_id uuid, p_initiative_id uuid, p_hotel_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "assign_pipeline_display_ref",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "create_outreach_initiative",
+    "args": "p_user_id uuid, p_name text, p_trip_id uuid, p_destination_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "delete_outreach_initiative",
+    "args": "p_user_id uuid, p_initiative_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_outreach_initiative_owner",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_outreach_membership_owner",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_pipeline_outreach_same_creator",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_stay_date_suggestion_owner",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "enforce_trip_creator_matches_outreach",
+    "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "import_outreach_shortlist",
+    "args": "p_user_id uuid, p_initiative_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "open_pipeline_opportunity",
+    "args": "p_user_id uuid, p_hotel_id uuid, p_trip_id uuid, p_stay_start date, p_stay_end date, p_outreach_initiative_id uuid, p_free_saved_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "propose_stay_date_suggestion",
+    "args": "p_user_id uuid, p_trip_hotel_id uuid, p_pipeline_item_id uuid, p_check_in date, p_check_out date, p_mail_account_id uuid, p_source_ref text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "reject_stay_date_suggestion",
+    "args": "p_user_id uuid, p_suggestion_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_pipeline_opportunity_dates",
+    "args": "p_user_id uuid, p_pipeline_item_id uuid, p_stay_start date, p_stay_end date",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "set_trip_hotel_stay",
+    "args": "p_user_id uuid, p_trip_id uuid, p_hotel_id uuid, p_check_in date, p_check_out date, p_night_status text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
   }
 ]

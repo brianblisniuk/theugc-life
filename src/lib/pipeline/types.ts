@@ -32,21 +32,53 @@ export const ENGAGED_STATUSES = [
   "won",
 ] as const;
 
-/** Human-readable labels (DESIGN_SYSTEM.md §5). */
+/**
+ * Display names (D187). Stored statuses are unchanged.
+ * `follow_up` stays a sentence label so existing workflow copy still reads.
+ * The seven V12.1 stage columns use `pipelineStageLabel`.
+ */
 const STATUS_LABEL: Record<string, string> = {
   saved: "Saved",
-  planned: "Planned",
-  pitched: "Pitched",
+  planned: "Pitch ready",
+  pitched: "Sent",
   replied: "Replied",
   follow_up: "Follow-up",
   negotiating: "Negotiating",
-  won: "Won",
+  won: "Agreed",
   closed: "Closed",
 };
+
+const STAGE_STATUSES = [
+  "saved",
+  "planned",
+  "pitched",
+  "replied",
+  "negotiating",
+  "won",
+  "closed",
+] as const;
 
 export function pipelineStatusLabel(status: string | null): string {
   if (!status) return "Saved";
   return STATUS_LABEL[status] ?? status.replace(/_/g, " ");
+}
+
+/** `stage` for the seven V12.1 columns, `event` for `follow_up`. */
+export function pipelineStatusKind(status: string | null): "stage" | "event" | null {
+  if (!status) return null;
+  if (status === "follow_up") return "event";
+  if ((STAGE_STATUSES as readonly string[]).includes(status)) return "stage";
+  return null;
+}
+
+export function isPipelineStage(status: string | null): boolean {
+  return pipelineStatusKind(status) === "stage";
+}
+
+/** V12.1 column name. `follow_up` is an event and returns null. */
+export function pipelineStageLabel(status: string | null): string | null {
+  if (!isPipelineStage(status) || !status) return null;
+  return STATUS_LABEL[status] ?? null;
 }
 
 /** A cycle is open (D023) in every status except `closed`. */

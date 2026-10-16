@@ -361,7 +361,7 @@ Reuse existing pipeline, event-ledger, negotiation and collaboration foundations
 | Round | Status | Implementation block | Core gate |
 |---|---|---|---|
 | D01 | **DONE** — PR #52, merge `4062170212beb8b978a248ef219eb91ddbfb080b`, migration `0046` | Trips: destination/date/context + shortlist + trip summary | targets/pipeline/collabs share one trip context |
-| D02 | **IN PROGRESS** — PR #97 merged the Hunter adapter (migration `0095`, D180, merge `9658a451a09e2543a36184ae47562cb4dde59241`). PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181 email cascade). Fake stays the local and CI provider. One credit still charges only on a found address. The unlock screen is one status line. Confidence, verification, and tier are not shown, so provenance and freshness on screen are not done. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
+| D02 | **IN PROGRESS** — PR #97 merged the Hunter adapter (migration `0095`, D180, merge `9658a451a09e2543a36184ae47562cb4dde59241`). PR #98 merged the audit fix (migration `0096`, D181, merge `dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`). Fake stays the local and CI provider. One credit still charges only on a found address. The unlock screen is one status line. Confidence, verification, and tier are not shown, so provenance and freshness on screen are not done. | Contact Hub + enrichment/verification adapter | best route/role available; provenance and freshness visible |
 | D03 | **DONE** — PR #84, merge `b2b4e49825a1dd212734e812a4fbb069ee7db0ea`. Migrations `0082` and `0083`. D141–D145. Claude Sonnet for Pro and Max. Drafts are not sent. | AI assistance service + contextual composer | reusable structured AI service; not model calls scattered through UI |
 | D04 | **DONE** — PR #86, merge `3e11ded390a2845603b207433af90bb846d4670e`. Migration `0089`. D156–D161. D159: a successful send costs no credits. Unrestricted sending requires `GMAIL_SEND_ENV=production`. | Gmail send from OS | exact sent event linked to target/contact/trip/pipeline |
 | D04b | **DONE** — PR #87, merge `f892d6e37cd7b606e4b5c663dc002e0503d0145b`. Migrations `0090` and `0091`. D162–D170. Monthly USD AI budget, account pause, structured generation, queued sends, bounce pause. Sends still cost no credits. | AI cost and anti-abuse | per-user budget before the global pool; queued sends; deletion cascades |
@@ -380,9 +380,11 @@ adds no migration. PREPROD-1 (PR #92) stays merged as
 `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration
 `0093_preprod_jobs.sql`. D178 is Accepted (owner Brian, 16 Oct 2026). D02 Contact Hub
 is not finished: PR #97 merged the Hunter adapter (`9658a451a09e2543a36184ae47562cb4dde59241`,
-migration `0095`, D180). PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`,
-migration `0096`, D181 email cascade). The unlock
-screen still does not show provenance or freshness. PR #102 merges V2-F1
+migration `0095`, D180). PR #98 merged the audit fix (migration `0096`, D181,
+`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`). The unlock
+screen still does not show provenance or freshness. PR #100 is merged
+(`4001a628a347c0588fcc402d03fadb40302b8b6a`, migration `0097`, D182–D187).
+Contract Review stays out of MVP (D185). PR #102 merges V2-F1
 (V12.2 Midnight shell and theme, no migration). The merge SHA of PR #102 is
 recorded by the next block.
 `HUNTER_API_KEY` stays unset in CI. UX02 design
@@ -427,6 +429,7 @@ without needing Sheets/Notion/a separate CRM as the operational source of truth.
 | E04 | **DONE** — PR #62, merge `dc5979eed799d1724eb36482eb0067d3e9f0fe55`. Migration `0051_outside_free_allowance.sql` fixes the contradictory outside Free counters (D056). D08 surfaces with no written tier stay UNDECIDED. D083–D085 are not used. | entitlement/billing audit for Pass/Pro + new modules | one canonical inventory; feature access correct; no accidental data exposure |
 | E05 | **DONE** — PR #64, merge `621bc557762a70242b08a02afca94bca6c08f08d`. Migration `0054` grants signup-trigger execute to `supabase_auth_admin`. `0039` installs `public.digest` only when pgcrypto is not already in `public`. D092–D094 stay Proposed. | E2E, observability, security/privacy, data QA and launch operations | failure/retry/admin paths tested; launch candidate gate explicit |
 | UX01 | **DONE** — PR #65, merge `9a449239df1ebd859d4876c35e83e35007cf41af`. Migration `0055_onboarding_and_public_profile.sql`. D095–D098 Accepted. PR #102 replaces this visual system with V12.2 Midnight. | Sunlit shell, D082 v2 onboarding, D086–D088 v2 profile, Free for undocumented gates | first hotel saved from the catalog; public card has no private fields; D056 quotas unchanged |
+| V2-D1 | **DONE — PR #100**, merge `4001a628a347c0588fcc402d03fadb40302b8b6a`. Migration `0097`. D182–D187. Several opportunities per hotel, per-creator `OP-` display ids, creator-set trip nights, Gmail date suggestions that do not auto-apply, and outreach campaigns. Contract Review stays out of MVP (D185). | Opportunity, nights, and campaign data model | one hotel can hold several opportunities; Contract Review is not a product screen |
 | V2-F1 | **DONE — PR #102**. No migration. V12.2 Midnight is the single theme (dark only, accent `#D1FF02`). Shell, base components, and a minimal re-skin of existing pages. `contracts.html` is design reference only. The merge SHA is recorded by the next block. | Midnight shell and theme | existing pages compile on the new shell; contrast AA |
 
 **Base rounds:** 5  
@@ -624,24 +627,22 @@ After every 5–8 merged base rounds:
 
 # 9. Immediate next move
 
-**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #99,
-`7041104f7fce3e9a8e0916621daa39d0799b2b22` (Gmail callback error log).
-PR #98 is merged (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration
-`0096`, D181). PREPROD-1b
-(PR #93, `9c50400c104b6f5aa036eea3ea798f269aeffe5e`) and PREPROD-1 (PR #92,
-`697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`) stay merged.
-D05 is merged (PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`). UX02
-design is merged (PR #91, `dbfd2472b00d49590c17f416a10f6dbef371781b`). UX02
-screens are merged (PR #95, `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`) and
-re-skinned onto Midnight. V2-F1 is **DONE — PR #102** (V12.2 Midnight shell
-and theme, no migration). The merge SHA of PR #102 is recorded by the next
-block. D02 Contact Hub is not finished. PR #97 merged the Hunter adapter
-(`9658a451a09e2543a36184ae47562cb4dde59241`, migration `0095`, D180).
-Provenance and freshness are
-not on the unlock screen. D178 is Accepted
-(owner Brian, 16 Oct 2026). Draft PRs #88 and #90 await the owner. Do not
-merge them. BASE-N9 is closed by migration `0094` (D179) and is not the
-frontier. The human frontier stays CREDENTIAL REQUIRED for the Hunter key.
+**Current frontier (16 Oct 2026).** Recorded main is the merge of PR #100,
+`4001a628a347c0588fcc402d03fadb40302b8b6a` (V2-D1, migration `0097`,
+D182–D187). Contract Review stays out of MVP (D185). PR #98 merged the D02
+audit fix (`dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`, migration `0096`, D181).
+PREPROD-1b (PR #93, `9c50400c104b6f5aa036eea3ea798f269aeffe5e`) and PREPROD-1
+(PR #92, `697ca0946fcef24f32fe0da518512ec1c3c3b4cf`, migration `0093`) stay
+merged. D05 is merged (PR #89, `2549b96836d90180b655a7d0893316e57e92a5f2`).
+UX02 design is merged (PR #91, `dbfd2472b00d49590c17f416a10f6dbef371781b`).
+UX02 screens are merged (PR #95, `3a39ceb394df7b00e6ad6b12ab5bc40c7e3bfc59`)
+and re-skinned onto Midnight. V2-F1 is **DONE — PR #102** (V12.2 Midnight
+shell and theme, no migration). The merge SHA of PR #102 is recorded by the
+next block. D02 Contact Hub is not finished. Provenance and freshness are
+not on the unlock screen. D178 is Accepted (owner Brian, 16 Oct 2026). Draft
+PRs #88 and #90 await the owner. Do not merge them. BASE-N9 is closed by
+migration `0094` (D179) and is not the frontier. The human frontier stays
+CREDENTIAL REQUIRED for the Hunter key.
 
 At this baseline, Phase A is closed at the code gate:
 

@@ -36,7 +36,13 @@ const PIPELINE_ATTENTION_ORDER: readonly PipelineStatus[] = [
   "saved",
 ];
 
-const DELIVERABLE_STATUSES = ["pending", "submitted", "approved", "rejected"] as const;
+const DELIVERABLE_STATUSES = [
+  "pending",
+  "submitted",
+  "revision_requested",
+  "approved",
+  "rejected",
+] as const;
 type DeliverableStatus = (typeof DELIVERABLE_STATUSES)[number];
 
 const DUE_DELIVERABLE_STATUSES: readonly DeliverableStatus[] = ["pending", "rejected"];
