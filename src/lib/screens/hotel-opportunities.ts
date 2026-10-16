@@ -78,8 +78,17 @@ export function opportunityCard(
 ): OpportunityCardModel | null {
   if (!isUuid(row.id) || !isUuid(hotelId)) return null;
   const stage = pipelineStageLabel(row.status) ?? pipelineStatusLabel(row.status);
-  const tripId = origin.kind === "trip" ? origin.tripId : row.tripId;
-  const pitch = pitchHref(hotelId, tripId, origin, row.id);
+  const tripId = row.tripId && isUuid(row.tripId) ? row.tripId : null;
+  // A trip page origin is how the creator arrived. It is not this row's trip.
+  // pitchHref writes a trip origin's id into `trip`, so the card origin is the
+  // row's own trip, or discover when the row has none.
+  const pitchOrigin: HotelOrigin =
+    origin.kind === "trip"
+      ? tripId
+        ? { kind: "trip", tripId }
+        : { kind: "discover" }
+      : origin;
+  const pitch = pitchHref(hotelId, tripId, pitchOrigin, row.id);
   const inbox = hotelHref(hotelId, { kind: "inbox" }, "inbox");
   const collaboration = hotelHref(hotelId, { kind: "collaboration" }, "collaboration");
   const self = `/app/hotels/${hotelId}`;

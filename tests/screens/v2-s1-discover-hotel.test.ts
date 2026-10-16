@@ -247,6 +247,39 @@ describe("opportunity history", () => {
     expect(conversation?.href).not.toContain(OPP_B);
   });
 
+  it("keeps each card on its own trip when the page origin is a different trip", () => {
+    const originTrip = "55555555-5555-4555-8555-555555555555";
+    const planned = opportunity({
+      id: OPP_B,
+      displayRef: "OP-1084",
+      status: "planned",
+      tripId: TRIP,
+      tripName: "Spring content",
+    });
+    const unlinked = opportunity({
+      id: OPP_A,
+      displayRef: "OP-1042",
+      status: "saved",
+      tripId: null,
+    });
+    const cards = opportunityCards([planned, unlinked], HOTEL, null, {
+      kind: "trip",
+      tripId: originTrip,
+    });
+    const draft = cards.find((card) => card.id === OPP_B);
+    const saved = cards.find((card) => card.id === OPP_A);
+    const draftTrip = new URL(draft?.href ?? "/", "http://local").searchParams.get("trip");
+    const savedTrip = new URL(saved?.href ?? "/", "http://local").searchParams.get("trip");
+    expect(draft?.href).toContain("/pitch");
+    expect(draft?.href).toContain(`opportunity=${OPP_B}`);
+    expect(draftTrip).toBe(TRIP);
+    expect(draft?.href).not.toContain(originTrip);
+    expect(saved?.href).toContain("/pitch");
+    expect(saved?.href).toContain(`opportunity=${OPP_A}`);
+    expect(savedTrip).toBeNull();
+    expect(saved?.href).not.toContain(originTrip);
+  });
+
   it("does not offer a second save while another opportunity is open", () => {
     expect(relationshipFromOpportunities({ status: "ok", opportunities: [openA, openB] }, openB)).toEqual({
       status: "open",
