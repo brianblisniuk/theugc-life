@@ -10,7 +10,7 @@ import {
   pipelineStatusLabel,
   type PipelineStatus,
 } from "@/lib/pipeline/types";
-import { hotelHref, pitchHref } from "@/lib/shell/navigation";
+import { hotelHref, pitchHref, type HotelOrigin } from "@/lib/shell/navigation";
 
 export type OpportunityRelationship =
   | { status: "open"; relationship: { pipelineItemId: string; status: PipelineStatus } }
@@ -74,10 +74,12 @@ export function opportunityCard(
   row: HotelOpportunity,
   hotelId: string,
   back: string | null,
+  origin: HotelOrigin = { kind: "discover" },
 ): OpportunityCardModel | null {
   if (!isUuid(row.id) || !isUuid(hotelId)) return null;
   const stage = pipelineStageLabel(row.status) ?? pipelineStatusLabel(row.status);
-  const pitch = pitchHref(hotelId, row.tripId);
+  const tripId = origin.kind === "trip" ? origin.tripId : row.tripId;
+  const pitch = pitchHref(hotelId, tripId, origin, row.id);
   const inbox = hotelHref(hotelId, { kind: "inbox" }, "inbox");
   const collaboration = hotelHref(hotelId, { kind: "collaboration" }, "collaboration");
   const self = `/app/hotels/${hotelId}`;
@@ -117,9 +119,10 @@ export function opportunityCards(
   rows: readonly HotelOpportunity[],
   hotelId: string,
   back: string | null,
+  origin: HotelOrigin = { kind: "discover" },
 ): OpportunityCardModel[] {
   return rows.flatMap((row) => {
-    const card = opportunityCard(row, hotelId, back);
+    const card = opportunityCard(row, hotelId, back, origin);
     return card ? [card] : [];
   });
 }

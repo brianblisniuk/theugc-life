@@ -102,8 +102,6 @@ export async function loadPitchContext(input: {
   requestedTripId: string | null;
   /** When the URL does not name a trip, a saved draft's trip fills the suggestion. */
   preferDraftTrip: boolean;
-  /** One opportunity. A foreign id returns no status rather than another row. */
-  opportunityId?: string | null;
 }): Promise<PitchContextLoad> {
   if (!isUuid(input.userId) || !isUuid(input.hotelId)) return { status: "error" };
   if (input.requestedTripId && !isUuid(input.requestedTripId)) return { status: "error" };
@@ -133,17 +131,12 @@ export async function loadPitchContext(input: {
       listTrips(),
       getHotelIntelligence(input.hotelId),
       getHotelContactsIfAuthorized(input.hotelId),
-      (() => {
-        let pipelineQuery = supabase
-          .from("pipeline_items")
-          .select("id, status")
-          .eq("hotel_id", input.hotelId)
-          .neq("status", "closed");
-        if (input.opportunityId && isUuid(input.opportunityId)) {
-          pipelineQuery = pipelineQuery.eq("id", input.opportunityId);
-        }
-        return pipelineQuery.limit(1);
-      })(),
+      supabase
+        .from("pipeline_items")
+        .select("status")
+        .eq("hotel_id", input.hotelId)
+        .neq("status", "closed")
+        .limit(1),
       supabase
         .from("collaborations")
         .select("status, collaboration_type")

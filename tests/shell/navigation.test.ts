@@ -26,6 +26,7 @@ import {
   pipelineRowLinks,
   pipelineSurfaceHeading,
   pitchHref,
+  shellCrumbs,
   tripHotelHref,
 } from "@/lib/shell/navigation";
 
@@ -275,12 +276,63 @@ describe("hotel detail tabs", () => {
 describe("pitch href", () => {
   it("stays on the hotel pitch route and drops a bad trip id", () => {
     expect(pitchHref(HOTEL)).toBe(`/app/hotels/${HOTEL}/pitch`);
-    expect(pitchHref(HOTEL, TRIP)).toBe(`/app/hotels/${HOTEL}/pitch?trip=${TRIP}`);
+    expect(pitchHref(HOTEL, TRIP)).toBe(`/app/hotels/${HOTEL}/pitch?from=trip&trip=${TRIP}`);
+    expect(pitchHref(HOTEL, null, { kind: "inbox" })).toBe(`/app/hotels/${HOTEL}/pitch?from=inbox`);
+    expect(pitchHref(HOTEL, null, { kind: "collaboration" })).toBe(
+      `/app/hotels/${HOTEL}/pitch?from=collaboration`,
+    );
+    expect(pitchHref(HOTEL, null, { kind: "pipeline" })).toBe(
+      `/app/hotels/${HOTEL}/pitch?from=pipeline`,
+    );
+    const opportunity = "55555555-5555-4555-8555-555555555555";
+    const selected = pitchHref(HOTEL, TRIP, { kind: "inbox" }, opportunity);
+    expect(selected).toContain("from=inbox");
+    expect(selected).toContain(`trip=${TRIP}`);
+    expect(selected).toContain(`opportunity=${opportunity}`);
+    expect(pitchHref(HOTEL, null, { kind: "pipeline" }, "not-an-opportunity")).toBe(
+      `/app/hotels/${HOTEL}/pitch?from=pipeline`,
+    );
     expect(pitchHref(HOTEL, "not-a-trip")).toBeNull();
     expect(pitchHref("not-a-hotel", TRIP)).toBeNull();
     expect(pitchHref(`${HOTEL}/admin`)).toBeNull();
     const href = pitchHref(HOTEL, TRIP);
     expect(href).not.toBeNull();
     assertAppPath(href!);
+  });
+});
+
+describe("shell trail matches the hotel origin", () => {
+  it("links pitch back to the hotel and includes the trip id", () => {
+    const crumbs = shellCrumbs(`/app/hotels/${HOTEL}/pitch`, { kind: "trip", tripId: TRIP });
+    expect(crumbs.map((crumb) => crumb.label)).toEqual([
+      "Workspace",
+      "My Trips",
+      "Trip",
+      "Hotel",
+      "Pitch",
+    ]);
+    expect(crumbs[2]?.href).toBe(`/app/trips/${TRIP}`);
+    expect(crumbs[3]?.href).toBe(`/app/hotels/${HOTEL}?from=trip&trip=${TRIP}`);
+    expect(crumbs[4]?.href).toBeUndefined();
+  });
+
+  it("uses the pipeline surfaces for inbox and collaboration", () => {
+    const inbox = shellCrumbs(`/app/hotels/${HOTEL}`, { kind: "inbox" });
+    expect(inbox.map((crumb) => crumb.href)).toEqual([
+      "/app",
+      "/app/pipeline",
+      "/app/pipeline?surface=inbox",
+      undefined,
+    ]);
+    const collaboration = shellCrumbs(`/app/hotels/${HOTEL}/pitch`, { kind: "collaboration" });
+    expect(collaboration.map((crumb) => crumb.href)).toEqual([
+      "/app",
+      "/app/pipeline",
+      "/app/pipeline?surface=collaborations",
+      `/app/hotels/${HOTEL}?from=collaboration`,
+      undefined,
+    ]);
+    expect(JSON.stringify(inbox)).not.toContain("/app/inbox");
+    expect(JSON.stringify(collaboration)).not.toContain("/app/collaborations");
   });
 });

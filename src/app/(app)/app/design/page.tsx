@@ -1,4 +1,5 @@
 import { SourceBadge } from "@/components/ui/badge";
+import { requireRole } from "@/lib/auth/guards";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -22,7 +23,8 @@ export const metadata = { title: "UI guide" };
  * Internal specimen for the Midnight components. Not a product screen.
  * Contract Review is intentionally absent.
  */
-export default function DesignGuidePage() {
+export default async function DesignGuidePage() {
+  await requireRole(["admin", "editor"], "/app/design");
   return (
     <div className="space-y-6">
       <header className="space-y-2">

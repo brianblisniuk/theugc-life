@@ -122,13 +122,6 @@ const ACTIVE_STATUS_LABEL: Record<string, string> = {
   closed: "Closed",
 };
 
-function withOpportunity(href: string, opportunityId: string): string {
-  if (href.startsWith("#")) return href;
-  const url = new URL(href, "http://local");
-  url.searchParams.set("opportunity", opportunityId);
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
 export default async function HotelDetailPage({
   params,
   searchParams,
@@ -285,7 +278,7 @@ export default async function HotelDetailPage({
           : origin.kind === "collaboration"
             ? { href: "/app/pipeline?surface=collaborations", label: "Back to Collaborations" }
             : { href: `/app/trips/${origin.tripId}`, label: "Back to trip" };
-  const cards = opportunityCards(opportunities, hotel.id, discoverBack);
+  const cards = opportunityCards(opportunities, hotel.id, discoverBack, origin);
   const openCount = opportunities.filter((row) => isOpenCycle(row.status)).length;
   const figures = discoverFigures(metricSignals);
   const photos = eligibleHotelPhotos();
@@ -312,8 +305,9 @@ export default async function HotelDetailPage({
     relationship.status === "open"
       ? (opportunities.find((row) => row.id === relationship.relationship.pipelineItemId) ?? null)
       : null;
-  const pitchBase = pitchHref(hotel.id, openRow?.tripId ?? null) ?? "#work";
-  const pitch = openRow ? withOpportunity(pitchBase, openRow.id) : pitchBase;
+  const pitchTripId = origin.kind === "trip" ? origin.tripId : (openRow?.tripId ?? null);
+  const pitch =
+    pitchHref(hotel.id, pitchTripId, origin, openRow?.id ?? null) ?? "#work";
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,

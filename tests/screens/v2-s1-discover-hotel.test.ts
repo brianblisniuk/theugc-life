@@ -222,6 +222,7 @@ describe("opportunity history", () => {
     expect(cards[1]?.action).toBe("Review draft");
     expect(cards[0]?.href).toContain(`opportunity=${OPP_A}`);
     expect(cards[1]?.href).toContain(`opportunity=${OPP_B}`);
+    expect(cards[1]?.href).toContain("/pitch");
     expect(cards[0]?.href).not.toContain(OPP_B);
     expect(cards[1]?.href).not.toContain(OPP_A);
     expect(JSON.stringify(cards)).not.toContain(SECRET);
@@ -232,6 +233,18 @@ describe("opportunity history", () => {
     );
     expect(untitled).toBe("No trip");
     expect(untitled).not.toContain("pipeline-item");
+
+    const fromInbox = opportunityCards([openA, openB], HOTEL, "/app/discover?q=lisbon", {
+      kind: "inbox",
+    });
+    const draft = fromInbox.find((card) => card.id === OPP_B);
+    expect(draft?.href).toContain("from=inbox");
+    expect(draft?.href).toContain(`opportunity=${OPP_B}`);
+    expect(draft?.href).toContain("/pitch");
+    expect(draft?.href).not.toContain(OPP_A);
+    const conversation = fromInbox.find((card) => card.id === OPP_A);
+    expect(conversation?.href).toContain(`opportunity=${OPP_A}`);
+    expect(conversation?.href).not.toContain(OPP_B);
   });
 
   it("does not offer a second save while another opportunity is open", () => {
@@ -420,6 +433,9 @@ describe("screen source", () => {
     expect(hotel).toContain("ContactFeature");
     expect(hotel).toContain("OpportunityHistory");
     expect(hotel).toContain("eligibleHotelPhotos");
+    expect(hotel).toContain("pitchHref(hotel.id, pitchTripId, origin, openRow?.id ?? null)");
+    expect(hotel).not.toContain("withOpportunity");
+    expect(source("src/app/(app)/app/hotels/[id]/pitch/page.tsx")).not.toContain("opportunityId");
     expect(hotel).toContain("No verified photograph on file.");
     expect(hotel).not.toMatch(/<img[\s>]/);
     expect(hotel).not.toMatch(/unsplash|placeholder\.com|stock|hotelbeds|forbes/i);
