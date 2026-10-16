@@ -47,6 +47,7 @@ const RENEW = "d141aa00-0000-4000-8000-000000000007";
 const MID = "d141ab00-0000-4000-8000-000000000008";
 const LEGACY = "d141ac00-0000-4000-8000-000000000009";
 const STAY = "d141ad00-0000-4000-8000-00000000000a";
+const PASTDUE = "d188b000-0000-4000-8000-000000000002";
 
 async function makeUser(id: string) {
   await adminQuery("insert into auth.users (id, email) values ($1, $2)", [id, `${id}@rebill.test`]);
@@ -149,8 +150,30 @@ d("rebill apply", () => {
   beforeAll(async () => {
     await setupDatabase();
     for (const id of [
-      A, B, ANNUAL, PACK, REFUND, UPGRADE, DOWN, LAPSE, SLICE, GAP, YEAR, PACKCB, WEEKLY,
-      LEAK, LEAKCB, PACKS, WEEKEX, AFTER, KEEP, RENEW, MID, LEGACY, STAY,
+      A,
+      B,
+      ANNUAL,
+      PACK,
+      REFUND,
+      UPGRADE,
+      DOWN,
+      LAPSE,
+      SLICE,
+      GAP,
+      YEAR,
+      PACKCB,
+      WEEKLY,
+      LEAK,
+      LEAKCB,
+      PACKS,
+      WEEKEX,
+      AFTER,
+      KEEP,
+      RENEW,
+      MID,
+      LEGACY,
+      STAY,
+      PASTDUE,
     ]) {
       await makeUser(id);
     }
@@ -420,11 +443,40 @@ d("rebill apply", () => {
     expect(await balanceOf(PACK)).toBe(0);
     expect(
       await apply({
+        logId: "log_pack_refund_again",
+        event: "payment.updated",
+        payment: { id: "pay_pack50", status: "refunded", amount: 10, currency: "USD" },
+      }),
+    ).toBe("already_revoked");
+    expect(await balanceOf(PACK)).toBe(0);
+    expect(
+      await apply({
         logId: "log_pack_refund_2",
         event: "payment.updated",
         payment: { id: "pay_pack50", status: "chargeback", amount: 10, currency: "USD" },
       }),
-    ).toBe("already_revoked");
+    ).toBe("revoked");
+    const reversals = await adminQuery<{ n: number; rows: number }>(
+      `select coalesce(sum(delta), 0)::int as n, count(*)::int as rows
+         from public.credit_ledger
+        where user_id = $1
+          and (
+            idempotency_key = 'rebill_revoke:pay_pack50'
+            or idempotency_key = 'rebill_revoke:pay_pack50:chargeback'
+          )`,
+      [PACK],
+    );
+    expect(reversals[0]?.n).toBe(-50);
+    expect(reversals[0]?.rows).toBe(2);
+    expect(await balanceOf(PACK)).toBe(CREDITS_CONFIG.freeWeeklyCredits - 50);
+    expect(
+      await apply({
+        logId: "log_pack_refund_3",
+        event: "payment.updated",
+        payment: { id: "pay_pack50", status: "chargeback", amount: 10, currency: "USD" },
+      }),
+    ).toBe("revoked");
+    expect(await balanceOf(PACK)).toBe(CREDITS_CONFIG.freeWeeklyCredits - 50);
   });
 
   it("revokes a plan on chargeback and does not grant after a refund that arrived first", async () => {
@@ -877,9 +929,10 @@ d("rebill apply", () => {
   });
 
   it("resumes free weekly credits when a paid plan ends", async () => {
-    await adminQuery("update public.users set created_at = now() - interval '8 days' where id = $1", [
-      WEEKLY,
-    ]);
+    await adminQuery(
+      "update public.users set created_at = now() - interval '8 days' where id = $1",
+      [WEEKLY],
+    );
     const row = await checkout(WEEKLY, "pro_monthly", "pl_weekly");
     expect(
       await apply(
@@ -1355,7 +1408,12 @@ d("rebill apply", () => {
       await apply({
         logId: "log_mid_refund",
         event: "payment.updated",
-        payment: { id: "pay_midb", status: "partially_refunded", amount: amounts[1], currency: "USD" },
+        payment: {
+          id: "pay_midb",
+          status: "partially_refunded",
+          amount: amounts[1],
+          currency: "USD",
+        },
       }),
     ).toBe("revoked");
     const after = await entitlement(MID);
@@ -1417,5 +1475,63 @@ d("rebill apply", () => {
       "select status from public.subscriptions where provider_subscription_id = 'sub_legacy'",
     );
     expect(sub[0]?.status).toBe("canceled");
+  });
+
+  it("does not flip a past_due subscription to active when a later slice is refunded", async () => {
+    const first = await checkout(PASTDUE, "pro_monthly", "pl_pastduea");
+    expect(
+      await apply(
+        payment({
+          logId: "log_pastdue_1",
+          paymentId: "pay_pastduea",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_pastduea",
+          subscriptionId: "sub_pastdue",
+        }),
+      ),
+    ).toBe("applied");
+    const second = await checkout(PASTDUE, "pro_monthly", "pl_pastdueb");
+    expect(
+      await apply(
+        payment({
+          logId: "log_pastdue_2",
+          paymentId: "pay_pastdueb",
+          status: "approved",
+          amount: second.amount,
+          checkoutId: second.id,
+          linkId: "pl_pastdueb",
+          subscriptionId: "sub_pastdue",
+        }),
+      ),
+    ).toBe("applied");
+    expect(
+      await apply({
+        logId: "log_pastdue_mark",
+        event: "subscription.updated",
+        subscription: { id: "sub_pastdue", status: "paused", statusDetail: "defaulted" },
+      }),
+    ).toBe("subscription_updated");
+    const marked = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_pastdue'",
+    );
+    expect(marked[0]?.status).toBe("past_due");
+    expect(
+      await apply({
+        logId: "log_pastdue_refund",
+        event: "payment.updated",
+        payment: {
+          id: "pay_pastdueb",
+          status: "refunded",
+          amount: second.amount,
+          currency: "USD",
+        },
+      }),
+    ).toBe("revoked");
+    const sub = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_pastdue'",
+    );
+    expect(sub[0]?.status).toBe("past_due");
   });
 });

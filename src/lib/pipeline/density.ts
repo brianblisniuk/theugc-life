@@ -42,6 +42,7 @@ export interface DensityRow {
   stayStart: string | null;
   stayEnd: string | null;
   tripName: string | null;
+  tripId?: string | null;
   nextFollowupAt: string | null;
   lastActivityAt: string | null;
   deadlineLabel: string | null;

@@ -139,17 +139,25 @@ export function regenWeight(): number {
   return integerSetting(process.env.AI_REGEN_WEIGHT, AI_LIMITS.regenWeight, 2, 5);
 }
 
-/** Basis points. 1500 is 15%. Invalid input keeps 15%. Clamped to 1–50%. */
-export function poolPercentBps(raw: string | undefined = process.env.AI_GLOBAL_POOL_PERCENT): number {
-  if (raw === undefined || raw.trim() === "") return AI_LIMITS.poolPercent * 100;
+/**
+ * Basis points. 1500 is 15%. Unset, blank, or not a finite number stays at 15%.
+ * A finite number is clamped to 15–20% (D188).
+ */
+export function poolPercentBps(
+  raw: string | undefined = process.env.AI_GLOBAL_POOL_PERCENT,
+): number {
+  const fallback = AI_LIMITS.poolPercent * 100;
+  if (raw === undefined || raw.trim() === "") return fallback;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 50) return AI_LIMITS.poolPercent * 100;
-  return Math.round(parsed * 100);
+  if (!Number.isFinite(parsed)) return fallback;
+  const clamped = Math.min(20, Math.max(15, parsed));
+  return Math.round(clamped * 100);
 }
 
 /**
  * Unset, blank, or not a positive number means there is no floor.
- * The result is USD micros. The ceiling is $100,000.
+ * The result is USD micros. There is no $100,000 ceiling (D188).
+ * A value that is not a safe positive integer number of micros is not a floor.
  */
 export function readBudgetMicros(
   raw: string | undefined = process.env.ANTHROPIC_MONTHLY_BUDGET_USD,
@@ -158,7 +166,7 @@ export function readBudgetMicros(
   const dollars = Number(raw);
   if (!Number.isFinite(dollars) || dollars <= 0) return null;
   const micros = Math.round(dollars * 1_000_000);
-  if (micros <= 0 || micros > 100_000_000_000) return null;
+  if (!Number.isSafeInteger(micros) || micros <= 0) return null;
   return micros;
 }
 

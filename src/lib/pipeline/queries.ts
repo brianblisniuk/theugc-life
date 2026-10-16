@@ -66,6 +66,7 @@ export interface PipelineListItem {
   stayStart: string | null;
   stayEnd: string | null;
   tripName: string | null;
+  tripId: string | null;
   hotel: {
     id: string;
     name: string;
@@ -137,9 +138,24 @@ export type HotelOpportunityList =
 
 const DISPLAY_REF = /^OP-[1-9][0-9]{3,}$/;
 
+function mapHotelOpportunityRow(row: Record<string, unknown>): HotelOpportunityRow | null {
+  if (typeof row.id !== "string" || !isUuid(row.id)) return null;
+  if (typeof row.status !== "string") return null;
+  const displayRef = typeof row.display_ref === "string" ? row.display_ref : null;
+  return {
+    id: row.id,
+    displayRef: displayRef && DISPLAY_REF.test(displayRef) ? displayRef : null,
+    status: row.status as PipelineStatus,
+    stayStart: typeof row.stay_start === "string" ? row.stay_start : null,
+    stayEnd: typeof row.stay_end === "string" ? row.stay_end : null,
+    tripId: typeof row.trip_id === "string" && isUuid(row.trip_id) ? row.trip_id : null,
+  };
+}
+
 /**
  * Every pipeline row this creator has for one hotel, including closed.
  * RLS scopes the read. A display id that fails the OP- shape is omitted.
+ * The page is the oldest 50. A named id past that page is a separate read.
  */
 export async function listHotelOpportunities(
   hotelId: string,
@@ -157,20 +173,29 @@ export async function listHotelOpportunities(
   if (error) return { status: "error" };
   const opportunities: HotelOpportunityRow[] = [];
   for (const raw of data ?? []) {
-    const row = raw as Record<string, unknown>;
-    if (typeof row.id !== "string" || !isUuid(row.id)) continue;
-    if (typeof row.status !== "string") continue;
-    const displayRef = typeof row.display_ref === "string" ? row.display_ref : null;
-    opportunities.push({
-      id: row.id,
-      displayRef: displayRef && DISPLAY_REF.test(displayRef) ? displayRef : null,
-      status: row.status as PipelineStatus,
-      stayStart: typeof row.stay_start === "string" ? row.stay_start : null,
-      stayEnd: typeof row.stay_end === "string" ? row.stay_end : null,
-      tripId: typeof row.trip_id === "string" && isUuid(row.trip_id) ? row.trip_id : null,
-    });
+    const mapped = mapHotelOpportunityRow(raw as Record<string, unknown>);
+    if (mapped) opportunities.push(mapped);
   }
   return { status: "ok", opportunities };
+}
+
+/** One row by id, including a row older than the 50-row page. */
+export async function findHotelOpportunity(
+  hotelId: string,
+  opportunityId: string,
+  injectedClient?: PipelineQueryClient,
+): Promise<{ status: "ok"; row: HotelOpportunityRow | null } | { status: "error" }> {
+  if (!isUuid(hotelId) || !isUuid(opportunityId)) return { status: "ok", row: null };
+  const supabase = injectedClient ?? (await createClient());
+  const { data, error } = await supabase
+    .from("pipeline_items")
+    .select("id, display_ref, status, stay_start, stay_end, trip_id")
+    .eq("hotel_id", hotelId)
+    .eq("id", opportunityId)
+    .maybeSingle();
+  if (error) return { status: "error" };
+  if (!data || typeof data !== "object") return { status: "ok", row: null };
+  return { status: "ok", row: mapHotelOpportunityRow(data as Record<string, unknown>) };
 }
 
 /** One page of the creator's pipeline. 50 keeps the page useful without paging forever. */
@@ -207,10 +232,10 @@ export interface PipelineRankAuth {
 }
 
 const RANK_SELECT =
-  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip_id, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
 
 const SELECT_COLUMNS =
-  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip_id, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
 
 /**
  * Normalize a `?page=` value. Anything that is not a positive whole number —
@@ -254,6 +279,7 @@ function mapPipelineRow(raw: unknown): PipelineListItem & { destinationId: strin
     stayStart: typeof row.stay_start === "string" ? row.stay_start : null,
     stayEnd: typeof row.stay_end === "string" ? row.stay_end : null,
     tripName: typeof trip?.name === "string" ? trip.name : null,
+    tripId: typeof row.trip_id === "string" && isUuid(row.trip_id) ? row.trip_id : null,
     savedAt: (row.saved_at as string | null) ?? null,
     lastActivityAt: (row.last_activity_at as string | null) ?? null,
     nextFollowupAt: (row.next_followup_at as string | null) ?? null,

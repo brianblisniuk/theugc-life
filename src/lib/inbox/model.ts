@@ -14,7 +14,7 @@ import {
   type MachineThreadState,
 } from "@/lib/inbox-pipeline/contract";
 import { pipelineStageLabel, pipelineStatusLabel } from "@/lib/pipeline/types";
-import { hotelHref, pitchHref } from "@/lib/shell/navigation";
+import { hotelHref, pitchHref, withOpportunityQuery } from "@/lib/shell/navigation";
 import { REVOKED_INBOX_COPY } from "@/lib/surfaces/list-outcome";
 import {
   COLLABORATION_SUGGESTION_KINDS,
@@ -115,6 +115,7 @@ export interface InboxThreadRow {
   stale: boolean;
   hasHumanReply: boolean;
   hasRedirect: boolean;
+  tripId: string | null;
 }
 
 export interface InboxDateRow {
@@ -447,6 +448,7 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
     }
     const suggestions = suggestionsByItem.get(row.pipelineItemId) ?? [];
     const collaborationIds = collaborationsByItem.get(row.pipelineItemId) ?? [];
+    const pipelineBase = hotelHref(row.hotelId, { kind: "pipeline" });
     const attention = threadAttention({
       status: row.status,
       stale: row.stale,
@@ -466,8 +468,10 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
       attention,
       attentionLabel: attentionLabel(attention, row.status),
       source: "gmail",
-      pitchHref: pitchHref(row.hotelId, null, { kind: "inbox" }),
-      pipelineHref: hotelHref(row.hotelId, { kind: "pipeline" }),
+      pitchHref: pitchHref(row.hotelId, row.tripId, { kind: "inbox" }, row.pipelineItemId),
+      pipelineHref: pipelineBase
+        ? withOpportunityQuery(pipelineBase, row.pipelineItemId, row.tripId)
+        : null,
       stale: row.stale,
       suggestions,
       collaborationIds,

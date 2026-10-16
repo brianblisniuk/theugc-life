@@ -40,6 +40,7 @@ export function toDensityRow(item: PipelineListItem): DensityRow {
     stayStart: item.stayStart,
     stayEnd: item.stayEnd,
     tripName: item.tripName,
+    tripId: item.tripId,
     nextFollowupAt: item.nextFollowupAt,
     lastActivityAt: item.lastActivityAt,
     deadlineLabel: item.deadlineLabel ?? null,
@@ -233,10 +234,16 @@ function OpportunityCard({
   const ref = shownDisplayRef(row.displayRef);
   const context = contextLine(row);
   const links = pipelineRowLinks(
-    { status: row.status, hotelId: row.hotelId, hotelName: row.hotelName },
+    {
+      status: row.status,
+      hotelId: row.hotelId,
+      hotelName: row.hotelName,
+      id: row.id,
+      tripId: row.tripId,
+    },
     surface,
   );
-  const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id) : null;
+  const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id, row.tripId) : null;
   return (
     <article className="v12-deal">
       <h3>{row.hotelName}</h3>
@@ -458,6 +465,6 @@ export function attentionFromRows(input: {
     deadlines: input.deadlines,
     deadlineRead: input.deadlineRead,
     asOf: input.asOf,
-    hrefFor: (row) => (row.hotelId ? opportunityPitchHref(row.hotelId, row.id) : null),
+    hrefFor: (row) => (row.hotelId ? opportunityPitchHref(row.hotelId, row.id, row.tripId) : null),
   });
 }

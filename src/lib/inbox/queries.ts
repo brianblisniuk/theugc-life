@@ -60,7 +60,7 @@ type InboxQueryChain = {
 
 const PROFILE_COLUMNS = "id, user_id, display_name";
 const BINDING_COLUMNS =
-  "id, creator_id, pipeline_item_id, updated_at, pipeline_item:pipeline_items(id, creator_id, status, display_ref, hotel_id, hotel:hotels(id, name))";
+  "id, creator_id, pipeline_item_id, updated_at, pipeline_item:pipeline_items(id, creator_id, status, display_ref, hotel_id, trip_id, hotel:hotels(id, name))";
 const READING_COLUMNS =
   "binding_id, creator_id, commercial_state, stale, has_human_reply, has_redirect, has_rejection";
 const SUGGESTION_COLUMNS = "id, creator_id, pipeline_item_id, kind, applies_crm, status";
@@ -120,6 +120,7 @@ function mapThreads(
     const displayRef = typeof item.display_ref === "string" ? item.display_ref : null;
     const bindingId = typeof row.id === "string" ? row.id : "";
     const pipelineItemId = typeof row.pipeline_item_id === "string" ? row.pipeline_item_id : "";
+    const tripId = typeof item.trip_id === "string" && isUuid(item.trip_id) ? item.trip_id : null;
     const updatedAt = typeof row.updated_at === "string" ? row.updated_at : "";
     if (!name || !isUuid(hotelId) || !isUuid(bindingId) || !isUuid(pipelineItemId)) return null;
     const reading = readingByBinding.get(bindingId) ?? null;
@@ -157,6 +158,7 @@ function mapThreads(
       stale,
       hasHumanReply,
       hasRedirect,
+      tripId,
     });
   }
   return { foreign: false, threads };

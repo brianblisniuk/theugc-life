@@ -14,6 +14,10 @@ const migration = readFileSync(
   path.join(process.cwd(), "supabase/migrations/0098_pitch_draft_opportunity.sql"),
   "utf8",
 );
+const guards = readFileSync(
+  path.join(process.cwd(), "supabase/migrations/0099_pitch_opportunity_guards.sql"),
+  "utf8",
+);
 
 describe("pitch draft opportunity migration", () => {
   it("assigns a draft only when one open opportunity exists", () => {
@@ -22,6 +26,25 @@ describe("pitch draft opportunity migration", () => {
     expect(migration).toMatch(/pitch draft opportunity cannot change/);
     expect(migration).toMatch(/same creator and hotel/);
     expect(migration).not.toMatch(/order by updated_at[\s\S]{0,80}limit 1/i);
+    expect(guards).toMatch(/old\.pipeline_item_id is not null/);
+    expect(guards).toMatch(/new\.pipeline_item_id is distinct from old\.pipeline_item_id/);
+    expect(guards).not.toMatch(
+      /old\.pipeline_item_id is not null\s+and new\.pipeline_item_id is not null/,
+    );
+    expect(guards).toMatch(/v_open_count > 1/);
+    expect(guards).toMatch(/for update/);
+    expect(guards).toMatch(/case when stats\.n = 1 then stats\.only_id/);
+    expect(guards).toMatch(/d\.pipeline_item_id is distinct from p_pipeline_item_id/);
+    expect(guards).toMatch(/'result', 'invalid_input'/);
+    expect(guards).not.toMatch(/status <> 'closed'\s+limit 1/);
+    expect(guards).toMatch(/pitch_drafts_one_current_opportunity_idx/);
+    expect(guards).toMatch(
+      /unique index pitch_drafts_one_current_opportunity_idx[\s\S]*where pipeline_item_id is not null/,
+    );
+    expect(guards).toMatch(/row_number\(\) over/);
+    expect(guards).toMatch(/where n > 1/);
+    expect(guards).toMatch(/on delete cascade/);
+    expect(guards).not.toMatch(/on delete set null/);
   });
 });
 
@@ -137,6 +160,17 @@ d("pitch draft stays on its opportunity", () => {
     );
     expect(kept[0]?.pipeline_item_id).toBe(only[0]!.id);
 
+    const unbound = adminQuery(
+      "update public.pitch_drafts set pipeline_item_id = null where id = $1",
+      [draft[0]!.id],
+    );
+    await expect(unbound).rejects.toMatchObject({ code: "23514" });
+    const stillBound = await adminQuery<{ pipeline_item_id: string }>(
+      "select pipeline_item_id from public.pitch_drafts where id = $1",
+      [draft[0]!.id],
+    );
+    expect(stillBound[0]?.pipeline_item_id).toBe(only[0]!.id);
+
     const foreign = await adminQuery<{ id: string }>(
       `insert into public.pipeline_items (creator_id, hotel_id, status)
        values ($1, $2, 'saved') returning id`,
@@ -148,5 +182,19 @@ d("pitch draft stays on its opportunity", () => {
       [creatorA, HOTEL, foreign[0]!.id],
     );
     await expect(stolen).rejects.toMatchObject({ code: "23514" });
+
+    const secondDraft = adminQuery(
+      `insert into public.pitch_drafts (creator_id, hotel_id, pipeline_item_id, subject, body)
+       values ($1, $2, $3, 'Again', 'One draft already exists')`,
+      [creatorA, HOTEL, only[0]!.id],
+    );
+    await expect(secondDraft).rejects.toMatchObject({ code: "23505" });
+
+    await adminQuery("delete from public.pipeline_items where id = $1", [only[0]!.id]);
+    const removed = await adminQuery<{ id: string }>(
+      "select id from public.pitch_drafts where id = $1",
+      [draft[0]!.id],
+    );
+    expect(removed).toEqual([]);
   });
 });

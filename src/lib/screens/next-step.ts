@@ -19,6 +19,8 @@ import {
 export type RelationshipFact =
   | { status: "none" }
   | { status: "error" }
+  | { status: "not_open" }
+  | { status: "choose" }
   | { status: "open"; stage: PipelineStatus };
 
 export type ContactFact = "locked" | "ready" | "empty" | "error";
@@ -111,6 +113,32 @@ export function nextStep(input: {
     creditsUnknown: credits.creditsUnknown,
     outOfCredits: null as string | null,
   };
+
+  if (input.relationship.status === "choose") {
+    return {
+      ...base,
+      kind: "relationship_unknown",
+      title: "Choose an opportunity",
+      primaryLabel: "See opportunities",
+      primaryHref: "#work",
+      primaryDisabled: false,
+      offerSave: false,
+      note: "More than one opportunity is open. This page did not pick one.",
+    };
+  }
+
+  if (input.relationship.status === "not_open") {
+    return {
+      ...base,
+      kind: "relationship_unknown",
+      title: "That opportunity isn’t open",
+      primaryLabel: "See opportunities",
+      primaryHref: "#work",
+      primaryDisabled: false,
+      offerSave: false,
+      note: "This link names an opportunity that isn’t open. Another open opportunity was not used.",
+    };
+  }
 
   if (input.relationship.status === "error") {
     return {

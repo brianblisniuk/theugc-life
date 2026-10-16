@@ -9,6 +9,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { completeClaude } from "@/lib/ai/claude.server";
 import { composePitch, tokenLog, type ComposeDeps } from "@/lib/ai/compose.server";
+import {
+  AI_ACCOUNT_PAUSED_COPY,
+  AI_FOLLOW_UP_PAUSED_COPY,
+  AI_FOLLOW_UP_UNAVAILABLE_COPY,
+  AI_UNAVAILABLE_COPY,
+} from "@/lib/ai/copy";
+import { SUPPORT_EMAIL } from "@/lib/support";
 import { briefLooksLikeInjection } from "@/lib/ai/injection";
 import {
   AI_LIMITS,
@@ -143,7 +150,13 @@ describe("assistant limits", () => {
     expect(userBudgetMicros("pro")).toBe(5_000_000);
     expect(userBudgetMicros("max")).toBe(15_000_000);
     expect(poolPercentBps("15")).toBe(1500);
+    expect(poolPercentBps("20")).toBe(2000);
+    expect(poolPercentBps("17.5")).toBe(1750);
+    expect(poolPercentBps("10")).toBe(1500);
+    expect(poolPercentBps("50")).toBe(2000);
     expect(poolPercentBps("nope")).toBe(1500);
+    expect(readBudgetMicros("100001")).toBe(100_001_000_000);
+    expect(readBudgetMicros("250000")).toBe(250_000_000_000);
     expect(costMicros(1_000_000, 1_000_000)).toBe(12_000_000);
     expect(resolveAssistantModel("pro")).toEqual({
       provider: "anthropic",
@@ -158,7 +171,9 @@ describe("structured brief and post-check", () => {
     expect(
       parsePitchBrief({ tone: "warm", language: "Spanish", keyPoints: ["A June stay"] }).ok,
     ).toBe(true);
-    expect(parsePitchBrief({ tone: "poem", language: "Spanish", keyPoints: ["A June stay"] })).toMatchObject({
+    expect(
+      parsePitchBrief({ tone: "poem", language: "Spanish", keyPoints: ["A June stay"] }),
+    ).toMatchObject({
       ok: false,
     });
     expect(
@@ -393,7 +408,7 @@ describe("compose", () => {
     expect((await composePitch(poor)).status).toBe("out_of_credits");
     expect(poor.calls.complete).toBe(0);
     const paused = deps({ apiKey: null });
-    expect((await composePitch(paused)).status).toBe("paused");
+    expect((await composePitch(paused)).status).toBe("unavailable");
     expect(paused.calls.complete).toBe(0);
     const limited = deps({ prepare: async () => "budget" });
     expect((await composePitch(limited)).status).toBe("monthly_limit");
@@ -451,10 +466,46 @@ describe("compose", () => {
   it("refuses before the provider when the monthly budget is unset", async () => {
     delete process.env.ANTHROPIC_MONTHLY_BUDGET_USD;
     const draft = deps({ apiKey: "test-key-value" });
-    expect((await composePitch(draft)).status).toBe("paused");
+    expect((await composePitch(draft)).status).toBe("unavailable");
     expect(draft.calls.complete).toBe(0);
     expect(draft.calls.finish).toBe(0);
     expect(draft.calls.charge).toBe(0);
+  });
+
+  it("keeps the support pause for a real pause and records billed tokens on failure", async () => {
+    process.env.ANTHROPIC_MONTHLY_BUDGET_USD = "25";
+    const account = deps({ prepare: async () => "paused" });
+    expect((await composePitch(account)).status).toBe("paused");
+    expect(account.calls.complete).toBe(0);
+
+    const costs: number[] = [];
+    const billed = deps({
+      complete: async () => {
+        billed.calls.complete += 1;
+        return { ok: false, status: "http", inputTokens: 3, outputTokens: 1 };
+      },
+      finish: async (input) => {
+        billed.calls.finish += 1;
+        costs.push(input.costMicros);
+      },
+    });
+    expect((await composePitch(billed)).status).toBe("error");
+    expect(billed.calls.charge).toBe(0);
+    expect(costs).toEqual([costMicros(3, 1)]);
+
+    const none = deps({
+      complete: async () => {
+        none.calls.complete += 1;
+        return { ok: false, status: "timeout", inputTokens: 0, outputTokens: 0 };
+      },
+      finish: async (input) => {
+        none.calls.finish += 1;
+        costs.push(input.costMicros);
+      },
+    });
+    expect((await composePitch(none)).status).toBe("error");
+    expect(costs[1]).toBe(0);
+    expect(costs[0]).not.toBe(costs[1]);
   });
 
   it("refuses before the provider when the global pool is exhausted", async () => {
@@ -506,6 +557,22 @@ describe("assistant source", () => {
     expect(readFileSync(path.join(ROOT, "src/lib/ai/claude.server.ts"), "utf8")).not.toContain(
       "console.",
     );
+    const composer = readFileSync(path.join(ROOT, "src/components/pitch/composer.tsx"), "utf8");
+    const followUp = readFileSync(
+      path.join(ROOT, "src/components/pitch/follow-up-panel.tsx"),
+      "utf8",
+    );
+    expect(AI_UNAVAILABLE_COPY).not.toContain(SUPPORT_EMAIL);
+    expect(AI_UNAVAILABLE_COPY).not.toContain("paused on this account");
+    expect(AI_FOLLOW_UP_UNAVAILABLE_COPY).not.toContain(SUPPORT_EMAIL);
+    expect(AI_ACCOUNT_PAUSED_COPY).toContain(SUPPORT_EMAIL);
+    expect(AI_FOLLOW_UP_PAUSED_COPY).toContain(SUPPORT_EMAIL);
+    expect(composer).toContain("AI_UNAVAILABLE_COPY");
+    expect(composer).toContain("AI_ACCOUNT_PAUSED_COPY");
+    expect(composer).toContain('result.result === "unavailable"');
+    expect(composer).toContain('result.result === "paused"');
+    expect(followUp).toContain("AI_FOLLOW_UP_UNAVAILABLE_COPY");
+    expect(followUp).toContain("AI_FOLLOW_UP_PAUSED_COPY");
     const usage = readFileSync(
       path.join(ROOT, "supabase/migrations/0082_ai_assistant.sql"),
       "utf8",
@@ -515,5 +582,16 @@ describe("assistant source", () => {
       usage.indexOf("comment on table public.ai_usage"),
     );
     expect(table).not.toMatch(/prompt|completion|decoded_text|plain_text/);
+  });
+
+  it("updates the opportunity draft instead of inserting a second one", () => {
+    const source = readFileSync(path.join(ROOT, "src/lib/ai/actions.ts"), "utf8");
+    expect(source).toContain("resolveOpportunityDraftWrite");
+    expect(source).toContain(".update(draftFields)");
+    const pitchBranch = source.slice(source.indexOf('if (purpose === "follow_up")'));
+    const updateAt = pitchBranch.indexOf(".update(draftFields)");
+    const insertAt = pitchBranch.indexOf(".insert(");
+    expect(updateAt).toBeGreaterThan(0);
+    expect(insertAt).toBeGreaterThan(updateAt);
   });
 });
