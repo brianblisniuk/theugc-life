@@ -22,8 +22,10 @@ import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { isSystemTemplateKey, omissionNote } from "@/lib/pitch/contract";
 import {
+  assignOpportunity,
   draftScopeNote,
   portfolioLine,
+  readOpportunityParam,
   recipientLine,
   reviewChecks,
   shownDisplayRef,
@@ -33,7 +35,7 @@ import { pipelineStatusLabel } from "@/lib/pipeline/types";
 import { createPitchPersonalizer } from "@/lib/pitch/personalizer";
 import { loadPitchContext } from "@/lib/pitch/queries";
 import { loadHotelFollowUps } from "@/lib/gmail/followup/queries";
-import { hotelCrumbs, hotelHref, parseHotelOrigin } from "@/lib/shell/navigation";
+import { applyHotelOrigin, hotelCrumbs, hotelHref, parseHotelOrigin } from "@/lib/shell/navigation";
 
 export const metadata: Metadata = { title: "Pitch" };
 
@@ -71,7 +73,7 @@ export default async function HotelPitchPage({
   const requestedTrip = first(raw.trip);
   const fresh = first(raw.fresh) === "1";
   const templateParam = first(raw.template);
-  const requestedItem = first(raw.item);
+  const requestedItem = readOpportunityParam(first(raw.opportunity), first(raw.item));
 
   const assistant = await loadAssistantChrome();
   const budget =
@@ -153,11 +155,12 @@ export default async function HotelPitchPage({
   });
 
   const suggestionParams = new URLSearchParams();
-  if (tripId) suggestionParams.set("trip", tripId);
+  applyHotelOrigin(suggestionParams, origin);
+  if (tripId && origin.kind !== "trip") suggestionParams.set("trip", tripId);
   suggestionParams.set("fresh", "1");
   if (explicitSystem) suggestionParams.set("template", explicitSystem);
   if (creatorTemplate) suggestionParams.set("template", creatorTemplate.id);
-  if (context.selectedOpportunity) suggestionParams.set("item", context.selectedOpportunity.id);
+  assignOpportunity(suggestionParams, context.selectedOpportunity?.id ?? null);
 
   const selectedTrip = context.trips.find((trip) => trip.id === tripId) ?? null;
   const stay = travelWindow({
@@ -182,7 +185,8 @@ export default async function HotelPitchPage({
           { label: hotel.name, href: back ?? undefined },
           { label: "Pitch" },
         ]}
-        description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched. AI drafts use the same Claude path, budget, and rate limit. This page does not send mail by itself."
+        back={back ? { href: back, label: hotel.name } : null}
+        description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched. AI drafts use the same Claude path, budget, and rate limit."
       />
       {context.opportunityChoice === "missing" ? (
         <EmptyState
@@ -193,15 +197,15 @@ export default async function HotelPitchPage({
         <section className="space-y-3" aria-label="Choose an opportunity">
           <h2 className="text-lg font-semibold text-text">Choose the opportunity</h2>
           <p className="max-w-prose text-sm text-muted">
-            This hotel has more than one open opportunity. The draft is saved for the hotel, not for
-            one of them, until you pick which context to review.
+            This hotel has more than one open opportunity. Open one to see its draft. Saving here
+            does not replace another opportunity.
           </p>
           <ul className="space-y-2">
             {context.opportunities.map((opportunity) => {
               const params = new URLSearchParams();
-              if (tripId) params.set("trip", tripId);
-              params.set("item", opportunity.id);
-              params.set("from", "pipeline");
+              applyHotelOrigin(params, origin);
+              if (tripId && origin.kind !== "trip") params.set("trip", tripId);
+              assignOpportunity(params, opportunity.id);
               const ref = shownDisplayRef(opportunity.displayRef);
               return (
                 <li key={opportunity.id} className="v12-card px-4 py-3">
@@ -282,8 +286,9 @@ export default async function HotelPitchPage({
             })}
             {context.templates.map((template) => {
               const params = new URLSearchParams();
-              if (tripId) params.set("trip", tripId);
-              if (context.selectedOpportunity) params.set("item", context.selectedOpportunity.id);
+              applyHotelOrigin(params, origin);
+              if (tripId && origin.kind !== "trip") params.set("trip", tripId);
+              assignOpportunity(params, context.selectedOpportunity?.id ?? null);
               params.set("template", template.id);
               params.set("fresh", "1");
               return (

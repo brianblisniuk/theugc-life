@@ -267,7 +267,13 @@ export default async function HotelDetailPage({
       ? await loadBillingAccess(session.session.userId)
       : ({ status: "error" } as const);
   const plan = session.status === "authenticated" ? planChipFromAccess(billing) : null;
-  const pitch = pitchHref(hotel.id) ?? "#work";
+  const pitch =
+    pitchHref(
+      hotel.id,
+      origin.kind === "trip" ? origin.tripId : null,
+      origin,
+      relationship.status === "open" ? relationship.relationship.pipelineItemId : null,
+    ) ?? "#work";
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,
@@ -285,195 +291,212 @@ export default async function HotelDetailPage({
   return (
     <div className="ux-hotel">
       <div className="ux-hotel-main">
-      <AnalyticsPageView event="hotel_viewed" />
+        <AnalyticsPageView event="hotel_viewed" />
 
-      <header className="ux-stack" id="overview">
-        <p className="ux-eyebrow">Hotel information</p>
-        <nav className="ux-wrap ux-meta" aria-label="Breadcrumb">
-          {trail.map((crumb, index) =>
-            crumb.href ? (
-              <a key={crumb.href} href={crumb.href}>
-                {crumb.label}
-                {index < trail.length - 1 ? <span aria-hidden="true"> / </span> : null}
-              </a>
-            ) : (
-              <span key={crumb.label} aria-current="page">
-                {crumb.label}
-              </span>
-            ),
-          )}
-        </nav>
-        <h1 className="ux-h1">{hotel.name}</h1>
-        {location || type ? <p className="ux-lede">{[location, type].filter(Boolean).join(" · ")}</p> : null}
-        <div className="ux-hero" id="identity">
-          <strong>{initials}</strong>
-          <span>No verified photograph on file.</span>
-          <span className="sr-only">No photograph</span>
-        </div>
-        <div className="ux-wrap">
-          {classification ? <span className="ux-tag">{classification}</span> : null}
-          <VerificationBadge status={hotel.verificationStatus} />
-          {hotel.activeStatus === "active" ? <span className="ux-tag">Open</span> : null}
-          {statusNote ? <span className="ux-tag ux-tag-warning">{statusNote}</span> : null}
-        </div>
-        {hotel.address ? <p className="ux-meta">{hotel.address}</p> : null}
-        <div className="ux-wrap">
-          {hotel.websiteUrl ? (
-            <a className="ux-meta" href={hotel.websiteUrl} target="_blank" rel="noreferrer noopener">
-              Website
-            </a>
-          ) : null}
-          {hotel.instagramUrl ? (
-            <a className="ux-meta" href={hotel.instagramUrl} target="_blank" rel="noreferrer noopener">
-              Instagram
-            </a>
-          ) : null}
-        </div>
-        {firstHotelNotice && relationship.status === "open" ? (
-          <p className="ux-notice" role="status">
-            {FIRST_RUN_COPY.savedToast}
-          </p>
-        ) : null}
-      </header>
-      <HotelSectionNav />
-
-      <div id="map" className="scroll-mt-24">
-        <HotelMap pins={[loaded.mapPin]} variant="section" />
-      </div>
-
-      {/* 2. Creator intelligence — public layer, then the premium layer */}
-      <section className="ux-stack" id="intelligence">
-        <div className="ux-results">
-          <div className="ux-stack-sm">
-            <p className="ux-eyebrow">Creator network</p>
-            <h2 className="ux-name">Creator intelligence</h2>
-            <p className="ux-meta">Signals based on confirmed creator activity.</p>
-          </div>
-          <Methodology />
-        </div>
-        <MetricCells signals={metricSignals} strength={strength} />
-        <IntelligencePanel result={intelligence} />
-        <PremiumIntelligencePanel state={premiumState} result={premium} />
-        <NetworkIntelligencePanel
-          hotelId={hotel.id}
-          network={network}
-          rank={rank}
-          prioritized={prioritized}
-        />
-        <PersonalFacts load={ownFacts} />
-        <RankingBoards destinationName={hotel.destination?.name ?? null} rankings={metricRankings} />
-        <DecisionIntelligence
-          hotelId={hotel.id}
-          strength={strength}
-          personal={personal}
-          fit={fit}
-          decision={fitDecision}
-        />
-      </section>
-
-      {/* 3. Premium contact */}
-      <Section id="contact" title="Hotel contact">
-        {contactState === "contacts" ? (
-          <div className="space-y-4">
-            {via === "unlock" ? (
-              <p className="text-sm font-semibold text-text">Already unlocked</p>
-            ) : null}
-            <div className="grid gap-4 md:grid-cols-2">
-              {contacts.map((contact) => (
-                <ContactCard key={contact.id} contact={contact} />
-              ))}
-            </div>
-            {contacts.length === 0 && cacheEmail ? (
-              <p className="text-sm text-text">
-                <a className="underline" href={`mailto:${cacheEmail}`}>
-                  {cacheEmail}
+        <header className="ux-stack" id="overview">
+          <p className="ux-eyebrow">Hotel information</p>
+          <nav className="ux-wrap ux-meta" aria-label="Breadcrumb">
+            {trail.map((crumb, index) =>
+              crumb.href ? (
+                <a key={crumb.href} href={crumb.href}>
+                  {crumb.label}
+                  {index < trail.length - 1 ? <span aria-hidden="true"> / </span> : null}
                 </a>
-              </p>
-            ) : null}
-            {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
+              ) : (
+                <span key={crumb.label} aria-current="page">
+                  {crumb.label}
+                </span>
+              ),
+            )}
+          </nav>
+          <h1 className="ux-h1">{hotel.name}</h1>
+          {location || type ? (
+            <p className="ux-lede">{[location, type].filter(Boolean).join(" · ")}</p>
+          ) : null}
+          <div className="ux-hero" id="identity">
+            <strong>{initials}</strong>
+            <span>No verified photograph on file.</span>
+            <span className="sr-only">No photograph</span>
           </div>
-        ) : contactState === "locked" ? (
-          <div className="space-y-4">
-            <UnlockContact
+          <div className="ux-wrap">
+            {classification ? <span className="ux-tag">{classification}</span> : null}
+            <VerificationBadge status={hotel.verificationStatus} />
+            {hotel.activeStatus === "active" ? <span className="ux-tag">Open</span> : null}
+            {statusNote ? <span className="ux-tag ux-tag-warning">{statusNote}</span> : null}
+          </div>
+          {hotel.address ? <p className="ux-meta">{hotel.address}</p> : null}
+          <div className="ux-wrap">
+            {hotel.websiteUrl ? (
+              <a
+                className="ux-meta"
+                href={hotel.websiteUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Website
+              </a>
+            ) : null}
+            {hotel.instagramUrl ? (
+              <a
+                className="ux-meta"
+                href={hotel.instagramUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Instagram
+              </a>
+            ) : null}
+          </div>
+          {firstHotelNotice && relationship.status === "open" ? (
+            <p className="ux-notice" role="status">
+              {FIRST_RUN_COPY.savedToast}
+            </p>
+          ) : null}
+        </header>
+        <HotelSectionNav />
+
+        <div id="map" className="scroll-mt-24">
+          <HotelMap pins={[loaded.mapPin]} variant="section" />
+        </div>
+
+        {/* 2. Creator intelligence — public layer, then the premium layer */}
+        <section className="ux-stack" id="intelligence">
+          <div className="ux-results">
+            <div className="ux-stack-sm">
+              <p className="ux-eyebrow">Creator network</p>
+              <h2 className="ux-name">Creator intelligence</h2>
+              <p className="ux-meta">Signals based on confirmed creator activity.</p>
+            </div>
+            <Methodology />
+          </div>
+          <MetricCells signals={metricSignals} strength={strength} />
+          <IntelligencePanel result={intelligence} />
+          <PremiumIntelligencePanel state={premiumState} result={premium} />
+          <NetworkIntelligencePanel
+            hotelId={hotel.id}
+            network={network}
+            rank={rank}
+            prioritized={prioritized}
+          />
+          <PersonalFacts load={ownFacts} />
+          <RankingBoards
+            destinationName={hotel.destination?.name ?? null}
+            rankings={metricRankings}
+          />
+          <DecisionIntelligence
+            hotelId={hotel.id}
+            strength={strength}
+            personal={personal}
+            fit={fit}
+            decision={fitDecision}
+          />
+        </section>
+
+        {/* 3. Premium contact */}
+        <Section id="contact" title="Hotel contact">
+          {contactState === "contacts" ? (
+            <div className="space-y-4">
+              {via === "unlock" ? (
+                <p className="text-sm font-semibold text-text">Already unlocked</p>
+              ) : null}
+              <div className="grid gap-4 md:grid-cols-2">
+                {contacts.map((contact) => (
+                  <ContactCard key={contact.id} contact={contact} />
+                ))}
+              </div>
+              {contacts.length === 0 && cacheEmail ? (
+                <p className="text-sm text-text">
+                  <a className="underline" href={`mailto:${cacheEmail}`}>
+                    {cacheEmail}
+                  </a>
+                </p>
+              ) : null}
+              {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
+            </div>
+          ) : contactState === "locked" ? (
+            <div className="space-y-4">
+              <UnlockContact
+                hotelId={hotel.id}
+                unlocked={false}
+                balance={balance}
+                cost={cost}
+                showEmail
+              />
+            </div>
+          ) : contactState === "access-error" ? (
+            // The entitlement CHECK failed. We did not learn that this creator
+            // lacks access, so we must not imply it — no upgrade CTA here (F1).
+            <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+              <h3 className="text-base font-semibold text-text">
+                Contact access couldn&rsquo;t be checked
+              </h3>
+              <p className="mt-2 max-w-prose text-sm text-muted">
+                We couldn&rsquo;t verify your access right now. Reload the page to try again.
+              </p>
+            </div>
+          ) : contactState === "fetch-error" ? (
+            <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
+              <h3 className="text-base font-semibold text-text">{CONTACT_ERROR_TITLE}</h3>
+              <p className="mt-2 max-w-prose text-sm text-muted">{CONTACT_ERROR_BODY}</p>
+              <a className="ux-btn" href="">
+                Retry
+              </a>
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6">
+              {via === "unlock" ? (
+                <p className="text-sm font-semibold text-text">Already unlocked</p>
+              ) : null}
+              <h3 className="text-base font-semibold text-text">{NO_CONTACT_TITLE}</h3>
+              <p className="max-w-prose text-sm text-muted">
+                {via === "unlock"
+                  ? "This unlock did not return an email. Reporting it is how a courtesy credit starts."
+                  : "We haven’t published a verified contact for this hotel yet."}
+              </p>
+              {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
+            </div>
+          )}
+        </Section>
+
+        {/* 4. The creator's private relationship */}
+        <section className="ux-stack" id="work">
+          <p className="ux-eyebrow">Your history</p>
+          <h2 className="ux-name">Your work with this hotel</h2>
+          {relationship.status === "none" ? <p>{NO_RELATIONSHIP}</p> : null}
+          <PastCollaborations
+            load={pastCollaborations}
+            heading="Past collaborations with this hotel"
+            linkToHotel={false}
+            hideWhenEmpty
+          />
+          <ActivityPanel
+            hotelId={hotel.id}
+            relationship={relationship}
+            collaboration={collaboration}
+            workspace={workspace}
+            contracts={contracts}
+            inbox={inbox}
+            mailboxes={mailboxes}
+            gmailPrompt={gmailPrompt}
+            collaborationSuggestions={collaborationSuggestions}
+            pipelineHref={pipelineReturnHref(origin)}
+          />
+          <div id="trip" className="scroll-mt-24">
+            <AddToTrip
               hotelId={hotel.id}
-              unlocked={false}
-              balance={balance}
-              cost={cost}
-              showEmail
+              trips={tripChoices}
+              tripsLoad={trips.status === "ok" ? "ok" : "error"}
+              alreadyOn={alreadyOn}
             />
           </div>
-        ) : contactState === "access-error" ? (
-          // The entitlement CHECK failed. We did not learn that this creator
-          // lacks access, so we must not imply it — no upgrade CTA here (F1).
-          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            <h3 className="text-base font-semibold text-text">
-              Contact access couldn&rsquo;t be checked
-            </h3>
-            <p className="mt-2 max-w-prose text-sm text-muted">
-              We couldn&rsquo;t verify your access right now. Reload the page to try again.
-            </p>
-          </div>
-        ) : contactState === "fetch-error" ? (
-          <div className="rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            <h3 className="text-base font-semibold text-text">{CONTACT_ERROR_TITLE}</h3>
-            <p className="mt-2 max-w-prose text-sm text-muted">{CONTACT_ERROR_BODY}</p>
-            <a className="ux-btn" href="">
-              Retry
-            </a>
-          </div>
-        ) : (
-          <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6">
-            {via === "unlock" ? (
-              <p className="text-sm font-semibold text-text">Already unlocked</p>
-            ) : null}
-            <h3 className="text-base font-semibold text-text">{NO_CONTACT_TITLE}</h3>
-            <p className="max-w-prose text-sm text-muted">
-              {via === "unlock"
-                ? "This unlock did not return an email. Reporting it is how a courtesy credit starts."
-                : "We haven’t published a verified contact for this hotel yet."}
-            </p>
-            {via === "unlock" ? <ReportContact hotelId={hotel.id} /> : null}
-          </div>
-        )}
-      </Section>
-
-      {/* 4. The creator's private relationship */}
-      <section className="ux-stack" id="work">
-        <p className="ux-eyebrow">Your history</p>
-        <h2 className="ux-name">Your work with this hotel</h2>
-        {relationship.status === "none" ? <p>{NO_RELATIONSHIP}</p> : null}
-        <PastCollaborations
-          load={pastCollaborations}
-          heading="Past collaborations with this hotel"
-          linkToHotel={false}
-          hideWhenEmpty
-        />
-        <ActivityPanel
-          hotelId={hotel.id}
-          relationship={relationship}
-          collaboration={collaboration}
-          workspace={workspace}
-          contracts={contracts}
-          inbox={inbox}
-          mailboxes={mailboxes}
-          gmailPrompt={gmailPrompt}
-          collaborationSuggestions={collaborationSuggestions}
-          pipelineHref={pipelineReturnHref(origin)}
-        />
-        <div id="trip" className="scroll-mt-24">
-          <AddToTrip
-            hotelId={hotel.id}
-            trips={tripChoices}
-            tripsLoad={trips.status === "ok" ? "ok" : "error"}
-            alreadyOn={alreadyOn}
-          />
-        </div>
-      </section>
+        </section>
       </div>
       <NextStepPanel
         model={step}
         hotelId={hotel.id}
-        tripNote={plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null}
+        tripNote={
+          plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null
+        }
       />
     </div>
   );

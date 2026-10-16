@@ -105,6 +105,7 @@ export function PitchComposer({
     data.set("systemKey", systemKey ?? "");
     data.set("subject", subjectValue);
     data.set("body", bodyValue);
+    if (pipelineItemId) data.set("opportunityId", pipelineItemId);
     return data;
   }
 
@@ -177,7 +178,11 @@ export function PitchComposer({
     setPending(false);
   }
 
-  const returnTo = encodeURIComponent(`/app/hotels/${hotelId}/pitch`);
+  const returnTo = encodeURIComponent(
+    pipelineItemId
+      ? `/app/hotels/${hotelId}/pitch?opportunity=${pipelineItemId}`
+      : `/app/hotels/${hotelId}/pitch`,
+  );
   const connectHref = `/api/integrations/gmail/oauth/start?return_to=${returnTo}`;
   const allowSendHref = mailAccountId
     ? `/api/integrations/gmail/oauth/start?purpose=grant_send&mail_account_id=${mailAccountId}&return_to=${returnTo}`

@@ -107,15 +107,16 @@ export default async function PipelinePage({
   const state = pipelineListState({ failed, page: loaded, status, surface, rank, view });
   const unrankedHref = pipelinePageHref(status, 1, surface, null, view);
   const loadedItems: PipelineListItem[] = loaded?.items ?? [];
-  const contactEmails =
+  const contactRead =
     loadedItems.length > 0
       ? await readUnlockedContactEmails(
           loadedItems.flatMap((item) => (item.hotel?.id ? [item.hotel.id] : [])),
         )
-      : new Map<string, string>();
+      : { status: "ok" as const, emails: new Map<string, string>() };
   const items: PipelineListItem[] = loadedItems.map((item) => ({
     ...item,
-    contactEmail: pipelineContactEmail(item.hotel?.id, contactEmails),
+    contactEmail:
+      contactRead.status === "ok" ? pipelineContactEmail(item.hotel?.id, contactRead.emails) : null,
     deadlineLabel:
       deadlines.kind === "ok" && deadlines.indicators[item.id]
         ? DEADLINE_COPY[deadlines.indicators[item.id]!]
@@ -242,6 +243,7 @@ export default async function PipelinePage({
             view={view}
             asOf={asOf}
             counts={counts}
+            contactRead={contactRead.status}
             intelligence={intelligenceForCards}
           />
           {state.pagination ? <PipelinePagination state={state.pagination} /> : null}

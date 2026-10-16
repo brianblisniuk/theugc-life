@@ -68,6 +68,7 @@ export default async function PitchStudioPage() {
               lastActivityAt: item.lastActivityAt,
               deadlineLabel: null,
               contactEmail: null,
+              privateNotes: null,
               metricRank: null,
               metricValue: null,
               metricSample: null,

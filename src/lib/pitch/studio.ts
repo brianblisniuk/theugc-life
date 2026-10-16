@@ -2,7 +2,7 @@
  * Pitch Studio facts (V2-S3).
  *
  * The screen may only say what the caller already loaded. A missing stay is
- * not a trip date, and a hotel-level draft is not stored on one opportunity.
+ * not a trip date. A draft is shown only for the opportunity it is bound to.
  */
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -73,9 +73,47 @@ export function portfolioLine(title: string | null | undefined): string {
 
 export function draftScopeNote(openOpportunities: number): string | null {
   if (openOpportunities > 1) {
-    return "Drafts are saved for the hotel. This text is not stored on one opportunity.";
+    return "This draft is saved on the opportunity you picked. It does not replace another opportunity for this hotel.";
   }
   return null;
+}
+
+/** `opportunity` is the pitch-page id. `item` remains readable for older links. */
+export function readOpportunityParam(
+  opportunity: string | null | undefined,
+  legacyItem: string | null | undefined,
+): string | null {
+  const named = opportunity?.trim() || legacyItem?.trim() || "";
+  return named.length > 0 ? named : null;
+}
+
+export function assignOpportunity(params: URLSearchParams, opportunityId: string | null): void {
+  if (opportunityId) params.set("opportunity", opportunityId);
+  else params.delete("opportunity");
+  params.delete("item");
+}
+
+export interface BoundDraftRef {
+  id: string;
+  pipelineItemId: string | null;
+}
+
+/**
+ * The draft for this screen. A named opportunity never receives another
+ * opportunity's row, and an unbound hotel draft is not treated as belonging
+ * to one of several open opportunities.
+ */
+export function selectBoundDraft<T extends BoundDraftRef>(
+  drafts: readonly T[],
+  opportunityId: string | null,
+  choice: "none" | "one" | "many" | "selected" | "missing",
+): T | null {
+  if (choice === "many" || choice === "missing") return null;
+  if (choice === "selected" || choice === "one") {
+    if (!opportunityId) return null;
+    return drafts.find((draft) => draft.pipelineItemId === opportunityId) ?? null;
+  }
+  return drafts.find((draft) => draft.pipelineItemId === null) ?? null;
 }
 
 export interface ReviewCheck {

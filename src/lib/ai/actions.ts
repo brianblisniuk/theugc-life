@@ -139,6 +139,10 @@ async function draftAssistant(
     requestedPipelineItemId: readField(formData, "pipelineItemId") || null,
   });
   if (context.status !== "ok") return { result: "error" };
+  if (context.opportunityChoice === "many" || context.opportunityChoice === "missing") {
+    return { result: "invalid_input", message: "Choose one of your opportunities." };
+  }
+  const boundOpportunityId = context.selectedOpportunity?.id ?? null;
   const pipelineItemId = readField(formData, "pipelineItemId");
   if (pipelineItemId && !isUuid(pipelineItemId)) {
     return { result: "invalid_input", message: "Choose one of your opportunities." };
@@ -314,6 +318,7 @@ async function draftAssistant(
     .insert({
       hotel_id: hotelId,
       trip_id: tripId || null,
+      pipeline_item_id: boundOpportunityId,
       template_id: null,
       system_template_key: null,
       subject: outcome.subject,

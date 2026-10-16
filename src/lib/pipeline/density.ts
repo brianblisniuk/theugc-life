@@ -46,6 +46,7 @@ export interface DensityRow {
   lastActivityAt: string | null;
   deadlineLabel: string | null;
   contactEmail: string | null;
+  privateNotes: string | null;
   metricRank: number | null;
   metricValue: string | null;
   metricSample: string | null;
@@ -229,6 +230,41 @@ export function columnEmptyNote(pageCount: number, total: number | null): string
   if (total === null) return null;
   if (total > 0) return "On another page";
   return null;
+}
+
+export const COUNT_UNAVAILABLE = "Insufficient data";
+
+/** The lane number is the database count. A missing count is not zero and not the page length. */
+export function laneBadge(total: number | null | undefined): string {
+  if (typeof total !== "number" || !Number.isInteger(total) || total < 0) return COUNT_UNAVAILABLE;
+  return String(total);
+}
+
+export function followUpPresentation(
+  pageCount: number,
+  total: number | null | undefined,
+): { visible: false } | { visible: true; badge: string; note: string | null } {
+  const known = typeof total === "number" && Number.isInteger(total) && total >= 0;
+  if (!known) {
+    return {
+      visible: true,
+      badge: COUNT_UNAVAILABLE,
+      note: "We couldn’t count follow-up events. This is not zero.",
+    };
+  }
+  if (pageCount === 0 && total === 0) return { visible: false };
+  if (pageCount === 0) return { visible: true, badge: String(total), note: "On another page" };
+  return { visible: true, badge: String(total), note: null };
+}
+
+export type ContactLine =
+  { kind: "email"; email: string } | { kind: "none" } | { kind: "unavailable" };
+
+/** A failed unlock read is not “no email”. */
+export function contactLine(input: { read: "ok" | "error"; email: string | null }): ContactLine {
+  if (input.read === "error") return { kind: "unavailable" };
+  if (input.email && input.email.includes("@")) return { kind: "email", email: input.email };
+  return { kind: "none" };
 }
 
 export function rowsForStage(rows: readonly DensityRow[], status: string): DensityRow[] {

@@ -106,6 +106,7 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
     systemKey: readField(formData, "systemKey"),
     subject: readField(formData, "subject"),
     body: readField(formData, "body"),
+    opportunityId: readField(formData, "opportunityId"),
   });
   if (!parsed.ok) return { result: "invalid_input", message: parsed.message };
 
@@ -119,8 +120,16 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
     destinationName: hotel.hotel.destination?.name ?? null,
     requestedTripId: parsed.tripId,
     preferDraftTrip: false,
+    requestedPipelineItemId: parsed.opportunityId,
   });
   if (context.status !== "ok") return { result: "error" };
+  if (context.opportunityChoice === "many" || context.opportunityChoice === "missing") {
+    return { result: "invalid_input", message: "Choose one of your opportunities." };
+  }
+  const boundId = context.selectedOpportunity?.id ?? null;
+  if (parsed.opportunityId && boundId !== parsed.opportunityId) {
+    return { result: "invalid_input", message: "Choose one of your opportunities." };
+  }
   if (parsed.tripId && context.selectedTripId !== parsed.tripId) {
     return { result: "invalid_input", message: "Choose one of your trips." };
   }
@@ -144,6 +153,22 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
   try {
     const supabase = await createClient();
     if (parsed.draftId) {
+      const existing = await supabase
+        .from("pitch_drafts")
+        .select("id, pipeline_item_id")
+        .eq("id", parsed.draftId)
+        .eq("hotel_id", parsed.hotelId)
+        .maybeSingle();
+      if (existing.error) return { result: "error" };
+      if (!existing.data) return { result: "not_found" };
+      const current =
+        typeof existing.data.pipeline_item_id === "string" ? existing.data.pipeline_item_id : null;
+      if (current !== boundId) {
+        return {
+          result: "invalid_input",
+          message: "That draft belongs to a different opportunity.",
+        };
+      }
       const { data, error } = await supabase
         .from("pitch_drafts")
         .update(row)
@@ -157,7 +182,11 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
       return { result: "saved", draftId: parsed.draftId };
     }
 
-    const { data, error } = await supabase.from("pitch_drafts").insert(row).select("id").single();
+    const { data, error } = await supabase
+      .from("pitch_drafts")
+      .insert({ ...row, pipeline_item_id: boundId })
+      .select("id")
+      .single();
     if (error || !data?.id) return { result: "error" };
     revalidatePath(`/app/hotels/${parsed.hotelId}/pitch`);
     return { result: "saved", draftId: String(data.id) };

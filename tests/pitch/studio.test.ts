@@ -8,11 +8,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assignOpportunity,
   chooseOpportunity,
   draftScopeNote,
   portfolioLine,
+  readOpportunityParam,
   recipientLine,
   reviewChecks,
+  selectBoundDraft,
   travelWindow,
   type StudioOpportunity,
 } from "@/lib/pitch/studio";
@@ -52,6 +55,34 @@ describe("opportunity choice", () => {
   it("binds the only open opportunity", () => {
     expect(chooseOpportunity([FIRST], null)).toEqual({ choice: "one", selected: FIRST });
     expect(chooseOpportunity([], null).choice).toBe("none");
+  });
+});
+
+describe("opportunity query", () => {
+  it("honors opportunity and still reads the older item param", () => {
+    expect(readOpportunityParam(SECOND.id, FIRST.id)).toBe(SECOND.id);
+    expect(readOpportunityParam(null, FIRST.id)).toBe(FIRST.id);
+    expect(readOpportunityParam("  ", null)).toBeNull();
+    const params = new URLSearchParams("item=old&from=pipeline");
+    assignOpportunity(params, SECOND.id);
+    expect(params.get("opportunity")).toBe(SECOND.id);
+    expect(params.get("item")).toBeNull();
+    expect(params.get("from")).toBe("pipeline");
+  });
+});
+
+describe("draft binding", () => {
+  const draftA = { id: "draft-a", pipelineItemId: FIRST.id, body: "A text" };
+  const draftB = { id: "draft-b", pipelineItemId: SECOND.id, body: "B text" };
+  const unbound = { id: "draft-old", pipelineItemId: null, body: "hotel text" };
+
+  it("never shows or selects another opportunity's draft", () => {
+    expect(selectBoundDraft([draftB, draftA, unbound], SECOND.id, "selected")).toEqual(draftB);
+    expect(selectBoundDraft([draftA, unbound], SECOND.id, "selected")).toBeNull();
+    expect(selectBoundDraft([draftA, draftB, unbound], null, "many")).toBeNull();
+    expect(selectBoundDraft([unbound, draftA], null, "none")).toEqual(unbound);
+    expect(selectBoundDraft([draftA], FIRST.id, "one")).toEqual(draftA);
+    expect(selectBoundDraft([draftB], FIRST.id, "one")).toBeNull();
   });
 });
 
@@ -97,8 +128,8 @@ describe("recipient and portfolio", () => {
 });
 
 describe("draft scope and review", () => {
-  it("says a hotel draft is not an opportunity draft when two are open", () => {
-    expect(draftScopeNote(2)).toMatch(/not stored on one opportunity/);
+  it("says a picked opportunity keeps its own draft", () => {
+    expect(draftScopeNote(2)).toMatch(/does not replace another opportunity/);
     expect(draftScopeNote(1)).toBeNull();
   });
 

@@ -14,6 +14,10 @@ import {
   cardSignal,
   columnEmptyNote,
   commandSummary,
+  contactLine,
+  COUNT_UNAVAILABLE,
+  followUpPresentation,
+  laneBadge,
   contextLine,
   followUpRows,
   nextStep,
@@ -38,6 +42,7 @@ function row(patch: Partial<DensityRow> & Pick<DensityRow, "id" | "status">): De
     lastActivityAt: null,
     deadlineLabel: null,
     contactEmail: null,
+    privateNotes: null,
     metricRank: null,
     metricValue: null,
     metricSample: null,
@@ -138,6 +143,43 @@ describe("counts and empty columns", () => {
     expect(columnEmptyNote(0, 3)).toBe("On another page");
     expect(columnEmptyNote(1, 3)).toBeNull();
     expect(columnEmptyNote(0, 0)).toBeNull();
+  });
+
+  it("paints the database count, and a failed count is not the page length or zero", () => {
+    expect(laneBadge(12)).toBe("12");
+    expect(laneBadge(0)).toBe("0");
+    expect(laneBadge(null)).toBe(COUNT_UNAVAILABLE);
+    expect(laneBadge(undefined)).toBe(COUNT_UNAVAILABLE);
+    expect(laneBadge(-1)).toBe(COUNT_UNAVAILABLE);
+    expect(laneBadge(1.5)).toBe(COUNT_UNAVAILABLE);
+    expect(laneBadge(null)).not.toBe("0");
+    expect(laneBadge(null)).not.toBe("3");
+  });
+
+  it("keeps the follow-up strip when this page has none but the count does", () => {
+    expect(followUpPresentation(0, 4)).toEqual({
+      visible: true,
+      badge: "4",
+      note: "On another page",
+    });
+    const failed = followUpPresentation(0, null);
+    expect(failed.visible).toBe(true);
+    if (failed.visible) expect(failed.badge).toBe(COUNT_UNAVAILABLE);
+    expect(followUpPresentation(0, 0)).toEqual({ visible: false });
+    const shown = followUpPresentation(2, 9);
+    if (shown.visible) expect(shown.badge).toBe("9");
+  });
+});
+
+describe("unlocked email", () => {
+  it("does not describe a failed read as no email", () => {
+    expect(contactLine({ read: "error", email: null }).kind).toBe("unavailable");
+    expect(contactLine({ read: "error", email: "ada@hotel.test" }).kind).toBe("unavailable");
+    expect(contactLine({ read: "ok", email: null })).toEqual({ kind: "none" });
+    expect(contactLine({ read: "ok", email: "ada@hotel.test" })).toEqual({
+      kind: "email",
+      email: "ada@hotel.test",
+    });
   });
 });
 

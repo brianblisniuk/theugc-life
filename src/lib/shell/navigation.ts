@@ -206,6 +206,17 @@ export function isHotelSection(value: string): value is HotelSectionId {
   return HOTEL_SECTIONS.some((section) => section.id === value);
 }
 
+/** Writes the allowlisted origin onto a query. Discover adds nothing. */
+export function applyHotelOrigin(params: URLSearchParams, origin: HotelOrigin): void {
+  if (origin.kind === "pipeline") params.set("from", "pipeline");
+  else if (origin.kind === "inbox") params.set("from", "inbox");
+  else if (origin.kind === "collaboration") params.set("from", "collaboration");
+  else if (origin.kind === "trip") {
+    params.set("from", "trip");
+    params.set("trip", origin.tripId);
+  }
+}
+
 export function hotelHref(
   hotelId: string,
   origin: HotelOrigin,
@@ -214,13 +225,7 @@ export function hotelHref(
   if (!isUuid(hotelId)) return null;
   if (origin.kind === "trip" && !isUuid(origin.tripId)) return null;
   const params = new URLSearchParams();
-  if (origin.kind === "pipeline") params.set("from", "pipeline");
-  else if (origin.kind === "inbox") params.set("from", "inbox");
-  else if (origin.kind === "collaboration") params.set("from", "collaboration");
-  else if (origin.kind === "trip") {
-    params.set("from", "trip");
-    params.set("trip", origin.tripId);
-  }
+  applyHotelOrigin(params, origin);
   const query = params.toString();
   const path = `/app/hotels/${hotelId}${query ? `?${query}` : ""}`;
   return section ? `${path}#${section}` : path;
@@ -231,12 +236,29 @@ export function tripHotelHref(tripId: string, hotelId: string): string | null {
   return hotelHref(hotelId, { kind: "trip", tripId });
 }
 
-/** Pitch draft for one hotel. An optional trip must be a UUID. It does not authorize the read. */
-export function pitchHref(hotelId: string, tripId?: string | null): string | null {
+/**
+ * Pitch draft for one hotel. An optional trip must be a UUID. It does not
+ * authorize the read. A trip id with no explicit origin is a trip origin, so
+ * the trail can link that trip. Inbox and collaboration stay pipeline surfaces.
+ */
+export function pitchHref(
+  hotelId: string,
+  tripId?: string | null,
+  origin?: HotelOrigin,
+  opportunityId?: string | null,
+): string | null {
   if (!isUuid(hotelId)) return null;
   if (tripId && !isUuid(tripId)) return null;
+  const resolved: HotelOrigin =
+    origin ?? (tripId ? { kind: "trip", tripId } : { kind: "discover" });
+  if (resolved.kind === "trip" && !isUuid(resolved.tripId)) return null;
   const params = new URLSearchParams();
-  if (tripId) params.set("trip", tripId);
+  applyHotelOrigin(params, resolved);
+  if (tripId && resolved.kind !== "trip") params.set("trip", tripId);
+  if (opportunityId) {
+    if (!isUuid(opportunityId)) return null;
+    params.set("opportunity", opportunityId);
+  }
   const query = params.toString();
   return `/app/hotels/${hotelId}/pitch${query ? `?${query}` : ""}`;
 }
@@ -244,7 +266,7 @@ export function pitchHref(hotelId: string, tripId?: string | null): string | nul
 /** Pitch Studio for one opportunity. The id is the row id, not the display id. */
 export function opportunityPitchHref(hotelId: string, pipelineItemId: string): string | null {
   if (!isUuid(hotelId) || !isUuid(pipelineItemId)) return null;
-  return `/app/hotels/${hotelId}/pitch?item=${pipelineItemId}&from=pipeline`;
+  return `/app/hotels/${hotelId}/pitch?opportunity=${pipelineItemId}&from=pipeline`;
 }
 
 export function hotelCrumbs(origin: HotelOrigin, hotelName: string): Crumb[] {
@@ -449,18 +471,42 @@ export function shellCrumbs(pathname: string, origin: HotelOrigin | null): Crumb
   }
   if (pathname === "/app/pitch") return [root, { label: "Pitch Studio" }];
   if (isUnder(pathname, "/app/hotels")) {
-    const current: Crumb = { label: pathname.endsWith("/pitch") ? "Pitch" : "Hotel" };
-    if (pathname.endsWith("/pitch")) {
-      return [root, { label: "Pitch Studio", href: "/app/pitch" }, current];
+    const hotelId = pathname.match(/^\/app\/hotels\/([^/]+)/)?.[1] ?? null;
+    const pitching = pathname.includes("/pitch");
+    const resolved = origin ?? { kind: "discover" as const };
+    const hotelLink = hotelId && isUuid(hotelId) ? hotelHref(hotelId, resolved) : null;
+    const hotelCrumb: Crumb = pitching
+      ? { label: "Hotel", href: hotelLink ?? undefined }
+      : { label: "Hotel" };
+    const tail: Crumb[] = pitching ? [hotelCrumb, { label: "Pitch" }] : [hotelCrumb];
+    if (resolved.kind === "trip") {
+      return [
+        root,
+        { label: "My Trips", href: "/app/trips" },
+        { label: "Trip", href: `/app/trips/${resolved.tripId}` },
+        ...tail,
+      ];
     }
-    if (origin?.kind === "trip") return [root, { label: "My Trips", href: "/app/trips" }, current];
-    if (origin?.kind === "inbox") return [root, { label: "Inbox", href: "/app/inbox" }, current];
-    if (origin?.kind === "collaboration") {
-      return [root, { label: "Collaborations", href: "/app/collaborations" }, current];
+    if (resolved.kind === "inbox") {
+      return [
+        root,
+        { label: "Pipeline", href: "/app/pipeline" },
+        { label: "Inbox", href: pipelineReturnHref(resolved) },
+        ...tail,
+      ];
     }
-    if (origin?.kind === "pipeline")
-      return [root, { label: "Pipeline", href: "/app/pipeline" }, current];
-    return [root, { label: "Discover", href: "/app/discover" }, current];
+    if (resolved.kind === "collaboration") {
+      return [
+        root,
+        { label: "Pipeline", href: "/app/pipeline" },
+        { label: "Collaborations", href: pipelineReturnHref(resolved) },
+        ...tail,
+      ];
+    }
+    if (resolved.kind === "pipeline") {
+      return [root, { label: "Pipeline", href: pipelineReturnHref(resolved) }, ...tail];
+    }
+    return [root, { label: "Discover", href: "/app/discover" }, ...tail];
   }
   return [root, { label: shellHeading(pathname).title }];
 }

@@ -8,8 +8,12 @@ import {
   cardSignal,
   columnEmptyNote,
   commandSummary,
+  contactLine,
   contextLine,
+  COUNT_UNAVAILABLE,
+  followUpPresentation,
   followUpRows,
+  laneBadge,
   nextStep,
   rowsForStage,
   shownDisplayRef,
@@ -38,6 +42,7 @@ export function toDensityRow(item: PipelineListItem): DensityRow {
     lastActivityAt: item.lastActivityAt,
     deadlineLabel: item.deadlineLabel ?? null,
     contactEmail: item.contactEmail ?? null,
+    privateNotes: item.privateNotes,
     metricRank: item.metricRank ?? null,
     metricValue: item.metricValue ?? null,
     metricSample: item.metricSample ?? null,
@@ -181,11 +186,13 @@ function OpportunityCard({
   surface,
   asOf,
   signal,
+  contactRead,
 }: {
   row: DensityRow;
   surface: PipelineSurface;
   asOf: string;
   signal: CardSignal;
+  contactRead: "ok" | "error";
 }) {
   const step = nextStep(row, asOf);
   const ref = shownDisplayRef(row.displayRef);
@@ -217,7 +224,8 @@ function OpportunityCard({
           {row.deadlineLabel}
         </p>
       ) : null}
-      {row.contactEmail ? (
+      {contactLine({ read: contactRead, email: row.contactEmail }).kind === "email" &&
+      row.contactEmail ? (
         <a
           className="mt-1 block break-all text-xs text-text underline"
           href={`mailto:${row.contactEmail}`}
@@ -225,6 +233,10 @@ function OpportunityCard({
         >
           {row.contactEmail}
         </a>
+      ) : contactLine({ read: contactRead, email: row.contactEmail }).kind === "unavailable" ? (
+        <p className="mt-1 text-xs text-text" role="status">
+          We couldn’t check the unlocked email.
+        </p>
       ) : (
         <p className="mt-1 text-xs text-muted">No unlocked email on this card.</p>
       )}
@@ -245,7 +257,7 @@ function OpportunityCard({
           </Link>
         ) : null}
       </div>
-      <PrivateNotesEditor pipelineItemId={row.id} />
+      <PrivateNotesEditor pipelineItemId={row.id} initialNotes={row.privateNotes} />
     </article>
   );
 }
@@ -256,6 +268,7 @@ export function PipelineDense({
   view,
   asOf,
   counts,
+  contactRead,
   intelligence,
 }: {
   items: readonly PipelineListItem[];
@@ -263,6 +276,7 @@ export function PipelineDense({
   view: PipelineView;
   asOf: string;
   counts: Partial<Record<string, number>> | null;
+  contactRead: "ok" | "error";
   intelligence:
     { status: "error" } | { status: "ok"; byHotel: ReadonlyMap<string, IntelligenceResult> };
 }) {
@@ -277,6 +291,7 @@ export function PipelineDense({
               surface={surface}
               asOf={asOf}
               signal={signalFor(row.hotelId, intelligence)}
+              contactRead={contactRead}
             />
           </li>
         ))}
@@ -304,6 +319,7 @@ export function PipelineDense({
                 surface={surface}
                 asOf={asOf}
                 signal={signalFor(row.hotelId, intelligence)}
+                contactRead={contactRead}
               />
             ))}
           </section>
@@ -313,14 +329,20 @@ export function PipelineDense({
   }
 
   const events = followUpRows(rows);
+  const followTotal = counts && typeof counts.follow_up === "number" ? counts.follow_up : null;
+  const follow = followUpPresentation(events.length, followTotal);
   return (
     <div className="space-y-4">
-      {events.length > 0 ? (
+      {follow.visible ? (
         <section aria-label="Follow-up events">
           <h3 className="text-sm font-semibold text-text">
-            Follow-up events <span className="font-normal text-muted">{events.length}</span>
+            Follow-up events{" "}
+            <span className="font-normal text-muted" data-testid="follow-up-count">
+              {follow.badge}
+            </span>
           </h3>
           <p className="text-xs text-muted">An event, not a stage column.</p>
+          {follow.note ? <p className="text-xs text-muted">{follow.note}</p> : null}
           {events.map((row) => (
             <OpportunityCard
               key={row.id}
@@ -328,6 +350,7 @@ export function PipelineDense({
               surface={surface}
               asOf={asOf}
               signal={signalFor(row.hotelId, intelligence)}
+              contactRead={contactRead}
             />
           ))}
         </section>
@@ -337,15 +360,22 @@ export function PipelineDense({
           const columnRows = rowsForStage(rows, column.status);
           const total =
             counts && typeof counts[column.status] === "number" ? counts[column.status]! : null;
+          const badge = laneBadge(total);
           const empty = columnEmptyNote(columnRows.length, total);
+          const emptyText = badge === COUNT_UNAVAILABLE ? COUNT_UNAVAILABLE : (empty ?? "—");
           return (
             <section key={column.status} className="w-56 shrink-0">
               <h3 className="flex justify-between border-b border-border py-2 text-xs font-bold uppercase tracking-wider">
                 {column.label}
-                <span className="font-normal text-muted">{columnRows.length}</span>
+                <span
+                  className="font-normal text-muted"
+                  data-testid={`lane-count-${column.status}`}
+                >
+                  {badge}
+                </span>
               </h3>
               {columnRows.length === 0 ? (
-                <p className="px-1 py-2 text-sm text-muted">{empty ?? "—"}</p>
+                <p className="px-1 py-2 text-sm text-muted">{emptyText}</p>
               ) : (
                 columnRows.map((row) => (
                   <OpportunityCard
@@ -354,6 +384,7 @@ export function PipelineDense({
                     surface={surface}
                     asOf={asOf}
                     signal={signalFor(row.hotelId, intelligence)}
+                    contactRead={contactRead}
                   />
                 ))
               )}

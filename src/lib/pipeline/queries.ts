@@ -72,6 +72,8 @@ export interface PipelineListItem {
     destinationName: string | null;
     countryCode: string | null;
   } | null;
+  /** Stored private note. Null means the column is empty, not that the read failed. */
+  privateNotes: string | null;
   /** Set only on a one-metric order. Absent on the activity order. */
   metricRank?: number;
   metricValue?: string;
@@ -152,10 +154,10 @@ export interface PipelineRankAuth {
 }
 
 const RANK_SELECT =
-  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip:trips(name), hotel:hotels(id, name, country_code, destination_id, destination:destinations(id, name))";
 
 const SELECT_COLUMNS =
-  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
+  "id, status, display_ref, stay_start, stay_end, saved_at, last_activity_at, next_followup_at, private_notes, trip:trips(name), hotel:hotels(id, name, country_code, destination:destinations(name))";
 
 /**
  * Normalize a `?page=` value. Anything that is not a positive whole number —
@@ -202,6 +204,10 @@ function mapPipelineRow(raw: unknown): PipelineListItem & { destinationId: strin
     savedAt: (row.saved_at as string | null) ?? null,
     lastActivityAt: (row.last_activity_at as string | null) ?? null,
     nextFollowupAt: (row.next_followup_at as string | null) ?? null,
+    privateNotes:
+      typeof row.private_notes === "string" && row.private_notes.trim().length > 0
+        ? row.private_notes
+        : null,
     destinationId,
     hotel: hotel
       ? {

@@ -17,12 +17,7 @@ import { resolveSession } from "@/lib/auth/guards";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 
 // Load-time binding. A "use server" module may export only async functions.
-bindServerActions([
-  "pipeline.save",
-  "pipeline.engage",
-  "pipeline.own",
-  "collaborations.lifecycle",
-]);
+bindServerActions(["pipeline.save", "pipeline.engage", "pipeline.own", "collaborations.lifecycle"]);
 
 import { shouldRefreshIntelligence } from "@/lib/intelligence/refresh";
 import { recordCreatorFitDecision } from "@/lib/intelligence/queries";
@@ -182,9 +177,9 @@ export async function saveOnboardingHotelAction(formData: FormData): Promise<Sav
   redirect(`/app/hotels/${hotelId}?from=pipeline&notice=first-hotel`);
 }
 
-export async function updatePipelineNotesAction(
-  formData: FormData,
-): Promise<{ result: "updated" | "error" | "not_found_or_forbidden" | "invalid_input" }> {
+export async function updatePipelineNotesAction(formData: FormData): Promise<{
+  result: "updated" | "preserved" | "error" | "not_found_or_forbidden" | "invalid_input";
+}> {
   const resolution = await resolveSession();
   if (resolution.status !== "authenticated") return { result: "error" };
   const session = resolution.session;
@@ -192,8 +187,14 @@ export async function updatePipelineNotesAction(
   const pipelineItemId = readField(formData, "pipelineItemId");
   const notes = readField(formData, "notes") ?? "";
   if (!pipelineItemId) return { result: "invalid_input" };
+  const explicitClear = readField(formData, "clearNotes") === "1";
 
-  const result = await updatePipelinePrivateNotes(session.userId, pipelineItemId, notes);
+  const result = await updatePipelinePrivateNotes(
+    session.userId,
+    pipelineItemId,
+    notes,
+    explicitClear,
+  );
   if (result.result === "updated") {
     revalidatePath("/app/pipeline");
   }

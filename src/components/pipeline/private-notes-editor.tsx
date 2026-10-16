@@ -23,15 +23,28 @@ export function PrivateNotesEditor({
   initialNotes,
 }: {
   pipelineItemId: string;
-  initialNotes?: string | null;
+  initialNotes: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const loaded = initialNotes ?? "";
 
   async function onSubmit(formData: FormData) {
+    const notes = formData.get("notes");
+    const text = typeof notes === "string" ? notes : "";
+    if (loaded.trim().length > 0 && text.trim().length === 0) formData.set("clearNotes", "1");
+    else formData.delete("clearNotes");
     const outcome = await updatePipelineNotesAction(formData);
-    setStatus(outcome.result === "updated" ? "Saved" : "Could not save");
-    if (outcome.result === "updated") setOpen(false);
+    if (outcome.result === "updated") {
+      setStatus("Saved");
+      setOpen(false);
+      return;
+    }
+    if (outcome.result === "preserved") {
+      setStatus("Notes were not changed");
+      return;
+    }
+    setStatus("Could not save");
   }
 
   if (!open) {
@@ -51,14 +64,18 @@ export function PrivateNotesEditor({
       <input type="hidden" name="pipelineItemId" value={pipelineItemId} />
       <textarea
         name="notes"
-        defaultValue={initialNotes ?? ""}
+        defaultValue={loaded}
         rows={3}
         className="w-full rounded-[var(--radius-app)] border border-border bg-background px-3 py-2 text-sm text-text"
         placeholder="Private notes (only you can see these)"
       />
       <div className="flex items-center gap-3">
         <SubmitButton />
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-muted underline">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-muted underline"
+        >
           Cancel
         </button>
         {status ? <span className="text-xs text-muted">{status}</span> : null}

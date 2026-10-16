@@ -36,21 +36,24 @@ export async function getOwnCreditBalance(): Promise<CreditBalanceResult> {
   }
 }
 
+export type UnlockedEmailRead = { status: "ok"; emails: Map<string, string> } | { status: "error" };
+
 /**
  * Cache emails for pipeline cards. The database drops hotels this caller has
- * not unlocked. A failed read is an empty map, not another creator's address.
+ * not unlocked. A failed read is an error, not an empty map and not another
+ * creator's address.
  */
 export async function readUnlockedContactEmails(
   hotelIds: readonly string[],
-): Promise<Map<string, string>> {
+): Promise<UnlockedEmailRead> {
   const ids = [...new Set(hotelIds.filter((id) => id.length > 0))];
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) return { status: "ok", emails: new Map() };
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("read_own_unlocked_contacts", {
       p_hotel_ids: ids,
     });
-    if (error || !Array.isArray(data)) return new Map();
+    if (error || !Array.isArray(data)) return { status: "error" };
     const emails = new Map<string, string>();
     for (const row of data) {
       if (!row || typeof row !== "object") continue;
@@ -60,9 +63,9 @@ export async function readUnlockedContactEmails(
         emails.set(hotelId, email);
       }
     }
-    return emails;
+    return { status: "ok", emails };
   } catch {
-    return new Map();
+    return { status: "error" };
   }
 }
 
