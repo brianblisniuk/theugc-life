@@ -1,0 +1,66 @@
+
+/* theugc.life V6 — a connected trip, outreach and opportunity design layer */
+.v6-context-strip{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:15px 17px;border:1px solid #DCE8CE;background:#F1F8E7;border-radius:10px;margin-bottom:20px;flex-wrap:wrap}
+.v6-context-strip strong{font-size:14px}.v6-context-strip small{font-size:12px;color:#61735C}
+.v6-context-strip .btn{font-size:12px}
+.v6-explainer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:22px}
+.v6-explainer>div{background:#fff;border:1px solid var(--ops-line);border-radius:10px;padding:15px 17px}
+.v6-explainer strong{display:block;font-size:14px}
+.v6-explainer p{font-size:12px;margin:6px 0 0}
+.v6-trip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:20px}
+.v6-trip-card{background:#fff;border:1px solid #DDE7DD;border-radius:13px;overflow:hidden;box-shadow:0 4px 18px #1B32210A}
+.v6-trip-cover{background:#26392C;position:relative;color:#F8FFF1;padding:22px 23px;min-height:151px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+.v6-trip-cover:after{position:absolute;right:-60px;bottom:-110px;content:"";width:260px;height:260px;border-radius:50%;border:1px solid #97BD7B50;box-shadow:0 0 0 35px #A7C2890F,0 0 0 80px #C7DD8F0A;pointer-events:none}
+.v6-trip-cover small{color:#C5D6C1;font-size:12px}
+.v6-trip-cover h3{font-size:26px;line-height:1.2;letter-spacing:-1px;margin:7px 0 0;color:#F8FFF6}
+.v6-trip-cover .ops-pill{width:max-content;z-index:1}
+.v6-trip-body{padding:19px 21px}
+.v6-trip-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.v6-trip-stat{background:#F5F8F2;border-radius:7px;padding:10px 12px}
+.v6-trip-stat strong{display:block;font-size:22px;font-weight:800;letter-spacing:-.8px}
+.v6-trip-stat small{font-size:11px;color:#677767}
+.v6-trip-actions{display:flex;gap:9px;align-items:center;margin-top:18px;flex-wrap:wrap}
+.v6-trip-actions a,.v6-trip-actions button{font-size:12px}
+.v6-trip-preview{padding:12px 0;margin-top:13px;border-top:1px solid var(--ops-line);font-size:12px;color:#617063}
+.v6-trip-preview strong{color:#2A3F2B}
+.v6-additional{padding:17px 20px;border-radius:10px;border:1px dashed #C6D7BF;background:#F9FCF6;display:flex;justify-content:space-between;align-items:center;gap:15px;margin-top:17px}
+.v6-note-tag{font-size:11px;color:#567052;border-radius:6px;padding:6px 8px;background:#E7F2DF}
+.v6-origin{font-size:11px;color:#69796A;margin-top:6px}
+.v6-opp-scope{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.v6-opp-scope button{border:1px solid #D9E5D8;background:white;border-radius:7px;padding:9px 12px;font-weight:700;font-size:12px}
+.v6-opp-scope button.active{background:#DFFF4F;border-color:#DFFF4F}
+.v6-opp-filter{height:40px;background:white;border:1px solid #DFE9DE;border-radius:8px;padding:0 11px;font-size:12px}
+.v6-opp-filters{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:white;border:1px solid #DDE6DB;border-radius:10px;padding:14px;margin-bottom:15px}
+.v6-opp-filters .ops-search{max-width:300px}
+.v6-opp-filters .ops-hint{margin-left:auto}
+.v6-opp-card-identity{display:flex;gap:9px;align-items:center}
+.v6-opp-card-name{font-size:14px;line-height:1.4}
+.v6-opp-context{font-size:11.5px;color:#6F806E;margin-top:5px;line-height:1.5}
+.v6-opp-tag{font-size:10.5px;background:#F0F4EB;border-radius:5px;padding:5px 7px;color:#48634A;font-weight:700}
+.v6-opp-board-note{font-size:11px;color:#748577}
+.v6-mini-flow{display:flex;flex-wrap:wrap;gap:8px;margin:13px 0}
+.v6-mini-step{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#F2F7EC;border-radius:7px;font-size:11.5px;color:#546B52;font-weight:700}
+.v6-mini-step span{display:grid;place-items:center;background:#E2EFCF;color:#314E30;border-radius:50%;width:19px;height:19px;font-size:10px}
+.v6-campaign-tag{display:inline-flex;align-items:center;gap:6px;color:#D9ECCF;border:1px solid #647E65;padding:6px 9px;border-radius:6px;font-size:11.5px}
+.v6-segment{display:flex;gap:6px;padding:4px;border-radius:9px;background:#ECF2EA;width:max-content}
+.v6-segment button{border:0;background:transparent;padding:9px 13px;border-radius:7px;color:#546651;font-weight:700;font-size:12px}
+.v6-segment button.active{background:white;color:#1C2920;box-shadow:0 2px 9px #00000010}
+.v6-related-row{display:flex;justify-content:space-between;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--ops-line)}
+.v6-related-row:last-child{border-bottom:0}
+.v6-related-row strong{font-size:13px}
+.v6-related-row small{font-size:11px;color:#647562;display:block;margin-top:5px}
+.v6-panel-highlight{background:#EFF8E0;border:1px solid #D7E6C3;padding:13px 14px;border-radius:9px;color:#456044;font-size:12px;line-height:1.6}
+.v6-inline-status{font-size:11px;color:#536E55}
+.v6-warning{background:#FFF9E9;border:1px solid #E8DEB7;border-radius:8px;padding:12px 14px;font-size:11.5px;color:#806333}
+.v6-campaign-card-action{margin-top:12px}
+.v6-stat-number{font-weight:800;font-size:24px;letter-spacing:-.7px}
+.v6-card-save{display:flex;align-items:center;gap:8px;border-top:1px solid #E6EDE2;padding-top:10px;margin-top:12px}
+.v6-status-select{width:100%;height:40px;border-radius:8px;border:1px solid #D6E1D2;background:white;font-size:13px;padding:0 10px}
+.v6-panel-title{font-size:13px;letter-spacing:.2px;font-weight:800}
+.v6-board-sub{font-size:11px;color:#738473;margin-top:5px}
+.v6-link{border:0;background:transparent;color:#426F3E;font-size:12px;font-weight:700;text-decoration:underline;padding:3px;cursor:pointer}
+.v6-eyebrow-note{font-size:11px;font-weight:700;color:#5A7455;letter-spacing:.3px}
+.v6-trip-empty{color:#76877A;font-size:12px;margin-top:15px;line-height:1.6}
+.v6-hero-summary{font-size:12px;color:#BFD2C0;margin-top:12px}
+@media(max-width:1000px){.v6-trip-grid{grid-template-columns:1fr}.v6-explainer{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.v6-explainer{grid-template-columns:1fr}.v6-trip-cover{padding:18px}.v6-trip-body{padding:16px}.v6-trip-stats{gap:6px}.v6-trip-stat{padding:9px}.v6-trip-actions{align-items:stretch}.v6-trip-actions .btn{flex:1}.v6-opp-scope{gap:5px}.v6-opp-scope button{font-size:11px;padding:8px}.v6-opp-filters{padding:11px}.v6-additional{flex-direction:column;align-items:start}.v6-context-strip{padding:12px}}
