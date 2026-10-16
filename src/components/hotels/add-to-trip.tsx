@@ -33,11 +33,14 @@ export function AddToTrip({
   trips,
   tripsLoad,
   alreadyOn,
+  preferredTripId = null,
 }: {
   hotelId: string;
   trips: readonly { id: string; label: string }[];
   tripsLoad: "ok" | "error";
   alreadyOn: readonly string[] | null;
+  /** Origin trip, or the trip on a validated Discover return. Ignored when it is not in the list. */
+  preferredTripId?: string | null;
 }) {
   const [result, setResult] = useState<ShortlistResult | null>(null);
 
@@ -61,6 +64,10 @@ export function AddToTrip({
   }
 
   const known = new Set(alreadyOn ?? []);
+  const preferred =
+    preferredTripId && trips.some((trip) => trip.id === preferredTripId)
+      ? preferredTripId
+      : trips[0]?.id;
 
   return (
     <form
@@ -77,7 +84,7 @@ export function AddToTrip({
         <select
           id="add-to-trip"
           name="tripId"
-          defaultValue={trips[0]?.id}
+          defaultValue={preferred}
           className="w-full border border-border bg-background px-3 py-2 text-sm text-text"
         >
           {trips.map((trip) => (

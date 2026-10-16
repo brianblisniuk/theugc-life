@@ -153,6 +153,7 @@ export async function sendPitchFromGmailAction(formData: FormData): Promise<Send
       hotelId: optionalId(readField(formData, "hotelId")),
       tripId: optionalId(readField(formData, "tripId")),
       pitchDraftId: optionalId(readField(formData, "draftId")),
+      pipelineItemId: optionalId(readField(formData, "pipelineItemId")),
     },
     {
       db: createAdminClient(),

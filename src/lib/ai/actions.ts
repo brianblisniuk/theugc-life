@@ -15,6 +15,7 @@ import { getHotelById } from "@/lib/hotels/queries";
 import { isUuid } from "@/lib/hotels/ids";
 import { FACT_KEYS, type FactKey } from "@/lib/pitch/contract";
 import { loadPitchContext } from "@/lib/pitch/queries";
+import { resolveOpportunityDraftWrite } from "@/lib/pitch/studio";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -140,7 +141,11 @@ async function draftAssistant(
     requestedPipelineItemId: readField(formData, "pipelineItemId") || null,
   });
   if (context.status !== "ok") return { result: "error" };
-  if (context.opportunityChoice === "many" || context.opportunityChoice === "missing") {
+  if (
+    context.opportunityChoice === "many" ||
+    context.opportunityChoice === "missing" ||
+    context.opportunityChoice === "trip_empty"
+  ) {
     return { result: "invalid_input", message: "Choose one of your opportunities." };
   }
   const boundOpportunityId = context.selectedOpportunity?.id ?? null;
@@ -315,22 +320,40 @@ async function draftAssistant(
     };
   }
 
-  const { data, error } = await supabase
-    .from("pitch_drafts")
-    .insert({
-      hotel_id: hotelId,
-      trip_id: tripId || null,
-      pipeline_item_id: boundOpportunityId,
-      template_id: null,
-      system_template_key: null,
-      subject: outcome.subject,
-      body: outcome.body,
-      variables_used: factKeys(facts),
-      delivery: "unsent",
-      origin: "assistant",
-    })
-    .select("id")
-    .single();
+  const draftFields = {
+    trip_id: tripId || null,
+    template_id: null,
+    system_template_key: null,
+    subject: outcome.subject,
+    body: outcome.body,
+    variables_used: factKeys(facts),
+    delivery: "unsent" as const,
+    origin: "assistant" as const,
+  };
+  const write = resolveOpportunityDraftWrite({
+    postedDraftId: null,
+    loadedDraftId: context.draft?.id,
+    loadedOpportunityId: context.draft?.pipelineItemId,
+    boundOpportunityId,
+  });
+  const saved =
+    write.action === "update" && context.draft
+      ? await supabase
+          .from("pitch_drafts")
+          .update(draftFields)
+          .eq("id", context.draft.id)
+          .select("id")
+          .single()
+      : await supabase
+          .from("pitch_drafts")
+          .insert({
+            hotel_id: hotelId,
+            pipeline_item_id: boundOpportunityId,
+            ...draftFields,
+          })
+          .select("id")
+          .single();
+  const { data, error } = saved;
   revalidatePath(`/app/hotels/${hotelId}/pitch`);
   return {
     result: "drafted",

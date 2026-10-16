@@ -46,6 +46,7 @@ import { getInboxUnity, listConnectedMailboxes } from "@/lib/inbox-pipeline/quer
 import { enforcePremiumHotelAccess } from "@/lib/entitlements/gate";
 import { contactSectionState } from "@/lib/hotels/access";
 import { hotelTypeLabel } from "@/lib/hotels/filters";
+import { isUuid } from "@/lib/hotels/ids";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 import { premiumIntelligenceState } from "@/lib/hotels/intelligence";
 import {
@@ -74,21 +75,26 @@ import {
 import { getDestinationMetricRankings, getHotelMetricSignals } from "@/lib/metrics/queries";
 import { getPastCollaborations } from "@/lib/profile/queries";
 import { FIRST_RUN_COPY } from "@/lib/onboarding/first-run";
-import { getCycleCollaboration, listHotelOpportunities } from "@/lib/pipeline/queries";
+import {
+  findHotelOpportunity,
+  getCycleCollaboration,
+  listHotelOpportunities,
+} from "@/lib/pipeline/queries";
 import { isOpenCycle } from "@/lib/pipeline/types";
 import { discoverFigures } from "@/lib/screens/discover-figures";
-import { discoverReturnHref } from "@/lib/screens/discover-return";
+import { discoverReturnHref, parseDiscoverTrip } from "@/lib/screens/discover-return";
 import { eligibleHotelPhotos } from "@/lib/screens/hotel-photos";
 import {
+  nextStepPitchHref,
   opportunityCards,
-  pickHotelOpportunity,
-  relationshipFromOpportunities,
+  relationshipFromSelection,
+  selectHotelOpportunity,
   type HotelOpportunity,
+  type OpportunityRelationship,
 } from "@/lib/screens/hotel-opportunities";
 import {
   hotelCrumbs,
   parseHotelOrigin,
-  pitchHref,
   pipelineReturnHref,
 } from "@/lib/shell/navigation";
 import { tripLimitMessage } from "@/lib/trips/display";
@@ -150,16 +156,27 @@ export default async function HotelDetailPage({
     opportunityLoad.status === "ok"
       ? opportunityLoad.opportunities.map((row) => ({ ...row, tripName: null }))
       : [];
-  const selectedOpportunity =
-    opportunityLoad.status === "ok"
-      ? pickHotelOpportunity(bareOpportunities, requestedOpportunity ?? null)
+  const namedId =
+    typeof requestedOpportunity === "string" && isUuid(requestedOpportunity)
+      ? requestedOpportunity
       : null;
-  const relationship = relationshipFromOpportunities(
-    opportunityLoad.status === "ok"
-      ? { status: "ok", opportunities: bareOpportunities }
-      : { status: "error" },
-    selectedOpportunity,
-  );
+  let namedLookupFailed = false;
+  if (
+    opportunityLoad.status === "ok" &&
+    namedId &&
+    !bareOpportunities.some((row) => row.id === namedId)
+  ) {
+    const named = await findHotelOpportunity(hotel.id, namedId);
+    if (named.status === "error") namedLookupFailed = true;
+    else if (named.row) bareOpportunities.push({ ...named.row, tripName: null });
+  }
+  const originTripId = origin.kind === "trip" ? origin.tripId : null;
+  const relationship: OpportunityRelationship =
+    opportunityLoad.status === "ok" && !namedLookupFailed
+      ? relationshipFromSelection(
+          selectHotelOpportunity(bareOpportunities, requestedOpportunity ?? null, originTripId),
+        )
+      : { status: "error" };
   const { access, contacts, failed: contactsFailed, via, cacheEmail, balance, cost } = contactPanel;
 
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
@@ -293,9 +310,13 @@ export default async function HotelDetailPage({
   const relationshipFact: RelationshipFact =
     relationship.status === "error"
       ? { status: "error" }
-      : relationship.status === "none"
-        ? { status: "none" }
-        : { status: "open", stage: relationship.relationship.status };
+      : relationship.status === "not_open"
+        ? { status: "not_open" }
+        : relationship.status === "choose"
+          ? { status: "choose" }
+          : relationship.status === "none"
+          ? { status: "none" }
+          : { status: "open", stage: relationship.relationship.status };
   const billing =
     session.status === "authenticated"
       ? await loadBillingAccess(session.session.userId)
@@ -305,9 +326,7 @@ export default async function HotelDetailPage({
     relationship.status === "open"
       ? (opportunities.find((row) => row.id === relationship.relationship.pipelineItemId) ?? null)
       : null;
-  const pitchTripId = origin.kind === "trip" ? origin.tripId : (openRow?.tripId ?? null);
-  const pitch =
-    pitchHref(hotel.id, pitchTripId, origin, openRow?.id ?? null) ?? "#work";
+  const pitch = nextStepPitchHref(hotel.id, origin, openRow) ?? "#work";
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,
@@ -475,6 +494,15 @@ export default async function HotelDetailPage({
                 trips={tripChoices}
                 tripsLoad={trips.status === "ok" ? "ok" : "error"}
                 alreadyOn={alreadyOn}
+                preferredTripId={
+                  origin.kind === "trip"
+                    ? origin.tripId
+                    : parseDiscoverTrip(
+                        discoverBack
+                          ? new URL(discoverBack, "http://local").searchParams.get("trip")
+                          : null,
+                      )
+                }
               />
             </div>
           </section>

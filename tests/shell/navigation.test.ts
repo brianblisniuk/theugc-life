@@ -25,7 +25,9 @@ import {
   pipelineReturnHref,
   pipelineRowLinks,
   pipelineSurfaceHeading,
+  chooserPitchParams,
   opportunityPitchHref,
+  pitchContextParams,
   pitchHref,
   shellCrumbs,
   tripHotelHref,
@@ -92,6 +94,10 @@ describe("primary navigation stays the approved five", () => {
     expect(activePrimaryHref(`/app/hotels/${HOTEL}/pitch`, null)).toBe("/app/discover");
     expect(opportunityPitchHref(HOTEL, TRIP)).toBe(
       `/app/hotels/${HOTEL}/pitch?opportunity=${TRIP}&from=pipeline`,
+    );
+    const row = "33333333-3333-4333-8333-333333333333";
+    expect(opportunityPitchHref(HOTEL, row, TRIP)).toBe(
+      `/app/hotels/${HOTEL}/pitch?opportunity=${row}&from=pipeline&trip=${TRIP}`,
     );
     expect(opportunityPitchHref(HOTEL, "OP-1042")).toBeNull();
     expect(opportunityPitchHref("OP-1042", TRIP)).toBeNull();
@@ -226,8 +232,43 @@ describe("pipeline surfaces", () => {
 
     const openInbox = pipelineRowLinks({ status: "pitched", hotelId: HOTEL }, "inbox");
     expect(openInbox[0]?.href).toBe(`/app/hotels/${HOTEL}?from=inbox#inbox`);
+    const row = "33333333-3333-4333-8333-333333333333";
+    const managed = pipelineRowLinks(
+      { status: "saved", hotelId: HOTEL, hotelName: "Casa", id: row, tripId: TRIP },
+      "all",
+    );
+    expect(managed[0]?.href).toContain(`opportunity=${row}`);
+    expect(managed[0]?.href).toContain(`trip=${TRIP}`);
+    expect(managed[0]?.href).toContain("from=pipeline");
     const wonCollaborations = pipelineRowLinks({ status: "won", hotelId: HOTEL }, "collaborations");
     expect(wonCollaborations.some((link) => link.href.includes("#inbox"))).toBe(true);
+  });
+
+  it("keeps Discover back, origin, and the row trip on a pitch return", () => {
+    const other = "44444444-4444-4444-8444-444444444444";
+    const row = "33333333-3333-4333-8333-333333333333";
+    const back = `/app/discover?q=lisbon&trip=${TRIP}`;
+    const params = chooserPitchParams({ kind: "trip", tripId: other }, { id: row, tripId: TRIP }, back);
+    expect(params.get("trip")).toBe(TRIP);
+    expect(params.get("opportunity")).toBe(row);
+    expect(params.get("from")).toBe("trip");
+    expect(params.get("back")).toContain("q=lisbon");
+    expect(params.get("back")).toContain(TRIP);
+    expect(params.get("back")).not.toContain(other);
+    const none = chooserPitchParams({ kind: "trip", tripId: other }, { id: row, tripId: null }, back);
+    expect(none.get("trip")).toBeNull();
+    expect(none.get("from")).toBeNull();
+    expect(none.get("opportunity")).toBe(row);
+    const oauth = pitchContextParams({
+      origin: { kind: "inbox" },
+      tripId: TRIP,
+      opportunityId: row,
+      back,
+    });
+    expect(oauth.get("from")).toBe("inbox");
+    expect(oauth.get("trip")).toBe(TRIP);
+    expect(oauth.get("opportunity")).toBe(row);
+    expect(oauth.get("back")).toContain("/app/discover");
   });
 
   it("returns to the surface the creator came from", () => {

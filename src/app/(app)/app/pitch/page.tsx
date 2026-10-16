@@ -64,6 +64,7 @@ export default async function PitchStudioPage() {
               stayStart: item.stayStart,
               stayEnd: item.stayEnd,
               tripName: item.tripName,
+              tripId: item.tripId,
               nextFollowupAt: item.nextFollowupAt,
               lastActivityAt: item.lastActivityAt,
               deadlineLabel: null,
@@ -73,7 +74,9 @@ export default async function PitchStudioPage() {
               metricValue: null,
               metricSample: null,
             };
-            const href = item.hotel?.id ? opportunityPitchHref(item.hotel.id, item.id) : null;
+            const href = item.hotel?.id
+              ? opportunityPitchHref(item.hotel.id, item.id, item.tripId)
+              : null;
             const ref = shownDisplayRef(item.displayRef);
             const step = nextStep(row, asOf);
             return (
