@@ -96,6 +96,14 @@ function Icon({ name }: { name: ShellIcon }) {
       </svg>
     );
   }
+  if (name === "plans") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 10h18M7 15h4" />
+      </svg>
+    );
+  }
   if (name === "start") {
     return (
       <svg {...common}>

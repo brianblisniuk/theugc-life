@@ -28,6 +28,7 @@ function readField(formData: FormData, name: string): string | null {
 function revalidate(hotelId: string | null) {
   if (hotelId) revalidatePath(`/app/hotels/${hotelId}`);
   revalidatePath("/app/pipeline");
+  revalidatePath("/app/collaborations");
 }
 
 export async function saveCompensationAction(formData: FormData): Promise<CompensationWriteResult> {

@@ -88,7 +88,7 @@ describe("Midnight shell", () => {
     expect(journey).not.toMatch(/Ir al inicio|¿Esto pasó así\?|Registrado a mano|Pitch enviado/);
   });
 
-  it("links Outreach and still leaves Plans and Contract Review unlinked", () => {
+  it("links Outreach and Plans and leaves Contract Review unlinked", () => {
     const labels = SIDEBAR_NAV.flatMap((section) => section.items.map((item) => item.label));
     expect(labels).toEqual([
       "Home",
@@ -99,11 +99,27 @@ describe("Midnight shell", () => {
       "Inbox",
       "Collaborations",
       "My Profile",
+      "Plans & Credits",
       "Billing & Activity",
       "Getting Started",
       "Account",
     ]);
-    expect(labels.join(" ")).not.toMatch(/Contract Review|Plans & Credits/);
+    expect(labels.join(" ")).not.toMatch(/Contract Review/);
+    expect(source("src/app/(app)/app/collaborations/page.tsx")).not.toContain("Contract Review");
+    expect(existsSync("src/app/(app)/app/contracts/page.tsx")).toBe(false);
+    expect(existsSync("src/app/(app)/app/plans/page.tsx")).toBe(true);
+  });
+
+  it("renders the page body only in the resolved shell", () => {
+    const shell = source("src/components/shell/app-shell.tsx");
+    const fallbackAt = shell.indexOf("fallback=");
+    const resolvedAt = shell.indexOf("<ShellHeader");
+    expect(resolvedAt).toBeGreaterThan(fallbackAt);
+    const fallback = shell.slice(fallbackAt, resolvedAt);
+    expect(fallback).toContain("<ShellBody");
+    expect(fallback).not.toContain("{children}");
+    expect(shell.slice(resolvedAt)).toContain("{children}");
+    expect(shell.match(/\{children\}/g)).toHaveLength(2);
   });
 });
 
