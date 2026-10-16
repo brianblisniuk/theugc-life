@@ -61,7 +61,8 @@ function seedOrMigrate(){
    const events=get("ugc_v4_events",[]);
    db.campaigns.forEach(c=>(c.hotelIds||[]).forEach(h=>{
      const o=ensure(h,c.id,c.tripId||"");
-     const ev=events.filter(e=>e.hotelId===h&&e.type==="stage"&&(!e.campaignId||e.campaignId===c.id)).at(-1);
+     const isOnlyCampaign=db.campaigns.filter(x=>(x.hotelIds||[]).includes(h)).length===1;
+     const ev=events.filter(e=>e.hotelId===h&&e.type==="stage"&&(e.campaignId?e.campaignId===c.id:isOnlyCampaign)).at(-1);
      if(ev&&labels[ev.value])o.status=ev.value;
      else if(db.drafts.some(d=>d.hotelId===h&&(d.campaignId||"")===c.id))o.status="draft";
    }));
@@ -75,11 +76,11 @@ function stats(items){
  const n=count(items);return [["Opportunities",n.total,"Separate commercial attempts"],["Pitches saved",n.prepared,"Drafts linked by hotel"],["Outreach logged",n.sent,"Manual or demo events"],["Conversations",n.replies,"Manual or demo outcomes"]].map(([name,num,sub],i)=>`<div class="ops-stat ${i===3?"highlight":""}"><span class="k">${name}</span><strong>${num}</strong><small>${sub}</small></div>`).join("")
 }
 function badge(s){return `<span class="ops-pill ${["replied","won"].includes(s)?"lime":s==="sent"?"blue":s==="negotiating"?"amber":""}">${esc(labels[s]||"Saved")}</span>`}
-function fromTrip(id){
+function fromTrip(id,importNew=false){
  const t=trip(id);if(!t)return;
- let c=campaignsForTrip(id)[0];
+ let c=campaignsForTrip(id)[0],existing=Boolean(c);
  if(!c){c={id:uid("outreach"),name:t.city+" · Outreach",city:t.city,tripId:id,hotelIds:[],createdAt:new Date().toISOString()};db.campaigns.unshift(c)}
- for(const hid of A().state.shortlists[id]||[]){if(!c.hotelIds.includes(hid))c.hotelIds.push(hid);ensure(hid,c.id,id)}
+ if(!existing||importNew){for(const hid of A().state.shortlists[id]||[]){if(!c.hotelIds.includes(hid))c.hotelIds.push(hid);ensure(hid,c.id,id)}}
  save();return c;
 }
 function tripCard(t){
@@ -193,7 +194,7 @@ document.addEventListener("click",e=>{
  if(b.dataset.v6StartTrip){const c=fromTrip(b.dataset.v6StartTrip);if(c)location.href="campaigns.html?campaign="+encodeURIComponent(c.id)}
  if(b.dataset.v6Campaign){ui.campaign=b.dataset.v6Campaign;ui.search="";ui.stage="all";history.replaceState({},'',location.pathname+"?campaign="+encodeURIComponent(ui.campaign));E("ops-lead-search").value="";E("ops-lead-stage").value="all";renderCampaign()}
  if(b.hasAttribute("data-v6-new"))createOutreachModal();
- if(b.dataset.v6Import){fromTrip(b.dataset.v6Import);renderCampaign();A().toast("New Trip hotels imported")}
+ if(b.dataset.v6Import){fromTrip(b.dataset.v6Import,true);renderCampaign();A().toast("New Trip hotels imported")}
  if(b.hasAttribute("data-v6-add"))addLeads();
  if(b.dataset.v6Open){if(document.body.dataset.page==="campaigns")location.href="pipeline.html?opp="+encodeURIComponent(b.dataset.v6Open);else drawerOpen(b.dataset.v6Open)}
  if(b.dataset.v6Scope){ui.scope=b.dataset.v6Scope;if(ui.scope!=="trips")ui.trip="";renderPipeline()}
