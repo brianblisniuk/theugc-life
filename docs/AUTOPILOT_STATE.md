@@ -74,7 +74,6 @@
 - PR #97 — D02 Hunter contact provider, migration `0095`, D180 — `9658a451a09e2543a36184ae47562cb4dde59241`. Provenance and freshness are not on the unlock screen.
 - PR #98 — D02 audit fix, migration `0096`, D181 — `dc04d09369c5d2574755c970b3a3e3b7b95c3cc1`
 - PR #99 — Gmail callback error log — `7041104f7fce3e9a8e0916621daa39d0799b2b22`
-- PR #100 merges V2-D1, migration `0097`, D182–D187. The merge SHA is recorded by the next block.
 
 ## Next action
 - CREDENTIAL REQUIRED — set `HUNTER_API_KEY` and `CONTACT_PROVIDER=hunter` only on the host that should call Hunter. Leave both unset in CI. A manual smoke is at most three hotels with no contact cache row and three different website domains. Then unset `CONTACT_PROVIDER`.
