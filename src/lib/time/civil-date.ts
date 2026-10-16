@@ -1,6 +1,7 @@
 /**
- * A creator's calendar day. Trip windows and follow-up labels use this day,
- * not the UTC date of an instant. An invalid zone falls back to UTC.
+ * A creator's calendar day. Trip windows, follow-up labels, and deliverable
+ * due dates use this day, not the UTC date of an instant. An invalid zone
+ * falls back to UTC.
  */
 export function civilDate(
   instant: Date | string,

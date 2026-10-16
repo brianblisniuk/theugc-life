@@ -166,7 +166,11 @@ export type CreditSource = { status: "ok"; balance: number } | { status: "error"
 export interface NextActionInput {
   profileId: string;
   asOf: string;
-  /** IANA zone for the follow-up due label. Due detection still uses the instant. */
+  /**
+   * IANA zone for the follow-up due label and for whether a deliverable
+   * `dueOn` falls on or before the civil day. Follow-up due detection still
+   * uses the instant.
+   */
   timeZone?: string | null;
   pipeline: { status: "ok"; items: OwnedPipelineItem[]; capped: boolean } | { status: "error" };
   deliverables: { status: "ok"; items: OwnedDeliverable[]; capped: boolean } | { status: "error" };
@@ -219,10 +223,15 @@ function calendarDay(value: string): string | null {
   return value;
 }
 
-function asOfParts(asOf: string): { ms: number; day: string } | null {
+function asOfParts(
+  asOf: string,
+  timeZone: string | null | undefined,
+): { ms: number; day: string } | null {
   const ms = instantMs(asOf);
   if (ms === null) return null;
-  return { ms, day: new Date(ms).toISOString().slice(0, 10) };
+  const day = civilDate(asOf, timeZone ?? "UTC");
+  if (!day) return null;
+  return { ms, day };
 }
 
 function isPipelineStatus(value: string): value is PipelineStatus {
@@ -398,7 +407,7 @@ function validateGmail(
  */
 export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
   if (!isUuid(input.profileId)) return blockedNextActionBoard();
-  const clock = asOfParts(input.asOf);
+  const clock = asOfParts(input.asOf, input.timeZone);
   const notices: NextActionNotice[] = [];
   const operational: NextAction[] = [];
 

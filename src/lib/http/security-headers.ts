@@ -4,7 +4,22 @@
  * The Maps JavaScript API is allowed to load. Nothing else is framed.
  * Referrer-Policy is no-referrer, including on /p/[token], so a share token
  * is not sent as a referrer.
+ *
+ * script-src uses a per-request nonce and 'strict-dynamic', and does not
+ * include 'unsafe-inline'. Middleware copies that policy onto the forwarded
+ * request so Next.js can stamp the nonce onto its own scripts. 'strict-dynamic'
+ * lets that nonce-trusted script insert the Maps script. The Maps host
+ * allowlist stays for browsers that ignore 'strict-dynamic'.
+ *
+ * style-src keeps 'unsafe-inline'. React `style={{}}` attributes (progress,
+ * skeletons, spacing) are not covered by a style nonce — nonces apply to
+ * style elements, not style attributes — and Next's font loader emits inline
+ * style tags that would need a layout change to nonce. Those layout files
+ * stay untouched here.
  */
+
+/** Base64 or UUID token. Rejected values are omitted so they cannot break the policy. */
+const CSP_NONCE = /^[A-Za-z0-9+/_-]{16,128}={0,2}$/;
 
 export const MAPS_SCRIPT_ORIGINS = [
   "https://maps.googleapis.com",
@@ -34,12 +49,16 @@ export function supabaseOrigin(url: string | null | undefined): string | null {
   }
 }
 
-export function contentSecurityPolicy(supabaseUrl: string | null | undefined): string {
+export function contentSecurityPolicy(
+  supabaseUrl: string | null | undefined,
+  nonce: string,
+): string {
   const connect = connectSources(supabaseOrigin(supabaseUrl)).join(" ");
   const maps = MAPS_SCRIPT_ORIGINS.join(" ");
+  const nonceSource = CSP_NONCE.test(nonce) ? `'nonce-${nonce}' ` : "";
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' ${maps}`,
+    `script-src 'self' ${nonceSource}'strict-dynamic' ${maps}`,
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${maps}`,
     "font-src 'self' data:",
@@ -68,10 +87,10 @@ export const HSTS_VALUE = "max-age=63072000; includeSubDomains";
 
 export function securityHeaders(
   supabaseUrl: string | null | undefined,
-  options?: { https?: boolean },
+  options: { https?: boolean; nonce: string },
 ): Record<string, string> {
   const headers: Record<string, string> = {
-    "Content-Security-Policy": contentSecurityPolicy(supabaseUrl),
+    "Content-Security-Policy": contentSecurityPolicy(supabaseUrl, options.nonce),
     "Permissions-Policy": PERMISSIONS_POLICY,
     "Referrer-Policy": REFERRER_POLICY,
     "X-Content-Type-Options": "nosniff",

@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@supabase/ssr", () => ({
@@ -184,6 +184,49 @@ describe("session cookie and auth outage headers", () => {
 
     const httpOnly = await updateSession(new NextRequest("http://localhost:3000/login"));
     expect(httpOnly.headers.get("strict-transport-security")).toBeNull();
+  });
+
+  it("forwards the script nonce on the request and the response without unsafe-inline", async () => {
+    vi.mocked(createServerClient).mockImplementation(
+      (_url, _key, options) =>
+        ({
+          auth: {
+            getUser: async () => {
+              options?.cookies.setAll?.([
+                { name: "sb-access-token", value: "token", options: { path: "/" } },
+              ]);
+              return {
+                data: { user: { id: "11111111-1111-4111-8111-111111111111" } },
+                error: null,
+              };
+            },
+          },
+        }) as never,
+    );
+    const nextSpy = vi.spyOn(NextResponse, "next");
+    try {
+      const response = await updateSession(new NextRequest("https://app.example/app"));
+      const responseCsp = response.headers.get("content-security-policy") ?? "";
+      const forwarded = nextSpy.mock.calls
+        .map((call) => {
+          const headers = call[0]?.request?.headers;
+          return headers instanceof Headers ? headers.get("content-security-policy") : null;
+        })
+        .filter((value): value is string => typeof value === "string");
+      expect(forwarded.length).toBeGreaterThan(0);
+      expect(new Set(forwarded)).toEqual(new Set([responseCsp]));
+      const script =
+        responseCsp
+          .split(";")
+          .map((part) => part.trim())
+          .find((part) => part.startsWith("script-src ")) ?? "";
+      expect(script).toMatch(/'nonce-[A-Za-z0-9+/_-]{16,128}={0,2}'/);
+      expect(script).toContain("'strict-dynamic'");
+      expect(script).not.toContain("'unsafe-inline'");
+      expect(responseCsp).toContain("style-src 'self' 'unsafe-inline'");
+    } finally {
+      nextSpy.mockRestore();
+    }
   });
 });
 

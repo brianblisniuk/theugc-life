@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo } from "next/font/google";
+import { headers } from "next/headers";
 
 import { AnalyticsProvider } from "@/components/analytics-provider";
 import { assertContactProvider } from "@/lib/contacts/provider";
@@ -24,8 +25,12 @@ export const metadata: Metadata = {
   description: "The operating system for travel UGC creators.",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   assertContactProvider();
+  // Dynamic on purpose. Middleware puts the per-request CSP on the forwarded
+  // request; Next stamps that nonce onto its scripts only when this layout
+  // renders per request. A static shell would ship scripts the policy blocks.
+  await headers();
   return (
     <html lang="en">
       <body

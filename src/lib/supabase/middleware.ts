@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getClientEnv } from "@/env";
-import { securityHeaders } from "@/lib/http/security-headers";
+import { contentSecurityPolicy, securityHeaders } from "@/lib/http/security-headers";
 import { isProtectedPath } from "@/lib/auth/routes";
 import { normalizeRequestId, writeRequestLog } from "@/lib/log/request";
 import { consumeShareLinkRequest, shareLinkClientKey } from "@/lib/profile/share-rate-limit";
@@ -27,8 +27,9 @@ function decorate(
   requestId: string,
   supabaseUrl: string,
   https: boolean,
+  nonce: string,
 ): NextResponse {
-  for (const [name, value] of Object.entries(securityHeaders(supabaseUrl, { https }))) {
+  for (const [name, value] of Object.entries(securityHeaders(supabaseUrl, { https, nonce }))) {
     response.headers.set(name, value);
   }
   response.headers.set("x-request-id", requestId);
@@ -40,10 +41,11 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const requestId = normalizeRequestId(request.headers.get("x-request-id"));
   const env = getClientEnv();
   const https = requestIsHttps(request);
+  const nonce = crypto.randomUUID();
   writeRequestLog({ requestId, method: request.method, path: pathname });
 
   if (pathname === "/api/health") {
-    return decorate(NextResponse.next(), requestId, env.NEXT_PUBLIC_SUPABASE_URL, https);
+    return decorate(NextResponse.next(), requestId, env.NEXT_PUBLIC_SUPABASE_URL, https, nonce);
   }
 
   if (pathname.startsWith("/p/")) {
@@ -63,12 +65,18 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
         requestId,
         env.NEXT_PUBLIC_SUPABASE_URL,
         https,
+        nonce,
       );
     }
   }
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
+  // Next.js reads the nonce from this request header and applies it to its scripts.
+  requestHeaders.set(
+    "Content-Security-Policy",
+    contentSecurityPolicy(env.NEXT_PUBLIC_SUPABASE_URL, nonce),
+  );
 
   let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
 
@@ -104,6 +112,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       requestId,
       env.NEXT_PUBLIC_SUPABASE_URL,
       https,
+      nonce,
     );
   }
 
@@ -118,6 +127,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       requestId,
       env.NEXT_PUBLIC_SUPABASE_URL,
       https,
+      nonce,
     );
   }
 
@@ -127,5 +137,5 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     supabaseResponse.headers.set("Referrer-Policy", "no-referrer");
   }
 
-  return decorate(supabaseResponse, requestId, env.NEXT_PUBLIC_SUPABASE_URL, https);
+  return decorate(supabaseResponse, requestId, env.NEXT_PUBLIC_SUPABASE_URL, https, nonce);
 }
