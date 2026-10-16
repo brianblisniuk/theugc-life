@@ -254,11 +254,6 @@
   color: var(--ink);
 }
 
-/* The shell owns the trail. Page headers keep the title and the back link. */
-.v12-content header nav[aria-label="Breadcrumb"] {
-  display: none;
-}
-
 .v12-crumbs {
   display: flex;
   align-items: center;

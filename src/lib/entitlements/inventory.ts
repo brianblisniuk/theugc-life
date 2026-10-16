@@ -1030,14 +1030,14 @@ export const INVENTORY: readonly InventoryEntry[] = [
     id: "ui.guide",
     module: "Shell",
     summary:
-      "The Midnight component guide is the same static page for every signed-in tier. It reads no private records and grants nothing.",
+      "The Midnight component guide is staff-only. A creator plan does not open it. It reads no private records and grants nothing.",
     routes: ["/app/design"],
     sourceFiles: ["src/app/(app)/app/design/page.tsx"],
     serverActions: [],
     rpcs: [],
-    rule: { kind: "all_tiers" },
+    rule: { kind: "staff_role" },
     anon: "deny",
-    enforcement: { kind: "kept_current" },
+    enforcement: { kind: "staff_write" },
     sources: ["D098", "V12.2 Midnight"],
   },
 ];

@@ -23,7 +23,7 @@ import { isSystemTemplateKey, omissionNote } from "@/lib/pitch/contract";
 import { createPitchPersonalizer } from "@/lib/pitch/personalizer";
 import { loadPitchContext } from "@/lib/pitch/queries";
 import { loadHotelFollowUps } from "@/lib/gmail/followup/queries";
-import { hotelCrumbs, hotelHref, parseHotelOrigin } from "@/lib/shell/navigation";
+import { applyHotelOrigin, hotelCrumbs, hotelHref, parseHotelOrigin } from "@/lib/shell/navigation";
 
 export const metadata: Metadata = { title: "Pitch" };
 
@@ -132,7 +132,8 @@ export default async function HotelPitchPage({
   });
 
   const suggestionParams = new URLSearchParams();
-  if (tripId) suggestionParams.set("trip", tripId);
+  applyHotelOrigin(suggestionParams, origin);
+  if (tripId && origin.kind !== "trip") suggestionParams.set("trip", tripId);
   suggestionParams.set("fresh", "1");
   if (explicitSystem) suggestionParams.set("template", explicitSystem);
   if (creatorTemplate) suggestionParams.set("template", creatorTemplate.id);
@@ -146,6 +147,7 @@ export default async function HotelPitchPage({
           { label: hotel.name, href: back ?? undefined },
           { label: "Pitch" },
         ]}
+        back={back ? { href: back, label: hotel.name } : null}
         description="A draft from the facts already on your account. You edit it, then copy it, open it in your mail app, or send it from your connected Gmail. Sending does not mark the hotel as pitched."
       />
       <p className="max-w-prose text-sm text-muted">{note}</p>
@@ -172,7 +174,8 @@ export default async function HotelPitchPage({
         })}
         {context.templates.map((template) => {
           const params = new URLSearchParams();
-          if (tripId) params.set("trip", tripId);
+          applyHotelOrigin(params, origin);
+          if (tripId && origin.kind !== "trip") params.set("trip", tripId);
           params.set("template", template.id);
           params.set("fresh", "1");
           return (
