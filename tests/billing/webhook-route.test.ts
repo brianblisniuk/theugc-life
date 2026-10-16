@@ -6,7 +6,13 @@
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { handleRebillWebhook, type WebhookDeps } from "@/lib/billing/rebill-webhook";
+import { readWebhookEnvelope } from "@/lib/billing/rebill-confirm";
+import {
+  applyResultFromRpc,
+  handleRebillWebhook,
+  rebillWebhookHttpStatus,
+  type WebhookDeps,
+} from "@/lib/billing/rebill-webhook";
 import { rebillSignatureValid } from "@/lib/billing/rebill-signature";
 
 const SIGNING = "whsec_test_signing_secret";
@@ -202,5 +208,111 @@ describe("rebill webhook handler", () => {
     const res = await handleRebillWebhook(request(body, sign(body)), down);
     expect(res.status).toBe(503);
     expect(down.applied).toHaveLength(0);
+  });
+
+  it("returns 503 when apply errors so Rebill retries, and 200 for a finished result", async () => {
+    const body = JSON.stringify(envelope);
+    expect(rebillWebhookHttpStatus("applied")).toBe(200);
+    expect(rebillWebhookHttpStatus("duplicate")).toBe(200);
+    expect(rebillWebhookHttpStatus("ignored")).toBe(200);
+    expect(rebillWebhookHttpStatus("revoked")).toBe(200);
+    expect(rebillWebhookHttpStatus("invalid")).toBe(400);
+    expect(rebillWebhookHttpStatus("error")).toBe(503);
+    expect(rebillWebhookHttpStatus(undefined)).toBe(503);
+
+    for (const result of ["applied", "duplicate", "ignored", "revoked"] as const) {
+      const d = deps({
+        apply: async () => ({ result }),
+      });
+      const res = await handleRebillWebhook(request(body, sign(body)), d);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ result });
+    }
+
+    const errored = deps({
+      apply: async () => ({ result: "error" }),
+    });
+    const bad = await handleRebillWebhook(request(body, sign(body)), errored);
+    expect(bad.status).toBe(503);
+    expect(await bad.json()).toEqual({ result: "error" });
+
+    const thrown = deps({
+      apply: async () => {
+        throw new Error("apply_rebill_event failed");
+      },
+    });
+    const down = await handleRebillWebhook(request(body, sign(body)), thrown);
+    expect(down.status).toBe(503);
+    expect(await down.json()).toEqual({ result: "error" });
+
+    const ignoredBody = JSON.stringify({
+      webhook: { event: "payment.available", logId: "log_available_err" },
+      data: {},
+    });
+    const ignoredError = deps({
+      apply: async () => ({ result: "error" }),
+    });
+    const ignored = await handleRebillWebhook(
+      request(ignoredBody, sign(ignoredBody)),
+      ignoredError,
+    );
+    expect(ignored.status).toBe(503);
+    expect(await ignored.json()).toEqual({ result: "error" });
+
+    expect(applyResultFromRpc(null, { message: "db down" })).toEqual({ result: "error" });
+    expect(applyResultFromRpc({ result: "applied" }, null)).toEqual({ result: "applied" });
+    expect(applyResultFromRpc({ result: 1 }, null)).toEqual({ result: "error" });
+  });
+
+  it("accepts payment.updated with data.id and data.status, and grants from the confirm GET", async () => {
+    const body = JSON.stringify({
+      webhook: { event: "payment.updated", logId: "log_flat_pay" },
+      data: {
+        id: "pay_flat1",
+        status: "approved",
+        amount: 1,
+        currency: "EUR",
+        userId: "forged-user",
+      },
+    });
+    const fetched: string[] = [];
+    const d = deps({
+      fetchImpl: vi.fn(async (input: string | URL | Request) => {
+        fetched.push(String(input));
+        return Response.json({
+          id: "pay_flat1",
+          status: "refunded",
+          amount: 30,
+          currency: "USD",
+        });
+      }) as unknown as typeof fetch,
+    });
+    const res = await handleRebillWebhook(request(body, sign(body)), d);
+    expect(res.status).toBe(200);
+    expect(fetched.some((url) => url.endsWith("/payments/pay_flat1"))).toBe(true);
+    const event = d.applied[0] as { payment: Record<string, unknown> };
+    expect(event.payment).toMatchObject({
+      id: "pay_flat1",
+      status: "refunded",
+      amount: 30,
+      currency: "USD",
+    });
+    expect(JSON.stringify(event)).not.toContain("forged-user");
+    expect(JSON.stringify(event)).not.toContain('"approved"');
+
+    const missingStatus = JSON.stringify({
+      webhook: { event: "payment.updated", logId: "log_flat_nostatus" },
+      data: { id: "pay_flat2" },
+    });
+    const refused = deps();
+    const missing = await handleRebillWebhook(request(missingStatus, sign(missingStatus)), refused);
+    expect(missing.status).toBe(400);
+    expect(refused.applied).toHaveLength(0);
+    expect(
+      readWebhookEnvelope({
+        webhook: { event: "payment.updated", logId: "log_nested" },
+        data: { id: "pay_ignored", status: "approved", payment: { id: "pay_nested" } },
+      })?.paymentId,
+    ).toBe("pay_nested");
   });
 });

@@ -35,6 +35,21 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+const PAYMENT_ID = /^pay_[A-Za-z0-9]+$/;
+
+/**
+ * Nested `data.payment.id` wins. When `data.payment` is absent, a `payment.updated`
+ * body may put the id on `data.id` with `data.status`. Grants still come from
+ * GET /v3/payments/:id, never from this status.
+ */
+function paymentIdFromData(data: Record<string, unknown> | null): string | null {
+  if (!data) return null;
+  if (data.payment !== undefined) return asString(asRecord(data.payment)?.id);
+  const id = asString(data.id);
+  if (!id || !asString(data.status) || !PAYMENT_ID.test(id)) return null;
+  return id;
+}
+
 export function readWebhookEnvelope(body: unknown): {
   logId: string | null;
   event: string | null;
@@ -54,7 +69,7 @@ export function readWebhookEnvelope(body: unknown): {
   return {
     logId: asString(webhook?.logId),
     event: asString(webhook?.event),
-    paymentId: asString(asRecord(data?.payment)?.id),
+    paymentId: paymentIdFromData(data),
     checkoutId: asString(paymentMetadata?.checkoutId) ?? asString(dataMetadata?.checkoutId),
     paymentLinkId:
       asString(data?.paymentLinkId) ??
