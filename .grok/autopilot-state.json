@@ -6,7 +6,7 @@
   "last_recorded_main": "9658a451a09e2543a36184ae47562cb4dde59241",
   "active_block": "V2-F1",
   "branch": "cursor/v2-f1-design-system-2f4d",
-  "pr": null,
+  "pr": 101,
   "expected_head": null,
   "pending_jobs": [],
   "unresolved_findings": [],
@@ -15,5 +15,5 @@
     "verify": "success"
   },
   "required_human_action": "CREDENTIAL REQUIRED — set HUNTER_API_KEY and CONTACT_PROVIDER=hunter only on the host that should call Hunter. Leave both unset in CI. EXTERNAL ACTION APPROVAL REQUIRED remains open: add gmail.send to the Google consent screen, and set GMAIL_SEND_ENV=production only on production. Leave it unset on staging. Draft PRs #88 and #90 are UX01 mockups awaiting the owner. Do not merge them.",
-  "next_dependency": "V2-F1 is in flight on cursor/v2-f1-design-system-2f4d from main 7041104f7fce3e9a8e0916621daa39d0799b2b22 (PR #99). D182 accepts the V12.1 light theme. Audit that PR head. Recorded verified main in this file is still PR #97 until a later block records the newer merges. Provenance and freshness are not on the unlock screen, so D02 is not finished. Fake stays the local and CI provider. The Hunter credential stays a human step, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
+  "next_dependency": "V2-F1 is in flight as draft PR #101 on cursor/v2-f1-design-system-2f4d from main 7041104f7fce3e9a8e0916621daa39d0799b2b22 (PR #99). D182 accepts the V12.1 light theme. Audit that PR head. Recorded verified main in this file is still PR #97 until a later block records the newer merges. Provenance and freshness are not on the unlock screen, so D02 is not finished. Fake stays the local and CI provider. The Hunter credential stays a human step, not a CI call. Drafts #88 and #90 stay open for the owner. Do not merge them."
 }
