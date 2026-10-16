@@ -16,16 +16,25 @@ import { bindServerActions } from "@/lib/entitlements/inventory";
 // Load-time binding. A "use server" module may export only async functions.
 bindServerActions(["trips.active", "trips.own"]);
 
-import { parseTripForm, parseTripId } from "./input";
+import { parseNightStatus, parseStayPair, parseTripForm, parseTripId } from "./input";
 import {
+  acceptStaySuggestion,
   addTripHotel,
   createTrip,
   deleteTrip,
   linkPipelineItem,
+  rejectStaySuggestion,
   removeTripHotel,
+  setTripHotelStay,
   updateTrip,
 } from "./queries";
-import type { LinkResult, ShortlistResult, TripWriteResult } from "./types";
+import type {
+  LinkResult,
+  ShortlistResult,
+  StayWriteResult,
+  SuggestionDecision,
+  TripWriteResult,
+} from "./types";
 
 function readField(formData: FormData, name: string): string | null {
   const value = formData.get(name);
@@ -139,6 +148,58 @@ export async function linkPipelineItemAction(formData: FormData): Promise<LinkRe
   );
   if (result.result === "linked" || result.result === "unlinked") {
     revalidatePath(`/app/trips/${tripId}`);
+  }
+  return result;
+}
+
+export async function setTripHotelStayAction(formData: FormData): Promise<StayWriteResult> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+
+  const tripId = parseTripId(readField(formData, "tripId"));
+  const hotelId = parseTripId(readField(formData, "hotelId"));
+  const nightStatus = parseNightStatus(readField(formData, "nightStatus"));
+  const dates = parseStayPair(readField(formData, "checkIn"), readField(formData, "checkOut"));
+  if (!tripId || !hotelId || !nightStatus || !dates.ok) return { result: "invalid_input" };
+  if (nightStatus === "confirmed" && dates.checkIn === null) return { result: "invalid_input" };
+
+  const result = await setTripHotelStay(resolution.session.userId, tripId, hotelId, {
+    checkIn: dates.checkIn,
+    checkOut: dates.checkOut,
+    nightStatus,
+  });
+  if (result.result === "updated") {
+    revalidatePath(`/app/trips/${tripId}`);
+    revalidatePath("/app/trips");
+  }
+  return result;
+}
+
+export async function acceptStaySuggestionAction(formData: FormData): Promise<SuggestionDecision> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const suggestionId = parseTripId(readField(formData, "suggestionId"));
+  const tripId = parseTripId(readField(formData, "tripId"));
+  if (!suggestionId) return { result: "invalid_input" };
+  const result = await acceptStaySuggestion(resolution.session.userId, suggestionId);
+  if (result.result === "accepted") {
+    if (tripId) revalidatePath(`/app/trips/${tripId}`);
+    revalidatePath("/app/trips");
+    revalidatePath("/app/outreach");
+  }
+  return result;
+}
+
+export async function rejectStaySuggestionAction(formData: FormData): Promise<SuggestionDecision> {
+  const resolution = await resolveSession();
+  if (resolution.status !== "authenticated") return { result: "error" };
+  const suggestionId = parseTripId(readField(formData, "suggestionId"));
+  const tripId = parseTripId(readField(formData, "tripId"));
+  if (!suggestionId) return { result: "invalid_input" };
+  const result = await rejectStaySuggestion(resolution.session.userId, suggestionId);
+  if (result.result === "rejected") {
+    if (tripId) revalidatePath(`/app/trips/${tripId}`);
+    revalidatePath("/app/outreach");
   }
   return result;
 }
