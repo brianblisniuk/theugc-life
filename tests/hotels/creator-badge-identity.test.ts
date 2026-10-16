@@ -75,7 +75,7 @@ describe("creator badge identity", () => {
     expect(loaded.status).toBe("known");
     if (loaded.status !== "known") return;
     const badge = loaded.byHotel.get(HOTEL);
-    expect(badge?.pipeline).toEqual({ kind: "status", label: "Pitched" });
+    expect(badge?.pipeline).toEqual({ kind: "status", label: "Sent" });
     expect(badge?.tripIds).toEqual([TRIP]);
     expect(JSON.stringify(badge)).not.toContain("negotiating");
     expect(JSON.stringify(badge)).not.toContain("trip-other");

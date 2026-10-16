@@ -108,7 +108,7 @@ describe("workflow is only offered when the relationship is known", () => {
 describe("transition result state", () => {
   it("a successful transition reports the new status", () => {
     const state = workflowControlState({ result: "applied", status: "pitched" });
-    expect(state).toEqual({ kind: "applied", message: "Updated to Pitched.", status: "pitched" });
+    expect(state).toEqual({ kind: "applied", message: "Updated to Sent.", status: "pitched" });
   });
 
   it("already_applied reads as success, not failure", () => {

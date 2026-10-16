@@ -35,6 +35,7 @@ const DELIVERABLE_LABEL: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
   submitted: "Submitted",
+  revision_requested: "Revision requested",
   approved: "Approved",
   rejected: "Rejected",
 };

@@ -210,6 +210,11 @@ supporting repeat partnerships as sequential cycles. This finalizes the
 "exact active definition" left open in DATABASE.md §8. No schema change was
 required — the index already implements this rule.
 
+**Storage uniqueness is superseded by D182.** `closed` is still the only
+terminal status, and `won` stays an open relationship. The partial unique
+index is replaced by the overlap rule in D182. The historical paragraph
+above records the rule this index implemented.
+
 ## D024 — Destination Pass default pricing hypothesis
 Status: Accepted hypothesis — **duration superseded by D051**
 
@@ -330,12 +335,16 @@ passive `saved` state into engaged CRM workflow. The engaged statuses are
 `saved` does NOT consume the engaged allowance of 5. A Free creator may hold up
 to 10 open relationships, of which at most 5 may be engaged.
 
-**Relationship to D023.** D023 is unchanged and remains the database invariant:
-for cycle uniqueness, every status except `closed` is an open/non-closed cycle,
-enforced by `pipeline_items_single_active_cycle_uidx`. That is a storage rule
-about how many cycles may exist per creator+hotel. D042 is a commercial rule
-about how many relationships a Free plan may hold and how many may be engaged.
-Both apply independently; neither weakens the other.
+**Relationship to D023.** D023's terminal-status rule is unchanged: every
+status except `closed` is an open relationship, and `won` stays open. D182
+replaces the one-open-row index. D042 is a commercial rule about how many
+relationships a Free plan may hold and how many may be engaged.
+
+**Count amended by D182.** The open-relationship allowance counts distinct
+open hotels, not opportunity rows. A second opportunity on a hotel that is
+already open does not take another Free slot. The engaged allowance is
+unchanged. The D056 filter still excludes hotels covered by a destination
+entitlement from that count.
 
 **Enforcement.** Limits are enforced server-side from typed configuration
 (`FREE_LIMITS` in `src/lib/config.ts`), never from client input, and race-safely
@@ -5787,3 +5796,128 @@ the lookup result (`tier`).
 Email Finder is not a cascade. An excluded role is not stored. A named
 person who matches a tier records that tier. Otherwise `tier` is null
 and the address is still returned.
+
+## D182 — Several opportunities for one hotel
+
+Status: **Accepted** (owner, 16 Oct 2026). This replaces the storage
+uniqueness in D023. D023's terminal status is unchanged: only `closed` ends
+a relationship, and `won` stays open.
+
+A creator may hold more than one open pipeline row for the same hotel when
+the previous row is closed, or the stays do not overlap, or the rows belong
+to different trips. Migration `0097` drops
+`pipeline_items_single_active_cycle_uidx` after the new constraints are in
+place. Existing rows already satisfy the new rule, because each creator and
+hotel had at most one open row.
+
+Two non-closed rows for the same creator and hotel conflict only when they
+share a trip bucket and their date ranges overlap. A row with no trip is its
+own bucket. A row with no dates occupies the whole bucket: the range is
+`[-infinity, infinity)`. Checkout is exclusive, so a stay that ends on the
+day the next stay begins does not overlap. Closed rows are outside the
+constraints. Different trips may use the same dates.
+
+Each opportunity has a display id shaped `OP-` plus at least four digits,
+starting at `OP-1001` for each creator. The number is not global, so one
+creator cannot infer another creator's volume. The database assigns it on
+insert and refuses a later change. The counter row belongs to the creator
+profile and is deleted with it. The browser cannot read the counter.
+
+`save_hotel_to_pipeline` still returns the existing open row for that hotel
+(`already_saved`) and does not create a second opportunity. The explicit
+second opportunity is `open_pipeline_opportunity`. The same trip and the same
+dates return `already_open`. A partial overlap returns `overlap` and does
+not insert. A second opportunity on a hotel that is already open does not
+consume another Free slot (D042). Callers that omit `pipeline_item_id` on a
+Gmail send still resolve one open row. Pass `pipeline_item_id` when more
+than one open opportunity exists.
+
+## D183 — Trip nights are set by the creator
+
+Status: **Accepted** (owner, 16 Oct 2026).
+
+The creator records check-in and check-out on a shortlisted hotel, or a stay
+window on an opportunity. The trip-hotel pair has a status of `pending` or
+`confirmed`. Confirmed requires both dates. The dates are a pair: both null,
+or checkout after check-in.
+
+The trip window is half-open: `[start_date, end_date)`. 12 November through
+19 November is 7 nights. Confirmed nights inside that window are counted
+once. Pending nights do not count as confirmed, and a night that is already
+confirmed is not counted again as pending. The gap is the trip window minus
+confirmed nights minus pending nights. A trip whose start and end are the
+same day reports zero nights. `trip_night_coverage` runs as the caller.
+
+An opportunity's `stay_start` and `stay_end` are a separate commercial
+window. They are not copied from the trip-hotel dates.
+
+When Gmail names different dates, the product stores a suggestion. The
+creator accepts or rejects it. Accept copies the dates onto that one target
+and does not change `night_status`. If the accepted opportunity dates would
+overlap another open opportunity, the suggestion stays pending. Reject does
+not change the stored dates. A suggestion that repeats the stored dates is
+not inserted. A second pending suggestion for the same dates is not
+inserted. The source is `gmail`, and the row names the creator's mailbox.
+A deleted mailbox and another creator's mailbox are refused. The suggestion
+does not store a message body.
+
+## D184 — Outreach campaigns
+
+Status: **Accepted** (owner, 16 Oct 2026).
+
+An outreach campaign is its own record. It may name a trip, or none. The
+name is required, trimmed, and at most 120 characters. A campaign that names
+a trip copies that trip's destination. A later change to the trip's creator
+cannot leave the campaign on someone else's trip.
+
+Creating a campaign from a trip copies the shortlist once. Each copied hotel
+is `trip_shortlist`. A hotel is linked to an opportunity only when exactly
+one open opportunity matches that trip and does not already belong to a
+campaign. A hotel added to the trip later is not copied until
+`import_outreach_shortlist`, which adds the missing hotels as `imported`.
+`add_outreach_hotel` adds one hotel and does not create an opportunity.
+Deleting a campaign leaves the opportunities and clears the link.
+
+A campaign that has a trip may only link an opportunity on that same trip.
+A campaign with no trip may link an opportunity that has its own trip.
+
+## D185 — Contract Review is out of MVP
+
+Status: **Accepted** (owner, 16 Oct 2026).
+
+Contract Review from the V12.1 design is out of MVP scope. This block does
+not add its tables, functions, or screens. The existing agreement draft
+(D114) is unchanged.
+
+## D186 — Deliverable status `revision_requested`
+
+Status: **Accepted** (owner, 16 Oct 2026).
+
+`collaboration_deliverables.status` accepts `revision_requested` in addition
+to `pending`, `submitted`, `approved`, and `rejected`. The creator can store
+it through the existing deliverable write. D115 deadline lists stay
+`pending` and `rejected` only. A revision request is not a deadline.
+
+## D187 — Pipeline stage words
+
+Status: **Accepted** (owner, 16 Oct 2026).
+
+Stored pipeline statuses do not change. The V12.1 stage words are a display
+map:
+
+| Stored | Stage word |
+|---|---|
+| `saved` | Saved |
+| `planned` | Pitch ready |
+| `pitched` | Sent |
+| `replied` | Replied |
+| `negotiating` | Negotiating |
+| `won` | Agreed |
+| `closed` | Closed |
+
+`follow_up` remains a stored status and an event. It is not a stage column.
+`pipeline_stage_label` returns null for it. `pipeline_status_kind` returns
+`event`. The sentence label in the app stays "Follow-up", so existing
+workflow sentences still read. The Spanish pipeline board keeps its own
+column words. Trip metric counts keep the word "Pitched" for the count of
+pitched hotels.
