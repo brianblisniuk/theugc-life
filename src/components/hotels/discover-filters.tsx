@@ -257,23 +257,23 @@ export function DiscoverSort({ query, tripId }: { query: DiscoverQuery; tripId: 
         <input type="hidden" name="collaboration" value={query.collaboration} />
       ) : null}
       {tripId ? <input type="hidden" name="trip" value={tripId} /> : null}
-      <label className="ux-label" htmlFor="discover-rank">
-        Sort
+      <label className="v12-field" htmlFor="discover-rank">
+        <span>Sort</span>
+        <select
+          id="discover-rank"
+          name="rank"
+          defaultValue={query.rank ?? ""}
+          className="v12-sort"
+          onChange={(event) => event.currentTarget.form?.requestSubmit()}
+        >
+          <option value="">Most relevant</option>
+          {METRIC_IDS.map((metric) => (
+            <option key={metric} value={metric}>
+              {sortOptionLabel(metric, METRIC_TITLES[metric], METRIC_LAYERS[metric] === "premium")}
+            </option>
+          ))}
+        </select>
       </label>
-      <select
-        id="discover-rank"
-        name="rank"
-        defaultValue={query.rank ?? ""}
-        className="ux-control"
-        onChange={(event) => event.currentTarget.form?.requestSubmit()}
-      >
-        <option value="">Most relevant</option>
-        {METRIC_IDS.map((metric) => (
-          <option key={metric} value={metric}>
-            {sortOptionLabel(metric, METRIC_TITLES[metric], METRIC_LAYERS[metric] === "premium")}
-          </option>
-        ))}
-      </select>
     </form>
   );
 }

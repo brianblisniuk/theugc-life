@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AddToTripTrigger } from "@/components/hotels/add-to-trip-dialog";
 import { RetryButton } from "@/components/ui/retry-button";
 
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
@@ -47,9 +48,7 @@ export function NextStepPanel({
           <SaveHotelButton hotelId={hotelId} idle="Save hotel" pendingLabel="Saving…" />
         ) : null}
         {model.offerAddToTrip ? (
-          <a className="ux-btn" href="#trip">
-            Add to trip
-          </a>
+          <AddToTripTrigger className="v12-btn">Add to My Trip</AddToTripTrigger>
         ) : null}
         {model.offerViewPipeline ? (
           <a className="ux-btn" href="#work">

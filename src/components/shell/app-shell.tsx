@@ -297,13 +297,12 @@ function ShellBody({
               <Icon name="account" />
               <span>Admin</span>
             </Link>
-            <Link href="/app/design" className="v12-nav-link">
-              <Icon name="account" />
-              <span>UI guide</span>
-            </Link>
           </div>
         ) : null}
         <div className="v12-sidebar-foot">
+          <Link href="/app/design" className="v12-nav-link">
+            <span>UI Guide</span>
+          </Link>
           <div className="v12-profile">
             <span className="v12-avatar">{initials}</span>
             <span>

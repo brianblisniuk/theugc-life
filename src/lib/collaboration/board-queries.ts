@@ -8,7 +8,13 @@ import { isUuid } from "@/lib/hotels/ids";
 import { resolveOwnProfile } from "@/lib/onboarding/first-run";
 import { createClient } from "@/lib/supabase/server";
 
-import { BOARD_READ_LIMIT, assembleCollaborationBoard, type CollaborationBoard } from "./board";
+import {
+  BOARD_READ_LIMIT,
+  assembleCollaborationBoard,
+  mapOutreachActivity,
+  type ActivityTimeline,
+  type CollaborationBoard,
+} from "./board";
 
 const COLLABORATION_COLUMNS =
   "id, creator_id, hotel_id, pipeline_item_id, status, collaboration_type, start_date, end_date, hotel:hotels(id, name)";
@@ -101,7 +107,7 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
             .select("id, creator_id, display_ref")
             .eq("creator_id", profile.profileId)
             .in("id", pipelineIds);
-    return assembleCollaborationBoard({
+    const board = assembleCollaborationBoard({
       viewerId: profile.profileId,
       failed,
       total: typeof counted.count === "number" ? counted.count : null,
@@ -111,6 +117,7 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
       pipelineItems: Array.isArray(pipeline.data) ? pipeline.data : [],
       childFailed: childFailed || pipeline.error !== null || !Array.isArray(pipeline.data),
     });
+    return board;
   } catch {
     return assembleCollaborationBoard({
       viewerId: null,
@@ -122,5 +129,41 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
       pipelineItems: [],
       childFailed: true,
     });
+  }
+}
+
+/**
+ * Events for one opportunity, newest first. The limit is this opportunity's
+ * window. A full window is capped, never described as no stored events.
+ */
+export async function loadOpportunityTimeline(
+  authUserId: string,
+  pipelineItemId: string | null,
+): Promise<ActivityTimeline> {
+  if (!pipelineItemId || !isUuid(pipelineItemId) || !isUuid(authUserId)) {
+    return { kind: "ok", events: [], capped: false };
+  }
+  try {
+    const supabase = await createClient();
+    const profileResult = await supabase
+      .from("creator_profiles")
+      .select("id, user_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+    const profile = resolveOwnProfile(profileResult.data, profileResult.error !== null, authUserId);
+    if (profile.status !== "ok") return { kind: "error" };
+    const events = await supabase
+      .from("outreach_events")
+      .select("creator_id, pipeline_item_id, event_type, event_at")
+      .eq("creator_id", profile.profileId)
+      .eq("pipeline_item_id", pipelineItemId)
+      .order("event_at", { ascending: false })
+      .limit(BOARD_READ_LIMIT);
+    if (events.error !== null || !Array.isArray(events.data)) return { kind: "error" };
+    const timeline = mapOutreachActivity(events.data, profile.profileId);
+    if (timeline.kind === "error") return timeline;
+    return { ...timeline, capped: events.data.length >= BOARD_READ_LIMIT };
+  } catch {
+    return { kind: "error" };
   }
 }

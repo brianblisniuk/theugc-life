@@ -12,12 +12,12 @@ export const metadata: Metadata = { title: "Set new password" };
 export default function ResetPasswordPage() {
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-semibold text-text">Set a new password</h1>
-        <p className="mt-1 text-sm text-muted">
-          Choose a strong password you don&apos;t use elsewhere.
-        </p>
-      </div>
+      <header className="v12-pagehead">
+        <div>
+          <h1>Set a new password</h1>
+          <p>Choose a strong password you don&apos;t use elsewhere.</p>
+        </div>
+      </header>
       <ResetPasswordForm />
     </div>
   );

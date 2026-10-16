@@ -103,7 +103,6 @@ describe("Midnight shell", () => {
       "Plans & Credits",
       "Billing & Activity",
       "Getting Started",
-      "Account",
     ]);
     expect(labels.join(" ")).not.toMatch(/Contract Review/);
     expect(source("src/app/(app)/app/collaborations/page.tsx")).not.toContain("Contract Review");

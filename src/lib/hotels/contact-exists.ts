@@ -13,7 +13,9 @@ export function parseContactFlags(data: unknown): Map<string, boolean> | null {
   for (const row of data) {
     if (!row || typeof row !== "object" || Array.isArray(row)) return null;
     const record = row as Record<string, unknown>;
-    if ("email" in record || "phone" in record || "linkedin_url" in record) return null;
+    if ("email" in record || "phone" in record || "name" in record || "linkedin_url" in record) {
+      return null;
+    }
     const hotelId = record.hotel_id;
     const exists = record.contact_exists;
     if (typeof hotelId !== "string" || !UUID.test(hotelId)) return null;
@@ -21,4 +23,16 @@ export function parseContactFlags(data: unknown): Map<string, boolean> | null {
     flags.set(hotelId, exists);
   }
   return flags;
+}
+
+/**
+ * A successful read that omits a requested id is unknown.
+ * Unknown is not the same as a stored false.
+ */
+export function contactAvailability(
+  flags: ReadonlyMap<string, boolean>,
+  hotelId: string,
+): "available" | "absent" | "unknown" {
+  if (!flags.has(hotelId)) return "unknown";
+  return flags.get(hotelId) ? "available" : "absent";
 }

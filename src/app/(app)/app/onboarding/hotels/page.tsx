@@ -98,12 +98,17 @@ export default async function OnboardingHotelsPage() {
       : [];
 
   return (
-    <div className="s6-page">
-      <div>
-        <p className="s6-eyebrow">{progress.destinationName}</p>
-        <h1>Hotels for your destination</h1>
-        <p className="s6-muted">{FIRST_RUN_COPY.databaseNote}</p>
-      </div>
+    <div className="v12-stack">
+      <header className="v12-pagehead">
+        <div>
+          <p className="v12-eyebrow">GETTING STARTED / CREATOR WORKSPACE</p>
+          <h1>Hotels for your destination</h1>
+          <p>
+            {progress.destinationName ? `${progress.destinationName}. ` : ""}
+            {FIRST_RUN_COPY.databaseNote}
+          </p>
+        </div>
+      </header>
 
       {failed ? (
         <p className="text-sm">

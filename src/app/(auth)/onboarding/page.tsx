@@ -14,13 +14,15 @@ export default async function OnboardingPage() {
   await requireUser("/onboarding");
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-semibold text-text">Welcome</h1>
-        <p className="mt-1 text-sm text-muted">
-          Add the name you will use in the product. Next you can connect Gmail, create a trip, and
-          save a hotel.
-        </p>
-      </div>
+      <header className="v12-pagehead">
+        <div>
+          <h1>Welcome</h1>
+          <p>
+            Add the name you will use in the product. Next you can connect Gmail, create a trip, and
+            save a hotel.
+          </p>
+        </div>
+      </header>
       <OnboardingForm />
     </div>
   );

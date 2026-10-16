@@ -87,6 +87,94 @@ export interface BoardCard {
   compensation: BoardCompensation | null;
 }
 
+export interface BoardEvent {
+  pipelineItemId: string;
+  label: string;
+  day: string;
+}
+
+/** A failed ledger read is not an empty history. */
+export type ActivityTimeline =
+  { kind: "ok"; events: readonly BoardEvent[]; capped: boolean } | { kind: "error" };
+
+export const ACTIVITY_EMPTY = "No outreach events are stored for this opportunity.";
+export const ACTIVITY_ERROR =
+  "The activity timeline could not be read. This is not an empty history.";
+export const ACTIVITY_UNLINKED =
+  "This collaboration is not linked to an opportunity, so there is no event timeline.";
+export const ACTIVITY_CAPPED = "This timeline is capped. Older events are not listed.";
+
+/**
+ * A full read window is not an empty history. Empty is only a completed
+ * read that returned no rows for this opportunity.
+ */
+export function activityTimelineClaim(
+  timeline: ActivityTimeline,
+  pipelineItemId: string | null,
+): "unlinked" | "error" | "empty" | "events" {
+  if (!pipelineItemId) return "unlinked";
+  if (timeline.kind === "error") return "error";
+  const count = timeline.events.filter((event) => event.pipelineItemId === pipelineItemId).length;
+  if (count === 0) return timeline.capped ? "events" : "empty";
+  return "events";
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  hotel_saved: "Hotel saved",
+  pitch_sent: "Pitch recorded",
+  followup_sent: "Follow-up recorded",
+  reply_received: "Reply recorded",
+  positive_reply: "Positive reply recorded",
+  negative_reply: "Negative reply recorded",
+  contact_bounced: "Contact bounced",
+  offer_received: "Offer recorded",
+  negotiation_started: "Negotiation started",
+  deal_won: "Agreement recorded",
+  deal_lost: "Opportunity closed",
+  collaboration_started: "Collaboration started",
+  collaboration_completed: "Collaboration completed",
+  creator_closed_pipeline: "Pipeline closed",
+};
+
+/**
+ * Labels come from stored event types. An unknown type is shown as stored.
+ * A payload that carries mail, a name, or metadata is a failed read.
+ */
+export function mapOutreachActivity(rows: unknown, viewerId: string): ActivityTimeline {
+  if (!isUuid(viewerId) || !Array.isArray(rows)) return { kind: "error" };
+  const events: BoardEvent[] = [];
+  for (const raw of rows) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { kind: "error" };
+    const row = raw as Record<string, unknown>;
+    if (
+      "metadata" in row ||
+      "email" in row ||
+      "phone" in row ||
+      "name" in row ||
+      "body" in row ||
+      "subject" in row
+    ) {
+      return { kind: "error" };
+    }
+    if (row.creator_id !== viewerId) return { kind: "error" };
+    const pipelineItemId = row.pipeline_item_id;
+    const eventType = row.event_type;
+    const eventAt = row.event_at;
+    if (typeof pipelineItemId !== "string" || !isUuid(pipelineItemId)) return { kind: "error" };
+    if (typeof eventType !== "string" || !/^[a-z0-9_]{1,64}$/.test(eventType)) {
+      return { kind: "error" };
+    }
+    if (typeof eventAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(eventAt))
+      return { kind: "error" };
+    events.push({
+      pipelineItemId,
+      label: EVENT_LABELS[eventType] ?? eventType,
+      day: eventAt.slice(0, 10),
+    });
+  }
+  return { kind: "ok", events, capped: false };
+}
+
 export type CollaborationBoard =
   | { kind: "error"; title: string; body: string }
   | {
@@ -95,7 +183,13 @@ export type CollaborationBoard =
       body: string;
       cta: { href: string; label: string };
     }
-  | { kind: "items"; cards: BoardCard[]; summary: string; capped: boolean };
+  | {
+      kind: "items";
+      cards: BoardCard[];
+      summary: string;
+      capped: boolean;
+      timeline: ActivityTimeline;
+    };
 
 const ERROR = {
   kind: "error" as const,
@@ -459,5 +553,6 @@ export function assembleCollaborationBoard(input: {
     cards,
     summary,
     capped: input.total > shown || deliverableOverflow || compensationOverflow,
+    timeline: { kind: "error" },
   };
 }

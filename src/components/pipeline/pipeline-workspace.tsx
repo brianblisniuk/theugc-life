@@ -1,14 +1,12 @@
 import Link from "next/link";
 
-import { PrivateNotesEditor } from "@/components/pipeline/private-notes-editor";
+import { Chip } from "@/components/ui/chip";
 import type { PipelineListItem } from "@/lib/pipeline/queries";
 import {
   STAGE_COLUMNS,
   buildAttention,
-  cardSignal,
   columnEmptyNote,
   commandSummary,
-  contactLine,
   contextLine,
   COUNT_UNAVAILABLE,
   duplicateHotelNote,
@@ -16,18 +14,15 @@ import {
   followUpRows,
   laneBadge,
   laneTone,
-  nextStep,
   rowsForStage,
   shownDisplayRef,
   type AttentionBoard,
-  type CardSignal,
   type DeadlineAttention,
   type DensityRow,
 } from "@/lib/pipeline/density";
 import { pipelinePageHref, type PipelineSurface, type PipelineView } from "@/lib/pipeline/view";
-import type { IntelligenceResult } from "@/lib/hotels/intelligence";
 import type { MetricId } from "@/lib/metrics/contract";
-import { opportunityPitchHref, pipelineRowLinks } from "@/lib/shell/navigation";
+import { hotelHref, opportunityPitchHref } from "@/lib/shell/navigation";
 
 export function toDensityRow(item: PipelineListItem): DensityRow {
   return {
@@ -50,16 +45,6 @@ export function toDensityRow(item: PipelineListItem): DensityRow {
     metricValue: item.metricValue ?? null,
     metricSample: item.metricSample ?? null,
   };
-}
-
-function signalFor(
-  hotelId: string | null,
-  intelligence:
-    { status: "error" } | { status: "ok"; byHotel: ReadonlyMap<string, IntelligenceResult> },
-): CardSignal {
-  if (intelligence.status === "error") return cardSignal({ status: "error" });
-  if (!hotelId) return cardSignal({ status: "none" });
-  return cardSignal(intelligence.byHotel.get(hotelId) ?? { status: "none" });
 }
 
 export function PipelineCommand({ counts }: { counts: Parameters<typeof commandSummary>[0] }) {
@@ -121,9 +106,7 @@ export function PipelineAttentionList({ board }: { board: AttentionBoard }) {
         </div>
         {board.actions.length > 0 ? (
           <span className="v12-badge v12-badge-green">
-            {board.actions.length === 1
-              ? "1 next step"
-              : `${board.actions.length} next steps`}
+            {board.actions.length === 1 ? "1 next step" : `${board.actions.length} next steps`}
           </span>
         ) : null}
       </div>
@@ -187,141 +170,50 @@ export function PipelineViewSwitch({
         <h2>Opportunity board</h2>
         <p>Use Board, List, or Timeline to work from the same set of opportunities.</p>
       </div>
-      <div className="v12-head-actions" role="group" aria-label="Pipeline view">
-        {views.map((item) => {
-          const current = view === item.id;
-          return (
-            <Link
-              key={item.id}
-              href={pipelinePageHref(
-                status,
-                1,
-                surface,
-                rank,
-                item.id === "board" ? null : item.id,
-              )}
-              aria-current={current ? "page" : undefined}
-              className={
-                "inline-flex min-h-11 items-center rounded-md border px-3 text-sm font-semibold " +
-                (current
-                  ? "border-accent bg-accent text-accent-contrast"
-                  : "border-border text-text")
-              }
-            >
-              {item.label}
-            </Link>
-          );
-        })}
+      <div className="v12-chips" role="group" aria-label="Pipeline view">
+        {views.map((item) => (
+          <Chip
+            key={item.id}
+            href={pipelinePageHref(status, 1, surface, rank, item.id === "board" ? null : item.id)}
+            pressed={view === item.id}
+          >
+            {item.label}
+          </Chip>
+        ))}
       </div>
     </div>
   );
 }
 
-function OpportunityCard({
-  row,
-  surface,
-  asOf,
-  signal,
-  contactRead,
-}: {
-  row: DensityRow;
-  surface: PipelineSurface;
-  asOf: string;
-  signal: CardSignal;
-  contactRead: "ok" | "error";
-}) {
-  const step = nextStep(row, asOf);
+function OpportunityCard({ row }: { row: DensityRow }) {
   const ref = shownDisplayRef(row.displayRef);
   const context = contextLine(row);
-  const links = pipelineRowLinks(
-    {
-      status: row.status,
-      hotelId: row.hotelId,
-      hotelName: row.hotelName,
-      id: row.id,
-      tripId: row.tripId,
-    },
-    surface,
-  );
-  const pitch = row.hotelId && row.id ? opportunityPitchHref(row.hotelId, row.id, row.tripId) : null;
-  return (
-    <article className="v12-deal">
+  const href = row.hotelId ? hotelHref(row.hotelId, { kind: "pipeline" }) : null;
+  const body = (
+    <>
       <h3>{row.hotelName}</h3>
-      {context ? <p>{context}</p> : null}
-      <p>{step.detail}</p>
+      <p>{context || "Opportunity"}</p>
       <div className="v12-deal-foot">
         <span>{ref ?? "Opportunity"}</span>
-        <span>{step.title}</span>
       </div>
-      <p className="mt-1 text-xs text-text" data-testid="pipeline-signal">
-        Hotel signal: {signal.text}
-      </p>
-      {row.metricValue ? (
-        <p className="mt-1 text-xs text-text" data-testid="pipeline-rank">
-          {row.metricRank}. {row.metricValue}
-          {row.metricSample ? <span className="text-muted"> · {row.metricSample}</span> : null}
-        </p>
-      ) : null}
-      {row.deadlineLabel ? (
-        <p className="mt-1 text-xs font-semibold text-text" data-testid="pipeline-deadline">
-          {row.deadlineLabel}
-        </p>
-      ) : null}
-      {contactLine({ read: contactRead, email: row.contactEmail }).kind === "email" &&
-      row.contactEmail ? (
-        <a
-          className="mt-1 block break-all text-xs text-text underline"
-          href={`mailto:${row.contactEmail}`}
-          data-testid="pipeline-contact"
-        >
-          {row.contactEmail}
-        </a>
-      ) : contactLine({ read: contactRead, email: row.contactEmail }).kind === "unavailable" ? (
-        <p className="mt-1 text-xs text-text" role="status">
-          We couldn’t check the unlocked email.
-        </p>
-      ) : (
-        <p className="mt-1 text-xs text-muted">No unlocked email on this card.</p>
-      )}
-      <div className="mt-2 flex flex-wrap gap-2">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            aria-label={link.ariaLabel}
-            className="text-xs font-semibold underline"
-          >
-            {link.label}
-          </Link>
-        ))}
-        {pitch ? (
-          <Link href={pitch} className="text-xs font-semibold underline">
-            Pitch
-          </Link>
-        ) : null}
-      </div>
-      <PrivateNotesEditor pipelineItemId={row.id} initialNotes={row.privateNotes} />
-    </article>
+    </>
+  );
+  if (!href) return <article className="v12-deal">{body}</article>;
+  return (
+    <Link href={href} className="v12-deal">
+      {body}
+    </Link>
   );
 }
 
 export function PipelineDense({
   items,
-  surface,
   view,
-  asOf,
   counts,
-  contactRead,
-  intelligence,
 }: {
   items: readonly PipelineListItem[];
-  surface: PipelineSurface;
   view: PipelineView;
-  asOf: string;
   counts: Partial<Record<string, number>> | null;
-  contactRead: "ok" | "error";
-  intelligence:
-    { status: "error" } | { status: "ok"; byHotel: ReadonlyMap<string, IntelligenceResult> };
 }) {
   const rows = items.map(toDensityRow);
   if (view === "list") {
@@ -329,13 +221,7 @@ export function PipelineDense({
       <ul className="space-y-2">
         {rows.map((row) => (
           <li key={row.id}>
-            <OpportunityCard
-              row={row}
-              surface={surface}
-              asOf={asOf}
-              signal={signalFor(row.hotelId, intelligence)}
-              contactRead={contactRead}
-            />
+            <OpportunityCard row={row} />
           </li>
         ))}
       </ul>
@@ -356,14 +242,7 @@ export function PipelineDense({
           <section key={day}>
             <h3 className="text-sm font-semibold text-text">{day}</h3>
             {group.map((row) => (
-              <OpportunityCard
-                key={row.id}
-                row={row}
-                surface={surface}
-                asOf={asOf}
-                signal={signalFor(row.hotelId, intelligence)}
-                contactRead={contactRead}
-              />
+              <OpportunityCard key={row.id} row={row} />
             ))}
           </section>
         ))}
@@ -388,14 +267,7 @@ export function PipelineDense({
           <p className="text-xs text-muted">An event, not a stage column.</p>
           {follow.note ? <p className="text-xs text-muted">{follow.note}</p> : null}
           {events.map((row) => (
-            <OpportunityCard
-              key={row.id}
-              row={row}
-              surface={surface}
-              asOf={asOf}
-              signal={signalFor(row.hotelId, intelligence)}
-              contactRead={contactRead}
-            />
+            <OpportunityCard key={row.id} row={row} />
           ))}
         </section>
       ) : null}
@@ -425,16 +297,7 @@ export function PipelineDense({
               {columnRows.length === 0 ? (
                 <p className="px-1 py-2 text-sm text-muted">{emptyText}</p>
               ) : (
-                columnRows.map((row) => (
-                  <OpportunityCard
-                    key={row.id}
-                    row={row}
-                    surface={surface}
-                    asOf={asOf}
-                    signal={signalFor(row.hotelId, intelligence)}
-                    contactRead={contactRead}
-                  />
-                ))
+                columnRows.map((row) => <OpportunityCard key={row.id} row={row} />)
               )}
             </section>
           );

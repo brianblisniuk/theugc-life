@@ -8,12 +8,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/hotels/ids";
 
-import {
-  ownedExistence,
-  resolveOwnProfile,
-  type FirstRunFacts,
-  type Probe,
-} from "./first-run";
+import { ownedExistence, resolveOwnProfile, type FirstRunFacts, type Probe } from "./first-run";
 import { PROFILE_COLUMNS } from "@/lib/surfaces/lists";
 
 type QueryResult = {
@@ -84,7 +79,10 @@ function blocked(displayName: string | null = null): HomeProgress {
   };
 }
 
-function destinationFields(row: Record<string, unknown>): { name: string | null; slug: string | null } {
+function destinationFields(row: Record<string, unknown>): {
+  name: string | null;
+  slug: string | null;
+} {
   const nested = row.destination;
   if (!nested || typeof nested !== "object") return { name: null, slug: null };
   const record = nested as { name?: unknown; slug?: unknown };
@@ -130,7 +128,11 @@ function mapPitch(notes: QueryResult, events: QueryResult, profileId: string): P
   }
   for (const row of eventRows) {
     if (typeof row.creator_id !== "string") return "error";
-    if (row.creator_id === profileId && row.event_type === "pitch_sent" && row.source === "manual_creator") {
+    if (
+      row.creator_id === profileId &&
+      row.event_type === "pitch_sent" &&
+      row.source === "manual_creator"
+    ) {
       return "yes";
     }
   }
@@ -150,7 +152,9 @@ function mapFollowUp(
     if (row.creator_id !== profileId || !isUuid(row.hotel_id)) continue;
     const nested = row.hotel;
     const name =
-      nested && typeof nested === "object" && typeof (nested as { name?: unknown }).name === "string"
+      nested &&
+      typeof nested === "object" &&
+      typeof (nested as { name?: unknown }).name === "string"
         ? (nested as { name: string }).name.trim()
         : "";
     if (!name) return { probe: "error", hotel: null };
@@ -228,5 +232,29 @@ export async function loadHomeProgress(
     };
   } catch {
     return blocked();
+  }
+}
+
+/**
+ * Review the contact is done when this account owns a contact unlock.
+ * That row is what lets the creator view the unlocked contact. A failed
+ * read is not "not reviewed".
+ */
+export async function loadContactReviewed(authUserId: string): Promise<Probe> {
+  if (!isUuid(authUserId)) return "error";
+  try {
+    const supabase = await createClient();
+    const result = await supabase
+      .from("contact_unlocks")
+      .select("id, user_id")
+      .eq("user_id", authUserId)
+      .limit(1);
+    if (result.error !== null || !Array.isArray(result.data)) return "error";
+    for (const row of result.data) {
+      if (!row || typeof row !== "object" || row.user_id !== authUserId) return "error";
+    }
+    return result.data.length > 0 ? "yes" : "no";
+  } catch {
+    return "error";
   }
 }

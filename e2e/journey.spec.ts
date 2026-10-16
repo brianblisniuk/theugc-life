@@ -220,13 +220,12 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(ada.getByText("This hotel is in your pipeline.")).toBeVisible();
   await expect(ada.getByRole("button", { name: "Save to Pipeline" })).toHaveCount(0);
 
+  await ada.getByRole("button", { name: "Add to My Trip" }).click();
   await commitAction(ada, () => ada.getByRole("button", { name: "Add to trip" }).click());
   await expect(ada.locator("#add-to-trip option:checked")).toContainText("already on this trip");
 
   await ada.goto("/app/pipeline");
-  const pipelineContact = ada.getByTestId("pipeline-contact");
-  await expect(pipelineContact).toHaveCount(1);
-  await expect(pipelineContact).toHaveText("found-222222222222@fake-provider.test");
+  await expect(ada.getByTestId("pipeline-contact")).toHaveCount(0);
   await ada.goto(HOTEL_PATH);
 
   await ada.getByLabel("Gmail thread id").fill(FIXTURE_THREAD_ID);
@@ -294,6 +293,8 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
 
   await ada.getByRole("link", { name: "My Profile", exact: true }).click();
   await ada.waitForURL("**/app/profile");
+  await ada.getByRole("link", { name: "Edit profile" }).click();
+  await ada.waitForURL("**/app/profile/edit");
   await ada.getByRole("textbox", { name: "Bio" }).fill(BIO);
   await commitAction(ada, () => ada.getByRole("button", { name: "Save profile" }).click());
   await expect(ada.getByRole("textbox", { name: "Bio" })).toHaveValue(BIO);
@@ -425,7 +426,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByText("On a trip")).toHaveCount(0);
   await expect(bea.getByText("On trip")).toHaveCount(0);
 
-  await bea.goto("/app/profile");
+  await bea.goto("/app/profile/edit");
   await expect(bea.getByLabel("Display name")).toHaveValue(BEA_NAME);
   await expect(bea.getByText(ADA_NAME)).toHaveCount(0);
   await expect(bea.getByText(BIO)).toHaveCount(0);

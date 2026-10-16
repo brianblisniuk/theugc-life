@@ -13,6 +13,42 @@ import { planChipFromBillingState } from "@/lib/screens/plan-chip";
 
 export const metadata: Metadata = { title: "Plans & Credits" };
 
+const PLAN_FACE = {
+  free: {
+    eyebrow: "START SIMPLE",
+    points: [
+      "Browse the hotel catalog and public activity",
+      "Save a limited hotel shortlist and Trip",
+      "Unlock contacts with available credits",
+      "Write pitches using manual templates",
+      "Track opportunities manually",
+    ],
+    action: "Current Free capabilities",
+  },
+  pro: {
+    eyebrow: "FOR CONSISTENT OUTREACH",
+    points: [
+      "Everything in Free, higher working capacity",
+      "Reply rate and typical reply signals when publishable",
+      "Advanced discovery filters",
+      "AI-assisted pitch drafting with credits",
+      "Authorized Gmail-connected workflows",
+    ],
+    action: "Compare Pro capabilities",
+  },
+  max: {
+    eyebrow: "FOR HIGHER VOLUME",
+    points: [
+      "Everything in Pro, greater credit allowance",
+      "Deeper Creator Fit insight where available",
+      "More research and outreach capacity",
+      "Advanced workflow limits and filters",
+      "Still no guaranteed responses or collaborations",
+    ],
+    action: "Compare Max capabilities",
+  },
+} as const;
+
 /**
  * Plan comparison. Amounts come from config. Checkout stays on Billing.
  * This page does not grant access and does not send an amount.
@@ -25,22 +61,23 @@ export default async function PlansPage() {
   const cards = planCards();
 
   return (
-    <div className="s6-page">
-      <header className="s6-head">
+    <div className="v12-stack">
+      <header className="v12-pagehead">
         <div>
-          <p className="s6-eyebrow">Plans & Credits</p>
+          <p className="v12-eyebrow">PLANS & CREDITS / CREATOR WORKSPACE</p>
           <h1>Choose the capacity that fits your work.</h1>
           <p>
-            Every plan can reach the catalog. A credit is spent only when a lookup or a draft
-            succeeds. Prices below are the configured plan amounts.
+            Every plan starts with the same goal: help creators reach the right hotel contacts and
+            manage opportunities confidently.
           </p>
         </div>
         <ButtonLink href="/app/billing">Billing & Activity</ButtonLink>
       </header>
 
-      <p className="s6-callout">
-        One credit unlocks a hotel&apos;s available professional contacts when the lookup succeeds.
-        An unsuccessful lookup and reopening an unlocked hotel cost nothing.
+      <p className="v12-callout">
+        <strong>One credit unlocks a hotel&apos;s available professional contacts.</strong> Only a
+        successful unlock is charged. An unsuccessful lookup and reopening a previously unlocked
+        hotel cost zero. No one is promised a named person if only a department mailbox exists.
       </p>
 
       {state.kind === "error" ? (
@@ -65,13 +102,13 @@ export default async function PlansPage() {
               key={card.id}
               className={current ? "v12-card v12-card-pad s6-current" : "v12-card v12-card-pad"}
             >
-              <p className="s6-eyebrow">{current ? "Current" : card.name}</p>
+              <p className="v12-eyebrow">{current ? "Current" : PLAN_FACE[card.id].eyebrow}</p>
               <h2>{card.name}</h2>
               <p className="s6-credits">{card.credits} credits</p>
               <p>{card.creditNote}</p>
               <p className="s6-price">{card.priceNote}</p>
               <ul>
-                {card.points.map((point) => (
+                {PLAN_FACE[card.id].points.map((point) => (
                   <li key={point}>{point}</li>
                 ))}
               </ul>
@@ -80,9 +117,7 @@ export default async function PlansPage() {
                 variant={card.id === "pro" ? "primary" : "secondary"}
                 block
               >
-                {card.id === "free"
-                  ? "Review Free on Billing"
-                  : `Continue with ${card.name} on Billing`}
+                {PLAN_FACE[card.id].action}
               </ButtonLink>
             </section>
           );
@@ -93,7 +128,7 @@ export default async function PlansPage() {
 
       <section className="v12-card">
         <div className="v12-card-pad">
-          <h2>What a credit pays for</h2>
+          <h2>Know what a credit pays for.</h2>
         </div>
         <DataTable
           caption="Credit actions"
@@ -114,7 +149,8 @@ export default async function PlansPage() {
         <p className="s6-muted">
           Pro annual is ${PLAN_PRICES.pro.annualPerMonthUsd * 12} and Max annual is $
           {PLAN_PRICES.max.annualPerMonthUsd * 12}. Checkout starts on Billing. A payment is not
-          access.
+          access. Premium access never guarantees a hotel will have sufficient data to publish every
+          metric.
         </p>
       </section>
     </div>

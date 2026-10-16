@@ -1,24 +1,11 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
-import { AudienceFields } from "@/components/profile/audience-fields";
-import { ContentExamples } from "@/components/profile/content-examples";
-import { PastCollaborations } from "@/components/profile/past-collaborations";
-import { PersonalCounts } from "@/components/profile/personal-counts";
-import { ProfileEditor } from "@/components/profile/profile-editor";
-import { PublicProfileToggle } from "@/components/profile/public-profile-toggle";
-import { ShareLinkPanel } from "@/components/profile/share-link-panel";
-import { ShareOptIns } from "@/components/profile/share-opt-ins";
 import { ButtonLink } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { requireUser } from "@/lib/auth/guards";
 import { initialsFromName } from "@/lib/screens/initials";
-import {
-  getOwnProfile,
-  getPastCollaborations,
-  getPersonalCounts,
-  getProfileVisibility,
-} from "@/lib/profile/queries";
+import { getOwnProfile, getPastCollaborations } from "@/lib/profile/queries";
 import { profileReadiness } from "@/lib/profile/readiness";
 import { getShareSettings } from "@/lib/profile/share-queries";
 import { PROFILE_LIST_COPY } from "@/lib/surfaces/list-outcome";
@@ -32,12 +19,10 @@ export const metadata: Metadata = { title: "My Profile" };
  */
 export default async function ProfilePage() {
   const session = await requireUser("/app/profile");
-  const [profile, counts, past, share, visibility] = await Promise.all([
+  const [profile, past, share] = await Promise.all([
     getOwnProfile(session.userId),
-    getPersonalCounts(),
     getPastCollaborations(null),
     getShareSettings(),
-    getProfileVisibility(session.userId),
   ]);
 
   const selectedCount =
@@ -67,7 +52,7 @@ export default async function ProfilePage() {
           </p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/profile/pitches">Pitch templates</ButtonLink>
+          <ButtonLink href="/app/profile/edit">Edit profile</ButtonLink>
           <ButtonLink href="/app/pitch" variant="primary">
             Open Pitch Studio
           </ButtonLink>
@@ -104,7 +89,13 @@ export default async function ProfilePage() {
                     </p>
                   </div>
                 </div>
-                <ProfileEditor profile={profile.profile} />
+                <div className="v12-field">
+                  <span>Professional intro</span>
+                  <p>
+                    {profile.profile.bio.trim() ||
+                      "No introduction is saved yet. Edit profile to add one."}
+                  </p>
+                </div>
               </>
             ) : (
               <ErrorState title="Profile" description={PROFILE_LIST_COPY.error} />
@@ -118,7 +109,7 @@ export default async function ProfilePage() {
                 <p>Lead with recorded projects. Nothing here is a sample.</p>
               </div>
               <Link href="/app/profile/portfolio" className="v12-btn v12-btn-small">
-                Edit portfolio
+                Add project
               </Link>
             </div>
             {pieceReadsFailed ? (
@@ -150,22 +141,6 @@ export default async function ProfilePage() {
                   : null}
               </div>
             )}
-            {share.status === "ok" ? (
-              <ContentExamples
-                deliverables={share.deliverables}
-                sharedIds={share.sharedDeliverableIds}
-              />
-            ) : null}
-            <PastCollaborations
-              load={past}
-              heading="Past collaborations"
-              linkToHotel
-              sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
-            />
-            <p>
-              Past collaborations stay on this page until you mark them for the hotel link. They
-              are not public by default.
-            </p>
           </section>
         </div>
 
@@ -190,12 +165,15 @@ export default async function ProfilePage() {
                   : `${selectedCount} featured project${selectedCount === 1 ? "" : "s"}`}
             </p>
             <p>
-              Mailbox connection and account deletion stay on <Link href="/app/account">Account</Link>.
+              Mailbox connection and account deletion stay on{" "}
+              <Link href="/app/account">Account</Link>.
             </p>
           </section>
           <section className="v12-panel v12-panel-pad">
             <p className="v12-eyebrow">PROFILE READINESS</p>
-            <h3>{readiness?.ready ? "Ready enough to pitch" : "Still private until you fill it"}</h3>
+            <h3>
+              {readiness?.ready ? "Ready enough to pitch" : "Still private until you fill it"}
+            </h3>
             {readiness ? (
               <ul className="v12-checklist">
                 {readiness.items.map((item) => (
@@ -210,26 +188,13 @@ export default async function ProfilePage() {
             {pieceReadsFailed ? (
               <p>Selected pieces and the share link were not counted. That is not zero.</p>
             ) : null}
-            <p>Audience-size claims are optional. A new creator can have a portfolio without invented follower counts.</p>
+            <p>
+              Audience-size claims are optional. A new creator can have a portfolio without invented
+              follower counts.
+            </p>
           </section>
-          {visibility.status === "ok" ? (
-            <PublicProfileToggle enabled={visibility.enabled} username={visibility.username} />
-          ) : (
-            <ErrorState title="Public profile" description={PROFILE_LIST_COPY.error} />
-          )}
-          {share.status === "ok" ? (
-            <>
-              <AudienceFields followers={share.followers} engagement={share.engagement} />
-              <ShareOptIns optIns={share.optIns} />
-              <ShareLinkPanel link={share.link} />
-            </>
-          ) : (
-            <ErrorState title="Hotel share link" description={PROFILE_LIST_COPY.shareError} />
-          )}
         </aside>
       </div>
-
-      <PersonalCounts load={counts} />
     </div>
   );
 }
