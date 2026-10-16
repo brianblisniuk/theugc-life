@@ -437,4 +437,86 @@ d("e2e4 sql hardening", () => {
     expect(bind[0]?.def).not.toContain("nextval");
     expect(bind[0]?.def).toContain("refresh_token_ciphertext = p_expected_ciphertext");
   });
+
+  it("leaves 0102 and 0104 function bodies in place when the search_path rewrite runs after them", async () => {
+    const before = await adminQuery<{ proname: string; identity: string; cfg: string; def: string }>(
+      `select p.proname,
+              pg_get_function_identity_arguments(p.oid) as identity,
+              coalesce(array_to_string(p.proconfig, ','), '') as cfg,
+              pg_get_functiondef(p.oid) as def
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and (
+            (p.proname = 'catalog_contact_exists'
+             and pg_get_function_identity_arguments(p.oid) = 'p_hotel_ids uuid[]')
+            or (p.proname = 'list_own_pending_gmail_collaboration_suggestions'
+             and pg_get_function_identity_arguments(p.oid) = 'p_pipeline_item_ids uuid[]')
+          )
+        order by p.proname`,
+    );
+    expect(before.map((row) => row.proname)).toEqual([
+      "catalog_contact_exists",
+      "list_own_pending_gmail_collaboration_suggestions",
+    ]);
+    for (const row of before) {
+      expect(row.cfg, row.proname).toBe('search_path=""');
+      expect(row.def, row.proname).not.toMatch(/pg_temp/);
+    }
+    const catalog = before[0]!.def;
+    const scoped = before[1]!.def;
+    expect(catalog).toContain("k.status = 'found'");
+    expect(catalog).not.toMatch(/email/i);
+    expect(scoped).toContain("s.pipeline_item_id = any (v_ids)");
+    expect(scoped).toContain("truncated");
+
+    const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("begin");
+      await client.query(`
+        do $e2e4$
+        declare
+          r record;
+          def text;
+        begin
+          for r in
+            select p.oid
+              from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+             where p.prosecdef
+               and n.nspname in ('public', 'private')
+               and exists (
+                 select 1
+                   from unnest(coalesce(p.proconfig, array[]::text[])) cfg
+                  where cfg like '%pg_temp%'
+               )
+          loop
+            def := pg_get_functiondef(r.oid);
+            def := regexp_replace(def, '(?<![[:alnum:]_.])digest[[:space:]]*\\(', 'public.digest(', 'g');
+            def := regexp_replace(def, 'SET search_path TO [^\\n]+', 'SET search_path TO ''''', 'g');
+            execute def;
+          end loop;
+        end
+        $e2e4$;
+      `);
+      const after = await client.query<{ proname: string; def: string }>(
+        `select p.proname, pg_get_functiondef(p.oid) as def
+           from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public'
+            and (
+              (p.proname = 'catalog_contact_exists'
+               and pg_get_function_identity_arguments(p.oid) = 'p_hotel_ids uuid[]')
+              or (p.proname = 'list_own_pending_gmail_collaboration_suggestions'
+               and pg_get_function_identity_arguments(p.oid) = 'p_pipeline_item_ids uuid[]')
+            )
+          order by p.proname`,
+      );
+      expect(after.rows.map((row) => row.def)).toEqual([catalog, scoped]);
+      await client.query("rollback");
+    } finally {
+      await client.end();
+    }
+  });
 });

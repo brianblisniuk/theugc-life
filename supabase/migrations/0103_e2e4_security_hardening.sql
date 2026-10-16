@@ -1226,9 +1226,13 @@ revoke all on function public.gmail_credential_bind_ciphertext(uuid, text, text,
 grant execute on function public.gmail_credential_bind_ciphertext(uuid, text, text, text, text, text)
   to service_role;
 
--- Qualify unqualified digest() and pin every remaining security definer to an
--- empty search_path. Invoker functions are left as they are. The pattern is a
--- string, so this block does not call digest().
+-- Qualify unqualified digest() and pin every remaining security definer that
+-- still names pg_temp to an empty search_path. Invoker functions are left as
+-- they are. The pattern is a string, so this block does not call digest().
+-- 0102's list_own_pending_gmail_collaboration_suggestions(uuid[]) and 0104's
+-- catalog_contact_exists already pin an empty search_path. This loop does not
+-- recreate them, so their bodies stay whether this migration runs before 0104
+-- or after it on a database that already applied 0104.
 do $e2e4$
 declare
   r record;
