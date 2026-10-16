@@ -166,5 +166,6 @@ describe("V12.2 layout rebuild", () => {
     const journey = source("e2e/journey.spec.ts");
     expect(journey).toContain("#more-intelligence");
     expect(journey).toContain("Manually recorded");
+    expect(journey).toContain('name: "No network fact yet"');
   });
 });

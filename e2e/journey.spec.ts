@@ -379,6 +379,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByRole("heading", { name: "Trip not found" })).toBeVisible();
   await bea.goto(HOTEL_PATH);
   await expect(bea.getByRole("button", { name: "Save to Pipeline" })).toBeVisible();
+  await bea.locator("#more-intelligence").locator("summary").click();
   await expect(
     bea.getByRole("heading", { name: "No network fact yet", exact: true }),
   ).toBeVisible();
