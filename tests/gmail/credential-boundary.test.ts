@@ -100,6 +100,7 @@ d("B02 credential boundary (0036)", () => {
         "public.gmail_credential_load(uuid)",
         "public.gmail_credential_load_for_owner(uuid,uuid)",
         "public.gmail_credential_replace(uuid,bigint,text,text,text,text,timestamptz)",
+        "public.gmail_credential_bind_ciphertext(uuid,text,text,text,text,text)",
         "public.gmail_credential_currentness(uuid,bigint)",
         "public.gmail_mark_reauth_required(uuid,bigint)",
         "public.gmail_disconnect_prepare(uuid,uuid)",
@@ -146,7 +147,9 @@ d("B02 credential boundary (0036)", () => {
       // its own functions in its own boundary suite. A count over every
       // `gmail_%` function would stop being a statement about B02 the moment
       // a later block did its job.
-      expect(res.rows.length).toBe(13);
+      // 0103 adds gmail_credential_bind_ciphertext. It is service-role only
+      // and pins an empty search_path, same as the rest of this surface.
+      expect(res.rows.length).toBe(14);
       for (const row of res.rows) {
         expect(row.prosecdef, row.proname).toBe(true);
         expect(

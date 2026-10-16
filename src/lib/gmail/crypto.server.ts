@@ -20,6 +20,8 @@ import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "
 const IV_BYTES = 12;
 const KEY_BYTES = 32;
 const ALGORITHM = "aes-256-gcm";
+/** Dot is outside base64, so a legacy ciphertext cannot carry this prefix. */
+const AAD_PREFIX = "aad1.";
 
 /**
  * A stored secret and everything needed to open it again — except the key.
@@ -76,15 +78,25 @@ export function decodeKey(base64Key: string): Buffer {
  * collapses if a key/IV pair is ever repeated, and "reuse the IV for the same
  * account" is exactly the kind of shortcut that looks harmless.
  */
-export function sealSecret(plaintext: string, key: Buffer, keyVersion: string): SealedSecret {
+export function sealSecret(
+  plaintext: string,
+  key: Buffer,
+  keyVersion: string,
+  aad?: string,
+): SealedSecret {
   if (plaintext.length === 0) {
     throw new GmailCryptoError("refusing to encrypt an empty secret");
   }
+  if (aad !== undefined && aad.length === 0) {
+    throw new GmailCryptoError("refusing to bind an empty context");
+  }
   const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv(ALGORITHM, key, iv);
+  if (aad !== undefined) cipher.setAAD(Buffer.from(aad, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const encoded = ciphertext.toString("base64");
   return {
-    ciphertext: ciphertext.toString("base64"),
+    ciphertext: aad !== undefined ? `${AAD_PREFIX}${encoded}` : encoded,
     iv: iv.toString("base64"),
     authTag: cipher.getAuthTag().toString("base64"),
     keyVersion,
@@ -99,12 +111,18 @@ export function sealSecret(plaintext: string, key: Buffer, keyVersion: string): 
  * The error message is written on the assumption it may end up in a log, so it
  * says nothing that would help someone probing the ciphertext.
  */
-export function openSecret(sealed: SealedSecret, key: Buffer): string {
+export function openSecret(sealed: SealedSecret, key: Buffer, aad?: string): string {
+  const bound = sealed.ciphertext.startsWith(AAD_PREFIX);
   try {
     const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(sealed.iv, "base64"));
     decipher.setAuthTag(Buffer.from(sealed.authTag, "base64"));
+    if (bound) {
+      if (!aad) throw new Error("missing context");
+      decipher.setAAD(Buffer.from(aad, "utf8"));
+    }
+    const raw = bound ? sealed.ciphertext.slice(AAD_PREFIX.length) : sealed.ciphertext;
     const plaintext = Buffer.concat([
-      decipher.update(Buffer.from(sealed.ciphertext, "base64")),
+      decipher.update(Buffer.from(raw, "base64")),
       decipher.final(),
     ]);
     return plaintext.toString("utf8");

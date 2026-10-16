@@ -6,6 +6,7 @@ import { securityHeaders } from "@/lib/http/security-headers";
 import { isProtectedPath } from "@/lib/auth/routes";
 import { normalizeRequestId, writeRequestLog } from "@/lib/log/request";
 import { consumeShareLinkRequest, shareLinkClientKey } from "@/lib/profile/share-rate-limit";
+import { AUTH_COOKIE_OPTIONS } from "@/lib/supabase/cookie-options";
 
 /**
  * Refreshes the Supabase auth session (rotating cookies) and redirects
@@ -15,8 +16,19 @@ import { consumeShareLinkRequest, shareLinkClientKey } from "@/lib/profile/share
  * object must carry the refreshed cookies, so we mutate `supabaseResponse`
  * rather than creating a new one after `getUser()`.
  */
-function decorate(response: NextResponse, requestId: string, supabaseUrl: string): NextResponse {
-  for (const [name, value] of Object.entries(securityHeaders(supabaseUrl))) {
+function requestIsHttps(request: NextRequest): boolean {
+  if (request.nextUrl.protocol === "https:") return true;
+  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  return forwarded === "https";
+}
+
+function decorate(
+  response: NextResponse,
+  requestId: string,
+  supabaseUrl: string,
+  https: boolean,
+): NextResponse {
+  for (const [name, value] of Object.entries(securityHeaders(supabaseUrl, { https }))) {
     response.headers.set(name, value);
   }
   response.headers.set("x-request-id", requestId);
@@ -27,15 +39,16 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const { pathname } = request.nextUrl;
   const requestId = normalizeRequestId(request.headers.get("x-request-id"));
   const env = getClientEnv();
+  const https = requestIsHttps(request);
   writeRequestLog({ requestId, method: request.method, path: pathname });
 
   if (pathname === "/api/health") {
-    return decorate(NextResponse.next(), requestId, env.NEXT_PUBLIC_SUPABASE_URL);
+    return decorate(NextResponse.next(), requestId, env.NEXT_PUBLIC_SUPABASE_URL, https);
   }
 
   if (pathname.startsWith("/p/")) {
     const limit = consumeShareLinkRequest(
-      shareLinkClientKey(request.headers.get("x-forwarded-for"), request.headers.get("x-real-ip")),
+      shareLinkClientKey(request.headers.get("x-nf-client-connection-ip")),
     );
     if (!limit.allowed) {
       return decorate(
@@ -49,6 +62,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
         }),
         requestId,
         env.NEXT_PUBLIC_SUPABASE_URL,
+        https,
       );
     }
   }
@@ -62,6 +76,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
+      cookieOptions: AUTH_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -79,9 +94,18 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   // IMPORTANT: getUser() revalidates the token with the auth server. Do not put
   // any logic between createServerClient and getUser or sessions may break.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: { id: string } | null = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    return decorate(
+      new NextResponse("Service unavailable.", { status: 503 }),
+      requestId,
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      https,
+    );
+  }
 
   if (!user && isProtectedPath(pathname)) {
     const redirectUrl = request.nextUrl.clone();
@@ -89,7 +113,12 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // Preserve intended destination so we can return the user after auth
     // (ROUTES.md §7: return users to the intent that triggered the flow).
     redirectUrl.searchParams.set("redirect", pathname);
-    return decorate(NextResponse.redirect(redirectUrl), requestId, env.NEXT_PUBLIC_SUPABASE_URL);
+    return decorate(
+      NextResponse.redirect(redirectUrl),
+      requestId,
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      https,
+    );
   }
 
   if (pathname.startsWith("/p/")) {
@@ -98,5 +127,5 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     supabaseResponse.headers.set("Referrer-Policy", "no-referrer");
   }
 
-  return decorate(supabaseResponse, requestId, env.NEXT_PUBLIC_SUPABASE_URL);
+  return decorate(supabaseResponse, requestId, env.NEXT_PUBLIC_SUPABASE_URL, https);
 }

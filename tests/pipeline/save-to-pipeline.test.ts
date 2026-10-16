@@ -358,7 +358,7 @@ d("H — ownership and privilege surface", () => {
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname='public' and p.proname='save_hotel_to_pipeline'`,
     );
-    expect(rows[0]!.cfg).toContain("search_path=public, pg_temp");
+    expect(rows[0]!.cfg).toContain('search_path=""');
   });
 
   it("creator A cannot read or modify creator B's relationship", async () => {

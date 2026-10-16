@@ -19,10 +19,11 @@ export function resetShareLinkRateLimit(): void {
   buckets.clear();
 }
 
-export function shareLinkClientKey(forwardedFor: string | null, realIp: string | null): string {
-  const forwarded = forwardedFor?.split(",")[0]?.trim() ?? "";
-  const ip = forwarded || realIp?.trim() || "unknown";
-  return ip.slice(0, 200) || "unknown";
+/** Netlify's platform address. A caller-supplied forwarded-for hop is not a key. */
+export function shareLinkClientKey(platformIp: string | null): string {
+  const ip = platformIp?.trim() ?? "";
+  if (!ip) return "unknown";
+  return ip.slice(0, 200);
 }
 
 export function consumeShareLinkRequest(
@@ -30,13 +31,16 @@ export function consumeShareLinkRequest(
   now = Date.now(),
 ): { allowed: boolean; retryAfterSeconds: number } {
   const safeKey = key.slice(0, 200) || "unknown";
-  if (buckets.size > 5000) {
+  if (buckets.size >= 5000) {
     for (const [stored, bucket] of buckets) {
       if (now - bucket.start >= WINDOW_MS) buckets.delete(stored);
     }
   }
   const current = buckets.get(safeKey);
   if (!current || now - current.start >= WINDOW_MS) {
+    if (!buckets.has(safeKey) && buckets.size >= 5000) {
+      return { allowed: false, retryAfterSeconds: Math.ceil(WINDOW_MS / 1000) };
+    }
     buckets.set(safeKey, { start: now, count: 1 });
     return { allowed: true, retryAfterSeconds: 0 };
   }

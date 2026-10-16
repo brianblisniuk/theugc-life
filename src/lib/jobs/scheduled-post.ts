@@ -40,7 +40,7 @@ function safeErrorToken(value: unknown): string | null {
   return null;
 }
 
-function scheduledFailure(error: unknown): { name: string; code: string } {
+export function jobFailure(error: unknown): { name: string; code: string } {
   const name = error instanceof Error ? (safeErrorToken(error.name) ?? "Error") : "Error";
   const raw =
     error !== null && typeof error === "object" && "code" in error
@@ -64,7 +64,7 @@ export async function runScheduledJob(options: {
         : { result: "ok" };
     return { statusCode: 200, body: JSON.stringify(body) };
   } catch (error) {
-    const failure = scheduledFailure(error);
+    const failure = jobFailure(error);
     // Name and code only. Never the message, the stack, or the secret.
     console.error("[job] scheduled run failed", failure.name, failure.code);
     return {

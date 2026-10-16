@@ -6,7 +6,7 @@
  * public site. The HTTP route still requires the bearer.
  */
 
-import { runScheduledJob } from "@/lib/jobs/scheduled-post";
+import { jobFailure, runScheduledJob } from "@/lib/jobs/scheduled-post";
 
 export function authorizeDispatch(header: string | null, secret: string | undefined): boolean {
   if (!secret || secret.length < 16) return false;
@@ -27,8 +27,14 @@ export async function handleDispatchPost(
   if (!authorizeDispatch(authorization, secret)) {
     return { status: 401, body: { result: "forbidden" } };
   }
-  const summary = await run();
-  return { status: 200, body: { result: "ok", ...(summary as Record<string, unknown>) } };
+  try {
+    const summary = await run();
+    return { status: 200, body: { result: "ok", ...(summary as Record<string, unknown>) } };
+  } catch (error) {
+    const failure = jobFailure(error);
+    console.error("[job] dispatch failed", failure.name, failure.code);
+    return { status: 500, body: { result: "error", code: failure.code } };
+  }
 }
 
 export async function runScheduledDispatch(options: {

@@ -103,6 +103,34 @@ describe("B02 refresh-token encryption", () => {
     }
   });
 
+  it("binds a ciphertext to one mailbox and still opens a legacy envelope", () => {
+    const mailbox = "11111111-1111-4111-8111-111111111111";
+    const other = "22222222-2222-4222-8222-222222222222";
+    const bound = sealSecret("1//refresh-token-value", KEY_A, VERSION, mailbox);
+    expect(bound.keyVersion).toBe(VERSION);
+    expect(bound.ciphertext.startsWith("aad1.")).toBe(true);
+    expect(JSON.stringify(bound)).not.toContain("refresh-token");
+    expect(openSecret(bound, KEY_A, mailbox)).toBe("1//refresh-token-value");
+    expect(() => openSecret(bound, KEY_A, other)).toThrow(GmailCryptoError);
+    expect(() => openSecret(bound, KEY_A)).toThrow(GmailCryptoError);
+    try {
+      openSecret(bound, KEY_A, other);
+    } catch (error) {
+      expect((error as Error).message).toBe("stored credential could not be decrypted");
+    }
+
+    const swapped = sealSecret("1//other-token", KEY_A, VERSION, other);
+    expect(() => openSecret({ ...bound, ciphertext: swapped.ciphertext }, KEY_A, mailbox)).toThrow(
+      GmailCryptoError,
+    );
+
+    const legacy = sealSecret("1//legacy-token", KEY_A, VERSION);
+    expect(legacy.ciphertext.includes(".")).toBe(false);
+    expect(openSecret(legacy, KEY_A)).toBe("1//legacy-token");
+    expect(openSecret(legacy, KEY_A, mailbox)).toBe("1//legacy-token");
+    expect(() => sealSecret("secret", KEY_A, VERSION, "")).toThrow(GmailCryptoError);
+  });
+
   it("compares secrets without leaking length-independent timing", () => {
     expect(secretsEqual("abc", "abc")).toBe(true);
     expect(secretsEqual("abc", "abd")).toBe(false);

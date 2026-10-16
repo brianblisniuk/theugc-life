@@ -465,6 +465,13 @@ export async function completeGmailAuthorization(
     | { outcome: "refused" }
     | { outcome: "failed" }
   > => {
+    if (!tokens.refreshToken) return { outcome: "failed" };
+    const bound = sealSecret(
+      tokens.refreshToken,
+      cfg.encryptionKey,
+      cfg.encryptionKeyVersion,
+      mailAccountId,
+    );
     const { data, error: storeError } = await deps.db.rpc(
       "gmail_record_superseded_disconnect_credential",
       {
@@ -472,10 +479,10 @@ export async function completeGmailAuthorization(
         p_mail_account_id: mailAccountId,
         p_provider_account_subject: subject,
         p_oauth_intent_seq: intentSeq,
-        p_refresh_ciphertext: sealed.ciphertext,
-        p_refresh_iv: sealed.iv,
-        p_refresh_auth_tag: sealed.authTag,
-        p_key_version: sealed.keyVersion,
+        p_refresh_ciphertext: bound.ciphertext,
+        p_refresh_iv: bound.iv,
+        p_refresh_auth_tag: bound.authTag,
+        p_key_version: bound.keyVersion,
       },
     );
     if (storeError) return { outcome: "failed" };
@@ -549,7 +556,33 @@ export async function completeGmailAuthorization(
     return { result: "mailbox_unusable" };
   }
 
-  const sealed = sealSecret(tokens.refreshToken, cfg.encryptionKey, cfg.encryptionKeyVersion);
+  const sealed = sealSecret(
+    tokens.refreshToken,
+    cfg.encryptionKey,
+    cfg.encryptionKeyVersion,
+    tx.target_mail_account_id ?? undefined,
+  );
+
+  const rebindStoredCredential = async (mailAccountId: string | null | undefined) => {
+    if (!mailAccountId || !tokens.refreshToken || sealed.ciphertext.startsWith("aad1.")) return;
+    const bound = sealSecret(
+      tokens.refreshToken,
+      cfg.encryptionKey,
+      cfg.encryptionKeyVersion,
+      mailAccountId,
+    );
+    const { error: bindError } = await deps.db.rpc("gmail_credential_bind_ciphertext", {
+      p_mail_account_id: mailAccountId,
+      p_expected_ciphertext: sealed.ciphertext,
+      p_refresh_ciphertext: bound.ciphertext,
+      p_refresh_iv: bound.iv,
+      p_refresh_auth_tag: bound.authTag,
+      p_key_version: bound.keyVersion,
+    });
+    if (bindError) {
+      console.warn("[gmail] credential could not be rebound to its mailbox");
+    }
+  };
 
   const { data: persisted, error: persistError } =
     tx.purpose === "grant_send"
@@ -609,8 +642,10 @@ export async function completeGmailAuthorization(
 
   switch (outcome.result) {
     case "connected":
+      await rebindStoredCredential(outcome.mail_account_id);
       return { result: "connected", mailAccountId: outcome.mail_account_id!, returnPath };
     case "consent_required":
+      await rebindStoredCredential(outcome.mail_account_id);
       return { result: "consent_required", mailAccountId: outcome.mail_account_id!, returnPath };
     case "already_connected":
       // Not an error, and not a reason to swap the credential of a working
@@ -862,6 +897,7 @@ export async function disconnectGmailAccount(
           keyVersion: loaded.encryption_key_version!,
         },
         cfg.encryptionKey,
+        input.mailAccountId,
       );
     } catch {
       return { result: "provider_unavailable" };
@@ -1005,6 +1041,7 @@ export async function getFreshGmailAccessToken(
         keyVersion: loaded.encryption_key_version!,
       },
       cfg.encryptionKey,
+      input.mailAccountId,
     );
   } catch {
     return { result: "provider_unavailable" };
@@ -1089,7 +1126,12 @@ export async function getFreshGmailAccessToken(
   let effectiveGeneration = loadedGeneration;
 
   if (refreshed.refreshToken && refreshed.refreshToken !== refreshToken) {
-    const rotated = sealSecret(refreshed.refreshToken, cfg.encryptionKey, cfg.encryptionKeyVersion);
+    const rotated = sealSecret(
+      refreshed.refreshToken,
+      cfg.encryptionKey,
+      cfg.encryptionKeyVersion,
+      input.mailAccountId,
+    );
     const { data: replaced, error: replaceError } = await deps.db.rpc("gmail_credential_replace", {
       p_mail_account_id: input.mailAccountId,
       p_expected_generation: loadedGeneration,
