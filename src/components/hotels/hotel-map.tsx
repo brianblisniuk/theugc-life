@@ -6,8 +6,8 @@ import Link from "next/link";
 import { googleMapsApiKey } from "@/lib/maps/google";
 import { mountHotelMap } from "@/lib/maps/mount";
 import type { PublicMapPin } from "@/lib/maps/pins";
-import { MAP_PAGE_NOTE, MAP_UNAVAILABLE_BODY, MAP_UNAVAILABLE_TITLE, MAP_WAITING_NOTE } from "@/lib/ux02/copy";
-import { mapPresence, type MapPresence } from "@/lib/ux02/map-presence";
+import { MAP_PAGE_NOTE, MAP_UNAVAILABLE_BODY, MAP_UNAVAILABLE_TITLE, MAP_WAITING_NOTE } from "@/lib/screens/copy";
+import { mapPresence, type MapPresence } from "@/lib/screens/map-presence";
 
 import { useDiscoverSync } from "./discover-sync";
 

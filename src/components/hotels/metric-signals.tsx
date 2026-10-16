@@ -6,8 +6,8 @@ import {
   type MetricId,
   type RankingLoad,
 } from "@/lib/metrics/contract";
-import { METRIC_ERROR, VIEW_PLANS } from "@/lib/ux02/copy";
-import { metricCells, type MetricCell } from "@/lib/ux02/metric-state";
+import { METRIC_ERROR, VIEW_PLANS } from "@/lib/screens/copy";
+import { metricCells, type MetricCell } from "@/lib/screens/metric-state";
 
 import { RankingPicker } from "./ranking-picker";
 

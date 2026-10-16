@@ -14,7 +14,7 @@ import { listTrips } from "@/lib/trips/queries";
 const primary =
   "inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast";
 const outline =
-  "inline-flex rounded-md border-[1.5px] border-[#111] px-4 py-2 text-sm font-semibold text-[#111]";
+  "inline-flex rounded-md border border-border px-4 py-2 text-sm font-semibold text-text";
 
 function daysUntil(start: string): number | null {
   const date = new Date(`${start}T00:00:00.000Z`);
@@ -71,11 +71,11 @@ export default async function AppHomePage() {
   return (
     <div className="space-y-8">
       {next ? (
-        <section className="flex h-[220px] items-end overflow-hidden rounded-md bg-[#111] md:h-[300px]">
+        <section className="flex h-[220px] items-end overflow-hidden rounded-md bg-[#111918] md:h-[300px]">
           <div className="w-full bg-gradient-to-t from-black/55 to-transparent p-7 text-white">
             <p className="text-xs font-bold uppercase tracking-[0.1em] text-accent">
-              Próximo viaje
-              {daysUntil(next.startDate) !== null ? ` · en ${daysUntil(next.startDate)} días` : ""}
+              Next trip
+              {daysUntil(next.startDate) !== null ? ` · in ${daysUntil(next.startDate)} days` : ""}
             </p>
             <h1 className="text-[44px] font-extrabold leading-none tracking-tight text-white md:text-[64px]">
               {next.destinationName}
@@ -90,9 +90,7 @@ export default async function AppHomePage() {
 
       <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
         <section>
-          <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#666]">
-            Para hacer ahora
-          </p>
+          <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">Do this now</p>
           <h2 className="mt-1 text-3xl font-extrabold tracking-tight">
             {view.kind === "blocked" ? view.title : greeting(progress.displayName, remaining)}
           </h2>
@@ -107,25 +105,25 @@ export default async function AppHomePage() {
                 {view.steps.map((step, index) => (
                   <li
                     key={step.id}
-                    className="flex items-center gap-3.5 border-b border-[#ececec] py-3.5"
+                    className="flex items-center gap-3.5 border-b border-border py-3.5"
                   >
                     <span
                       className={
-                        "grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-[#111] text-[13px] font-bold " +
-                        (step.done ? "border-accent bg-accent" : "")
+                        "grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-text text-[13px] font-bold " +
+                        (step.done ? "border-accent bg-accent text-accent-contrast" : "")
                       }
                     >
                       {step.done ? "✓" : index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <b className={step.done ? "text-[#777] line-through" : ""}>
-                        {step.optional ? `(Opcional) ${step.title}` : step.title}
+                      <b className={step.done ? "text-muted line-through" : ""}>
+                        {step.optional ? `(Optional) ${step.title}` : step.title}
                       </b>
-                      <small className="block text-[13px] text-[#555]">{step.detail}</small>
+                      <small className="block text-[13px] text-muted">{step.detail}</small>
                     </div>
                     {step.done ? null : (
                       <Link href={step.href} className={outline}>
-                        Empezar
+                        Start
                       </Link>
                     )}
                   </li>
@@ -136,8 +134,8 @@ export default async function AppHomePage() {
           ) : null}
 
           <div className="mt-8" data-testid="home-next-actions">
-            <h3 className="text-xs font-bold uppercase tracking-[0.1em] text-[#666]">
-              Próximas acciones
+            <h3 className="text-xs font-bold uppercase tracking-[0.1em] text-muted">
+              Next actions
             </h3>
             {actions.followUpsDue !== null && actions.followUpsDue > 0 ? (
               <p className="mt-2 text-sm font-semibold">
@@ -155,11 +153,11 @@ export default async function AppHomePage() {
                 {actions.actions.map((action) => (
                   <li
                     key={action.id}
-                    className="grid items-center gap-2 border-b border-[#ececec] py-3.5 sm:grid-cols-[1fr_auto]"
+                    className="grid items-center gap-2 border-b border-border py-3.5 sm:grid-cols-[1fr_auto]"
                   >
                     <div>
                       <b>{action.title}</b>
-                      <small className="block text-[13px] text-[#555]">{action.detail}</small>
+                      <small className="block text-[13px] text-muted">{action.detail}</small>
                     </div>
                     {action.href ? (
                       <Link href={action.href} className={primary}>
@@ -178,52 +176,55 @@ export default async function AppHomePage() {
             {actions.credits ? (
               <p className="mt-4 text-sm" data-testid="home-credits">
                 <b>{actions.credits.title}</b>
-                <small className="block text-[13px] text-[#555]">{actions.credits.detail}</small>
+                <small className="block text-[13px] text-muted">{actions.credits.detail}</small>
               </p>
             ) : null}
           </div>
         </section>
 
         <aside>
-          <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#666]">
-            Tu progreso (solo tus datos)
+          <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">
+            Your progress (your data only)
           </p>
           {counts.status === "ok" ? (
-            <div className="mt-3 grid grid-cols-2 border-t-2 border-[#111]">
+            <div className="mt-3 grid grid-cols-2 border-t-2 border-border">
               {[
-                [counts.counts.outreach, "pitches enviados"],
-                [counts.counts.replies, "respuestas"],
-                [counts.counts.agreements, "acuerdos"],
-                [counts.counts.completedCollaborations, "colaboraciones hechas"],
+                [counts.counts.outreach, "pitches sent"],
+                [counts.counts.replies, "replies"],
+                [counts.counts.agreements, "agreements"],
+                [counts.counts.completedCollaborations, "collaborations done"],
               ].map(([value, label]) => (
-                <div key={String(label)} className="border-b border-[#e6e6e6] py-4">
+                <div key={String(label)} className="border-b border-border py-4">
                   <strong className="block text-4xl font-extrabold tracking-tight">{value}</strong>
-                  <span className="text-[13px] text-[#555]">{label}</span>
+                  <span className="text-[13px] text-muted">{label}</span>
                 </div>
               ))}
             </div>
           ) : (
             <p className="mt-3 text-sm text-muted">
               {counts.status === "not_found"
-                ? "No hay un perfil para contar. Esto no es cero."
-                : "No pudimos cargar tus conteos. Esto no es cero."}
+                ? "There is no profile to count. This is not zero."
+                : "We could not load your counts. This is not zero."}
             </p>
           )}
 
           {recommended.length > 0 ? (
             <div className="mt-8">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#666]">
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">
                 {recommendation.source === "trip"
                   ? HOME_NEXT_COPY.catalogTrip
                   : HOME_NEXT_COPY.catalogOnboarding}
               </p>
-              <p className="mt-1 text-[13px] text-[#555]">{HOME_NEXT_COPY.catalogNote}</p>
+              <p className="mt-1 text-[13px] text-muted">{HOME_NEXT_COPY.catalogNote}</p>
               {recommended.map((hotel) => (
                 <Link key={hotel.id} href={`/app/hotels/${hotel.id}`} className="mt-3 flex gap-3.5">
-                  <span className="h-16 w-24 shrink-0 rounded bg-[#f3f3f3]" aria-hidden="true" />
+                  <span
+                    className="h-16 w-24 shrink-0 rounded bg-[var(--placeholder)]"
+                    aria-hidden="true"
+                  />
                   <span>
                     <b>{hotel.name}</b>
-                    <small className="block text-[13px] text-[#555]">{hotel.line}</small>
+                    <small className="block text-[13px] text-muted">{hotel.line}</small>
                   </span>
                 </Link>
               ))}

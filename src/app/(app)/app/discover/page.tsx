@@ -46,9 +46,9 @@ import {
   RESPONSE_INSIGHTS_TITLE,
   RESPONSE_INSIGHTS_USE,
   VIEW_PLANS,
-} from "@/lib/ux02/copy";
-import { discoverFilterChips } from "@/lib/ux02/discover-chips";
-import { discoverSortGate } from "@/lib/ux02/discover-sort";
+} from "@/lib/screens/copy";
+import { discoverFilterChips } from "@/lib/screens/discover-chips";
+import { discoverSortGate } from "@/lib/screens/discover-sort";
 
 export const metadata: Metadata = { title: "Discover" };
 

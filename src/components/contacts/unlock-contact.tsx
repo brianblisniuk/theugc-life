@@ -12,7 +12,7 @@ import {
   unlockChrome,
   unlockContactLabel,
 } from "@/lib/credits/config";
-import { CREDITS_UNAVAILABLE, UNLOCK_ASSURANCE } from "@/lib/ux02/copy";
+import { CREDITS_UNAVAILABLE, UNLOCK_ASSURANCE } from "@/lib/screens/copy";
 import { unlockHotelContactAction } from "@/lib/credits/actions";
 import type { UnlockActionResult } from "@/lib/credits/types";
 import { PIPELINE_COPY, freeLimitExplanation } from "@/lib/pipeline/view";

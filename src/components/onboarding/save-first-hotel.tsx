@@ -20,7 +20,7 @@ export function SaveFirstHotelButton({ hotelId }: { hotelId: string }) {
         disabled={pending}
         className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
       >
-        {pending ? "Guardando…" : "Guardar en mi pipeline"}
+        {pending ? "Saving…" : "Save to my pipeline"}
       </button>
       {view && (view.kind === "limit" || view.kind === "problem") ? (
         <p className="mt-2 text-sm" role="alert">

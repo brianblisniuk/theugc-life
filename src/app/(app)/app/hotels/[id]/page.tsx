@@ -86,10 +86,10 @@ import {
   CONTACT_ERROR_TITLE,
   NO_CONTACT_TITLE,
   NO_RELATIONSHIP,
-} from "@/lib/ux02/copy";
-import { initialsFromName } from "@/lib/ux02/initials";
-import { nextStep, type ContactFact, type RelationshipFact } from "@/lib/ux02/next-step";
-import { planChipFromAccess } from "@/lib/ux02/plan-chip";
+} from "@/lib/screens/copy";
+import { initialsFromName } from "@/lib/screens/initials";
+import { nextStep, type ContactFact, type RelationshipFact } from "@/lib/screens/next-step";
+import { planChipFromAccess } from "@/lib/screens/plan-chip";
 
 /** Deduped per request so metadata and the page share one fetch. */
 const loadHotel = cache(getHotelById);

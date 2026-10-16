@@ -28,7 +28,7 @@ type OnboardingCard = RankedHotel & {
 import { loadHomeProgress } from "@/lib/onboarding/queries";
 import { listDestinations } from "@/lib/trips/queries";
 
-export const metadata = { title: "Primeros hoteles" };
+export const metadata = { title: "First hotels" };
 
 export default async function OnboardingHotelsPage() {
   const session = await requireUser("/app/onboarding/hotels");
@@ -36,7 +36,7 @@ export default async function OnboardingHotelsPage() {
   if (progress.facts.destination === "error") {
     return (
       <p className="text-sm">
-        No pudimos leer el destino que elegiste. Recargá la página. Esto no es “no hay hoteles”.
+        We could not read the destination you chose. Reload the page. This is not “no hotels”.
       </p>
     );
   }
@@ -100,28 +100,28 @@ export default async function OnboardingHotelsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#666]">
+        <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">
           {progress.destinationName}
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight">Hoteles para tu destino</h1>
-        <p className="mt-2 text-sm text-[#555]">{FIRST_RUN_COPY.databaseNote}</p>
+        <h1 className="text-3xl font-extrabold tracking-tight">Hotels for your destination</h1>
+        <p className="mt-2 text-sm text-muted">{FIRST_RUN_COPY.databaseNote}</p>
       </div>
 
       {failed ? (
         <p className="text-sm">
-          No pudimos cargar hoteles. Recargá la página. Esto no es un destino sin datos.
+          We could not load hotels. Reload the page. This is not a destination with no data.
         </p>
       ) : hotels.length === 0 ? (
         <div className="space-y-4">
           <h2 className="text-xl font-extrabold">{FIRST_RUN_COPY.insufficientTitle}</h2>
-          <p className="max-w-prose text-sm text-[#555]">{FIRST_RUN_COPY.insufficientBody}</p>
+          <p className="max-w-prose text-sm text-muted">{FIRST_RUN_COPY.insufficientBody}</p>
           {nearby.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {nearby.map((destination) => (
                 <Link
                   key={destination.id}
                   href={`/app/discover?destination=${destination.slug}`}
-                  className="rounded-md border border-[#ccc] px-3 py-1.5 text-sm font-semibold"
+                  className="rounded-md border border-border px-3 py-1.5 text-sm font-semibold"
                 >
                   {destination.name}
                 </Link>
@@ -130,13 +130,13 @@ export default async function OnboardingHotelsPage() {
           ) : null}
           <Link
             href="/app/discover"
-            className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold"
+            className="inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast"
           >
-            Agregar el primer hotel
+            Add the first hotel
           </Link>
         </div>
       ) : (
-        <ul className="divide-y divide-[#ececec] border-y border-[#ececec]">
+        <ul className="divide-y divide-border border-y border-border">
           {hotels.map((hotel) => {
             const label = contactLabel(hotel.contact);
             return (
@@ -150,11 +150,11 @@ export default async function OnboardingHotelsPage() {
                       {hotel.name}
                     </Link>
                   </h2>
-                  {hotel.zone ? <p className="text-[13px] text-[#555]">{hotel.zone}</p> : null}
+                  {hotel.zone ? <p className="text-[13px] text-muted">{hotel.zone}</p> : null}
                   {label ? (
-                    <p className="mt-1 text-sm font-semibold text-[#0b6b4b]">{label}</p>
+                    <p className="mt-1 text-sm font-semibold text-success">{label}</p>
                   ) : null}
-                  {hotel.context ? <p className="text-xs text-[#555]">{hotel.context}</p> : null}
+                  {hotel.context ? <p className="text-xs text-muted">{hotel.context}</p> : null}
                 </div>
                 <div className="flex flex-col items-start gap-2 sm:items-end">
                   <UnlockContact
@@ -172,8 +172,8 @@ export default async function OnboardingHotelsPage() {
         </ul>
       )}
 
-      <Link href="/app" className="inline-block text-sm text-[#555] underline">
-        Ir al inicio
+      <Link href="/app" className="inline-block text-sm text-muted underline">
+        Back to home
       </Link>
     </div>
   );

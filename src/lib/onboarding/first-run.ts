@@ -53,21 +53,21 @@ export type HomeView =
     };
 
 export const FIRST_RUN_COPY = {
-  blockedTitle: "No pudimos revisar tu inicio",
+  blockedTitle: "We could not review your home",
   blockedBody:
-    "Algo falló al leer tu cuenta. Recargá la página. Esto no es un destino vacío ni un pipeline vacío.",
-  destinationTitle: "Elegiste tu destino",
-  destinationDetail: "Sirve para mostrarte hoteles de nuestra base. Podés cambiarlo.",
-  hotelTitle: "Guardaste tu primer hotel",
-  hotelDetail: "El hotel queda en tu pipeline, con el contacto que podés ver.",
-  pitchTitle: "Preparaste el primer pitch",
-  pitchDetail: "Opcional. Una nota en el hotel cuenta como pitch preparado.",
-  savedToast: "Listo. Ya tenés tu primer hotel en el pipeline.",
-  databaseNote: "Estos hoteles salen de nuestra base, no de tu Gmail.",
-  genericContact: "Contacto genérico",
-  insufficientTitle: "Todavía no tenemos hoteles publicados para ese destino",
+    "Something failed while reading your account. Reload the page. This is not an empty destination and not an empty pipeline.",
+  destinationTitle: "You chose your destination",
+  destinationDetail: "We use it to show hotels from our catalog. You can change it.",
+  hotelTitle: "You saved your first hotel",
+  hotelDetail: "The hotel stays on your pipeline, with the contact you are allowed to see.",
+  pitchTitle: "You prepared the first pitch",
+  pitchDetail: "Optional. A note on the hotel counts as a prepared pitch.",
+  savedToast: "Saved. Your first hotel is on the pipeline.",
+  databaseNote: "These hotels come from our catalog, not from your Gmail.",
+  genericContact: "Generic contact",
+  insufficientTitle: "No published hotels for that destination yet",
   insufficientBody:
-    "No inventamos hoteles. Podés mirar un destino cercano o agregar el primero desde Descubrir.",
+    "We do not invent hotels. Look at a nearby destination or add the first one from Discover.",
 } as const;
 
 export function gmailProbe(
@@ -112,27 +112,29 @@ export function resolveOwnProfile(
   };
 }
 
-const STEP_COPY: Record<FirstRunStepId, { title: string; detail: string; href: string; optional: boolean }> =
-  {
-    destination: {
-      title: FIRST_RUN_COPY.destinationTitle,
-      detail: FIRST_RUN_COPY.destinationDetail,
-      href: FIRST_RUN_HREFS.destination,
-      optional: false,
-    },
-    hotel: {
-      title: FIRST_RUN_COPY.hotelTitle,
-      detail: FIRST_RUN_COPY.hotelDetail,
-      href: FIRST_RUN_HREFS.hotels,
-      optional: false,
-    },
-    pitch: {
-      title: FIRST_RUN_COPY.pitchTitle,
-      detail: FIRST_RUN_COPY.pitchDetail,
-      href: FIRST_RUN_HREFS.pipeline,
-      optional: true,
-    },
-  };
+const STEP_COPY: Record<
+  FirstRunStepId,
+  { title: string; detail: string; href: string; optional: boolean }
+> = {
+  destination: {
+    title: FIRST_RUN_COPY.destinationTitle,
+    detail: FIRST_RUN_COPY.destinationDetail,
+    href: FIRST_RUN_HREFS.destination,
+    optional: false,
+  },
+  hotel: {
+    title: FIRST_RUN_COPY.hotelTitle,
+    detail: FIRST_RUN_COPY.hotelDetail,
+    href: FIRST_RUN_HREFS.hotels,
+    optional: false,
+  },
+  pitch: {
+    title: FIRST_RUN_COPY.pitchTitle,
+    detail: FIRST_RUN_COPY.pitchDetail,
+    href: FIRST_RUN_HREFS.pipeline,
+    optional: true,
+  },
+};
 
 function step(id: FirstRunStepId, done: boolean): FirstRunStep {
   const meta = STEP_COPY[id];
@@ -177,8 +179,8 @@ export function homeView(facts: FirstRunFacts): HomeView {
 }
 
 export function greeting(name: string | null, remaining: number): string {
-  const who = name?.trim() ? name.trim() : "creador";
-  if (remaining <= 0) return `Hola, ${who}.`;
-  if (remaining === 1) return `Hola, ${who}. Te falta 1 paso.`;
-  return `Hola, ${who}. Te faltan ${remaining} pasos.`;
+  const who = name?.trim() ? name.trim() : "creator";
+  if (remaining <= 0) return `Hello, ${who}.`;
+  if (remaining === 1) return `Hello, ${who}. 1 step left.`;
+  return `Hello, ${who}. ${remaining} steps left.`;
 }

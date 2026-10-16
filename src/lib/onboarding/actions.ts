@@ -37,10 +37,10 @@ export async function chooseOnboardingDestination(
 ): Promise<DestinationSaveResult> {
   const destinationId = formData.get("destinationId");
   if (typeof destinationId !== "string" || !isUuid(destinationId)) {
-    return { error: "Elegí un destino de la lista." };
+    return { error: "Choose a destination from the list." };
   }
   const creatorId = await ownCreatorId();
-  if (!creatorId) return { error: "Tenés que iniciar sesión." };
+  if (!creatorId) return { error: "You need to sign in." };
 
   const supabase = await createClient();
   const destination = await supabase
@@ -49,14 +49,13 @@ export async function chooseOnboardingDestination(
     .eq("id", destinationId)
     .maybeSingle();
   if (destination.error || !destination.data) {
-    return { error: "Ese destino no está en nuestra base." };
+    return { error: "That destination is not in our catalog." };
   }
 
-  const { error } = await supabase.from("creator_onboarding_state").upsert(
-    { creator_id: creatorId, destination_id: destinationId },
-    { onConflict: "creator_id" },
-  );
-  if (error) return { error: "No pudimos guardar el destino. Probá de nuevo." };
+  const { error } = await supabase
+    .from("creator_onboarding_state")
+    .upsert({ creator_id: creatorId, destination_id: destinationId }, { onConflict: "creator_id" });
+  if (error) return { error: "We could not save the destination. Try again." };
 
   revalidatePath("/app");
   revalidatePath("/app/onboarding");
@@ -68,13 +67,15 @@ export async function dismissOnboardingChecklist(
   _formData: FormData,
 ): Promise<{ error: string } | { ok: true }> {
   const creatorId = await ownCreatorId();
-  if (!creatorId) return { error: "Tenés que iniciar sesión." };
+  if (!creatorId) return { error: "You need to sign in." };
   const supabase = await createClient();
-  const { error } = await supabase.from("creator_onboarding_state").upsert(
-    { creator_id: creatorId, checklist_dismissed_at: new Date().toISOString() },
-    { onConflict: "creator_id" },
-  );
-  if (error) return { error: "No pudimos ocultar la lista. Probá de nuevo." };
+  const { error } = await supabase
+    .from("creator_onboarding_state")
+    .upsert(
+      { creator_id: creatorId, checklist_dismissed_at: new Date().toISOString() },
+      { onConflict: "creator_id" },
+    );
+  if (error) return { error: "We could not hide the list. Try again." };
   revalidatePath("/app");
   return { ok: true };
 }

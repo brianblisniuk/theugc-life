@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 import { SaveHotelButton } from "@/components/pipeline/save-hotel-button";
-import { GENERATE_PITCH, UNLOCK_ASSURANCE } from "@/lib/ux02/copy";
-import { type NextStepModel } from "@/lib/ux02/next-step";
+import { GENERATE_PITCH, UNLOCK_ASSURANCE } from "@/lib/screens/copy";
+import { type NextStepModel } from "@/lib/screens/next-step";
 
 function Primary({ model }: { model: NextStepModel }) {
   if (model.primaryDisabled || !model.primaryHref) {

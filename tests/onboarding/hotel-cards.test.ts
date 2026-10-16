@@ -1,5 +1,5 @@
 /**
- * First-value cards (D095). A denied contact read is "Contacto genérico"
+ * First-value cards (D095). A denied contact read is "Generic contact"
  * and carries no email. A failed intelligence read is not "insufficient".
  */
 import { describe, expect, it } from "vitest";
@@ -44,7 +44,7 @@ describe("onboarding hotel cards", () => {
   it("a denied read is generic even when the payload includes a verified email", () => {
     const shown = onboardingContact("denied", [verified]);
     expect(shown).toEqual({ kind: "generic" });
-    expect(contactLabel(shown)).toBe("Contacto genérico");
+    expect(contactLabel(shown)).toBe("Generic contact");
     expect(JSON.stringify(shown)).not.toContain("Ana");
     expect(JSON.stringify(shown)).not.toContain("@");
   });
@@ -77,13 +77,10 @@ describe("onboarding hotel cards", () => {
 
   it("does not call a failed intelligence read insufficient data", () => {
     expect(onboardingContext(null, true)).toEqual({ text: null, score: 0 });
-    expect(onboardingContext(null, false).text).toBe("Datos insuficientes todavía");
+    expect(onboardingContext(null, false).text).toBe("Insufficient data");
     expect(
-      onboardingContext(
-        { activity: null, recency: null, collaborationObserved: true },
-        false,
-      ).text,
-    ).toBe("Trabaja con creadores");
+      onboardingContext({ activity: null, recency: null, collaborationObserved: true }, false).text,
+    ).toBe("Works with creators");
   });
 
   it("the card model has no email field", () => {

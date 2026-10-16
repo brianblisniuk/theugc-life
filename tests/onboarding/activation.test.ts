@@ -122,9 +122,9 @@ describe("home checklist", () => {
     if (view.kind !== "checklist") return;
     expect(view.remaining).toBe(0);
     expect(view.steps.find((step) => step.id === "pitch")?.done).toBe(false);
-    expect(greeting("Sofi", 2)).toBe("Hola, Sofi. Te faltan 2 pasos.");
-    expect(greeting("Sofi", 1)).toBe("Hola, Sofi. Te falta 1 paso.");
-    expect(greeting("  ", 0)).toBe("Hola, creador.");
+    expect(greeting("Sofi", 2)).toBe("Hello, Sofi. 2 steps left.");
+    expect(greeting("Sofi", 1)).toBe("Hello, Sofi. 1 step left.");
+    expect(greeting("  ", 0)).toBe("Hello, creator.");
   });
 
   it("hiding the checklist does not mark an unfinished step done", () => {
@@ -141,7 +141,7 @@ describe("home checklist", () => {
     expect(view.kind).toBe("blocked");
     if (view.kind !== "blocked") return;
     expect(view.title).toBe(FIRST_RUN_COPY.blockedTitle);
-    expect(view.body).toContain("no es un destino vacío");
+    expect(view.body).toContain("not an empty destination");
     expect(view.body).not.toContain(FIRST_RUN_COPY.insufficientTitle);
   });
 
@@ -154,7 +154,7 @@ describe("home checklist", () => {
     });
     expect(view.kind).toBe("blocked");
     if (view.kind !== "blocked") return;
-    expect(view.body).toContain("no es un destino vacío");
+    expect(view.body).toContain("not an empty destination");
     expect(view.title).not.toContain("nada");
   });
 

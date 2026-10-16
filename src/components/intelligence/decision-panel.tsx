@@ -57,10 +57,14 @@ function StrengthBlock({ strength }: { strength: StrengthLoad }) {
     return <Notice title="Data strength" description={strength.notice} />;
   }
   return (
-    <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6" data-testid="data-strength">
+    <div
+      className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6"
+      data-testid="data-strength"
+    >
       <h3 className="text-base font-semibold text-text">Data strength</h3>
       <p className="max-w-prose text-sm text-muted">
-        Confidence and freshness sit beside each metric. They are not a score. A hidden band is not zero.
+        Confidence and freshness sit beside each metric. They are not a score. A hidden band is not
+        zero.
       </p>
       <div className="space-y-3">
         {strength.metrics.map((metric) => (
@@ -72,8 +76,12 @@ function StrengthBlock({ strength }: { strength: StrengthLoad }) {
               <p className="text-sm text-muted">Not enough data</p>
             ) : (
               <p className="text-sm text-text">
-                {metric.confidenceLevel ? `Confidence: ${CONFIDENCE_LABELS[metric.confidenceLevel]}` : "Confidence withheld"}
-                {metric.freshnessBand ? `. Freshness: ${FRESHNESS_LABELS[metric.freshnessBand]}` : ". Freshness withheld"}
+                {metric.confidenceLevel
+                  ? `Confidence: ${CONFIDENCE_LABELS[metric.confidenceLevel]}`
+                  : "Confidence withheld"}
+                {metric.freshnessBand
+                  ? `. Freshness: ${FRESHNESS_LABELS[metric.freshnessBand]}`
+                  : ". Freshness withheld"}
               </p>
             )}
           </div>
@@ -91,7 +99,10 @@ function PersonalBlock({ personal }: { personal: PersonalLoad }) {
   const { aggregate } = personal;
   const types = aggregate.collaborationTypes.map((type) => TYPE_LABELS[type]).join(", ");
   return (
-    <div className="space-y-2 rounded-[var(--radius-app)] border border-border bg-surface p-6" data-testid="personal-aggregate">
+    <div
+      className="space-y-2 rounded-[var(--radius-app)] border border-border bg-surface p-6"
+      data-testid="personal-aggregate"
+    >
       <h3 className="text-base font-semibold text-text">Your confirmed events</h3>
       <p className="text-sm text-text">
         Recorded by you: {aggregate.manualEvents}. From Gmail: {aggregate.gmailEvents}.
@@ -121,11 +132,15 @@ function FitBlock({
   const current = fit.hotels.find((hotel) => hotel.hotelId === hotelId);
   const saved = decision.status === "ok" ? decision.decision : null;
   return (
-    <div className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6" data-testid="creator-fit">
+    <div
+      className="space-y-3 rounded-[var(--radius-app)] border border-border bg-surface p-6"
+      data-testid="creator-fit"
+    >
       <h3 className="text-base font-semibold text-text">Fit for you</h3>
       <p className="max-w-prose text-sm text-muted">
-        A hotel fits when you have confirmed that collaboration type and at least three other creators confirmed it there.
-        The order is creator activity, then hotel id. No prior is applied.
+        A hotel fits when you have confirmed that collaboration type and at least three other
+        creators confirmed it there. The order is creator activity, then hotel id. No prior is
+        applied.
       </p>
       {fit.hotels.length === 0 ? (
         <p className="max-w-prose text-sm text-muted">{FIT_EMPTY_COPY}</p>
@@ -142,8 +157,12 @@ function FitBlock({
               </p>
               {fit.detailed ? (
                 <p className="text-muted">
-                  {hotel.confidenceLevel ? `Confidence: ${CONFIDENCE_LABELS[hotel.confidenceLevel]}. ` : "Confidence withheld. "}
-                  {hotel.freshnessBand ? `Freshness: ${FRESHNESS_LABELS[hotel.freshnessBand]}.` : "Freshness withheld."}
+                  {hotel.confidenceLevel
+                    ? `Confidence: ${CONFIDENCE_LABELS[hotel.confidenceLevel]}. `
+                    : "Confidence withheld. "}
+                  {hotel.freshnessBand
+                    ? `Freshness: ${FRESHNESS_LABELS[hotel.freshnessBand]}.`
+                    : "Freshness withheld."}
                 </p>
               ) : null}
             </li>
@@ -154,7 +173,9 @@ function FitBlock({
         <div className="space-y-2 border-t border-border pt-3">
           {saved ? (
             <p className="text-sm text-text" data-testid="fit-decision-stored">
-              {saved === "pursue" ? "You chose to pursue this hotel." : "You chose to skip this hotel."}
+              {saved === "pursue"
+                ? "You chose to pursue this hotel."
+                : "You chose to skip this hotel."}
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
@@ -183,7 +204,9 @@ function FitBlock({
               </form>
             ) : null}
           </div>
-          <p className="text-xs text-muted">This choice stays on your account. It does not change the network.</p>
+          <p className="text-xs text-muted">
+            This choice stays on your account. It does not change the network.
+          </p>
         </div>
       ) : null}
       {decision.status === "error" ? <p className="text-sm text-muted">{decision.notice}</p> : null}

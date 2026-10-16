@@ -252,12 +252,12 @@ export default async function PipelinePage({
         />
       ) : state.kind === "items" && surface === "all" && !status && !rank ? (
         <div className="space-y-3">
-          <p className="text-sm text-[#555]">
+          <p className="text-sm text-muted">
             {state.summary}
-            {loaded ? ` · ${loaded.total} ciclos` : ""}
+            {loaded ? ` · ${loaded.total} cycles` : ""}
           </p>
-          <p className="text-sm text-[#555]">
-            Lo que se lee de Gmail es una sugerencia; vos confirmás el estado.
+          <p className="text-sm text-muted">
+            A Gmail reading is a suggestion. You confirm the status.
           </p>
           <PipelineBoard items={items} surface={surface} />
           {state.pagination ? <PipelinePagination state={state.pagination} /> : null}

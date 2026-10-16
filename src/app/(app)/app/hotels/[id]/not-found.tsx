@@ -5,7 +5,7 @@
  */
 import Link from "next/link";
 
-import { HOTEL_NOT_FOUND_BODY, HOTEL_NOT_FOUND_TITLE } from "@/lib/ux02/copy";
+import { HOTEL_NOT_FOUND_BODY, HOTEL_NOT_FOUND_TITLE } from "@/lib/screens/copy";
 
 export default function HotelNotFound() {
   return (

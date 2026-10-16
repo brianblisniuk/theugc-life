@@ -37,14 +37,14 @@ export default async function PublicCreatorPage({
   return (
     <article className="space-y-6">
       <header>
-        <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#666]">Creator</p>
+        <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">Creator</p>
         <h1 className="text-4xl font-extrabold tracking-tight">
           {card.displayName ?? card.username}
         </h1>
-        <p className="text-sm text-[#555]">@{card.username}</p>
+        <p className="text-sm text-muted">@{card.username}</p>
       </header>
       {card.bio ? <p className="max-w-prose text-sm">{card.bio}</p> : null}
-      <p className="text-sm text-[#555]">
+      <p className="text-sm text-muted">
         {[card.homeCity, card.homeCountry, card.primaryLanguage].filter(Boolean).join(" · ")}
       </p>
       {card.niches.length > 0 ? <p className="text-sm">{card.niches.join(", ")}</p> : null}
@@ -54,10 +54,10 @@ export default async function PublicCreatorPage({
         {card.youtubeUrl ? <li>YouTube: {card.youtubeUrl}</li> : null}
         {card.websiteUrl ? <li>Web: {card.websiteUrl}</li> : null}
       </ul>
-      <dl className="grid grid-cols-2 gap-4 border-t-2 border-[#111] pt-4">
+      <dl className="grid grid-cols-2 gap-4 border-t-2 border-border pt-4">
         {COUNTS.map(([key, label]) => (
           <div key={key}>
-            <dt className="text-xs text-[#555]">{label}</dt>
+            <dt className="text-xs text-muted">{label}</dt>
             <dd className="text-3xl font-extrabold">{card.counts[key]}</dd>
           </div>
         ))}

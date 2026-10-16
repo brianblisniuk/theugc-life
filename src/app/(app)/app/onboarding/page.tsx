@@ -2,7 +2,7 @@ import { DestinationQuestion } from "@/components/onboarding/destination-questio
 import { requireUser } from "@/lib/auth/guards";
 import { listDestinations } from "@/lib/trips/queries";
 
-export const metadata = { title: "Destino" };
+export const metadata = { title: "Destination" };
 
 export default async function OnboardingDestinationPage() {
   await requireUser("/app/onboarding");
@@ -10,7 +10,7 @@ export default async function OnboardingDestinationPage() {
   if (catalog.status !== "ok") {
     return (
       <p className="max-w-prose text-sm">
-        No pudimos cargar los destinos. Recargá la página. Esto no es un catálogo vacío.
+        We could not load destinations. Reload the page. This is not an empty catalog.
       </p>
     );
   }

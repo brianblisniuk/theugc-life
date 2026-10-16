@@ -1,13 +1,14 @@
 /**
- * E02 owns the shell (D081, Accepted). E03 may add routes, and must not add
- * them to the primary navigation.
+ * D081 keeps the five primary labels. V12.2 draws them in the sidebar and
+ * also links the existing Inbox and Collaborations routes. It does not add
+ * Contract Review.
  */
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
 describe("primary navigation", () => {
-  it("keeps the five primary items and does not add Inbox or Collaborations routes", () => {
+  it("keeps the five primary labels and lets the sidebar link existing routes", () => {
     const nav = readFileSync("src/lib/shell/navigation.ts", "utf8");
     const shell = readFileSync("src/components/shell/app-shell.tsx", "utf8");
     const primary = nav.slice(
@@ -22,8 +23,10 @@ describe("primary navigation", () => {
     expect(primary).not.toContain("/app/inbox");
     expect(primary).not.toContain("/app/collaborations");
     expect(primary).not.toContain("surface=");
-    expect(shell).toContain("PRIMARY_NAV");
-    expect(shell).not.toContain("/app/inbox");
-    expect(shell).not.toContain("/app/collaborations");
+    expect(shell).toContain("SIDEBAR_NAV");
+    expect(shell).toContain("MOBILE_NAV");
+    expect(nav).toContain('href: "/app/inbox"');
+    expect(nav).toContain('href: "/app/collaborations"');
+    expect(shell).not.toContain("Contract Review");
   });
 });

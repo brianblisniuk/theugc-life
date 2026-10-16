@@ -1,5 +1,6 @@
-/* UX02 layout for Discover, Hotel Detail, and the shared shell.
-   Spacing is 4/8/12/16/24/32/40/48/64. Skeletons do not shimmer. */
+/* Screen layout for Discover and Hotel Detail.
+   Spacing is 4/8/12/16/24/32/40/48/64. Skeletons do not shimmer.
+   Color comes from the Midnight tokens in globals.css. */
 
 .ux-header {
   position: sticky;

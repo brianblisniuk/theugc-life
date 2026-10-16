@@ -1,0 +1,643 @@
+{
+  "billing.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "collaborations.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "contracts.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(245, 248, 246)",
+      "buttonBg": "rgb(12, 17, 16)"
+    },
+    "off": []
+  },
+  "design-system.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "discover.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "home.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "hotel-detail.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "inbox.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "index.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "onboarding.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "outreach.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "pipeline.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "pitch-op-1042.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(245, 248, 246)",
+      "buttonBg": "rgb(12, 17, 16)"
+    },
+    "off": []
+  },
+  "pitch.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(245, 248, 246)",
+      "buttonBg": "rgb(12, 17, 16)"
+    },
+    "off": []
+  },
+  "plans.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "profile.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "trips.html@1440": {
+    "overflow": false,
+    "w": 1440,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "billing.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": [
+      {
+        "name": "TH",
+        "cls": "",
+        "left": 418
+      },
+      {
+        "name": "TH",
+        "cls": "",
+        "left": 519
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 418
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 519
+      },
+      {
+        "name": "SPAN",
+        "cls": "pill green",
+        "left": 534
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 418
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 519
+      },
+      {
+        "name": "SPAN",
+        "cls": "pill green",
+        "left": 534
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 418
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 519
+      }
+    ]
+  },
+  "collaborations.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "contracts.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(245, 248, 246)",
+      "buttonBg": "rgb(12, 17, 16)"
+    },
+    "off": []
+  },
+  "design-system.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "discover.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": [
+      {
+        "name": "DIV",
+        "cls": "",
+        "left": 489
+      },
+      {
+        "name": "DIV",
+        "cls": "metric-name",
+        "left": 489
+      },
+      {
+        "name": "DIV",
+        "cls": "metric-note",
+        "left": 489
+      },
+      {
+        "name": "DIV",
+        "cls": "",
+        "left": 489
+      },
+      {
+        "name": "SPAN",
+        "cls": "pill green",
+        "left": 489
+      },
+      {
+        "name": "DIV",
+        "cls": "row between",
+        "left": 660
+      },
+      {
+        "name": "A",
+        "cls": "btn small",
+        "left": 660
+      },
+      {
+        "name": "svg",
+        "cls": {},
+        "left": 671
+      },
+      {
+        "name": "path",
+        "cls": {},
+        "left": 674
+      },
+      {
+        "name": "SPAN",
+        "cls": "",
+        "left": 660
+      }
+    ]
+  },
+  "home.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "hotel-detail.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "inbox.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "index.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "onboarding.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "outreach.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": [
+      {
+        "name": "TH",
+        "cls": "",
+        "left": 570
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 570
+      },
+      {
+        "name": "A",
+        "cls": "btn small",
+        "left": 585
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 570
+      },
+      {
+        "name": "A",
+        "cls": "btn small",
+        "left": 585
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 570
+      },
+      {
+        "name": "A",
+        "cls": "btn small",
+        "left": 585
+      },
+      {
+        "name": "TD",
+        "cls": "",
+        "left": 570
+      },
+      {
+        "name": "A",
+        "cls": "btn small",
+        "left": 585
+      }
+    ]
+  },
+  "pipeline.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": [
+      {
+        "name": "SPAN",
+        "cls": "",
+        "left": 402
+      },
+      {
+        "name": "svg",
+        "cls": {},
+        "left": 394
+      },
+      {
+        "name": "path",
+        "cls": {},
+        "left": 397
+      },
+      {
+        "name": "DIV",
+        "cls": "lane",
+        "left": 432
+      },
+      {
+        "name": "DIV",
+        "cls": "lanehead",
+        "left": 445
+      },
+      {
+        "name": "SPAN",
+        "cls": "",
+        "left": 612
+      },
+      {
+        "name": "A",
+        "cls": "deal",
+        "left": 445
+      },
+      {
+        "name": "H4",
+        "cls": "",
+        "left": 445
+      },
+      {
+        "name": "P",
+        "cls": "",
+        "left": 445
+      },
+      {
+        "name": "DIV",
+        "cls": "foot",
+        "left": 445
+      }
+    ]
+  },
+  "pitch-op-1042.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(245, 248, 246)",
+      "buttonBg": "rgb(12, 17, 16)"
+    },
+    "off": []
+  },
+  "pitch.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(245, 248, 246)",
+      "buttonBg": "rgb(12, 17, 16)"
+    },
+    "off": []
+  },
+  "plans.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "profile.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  },
+  "trips.html@390": {
+    "overflow": false,
+    "w": 390,
+    "errors": [],
+    "colors": {
+      "background": "rgb(12, 17, 16)",
+      "sidebar": "rgb(10, 14, 13)",
+      "pageText": "rgb(245, 248, 246)",
+      "primary": "rgb(17, 21, 7)",
+      "buttonBg": "rgb(209, 255, 2)"
+    },
+    "off": []
+  }
+}

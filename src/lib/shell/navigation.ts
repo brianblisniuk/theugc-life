@@ -135,12 +135,12 @@ export function pipelineQueryStatus(
 
 export function pipelineSurfaces(): { id: PipelineSurface; href: string; label: string }[] {
   return [
-    { id: "all", href: "/app/pipeline", label: "Todos los ciclos" },
-    { id: "inbox", href: "/app/pipeline?surface=inbox", label: "Inbox · con mails" },
+    { id: "all", href: "/app/pipeline", label: "All" },
+    { id: "inbox", href: "/app/pipeline?surface=inbox", label: "Inbox" },
     {
       id: "collaborations",
       href: "/app/pipeline?surface=collaborations",
-      label: "Colaboraciones · ganados",
+      label: "Collaborations",
     },
   ];
 }
@@ -328,4 +328,145 @@ export function listCrumbs(current: string, parent?: { href: string; label: stri
   const home: Crumb = { label: "Home", href: "/app" };
   if (!parent) return [home, { label: current }];
   return [home, parent, { label: current }];
+}
+
+/** Live routes only. Outreach, Plans, and Contract Review are later blocks. */
+export const SIDEBAR_NAV = [
+  {
+    label: "Your workspace",
+    items: [
+      { href: "/app", label: "Home", icon: "home" },
+      { href: "/app/discover", label: "Discover", icon: "discover" },
+      { href: "/app/trips", label: "My Trips", icon: "trips" },
+    ],
+  },
+  {
+    label: "Outreach & relationships",
+    items: [
+      { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
+      { href: "/app/inbox", label: "Inbox", icon: "inbox" },
+    ],
+  },
+  {
+    label: "Your business",
+    items: [
+      { href: "/app/collaborations", label: "Collaborations", icon: "collaborations" },
+      { href: "/app/profile", label: "My Profile", icon: "profile" },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { href: "/app/billing", label: "Billing & Activity", icon: "billing" },
+      { href: "/app/onboarding", label: "Getting Started", icon: "start" },
+      { href: "/app/account", label: "Account", icon: "account" },
+    ],
+  },
+] as const;
+
+export const MOBILE_NAV = [
+  { href: "/app", label: "Home", icon: "home" },
+  { href: "/app/discover", label: "Explore", icon: "discover" },
+  { href: "/app/trips", label: "Trips", icon: "trips" },
+  { href: "/app/inbox", label: "Inbox", icon: "inbox" },
+  { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
+] as const;
+
+export const SHELL_ICONS = [
+  "home",
+  "discover",
+  "trips",
+  "pipeline",
+  "inbox",
+  "collaborations",
+  "profile",
+  "billing",
+  "start",
+  "account",
+] as const;
+
+export type ShellIcon = (typeof SHELL_ICONS)[number];
+
+export function shellHeading(pathname: string): { title: string; subtle: string } {
+  if (pathname === "/app") return { title: "Home", subtle: "Your daily priorities" };
+  if (isUnder(pathname, "/app/discover"))
+    return { title: "Discover", subtle: "Hotels worth a closer look" };
+  if (isUnder(pathname, "/app/trips"))
+    return { title: "My Trips", subtle: "Dates, shortlist, and nights" };
+  if (isUnder(pathname, "/app/pipeline"))
+    return { title: "Pipeline", subtle: "Each commercial attempt" };
+  if (isUnder(pathname, "/app/inbox"))
+    return { title: "Inbox", subtle: "Replies that need a decision" };
+  if (isUnder(pathname, "/app/collaborations")) {
+    return { title: "Collaborations", subtle: "Deliverables and deadlines" };
+  }
+  if (isUnder(pathname, "/app/profile"))
+    return { title: "My Profile", subtle: "How hotels see your work" };
+  if (isUnder(pathname, "/app/billing"))
+    return { title: "Billing & Activity", subtle: "Credits and plan activity" };
+  if (isUnder(pathname, "/app/account"))
+    return { title: "Account", subtle: "Sign-in and connected email" };
+  if (isUnder(pathname, "/app/onboarding"))
+    return { title: "Getting Started", subtle: "Your first useful step" };
+  if (isUnder(pathname, "/app/design")) return { title: "UI guide", subtle: "Midnight components" };
+  if (isUnder(pathname, "/app/hotels")) return { title: "Hotel", subtle: "Detail" };
+  return { title: "theugc.life", subtle: "Creator workspace" };
+}
+
+export function shellCrumbs(pathname: string, origin: HotelOrigin | null): Crumb[] {
+  const root: Crumb = { label: "Workspace", href: "/app" };
+  if (pathname === "/app") return [{ label: "Workspace" }];
+  if (isUnder(pathname, "/app/trips/") && pathname !== "/app/trips") {
+    return [root, { label: "My Trips", href: "/app/trips" }, { label: "Trip" }];
+  }
+  if (pathname === "/app/profile/portfolio") {
+    return [root, { label: "My Profile", href: "/app/profile" }, { label: "Portfolio" }];
+  }
+  if (pathname === "/app/profile/pitches") {
+    return [root, { label: "My Profile", href: "/app/profile" }, { label: "Pitch templates" }];
+  }
+  if (isUnder(pathname, "/app/onboarding/hotels")) {
+    return [root, { label: "Getting Started", href: "/app/onboarding" }, { label: "Hotels" }];
+  }
+  if (isUnder(pathname, "/app/hotels")) {
+    const current: Crumb = { label: pathname.includes("/pitch") ? "Pitch" : "Hotel" };
+    if (origin?.kind === "trip") return [root, { label: "My Trips", href: "/app/trips" }, current];
+    if (origin?.kind === "inbox") return [root, { label: "Inbox", href: "/app/inbox" }, current];
+    if (origin?.kind === "collaboration") {
+      return [root, { label: "Collaborations", href: "/app/collaborations" }, current];
+    }
+    if (origin?.kind === "pipeline")
+      return [root, { label: "Pipeline", href: "/app/pipeline" }, current];
+    return [root, { label: "Discover", href: "/app/discover" }, current];
+  }
+  return [root, { label: shellHeading(pathname).title }];
+}
+
+/** Longest matching sidebar href. Home is only the exact /app path. */
+export function activeSidebarHref(pathname: string, origin: HotelOrigin | null): string | null {
+  if (pathname === "/app") return "/app";
+  if (isUnder(pathname, "/app/discover")) return "/app/discover";
+  if (isUnder(pathname, "/app/trips")) return "/app/trips";
+  if (isUnder(pathname, "/app/pipeline")) return "/app/pipeline";
+  if (isUnder(pathname, "/app/inbox")) return "/app/inbox";
+  if (isUnder(pathname, "/app/collaborations")) return "/app/collaborations";
+  if (isUnder(pathname, "/app/profile")) return "/app/profile";
+  if (isUnder(pathname, "/app/billing")) return "/app/billing";
+  if (isUnder(pathname, "/app/account")) return "/app/account";
+  if (isUnder(pathname, "/app/onboarding")) return "/app/onboarding";
+  if (isUnder(pathname, "/app/hotels")) {
+    if (origin?.kind === "trip") return "/app/trips";
+    if (origin?.kind === "inbox") return "/app/inbox";
+    if (origin?.kind === "collaboration") return "/app/collaborations";
+    if (origin && origin.kind !== "discover") return "/app/pipeline";
+    return "/app/discover";
+  }
+  return null;
+}
+
+export function workspaceInitials(email: string | null): string {
+  const local = (email ?? "").split("@")[0]?.replace(/[^a-zA-Z0-9]/g, "") ?? "";
+  if (local.length >= 2) return local.slice(0, 2).toUpperCase();
+  if (local.length === 1) return local.toUpperCase();
+  return "·";
 }

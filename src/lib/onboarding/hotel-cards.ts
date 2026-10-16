@@ -2,7 +2,7 @@
  * First-value hotel cards (D095).
  *
  * A verified name and role are shown only when this user already unlocked the
- * hotel. Otherwise the card says "Contacto genérico" and does not carry an
+ * hotel. Otherwise the card says "Generic contact" and does not carry an
  * email. The card never spends a credit by being rendered.
  */
 import type { PublicCardSignal } from "@/lib/hotels/card-signal";
@@ -61,13 +61,13 @@ export function onboardingContext(
   intelligenceFailed: boolean,
 ): { text: string | null; score: number } {
   if (intelligenceFailed) return { text: null, score: 0 };
-  if (!signal) return { text: "Datos insuficientes todavía", score: 0 };
+  if (!signal) return { text: "Insufficient data", score: 0 };
   if (signal.collaborationObserved) {
-    return { text: "Trabaja con creadores", score: 2 };
+    return { text: "Works with creators", score: 2 };
   }
   const parts = [signal.activity, signal.recency].filter((part): part is string => Boolean(part));
   if (parts.length > 0) return { text: parts.join(" · "), score: 1 };
-  return { text: "Datos insuficientes todavía", score: 0 };
+  return { text: "Insufficient data", score: 0 };
 }
 
 export function rankOnboardingHotels<T extends RankedHotel>(hotels: readonly T[]): T[] {

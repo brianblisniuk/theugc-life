@@ -1,0 +1,1081 @@
+[
+  {
+    "file": "collaborations.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "collaborations.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "collaborations.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Collaborations",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Collaborations",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "collaborations.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "collaborations.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Contract Review",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "collaborations.html",
+    "tag": "SPAN",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "collaborations.html",
+    "tag": "A",
+    "cls": "btn lime block",
+    "txt": "View Contract Review",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Home",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Home",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "home.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "SPAN",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "A",
+    "cls": "btn block lime",
+    "txt": "Open My Trips",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "SPAN",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "home.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Continue exploring Bangkok",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "billing.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "billing.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "billing.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Billing & Activity",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Billing & Activity",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "billing.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "billing.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Manage plan",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "inbox.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "inbox.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "inbox.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Inbox",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Inbox",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "inbox.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "inbox.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "New pitch",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "inbox.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Needs reply",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "inbox.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Prepare reply in Pitch Studio",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "contracts.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "contracts.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "contracts.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Contract Review",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Contract Review",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "contracts.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "View Home \u2192",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "DIV",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "DIV",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(245, 248, 246)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "design-system.html",
+    "tag": "SPAN",
+    "cls": "btn lime is-placeholder",
+    "txt": "Primary action / #D1FF02",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "discover.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "discover.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "discover.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Discover",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Discover",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "discover.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "discover.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "View Bangkok Trip",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "discover.html",
+    "tag": "DIV",
+    "cls": "",
+    "txt": "3 hotels",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "discover.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Bangkok",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Home",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Home",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "index.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "SPAN",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "A",
+    "cls": "btn block lime",
+    "txt": "Open My Trips",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "SPAN",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "index.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Continue exploring Bangkok",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "profile.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "profile.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "profile.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "My Profile",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "My Profile",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "profile.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "profile.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Open Pitch Studio",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "profile.html",
+    "tag": "SPAN",
+    "cls": "btn lime is-placeholder",
+    "txt": "Portfolio preview",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Pipeline",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Pipeline",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Find hotels",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Open Inbox",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Board",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pipeline.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "All opportunities",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Discover",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Discover",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Add to My Trip",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "SPAN",
+    "cls": "square",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "hotel-detail.html",
+    "tag": "SPAN",
+    "cls": "btn lime block is-placeholder",
+    "txt": "Unlock hotel contacts \u00b7 1 credit",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "trips.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "trips.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "trips.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "My Trips",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "My Trips",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "trips.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "trips.html",
+    "tag": "SPAN",
+    "cls": "btn lime is-placeholder",
+    "txt": "New trip",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "trips.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Continue outreach",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "plans.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "plans.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "plans.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Plans & Credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Plans & Credits",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "plans.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "plans.html",
+    "tag": "SPAN",
+    "cls": "btn lime block is-placeholder",
+    "txt": "Compare Pro capabilities",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "pitch.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Pitch Studio",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Pitch Studio",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "pitch.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Social-first UGC",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Warm",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch-op-1042.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch-op-1042.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "pitch-op-1042.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Pitch Studio",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Pitch Studio",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "pitch-op-1042.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch-op-1042.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Social-first UGC",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "pitch-op-1042.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "Warm",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "onboarding.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "onboarding.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "onboarding.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Getting Started",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Getting Started",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "onboarding.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "onboarding.html",
+    "tag": "SPAN",
+    "cls": "step current",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "onboarding.html",
+    "tag": "A",
+    "cls": "btn lime",
+    "txt": "Explore hotel opportunities",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "A",
+    "cls": "skip",
+    "txt": "Skip to content",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "SPAN",
+    "cls": "dot",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "A",
+    "cls": "nav-link active",
+    "txt": "Outreach",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": [
+      {
+        "t": "Outreach",
+        "fg": "rgb(17, 21, 7)"
+      }
+    ]
+  },
+  {
+    "file": "outreach.html",
+    "tag": "A",
+    "cls": "top-pill lime",
+    "txt": "147 credits",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "SPAN",
+    "cls": "btn lime is-placeholder",
+    "txt": "New outreach",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "SPAN",
+    "cls": "",
+    "txt": "",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(245, 248, 246)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "SPAN",
+    "cls": "chip active",
+    "txt": "All",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  },
+  {
+    "file": "outreach.html",
+    "tag": "A",
+    "cls": "btn lime block",
+    "txt": "Open conversation",
+    "bg": "rgb(209, 255, 2)",
+    "fg": "rgb(17, 21, 7)",
+    "sub": []
+  }
+]
