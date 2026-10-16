@@ -11,6 +11,7 @@ export const INBOX_SYNC_BATCH = 10;
 /**
  * Discharges mailboxes the database already marked due. Gmail is reached
  * only through the adapter the worker is given. Tests pass their own deps.
+ * The Netlify schedule calls this function in-process.
  */
 export async function runProductionInboxSync(): Promise<{
   accounts: number;

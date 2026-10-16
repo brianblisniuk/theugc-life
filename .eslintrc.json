@@ -8,5 +8,5 @@
     ],
     "@typescript-eslint/no-explicit-any": "error"
   },
-  "ignorePatterns": ["node_modules/", ".next/", "next-env.d.ts", "supabase/migrations/**"]
+  "ignorePatterns": ["node_modules/", ".next/", "next-env.d.ts", "supabase/migrations/**", "netlify/functions-built/**"]
 }

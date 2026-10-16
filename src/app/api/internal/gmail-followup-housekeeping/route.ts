@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Stops follow-ups that must not send and enqueues the ones that are due.
- * Does not call Gmail or Claude.
+ * Does not call Gmail or Claude. The Netlify schedule runs the same job
+ * in-process and does not call this route.
  */
 export async function POST(request: Request): Promise<Response> {
   const result = await handleDispatchPost(
