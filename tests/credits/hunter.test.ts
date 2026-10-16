@@ -7,7 +7,9 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { getClientEnv, resetClientEnvCache } from "@/env";
 import { CONTACT_LOOKUP_UNAVAILABLE } from "@/lib/credits/config";
+import { resetServerEnvCache, serverEnv } from "@/lib/env.server";
 import {
   HUNTER_DOMAIN_SEARCH_VERIFICATION_HEADROOM,
   HUNTER_ORIGIN,
@@ -1394,13 +1396,38 @@ describe("Hunter contact lookup", () => {
 
   it("does not let the default provider call the network", async () => {
     const original = globalThis.fetch;
+    const leaked = [
+      "CONTACT_PROVIDER",
+      "HUNTER_API_KEY",
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_SITE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ] as const;
+    const previous = Object.fromEntries(leaked.map((name) => [name, process.env[name]]));
     let called = false;
     globalThis.fetch = () => {
       called = true;
       return Promise.reject(new Error("real network"));
     };
     try {
-      delete process.env.CONTACT_PROVIDER;
+      // CI exports dummy Supabase credentials for the whole job, and the
+      // first successful read is cached. Warm that cache, then drop it and
+      // the variables. The default provider must not open the admin client
+      // or call fetch, including when a Hunter key is present.
+      try {
+        getClientEnv();
+      } catch {
+        // This process had no client env yet.
+      }
+      try {
+        serverEnv();
+      } catch {
+        // This process had no server env yet.
+      }
+      for (const name of leaked) delete process.env[name];
+      resetClientEnvCache();
+      resetServerEnvCache();
       const fake = getContactProvider();
       await expect(fake.findHotelEmail(lookup())).resolves.toMatchObject({ status: "found" });
       process.env.CONTACT_PROVIDER = "hunter";
@@ -1410,6 +1437,13 @@ describe("Hunter contact lookup", () => {
       expect(called).toBe(false);
     } finally {
       globalThis.fetch = original;
+      for (const name of leaked) {
+        const value = previous[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      resetClientEnvCache();
+      resetServerEnvCache();
     }
   });
 
