@@ -9,17 +9,36 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Scheduled jobs are prebundled into this directory by `npm run build`.
+# `node_bundler` is set on each function, not globally, so the Next.js
+# server function keeps Netlify's bundler. `server-only` is stubbed only
+# in the prebundle. Background mode keeps a mailbox sync inside the
+# 15-minute limit instead of the synchronous one.
+
+[functions]
+  directory = "netlify/functions-built"
+
 [functions."gmail-send-dispatch"]
   schedule = "* * * * *"
+  background = true
+  node_bundler = "none"
 
 [functions."gmail-inbox-sync"]
   schedule = "*/15 * * * *"
+  background = true
+  node_bundler = "none"
 
 [functions."account-erasure"]
   schedule = "15 6 * * *"
+  background = true
+  node_bundler = "none"
 
 [functions."credit-period-refresh"]
   schedule = "45 6 * * *"
+  background = true
+  node_bundler = "none"
 
 [functions."gmail-followup-housekeeping"]
   schedule = "7,22,37,52 * * * *"
+  background = true
+  node_bundler = "none"
