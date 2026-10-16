@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
 import { domainFromWebsite, getContactProvider, unlockFollowUp } from "@/lib/contacts/provider";
+import { CREDITS_CONFIG } from "@/lib/credits/config";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 import { isUuid } from "@/lib/hotels/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -88,7 +89,15 @@ export async function unlockHotelContactAction(formData: FormData): Promise<Unlo
   let payload = asPayload(first.data);
   if (!payload?.status) return { status: "error", email: null };
 
+  if (payload.status === "insufficient_credits") {
+    return { status: "insufficient_credits", email: null, balance: balanceOf(payload) };
+  }
+
   if (payload.status === "needs_provider") {
+    const balance = balanceOf(payload);
+    if (balance !== null && balance < CREDITS_CONFIG.unlockCost) {
+      return { status: "insufficient_credits", email: null, balance };
+    }
     const hotel = await supabase
       .from("hotels")
       .select("name, website_url")

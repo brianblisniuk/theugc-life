@@ -5050,8 +5050,9 @@ Status: **Accepted — PRODUCT DECISION (owner, 2026-10-14).**
 
 `ANTHROPIC_MONTHLY_BUDGET_USD` is the hard stop for estimated spend in the
 current UTC month. Unset, blank, or not a positive number refuses every
-model call. A call whose estimate would pass the cap is refused before the
-request. Spend is `input_tokens * $2 + output_tokens * $10` per million,
+model call. D188 removes the $100,000 implementation ceiling. A call whose
+estimate would pass the cap is refused before the request. Spend is
+`input_tokens * $2 + output_tokens * $10` per million,
 the Sonnet 5.5 list price effective 2026-10-07, counted in micros. Cache
 tokens, when the API reports them, are counted at the input price so the
 cap stops early rather than late.
@@ -5378,7 +5379,9 @@ $5 a month and Max to $15, tracked from real token counts at the
 configured Sonnet prices. `AI_BUDGET_PRO_USD` and `AI_BUDGET_MAX_USD`
 override the defaults. The soft warning is 80 percent. At 100 percent
 that user stops. Free still has no AI. A failed or rejected call can
-still consume the budget for tokens the provider billed.
+still consume the budget for tokens the provider billed. A failed call
+records that billed token cost, or 0 when the provider billed none. It
+does not record the pre-call estimate.
 
 ## D163 — The global pool warns at 80 percent and stops everyone at 100 percent
 
@@ -5388,6 +5391,7 @@ The pool is `AI_GLOBAL_POOL_PERCENT` of the previous calendar month's
 approved USD revenue. The default is 15 percent. Invalid percents stay
 at 15. `ANTHROPIC_MONTHLY_BUDGET_USD` is the floor. Unset, blank, or not
 a positive number refuses paid generation before the provider is called.
+D188 clamps a numeric pool percent to 15–20.
 Nearing is 80 percent of the pool. Exhausted is 100 percent. Both write
 one admin-visible alert per UTC month. At 100 percent a new generation
 is refused for every user, including one who is still inside their own
@@ -5408,9 +5412,12 @@ Status: **Accepted**.
 
 An eleventh generation start inside 60 seconds pauses that user. The
 pause stops AI and Gmail sends. The in-app message tells them to email
-support@theugc.life. `admin_unpause_account` is admin-only. An editor or
-the creator receives `forbidden` and changes nothing. A gap under three
-seconds returns `rate_limited` and does not pause.
+support@theugc.life. A missing API key or an unset budget floor is not
+this pause. That result is `unavailable`, with neutral copy that does
+not ask the creator to email support. The support sentence stays for an
+open `ai_account_pauses` row. `admin_unpause_account` is admin-only. An
+editor or the creator receives `forbidden` and changes nothing. A gap
+under three seconds returns `rate_limited` and does not pause.
 
 ## D166 — Generation is a structured pitch for an unlocked hotel
 
@@ -5963,3 +5970,17 @@ map:
 workflow sentences still read. The Spanish pipeline board keeps its own
 column words. Trip metric counts keep the word "Pitched" for the count of
 pitched hotels.
+
+## D188 — Pool percent is 15 to 20, and the budget floor has no $100k cap
+
+Status: **Accepted — PRODUCT DECISION (owner, 16 Oct 2026).** Amends the
+numeric range in D163 and the implementation ceiling on D145.
+
+`AI_GLOBAL_POOL_PERCENT` is clamped to 15 through 20 inclusive. A finite
+number below 15 becomes 15. A finite number above 20 becomes 20. Unset,
+blank, or not a finite number stays at 15.
+
+`ANTHROPIC_MONTHLY_BUDGET_USD` has no $100,000 ceiling. Unset, blank, or
+not a positive number still refuses paid generation before the provider
+is called. A positive finite amount is the floor. A value that is not a
+safe positive integer number of micros is not a floor.

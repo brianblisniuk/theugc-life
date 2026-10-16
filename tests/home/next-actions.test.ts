@@ -49,6 +49,7 @@ function pipeline(overrides: Partial<OwnedPipelineItem> = {}): OwnedPipelineItem
     hotelName: "Ada House",
     nextFollowupAt: null,
     lastActivityAt: "2026-10-01T00:00:00.000Z",
+    tripId: null,
     ...overrides,
   };
 }
@@ -141,8 +142,12 @@ describe("prioritizeNextActions", () => {
       "Saved hotel: Ada Later",
     ]);
     expect(board.followUpsDue).toBe(1);
-    expect(board.actions[0]?.href).toBe(`/app/hotels/${HOTEL_A}?from=pipeline`);
-    expect(board.actions[2]?.href).toBe(`/app/hotels/${HOTEL_A}?from=inbox#activity`);
+    expect(board.actions[0]?.href).toBe(
+      `/app/hotels/${HOTEL_A}?from=pipeline&opportunity=${ITEM_A}`,
+    );
+    expect(board.actions[2]?.href).toBe(
+      `/app/hotels/${HOTEL_A}?from=inbox&opportunity=${ITEM_A}#activity`,
+    );
     expect(board.actions[1]?.href).toBe(`/app/hotels/${HOTEL_C}?from=collaboration#collaboration`);
     expect(board.actions.some((action) => action.id === `pipeline:${ITEM_A}`)).toBe(false);
     expect(JSON.stringify(board)).not.toContain("/billing");
@@ -443,6 +448,51 @@ describe("prioritizeNextActions", () => {
     const badClock = prioritizeNextActions(input({ asOf: "yesterday" }));
     expect(badClock.followUpsDue).toBeNull();
     expect(badClock.empty).toBeNull();
+  });
+});
+
+describe("opportunity links", () => {
+  it("puts the row id on follow-up, pipeline, and Gmail links", () => {
+    const trip = "44444444-4444-4444-8444-444444444444";
+    const board = prioritizeNextActions(
+      input({
+        pipeline: {
+          status: "ok",
+          capped: false,
+          items: [
+            pipeline({
+              id: ITEM_A,
+              nextFollowupAt: "2026-10-01T00:00:00.000Z",
+              status: "pitched",
+              tripId: trip,
+            }),
+            pipeline({
+              id: ITEM_B,
+              hotelName: "Ada Later",
+              status: "saved",
+              tripId: null,
+            }),
+          ],
+        },
+        gmail: {
+          status: "ok",
+          truncated: false,
+          suggestions: [suggestion({ id: SUGGEST_PITCH, pipelineItemId: ITEM_B })],
+        },
+      }),
+    );
+    const followUp = board.actions.find((action) => action.id === `follow-up:${ITEM_A}`);
+    const pipelineAction = board.actions.find((action) => action.id === `pipeline:${ITEM_B}`);
+    const gmail = board.actions.find((action) => action.kind === "gmail_suggestion");
+    expect(followUp?.href).toContain(`opportunity=${ITEM_A}`);
+    expect(followUp?.href).toContain(`trip=${trip}`);
+    expect(followUp?.href).toContain("from=pipeline");
+    expect(pipelineAction?.href).toContain(`opportunity=${ITEM_B}`);
+    expect(pipelineAction?.href).not.toContain("trip=");
+    expect(gmail?.href).toContain(`opportunity=${ITEM_B}`);
+    expect(gmail?.href).toContain("from=inbox");
+    expect(gmail?.href).toContain("#activity");
+    expect(gmail?.href).not.toContain(`opportunity=${ITEM_A}`);
   });
 });
 
