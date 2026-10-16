@@ -51,12 +51,13 @@ describe("Midnight shell", () => {
     expect(existsSync("src/app/(app)/app/contracts/page.tsx")).toBe(false);
   });
 
-  it("does not link Outreach, Plans, or Contract Review until those screens exist", () => {
+  it("links Outreach and still leaves Plans and Contract Review unlinked", () => {
     const labels = SIDEBAR_NAV.flatMap((section) => section.items.map((item) => item.label));
     expect(labels).toEqual([
       "Home",
       "Discover",
       "My Trips",
+      "Outreach",
       "Pipeline",
       "Inbox",
       "Collaborations",
@@ -65,7 +66,7 @@ describe("Midnight shell", () => {
       "Getting Started",
       "Account",
     ]);
-    expect(labels.join(" ")).not.toMatch(/Contract Review|Outreach|Plans & Credits/);
+    expect(labels.join(" ")).not.toMatch(/Contract Review|Plans & Credits/);
   });
 });
 

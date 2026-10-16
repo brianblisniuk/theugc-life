@@ -86,3 +86,22 @@ export function parseTripForm(fields: {
 export function parseTripId(value: unknown): string | null {
   return typeof value === "string" && isUuid(value) ? value : null;
 }
+
+export type NightStatusInput = "pending" | "confirmed";
+
+/** Both empty clears the stay. One side alone is refused. Checkout is exclusive. */
+export function parseStayPair(
+  checkIn: unknown,
+  checkOut: unknown,
+): { ok: true; checkIn: string | null; checkOut: string | null } | { ok: false } {
+  const start = typeof checkIn === "string" ? checkIn.trim() : "";
+  const end = typeof checkOut === "string" ? checkOut.trim() : "";
+  if (!start && !end) return { ok: true, checkIn: null, checkOut: null };
+  if (!isRealDay(start) || !isRealDay(end) || end <= start) return { ok: false };
+  return { ok: true, checkIn: start, checkOut: end };
+}
+
+export function parseNightStatus(value: unknown): NightStatusInput | null {
+  if (value === "pending" || value === "confirmed") return value;
+  return null;
+}

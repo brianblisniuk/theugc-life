@@ -50,6 +50,13 @@ function Icon({ name }: { name: ShellIcon }) {
       </svg>
     );
   }
+  if (name === "outreach") {
+    return (
+      <svg {...common}>
+        <path d="m22 2-7 20-4-9-9-4zM22 2 11 13" />
+      </svg>
+    );
+  }
   if (name === "pipeline") {
     return (
       <svg {...common}>

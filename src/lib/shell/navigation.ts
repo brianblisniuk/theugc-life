@@ -330,7 +330,7 @@ export function listCrumbs(current: string, parent?: { href: string; label: stri
   return [home, parent, { label: current }];
 }
 
-/** Live routes only. Outreach, Plans, and Contract Review are later blocks. */
+/** Live routes only. Plans and Contract Review stay unlinked. */
 export const SIDEBAR_NAV = [
   {
     label: "Your workspace",
@@ -343,6 +343,7 @@ export const SIDEBAR_NAV = [
   {
     label: "Outreach & relationships",
     items: [
+      { href: "/app/outreach", label: "Outreach", icon: "outreach" },
       { href: "/app/pipeline", label: "Pipeline", icon: "pipeline" },
       { href: "/app/inbox", label: "Inbox", icon: "inbox" },
     ],
@@ -376,6 +377,7 @@ export const SHELL_ICONS = [
   "home",
   "discover",
   "trips",
+  "outreach",
   "pipeline",
   "inbox",
   "collaborations",
@@ -393,6 +395,8 @@ export function shellHeading(pathname: string): { title: string; subtle: string 
     return { title: "Discover", subtle: "Hotels worth a closer look" };
   if (isUnder(pathname, "/app/trips"))
     return { title: "My Trips", subtle: "Dates, shortlist, and nights" };
+  if (isUnder(pathname, "/app/outreach"))
+    return { title: "Outreach", subtle: "Shortlists into conversations" };
   if (isUnder(pathname, "/app/pipeline"))
     return { title: "Pipeline", subtle: "Each commercial attempt" };
   if (isUnder(pathname, "/app/inbox"))
@@ -416,8 +420,11 @@ export function shellHeading(pathname: string): { title: string; subtle: string 
 export function shellCrumbs(pathname: string, origin: HotelOrigin | null): Crumb[] {
   const root: Crumb = { label: "Workspace", href: "/app" };
   if (pathname === "/app") return [{ label: "Workspace" }];
-  if (isUnder(pathname, "/app/trips/") && pathname !== "/app/trips") {
+  if (isUnder(pathname, "/app/trips") && pathname !== "/app/trips") {
     return [root, { label: "My Trips", href: "/app/trips" }, { label: "Trip" }];
+  }
+  if (isUnder(pathname, "/app/outreach") && pathname !== "/app/outreach") {
+    return [root, { label: "Outreach", href: "/app/outreach" }, { label: "Campaign" }];
   }
   if (pathname === "/app/profile/portfolio") {
     return [root, { label: "My Profile", href: "/app/profile" }, { label: "Portfolio" }];
@@ -447,6 +454,7 @@ export function activeSidebarHref(pathname: string, origin: HotelOrigin | null):
   if (pathname === "/app") return "/app";
   if (isUnder(pathname, "/app/discover")) return "/app/discover";
   if (isUnder(pathname, "/app/trips")) return "/app/trips";
+  if (isUnder(pathname, "/app/outreach")) return "/app/outreach";
   if (isUnder(pathname, "/app/pipeline")) return "/app/pipeline";
   if (isUnder(pathname, "/app/inbox")) return "/app/inbox";
   if (isUnder(pathname, "/app/collaborations")) return "/app/collaborations";

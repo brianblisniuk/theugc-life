@@ -47,7 +47,8 @@ Sources: PRD §5.1–§5.3.1, §10.2, §12.8, §15; D014, D042, D049, D050, D056
 | `pipeline.engage` | Pipeline | Free limit 5; same outside-coverage count |
 | `pipeline.own` | Pipeline | owner, every tier |
 | `trips.active` | Trips | Free limit 1; Pass exempt when covered; outside counts only outside-coverage trips |
-| `trips.own` | Trips | owner, including after expiry |
+| `trips.own` | Trips | owner, including after expiry. Creator-set nights and Gmail date accept or reject (D183) |
+| `outreach.own` | Outreach | owner, every tier (D184). A campaign is not a second hotel database. Opening an opportunity still uses `pipeline.save` |
 | `inbox.own` | Inbox | owner. Not a separate plan |
 | `collaborations.lifecycle` | Collaborations | owner, on a relationship they already have |
 | `collaborations.compensation` | Collaborations | owner. Not a charge |
