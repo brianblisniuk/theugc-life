@@ -104,7 +104,10 @@ function that is both scheduled and background, and answers that
 combination with a bare 502 and no function log. A thrown job returns
 500 `{ "result": "error", "code" }` and logs only the error name and code.
 Locking and idempotency stay in the same database functions the routes call.
-The scheduled limit is 30 seconds.
+The scheduled limit is 30 seconds. Send dispatch claims one queued row,
+delivers it, then claims the next, and stops claiming at 25 seconds. A
+kill cannot leave a batch of unsent reservations. A row already handed to
+Gmail is not claimed again.
 
 | Function | Schedule | Secret | In-process job |
 | --- | --- | --- | --- |

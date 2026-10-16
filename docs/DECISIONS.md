@@ -5656,6 +5656,16 @@ short secret still does not run the job.
 500 `{ "result": "error", "code" }`. The log and the body do not include
 the message, a token, an email address, or the secret.
 
+### Amendment (16 Oct 2026) — send dispatch claims one row inside the 30s limit
+
+The scheduled function is killed at 30 seconds. `dispatchDueGmailSends`
+claims one queued row (`gmail_send_claim_due` with `p_limit` 1), delivers
+it, then claims the next, and stops claiming at 25 seconds. A kill cannot
+leave a batch of unsent reservations. A reserved row is not returned to
+`queued` and is not claimed again. One send already in progress can still
+be interrupted; that row stays `reserved` and becomes `unknown` after 15
+minutes (D168). The public route uses the same dispatcher.
+
 ## D179 — A null entitlement reference is one logical grant
 
 Status: **Accepted**. Records the BASE-N9 bugfix. It does not change who
