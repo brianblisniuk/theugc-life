@@ -126,6 +126,7 @@ export function GmailConnectionPanel({
   configured,
   callbackStatus,
   deletionPending = false,
+  deletionReadable = true,
 }: {
   accounts: GmailAccountStatus[];
   configured: boolean;
@@ -133,9 +134,11 @@ export function GmailConnectionPanel({
   callbackStatus?: string | null;
   /** Account deletion is scheduled. Connect and reconnect stay hidden. */
   deletionPending?: boolean;
+  /** A failed deletion read is not “no request”. Connect stays hidden. */
+  deletionReadable?: boolean;
 }) {
   const notice = disconnectNoticeFor(callbackStatus);
-  const offered = gmailConnectionOffered(deletionPending);
+  const offered = gmailConnectionOffered(deletionPending, deletionReadable);
   return (
     <section className="space-y-4 rounded-[var(--radius-app)] border border-border bg-surface p-5">
       <div>
@@ -157,7 +160,9 @@ export function GmailConnectionPanel({
 
       {!offered ? (
         <p className="text-sm text-muted">
-          Gmail stays disconnected while account deletion is pending.
+          {deletionReadable
+            ? "Gmail stays disconnected while account deletion is pending."
+            : "We couldn’t read the deletion status, so Gmail connect stays off. This is not a confirmation that no deletion was requested."}
         </p>
       ) : null}
 

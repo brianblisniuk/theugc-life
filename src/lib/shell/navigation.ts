@@ -347,7 +347,7 @@ export function listCrumbs(current: string, parent?: { href: string; label: stri
   return [home, parent, { label: current }];
 }
 
-/** Live routes only. Outreach, Plans, and Contract Review are later blocks. */
+/** Live routes only. Outreach and Contract Review stay out of this shell. */
 export const SIDEBAR_NAV = [
   {
     label: "Your workspace",
@@ -374,6 +374,7 @@ export const SIDEBAR_NAV = [
   {
     label: "Account",
     items: [
+      { href: "/app/plans", label: "Plans & Credits", icon: "plans" },
       { href: "/app/billing", label: "Billing & Activity", icon: "billing" },
       { href: "/app/onboarding", label: "Getting Started", icon: "start" },
       { href: "/app/account", label: "Account", icon: "account" },
@@ -398,6 +399,7 @@ export const SHELL_ICONS = [
   "collaborations",
   "profile",
   "billing",
+  "plans",
   "start",
   "account",
 ] as const;
@@ -419,8 +421,10 @@ export function shellHeading(pathname: string): { title: string; subtle: string 
   }
   if (isUnder(pathname, "/app/profile"))
     return { title: "My Profile", subtle: "How hotels see your work" };
+  if (isUnder(pathname, "/app/plans"))
+    return { title: "Plans & Credits", subtle: "Plans and available capabilities" };
   if (isUnder(pathname, "/app/billing"))
-    return { title: "Billing & Activity", subtle: "Credits and plan activity" };
+    return { title: "Billing & Activity", subtle: "Credit and billing transparency" };
   if (isUnder(pathname, "/app/account"))
     return { title: "Account", subtle: "Sign-in and connected email" };
   if (isUnder(pathname, "/app/onboarding"))
@@ -495,6 +499,7 @@ export function activeSidebarHref(pathname: string, origin: HotelOrigin | null):
   if (isUnder(pathname, "/app/inbox")) return "/app/inbox";
   if (isUnder(pathname, "/app/collaborations")) return "/app/collaborations";
   if (isUnder(pathname, "/app/profile")) return "/app/profile";
+  if (isUnder(pathname, "/app/plans")) return "/app/plans";
   if (isUnder(pathname, "/app/billing")) return "/app/billing";
   if (isUnder(pathname, "/app/account")) return "/app/account";
   if (isUnder(pathname, "/app/onboarding")) return "/app/onboarding";

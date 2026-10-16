@@ -301,8 +301,12 @@ export const INVENTORY: readonly InventoryEntry[] = [
     module: "Plans",
     summary:
       "Max adds priority AI, advanced signals, priority support, and a future-premium placeholder. Priority AI is a fuller draft and more context on the same Claude model. Advanced signals add rank, confidence, and freshness on creator fit. The flags do not change Discover order, Pipeline order, or support mail.",
-    routes: ["/pricing", "/app/billing"],
-    sourceFiles: ["src/lib/credits/config.ts", "src/app/(app)/app/billing/page.tsx"],
+    routes: ["/pricing", "/app/billing", "/app/plans"],
+    sourceFiles: [
+      "src/lib/credits/config.ts",
+      "src/app/(app)/app/billing/page.tsx",
+      "src/app/(app)/app/plans/page.tsx",
+    ],
     serverActions: [],
     rpcs: ["own_plan_features", "has_active_max"],
     rule: { kind: "max_only" },
