@@ -355,7 +355,7 @@ export function PitchComposer({
             type="button"
             disabled={pending}
             onClick={() => void onAssist()}
-            className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+            className="v12-btn"
           >
             Draft with AI
           </button>
@@ -391,45 +391,43 @@ export function PitchComposer({
         </label>
       </div>
 
-      <label className="block space-y-1 text-xs font-medium text-muted">
-        Subject
+      <div className="v12-field">
+        <span>To / contact</span>
+        <p>{recipientEmail ?? "Hotel recipient will appear after a successful unlock."}</p>
+      </div>
+      <label className="v12-field">
+        <span>Subject</span>
         <input
-          className={FIELD}
           value={subjectValue}
           maxLength={200}
           onChange={(event) => setSubjectValue(event.target.value)}
         />
       </label>
-      <label className="block space-y-1 text-xs font-medium text-muted">
-        Message
+      <label className="v12-field">
+        <span>Message</span>
         <textarea
-          className={`${FIELD} min-h-64`}
+          className="min-h-64"
           value={bodyValue}
           maxLength={8000}
           onChange={(event) => setBodyValue(event.target.value)}
         />
       </label>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="v12-head-actions">
         <button
           type="button"
           disabled={pending}
           onClick={() => void onSave()}
-          className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+          className="v12-btn v12-btn-dark"
         >
           Save draft
         </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void onCopy()}
-          className="inline-flex border border-border px-4 py-2 text-sm font-medium text-text disabled:opacity-60"
-        >
-          Copy
+        <button type="button" disabled={pending} onClick={() => void onCopy()} className="v12-btn">
+          Copy email
         </button>
         <a
           href={mailto}
-          className="inline-flex border border-border px-4 py-2 text-sm font-medium text-text"
+          className="v12-btn"
           onClick={(event) => {
             event.preventDefault();
             void (async () => {
@@ -452,24 +450,18 @@ export function PitchComposer({
             type="button"
             disabled={pending}
             onClick={() => void onSend()}
-            className="inline-flex bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast disabled:opacity-60"
+            className="v12-btn v12-btn-primary"
           >
             Send
           </button>
         ) : null}
         {canSend && !mailAccountId ? (
-          <a
-            href={connectHref}
-            className="inline-flex border border-border px-4 py-2 text-sm font-medium text-text"
-          >
+          <a href={connectHref} className="v12-btn">
             Connect Gmail to send
           </a>
         ) : null}
         {canSend && mailAccountId && !hasSendScope ? (
-          <a
-            href={allowSendHref}
-            className="inline-flex border border-border px-4 py-2 text-sm font-medium text-text"
-          >
+          <a href={allowSendHref} className="v12-btn">
             Allow sending
           </a>
         ) : null}

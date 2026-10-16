@@ -7,11 +7,12 @@ import { buildHomeDashboard, upcomingTrip } from "@/lib/home/dashboard";
 import { loadHomeNextActions } from "@/lib/home/queries";
 import { loadHomeSignals } from "@/lib/home/signals";
 import { getPublicCardSignals, searchHotels } from "@/lib/hotels/queries";
-import { parseDiscoverQuery } from "@/lib/hotels/filters";
+import { buildDiscoverHref, parseDiscoverQuery } from "@/lib/hotels/filters";
 import { HOME_NEXT_COPY, recommendationDestination } from "@/lib/home/next-actions";
 import { greeting, homeView } from "@/lib/onboarding/first-run";
 import { loadHomeProgress } from "@/lib/onboarding/queries";
 import { getPersonalCounts } from "@/lib/profile/queries";
+import { readOwnTimeZone } from "@/lib/time/zone.server";
 import { listTrips } from "@/lib/trips/queries";
 
 const outline =
@@ -24,14 +25,15 @@ const outline =
 export default async function AppHomePage() {
   const session = await requireUser("/app");
   const asOf = new Date().toISOString();
-  const [progress, counts, trips, actions] = await Promise.all([
+  const [progress, counts, trips, actions, timeZone] = await Promise.all([
     loadHomeProgress(session.userId),
     getPersonalCounts(),
     listTrips(),
     loadHomeNextActions(session.userId),
+    readOwnTimeZone(session.userId),
   ]);
   const view = homeView(progress.facts);
-  const next = trips.status === "ok" ? upcomingTrip(trips.trips, asOf) : null;
+  const next = trips.status === "ok" ? upcomingTrip(trips.trips, asOf, timeZone) : null;
   const signals = await loadHomeSignals(session.userId, next?.id ?? null);
 
   const recommendation = recommendationDestination(next?.destinationSlug, progress.destinationSlug);
@@ -61,6 +63,7 @@ export default async function AppHomePage() {
     coverage: next ? signals.coverage : { status: "none" },
     outreach: signals.outreach,
     asOf,
+    timeZone,
     gmail: signals.gmail,
   });
 
@@ -101,6 +104,21 @@ export default async function AppHomePage() {
         mailbox={signals.mailbox}
         credits={
           actions.credits ? { title: actions.credits.title, detail: actions.credits.detail } : null
+        }
+        continueExplore={
+          recommendation.slug
+            ? {
+                title: `Continue exploring ${next?.destinationName ?? "hotels"}`,
+                href: buildDiscoverHref({ destination: recommendation.slug }),
+                detail:
+                  "Return to that destination. This is the destination already on your trip or onboarding, not a sample city.",
+              }
+            : {
+                title: "Explore hotels",
+                href: "/app/discover",
+                detail:
+                  "No destination is stored yet. Discover opens the catalog you can actually search.",
+              }
         }
       />
 

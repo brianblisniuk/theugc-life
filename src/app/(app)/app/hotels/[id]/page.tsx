@@ -35,7 +35,6 @@ import { NextStepPanel } from "@/components/hotels/next-step-panel";
 import { Methodology } from "@/components/hotels/methodology";
 import { VerificationBadge } from "@/components/hotels/verification-badge";
 import { PastCollaborations } from "@/components/profile/past-collaborations";
-import { HotelSectionNav } from "@/components/shell/hotel-section-nav";
 import { resolveSession } from "@/lib/auth/guards";
 import { loadBillingAccess } from "@/lib/billing/queries";
 import { FREE_LIMITS } from "@/lib/config";
@@ -92,16 +91,10 @@ import {
   type HotelOpportunity,
   type OpportunityRelationship,
 } from "@/lib/screens/hotel-opportunities";
-import {
-  hotelCrumbs,
-  parseHotelOrigin,
-  pipelineReturnHref,
-} from "@/lib/shell/navigation";
+import { parseHotelOrigin, pipelineReturnHref } from "@/lib/shell/navigation";
 import { tripLimitMessage } from "@/lib/trips/display";
 import { listTrips } from "@/lib/trips/queries";
-import {
-  NO_RELATIONSHIP,
-} from "@/lib/screens/copy";
+import { NO_RELATIONSHIP } from "@/lib/screens/copy";
 import { initialsFromName } from "@/lib/screens/initials";
 import { nextStep, type ContactFact, type RelationshipFact } from "@/lib/screens/next-step";
 import { planChipFromAccess } from "@/lib/screens/plan-chip";
@@ -151,7 +144,9 @@ export default async function HotelDetailPage({
     getHotelIntelligence(hotel.id),
     listHotelOpportunities(hotel.id),
   ]);
-  const requestedOpportunity = Array.isArray(raw.opportunity) ? raw.opportunity[0] : raw.opportunity;
+  const requestedOpportunity = Array.isArray(raw.opportunity)
+    ? raw.opportunity[0]
+    : raw.opportunity;
   const bareOpportunities: HotelOpportunity[] =
     opportunityLoad.status === "ok"
       ? opportunityLoad.opportunities.map((row) => ({ ...row, tripName: null }))
@@ -282,9 +277,6 @@ export default async function HotelDetailPage({
   }));
   const backParam = Array.isArray(raw.back) ? raw.back[0] : raw.back;
   const discoverBack = origin.kind === "discover" ? discoverReturnHref(backParam) : null;
-  const trail = hotelCrumbs(origin, hotel.name).map((crumb) =>
-    crumb.label === "Discover" && discoverBack ? { ...crumb, href: discoverBack } : crumb,
-  );
   const back =
     origin.kind === "discover"
       ? { href: discoverBack ?? "/app/discover", label: "Back to Discover" }
@@ -348,20 +340,6 @@ export default async function HotelDetailPage({
       <header className="s1-pagehead" id="overview">
         <div>
           <p className="s1-eyebrow">HOTEL DETAIL</p>
-          <nav className="ux-wrap ux-meta" aria-label="Breadcrumb">
-            {trail.map((crumb, index) =>
-              crumb.href ? (
-                <a key={crumb.href} href={crumb.href}>
-                  {crumb.label}
-                  {index < trail.length - 1 ? <span aria-hidden="true"> / </span> : null}
-                </a>
-              ) : (
-                <span key={crumb.label} aria-current="page">
-                  {crumb.label}
-                </span>
-              ),
-            )}
-          </nav>
           <h1>{hotel.name}</h1>
           {location || type ? (
             <p className="s1-lede">{[location, type].filter(Boolean).join(" · ")}</p>
@@ -369,18 +347,30 @@ export default async function HotelDetailPage({
           <div className="s1-actions">
             {classification ? <span className="v12-badge">{classification}</span> : null}
             <VerificationBadge status={hotel.verificationStatus} />
-            {hotel.activeStatus === "active" ? <span className="v12-badge v12-badge-green">Open</span> : null}
+            {hotel.activeStatus === "active" ? (
+              <span className="v12-badge v12-badge-green">Open</span>
+            ) : null}
             {statusNote ? <span className="v12-badge v12-badge-amber">{statusNote}</span> : null}
           </div>
           {hotel.address ? <p className="s1-muted">{hotel.address}</p> : null}
           <div className="s1-actions">
             {hotel.websiteUrl ? (
-              <a className="s1-muted" href={hotel.websiteUrl} target="_blank" rel="noreferrer noopener">
+              <a
+                className="s1-muted"
+                href={hotel.websiteUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
                 Website
               </a>
             ) : null}
             {hotel.instagramUrl ? (
-              <a className="s1-muted" href={hotel.instagramUrl} target="_blank" rel="noreferrer noopener">
+              <a
+                className="s1-muted"
+                href={hotel.instagramUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
                 Instagram
               </a>
             ) : null}
@@ -398,7 +388,6 @@ export default async function HotelDetailPage({
           </a>
         </div>
       </header>
-      <HotelSectionNav />
 
       <div className="s1-detail">
         <div>
@@ -425,24 +414,30 @@ export default async function HotelDetailPage({
                 <MetricValue figure={figures.activity} label="Aggregated public signal" />
               </article>
             </div>
-            <MetricCells signals={metricSignals} strength={strength} />
-            <IntelligencePanel result={intelligence} />
-            <PremiumIntelligencePanel state={premiumState} result={premium} />
-            <NetworkIntelligencePanel
-              hotelId={hotel.id}
-              network={network}
-              rank={rank}
-              prioritized={prioritized}
-            />
-            <PersonalFacts load={ownFacts} />
-            <RankingBoards destinationName={hotel.destination?.name ?? null} rankings={metricRankings} />
-            <DecisionIntelligence
-              hotelId={hotel.id}
-              strength={strength}
-              personal={personal}
-              fit={fit}
-              decision={fitDecision}
-            />
+            <details className="v12-details" id="more-intelligence">
+              <summary>More signals, rankings, and your history</summary>
+              <MetricCells signals={metricSignals} strength={strength} />
+              <IntelligencePanel result={intelligence} />
+              <PremiumIntelligencePanel state={premiumState} result={premium} />
+              <NetworkIntelligencePanel
+                hotelId={hotel.id}
+                network={network}
+                rank={rank}
+                prioritized={prioritized}
+              />
+              <PersonalFacts load={ownFacts} />
+              <RankingBoards
+                destinationName={hotel.destination?.name ?? null}
+                rankings={metricRankings}
+              />
+              <DecisionIntelligence
+                hotelId={hotel.id}
+                strength={strength}
+                personal={personal}
+                fit={fit}
+                decision={fitDecision}
+              />
+            </details>
           </section>
 
           <section className="s1-panel" id="identity">
@@ -465,7 +460,9 @@ export default async function HotelDetailPage({
                 <h2>Your history with this hotel</h2>
               </div>
               {openCount > 1 ? (
-                <span className="v12-badge v12-badge-amber">{openCount} separate opportunities</span>
+                <span className="v12-badge v12-badge-amber">
+                  {openCount} separate opportunities
+                </span>
               ) : null}
             </div>
             {relationship.status === "none" ? <p>{NO_RELATIONSHIP}</p> : null}
@@ -520,7 +517,9 @@ export default async function HotelDetailPage({
           <NextStepPanel
             model={step}
             hotelId={hotel.id}
-            tripNote={plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null}
+            tripNote={
+              plan === "Free" ? `Trip limit · ${tripLimitMessage(FREE_LIMITS.activeTrips)}` : null
+            }
           />
         </div>
       </div>

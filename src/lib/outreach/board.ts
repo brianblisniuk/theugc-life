@@ -164,6 +164,6 @@ export function stageTone(status: string | null): StageTone {
   if (status === "replied" || status === "won") return "green";
   if (status === "negotiating" || status === "follow_up") return "amber";
   if (status === "pitched") return "blue";
-  if (status === "planned") return "lime";
+  if (status === "planned") return "blue";
   return "gray";
 }

@@ -3,10 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+import { RetryButton } from "@/components/ui/retry-button";
+
 import { googleMapsApiKey } from "@/lib/maps/google";
 import { mountHotelMap } from "@/lib/maps/mount";
 import type { PublicMapPin } from "@/lib/maps/pins";
-import { MAP_PAGE_NOTE, MAP_UNAVAILABLE_BODY, MAP_UNAVAILABLE_TITLE, MAP_WAITING_NOTE } from "@/lib/screens/copy";
+import {
+  MAP_PAGE_NOTE,
+  MAP_UNAVAILABLE_BODY,
+  MAP_UNAVAILABLE_TITLE,
+  MAP_WAITING_NOTE,
+} from "@/lib/screens/copy";
 import { mapPresence, type MapPresence } from "@/lib/screens/map-presence";
 
 import { useDiscoverSync } from "./discover-sync";
@@ -82,9 +89,7 @@ export function DiscoverMap({
         <div className="ux-map-note ux-stack-sm" role="alert">
           <h2 className="ux-name">{MAP_UNAVAILABLE_TITLE}</h2>
           <p className="ux-meta">{MAP_UNAVAILABLE_BODY}</p>
-          <a className="ux-btn" href="">
-            Retry
-          </a>
+          <RetryButton className="ux-btn" />
         </div>
       ) : presence === "waiting" ? (
         <p className="ux-map-note ux-meta">{MAP_WAITING_NOTE}</p>
@@ -189,9 +194,7 @@ export function HotelMap({
       <div className="ux-notice" role="alert">
         <h2 className="ux-name">{MAP_UNAVAILABLE_TITLE}</h2>
         <p className="ux-meta">{MAP_UNAVAILABLE_BODY}</p>
-        <a className="ux-btn" href="">
-          Retry
-        </a>
+        <RetryButton className="ux-btn" />
       </div>
     );
   }

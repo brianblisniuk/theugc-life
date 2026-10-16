@@ -48,10 +48,10 @@ describe("Discover screen", () => {
 });
 
 describe("Hotel Detail screen", () => {
-  it("uses four tabs, a real next step, and initials until a verified photo exists", () => {
+  it("keeps one scroll, a real next step, and initials until a verified photo exists", () => {
     const page = source("src/app/(app)/app/hotels/[id]/page.tsx");
     const panel = source("src/components/hotels/next-step-panel.tsx");
-    expect(page).toContain("HotelSectionNav");
+    expect(page).not.toContain("HotelSectionNav");
     expect(page).toContain("NextStepPanel");
     expect(page).toContain("initialsFromName");
     expect(page).toContain("No verified photograph on file.");

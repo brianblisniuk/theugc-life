@@ -195,6 +195,20 @@ export function selectFeaturedTrip<T extends FeaturedTrip>(
   return upcoming[0] ?? null;
 }
 
+/**
+ * A thrown shortlist or coverage read is a failed read. Both reads succeeding
+ * with different counts is a mismatch. They are not the same sentence.
+ */
+export function nightDrawProblem(input: {
+  shortlistOk: boolean;
+  coverageOk: boolean;
+  countsMatch: boolean;
+}): "ok" | "read" | "mismatch" {
+  if (!input.shortlistOk || !input.coverageOk) return "read";
+  if (!input.countsMatch) return "mismatch";
+  return "ok";
+}
+
 export function hotelMark(name: string): string {
   const words = name
     .trim()

@@ -11,6 +11,7 @@ import { isUuid } from "@/lib/hotels/ids";
 import { resolveOwnProfile } from "@/lib/onboarding/first-run";
 import { PROFILE_COLUMNS } from "@/lib/surfaces/lists";
 import { createClient } from "@/lib/supabase/server";
+import { civilDate } from "@/lib/time/civil-date";
 
 import {
   HOME_DELIVERABLE_READ_LIMIT,
@@ -173,24 +174,36 @@ export async function loadHomeNextActions(
     const profile = resolveOwnProfile(profileResult.data, profileResult.error !== null, authUserId);
     if (profile.status !== "ok") return blockedNextActionBoard();
 
-    const [pipelineResult, deliverableResult, gmailResult, credits] = await Promise.all([
-      supabase
-        .from("pipeline_items")
-        .select(PIPELINE_COLUMNS)
-        .eq("creator_id", profile.profileId)
-        .neq("status", "closed")
-        .order("next_followup_at", { ascending: true, nullsFirst: false })
-        .limit(HOME_PIPELINE_READ_LIMIT + 1),
-      supabase
-        .from("collaboration_deliverables")
-        .select(DELIVERABLE_COLUMNS)
-        .eq("creator_id", profile.profileId)
-        .in("status", ["pending", "rejected"])
-        .order("due_on", { ascending: true, nullsFirst: false })
-        .limit(HOME_DELIVERABLE_READ_LIMIT + 1),
-      supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC),
-      injected?.credits ? Promise.resolve(injected.credits) : getOwnCreditBalance(),
-    ]);
+    const [pipelineResult, deliverableResult, gmailResult, credits, zoneResult] = await Promise.all(
+      [
+        supabase
+          .from("pipeline_items")
+          .select(PIPELINE_COLUMNS)
+          .eq("creator_id", profile.profileId)
+          .neq("status", "closed")
+          .order("next_followup_at", { ascending: true, nullsFirst: false })
+          .limit(HOME_PIPELINE_READ_LIMIT + 1),
+        supabase
+          .from("collaboration_deliverables")
+          .select(DELIVERABLE_COLUMNS)
+          .eq("creator_id", profile.profileId)
+          .in("status", ["pending", "rejected"])
+          .order("due_on", { ascending: true, nullsFirst: false })
+          .limit(HOME_DELIVERABLE_READ_LIMIT + 1),
+        supabase.rpc(LIST_OWN_GMAIL_SUGGESTIONS_RPC),
+        injected?.credits ? Promise.resolve(injected.credits) : getOwnCreditBalance(),
+        supabase.from("users").select("timezone").eq("id", authUserId).maybeSingle(),
+      ],
+    );
+
+    const storedZone =
+      zoneResult.error || !zoneResult.data
+        ? null
+        : (zoneResult.data as { timezone?: unknown }).timezone;
+    const timeZone =
+      typeof storedZone === "string" && civilDate(new Date(), storedZone)
+        ? storedZone.trim()
+        : "UTC";
 
     const pipelineMapped = mapBounded(pipelineResult, HOME_PIPELINE_READ_LIMIT, (rows) =>
       mapPipeline(rows, profile.profileId),
@@ -205,6 +218,7 @@ export async function loadHomeNextActions(
     return prioritizeNextActions({
       profileId: profile.profileId,
       asOf: (injected?.now ?? new Date()).toISOString(),
+      timeZone,
       pipeline: pipelineMapped,
       deliverables: deliverableMapped,
       gmail,

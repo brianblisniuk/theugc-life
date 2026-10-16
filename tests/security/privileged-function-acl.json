@@ -1721,6 +1721,16 @@
   },
   {
     "schema": "public",
+    "name": "catalog_contact_exists",
+    "args": "p_hotel_ids uuid[]",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "claim_contact_provider_lookup",
     "args": "p_cache_key text",
     "searchPath": "\"\"",
@@ -1783,6 +1793,16 @@
     "schema": "public",
     "name": "list_own_pending_gmail_collaboration_suggestions",
     "args": "",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "list_own_pending_gmail_collaboration_suggestions",
+    "args": "p_pipeline_item_ids uuid[]",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": true,

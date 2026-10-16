@@ -284,6 +284,8 @@ export const TRIP_PIPELINE_PAGE_SIZE = 100;
 export interface LinkablePipelinePage {
   status: "ok";
   items: LinkablePipelineItem[];
+  /** Rows skipped because the hotel name was missing. They are not labeled Hotel. */
+  withheld: number;
   page: number;
   pageSize: number;
   hasNext: boolean;
@@ -291,12 +293,35 @@ export interface LinkablePipelinePage {
   query: string | null;
 }
 
+export const TRIP_CAMPAIGN_CAP = 20;
+export const STAY_SUGGESTION_CAP = 100;
+
+export function campaignRemainderNotice(total: number, shown: number): string | null {
+  if (!Number.isInteger(total) || !Number.isInteger(shown) || total < 0 || shown < 0) return null;
+  if (total < shown) return null;
+  const rest = total - shown;
+  if (rest === 0) return null;
+  return rest === 1 ? "1 more campaign is not listed." : `${rest} more campaigns are not listed.`;
+}
+
+export function staySuggestionNotice(truncated: boolean): string | null {
+  if (!truncated) return null;
+  return "There are more date suggestions than this page lists. This is not a complete list.";
+}
+
 function pipelinePage(raw: number | null | undefined): number {
   if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1) return 1;
   return raw;
 }
 
-function mapLinkableRow(row: unknown): LinkablePipelineItem | null {
+/** A missing or blank hotel name is not the word Hotel. */
+export function linkableHotelName(name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function mapLinkableRow(row: unknown): LinkablePipelineItem | "unnamed" | null {
   const record = row as {
     id?: unknown;
     status?: unknown;
@@ -305,11 +330,13 @@ function mapLinkableRow(row: unknown): LinkablePipelineItem | null {
   };
   const hotel = Array.isArray(record.hotel) ? record.hotel[0] : record.hotel;
   if (typeof record.id !== "string" || typeof record.status !== "string") return null;
+  const hotelName = linkableHotelName(hotel && typeof hotel === "object" ? hotel.name : null);
+  if (!hotelName) return "unnamed";
   return {
     id: record.id,
     status: record.status,
     tripId: typeof record.trip_id === "string" ? record.trip_id : null,
-    hotelName: hotel && typeof hotel.name === "string" ? hotel.name : "Hotel",
+    hotelName,
   };
 }
 
@@ -342,13 +369,20 @@ export async function listLinkablePipelineItems(
     const rows = data ?? [];
     const hasNext = rows.length > pageSize;
     const items: LinkablePipelineItem[] = [];
+    let withheld = 0;
     for (const row of rows.slice(0, pageSize)) {
       const item = mapLinkableRow(row);
-      if (item) items.push(item);
+      if (item === null) return { status: "error" };
+      if (item === "unnamed") {
+        withheld += 1;
+        continue;
+      }
+      items.push(item);
     }
     return {
       status: "ok",
       items,
+      withheld,
       page,
       pageSize,
       hasNext,
@@ -555,22 +589,31 @@ export async function listTripOpportunities(
 export async function listStaySuggestions(
   input: { tripHotelIds: string[]; pipelineItemIds: string[] },
   injected?: TripQueryClient,
-): Promise<{ status: "ok"; suggestions: StaySuggestion[] } | { status: "error" }> {
+): Promise<
+  { status: "ok"; suggestions: StaySuggestion[]; truncated: boolean } | { status: "error" }
+> {
   const tripHotelIds = input.tripHotelIds.filter(isUuid);
   const pipelineItemIds = input.pipelineItemIds.filter(isUuid);
   if (tripHotelIds.length === 0 && pipelineItemIds.length === 0) {
-    return { status: "ok", suggestions: [] };
+    return { status: "ok", suggestions: [], truncated: false };
   }
   try {
     const supabase = await clientOrInjected(injected);
+    const scope = [
+      tripHotelIds.length > 0 ? `trip_hotel_id.in.(${tripHotelIds.join(",")})` : null,
+      pipelineItemIds.length > 0 ? `pipeline_item_id.in.(${pipelineItemIds.join(",")})` : null,
+    ]
+      .filter((clause): clause is string => clause !== null)
+      .join(",");
     const { data, error } = await supabase
       .from("stay_date_suggestions")
       .select(
         "id, trip_hotel_id, pipeline_item_id, suggested_check_in, suggested_check_out, status",
       )
       .eq("status", "pending")
+      .or(scope)
       .order("created_at", { ascending: true })
-      .limit(100);
+      .limit(STAY_SUGGESTION_CAP + 1);
     if (error) return { status: "error" };
     const hotelSet = new Set(tripHotelIds);
     const itemSet = new Set(pipelineItemIds);
@@ -608,7 +651,12 @@ export async function listStaySuggestions(
         checkOut: record.suggested_check_out,
       });
     }
-    return { status: "ok", suggestions };
+    const truncated = suggestions.length > STAY_SUGGESTION_CAP;
+    return {
+      status: "ok",
+      suggestions: suggestions.slice(0, STAY_SUGGESTION_CAP),
+      truncated,
+    };
   } catch {
     return { status: "error" };
   }
@@ -617,16 +665,31 @@ export async function listStaySuggestions(
 export async function listTripCampaigns(
   tripId: string,
   injected?: TripQueryClient,
-): Promise<{ status: "ok"; campaigns: TripCampaignLink[] } | { status: "error" }> {
-  if (!isUuid(tripId)) return { status: "ok", campaigns: [] };
+): Promise<
+  | { status: "ok"; campaigns: TripCampaignLink[]; total: number; truncated: boolean }
+  | { status: "error" }
+> {
+  if (!isUuid(tripId)) return { status: "ok", campaigns: [], total: 0, truncated: false };
   try {
     const supabase = await clientOrInjected(injected);
+    const counted = await supabase
+      .from("outreach_initiatives")
+      .select("id", { count: "exact", head: true })
+      .eq("trip_id", tripId);
+    if (
+      counted.error ||
+      typeof counted.count !== "number" ||
+      !Number.isInteger(counted.count) ||
+      counted.count < 0
+    ) {
+      return { status: "error" };
+    }
     const { data, error } = await supabase
       .from("outreach_initiatives")
       .select("id, name")
       .eq("trip_id", tripId)
       .order("updated_at", { ascending: false })
-      .limit(20);
+      .limit(TRIP_CAMPAIGN_CAP);
     if (error) return { status: "error" };
     const campaigns: TripCampaignLink[] = [];
     for (const row of data ?? []) {
@@ -636,7 +699,13 @@ export async function listTripCampaigns(
       }
       campaigns.push({ id: record.id, name: record.name });
     }
-    return { status: "ok", campaigns };
+    if (counted.count < campaigns.length) return { status: "error" };
+    return {
+      status: "ok",
+      campaigns,
+      total: counted.count,
+      truncated: counted.count > campaigns.length,
+    };
   } catch {
     return { status: "error" };
   }

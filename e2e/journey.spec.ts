@@ -247,6 +247,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await ada.locator("#pitch-date").fill(day(-1));
   await commitAction(ada, () => ada.getByRole("button", { name: "Mark as pitched" }).click());
   await expect(ada.getByRole("heading", { name: "Sent", exact: true })).toBeVisible();
+  await ada.locator("#more-intelligence").locator("summary").click();
   const personal = ada.getByTestId("personal-intelligence");
   await expect(personal.getByText("Manually recorded", { exact: true })).toBeVisible();
   await expect(personal.getByText("Pitch sent", { exact: true })).toBeVisible();
@@ -378,6 +379,7 @@ test("creator journey, revoked inbox, and the other creator sees nothing private
   await expect(bea.getByRole("heading", { name: "Trip not found" })).toBeVisible();
   await bea.goto(HOTEL_PATH);
   await expect(bea.getByRole("button", { name: "Save to Pipeline" })).toBeVisible();
+  await bea.locator("#more-intelligence").locator("summary").click();
   await expect(
     bea.getByRole("heading", { name: "No network fact yet", exact: true }),
   ).toBeVisible();

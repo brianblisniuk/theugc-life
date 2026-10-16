@@ -112,8 +112,8 @@
 }
 
 .s1-map .ux-map-canvas {
-  height: 180px;
-  min-height: 180px;
+  height: 245px;
+  min-height: 245px;
 }
 
 .s1-list {
@@ -131,7 +131,10 @@
 
 .s1-row {
   display: grid;
-  grid-template-columns: minmax(270px, 1.25fr) minmax(152px, 0.65fr) minmax(154px, 0.7fr) minmax(135px, 0.55fr);
+  grid-template-columns: minmax(270px, 1.25fr) minmax(152px, 0.65fr) minmax(154px, 0.7fr) minmax(
+      135px,
+      0.55fr
+    );
   gap: 17px;
   align-items: center;
   padding: 19px 20px;

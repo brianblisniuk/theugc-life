@@ -1,4 +1,5 @@
 import { ButtonLink } from "@/components/ui/button";
+import { RetryButton } from "@/components/ui/retry-button";
 import type { OpportunityCardModel } from "@/lib/screens/hotel-opportunities";
 
 const TONE = {
@@ -20,9 +21,7 @@ export function OpportunityHistory({
       <div className="v12-state v12-state-danger" role="alert">
         <h3>Opportunities couldn’t be loaded</h3>
         <p>Retry. This is not an empty history.</p>
-        <a className="v12-btn" href="">
-          Retry
-        </a>
+        <RetryButton />
       </div>
     );
   }

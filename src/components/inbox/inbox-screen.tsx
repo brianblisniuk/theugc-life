@@ -61,11 +61,15 @@ export function InboxScreen({ model }: { model: InboxReady }) {
     <div className="v12-workspace" data-testid="inbox-workspace">
       <header className="v12-pagehead">
         <div>
-          <p className="v12-eyebrow">Inbox</p>
-          <h1>{model.heading}</h1>
+          <p className="v12-eyebrow">INBOX / CREATOR WORKSPACE</p>
+          <h1>Less email sorting. More decisions.</h1>
+          <p>{model.heading}</p>
           <p>{model.lede}</p>
         </div>
         <div className="v12-head-actions">
+          <Link href="/app/pitch" className="v12-btn v12-btn-primary">
+            New pitch
+          </Link>
           <Link href="/app/pipeline" className="v12-btn">
             Open Pipeline
           </Link>
@@ -145,12 +149,8 @@ export function InboxScreen({ model }: { model: InboxReady }) {
               </Link>
             </div>
           </div>
-          {model.threads.length === 0 ? (
-            <p className="v12-panel-empty">
-              {model.mailbox.kind === "connected" || model.mailbox.kind === "reauth"
-                ? INBOX_COPY.emptyConnected
-                : INBOX_COPY.emptyDisconnected}
-            </p>
+          {revoked ? null : model.threads.length === 0 ? (
+            <p className="v12-panel-empty">{model.emptySentence}</p>
           ) : (
             <ul className="v12-threads">
               {model.threads.map((thread) => (
