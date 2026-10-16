@@ -13,6 +13,16 @@ import { rebillSignatureValid } from "@/lib/billing/rebill-signature";
 
 type ApplyResult = { result?: string };
 
+/** An RPC failure is result `error`. The handler answers 503 so Rebill retries. */
+export function applyResultFromRpc(
+  data: unknown,
+  error: { message?: string } | null,
+): { result: string } {
+  if (error || !data || typeof data !== "object") return { result: "error" };
+  const result = (data as { result?: unknown }).result;
+  return { result: typeof result === "string" ? result : "error" };
+}
+
 export type WebhookDeps = {
   env: RebillServerEnv;
   fetchImpl: typeof fetch;
@@ -21,6 +31,30 @@ export type WebhookDeps = {
 
 function json(body: Record<string, unknown>, status: number) {
   return NextResponse.json(body, { status });
+}
+
+/**
+ * Rebill retries a 503. `applied`, `duplicate`, `ignored`, and `revoked`
+ * are finished. `invalid` is a bad payload. An apply error is not finished.
+ */
+export function rebillWebhookHttpStatus(result: string | undefined): number {
+  if (result === "invalid") return 400;
+  if (!result || result === "error") return 503;
+  return 200;
+}
+
+async function appliedResponse(
+  apply: WebhookDeps["apply"],
+  event: Record<string, unknown>,
+): Promise<Response> {
+  let applied: ApplyResult;
+  try {
+    applied = await apply(event);
+  } catch {
+    return json({ result: "error" }, 503);
+  }
+  const result = applied.result ?? "error";
+  return json({ result }, rebillWebhookHttpStatus(result));
 }
 
 /**
@@ -51,11 +85,10 @@ export async function handleRebillWebhook(request: Request, deps: WebhookDeps): 
     envelope.event === "payout.updated" ||
     envelope.event === "subscription.created"
   ) {
-    const ignored = await deps.apply({
+    return appliedResponse(deps.apply, {
       logId: envelope.logId,
       event: envelope.event,
     });
-    return json({ result: ignored.result ?? "ignored" }, 200);
   }
 
   if (!deps.env.secretKey) {
@@ -107,8 +140,5 @@ export async function handleRebillWebhook(request: Request, deps: WebhookDeps): 
     };
   }
 
-  const applied = await deps.apply(event);
-  const result = applied.result ?? "error";
-  if (result === "invalid") return json({ result }, 400);
-  return json({ result }, 200);
+  return appliedResponse(deps.apply, event);
 }

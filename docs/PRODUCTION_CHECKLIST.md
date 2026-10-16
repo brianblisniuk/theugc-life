@@ -47,13 +47,13 @@ organization's signing secret in `REBILL_WEBHOOK_SIGNING_SECRET`.
 | `ANTHROPIC_PRO_MAX_TOKENS` | Optional ceiling for Pro. |
 | `ANTHROPIC_PRIORITY_CONTEXT_CHARS` | Optional context ceiling for Max. |
 | `ANTHROPIC_PRO_CONTEXT_CHARS` | Optional context ceiling for Pro. |
-| `ANTHROPIC_MONTHLY_BUDGET_USD` | Required before any model call. A missing or non-positive value refuses the call. |
+| `ANTHROPIC_MONTHLY_BUDGET_USD` | Required before any model call. A missing or non-positive value refuses the call. No $100,000 ceiling. |
 | `ANTHROPIC_INPUT_USD_PER_MTOK` | Optional price override. |
 | `ANTHROPIC_OUTPUT_USD_PER_MTOK` | Optional price override. |
 | `AI_BUDGET_MAX_USD` | Optional Max budget ceiling. |
 | `AI_BUDGET_PRO_USD` | Optional Pro budget ceiling. |
 | `AI_REGEN_WEIGHT` | Optional. Clamped by the server. |
-| `AI_GLOBAL_POOL_PERCENT` | Optional pool share. |
+| `AI_GLOBAL_POOL_PERCENT` | Optional pool share. Clamped to 15–20. Unset stays at 15. |
 
 `ANTHROPIC_BASE_URL` is for the benchmark script only. The application
 does not read it.
