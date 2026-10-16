@@ -106,7 +106,14 @@ const CONTRACT: Record<string, Expected> = {
   trips: { anon: "", authenticated: "S", serviceRole: "all" },
   trip_hotels: { anon: "", authenticated: "S", serviceRole: "all" },
   pipeline_items: { anon: "", authenticated: "S", serviceRole: "all" },
+  // V2-D1 (0097, D182). The display-id counter is not a client table.
+  pipeline_opportunity_counters: { anon: "", authenticated: "", serviceRole: "all" },
   outreach_events: { anon: "", authenticated: "S", serviceRole: "all" },
+  // V2-D1 (0097, D183/D184). Campaigns and stay suggestions are owner-read.
+  // Writes go through service-role RPCs.
+  outreach_initiatives: { anon: "", authenticated: "S", serviceRole: "all" },
+  outreach_initiative_hotels: { anon: "", authenticated: "S", serviceRole: "all" },
+  stay_date_suggestions: { anon: "", authenticated: "S", serviceRole: "all" },
   collaborations: { anon: "", authenticated: "S", serviceRole: "all" },
   // D07 (0050, D078). Compensation and deliverables are creator records. The browser
   // can read its own rows; writes go through service-role RPCs.

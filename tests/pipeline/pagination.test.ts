@@ -163,8 +163,8 @@ d("pipeline pagination", () => {
     const ownerCreator = await creator(U.owner);
     const otherCreator = await creator(U.other);
 
-    // One hotel per relationship: pipeline_items_single_active_cycle_uidx allows
-    // only one non-closed cycle per (creator, hotel).
+    // One hotel per relationship in this fixture. D182 allows another open
+    // opportunity when the trip or the dates differ; these rows do not.
     for (let i = 0; i < TOTAL; i += 1) {
       await adminQuery(
         `insert into public.hotels (id, name, slug, destination_id, country_code)
