@@ -1,13 +1,14 @@
-import { FOLLOWUP_HOUSEKEEPING_PATH, runScheduledPost } from "../../src/lib/jobs/scheduled-post";
+import { runFollowupHousekeeping } from "../../src/lib/jobs/maintenance";
+import { runScheduledJob } from "../../src/lib/jobs/scheduled-post";
+import { createAdminClient } from "../../src/lib/supabase/admin";
 
 /**
- * Netlify schedule. The cron is declared once, in netlify.toml.
- * This file does not import the Gmail or Claude clients.
+ * Netlify schedule. The cron and the background flag are in netlify.toml.
+ * Housekeeping runs in this process. It does not call Gmail. A missing or
+ * short GMAIL_FOLLOWUP_SECRET does not stop or enqueue follow-ups.
  */
-export const handler = async (): Promise<{ statusCode: number; body: string }> =>
-  runScheduledPost({
-    fetchImpl: fetch,
-    siteUrl: process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
+export const handler = async (_event?: unknown): Promise<{ statusCode: number; body: string }> =>
+  runScheduledJob({
     secret: process.env.GMAIL_FOLLOWUP_SECRET ?? null,
-    path: FOLLOWUP_HOUSEKEEPING_PATH,
+    run: () => runFollowupHousekeeping(createAdminClient(), new Date()),
   });

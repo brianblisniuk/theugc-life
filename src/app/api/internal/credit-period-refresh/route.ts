@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Annual plan credit windows (D135). Idempotent. Does not call Rebill.
+ * The Netlify schedule runs the same job in-process and does not call this route.
  */
 export async function POST(request: Request): Promise<Response> {
   const result = await handleDispatchPost(
