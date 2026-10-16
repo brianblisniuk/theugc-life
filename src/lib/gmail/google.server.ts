@@ -262,23 +262,49 @@ export const googleOAuthAdapter: GoogleOAuthAdapter = {
   },
 
   async refreshAccessToken({ refreshToken }) {
+    // The token endpoint body is read directly. OAuth2Client.refreshAccessToken
+    // copies the input refresh token back over a rotated one, so a replacement
+    // would never be stored.
+    const cfg = gmailOAuthConfig();
+    let response: Response;
     try {
-      const c = client();
-      c.setCredentials({ refresh_token: refreshToken });
-      const { credentials } = await c.refreshAccessToken();
-      return {
-        accessToken: credentials.access_token ?? "",
-        // Google sometimes rotates the refresh token. When it does, the
-        // replacement must be stored or the next refresh fails.
-        refreshToken: credentials.refresh_token ?? null,
-        grantedScopes: parseGrantedScopes(credentials.scope),
-        idToken: credentials.id_token ?? null,
-        expiryDate: credentials.expiry_date ?? null,
-        refreshTokenExpiresAt: null,
-      };
+      response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: cfg.clientId,
+          client_secret: cfg.clientSecret,
+          refresh_token: refreshToken,
+          grant_type: "refresh_token",
+        }),
+      });
     } catch (error) {
       throw classifyGoogleError(error);
     }
+    const body = (await response.json().catch(() => ({}))) as {
+      access_token?: unknown;
+      refresh_token?: unknown;
+      scope?: unknown;
+      id_token?: unknown;
+      expires_in?: unknown;
+      error?: unknown;
+    };
+    if (!response.ok || typeof body.error === "string") {
+      const reported = typeof body.error === "string" ? body.error : "unknown_error";
+      throw classifyGoogleError({ response: { data: { error: reported } }, message: reported });
+    }
+    const expiresIn = typeof body.expires_in === "number" ? body.expires_in : null;
+    return {
+      accessToken: typeof body.access_token === "string" ? body.access_token : "",
+      refreshToken:
+        typeof body.refresh_token === "string" && body.refresh_token.length > 0
+          ? body.refresh_token
+          : null,
+      grantedScopes: parseGrantedScopes(typeof body.scope === "string" ? body.scope : null),
+      idToken: typeof body.id_token === "string" ? body.id_token : null,
+      expiryDate: expiresIn === null ? null : Date.now() + expiresIn * 1000,
+      refreshTokenExpiresAt: null,
+    };
   },
 
   async revoke({ token }) {

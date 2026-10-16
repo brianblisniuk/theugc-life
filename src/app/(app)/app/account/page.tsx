@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/shell/page-header";
 import { getOwnAccountDeletion } from "@/lib/account/deletion";
 import { listCrumbs } from "@/lib/shell/navigation";
 import { requireUser } from "@/lib/auth/guards";
-import { listGmailAccounts } from "@/lib/gmail/connection.server";
+import { consentReceiptsFor, listGmailAccounts } from "@/lib/gmail/connection.server";
 import { isGmailOAuthConfigured } from "@/lib/gmail/env.server";
 
 export const metadata: Metadata = { title: "Account" };
@@ -52,6 +52,7 @@ export default async function AccountPage({
         callbackStatus={typeof gmailStatus === "string" ? gmailStatus : null}
         deletionPending={deletion?.status === "scheduled"}
         deletionReadable={deletion == null || deletion.status !== "error"}
+        consentReceipts={consentReceiptsFor(gmailAccounts)}
       />
 
       <p className="text-sm text-muted">

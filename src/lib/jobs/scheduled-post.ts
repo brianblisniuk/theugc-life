@@ -3,13 +3,18 @@
  *
  * The function runs the job in this process. It does not POST to the public
  * site: password protection answers that request with 401 before the app
- * route runs, so the job never starts. A missing secret, or a secret shorter
- * than 16 characters, fails closed and does not call the job. The secret is
- * not logged and is not copied into the result.
+ * route runs, so the job never starts. Netlify's scheduler posts
+ * `{ "next_run": "<ISO-8601>" }` and does not send a bearer. A function
+ * with `schedule` set does not accept incoming web requests on a published
+ * deploy, so the handler does not require Authorization. A missing secret,
+ * or a secret shorter than 16 characters, is 500 and does not run the job.
  *
  * The path constants are the bearer-gated HTTP routes. Those routes stay.
- * The schedule does not call them.
+ * The schedule does not call them. `bearerMatches` is the constant-time
+ * compare those routes use.
  */
+
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export const INBOX_SYNC_PATH = "/api/internal/gmail-inbox-sync";
 export const ACCOUNT_ERASURE_PATH = "/api/internal/account-erasure";
@@ -29,6 +34,20 @@ const SAFE_ERROR_NUMBER = /^\d{1,6}$/;
 
 export function scheduledSecretConfigured(secret: string | null | undefined): secret is string {
   return typeof secret === "string" && secret.length >= MIN_SECRET_LENGTH;
+}
+
+/**
+ * Constant-time bearer check for `POST /api/internal/*`. Both sides are
+ * hashed before compare, so a different header length does not return
+ * early and does not throw. Scheduled functions do not use this.
+ */
+export function bearerMatches(header: string | null, secret: string): boolean {
+  const expected = `Bearer ${secret}`;
+  const left = createHash("sha256")
+    .update(header ?? "", "utf8")
+    .digest();
+  const right = createHash("sha256").update(expected, "utf8").digest();
+  return timingSafeEqual(left, right);
 }
 
 function safeErrorToken(value: unknown): string | null {

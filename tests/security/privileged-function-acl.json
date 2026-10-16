@@ -1051,6 +1051,16 @@
   },
   {
     "schema": "public",
+    "name": "gmail_send_arm_provider",
+    "args": "p_user_id uuid, p_attempt_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "gmail_send_bind_pending",
     "args": "p_user_id uuid, p_mail_account_id uuid",
     "searchPath": "\"\"",
@@ -2233,6 +2243,16 @@
     "schema": "public",
     "name": "gmail_send_record_thread_bounces",
     "args": "p_user_id uuid, p_mail_account_id uuid, p_provider_thread_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "gmail_send_remember_provider",
+    "args": "p_user_id uuid, p_attempt_id uuid, p_provider_message_id text, p_provider_thread_id text",
     "searchPath": "\"\"",
     "anon": false,
     "authenticated": false,
