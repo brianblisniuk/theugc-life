@@ -48,6 +48,14 @@ function seedOrMigrate(){
    const t=A().state.trips.find(t=>t.city==="Bangkok");
    db.campaigns=[{id:"demo-trip",name:"Bangkok · November outreach",city:"Bangkok",tripId:t?.id||"",hotelIds:["canopy","riverline","atelier","garden"],sample:true},{id:"demo-independent",name:"Bangkok · Luxury storytelling",city:"Bangkok",tripId:"",hotelIds:["canopy","lantern"],sample:true}];
    [["canopy","demo-trip","replied"],["riverline","demo-trip","sent"],["atelier","demo-trip","draft"],["garden","demo-trip","saved"],["canopy","demo-independent","draft"],["lantern","demo-independent","saved"]].forEach(([h,c,s])=>{const o=ensure(h,c,c==="demo-trip"?t?.id||"":"");o.status=s;o.sample=true});
+   if(t){if(!A().state.shortlists[t.id])A().state.shortlists[t.id]=[];for(const id of ["canopy","riverline","atelier","garden"]){if(!A().state.shortlists[t.id].includes(id))A().state.shortlists[t.id].push(id)}}
+   for(const id of ["canopy","riverline","atelier","garden","lantern"]){if(!A().state.pipeline.includes(id))A().state.pipeline.push(id)}
+   A().saveState();
+   const drafts=[
+    {id:"v6-demo-draft-1",hotelId:"atelier",campaignId:"demo-trip",subject:"UGC content collaboration · Atelier Sukhumvit",body:"Illustrative draft only. No email was sent. Please personalize before using.",updatedAt:new Date().toISOString(),sample:true},
+    {id:"v6-demo-draft-2",hotelId:"canopy",campaignId:"demo-independent",subject:"Luxury storytelling idea · Siam Canopy",body:"Illustrative draft only. No email was sent. Please personalize before using.",updatedAt:new Date().toISOString(),sample:true}
+   ];
+   db.drafts.push(...drafts);put("ugc_v4_drafts",db.drafts);
    put("ugc_v6_sample",true);
  }else{
    const events=get("ugc_v4_events",[]);
@@ -159,6 +167,10 @@ function drawerRender(){
 }
 function stageChange(o,v){
  if(!o||o.status===v)return;
+ if(A().state.plan==="free"&&["draft","sent","replied","negotiating","won","bounced"].includes(v)&&!["draft","sent","replied","negotiating","won","bounced"].includes(o.status)){
+ const active=db.opportunities.filter(x=>x.id!==o.id&&["draft","sent","replied","negotiating","won","bounced"].includes(x.status)).length;
+ if(active>=5){A().upgrade("Free allows up to five active outreach opportunities. Upgrade for a larger working Pipeline.");return}
+ }
  if(["sent","replied","negotiating","won","bounced"].includes(v)){A().modal("Confirm manual update",`<p>Record <strong>${esc(hotel(o.hotelId).name)}</strong> as <strong>${esc(labels[v])}</strong>? This does not verify a Gmail message or confirm a collaboration.</p><div class="modal-bottom"><button class="btn" data-close>Cancel</button><button class="btn lime" data-v6-confirm="${esc(o.id)}" data-v6-next="${esc(v)}">Confirm</button></div>`)}
  else stageApply(o,v);
 }
