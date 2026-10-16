@@ -2,15 +2,26 @@
  * V12.2 Midnight foundation.
  * Contrast is computed. Shell structure is read from source. No browser.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { SIDEBAR_NAV } from "@/lib/shell/navigation";
 import { contrastRatio, meetsAa } from "@/lib/ui/contrast";
 
-function source(path: string): string {
-  return readFileSync(path, "utf8");
+function source(file: string): string {
+  return readFileSync(file, "utf8");
+}
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) out.push(...sourceFiles(full));
+    else if (name.endsWith(".tsx") || name.endsWith(".css")) out.push(full);
+  }
+  return out;
 }
 
 describe("Midnight accent contrast", () => {
@@ -30,6 +41,12 @@ describe("Midnight accent contrast", () => {
     expect(meetsAa("#FFB7B7", "#391F23")).toBe(true);
     expect(meetsAa("#E5FF8C", "#2B3914")).toBe(true);
   });
+
+  it("never pairs an accent fill with white text", () => {
+    const pair = /(?:bg-accent[^"'`]*text-white|text-white[^"'`]*bg-accent)/;
+    const offenders = sourceFiles("src").filter((file) => pair.test(source(file)));
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe("Midnight shell", () => {
@@ -46,6 +63,7 @@ describe("Midnight shell", () => {
     expect(css).toContain("@media (max-width: 530px)");
     expect(css).toContain("overflow-x: clip");
     expect(css).toContain(".v12-bottom");
+    expect(css).not.toMatch(/header nav\[aria-label="Breadcrumb"\]\s*\{[^}]*display:\s*none/);
     expect(existsSync("src/components/theme/theme-toggle.tsx")).toBe(false);
     expect(existsSync("src/lib/ux02/theme.ts")).toBe(false);
     expect(existsSync("src/app/(app)/app/contracts/page.tsx")).toBe(false);
@@ -82,5 +100,12 @@ describe("required states and source badges", () => {
     expect(badges).toContain("Verified via Gmail");
     expect(badges).toContain("Manually recorded");
     expect(source("src/app/(app)/app/design/page.tsx")).toContain("SourceBadge");
+    expect(source("src/app/(app)/app/design/page.tsx")).toContain(
+      'requireRole(["admin", "editor"], "/app/design")',
+    );
+    const shell = source("src/components/shell/app-shell.tsx");
+    const staff = shell.slice(shell.indexOf("isStaff ?"));
+    expect(staff).toContain('href="/app/design"');
+    expect(shell.slice(0, shell.indexOf("isStaff ?"))).not.toContain('href="/app/design"');
   });
 });
