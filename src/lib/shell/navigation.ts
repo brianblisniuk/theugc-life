@@ -290,7 +290,8 @@ export function withOpportunityQuery(
   const withoutHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
   const url = new URL(withoutHash, "http://local");
   if (opportunityId && isUuid(opportunityId)) url.searchParams.set("opportunity", opportunityId);
-  if (tripId && isUuid(tripId) && !url.searchParams.has("trip")) url.searchParams.set("trip", tripId);
+  if (tripId && isUuid(tripId) && !url.searchParams.has("trip"))
+    url.searchParams.set("trip", tripId);
   return `${url.pathname}${url.search}${hash}`;
 }
 
@@ -429,7 +430,11 @@ export function pipelineRowLinks(
   if (surface !== "collaborations" && item.status === "won") {
     const href = hotelHref(item.hotelId, { kind: "collaboration" }, "collaboration");
     if (href) {
-      links.push({ href: rowHref(href), label: "Collaboration", ariaLabel: `Collaboration for ${name}` });
+      links.push({
+        href: rowHref(href),
+        label: "Collaboration",
+        ariaLabel: `Collaboration for ${name}`,
+      });
     }
   }
   return links;
@@ -473,7 +478,6 @@ export const SIDEBAR_NAV = [
       { href: "/app/plans", label: "Plans & Credits", icon: "plans" },
       { href: "/app/billing", label: "Billing & Activity", icon: "billing" },
       { href: "/app/onboarding", label: "Getting Started", icon: "start" },
-      { href: "/app/account", label: "Account", icon: "account" },
     ],
   },
 ] as const;

@@ -38,14 +38,14 @@ function CampaignProgress({ card }: { card: OutreachCard }) {
               <div className="v12-stat-note">Hotels</div>
             </div>
             <div className="v12-stat">
-              <span className="v12-stat-label">Contacted</span>
-              <div className="v12-stat-num">{card.contactedCount}</div>
-              <div className="v12-stat-note">Sent or further</div>
+              <span className="v12-stat-label">Replies</span>
+              <div className="v12-stat-num">{card.replyCount}</div>
+              <div className="v12-stat-note">Reported</div>
             </div>
             <div className="v12-stat">
-              <span className="v12-stat-label">Not contacted</span>
+              <span className="v12-stat-label">Open tasks</span>
               <div className="v12-stat-num">{remaining}</div>
-              <div className="v12-stat-note">Still on the shortlist</div>
+              <div className="v12-stat-note">Next steps</div>
             </div>
           </div>
         </>

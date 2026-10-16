@@ -67,7 +67,9 @@ export default async function ProfilePage() {
           </p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/profile/pitches">Pitch templates</ButtonLink>
+          <a href="#edit-profile" className="v12-btn">
+            Edit profile
+          </a>
           <ButtonLink href="/app/pitch" variant="primary">
             Open Pitch Studio
           </ButtonLink>
@@ -104,7 +106,13 @@ export default async function ProfilePage() {
                     </p>
                   </div>
                 </div>
-                <ProfileEditor profile={profile.profile} />
+                <div className="v12-field">
+                  <span>Professional intro</span>
+                  <p>
+                    {profile.profile.bio.trim() ||
+                      "No introduction is saved yet. Edit profile to add one."}
+                  </p>
+                </div>
               </>
             ) : (
               <ErrorState title="Profile" description={PROFILE_LIST_COPY.error} />
@@ -118,7 +126,7 @@ export default async function ProfilePage() {
                 <p>Lead with recorded projects. Nothing here is a sample.</p>
               </div>
               <Link href="/app/profile/portfolio" className="v12-btn v12-btn-small">
-                Edit portfolio
+                Add project
               </Link>
             </div>
             {pieceReadsFailed ? (
@@ -150,22 +158,6 @@ export default async function ProfilePage() {
                   : null}
               </div>
             )}
-            {share.status === "ok" ? (
-              <ContentExamples
-                deliverables={share.deliverables}
-                sharedIds={share.sharedDeliverableIds}
-              />
-            ) : null}
-            <PastCollaborations
-              load={past}
-              heading="Past collaborations"
-              linkToHotel
-              sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
-            />
-            <p>
-              Past collaborations stay on this page until you mark them for the hotel link. They
-              are not public by default.
-            </p>
           </section>
         </div>
 
@@ -190,12 +182,15 @@ export default async function ProfilePage() {
                   : `${selectedCount} featured project${selectedCount === 1 ? "" : "s"}`}
             </p>
             <p>
-              Mailbox connection and account deletion stay on <Link href="/app/account">Account</Link>.
+              Mailbox connection and account deletion stay on{" "}
+              <Link href="/app/account">Account</Link>.
             </p>
           </section>
           <section className="v12-panel v12-panel-pad">
             <p className="v12-eyebrow">PROFILE READINESS</p>
-            <h3>{readiness?.ready ? "Ready enough to pitch" : "Still private until you fill it"}</h3>
+            <h3>
+              {readiness?.ready ? "Ready enough to pitch" : "Still private until you fill it"}
+            </h3>
             {readiness ? (
               <ul className="v12-checklist">
                 {readiness.items.map((item) => (
@@ -210,26 +205,59 @@ export default async function ProfilePage() {
             {pieceReadsFailed ? (
               <p>Selected pieces and the share link were not counted. That is not zero.</p>
             ) : null}
-            <p>Audience-size claims are optional. A new creator can have a portfolio without invented follower counts.</p>
+            <p>
+              Audience-size claims are optional. A new creator can have a portfolio without invented
+              follower counts.
+            </p>
           </section>
-          {visibility.status === "ok" ? (
-            <PublicProfileToggle enabled={visibility.enabled} username={visibility.username} />
-          ) : (
-            <ErrorState title="Public profile" description={PROFILE_LIST_COPY.error} />
-          )}
-          {share.status === "ok" ? (
-            <>
-              <AudienceFields followers={share.followers} engagement={share.engagement} />
-              <ShareOptIns optIns={share.optIns} />
-              <ShareLinkPanel link={share.link} />
-            </>
-          ) : (
-            <ErrorState title="Hotel share link" description={PROFILE_LIST_COPY.shareError} />
-          )}
         </aside>
       </div>
 
-      <PersonalCounts load={counts} />
+      <section id="edit-profile" className="v12-panel v12-panel-pad v12-stack">
+        <div className="v12-panel-head">
+          <div>
+            <p className="v12-eyebrow">EDIT PROFILE</p>
+            <h2>Update what hotels can see.</h2>
+          </div>
+          <Link href="/app/profile/pitches" className="v12-btn v12-btn-small">
+            Pitch templates
+          </Link>
+        </div>
+        {profile.status === "ok" ? (
+          <ProfileEditor profile={profile.profile} />
+        ) : (
+          <ErrorState title="Profile" description={PROFILE_LIST_COPY.error} />
+        )}
+        {visibility.status === "ok" ? (
+          <PublicProfileToggle enabled={visibility.enabled} username={visibility.username} />
+        ) : (
+          <ErrorState title="Public profile" description={PROFILE_LIST_COPY.error} />
+        )}
+        {share.status === "ok" ? (
+          <>
+            <AudienceFields followers={share.followers} engagement={share.engagement} />
+            <ShareOptIns optIns={share.optIns} />
+            <ShareLinkPanel link={share.link} />
+            <ContentExamples
+              deliverables={share.deliverables}
+              sharedIds={share.sharedDeliverableIds}
+            />
+          </>
+        ) : (
+          <ErrorState title="Hotel share link" description={PROFILE_LIST_COPY.shareError} />
+        )}
+        <PastCollaborations
+          load={past}
+          heading="Past collaborations"
+          linkToHotel
+          sharedIds={share.status === "ok" ? new Set(share.sharedCollaborationIds) : undefined}
+        />
+        <p>
+          Past collaborations stay on this page until you mark them for the hotel link. They are not
+          public by default.
+        </p>
+        <PersonalCounts load={counts} />
+      </section>
     </div>
   );
 }

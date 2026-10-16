@@ -40,7 +40,9 @@ export default async function OnboardingDestinationPage() {
         <div>
           <p className="v12-eyebrow">GETTING STARTED / CREATOR WORKSPACE</p>
           <h1>Your first opportunity, not a long setup.</h1>
-          <p>We’ll guide you to one useful action. You can complete the rest of your profile later.</p>
+          <p>
+            We’ll guide you to one useful action. You can complete the rest of your profile later.
+          </p>
         </div>
         <div className="v12-head-actions">
           <ButtonLink href="/app/discover">Skip to Discover</ButtonLink>
@@ -52,22 +54,34 @@ export default async function OnboardingDestinationPage() {
           <p className="v12-eyebrow">YOUR FIRST SUCCESS</p>
           <h2>What are you here to do?</h2>
           <p>You don&rsquo;t need a confirmed trip or a large audience to begin.</p>
-          <div className="v12-stepper" aria-hidden="true">
-            {marks.map((mark, index) => (
-              <span
-                key={FIRST_PITCH_STEPS[index]?.title ?? index}
-                className={
-                  mark === "done"
-                    ? "v12-step v12-step-done"
-                    : mark === "current"
-                      ? "v12-step v12-step-current"
-                      : "v12-step"
-                }
-              />
-            ))}
-          </div>
+          <ol className="v12-stepper">
+            {marks.map((mark, index) => {
+              const step = FIRST_PITCH_STEPS[index];
+              const state = mark === "done" ? "Done" : mark === "current" ? "Current" : "Upcoming";
+              return (
+                <li
+                  key={step?.title ?? index}
+                  className={
+                    mark === "done"
+                      ? "v12-step v12-step-done"
+                      : mark === "current"
+                        ? "v12-step v12-step-current"
+                        : "v12-step"
+                  }
+                  aria-current={mark === "current" ? "step" : undefined}
+                >
+                  <span className="sr-only">
+                    {state}: {step?.title ?? "Step"}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
           {view.kind === "blocked" ? (
-            <p>The stepper is blank because your progress could not be read. That is not zero steps done.</p>
+            <p>
+              The stepper is blank because your progress could not be read. That is not zero steps
+              done.
+            </p>
           ) : null}
           <div className="v12-stack">
             {ONBOARDING_GOALS.map((goal, index) => (
@@ -90,7 +104,11 @@ export default async function OnboardingDestinationPage() {
               {FIRST_PITCH_STEPS.map((step, index) => (
                 <div key={step.title} className="v12-event">
                   <strong>
-                    {marks[index] === "done" ? "Done · " : marks[index] === "current" ? "Now · " : ""}
+                    {marks[index] === "done"
+                      ? "Done · "
+                      : marks[index] === "current"
+                        ? "Now · "
+                        : ""}
                     {step.title}
                   </strong>
                   <p>{step.detail}</p>
@@ -105,24 +123,7 @@ export default async function OnboardingDestinationPage() {
         </aside>
       </div>
 
-      {view.kind === "blocked" ? (
-        <ErrorState title={view.title} description={view.body} />
-      ) : view.kind === "checklist" ? (
-        <ol className="s6-steps">
-          {view.steps.map((step, index) => (
-            <li key={step.id}>
-              <span>{index + 1}</span>
-              <div>
-                <strong>{step.title}</strong>
-                <p>{step.detail}</p>
-                <Link href={step.href}>{step.done ? "Done" : "Continue"}</Link>
-              </div>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="s6-muted">The checklist is hidden. Your saved work is still on Pipeline.</p>
-      )}
+      {view.kind === "blocked" ? <ErrorState title={view.title} description={view.body} /> : null}
 
       <section id="destination" className="v12-card v12-card-pad">
         <h2>Choose a destination</h2>

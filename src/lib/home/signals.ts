@@ -225,7 +225,7 @@ export async function loadHomeSignals(
     }
     const totals: OutreachCount[] = [];
     for (const initiative of initiatives) {
-      const [hotelCount, contactedCount] = await Promise.all([
+      const [hotelCount, contactedCount, replyCount] = await Promise.all([
         exactCount(supabase, "outreach_initiative_hotels", HOTEL_COUNT_COLUMNS, (query) =>
           query.eq("creator_id", profile.profileId).eq("initiative_id", initiative.id),
         ),
@@ -235,11 +235,17 @@ export async function loadHomeSignals(
             .eq("initiative_id", initiative.id)
             .in("pipeline_item.status", CONTACTED_STATUSES),
         ),
+        exactCount(supabase, "outreach_initiative_hotels", HOTEL_CONTACTED_COLUMNS, (query) =>
+          query
+            .eq("creator_id", profile.profileId)
+            .eq("initiative_id", initiative.id)
+            .eq("pipeline_item.status", "replied"),
+        ),
       ]);
-      if (hotelCount === "error" || contactedCount === "error") {
+      if (hotelCount === "error" || contactedCount === "error" || replyCount === "error") {
         return { mailbox, coverage, outreach: { status: "error" }, gmail };
       }
-      totals.push({ initiativeId: initiative.id, hotelCount, contactedCount });
+      totals.push({ initiativeId: initiative.id, hotelCount, contactedCount, replyCount });
     }
     const outreach = outreachFromCounts(profile.profileId, initiatives, totals, initiativeTotal);
     if (outreach === "foreign") {

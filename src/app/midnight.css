@@ -406,6 +406,7 @@
 }
 
 .v12-chip[aria-pressed="true"],
+.v12-chip[aria-current="page"],
 .v12-chip[aria-current="true"],
 .v12-chip:has(input:checked) {
   border-color: #d1ff02;
@@ -1773,12 +1774,38 @@
 }
 
 .v12-deal {
+  display: block;
   margin-top: 8px;
   padding: 12px;
   border: 1px solid #2c3e32;
   border-radius: 10px;
   background: #151d1b;
   color: #f5f8f6;
+  text-decoration: none;
+}
+
+.v12-dialog {
+  width: min(520px, calc(100% - 32px));
+  padding: 18px;
+  border: 1px solid #23302d;
+  border-radius: 13px;
+  background: #121918;
+  color: #f5f8f6;
+}
+
+.v12-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.v12-sort {
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid #35463d;
+  border-radius: 8px;
+  background: #1b2723;
+  color: #c9d9cf;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .v12-deal h3 {
@@ -1886,6 +1913,8 @@
   display: flex;
   gap: 6px;
   margin: 14px 0 16px;
+  padding: 0;
+  list-style: none;
 }
 
 .v12-step {

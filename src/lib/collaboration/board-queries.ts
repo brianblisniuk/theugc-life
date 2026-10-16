@@ -8,7 +8,12 @@ import { isUuid } from "@/lib/hotels/ids";
 import { resolveOwnProfile } from "@/lib/onboarding/first-run";
 import { createClient } from "@/lib/supabase/server";
 
-import { BOARD_READ_LIMIT, assembleCollaborationBoard, type CollaborationBoard } from "./board";
+import {
+  BOARD_READ_LIMIT,
+  assembleCollaborationBoard,
+  mapOutreachActivity,
+  type CollaborationBoard,
+} from "./board";
 
 const COLLABORATION_COLUMNS =
   "id, creator_id, hotel_id, pipeline_item_id, status, collaboration_type, start_date, end_date, hotel:hotels(id, name)";
@@ -101,7 +106,7 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
             .select("id, creator_id, display_ref")
             .eq("creator_id", profile.profileId)
             .in("id", pipelineIds);
-    return assembleCollaborationBoard({
+    const board = assembleCollaborationBoard({
       viewerId: profile.profileId,
       failed,
       total: typeof counted.count === "number" ? counted.count : null,
@@ -111,6 +116,33 @@ export async function loadCollaborationBoard(authUserId: string): Promise<Collab
       pipelineItems: Array.isArray(pipeline.data) ? pipeline.data : [],
       childFailed: childFailed || pipeline.error !== null || !Array.isArray(pipeline.data),
     });
+    if (board.kind !== "items") return board;
+    const pipelineItemIds = [
+      ...new Set(
+        board.cards
+          .map((card) => card.pipelineItemId)
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    ];
+    if (pipelineItemIds.length === 0) {
+      return { ...board, timeline: { kind: "ok", events: [], capped: false } };
+    }
+    const events = await supabase
+      .from("outreach_events")
+      .select("creator_id, pipeline_item_id, event_type, event_at")
+      .eq("creator_id", profile.profileId)
+      .in("pipeline_item_id", pipelineItemIds)
+      .order("event_at", { ascending: false })
+      .limit(BOARD_READ_LIMIT);
+    if (events.error !== null || !Array.isArray(events.data)) {
+      return { ...board, timeline: { kind: "error" } };
+    }
+    const timeline = mapOutreachActivity(events.data, profile.profileId);
+    if (timeline.kind === "error") return { ...board, timeline };
+    return {
+      ...board,
+      timeline: { ...timeline, capped: events.data.length >= BOARD_READ_LIMIT },
+    };
   } catch {
     return assembleCollaborationBoard({
       viewerId: null,

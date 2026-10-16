@@ -8,7 +8,8 @@ import {
   deliverablePillClass,
   inPreparationCount,
 } from "@/lib/collaboration/board";
-import { parseContactFlags } from "@/lib/hotels/contact-exists";
+import { contactAvailability, parseContactFlags } from "@/lib/hotels/contact-exists";
+import { mapOutreachActivity } from "@/lib/collaboration/board";
 import { outreachProgress } from "@/lib/home/dashboard";
 import { firstPitchMarks } from "@/lib/onboarding/path";
 import { duplicateHotelNote, laneTone } from "@/lib/pipeline/density";
@@ -30,6 +31,11 @@ describe("V12.2 layout rebuild", () => {
     expect(board).toContain("v12-attention");
     expect(board).toContain("v12-stage-board");
     expect(board).toContain("v12-deal");
+    expect(board).toContain("<Chip");
+    expect(source("src/app/midnight.css")).toContain('.v12-chip[aria-current="page"]');
+    expect(board).not.toContain("PrivateNotesEditor");
+    expect(board).not.toContain("mailto:");
+    expect(board).not.toContain("pipeline-contact");
     expect(board).toContain("lane-count-");
     expect(laneTone("replied")).toBe("reply");
     expect(laneTone("negotiating")).toBe("negotiate");
@@ -51,12 +57,17 @@ describe("V12.2 layout rebuild", () => {
     const home = source("src/components/home/home-screen.tsx");
     expect(home).toContain("In progress");
     expect(home).toContain("Continue outreach");
+    expect(home).toContain("Shortlist");
+    expect(home).toContain("Replies");
+    expect(home).toContain("Open tasks");
+    expect(home).not.toContain("Not contacted");
     expect(home).toContain("v12-progress");
     const bar = outreachProgress({
       id: "c",
       name: "Bangkok",
       hotelCount: 8,
       contactedCount: 5,
+      replyCount: 2,
     });
     expect(bar).toEqual({
       kind: "bar",
@@ -65,7 +76,8 @@ describe("V12.2 layout rebuild", () => {
       width: 62.5,
     });
     expect(
-      outreachProgress({ id: "c", name: "Empty", hotelCount: 0, contactedCount: 0 }).kind,
+      outreachProgress({ id: "c", name: "Empty", hotelCount: 0, contactedCount: 0, replyCount: 0 })
+        .kind,
     ).toBe("empty");
   });
 
@@ -75,7 +87,11 @@ describe("V12.2 layout rebuild", () => {
     expect(page).toContain("Selected work");
     expect(page).toContain("HOTEL-FACING PREVIEW");
     expect(page).toContain("PROFILE READINESS");
-    expect(page).toContain("ProfileEditor");
+    expect(page).toContain('id="edit-profile"');
+    const identity = page.indexOf("YOUR CREATOR IDENTITY");
+    const editor = page.indexOf("<ProfileEditor");
+    expect(editor).toBeGreaterThan(page.indexOf('id="edit-profile"'));
+    expect(page.slice(identity, page.indexOf('id="edit-profile"'))).not.toContain("ProfileEditor");
     expect(page).toContain("ShareLinkPanel");
     expect(page).toContain("/app/account");
     expect(page).not.toContain("GmailConnectionPanel");
@@ -106,7 +122,52 @@ describe("V12.2 layout rebuild", () => {
     expect(board).toContain("v12-context");
     expect(board).toContain("v12-stats");
     expect(board).toContain("Activity timeline");
+    expect(board).toContain("v12-list-item");
+    expect(board).toContain("Update this collaboration");
+    expect(board).not.toContain("No activity timeline is stored");
     expect(board).toContain('aria-label="Other collaborations"');
+    const creator = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const pipe = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    expect(
+      mapOutreachActivity(
+        [
+          {
+            creator_id: creator,
+            pipeline_item_id: pipe,
+            event_type: "pitch_sent",
+            event_at: "2026-10-16T12:00:00.000Z",
+          },
+          {
+            creator_id: creator,
+            pipeline_item_id: pipe,
+            event_type: "custom_note",
+            event_at: "2026-10-17T12:00:00.000Z",
+          },
+        ],
+        creator,
+      ),
+    ).toEqual({
+      kind: "ok",
+      capped: false,
+      events: [
+        { pipelineItemId: pipe, label: "Pitch recorded", day: "2026-10-16" },
+        { pipelineItemId: pipe, label: "custom_note", day: "2026-10-17" },
+      ],
+    });
+    expect(
+      mapOutreachActivity(
+        [
+          {
+            creator_id: creator,
+            pipeline_item_id: pipe,
+            event_type: "pitch_sent",
+            event_at: "2026-10-16T12:00:00.000Z",
+            metadata: { email: "a@b.c" },
+          },
+        ],
+        creator,
+      ).kind,
+    ).toBe("error");
     expect(deliverablePillClass("approved")).toContain("green");
     expect(deliverablePillClass("pending")).not.toContain("lime");
     expect(inPreparationCount([{ status: "pending" }, { status: "approved" }])).toBe(1);
@@ -117,6 +178,9 @@ describe("V12.2 layout rebuild", () => {
   it("adds the getting started stepper and timeline", () => {
     const page = source("src/app/(app)/app/onboarding/page.tsx");
     expect(page).toContain("v12-stepper");
+    expect(page).toContain('aria-current={mark === "current" ? "step" : undefined}');
+    expect(page).not.toContain('aria-hidden="true"');
+    expect(page).not.toContain("s6-steps");
     expect(page).toContain("v12-timeline");
     expect(page).toContain("Skip to Discover");
     expect(firstPitchMarks(null)).toEqual(["upcoming", "upcoming", "upcoming", "upcoming"]);
@@ -131,9 +195,14 @@ describe("V12.2 layout rebuild", () => {
     const id = "11111111-1111-4111-8111-111111111111";
     expect(parseContactFlags([{ hotel_id: id, contact_exists: true }])?.get(id)).toBe(true);
     expect(parseContactFlags([{ hotel_id: id, contact_exists: true, email: "a@b.c" }])).toBeNull();
+    expect(parseContactFlags([{ hotel_id: id, contact_exists: true, name: "Ada" }])).toBeNull();
     expect(parseContactFlags([{ hotel_id: id, contact_exists: "yes" }])).toBeNull();
+    expect(contactAvailability(new Map([[id, true]]), id)).toBe("available");
+    expect(contactAvailability(new Map([[id, false]]), id)).toBe("absent");
+    expect(contactAvailability(new Map(), id)).toBe("unknown");
     const row = source("src/components/hotels/hotel-row.tsx");
     expect(row).toContain("Contact available");
+    expect(row).toContain("Contact check incomplete");
     expect(row).toContain("contactAvailable");
   });
 

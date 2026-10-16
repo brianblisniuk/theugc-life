@@ -24,6 +24,7 @@ import {
   parseDiscoverQuery,
   type RawSearchParams,
 } from "@/lib/hotels/filters";
+import { contactAvailability } from "@/lib/hotels/contact-exists";
 import { listCatalogContactFlags } from "@/lib/hotels/contact-exists-query";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 import {
@@ -39,7 +40,7 @@ import {
   type RankedDiscover,
 } from "@/lib/metrics/discover-rank";
 import { loadPageMetricSignals } from "@/lib/metrics/page-signals";
-import { METRIC_LAYERS, ORDER_BELOW_FLOOR_COPY, THRESHOLD_RULES } from "@/lib/metrics/contract";
+import { METRIC_LAYERS, ORDER_BELOW_FLOOR_COPY } from "@/lib/metrics/contract";
 import { discoverListOutcome } from "@/lib/surfaces/list-outcome";
 import {
   DISCOVER_EMPTY_BODY,
@@ -197,9 +198,9 @@ export default async function DiscoverPage({
   return (
     <DiscoverFrame layout="studio" map={null}>
       <AnalyticsPageView event="discover_viewed" />
-      <header className="s1-pagehead">
+      <header className="v12-pagehead">
         <div>
-          <div className="s1-eyebrow">DISCOVER / CREATOR WORKSPACE</div>
+          <div className="v12-eyebrow">DISCOVER / CREATOR WORKSPACE</div>
           <h1>{DISCOVER_TITLE}</h1>
           <p className="s1-lede">{DISCOVER_LEDE}</p>
         </div>
@@ -369,16 +370,11 @@ export default async function DiscoverPage({
 
         {showList && listOutcome === "items" && result ? (
           <div>
-            {query.rank && ranked?.kind === "list" ? (
-              <p className="s1-muted">
-                {ranked.title}. One metric, not a score. {THRESHOLD_RULES[query.rank]}
-              </p>
-            ) : null}
             <h2 className="sr-only">Hotel results</h2>
             {contacts.status === "error" ? (
               <p role="status">
-                Contact availability could not be checked. This is not a statement that contacts
-                are missing.
+                Contact availability could not be checked. This is not a statement that contacts are
+                missing.
               </p>
             ) : null}
             <ul className="s1-rows s1-list">
@@ -394,7 +390,9 @@ export default async function DiscoverPage({
                     href={meta[hotel.id]?.href ?? `/app/hotels/${hotel.id}`}
                     figures={discoverFigures(metrics.get(hotel.id))}
                     contactAvailable={
-                      contacts.status === "ok" ? (contacts.flags.get(hotel.id) ?? false) : null
+                      contacts.status === "ok"
+                        ? contactAvailability(contacts.flags, hotel.id)
+                        : null
                     }
                   />
                 </SyncRow>

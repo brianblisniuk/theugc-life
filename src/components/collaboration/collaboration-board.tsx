@@ -19,9 +19,14 @@ import {
   paymentStatusLabel,
 } from "@/lib/collaboration/display";
 import {
+  ACTIVITY_CAPPED,
+  ACTIVITY_EMPTY,
+  ACTIVITY_ERROR,
+  ACTIVITY_UNLINKED,
   approvalProgress,
   deliverablePillClass,
   inPreparationCount,
+  type ActivityTimeline,
   type BoardCard,
   type BoardCompensation,
   type BoardDeliverable,
@@ -258,52 +263,74 @@ function CompensationEditor({
   );
 }
 
+function DeliverableRow({ row }: { row: BoardDeliverable }) {
+  const detail = [row.platform, row.dueOn ? `Due ${row.dueOn}` : "No due date"]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="v12-list-item">
+      <strong>
+        {row.quantity} × {row.typeLabel}
+      </strong>
+      <p>{detail}</p>
+      <span className={deliverablePillClass(row.status)}>{row.statusLabel}</span>
+    </div>
+  );
+}
+
 function CardView({ card }: { card: BoardCard }) {
   return (
     <div className="v12-stack">
-      <section>
-        <h3>Compensation</h3>
-        {card.compensation ? (
-          <p>
-            <span className="v12-badge">{card.compensation.familyLabel}</span>{" "}
-            {card.compensation.summary} · {card.compensation.paymentLabel}
-          </p>
-        ) : (
-          <p className="s6-muted">Compensation is not recorded. Unknown is not zero.</p>
-        )}
+      {card.deliverables.length === 0 ? (
+        <p>No deliverables recorded.</p>
+      ) : (
+        card.deliverables.map((row) => <DeliverableRow key={row.id} row={row} />)
+      )}
+      <details className="v12-details">
+        <summary>Update this collaboration</summary>
         {card.pipelineItemId ? (
-          <CompensationEditor
-            seed={card.compensation}
-            pipelineItemId={card.pipelineItemId}
-            hotelId={card.hotelId}
-          />
-        ) : (
-          <p className="s6-muted">This collaboration is not linked to a pipeline cycle.</p>
-        )}
-      </section>
-      <section>
-        <h3>Deliverables</h3>
-        {card.deliverables.length === 0 ? (
-          <p className="s6-muted">No deliverables recorded.</p>
-        ) : (
-          <ul className="s6-list">
+          <div className="v12-stack">
+            <CompensationEditor
+              seed={card.compensation}
+              pipelineItemId={card.pipelineItemId}
+              hotelId={card.hotelId}
+            />
             {card.deliverables.map((row) => (
-              <li key={row.id}>
-                {card.pipelineItemId ? (
-                  <DeliverableStatusForm row={row} hotelId={card.hotelId} />
-                ) : (
-                  <p>
-                    {row.quantity} × {row.typeLabel} · {row.statusLabel}
-                  </p>
-                )}
-              </li>
+              <DeliverableStatusForm key={row.id} row={row} hotelId={card.hotelId} />
             ))}
-          </ul>
+            <AddDeliverableForm pipelineItemId={card.pipelineItemId} hotelId={card.hotelId} />
+          </div>
+        ) : (
+          <p>This collaboration is not linked to a pipeline cycle.</p>
         )}
-        {card.pipelineItemId ? (
-          <AddDeliverableForm pipelineItemId={card.pipelineItemId} hotelId={card.hotelId} />
-        ) : null}
-      </section>
+      </details>
+    </div>
+  );
+}
+
+function ActivityTimelineView({
+  pipelineItemId,
+  timeline,
+}: {
+  pipelineItemId: string | null;
+  timeline: ActivityTimeline;
+}) {
+  if (!pipelineItemId) return <p>{ACTIVITY_UNLINKED}</p>;
+  if (timeline.kind === "error") return <p>{ACTIVITY_ERROR}</p>;
+  const events = timeline.events.filter((event) => event.pipelineItemId === pipelineItemId);
+  if (events.length === 0) return <p>{ACTIVITY_EMPTY}</p>;
+  return (
+    <div className="v12-timeline">
+      {events.map((event, index) => (
+        <div
+          key={`${event.pipelineItemId}-${event.day}-${event.label}-${index}`}
+          className="v12-event"
+        >
+          <strong>{event.label}</strong>
+          <p>{event.day}</p>
+        </div>
+      ))}
+      {timeline.capped ? <p>{ACTIVITY_CAPPED}</p> : null}
     </div>
   );
 }
@@ -311,9 +338,11 @@ function CardView({ card }: { card: BoardCard }) {
 export function CollaborationBoardView({
   cards,
   selectedId,
+  timeline,
 }: {
   cards: readonly BoardCard[];
   selectedId: string | null;
+  timeline: ActivityTimeline;
 }) {
   const selected = cards.find((card) => card.id === selectedId) ?? cards[0];
   if (!selected) return null;
@@ -321,7 +350,9 @@ export function CollaborationBoardView({
   const hotelLink = hotelHref(selected.hotelId, { kind: "collaboration" }, "collaboration");
   const progress = approvalProgress(selected.approved, selected.deliverables.length);
   const preparing = inPreparationCount(selected.deliverables);
-  const context = [selected.typeLabel, selected.when, selected.statusLabel].filter(Boolean).join(" · ");
+  const context = [selected.typeLabel, selected.when, selected.statusLabel]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className="v12-stack">
       <nav className="v12-picker" aria-label="Other collaborations">
@@ -332,7 +363,9 @@ export function CollaborationBoardView({
               key={card.id}
               href={`/app/collaborations?collaboration=${card.id}`}
               aria-current={current ? "page" : undefined}
-              className={current ? "v12-btn v12-btn-primary v12-btn-small" : "v12-btn v12-btn-small"}
+              className={
+                current ? "v12-btn v12-btn-primary v12-btn-small" : "v12-btn v12-btn-small"
+              }
             >
               {card.hotelName}
             </Link>
@@ -438,7 +471,7 @@ export function CollaborationBoardView({
       </div>
       <section className="v12-panel v12-panel-pad">
         <h2>Activity timeline</h2>
-        <p>No activity timeline is stored for this collaboration. Deliverable dates above are the record.</p>
+        <ActivityTimelineView pipelineItemId={selected.pipelineItemId} timeline={timeline} />
       </section>
     </div>
   );

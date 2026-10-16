@@ -2,8 +2,8 @@
  * Pipeline — the creator's private opportunities (D182, D187, V2-S3).
  *
  * The list is paginated. Counts are exact database counts. A failed count is
- * not shown as zero. Rows are creator-owned by RLS. An unlocked contact email
- * is read for this caller only.
+ * not shown as zero. Rows are creator-owned by RLS. Deal cards name the hotel
+ * and the opportunity. Unlocked email stays on Hotel Detail.
  */
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -21,10 +21,7 @@ import {
 } from "@/components/pipeline/pipeline-workspace";
 import { PipelineSurfaceNav } from "@/components/shell/pipeline-surface-nav";
 import { requireUser } from "@/lib/auth/guards";
-import { DEADLINE_COPY } from "@/lib/collaboration/deadlines";
 import { loadDeliverableDeadlineBoard } from "@/lib/collaboration/deadline-queries";
-import { readUnlockedContactEmails } from "@/lib/credits/queries";
-import type { IntelligenceResult } from "@/lib/hotels/intelligence";
 import {
   LOCKED_METRIC_COPY,
   METRIC_TITLES,
@@ -36,7 +33,6 @@ import {
   countPipelineStatuses,
   listOpenPipelineForAttention,
   listPipelineItems,
-  listPublicIntelligence,
   normalizePageParam,
   type PipelineListItem,
   type PipelinePage,
@@ -45,7 +41,6 @@ import {
   PIPELINE_COPY,
   normalizePipelineView,
   normalizeStatusFilter,
-  pipelineContactEmail,
   pipelineListState,
   pipelinePageHref,
 } from "@/lib/pipeline/view";
@@ -98,39 +93,7 @@ export default async function PipelinePage({
 
   const state = pipelineListState({ failed, page: loaded, status, surface, rank, view });
   const unrankedHref = pipelinePageHref(status, 1, surface, null, view);
-  const loadedItems: PipelineListItem[] = loaded?.items ?? [];
-  const contactRead =
-    loadedItems.length > 0
-      ? await readUnlockedContactEmails(
-          loadedItems.flatMap((item) => (item.hotel?.id ? [item.hotel.id] : [])),
-        )
-      : { status: "ok" as const, emails: new Map<string, string>() };
-  const items: PipelineListItem[] = loadedItems.map((item) => ({
-    ...item,
-    contactEmail:
-      contactRead.status === "ok" ? pipelineContactEmail(item.hotel?.id, contactRead.emails) : null,
-    deadlineLabel:
-      deadlines.kind === "ok" && deadlines.indicators[item.id]
-        ? DEADLINE_COPY[deadlines.indicators[item.id]!]
-        : null,
-  }));
-
-  const intelligence = await listPublicIntelligence(
-    items.flatMap((item) => (item.hotel?.id ? [item.hotel.id] : [])),
-  ).catch(() => ({ status: "error" as const }));
-  const intelligenceForCards:
-    { status: "error" } | { status: "ok"; byHotel: Map<string, IntelligenceResult> } =
-    intelligence.status === "error"
-      ? { status: "error" }
-      : {
-          status: "ok",
-          byHotel: new Map(
-            [...intelligence.byHotel.entries()].map(([id, signal]) => [
-              id,
-              { status: "ok" as const, signal },
-            ]),
-          ),
-        };
+  const items: PipelineListItem[] = loaded?.items ?? [];
 
   const attention = attentionFromRows({
     rows: attentionResult.status === "ok" ? attentionResult.items : [],
@@ -174,11 +137,13 @@ export default async function PipelinePage({
           {surface === "inbox" ? (
             <p>
               Each open cycle can hold one Gmail thread. The reading is a suggestion beside your
-              pipeline status. Connecting a mailbox is on{" "}
-              <Link href="/app/account">Account</Link>. Opening this page does not start a sync.
+              pipeline status. Connecting a mailbox is on <Link href="/app/account">Account</Link>.
+              Opening this page does not start a sync.
             </p>
           ) : (
-            <p>Only you can see this. Counts below are database totals, not the length of this page.</p>
+            <p>
+              Only you can see this. Counts below are database totals, not the length of this page.
+            </p>
           )}
         </div>
         <div className="v12-head-actions">
@@ -250,15 +215,7 @@ export default async function PipelinePage({
             The board shows this page. A Gmail reading is a suggestion. You confirm the status.
           </p>
           <PipelineViewSwitch view={view} status={status} surface={surface} rank={rank} />
-          <PipelineDense
-            items={items}
-            surface={surface}
-            view={view}
-            asOf={asOf}
-            counts={counts}
-            contactRead={contactRead.status}
-            intelligence={intelligenceForCards}
-          />
+          <PipelineDense items={items} view={view} counts={counts} />
           {state.pagination ? <PipelinePagination state={state.pagination} /> : null}
         </div>
       ) : state.kind === "empty_filtered" ? (

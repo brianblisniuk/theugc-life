@@ -74,10 +74,10 @@ export default async function BillingPage({
     checkoutCode && CHECKOUT_NOTES[checkoutCode] ? CHECKOUT_NOTES[checkoutCode] : null;
 
   return (
-    <div className="s6-page">
-      <header className="s6-head">
+    <div className="v12-stack">
+      <header className="v12-pagehead">
         <div>
-          <p className="s6-eyebrow">Billing & Activity</p>
+          <p className="v12-eyebrow">BILLING & ACTIVITY / CREATOR WORKSPACE</p>
           <h1>Understand every credit movement.</h1>
           <p>Your plan, credits, and payment records should agree with what happened.</p>
         </div>

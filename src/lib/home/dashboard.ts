@@ -102,6 +102,7 @@ export interface OutreachCard {
   name: string;
   hotelCount: number;
   contactedCount: number;
+  replyCount: number;
 }
 
 export const OUTREACH_LIST_CAP = 8;
@@ -133,9 +134,8 @@ export function outreachProgress(
   card: OutreachCard,
 ): { kind: "empty" } | { kind: "bar"; label: string; percentLabel: string; width: number } {
   if (!Number.isInteger(card.hotelCount) || card.hotelCount <= 0) return { kind: "empty" };
-  const contacted = Number.isInteger(card.contactedCount) && card.contactedCount > 0
-    ? card.contactedCount
-    : 0;
+  const contacted =
+    Number.isInteger(card.contactedCount) && card.contactedCount > 0 ? card.contactedCount : 0;
   const width = Math.min(100, (contacted / card.hotelCount) * 100);
   return {
     kind: "bar",
@@ -264,11 +264,13 @@ export function outreachCards(
         hotel.pipelineStatus !== null &&
         (CONTACTED_STATUSES as readonly string[]).includes(hotel.pipelineStatus),
     ).length;
+    const replyCount = rows.filter((hotel) => hotel.pipelineStatus === "replied").length;
     return {
       id: initiative.id,
       name: initiative.name.trim(),
       hotelCount: rows.length,
       contactedCount,
+      replyCount,
     };
   });
   if (cards.length === 0) return { status: "empty" };
@@ -279,6 +281,7 @@ export interface OutreachCount {
   initiativeId: string;
   hotelCount: number;
   contactedCount: number;
+  replyCount: number;
 }
 
 /**
@@ -304,9 +307,12 @@ export function outreachFromCounts(
     if (
       !Number.isInteger(total.hotelCount) ||
       !Number.isInteger(total.contactedCount) ||
+      !Number.isInteger(total.replyCount) ||
       total.hotelCount < 0 ||
       total.contactedCount < 0 ||
+      total.replyCount < 0 ||
       total.contactedCount > total.hotelCount ||
+      total.replyCount > total.hotelCount ||
       byId.has(total.initiativeId)
     ) {
       return { status: "error" };
@@ -322,6 +328,7 @@ export function outreachFromCounts(
       name: initiative.name.trim(),
       hotelCount: total.hotelCount,
       contactedCount: total.contactedCount,
+      replyCount: total.replyCount,
     });
   }
   if (cards.length === 0) return { status: "error" };

@@ -631,7 +631,7 @@ describe("home dashboard", () => {
     expect(result).toEqual({
       status: "ok",
       truncated: false,
-      cards: [{ id: ITEM_A, name: "Lisbon week", hotelCount: 2, contactedCount: 1 }],
+      cards: [{ id: ITEM_A, name: "Lisbon week", hotelCount: 2, contactedCount: 1, replyCount: 0 }],
     });
     expect(CONTACTED_STATUSES).not.toContain("saved");
     expect(CONTACTED_STATUSES).not.toContain("planned");
@@ -641,13 +641,15 @@ describe("home dashboard", () => {
     const shown = outreachFromCounts(
       PROFILE_A,
       [{ id: ITEM_A, creatorId: PROFILE_A, name: "Lisbon week" }],
-      [{ initiativeId: ITEM_A, hotelCount: 240, contactedCount: 17 }],
+      [{ initiativeId: ITEM_A, hotelCount: 240, contactedCount: 17, replyCount: 0 }],
       9,
     );
     expect(shown).toEqual({
       status: "ok",
       truncated: true,
-      cards: [{ id: ITEM_A, name: "Lisbon week", hotelCount: 240, contactedCount: 17 }],
+      cards: [
+        { id: ITEM_A, name: "Lisbon week", hotelCount: 240, contactedCount: 17, replyCount: 0 },
+      ],
     });
     if (shown === "foreign" || shown.status !== "ok") return;
     expect(outreachFractionLabel(shown.cards[0]!)).toBe(

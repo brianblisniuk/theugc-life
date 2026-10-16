@@ -66,7 +66,11 @@ export default async function CollaborationsPage({
           {board.capped ? (
             <p className="s6-muted">This list is capped. It is not every deliverable.</p>
           ) : null}
-          <CollaborationBoardView cards={board.cards} selectedId={selectedId} />
+          <CollaborationBoardView
+            cards={board.cards}
+            selectedId={selectedId}
+            timeline={board.timeline}
+          />
         </>
       )}
     </div>

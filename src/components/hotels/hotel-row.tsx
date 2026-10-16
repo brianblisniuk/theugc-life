@@ -46,8 +46,13 @@ export function HotelRow({
   } | null;
   href: string;
   figures?: DiscoverFigures;
-  /** True only when the catalog RPC says a contact exists. Null is unchecked. */
-  contactAvailable?: boolean | null;
+  /**
+   * available: the RPC said a contact exists.
+   * absent: the RPC said it does not.
+   * unknown: the successful RPC omitted this id. That is not “no contact”.
+   * null: the check did not run for this row.
+   */
+  contactAvailable?: boolean | "available" | "absent" | "unknown" | null;
 }) {
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
@@ -89,12 +94,19 @@ export function HotelRow({
               {rankLine.sampleBasis ? ` · ${rankLine.sampleBasis}` : ""}
             </span>
           ) : null}
-          {pipeline || onTrip || contactAvailable ? (
+          {pipeline ||
+          onTrip ||
+          contactAvailable === true ||
+          contactAvailable === "available" ||
+          contactAvailable === "unknown" ? (
             <span className="s1-chips">
               {pipeline ? <span className="v12-badge v12-badge-blue">{pipeline}</span> : null}
               {onTrip ? <span className="v12-badge">{ON_TRIP}</span> : null}
-              {contactAvailable ? (
+              {contactAvailable === true || contactAvailable === "available" ? (
                 <span className="v12-badge v12-badge-green">Contact available</span>
+              ) : null}
+              {contactAvailable === "unknown" ? (
+                <span className="v12-badge v12-badge-amber">Contact check incomplete</span>
               ) : null}
             </span>
           ) : null}

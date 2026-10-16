@@ -18,6 +18,7 @@ import type { Metadata } from "next";
 import { AnalyticsPageView } from "@/components/analytics-page-view";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
 import { AddToTrip } from "@/components/hotels/add-to-trip";
+import { AddToTripDialog, AddToTripTrigger } from "@/components/hotels/add-to-trip-dialog";
 import { ContactFeature } from "@/components/hotels/contact-feature";
 import { HotelMap } from "@/components/hotels/hotel-map";
 import { HotelPhotos } from "@/components/hotels/hotel-photos";
@@ -307,8 +308,8 @@ export default async function HotelDetailPage({
         : relationship.status === "choose"
           ? { status: "choose" }
           : relationship.status === "none"
-          ? { status: "none" }
-          : { status: "open", stage: relationship.relationship.status };
+            ? { status: "none" }
+            : { status: "open", stage: relationship.relationship.status };
   const billing =
     session.status === "authenticated"
       ? await loadBillingAccess(session.session.userId)
@@ -337,9 +338,9 @@ export default async function HotelDetailPage({
     <div className="s1-hotel">
       <AnalyticsPageView event="hotel_viewed" />
 
-      <header className="s1-pagehead" id="overview">
+      <header className="v12-pagehead" id="overview">
         <div>
-          <p className="s1-eyebrow">HOTEL DETAIL</p>
+          <p className="v12-eyebrow">HOTEL DETAIL / CREATOR WORKSPACE</p>
           <h1>{hotel.name}</h1>
           {location || type ? (
             <p className="s1-lede">{[location, type].filter(Boolean).join(" · ")}</p>
@@ -383,9 +384,7 @@ export default async function HotelDetailPage({
         </div>
         <div className="s1-actions">
           <ButtonLink href={back.href}>{back.label}</ButtonLink>
-          <a className="v12-btn v12-btn-primary" href="#trip">
-            Add to My Trip
-          </a>
+          <AddToTripTrigger className="v12-btn v12-btn-primary">Add to My Trip</AddToTripTrigger>
         </div>
       </header>
 
@@ -394,9 +393,9 @@ export default async function HotelDetailPage({
           <section className="s1-panel" id="intelligence">
             <div className="s1-panel-head">
               <div>
-                <p className="s1-eyebrow">CREATOR INTELLIGENCE</p>
-                <h2>Creator intelligence</h2>
-                <p>Signals based on confirmed creator activity.</p>
+                <p className="s1-eyebrow">CREATOR INTELLIGENCE · BEFORE PHOTOGRAPHY</p>
+                <h2>Signals that help you decide</h2>
+                <p>Aggregates stay unpublished until the sample is large enough.</p>
               </div>
               <Methodology />
             </div>
@@ -485,7 +484,7 @@ export default async function HotelDetailPage({
               collaborationSuggestions={collaborationSuggestions}
               pipelineHref={pipelineReturnHref(origin)}
             />
-            <div id="trip" className="scroll-mt-24">
+            <AddToTripDialog>
               <AddToTrip
                 hotelId={hotel.id}
                 trips={tripChoices}
@@ -501,7 +500,7 @@ export default async function HotelDetailPage({
                       )
                 }
               />
-            </div>
+            </AddToTripDialog>
           </section>
         </div>
         <div className="s1-side">
