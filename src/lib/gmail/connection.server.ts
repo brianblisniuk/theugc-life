@@ -348,6 +348,10 @@ export async function completeGmailAuthorization(
       cfg.encryptionKey,
     );
   } catch {
+    // Same outcome as a bad state — the human starts again — but the failure
+    // is no longer silent. The warning names the step and nothing else: the
+    // ciphertext, the key and the verifier never reach a log.
+    console.warn("[gmail] callback: verifier decrypt failed");
     return { result: "invalid_state" };
   }
 
@@ -363,9 +367,13 @@ export async function completeGmailAuthorization(
   let tokens;
   try {
     tokens = await deps.google.exchangeCode({ code: input.code, codeVerifier });
-  } catch {
+  } catch (e) {
     // A PKCE mismatch, a reused code and an expired code all land here, and all
-    // mean the same thing to the human: start again.
+    // mean the same thing to the human: start again. The log is the OAuth error
+    // code only — never the authorization code, the verifier, or a token.
+    console.warn("[gmail] callback: code exchange failed", {
+      code: e instanceof GoogleAdapterError ? e.code : "unknown",
+    });
     return { result: "invalid_state" };
   }
 
