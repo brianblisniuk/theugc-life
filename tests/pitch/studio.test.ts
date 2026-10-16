@@ -12,6 +12,8 @@ import {
   chooseOpportunity,
   draftScopeNote,
   portfolioLine,
+  opportunityDraftTrip,
+  pitchTripToStore,
   readOpportunityParam,
   recipientLine,
   reviewChecks,
@@ -55,6 +57,70 @@ describe("opportunity choice", () => {
   it("binds the only open opportunity", () => {
     expect(chooseOpportunity([FIRST], null)).toEqual({ choice: "one", selected: FIRST });
     expect(chooseOpportunity([], null).choice).toBe("none");
+  });
+});
+
+describe("opportunity trip", () => {
+  const originTrip = "55555555-5555-4555-8555-555555555555";
+
+  it("keeps opportunity B's trip when the request names trip A", () => {
+    expect(opportunityDraftTrip(FIRST, originTrip)).toBe(FIRST.tripId);
+    expect(
+      pitchTripToStore({
+        opportunity: FIRST,
+        requestedTripId: originTrip,
+        ownedTripId: FIRST.tripId,
+      }),
+    ).toEqual({
+      ok: false,
+      message: "That trip is not this opportunity's trip.",
+    });
+    expect(
+      pitchTripToStore({
+        opportunity: FIRST,
+        requestedTripId: null,
+        ownedTripId: FIRST.tripId,
+      }),
+    ).toEqual({ ok: true, tripId: FIRST.tripId });
+  });
+
+  it("does not adopt a requested trip onto an opportunity that has none", () => {
+    expect(opportunityDraftTrip(SECOND, originTrip)).toBeNull();
+    expect(
+      pitchTripToStore({
+        opportunity: SECOND,
+        requestedTripId: originTrip,
+        ownedTripId: originTrip,
+      }),
+    ).toEqual({
+      ok: false,
+      message: "That trip is not this opportunity's trip.",
+    });
+    expect(
+      pitchTripToStore({
+        opportunity: SECOND,
+        requestedTripId: null,
+        ownedTripId: null,
+      }),
+    ).toEqual({ ok: true, tripId: null });
+  });
+
+  it("still stores a requested trip when no opportunity is selected", () => {
+    expect(opportunityDraftTrip(null, originTrip)).toBe(originTrip);
+    expect(
+      pitchTripToStore({
+        opportunity: null,
+        requestedTripId: originTrip,
+        ownedTripId: originTrip,
+      }),
+    ).toEqual({ ok: true, tripId: originTrip });
+    expect(
+      pitchTripToStore({
+        opportunity: null,
+        requestedTripId: originTrip,
+        ownedTripId: null,
+      }),
+    ).toEqual({ ok: false, message: "Choose one of your trips." });
   });
 });
 

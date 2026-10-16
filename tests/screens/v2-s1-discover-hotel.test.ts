@@ -21,6 +21,7 @@ import {
 } from "@/lib/screens/discover-figures";
 import { discoverReturnHref, hotelFromDiscoverHref } from "@/lib/screens/discover-return";
 import {
+  nextStepPitchHref,
   opportunityCards,
   opportunityTitle,
   relationshipFromOpportunities,
@@ -280,6 +281,35 @@ describe("opportunity history", () => {
     expect(saved?.href).not.toContain(originTrip);
   });
 
+  it("puts the open opportunity's trip on the next-step pitch link", () => {
+    const originTrip = "55555555-5555-4555-8555-555555555555";
+    const href = nextStepPitchHref(
+      HOTEL,
+      { kind: "trip", tripId: originTrip },
+      { id: OPP_B, tripId: TRIP },
+    );
+    const trip = new URL(href ?? "/", "http://local").searchParams.get("trip");
+    expect(href).toContain("/pitch");
+    expect(href).toContain(`opportunity=${OPP_B}`);
+    expect(trip).toBe(TRIP);
+    expect(href).not.toContain(originTrip);
+  });
+
+  it("omits a trip on the next-step pitch link when the open opportunity has none", () => {
+    const originTrip = "55555555-5555-4555-8555-555555555555";
+    const href = nextStepPitchHref(
+      HOTEL,
+      { kind: "trip", tripId: originTrip },
+      { id: OPP_B, tripId: null },
+    );
+    const trip = new URL(href ?? "/", "http://local").searchParams.get("trip");
+    expect(href).toContain("/pitch");
+    expect(href).toContain(`opportunity=${OPP_B}`);
+    expect(trip).toBeNull();
+    expect(href).not.toContain("from=trip");
+    expect(href).not.toContain(originTrip);
+  });
+
   it("does not offer a second save while another opportunity is open", () => {
     expect(relationshipFromOpportunities({ status: "ok", opportunities: [openA, openB] }, openB)).toEqual({
       status: "open",
@@ -466,7 +496,8 @@ describe("screen source", () => {
     expect(hotel).toContain("ContactFeature");
     expect(hotel).toContain("OpportunityHistory");
     expect(hotel).toContain("eligibleHotelPhotos");
-    expect(hotel).toContain("pitchHref(hotel.id, pitchTripId, origin, openRow?.id ?? null)");
+    expect(hotel).toContain("nextStepPitchHref(hotel.id, origin, openRow)");
+    expect(hotel).not.toContain("pitchTripId");
     expect(hotel).not.toContain("withOpportunity");
     const pitch = source("src/app/(app)/app/hotels/[id]/pitch/page.tsx");
     expect(pitch).toContain("readOpportunityParam");

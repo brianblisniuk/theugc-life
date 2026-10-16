@@ -20,6 +20,7 @@ import { listTrips } from "@/lib/trips/queries";
 
 import {
   chooseOpportunity,
+  opportunityDraftTrip,
   selectBoundDraft,
   shownDisplayRef,
   type StudioOpportunity,
@@ -339,6 +340,19 @@ export async function loadPitchContext(input: {
     if (!selected && input.preferDraftTrip) {
       const fromBound = draft?.tripId ?? chosen.selected?.tripId ?? null;
       selected = fromBound ? (tripChoices.find((trip) => trip.id === fromBound) ?? null) : null;
+      if (selected) {
+        put("trip_name", pitchFact(selected.name, 120));
+        put("trip_start", pitchFact(selected.startDate, 20));
+        put("trip_end", pitchFact(selected.endDate, 20));
+      }
+    }
+
+    if (chosen.selected) {
+      const ownTripId = opportunityDraftTrip(chosen.selected, null);
+      selected = ownTripId ? (tripChoices.find((trip) => trip.id === ownTripId) ?? null) : null;
+      delete facts.trip_name;
+      delete facts.trip_start;
+      delete facts.trip_end;
       if (selected) {
         put("trip_name", pitchFact(selected.name, 120));
         put("trip_start", pitchFact(selected.startDate, 20));

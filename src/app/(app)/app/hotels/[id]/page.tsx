@@ -80,6 +80,7 @@ import { discoverFigures } from "@/lib/screens/discover-figures";
 import { discoverReturnHref } from "@/lib/screens/discover-return";
 import { eligibleHotelPhotos } from "@/lib/screens/hotel-photos";
 import {
+  nextStepPitchHref,
   opportunityCards,
   pickHotelOpportunity,
   relationshipFromOpportunities,
@@ -88,7 +89,6 @@ import {
 import {
   hotelCrumbs,
   parseHotelOrigin,
-  pitchHref,
   pipelineReturnHref,
 } from "@/lib/shell/navigation";
 import { tripLimitMessage } from "@/lib/trips/display";
@@ -305,9 +305,7 @@ export default async function HotelDetailPage({
     relationship.status === "open"
       ? (opportunities.find((row) => row.id === relationship.relationship.pipelineItemId) ?? null)
       : null;
-  const pitchTripId = origin.kind === "trip" ? origin.tripId : (openRow?.tripId ?? null);
-  const pitch =
-    pitchHref(hotel.id, pitchTripId, origin, openRow?.id ?? null) ?? "#work";
+  const pitch = nextStepPitchHref(hotel.id, origin, openRow) ?? "#work";
   const step = nextStep({
     relationship: relationshipFact,
     contact: contactFact,

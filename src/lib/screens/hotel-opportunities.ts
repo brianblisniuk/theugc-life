@@ -59,6 +59,17 @@ function toneFor(status: string): OpportunityCardModel["tone"] {
   return "gray";
 }
 
+/**
+ * A trip origin is how the creator arrived. pitchHref writes that origin's id
+ * into `trip` and ignores a separate trip argument, so a row must not reuse
+ * the page trip. The row's own trip becomes the origin, or discover when the
+ * row has none.
+ */
+function rowPitchOrigin(origin: HotelOrigin, tripId: string | null): HotelOrigin {
+  if (origin.kind !== "trip") return origin;
+  return tripId ? { kind: "trip", tripId } : { kind: "discover" };
+}
+
 function withQuery(href: string, params: Record<string, string | null>): string {
   const hashIndex = href.indexOf("#");
   const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
@@ -79,16 +90,7 @@ export function opportunityCard(
   if (!isUuid(row.id) || !isUuid(hotelId)) return null;
   const stage = pipelineStageLabel(row.status) ?? pipelineStatusLabel(row.status);
   const tripId = row.tripId && isUuid(row.tripId) ? row.tripId : null;
-  // A trip page origin is how the creator arrived. It is not this row's trip.
-  // pitchHref writes a trip origin's id into `trip`, so the card origin is the
-  // row's own trip, or discover when the row has none.
-  const pitchOrigin: HotelOrigin =
-    origin.kind === "trip"
-      ? tripId
-        ? { kind: "trip", tripId }
-        : { kind: "discover" }
-      : origin;
-  const pitch = pitchHref(hotelId, tripId, pitchOrigin, row.id);
+  const pitch = pitchHref(hotelId, tripId, rowPitchOrigin(origin, tripId), row.id);
   const inbox = hotelHref(hotelId, { kind: "inbox" }, "inbox");
   const collaboration = hotelHref(hotelId, { kind: "collaboration" }, "collaboration");
   const self = `/app/hotels/${hotelId}`;
@@ -122,6 +124,22 @@ export function opportunityCard(
     href: withQuery(href, { opportunity: row.id, back }),
     action,
   };
+}
+
+/**
+ * Next-step pitch for the open opportunity. The trip is that row's trip, or
+ * absent when the row has none. The page origin never supplies it.
+ */
+export function nextStepPitchHref(
+  hotelId: string,
+  origin: HotelOrigin,
+  openRow: { id: string; tripId: string | null } | null,
+): string | null {
+  if (!openRow) {
+    return pitchHref(hotelId, origin.kind === "trip" ? origin.tripId : null, origin, null);
+  }
+  const tripId = openRow.tripId && isUuid(openRow.tripId) ? openRow.tripId : null;
+  return pitchHref(hotelId, tripId, rowPitchOrigin(origin, tripId), openRow.id);
 }
 
 export function opportunityCards(

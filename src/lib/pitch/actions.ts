@@ -22,6 +22,7 @@ import {
   type FactKey,
 } from "./contract";
 import { loadPitchContext } from "./queries";
+import { pitchTripToStore } from "./studio";
 
 bindServerActions(["pitch.drafts"]);
 
@@ -130,9 +131,12 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
   if (parsed.opportunityId && boundId !== parsed.opportunityId) {
     return { result: "invalid_input", message: "Choose one of your opportunities." };
   }
-  if (parsed.tripId && context.selectedTripId !== parsed.tripId) {
-    return { result: "invalid_input", message: "Choose one of your trips." };
-  }
+  const storedTrip = pitchTripToStore({
+    opportunity: context.selectedOpportunity,
+    requestedTripId: parsed.tripId,
+    ownedTripId: context.selectedTripId,
+  });
+  if (!storedTrip.ok) return { result: "invalid_input", message: storedTrip.message };
   if (
     parsed.templateId &&
     !context.templates.some((template) => template.id === parsed.templateId)
@@ -142,7 +146,7 @@ export async function savePitchDraftAction(formData: FormData): Promise<PitchAct
 
   const row = {
     hotel_id: parsed.hotelId,
-    trip_id: parsed.tripId,
+    trip_id: storedTrip.tripId,
     template_id: parsed.templateId,
     system_template_key: parsed.systemKey,
     subject: parsed.subject,

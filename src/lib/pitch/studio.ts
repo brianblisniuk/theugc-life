@@ -146,6 +146,43 @@ export function reviewChecks(input: {
   ];
 }
 
+/**
+ * The trip a draft may name. With no selected opportunity the requested trip
+ * stands. With one, only that opportunity's trip stands — including none.
+ */
+export function opportunityDraftTrip(
+  opportunity: { tripId: string | null } | null,
+  requestedTripId: string | null,
+): string | null {
+  if (!opportunity) return requestedTripId;
+  return opportunity.tripId;
+}
+
+/**
+ * Trip written on save. A selected opportunity rejects a posted trip that is
+ * not its own, and stores its own trip (or none) rather than the posted one.
+ */
+export function pitchTripToStore(input: {
+  opportunity: { tripId: string | null } | null;
+  requestedTripId: string | null;
+  ownedTripId: string | null;
+}): { ok: true; tripId: string | null } | { ok: false; message: string } {
+  if (!input.opportunity) {
+    if (input.requestedTripId && input.ownedTripId !== input.requestedTripId) {
+      return { ok: false, message: "Choose one of your trips." };
+    }
+    return { ok: true, tripId: input.requestedTripId };
+  }
+  const ownTrip = opportunityDraftTrip(input.opportunity, null);
+  if (input.requestedTripId && input.requestedTripId !== ownTrip) {
+    return { ok: false, message: "That trip is not this opportunity's trip." };
+  }
+  if (input.requestedTripId && input.ownedTripId !== input.requestedTripId) {
+    return { ok: false, message: "Choose one of your trips." };
+  }
+  return { ok: true, tripId: ownTrip && input.ownedTripId === ownTrip ? ownTrip : null };
+}
+
 export function chooseOpportunity(
   opportunities: readonly StudioOpportunity[],
   requestedId: string | null,
