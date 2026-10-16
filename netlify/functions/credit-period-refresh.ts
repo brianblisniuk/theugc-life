@@ -1,13 +1,14 @@
-import { CREDIT_PERIOD_PATH, runScheduledPost } from "../../src/lib/jobs/scheduled-post";
+import { runAnnualCreditRefresh } from "../../src/lib/jobs/maintenance";
+import { runScheduledJob } from "../../src/lib/jobs/scheduled-post";
+import { createAdminClient } from "../../src/lib/supabase/admin";
 
 /**
- * Netlify schedule. The cron is declared once, in netlify.toml.
- * This file does not import the Gmail or Claude clients.
+ * Netlify schedule. The cron and the background flag are in netlify.toml.
+ * Credit refresh runs in this process. A missing or short CREDIT_PERIOD_SECRET
+ * does not grant. This file does not import Gmail, Claude, or Rebill.
  */
-export const handler = async (): Promise<{ statusCode: number; body: string }> =>
-  runScheduledPost({
-    fetchImpl: fetch,
-    siteUrl: process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? null,
+export const handler = async (_event?: unknown): Promise<{ statusCode: number; body: string }> =>
+  runScheduledJob({
     secret: process.env.CREDIT_PERIOD_SECRET ?? null,
-    path: CREDIT_PERIOD_PATH,
+    run: () => runAnnualCreditRefresh(createAdminClient()),
   });

@@ -87,22 +87,36 @@ connect.
 | `GMAIL_SEND_ALLOWLIST` | Comma-separated addresses. When `GMAIL_SEND_ENV` is not `production` and this is unset, only `hello@theugc.life` can be a recipient. |
 | `GMAIL_SEND_PRO_DAILY_CAP` | Optional. Unset means 120. |
 | `GMAIL_SEND_MAX_DAILY_CAP` | Optional. Unset means 300. |
-| `GMAIL_DISPATCH_SECRET` | Bearer for `POST /api/internal/gmail-send-dispatch`. At least 16 characters. |
+| `GMAIL_DISPATCH_SECRET` | Bearer for `POST /api/internal/gmail-send-dispatch`, and the schedule's fail-closed switch. At least 16 characters. The schedule does not send when this is missing or shorter. |
 
 The send schedule is every minute: `* * * * *` on `gmail-send-dispatch`.
 
 ## Scheduled jobs
 
-Each function only posts to its route. The route does the work. Give
-each secret its own value of at least 16 characters.
+Each function runs its job in this process after a secret check. It does
+not POST to the public site. Password protection would answer that POST
+with 401 before the route ran. Give each secret its own value of at least
+16 characters. A missing or shorter secret does not run the job. The
+public routes stay bearer-gated for a caller that can reach them.
 
-| Function | Schedule | Secret | Route |
+The functions are background functions. Locking and idempotency stay in
+the same database functions the routes call.
+
+| Function | Schedule | Secret | In-process job |
 | --- | --- | --- | --- |
-| `gmail-inbox-sync` | `*/15 * * * *` | `GMAIL_SYNC_SECRET` | `POST /api/internal/gmail-inbox-sync` |
-| `account-erasure` | `15 6 * * *` (06:15 UTC) | `ACCOUNT_ERASURE_SECRET` | `POST /api/internal/account-erasure` |
-| `credit-period-refresh` | `45 6 * * *` (06:45 UTC) | `CREDIT_PERIOD_SECRET` | `POST /api/internal/credit-period-refresh` |
-| `gmail-followup-housekeeping` | `7,22,37,52 * * * *` | `GMAIL_FOLLOWUP_SECRET` | `POST /api/internal/gmail-followup-housekeeping` |
-| `gmail-send-dispatch` | `* * * * *` | `GMAIL_DISPATCH_SECRET` | `POST /api/internal/gmail-send-dispatch` |
+| `gmail-inbox-sync` | `*/15 * * * *` | `GMAIL_SYNC_SECRET` | `runProductionInboxSync` |
+| `account-erasure` | `15 6 * * *` (06:15 UTC) | `ACCOUNT_ERASURE_SECRET` | `runAccountErasure` |
+| `credit-period-refresh` | `45 6 * * *` (06:45 UTC) | `CREDIT_PERIOD_SECRET` | `runAnnualCreditRefresh` |
+| `gmail-followup-housekeeping` | `7,22,37,52 * * * *` | `GMAIL_FOLLOWUP_SECRET` | `runFollowupHousekeeping` |
+| `gmail-send-dispatch` | `* * * * *` | `GMAIL_DISPATCH_SECRET` | `dispatchDueGmailSends` |
+
+Bearer routes that remain, and that the schedule does not call:
+
+- `POST /api/internal/gmail-inbox-sync`
+- `POST /api/internal/account-erasure`
+- `POST /api/internal/credit-period-refresh`
+- `POST /api/internal/gmail-followup-housekeeping`
+- `POST /api/internal/gmail-send-dispatch`
 
 Inbox sync discharges mailboxes the database has already marked due
 (about 15 minutes, a login, or a pipeline catch-up). It does not call

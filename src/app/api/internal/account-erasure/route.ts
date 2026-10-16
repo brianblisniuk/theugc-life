@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * D151 daily erasure. Returns a result code and a count. No email, no token.
+ * The Netlify schedule runs the same job in-process and does not call this route.
  */
 export async function POST(request: Request): Promise<Response> {
   const result = await handleDispatchPost(

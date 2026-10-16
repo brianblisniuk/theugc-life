@@ -1,5 +1,6 @@
 node_modules
 .next
+netlify/functions-built
 next-env.d.ts
 package-lock.json
 docs
