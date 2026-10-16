@@ -25,7 +25,7 @@ function daysUntil(start: string): number | null {
 }
 
 /**
- * Inicio. Direction A layout over the creator's own rows (D095).
+ * Home. Direction A layout over the creator's own rows (D095).
  * Counts are creator-recorded. A missing profile is not a zero.
  */
 export default async function AppHomePage() {

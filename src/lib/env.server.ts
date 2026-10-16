@@ -26,6 +26,11 @@ function formatIssues(error: z.ZodError): string {
 
 let _serverEnv: ServerEnv | undefined;
 
+/** Drops a cached parse so a test can change `process.env` and read it again. */
+export function resetServerEnvCache(): void {
+  _serverEnv = undefined;
+}
+
 export function serverEnv(): ServerEnv {
   if (_serverEnv) return _serverEnv;
   const parsed = serverSchema.safeParse({
