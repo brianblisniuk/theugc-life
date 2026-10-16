@@ -56,6 +56,9 @@ export function DestinationQuestion({ destinations }: { destinations: Destinatio
         <Link href="/app/onboarding/hotels" className="v12-btn">
           Hotels for this destination
         </Link>
+        <Link href="/app" className="text-sm text-muted underline">
+          Back to home
+        </Link>
       </div>
     </form>
   );

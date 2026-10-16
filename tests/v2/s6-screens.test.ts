@@ -192,39 +192,69 @@ describe("billing activity", () => {
     }
 
     expect(
-      reversal("monthly", "rebill_revoke:pay_month", -20, {
-        product_type: "plan",
-        product_reference: "pro_monthly",
-        status: "refunded",
-      }, null),
+      reversal(
+        "monthly",
+        "rebill_revoke:pay_month",
+        -20,
+        {
+          product_type: "plan",
+          product_reference: "pro_monthly",
+          status: "refunded",
+        },
+        null,
+      ),
     ).toBe("Unused plan credits reversed for that payment");
     expect(
-      reversal("pack-cb", "rebill_revoke:pay_pack", -50, {
-        product_type: "credit_pack",
-        product_reference: "pack_50",
-        status: "chargeback",
-      }, 50),
+      reversal(
+        "pack-cb",
+        "rebill_revoke:pay_pack",
+        -50,
+        {
+          product_type: "credit_pack",
+          product_reference: "pack_50",
+          status: "chargeback",
+        },
+        50,
+      ),
     ).toBe("Pack credits reversed for a chargeback");
     expect(
-      reversal("pack-refund", "rebill_revoke:pay_pack_refund", -12, {
-        product_type: "credit_pack",
-        product_reference: "pack_50",
-        status: "refunded",
-      }, 50),
+      reversal(
+        "pack-refund",
+        "rebill_revoke:pay_pack_refund",
+        -12,
+        {
+          product_type: "credit_pack",
+          product_reference: "pack_50",
+          status: "refunded",
+        },
+        50,
+      ),
     ).toBe("Unused pack credits reversed");
     expect(
-      reversal("plan-cb", "rebill_revoke_plan:pay_cb", -150, {
-        product_type: "plan",
-        product_reference: "max_monthly",
-        status: "chargeback",
-      }, null),
+      reversal(
+        "plan-cb",
+        "rebill_revoke_plan:pay_cb",
+        -150,
+        {
+          product_type: "plan",
+          product_reference: "max_monthly",
+          status: "chargeback",
+        },
+        null,
+      ),
     ).toBe("Plan credits reversed for a chargeback");
     expect(
-      reversal("annual", "rebill_revoke_plan:pay_year", -400, {
-        product_type: "plan",
-        product_reference: "pro_annual",
-        status: "refunded",
-      }, null),
+      reversal(
+        "annual",
+        "rebill_revoke_plan:pay_year",
+        -400,
+        {
+          product_type: "plan",
+          product_reference: "pro_annual",
+          status: "refunded",
+        },
+        null,
+      ),
     ).toBe("Unused plan credits reversed for a refunded annual payment");
     expect(reversal("bare-plan", "rebill_revoke_plan:pay_bare", -10, null, null)).toBe(
       "Credit reversal",
