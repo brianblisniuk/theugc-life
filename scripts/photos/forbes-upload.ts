@@ -20,6 +20,7 @@ import path from "node:path";
 
 import {
   callRpc,
+  hiddenForbesStoragePaths,
   hiddenHotelMedia,
   inFilter,
   insertRows,
@@ -211,6 +212,11 @@ export async function runForbesUpload(options: ForbesRunOptions): Promise<Forbes
     "forbes",
     jobs.map((job) => job.hotelId),
   );
+  const confirmedHidden = await hiddenForbesStoragePaths(
+    client,
+    jobs.filter((job) => !hidden.paths.has(job.base)).map((job) => job.base),
+  );
+  for (const storagePath of confirmedHidden) hidden.paths.add(storagePath);
   await mkdir(path.dirname(options.ledgerPath), { recursive: true });
   await pool(jobs, 8, async (job) => {
     if (hidden.paths.has(job.base)) {

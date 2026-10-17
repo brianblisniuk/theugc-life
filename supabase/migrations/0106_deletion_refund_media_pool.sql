@@ -810,12 +810,21 @@ begin
 
   if v_status not in ('refunded', 'partially_refunded', 'chargeback') then
   -- Approved money for a deletion-pending or deleted account is not granted.
-  -- The same log id still returns duplicate above. The queue is the alert.
+  -- The same log id still returns duplicate above. A payment that already
+  -- granted access returns already_applied and is not queued. The queue is
+  -- the alert. It is not an automatic refund.
   if v_status = 'approved'
      and public.rebill_account_closed_for_payment(
        v_user, v_sub, coalesce(v_checkout.id, v_checkout_id), v_link
      )
   then
+    if v_payment is not null and exists (
+      select 1 from public.rebill_payment_effects f where f.payment_id = v_payment
+    ) then
+      insert into public.rebill_webhook_events (log_id, event_name, payment_id, result)
+      values (v_log, v_event, v_payment, 'already_applied');
+      return pg_catalog.jsonb_build_object('result', 'already_applied');
+    end if;
     if v_payment is null or v_amount is null or v_currency = '' then
       return pg_catalog.jsonb_build_object('result', 'error');
     end if;

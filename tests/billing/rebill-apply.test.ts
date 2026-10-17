@@ -1579,6 +1579,24 @@ d("rebill apply", () => {
     expect(
       await apply(
         payment({
+          logId: "log_closed1_again",
+          paymentId: "pay_closed1",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_closed1",
+          subscriptionId: "sub_closed",
+        }),
+      ),
+    ).toBe("already_applied");
+    const queuedOriginal = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from private.rebill_refund_queue where payment_id = 'pay_closed1'",
+    );
+    expect(queuedOriginal[0]?.n).toBe(0);
+
+    expect(
+      await apply(
+        payment({
           logId: "log_closed_renew",
           paymentId: "pay_closedrenew",
           status: "approved",

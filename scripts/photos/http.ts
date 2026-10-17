@@ -150,6 +150,94 @@ export async function restGet(client: RestClient, path: string): Promise<unknown
   return response.json() as Promise<unknown>;
 }
 
+/** PostgREST `max_rows`. A full page is not the end of the list. */
+const HIDDEN_PAGE_SIZE = 1000;
+
+function hiddenMarker(row: {
+  hotel_id?: unknown;
+  source_media_key?: unknown;
+  storage_path?: unknown;
+}): string {
+  return `${String(row.hotel_id)}\n${String(row.source_media_key)}\n${String(row.storage_path)}`;
+}
+
+/**
+ * Every hidden row for this filter. Pages with Range and limit until a short
+ * page. A failed read, a non-list body, or a page that does not move forward
+ * throws, so the importer does not upload.
+ */
+async function readHiddenPages(client: RestClient, filterPath: string): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  const seen = new Set<string>();
+  let offset = 0;
+  for (;;) {
+    const path = `${filterPath}&order=id.asc&limit=${HIDDEN_PAGE_SIZE}&offset=${offset}`;
+    const response = await request(client, path, {
+      method: "GET",
+      headers: {
+        Range: `${offset}-${offset + HIDDEN_PAGE_SIZE - 1}`,
+        "Range-Unit": "items",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`hidden hotel_media read failed HTTP ${response.status}`);
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("hidden hotel_media response was not a list");
+    }
+    if (!Array.isArray(payload)) throw new Error("hidden hotel_media response was not a list");
+    if (payload.length > HIDDEN_PAGE_SIZE) {
+      throw new Error("hidden hotel_media page was longer than the limit");
+    }
+    const contentRange = response.headers.get("content-range");
+    if (contentRange && payload.length > 0 && !contentRange.startsWith(`${offset}-`)) {
+      throw new Error("hidden hotel_media page range did not match");
+    }
+    let advanced = false;
+    for (const row of payload) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        throw new Error("hidden hotel_media row was not an object");
+      }
+      const marker = hiddenMarker(
+        row as { hotel_id?: unknown; source_media_key?: unknown; storage_path?: unknown },
+      );
+      if (!seen.has(marker)) {
+        seen.add(marker);
+        advanced = true;
+      }
+      rows.push(row);
+    }
+    if (payload.length === HIDDEN_PAGE_SIZE && !advanced) {
+      throw new Error("hidden hotel_media page did not advance");
+    }
+    if (payload.length < HIDDEN_PAGE_SIZE) return rows;
+    offset += HIDDEN_PAGE_SIZE;
+  }
+}
+
+function collectHidden(
+  payload: readonly unknown[],
+  keys: Set<string>,
+  paths: Set<string>,
+): void {
+  for (const row of payload) {
+    const record = row as {
+      hotel_id?: unknown;
+      source_media_key?: unknown;
+      storage_path?: unknown;
+    };
+    if (typeof record.hotel_id === "string" && typeof record.source_media_key === "string") {
+      keys.add(`${record.hotel_id}\n${record.source_media_key}`);
+    }
+    if (typeof record.storage_path === "string" && record.storage_path.length > 0) {
+      paths.add(record.storage_path);
+    }
+  }
+}
+
 /**
  * Hidden catalog rows for these hotels. A failed read throws, so the importer
  * does not upload. Keys are `hotelId\\nsource_media_key`. Paths are Forbes bases.
@@ -164,25 +252,36 @@ export async function hiddenHotelMedia(
   const unique = [...new Set(hotelIds)];
   for (let index = 0; index < unique.length; index += 80) {
     const batch = unique.slice(index, index + 80);
-    const payload = await restGet(
+    const payload = await readHiddenPages(
       client,
       `/rest/v1/hotel_media?select=hotel_id,source_media_key,storage_path&source=eq.${source}&status=eq.hidden&hotel_id=${inFilter(batch)}`,
     );
-    if (!Array.isArray(payload)) throw new Error("hidden hotel_media response was not a list");
-    for (const row of payload) {
-      if (!row || typeof row !== "object") continue;
-      const record = row as {
-        hotel_id?: unknown;
-        source_media_key?: unknown;
-        storage_path?: unknown;
-      };
-      if (typeof record.hotel_id === "string" && typeof record.source_media_key === "string") {
-        keys.add(`${record.hotel_id}\n${record.source_media_key}`);
-      }
-      if (typeof record.storage_path === "string" && record.storage_path.length > 0) {
-        paths.add(record.storage_path);
-      }
-    }
+    collectHidden(payload, keys, paths);
   }
   return { keys, paths };
+}
+
+/**
+ * Forbes storage paths in this batch whose catalog row is hidden.
+ * Checked again immediately before a public upload. A failed read throws.
+ */
+export async function hiddenForbesStoragePaths(
+  client: RestClient,
+  storagePaths: readonly string[],
+): Promise<Set<string>> {
+  const found = new Set<string>();
+  const unique = [...new Set(storagePaths.filter((storagePath) => storagePath.length > 0))];
+  for (let index = 0; index < unique.length; index += 80) {
+    const batch = unique.slice(index, index + 80);
+    const wanted = new Set(batch);
+    const payload = await readHiddenPages(
+      client,
+      `/rest/v1/hotel_media?select=hotel_id,source_media_key,storage_path&source=eq.forbes&status=eq.hidden&storage_path=${inFilter(batch)}`,
+    );
+    for (const row of payload) {
+      const storagePath = (row as { storage_path?: unknown }).storage_path;
+      if (typeof storagePath === "string" && wanted.has(storagePath)) found.add(storagePath);
+    }
+  }
+  return found;
 }
