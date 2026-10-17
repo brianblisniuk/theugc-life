@@ -334,6 +334,19 @@
   gap: 8px;
 }
 
+.s1-photo-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 180px;
+  overflow: hidden;
+  border: 1px solid #36483d;
+  border-radius: 11px;
+  background: #1b302e;
+  color: #c2f0ca;
+  text-align: center;
+}
+
 .s1-photo {
   display: grid;
   place-items: center;

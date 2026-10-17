@@ -65,6 +65,7 @@ export default async function AppHomePage() {
     asOf,
     timeZone,
     gmail: signals.gmail,
+    campaignHotelIds: signals.campaignHotelIds,
   });
 
   const remaining = view.kind === "checklist" ? view.remaining : 0;

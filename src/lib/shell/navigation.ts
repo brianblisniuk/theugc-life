@@ -232,6 +232,21 @@ export function hotelHref(
   return section ? `${path}#${section}` : path;
 }
 
+/**
+ * Hotel Detail for one pipeline row. The opportunity id is that row.
+ * A hotel-only link is not a substitute when the hotel has another row.
+ */
+export function pipelineHotelHref(
+  hotelId: string | null | undefined,
+  opportunityId: string | null | undefined,
+  tripId?: string | null,
+): string | null {
+  if (!hotelId || !opportunityId || !isUuid(opportunityId)) return null;
+  const base = hotelHref(hotelId, { kind: "pipeline" });
+  if (!base) return null;
+  return withOpportunityQuery(base, opportunityId, tripId);
+}
+
 export function tripHotelHref(tripId: string, hotelId: string): string | null {
   if (!isUuid(tripId)) return null;
   return hotelHref(hotelId, { kind: "trip", tripId });

@@ -253,7 +253,12 @@ function mailboxFromRows(
 export async function loadInboxWorkspace(
   authUserId: string,
   search: { filter?: string | null; thread?: string | null },
-  injected?: { client?: InboxQueryClient; gmailConfigured?: boolean; now?: Date },
+  injected?: {
+    client?: InboxQueryClient;
+    gmailConfigured?: boolean;
+    now?: Date;
+    timeZone?: string | null;
+  },
 ): Promise<InboxScreenModel> {
   if (!isUuid(authUserId)) {
     return { kind: "error", title: INBOX_COPY.errorTitle, body: INBOX_COPY.errorBody };
@@ -415,6 +420,7 @@ export async function loadInboxWorkspace(
     return buildInboxScreen({
       profileId: profile.profileId,
       asOf: (injected?.now ?? new Date()).toISOString(),
+      timeZone: injected?.timeZone,
       filter: parseInboxFilter(search.filter),
       selectedId: selected,
       mailbox,

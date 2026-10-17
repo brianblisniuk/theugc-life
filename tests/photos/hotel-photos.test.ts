@@ -7,9 +7,12 @@ import { HotelPhotos } from "@/components/hotels/hotel-photos";
 import { HotelRow } from "@/components/hotels/hotel-row";
 import { contentSecurityPolicy } from "@/lib/http/security-headers";
 import {
+  announcedPhotoAlt,
   compareHotelMedia,
   creditLines,
   eligiblePhotoHosts,
+  hidePhotographName,
+  hotelPhotoCountNote,
   mediaUrl,
   photoCreditLine,
   renderedHotelPhotos,
@@ -31,7 +34,9 @@ import { runHotelbedsLoad } from "../../scripts/photos/hotelbeds-load";
 
 const STORAGE = "https://staging.supabase.co";
 
-function row(patch: Partial<HotelMediaRecord> & Pick<HotelMediaRecord, "id" | "source">): HotelMediaRecord {
+function row(
+  patch: Partial<HotelMediaRecord> & Pick<HotelMediaRecord, "id" | "source">,
+): HotelMediaRecord {
   return {
     storagePath: patch.source === "forbes" ? "forbes/hotel/00-facade" : null,
     remotePath: patch.source === "hotelbeds" ? "00/1/a.jpg" : null,
@@ -53,7 +58,11 @@ describe("media URLs", () => {
       "https://staging.supabase.co/storage/v1/object/public/hotel-media/forbes/hotel/00-facade/w480.webp",
     );
     expect(mediaUrl(forbes, "large", STORAGE)).toContain("/w1280.webp");
-    const beds = row({ id: "b", source: "hotelbeds", remotePath: "00/005787/005787a_hb_a_030.jpg" });
+    const beds = row({
+      id: "b",
+      source: "hotelbeds",
+      remotePath: "00/005787/005787a_hb_a_030.jpg",
+    });
     expect(mediaUrl(beds, "thumb", STORAGE)).toBe(
       "https://photos.hotelbeds.com/giata/00/005787/005787a_hb_a_030.jpg",
     );
@@ -113,7 +122,12 @@ describe("photo grid", () => {
       createElement(HotelPhotos, {
         name: "Harbor House",
         initials: "HH",
-        photos: [photo("1", "Hotelbeds"), photo("2", "Hotelbeds"), photo("3", "Hotelbeds"), photo("4", "Forbes Travel Guide")],
+        photos: [
+          photo("1", "Hotelbeds"),
+          photo("2", "Hotelbeds"),
+          photo("3", "Hotelbeds"),
+          photo("4", "Forbes Travel Guide"),
+        ],
       }),
     );
     expect(html.match(/<img /g)?.length).toBe(7);
@@ -127,6 +141,56 @@ describe("photo grid", () => {
     expect(html).toContain('height="533"');
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('decoding="async"');
+  });
+
+  it("fills the photo row when the hotel has no verified photograph", () => {
+    const html = renderToStaticMarkup(
+      createElement(HotelPhotos, { name: "Harbor House", initials: "HH", photos: [] }),
+    );
+    expect(html).toContain('data-photo-state="none"');
+    expect(html).toContain("s1-photo-placeholder");
+    expect(html).not.toContain("s1-photo-grid");
+    expect(html).toContain(">HH<");
+  });
+
+  it("names each hide control by place and credit, and missing alts by hotel and index", () => {
+    const blank = renderedHotelPhotos(
+      [
+        row({
+          id: "a",
+          source: "forbes",
+          altText: null,
+          position: 0,
+          credit: "Forbes Travel Guide",
+        }),
+        row({ id: "b", source: "hotelbeds", altText: null, position: 1, credit: "Hotelbeds" }),
+      ],
+      STORAGE,
+    );
+    expect(announcedPhotoAlt(blank[0]!, "Harbor House", 1)).toBe("Harbor House photograph 1");
+    expect(announcedPhotoAlt(blank[1]!, "Harbor House", 2)).toBe("Harbor House photograph 2");
+    expect(hidePhotographName(1, "Forbes Travel Guide")).toBe(
+      "Hide photograph 1, Forbes Travel Guide",
+    );
+    expect(hidePhotographName(2, "Hotelbeds")).toBe("Hide photograph 2, Hotelbeds");
+    const html = renderToStaticMarkup(
+      createElement(HotelPhotos, {
+        name: "Harbor House",
+        initials: "HH",
+        photos: blank,
+        hotelId: "40000000-0000-4000-8000-000000000001",
+        canHide: true,
+      }),
+    );
+    expect(html).toContain("Harbor House photograph 1");
+    expect(html).toContain("Harbor House photograph 2");
+    expect(html).toContain("Hide photograph 1, Forbes Travel Guide");
+    expect(html).toContain("Hide photograph 2, Hotelbeds");
+    expect(html).not.toContain(">Hide photograph<");
+    expect(hotelPhotoCountNote(36, true)).toBe(
+      "Showing 36 photographs. More photographs are on file.",
+    );
+    expect(hotelPhotoCountNote(36, false)).toBeNull();
   });
 
   it("uses initials when nothing is eligible", () => {
@@ -204,7 +268,9 @@ describe("import plan", () => {
       expect(result.chosen.every((row) => row.className === "auto")).toBe(true);
       expect(result.skippedReview).toBe(2);
       expect(result.skippedReject).toBe(1);
-      expect(logs.some((line) => line.includes("review=2") && line.includes("reject=1"))).toBe(true);
+      expect(logs.some((line) => line.includes("review=2") && line.includes("reject=1"))).toBe(
+        true,
+      );
       const link = forbesLinkPlan(result.chosen[0]!);
       expect(link.source_environment).toBe("production");
       expect(link.link_status).toBe("active");
@@ -310,9 +376,12 @@ describe("import plan", () => {
         const headers = new Headers(init?.headers);
         seen.push({ url: String(url), auth: headers.get("authorization") ?? "" });
         if (String(url).includes("/hotels?")) {
-          return new Response(JSON.stringify([{ id: "40000000-0000-4000-8000-000000000009", hotelbeds_code: "184" }]), {
-            status: 200,
-          });
+          return new Response(
+            JSON.stringify([{ id: "40000000-0000-4000-8000-000000000009", hotelbeds_code: "184" }]),
+            {
+              status: 200,
+            },
+          );
         }
         return new Response("[]", { status: 200 });
       }) as typeof fetch,

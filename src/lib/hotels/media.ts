@@ -24,6 +24,8 @@ const COVER_ID_LIMIT = 50;
 export interface HotelMediaLoad {
   status: "ok" | "error";
   photos: RenderedHotelPhoto[];
+  /** Active rows continue past this page. An error is not a short page. */
+  more: boolean;
 }
 
 export interface HotelCoverLoad {
@@ -83,7 +85,7 @@ export function mapMediaRow(row: MediaRow): HotelMediaRecord | null {
 }
 
 export async function fetchHotelMedia(hotelId: string): Promise<HotelMediaLoad> {
-  if (!isUuid(hotelId)) return { status: "ok", photos: [] };
+  if (!isUuid(hotelId)) return { status: "ok", photos: [], more: false };
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hotel_media")
@@ -93,13 +95,16 @@ export async function fetchHotelMedia(hotelId: string): Promise<HotelMediaLoad> 
     .eq("hotel_id", hotelId)
     .eq("status", "active")
     .order("position", { ascending: true })
-    .limit(MEDIA_LIMIT);
-  if (error) return { status: "error", photos: [] };
-  const records = ((data ?? []) as MediaRow[])
+    .limit(MEDIA_LIMIT + 1);
+  if (error) return { status: "error", photos: [], more: false };
+  const raw = (data ?? []) as MediaRow[];
+  const more = raw.length > MEDIA_LIMIT;
+  const records = raw
+    .slice(0, MEDIA_LIMIT)
     .map(mapMediaRow)
     .filter((row): row is HotelMediaRecord => row !== null)
     .sort(compareHotelMedia);
-  return { status: "ok", photos: renderedHotelPhotos(records) };
+  return { status: "ok", photos: renderedHotelPhotos(records), more };
 }
 
 export async function fetchHotelCovers(hotelIds: readonly string[]): Promise<HotelCoverLoad> {

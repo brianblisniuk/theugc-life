@@ -7,6 +7,7 @@
  * creator accepts or rejects it. This module does not send mail.
  */
 import { isUuid } from "@/lib/hotels/ids";
+import { civilDate } from "@/lib/time/civil-date";
 import {
   INBOX_SUGGESTION_KINDS,
   MACHINE_THREAD_STATES,
@@ -192,6 +193,8 @@ export interface InboxCollaborationRef {
 export interface InboxBuildInput {
   profileId: string;
   asOf: string;
+  /** Creator civil day. Omitted means UTC, the same fallback as a blank zone. */
+  timeZone?: string | null;
   filter: InboxFilter;
   selectedId: string | null;
   mailbox: InboxMailbox;
@@ -298,18 +301,21 @@ function calendarDay(value: string): string | null {
   return value;
 }
 
-export function inboxWhenLabel(iso: string, asOf: string): string {
-  const ms = Date.parse(iso);
-  const now = Date.parse(asOf);
-  if (!Number.isFinite(ms) || !Number.isFinite(now)) return "Date unavailable";
-  const day = (value: number) => new Date(value).toISOString().slice(0, 10);
-  const happened = day(ms);
-  const today = day(now);
+function shiftCivilDay(ymd: string, days: number): string | null {
+  const match = YMD.exec(ymd);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Today and Yesterday follow the creator's civil day, not the UTC date of the instant. */
+export function inboxWhenLabel(iso: string, asOf: string, timeZone?: string | null): string {
+  const happened = civilDate(iso, timeZone ?? "UTC");
+  const today = civilDate(asOf, timeZone ?? "UTC");
+  if (!happened || !today) return "Date unavailable";
   if (happened === today) return "Today";
-  const yesterday = new Date(Date.parse(`${today}T00:00:00.000Z`) - 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-  if (happened === yesterday) return "Yesterday";
+  if (happened === shiftCivilDay(today, -1)) return "Yesterday";
   const delta = Math.round(
     (Date.parse(`${today}T00:00:00.000Z`) - Date.parse(`${happened}T00:00:00.000Z`)) / 86_400_000,
   );
@@ -463,7 +469,7 @@ export function buildInboxScreen(input: InboxBuildInput): InboxScreenModel {
       pipelineItemId: row.pipelineItemId,
       displayRef: cleanDisplayRef(row.displayRef),
       stage: pipelineStageLabel(row.status) ?? pipelineStatusLabel(row.status),
-      when: inboxWhenLabel(row.updatedAt, input.asOf),
+      when: inboxWhenLabel(row.updatedAt, input.asOf, input.timeZone),
       summary: commercialSummary(row),
       attention,
       attentionLabel: attentionLabel(attention, row.status),

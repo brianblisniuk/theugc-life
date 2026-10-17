@@ -109,6 +109,8 @@ export interface NextAction {
   title: string;
   detail: string;
   href: string | null;
+  /** Hotel this step is about. Credits are not a hotel. */
+  hotelId: string | null;
 }
 
 export interface NextActionNotice {
@@ -118,6 +120,8 @@ export interface NextActionNotice {
 
 export interface NextActionBoard {
   actions: NextAction[];
+  /** Hotel of every operational action, including ones past the visible cap. */
+  taskHotelIds: readonly (string | null)[];
   hiddenCount: number;
   /** Null when the follow-up read failed. A successful zero stays zero. */
   followUpsDue: number | null;
@@ -181,6 +185,7 @@ export interface NextActionInput {
 export function blockedNextActionBoard(): NextActionBoard {
   return {
     actions: [],
+    taskHotelIds: [],
     hiddenCount: 0,
     followUpsDue: null,
     notices: [{ id: "home", text: HOME_NEXT_COPY.blocked }],
@@ -264,6 +269,7 @@ function creditAction(balance: number): NextAction {
     title: creditsLeftLabel(balance),
     detail: out ? OUT_OF_CREDITS_COPY : HOME_NEXT_COPY.creditAvailable(CREDITS_CONFIG.unlockCost),
     href: null,
+    hotelId: null,
   };
 }
 
@@ -454,6 +460,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
           title: HOME_NEXT_COPY.followUpTitle(row.hotelName),
           detail: HOME_NEXT_COPY.followUpDetail(dueDay),
           href,
+          hotelId: row.hotelId,
         });
       }
       if (!dueOk) {
@@ -500,6 +507,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
           title: HOME_NEXT_COPY.deliverableTitle(row.hotelName),
           detail: HOME_NEXT_COPY.deliverableDetail(row.dueOn),
           href,
+          hotelId: row.hotelId,
         });
       }
       if (!dueOk) {
@@ -559,6 +567,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
           title: title(row.hotelName),
           detail: HOME_NEXT_COPY.pipelineDetail,
           href,
+          hotelId: row.hotelId,
         });
       }
     }
@@ -575,6 +584,7 @@ export function prioritizeNextActions(input: NextActionInput): NextActionBoard {
   const hiddenCount = operational.length - actions.length;
   return {
     actions,
+    taskHotelIds: operational.map((action) => action.hotelId),
     hiddenCount,
     followUpsDue,
     notices,
@@ -600,6 +610,7 @@ function gmailActionsFor(suggestions: readonly OwnedGmailSuggestion[]): NextActi
       title: HOME_NEXT_COPY.gmailTitle[row.kind](row.hotelName),
       detail: HOME_NEXT_COPY.gmailDetail[row.kind],
       href,
+      hotelId: row.hotelId,
     });
   }
   return actions;
