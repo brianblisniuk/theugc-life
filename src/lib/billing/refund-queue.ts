@@ -21,6 +21,53 @@ function amountText(value: unknown): string | null {
  * Admin refund alerts. A failed read is not an empty queue.
  * The rows carry amount and provider ids. They do not carry a user id.
  */
+export interface CancelQueueRow {
+  subscriptionId: string;
+  reason: string;
+  createdAt: string;
+}
+
+/**
+ * Admin alerts for Rebill subscription ids whose cancel is not done.
+ * A failed read is not an empty queue. The rows do not carry a user id.
+ */
+export async function listAdminCancelQueue(): Promise<
+  { status: "ok"; rows: CancelQueueRow[] } | { status: "error" }
+> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("read_admin_rebill_cancel_queue", { p_limit: 50 });
+    if (error || !Array.isArray(data)) return { status: "error" };
+    const rows: CancelQueueRow[] = [];
+    for (const row of data) {
+      if (!row || typeof row !== "object") continue;
+      const record = row as {
+        subscription_id?: unknown;
+        reason?: unknown;
+        created_at?: unknown;
+      };
+      if (typeof record.subscription_id !== "string" || typeof record.created_at !== "string") {
+        continue;
+      }
+      if (
+        record.reason !== "pending" &&
+        record.reason !== "provider_error" &&
+        record.reason !== "not_configured"
+      ) {
+        continue;
+      }
+      rows.push({
+        subscriptionId: record.subscription_id,
+        reason: record.reason,
+        createdAt: record.created_at,
+      });
+    }
+    return { status: "ok", rows };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 export async function listAdminRefundQueue(): Promise<
   { status: "ok"; rows: RefundQueueRow[] } | { status: "error" }
 > {

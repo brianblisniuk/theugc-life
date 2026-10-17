@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { AdminAiControls } from "@/components/admin/ai-admin";
 import { AdminGrantForm, AdminReportQueue } from "@/components/admin/credit-admin";
 import { listAdminAbuseFlags, listAdminPoolAlerts } from "@/lib/ai/admin-queries";
-import { listAdminRefundQueue } from "@/lib/billing/refund-queue";
+import { listAdminCancelQueue, listAdminRefundQueue } from "@/lib/billing/refund-queue";
 import { requireRole } from "@/lib/auth/guards";
 import { listPendingContactReports } from "@/lib/credits/queries";
 import { factTypeLabel, responseTimeBandLabel } from "@/lib/network-intelligence/display";
@@ -25,6 +25,7 @@ export default async function AdminHomePage({
   const abuseFlags = isAdmin ? await listAdminAbuseFlags() : [];
   const poolAlerts = isAdmin ? await listAdminPoolAlerts() : [];
   const refunds = isAdmin ? await listAdminRefundQueue() : { status: "hidden" as const };
+  const cancels = isAdmin ? await listAdminCancelQueue() : { status: "hidden" as const };
   const grantKey = crypto.randomUUID();
   const provenance =
     isAdmin && factId ? await getAdminProvenance(factId) : { status: "hidden" as const };
@@ -185,6 +186,26 @@ export default async function AdminHomePage({
             </ul>
           ) : refunds.status === "ok" ? (
             <p className="text-sm text-muted">No refund is waiting.</p>
+          ) : null}
+          <h3 className="text-sm font-semibold text-text">Subscription cancel required</h3>
+          <p className="max-w-prose text-sm text-muted">
+            These Rebill subscriptions were not cancelled. The erasure job retries them. This
+            product does not refund them.
+          </p>
+          {cancels.status === "error" ? (
+            <p className="text-sm text-muted">
+              The cancel queue could not be loaded. That is not an empty queue.
+            </p>
+          ) : cancels.status === "ok" && cancels.rows.length > 0 ? (
+            <ul className="space-y-1 text-sm text-text">
+              {cancels.rows.map((row) => (
+                <li key={row.subscriptionId}>
+                  Cancel required. Subscription {row.subscriptionId}. {row.reason}. {row.createdAt}.
+                </li>
+              ))}
+            </ul>
+          ) : cancels.status === "ok" ? (
+            <p className="text-sm text-muted">No subscription cancel is waiting.</p>
           ) : null}
         </section>
       ) : null}

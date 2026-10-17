@@ -10,6 +10,7 @@ import { resolveSession } from "@/lib/auth/guards";
 import { readRebillEnv } from "@/lib/billing/rebill-catalog";
 import { cancelRebillSubscriptions } from "@/lib/billing/rebill-checkout";
 import { bindServerActions } from "@/lib/entitlements/inventory";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 bindServerActions(["account.settings"]);
@@ -33,15 +34,37 @@ function subscriptionIds(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === "string" && SUBSCRIPTION_ID.test(id));
 }
 
-/** Stops future Rebill charges. A failed cancel does not undo the deletion clock. */
+/**
+ * Stops future Rebill charges. The deletion clock stays either way.
+ * A result other than cancelled leaves the provider id pending. It is not a refund.
+ */
 async function cancelAtRebill(ids: unknown): Promise<void> {
   const list = subscriptionIds(ids);
   if (list.length === 0) return;
-  await cancelRebillSubscriptions({
+  const results = await cancelRebillSubscriptions({
     env: readRebillEnv(),
     subscriptionIds: list,
     fetchImpl: fetch,
   });
+  try {
+    const admin = createAdminClient();
+    for (let index = 0; index < list.length; index += 1) {
+      const subscriptionId = list[index];
+      if (!subscriptionId) continue;
+      if (results[index] === "cancelled") {
+        await admin.rpc("rebill_finish_provider_cancel", {
+          p_subscription_id: subscriptionId,
+        });
+        continue;
+      }
+      await admin.rpc("rebill_queue_provider_cancel", {
+        p_subscription_id: subscriptionId,
+        p_reason: results[index] === "not_configured" ? "not_configured" : "provider_error",
+      });
+    }
+  } catch {
+    // The clock is already set. Pending rows stay for the erasure job.
+  }
 }
 
 export async function requestAccountDeletion(

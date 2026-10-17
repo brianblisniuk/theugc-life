@@ -669,6 +669,9 @@ export const INVENTORY: readonly InventoryEntry[] = [
     serverActions: [],
     rpcs: [
       "erase_due_creator_accounts",
+      "read_rebill_pending_cancels",
+      "rebill_finish_provider_cancel",
+      "rebill_queue_provider_cancel",
       "refresh_annual_credit_periods",
       "gmail_followup_settle",
       "gmail_incremental_sync_list_due",
@@ -1086,6 +1089,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "admin_unpause_sends",
       "read_admin_abuse_flags",
       "read_admin_ai_pool_alerts",
+      "read_admin_rebill_cancel_queue",
       "read_admin_rebill_refund_queue",
     ],
     rule: { kind: "staff_role" },
