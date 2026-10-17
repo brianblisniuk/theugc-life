@@ -150,11 +150,35 @@ export type OutreachLoad =
   | { status: "empty" }
   | { status: "error" };
 
+const CAMPAIGN_TASK_READ_FAILED = new Set(["home", "pipeline", "follow-ups"]);
+
+/**
+ * Open tasks on the campaign card are next steps for that campaign's hotels.
+ * A failed deliverable or Gmail read does not blank the number. A failed
+ * pipeline read does, because the missing rows are not zero.
+ */
+export function campaignOpenTaskCount(
+  campaignHotelIds: readonly string[] | null,
+  taskHotelIds: readonly (string | null)[],
+  notices: readonly { id: string }[] = [],
+): number | null {
+  if (campaignHotelIds === null) return null;
+  if (notices.some((notice) => CAMPAIGN_TASK_READ_FAILED.has(notice.id))) return null;
+  const hotels = new Set(campaignHotelIds);
+  let count = 0;
+  for (const hotelId of taskHotelIds) {
+    if (hotelId && hotels.has(hotelId)) count += 1;
+  }
+  return count;
+}
+
 export interface HomeDashboard {
   heading: string;
   attentionUnavailable: boolean;
   tasks: HomeTask[];
   hiddenCount: number;
+  /** Next steps on the first campaign. Null when that list could not be read. */
+  campaignOpenTasks: number | null;
   notices: string[];
   stats: HomeStat[];
   trip:
@@ -368,6 +392,8 @@ export function buildHomeDashboard(input: {
   asOf: string;
   /** IANA zone for the creator's civil date. Blank means UTC. */
   timeZone?: string | null;
+  /** Hotels on the card's campaign. Null when that list could not be read. */
+  campaignHotelIds?: readonly string[] | null;
   gmail:
     | { status: "ok"; count: number; truncated?: boolean }
     | { status: "paused" }
@@ -480,6 +506,11 @@ export function buildHomeDashboard(input: {
     attentionUnavailable,
     tasks,
     hiddenCount: input.actions.hiddenCount,
+    campaignOpenTasks: campaignOpenTaskCount(
+      input.campaignHotelIds === undefined ? null : input.campaignHotelIds,
+      input.actions.taskHotelIds,
+      input.actions.notices,
+    ),
     notices: input.actions.notices.map((notice) => notice.text),
     stats,
     trip,

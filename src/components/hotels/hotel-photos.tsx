@@ -3,7 +3,12 @@
 import { useId, useRef } from "react";
 
 import { hideHotelPhotoAction } from "@/lib/hotels/media-actions";
-import { creditLines, type RenderedHotelPhoto } from "@/lib/screens/hotel-photos";
+import {
+  announcedPhotoAlt,
+  creditLines,
+  hidePhotographName,
+  type RenderedHotelPhoto,
+} from "@/lib/screens/hotel-photos";
 
 /**
  * V12.2 photo grid. Cover plus two more, then a +N dialog.
@@ -27,12 +32,10 @@ export function HotelPhotos({
   const dialogId = useId();
   if (photos.length === 0) {
     return (
-      <div className="s1-photo-grid" data-photo-state="none">
-        <div className="s1-photo">
-          <strong className="s1-hotelmark" style={{ margin: "0 auto" }}>
-            {initials}
-          </strong>
-        </div>
+      <div className="s1-photo-placeholder" data-photo-state="none">
+        <strong className="s1-hotelmark" style={{ margin: "0 auto" }}>
+          {initials}
+        </strong>
       </div>
     );
   }
@@ -44,8 +47,8 @@ export function HotelPhotos({
   return (
     <div data-photo-state="ready" data-photo-count={photos.length}>
       <div className="s1-photo-grid">
-        {preview.map((photo) => (
-          <PhotoFrame key={photo.id} photo={photo} name={name} />
+        {preview.map((photo, index) => (
+          <PhotoFrame key={photo.id} photo={photo} name={name} index={index + 1} />
         ))}
       </div>
       {extra > 0 ? (
@@ -63,9 +66,9 @@ export function HotelPhotos({
       {lines.length > 0 ? <p className="s1-caption">{lines.join(" · ")}</p> : null}
       {canHide && hotelId ? (
         <ul className="s1-photo-hides">
-          {photos.map((photo) => (
+          {photos.map((photo, index) => (
             <li key={photo.id}>
-              <HidePhotoForm hotelId={hotelId} photo={photo} />
+              <HidePhotoForm hotelId={hotelId} photo={photo} index={index + 1} />
             </li>
           ))}
         </ul>
@@ -79,8 +82,14 @@ export function HotelPhotos({
         <div className="v12-modal-body">
           <h2 id={titleId}>Photographs of {name}</h2>
           <div className="s1-photo-all">
-            {photos.map((photo) => (
-              <PhotoFrame key={`all-${photo.id}`} photo={photo} name={name} large />
+            {photos.map((photo, index) => (
+              <PhotoFrame
+                key={`all-${photo.id}`}
+                photo={photo}
+                name={name}
+                index={index + 1}
+                large
+              />
             ))}
           </div>
           {lines.length > 0 ? <p className="s1-caption">{lines.join(" · ")}</p> : null}
@@ -102,10 +111,12 @@ export function HotelPhotos({
 function PhotoFrame({
   photo,
   name,
+  index,
   large = false,
 }: {
   photo: RenderedHotelPhoto;
   name: string;
+  index: number;
   large?: boolean;
 }) {
   return (
@@ -117,7 +128,7 @@ function PhotoFrame({
         sizes={large ? "90vw" : "(max-width: 760px) 100vw, 40vw"}
         width={photo.width}
         height={photo.height}
-        alt={photo.alt || name}
+        alt={announcedPhotoAlt(photo, name, index)}
         loading="lazy"
         decoding="async"
       />
@@ -125,7 +136,16 @@ function PhotoFrame({
   );
 }
 
-function HidePhotoForm({ hotelId, photo }: { hotelId: string; photo: RenderedHotelPhoto }) {
+function HidePhotoForm({
+  hotelId,
+  photo,
+  index,
+}: {
+  hotelId: string;
+  photo: RenderedHotelPhoto;
+  index: number;
+}) {
+  const label = hidePhotographName(index, photo.credit);
   async function onSubmit(formData: FormData) {
     await hideHotelPhotoAction(formData);
   }
@@ -133,9 +153,8 @@ function HidePhotoForm({ hotelId, photo }: { hotelId: string; photo: RenderedHot
     <form action={onSubmit}>
       <input type="hidden" name="mediaId" value={photo.id} />
       <input type="hidden" name="hotelId" value={hotelId} />
-      <button type="submit" className="v12-btn v12-btn-small">
-        Hide photograph
-        <span className="sr-only"> {photo.alt}</span>
+      <button type="submit" className="v12-btn v12-btn-small" aria-label={label}>
+        {label}
       </button>
     </form>
   );

@@ -22,18 +22,20 @@ export function PageHeader({
   void crumbs;
   return (
     <header className="v12-pagehead">
-      {back ? (
-        <p className="text-sm">
-          <Link href={back.href} className="text-muted underline hover:text-text">
-            ← Back to {back.label}
-          </Link>
-        </p>
-      ) : null}
-      <div className="v12-head-actions">
+      <div className="v12-pagehead-copy">
+        {back ? (
+          <p className="text-sm">
+            <Link href={back.href} className="text-muted underline hover:text-text">
+              ← Back to {back.label}
+            </Link>
+          </p>
+        ) : null}
         <h1>{title}</h1>
-        {actions}
+        {description ? (
+          <div className="v12-pagehead-lede max-w-prose text-sm text-muted">{description}</div>
+        ) : null}
       </div>
-      {description ? <div className="max-w-prose text-sm text-muted">{description}</div> : null}
+      {actions ? <div className="v12-head-actions">{actions}</div> : null}
     </header>
   );
 }

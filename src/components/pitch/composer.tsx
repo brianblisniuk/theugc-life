@@ -22,6 +22,12 @@ import {
   type PitchActionResult,
 } from "@/lib/pitch/actions";
 import { buildMailto, copyText, type SystemTemplateKey } from "@/lib/pitch/contract";
+import {
+  browserPitchSendKeyStore,
+  isPitchSendKey,
+  readPitchSendKey,
+  writePitchSendKey,
+} from "@/lib/pitch/send-key";
 import { recipientLine, tripChangeForOpportunity } from "@/lib/pitch/studio";
 
 const FIELD =
@@ -110,6 +116,26 @@ export function PitchComposer({
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
 
+  function keptOrMinted(): string {
+    if (isPitchSendKey(idempotencyKey.current)) return idempotencyKey.current;
+    const stored = readPitchSendKey(browserPitchSendKeyStore(), savedId, pipelineItemId ?? null);
+    if (stored) {
+      idempotencyKey.current = stored;
+      return stored;
+    }
+    idempotencyKey.current = mintKey();
+    return idempotencyKey.current;
+  }
+
+  function rememberKey(key: string) {
+    idempotencyKey.current = key;
+    writePitchSendKey(browserPitchSendKeyStore(), {
+      draftId: savedId,
+      opportunityId: pipelineItemId ?? null,
+      key,
+    });
+  }
+
   function formData(): FormData {
     const data = new FormData();
     data.set("hotelId", hotelId);
@@ -175,11 +201,12 @@ export function PitchComposer({
     if (inflight.current || locked.current) return;
     inflight.current = true;
     setPending(true);
-    if (!idempotencyKey.current) idempotencyKey.current = mintKey();
+    const key = keptOrMinted();
+    rememberKey(key);
     const data = new FormData();
     data.set("hotelId", hotelId);
     data.set("mailAccountId", mailAccountId);
-    data.set("idempotencyKey", idempotencyKey.current);
+    data.set("idempotencyKey", key);
     data.set("kind", "pitch");
     data.set("recipient", recipientEmail);
     data.set("subject", subjectValue);
@@ -189,7 +216,7 @@ export function PitchComposer({
     if (pipelineItemId) data.set("pipelineItemId", pipelineItemId);
     const result = await sendPitchFromGmailAction(data);
     if (result.result === "sent" || result.result === "unknown") locked.current = true;
-    else if (result.retry) idempotencyKey.current = mintKey();
+    else if (result.retry) rememberKey(mintKey());
     setNote(result.message);
     inflight.current = false;
     setPending(false);

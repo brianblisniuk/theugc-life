@@ -85,6 +85,7 @@ import { discoverFigures } from "@/lib/screens/discover-figures";
 import { discoverReturnHref, parseDiscoverTrip } from "@/lib/screens/discover-return";
 import { isAdminOrEditor } from "@/lib/auth/roles";
 import { fetchHotelMedia } from "@/lib/hotels/media";
+import { hotelPhotoCountNote } from "@/lib/screens/hotel-photos";
 import {
   nextStepPitchHref,
   opportunityCards,
@@ -294,8 +295,8 @@ export default async function HotelDetailPage({
   const openCount = opportunities.filter((row) => isOpenCycle(row.status)).length;
   const figures = discoverFigures(metricSignals);
   const photos = media.status === "ok" ? media.photos : [];
-  const canHide =
-    session.status === "authenticated" && isAdminOrEditor(session.session.role);
+  const photoNote = media.status === "ok" ? hotelPhotoCountNote(photos.length, media.more) : null;
+  const canHide = session.status === "authenticated" && isAdminOrEditor(session.session.role);
   const contactFact: ContactFact =
     contactState === "locked"
       ? "locked"
@@ -458,6 +459,8 @@ export default async function HotelDetailPage({
               <p className="s1-caption">Photographs could not be loaded.</p>
             ) : photos.length === 0 ? (
               <p className="s1-caption">No verified photograph on file.</p>
+            ) : photoNote ? (
+              <p className="s1-caption">{photoNote}</p>
             ) : null}
             <div id="map" className="scroll-mt-24">
               <HotelMap pins={[loaded.mapPin]} variant="section" />

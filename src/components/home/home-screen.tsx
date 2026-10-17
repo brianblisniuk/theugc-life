@@ -258,11 +258,7 @@ export function HomeScreen({
               {dashboard.outreach.cards[0] ? (
                 <CampaignProgress
                   card={dashboard.outreach.cards[0]}
-                  openTasks={
-                    dashboard.attentionUnavailable
-                      ? null
-                      : dashboard.tasks.length + dashboard.hiddenCount
-                  }
+                  openTasks={dashboard.campaignOpenTasks}
                 />
               ) : null}
               {dashboard.outreach.truncated ? <p>{HOME_DASHBOARD_COPY.outreachTruncated}</p> : null}
