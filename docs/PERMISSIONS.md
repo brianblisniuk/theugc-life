@@ -304,6 +304,22 @@ the building state, never a zero or a negative claim.
 
 No plan bypasses privacy thresholds.
 
+### Definer-rights projections (D190, migration 0108)
+
+`hotel_public_intelligence`, `hotel_premium_intelligence`,
+`network_hotel_public`, `hotel_metric_signal_public`, and
+`hotel_metric_signal_premium` stay `security_invoker = false`. The view owner
+reads `hotel_intelligence` or `private.intelligence_facts` /
+`private.hotel_metric_basis`. Browser roles do not. `security_invoker = true`
+would hide the public rows from anonymous and Free callers, or it would
+require grants on those base relations. Those grants are not added.
+
+Premium rows still require `has_premium_hotel_access(hotel_id)`, which reads
+`auth.uid()` for the session. `anon` has no privilege on either premium view.
+An unentitled authenticated caller reads zero rows. `0108` sets
+`security_barrier = true` on the two intelligence views that omitted it. It
+does not change a column list, a floor, or a grant.
+
 ### Confirmed-fact reads (D146–D150, migrations 0084–0087)
 
 These reads sit beside H01. They do not grant `hotel_intelligence` or
