@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { CollaborationBoardView } from "@/components/collaboration/collaboration-board";
 import { DeliverableReminders } from "@/components/collaboration/deliverable-reminders";
 import { ButtonLink } from "@/components/ui/button";
@@ -49,12 +50,17 @@ export default async function CollaborationsPage({
           </p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/pipeline">Open Pipeline</ButtonLink>
+          <ButtonLink href="/app/pipeline">
+            <V12Icon name="arrow" size={15} />
+            Open Pipeline
+          </ButtonLink>
         </div>
       </header>
 
-      <p className="v12-callout">{AGREED_IS_NOT_APPROVED}</p>
-      <DeliverableReminders board={deadlines} />
+      <div className="v12-compact-strip">
+        <p className="v12-callout">{AGREED_IS_NOT_APPROVED}</p>
+        <DeliverableReminders board={deadlines} />
+      </div>
 
       {board.kind === "error" ? (
         <ErrorState title={board.title} description={board.body} />

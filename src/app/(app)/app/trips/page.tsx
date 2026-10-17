@@ -6,6 +6,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { requireUser } from "@/lib/auth/guards";
 import { TripCreateForm } from "@/components/trips/trip-forms";
 import { Badge } from "@/components/ui/badge";
@@ -99,8 +100,12 @@ export default async function TripsPage() {
           </p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/discover">Explore hotels</ButtonLink>
+          <ButtonLink href="/app/discover">
+            <V12Icon name="discover" size={15} />
+            Explore hotels
+          </ButtonLink>
           <ButtonLink href="#new-trip" variant="primary">
+            <V12Icon name="plus" size={15} />
             New trip
           </ButtonLink>
         </div>
@@ -145,6 +150,7 @@ export default async function TripsPage() {
               />
             ) : (
               <ButtonLink href={continueHref} variant="primary">
+                <V12Icon name="arrow" size={15} />
                 {campaigns.campaigns[0] ? "Continue outreach" : "Start outreach"}
               </ButtonLink>
             )}

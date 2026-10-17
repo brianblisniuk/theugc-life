@@ -5,6 +5,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { CreateOutreachForm } from "@/components/outreach/campaign-forms";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -48,8 +49,12 @@ export default async function OutreachPage() {
           </p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/pipeline">Open Pipeline</ButtonLink>
+          <ButtonLink href="/app/pipeline">
+            <V12Icon name="arrow" size={15} />
+            Open Pipeline
+          </ButtonLink>
           <ButtonLink href="#new-outreach" variant="primary">
+            <V12Icon name="plus" size={15} />
             New outreach
           </ButtonLink>
         </div>
@@ -66,35 +71,78 @@ export default async function OutreachPage() {
           description="A campaign can start from a trip, or with no trip and no invented dates."
         />
       ) : (
-        <ul className="v12-plain-list">
-          {campaigns.campaigns.map((campaign) => {
-            const place = campaign.tripName || campaign.destinationName;
-            return (
-              <li key={campaign.id} className="v12-navtile">
-                <div>
-                  <strong>
-                    <Link href={`/app/outreach/${campaign.id}`}>{campaign.name}</Link>
-                  </strong>
-                  <p>
-                    {campaign.tripId ? `Linked trip${place ? ` · ${place}` : ""}` : "No trip yet"}
-                    {campaign.tripStart && campaign.tripEnd
-                      ? ` · ${campaign.tripStart}–${campaign.tripEnd}`
-                      : ""}
-                  </p>
-                </div>
-                <Badge tone={campaign.tripId ? "green" : "gray"}>
-                  {campaign.tripId ? "Linked trip" : "No trip"}
-                </Badge>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <section className="v12-panel v12-panel-pad" aria-label="Active outreach">
+            <div className="v12-panel-head">
+              <div>
+                <p className="v12-eyebrow">ACTIVE OUTREACH</p>
+                <h2>{campaigns.campaigns[0]!.name}</h2>
+                <p>
+                  {campaigns.campaigns[0]!.tripName ||
+                    campaigns.campaigns[0]!.destinationName ||
+                    "No trip yet"}
+                  . Open the workspace for the hotels, the next move, and the volume note.
+                </p>
+              </div>
+              <ButtonLink href={`/app/outreach/${campaigns.campaigns[0]!.id}`} variant="primary">
+                <V12Icon name="arrow" size={15} />
+                Open outreach
+              </ButtonLink>
+            </div>
+            <div className="v12-stats v12-stats-3">
+              <Link
+                href={`/app/outreach/${campaigns.campaigns[0]!.id}#hotel-opportunities`}
+                className="v12-stat"
+              >
+                <span className="v12-stat-label">Hotel opportunities</span>
+                <div className="v12-stat-note">Each hotel keeps its own stage</div>
+              </Link>
+              <Link
+                href={`/app/outreach/${campaigns.campaigns[0]!.id}#next-move`}
+                className="v12-stat"
+              >
+                <span className="v12-stat-label">Your next move</span>
+                <div className="v12-stat-note">Finish a reply before adding volume</div>
+              </Link>
+              <Link
+                href={`/app/outreach/${campaigns.campaigns[0]!.id}#volume`}
+                className="v12-stat"
+              >
+                <span className="v12-stat-label">Volume without losing trust</span>
+                <div className="v12-stat-note">No send-all on this workspace</div>
+              </Link>
+            </div>
+          </section>
+          <ul className="v12-plain-list">
+            {campaigns.campaigns.map((campaign) => {
+              const place = campaign.tripName || campaign.destinationName;
+              return (
+                <li key={campaign.id} className="v12-navtile">
+                  <div>
+                    <strong>
+                      <Link href={`/app/outreach/${campaign.id}`}>{campaign.name}</Link>
+                    </strong>
+                    <p>
+                      {campaign.tripId ? `Linked trip${place ? ` · ${place}` : ""}` : "No trip yet"}
+                      {campaign.tripStart && campaign.tripEnd
+                        ? ` · ${campaign.tripStart}–${campaign.tripEnd}`
+                        : ""}
+                    </p>
+                  </div>
+                  <Badge tone={campaign.tripId ? "green" : "gray"}>
+                    {campaign.tripId ? "Linked trip" : "No trip"}
+                  </Badge>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
       {campaigns.status === "ok" && campaigns.truncated ? (
         <p>{campaignRemainderNotice(campaigns.total, campaigns.campaigns.length)}</p>
       ) : null}
 
-      <section className="v12-card v12-card-pad">
+      <section className="v12-card v12-card-pad" id="new-outreach">
         <h2>New outreach</h2>
         <p>
           Linking a trip copies its shortlist once. Hotels you add later stay off until you import

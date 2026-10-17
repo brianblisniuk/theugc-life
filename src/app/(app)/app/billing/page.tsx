@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { ButtonLink } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState, ErrorState } from "@/components/ui/states";
@@ -75,14 +76,17 @@ export default async function BillingPage({
     checkoutCode && CHECKOUT_NOTES[checkoutCode] ? CHECKOUT_NOTES[checkoutCode] : null;
 
   return (
-    <div className="v12-stack">
+    <div className="v12-stack v12-billing">
       <header className="v12-pagehead">
         <div>
           <p className="v12-eyebrow">BILLING & ACTIVITY / CREATOR WORKSPACE</p>
           <h1>Understand every credit movement.</h1>
           <p>Your plan, credits, and payment records should agree with what happened.</p>
         </div>
-        <ButtonLink href="/app/plans">Compare plans</ButtonLink>
+        <ButtonLink href="/app/plans">
+          <V12Icon name="plans" size={15} />
+          Compare plans
+        </ButtonLink>
       </header>
 
       {state.kind === "error" ? (

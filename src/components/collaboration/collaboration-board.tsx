@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { Button } from "@/components/ui/button";
 import {
   COMPENSATION_STRUCTURES,
@@ -144,6 +145,7 @@ function AddDeliverableForm({
         </select>
       </label>
       <Button type="submit" size="small">
+        <V12Icon name="plus" size={15} />
         Add deliverable
       </Button>
       {message ? <p role="status">{message}</p> : null}

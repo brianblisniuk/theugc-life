@@ -11,6 +11,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { AnalyticsPageView } from "@/components/analytics-page-view";
+import { V12Icon } from "@/components/icons/v12-icons";
 import { DiscoverFilters, DiscoverSort } from "@/components/hotels/discover-filters";
 import { DiscoverFrame, SyncRow } from "@/components/hotels/discover-sync";
 import { DiscoverMap } from "@/components/hotels/hotel-map";
@@ -209,10 +210,12 @@ export default async function DiscoverPage({
         <div className="s1-actions">
           {tripId ? (
             <ButtonLink href={`/app/trips/${tripId}`} variant="primary">
+              <V12Icon name="arrow" size={15} />
               View trip
             </ButtonLink>
           ) : (
             <ButtonLink href="/app/trips" variant="primary">
+              <V12Icon name="trips" size={15} />
               My Trips
             </ButtonLink>
           )}
@@ -231,6 +234,7 @@ export default async function DiscoverPage({
             </p>
           </div>
           <ButtonLink href={discoverHref} size="small">
+            <V12Icon name="arrow" size={15} />
             Resume this search
           </ButtonLink>
         </div>
@@ -295,6 +299,9 @@ export default async function DiscoverPage({
           >
             Faster replies · Pro
           </Link>
+          <a className="v12-chip" href="#discover-filters">
+            More filters
+          </a>
         </div>
       </section>
 

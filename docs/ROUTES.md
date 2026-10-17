@@ -96,8 +96,11 @@ Includes entitlement-aware contact section and private creator relationship.
 authorize the read. The map marker and Discover cards omit them.
 
 ### `/app/pitch`
-Pitch Studio index. The caller's open opportunities only. Each link uses the
-pipeline row id. It does not call a model and it does not send mail.
+Pitch Studio editor. With no opportunity selected, the editor shows a
+hotel/opportunity picker. Choosing one opens `/app/hotels/[id]/pitch`. A
+pitch is generated only there, from a real hotel. This page does not call a
+model and it does not send mail. `opportunity` is a pipeline row id; a match
+redirects to that hotel editor. A display id is not accepted.
 
 ### `/app/hotels/[id]/pitch`
 Pitch draft for one hotel. Copy and a mailto link stay on the device.

@@ -195,6 +195,9 @@ describe("V12.2 layout rebuild", () => {
     expect(page).not.toContain("s6-steps");
     expect(page).toContain("v12-timeline");
     expect(page).toContain("Skip to Discover");
+    expect(page).toContain('<section id="destination"');
+    expect(page).not.toContain("<details");
+    expect(source("src/components/onboarding/destination-question.tsx")).toContain("Back to home");
     expect(firstPitchMarks(null)).toEqual(["upcoming", "upcoming", "upcoming", "upcoming"]);
     expect(
       firstPitchMarks({ destination: true, saved: false, pitch: false, contact: false })[1],

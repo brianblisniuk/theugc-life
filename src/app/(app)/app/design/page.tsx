@@ -32,7 +32,9 @@ export default async function DesignGuidePage() {
         <h1 className="text-3xl font-extrabold tracking-tight">UI guide</h1>
         <p className="max-w-prose text-sm text-muted">
           Buttons, fields, chips, cards, tables, badges, tabs, dialogs, and the required states.
-          Lime is the primary action. It is not a success color.
+          Lime is the primary action. It is not a success color. The full V12.2 token and icon
+          reference stays in the design HTML. This page is an internal specimen, not a public copy
+          of that guide.
         </p>
       </header>
 

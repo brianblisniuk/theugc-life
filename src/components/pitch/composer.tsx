@@ -10,6 +10,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { V12Icon } from "@/components/icons/v12-icons";
+
 import { draftPitchWithAssistantAction } from "@/lib/ai/actions";
 import { AI_ACCOUNT_PAUSED_COPY, AI_UNAVAILABLE_COPY } from "@/lib/ai/copy";
 import { PITCH_LANGUAGES, PITCH_TONES } from "@/lib/ai/structured";
@@ -397,6 +399,7 @@ export function PitchComposer({
             onClick={() => void onAssist()}
             className="v12-btn"
           >
+            <V12Icon name="pitch" size={15} />
             Draft with AI
           </button>
         </div>
@@ -479,9 +482,11 @@ export function PitchComposer({
           onClick={() => void onSave()}
           className="v12-btn v12-btn-dark"
         >
+          <V12Icon name="save" size={15} />
           Save draft
         </button>
         <button type="button" disabled={pending} onClick={() => void onCopy()} className="v12-btn">
+          <V12Icon name="copy" size={15} />
           Copy email
         </button>
         <a
@@ -511,6 +516,7 @@ export function PitchComposer({
             onClick={() => void onSend()}
             className="v12-btn v12-btn-primary"
           >
+            <V12Icon name="outreach" size={15} />
             Send
           </button>
         ) : null}

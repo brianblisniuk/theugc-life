@@ -31,7 +31,8 @@
   --radius: 13px;
   --radius-control: 8px;
   --shade: 0 16px 36px rgba(0, 0, 0, 0.24);
-  --topbar: #101715;
+  /* V12.2 top bar. Light text stays on this surface. */
+  --topbar: #151d1b;
   --topbar-h: 69px;
   --sidebar-w: 253px;
   --bottom-nav-h: 64px;

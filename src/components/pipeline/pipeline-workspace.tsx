@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { V12Icon, type V12IconName } from "@/components/icons/v12-icons";
+
 import { Chip } from "@/components/ui/chip";
 import type { PipelineListItem } from "@/lib/pipeline/queries";
 import {
@@ -80,6 +82,7 @@ export function PipelineCommand({ counts }: { counts: Parameters<typeof commandS
           </p>
         </div>
         <Link href="/app/inbox" className="v12-btn v12-btn-primary">
+          <V12Icon name="arrow" size={15} />
           Open Inbox
         </Link>
       </section>
@@ -159,10 +162,10 @@ export function PipelineViewSwitch({
   surface: PipelineSurface;
   rank: MetricId | null;
 }) {
-  const views: { id: PipelineView; label: string }[] = [
-    { id: "board", label: "Board" },
-    { id: "list", label: "List" },
-    { id: "timeline", label: "Timeline" },
+  const views: { id: PipelineView; label: string; icon: V12IconName }[] = [
+    { id: "board", label: "Board", icon: "pipeline" },
+    { id: "list", label: "List", icon: "list" },
+    { id: "timeline", label: "Timeline", icon: "clock" },
   ];
   return (
     <div className="v12-subhead">
@@ -177,6 +180,7 @@ export function PipelineViewSwitch({
             href={pipelinePageHref(status, 1, surface, rank, item.id === "board" ? null : item.id)}
             pressed={view === item.id}
           >
+            <V12Icon name={item.icon} size={15} />
             {item.label}
           </Chip>
         ))}
@@ -264,7 +268,6 @@ export function PipelineDense({
               {follow.badge}
             </span>
           </h3>
-          <p className="text-xs text-muted">An event, not a stage column.</p>
           {follow.note ? <p className="text-xs text-muted">{follow.note}</p> : null}
           {events.map((row) => (
             <OpportunityCard key={row.id} row={row} />

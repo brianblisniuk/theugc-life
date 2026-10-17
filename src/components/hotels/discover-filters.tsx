@@ -46,7 +46,13 @@ export function DiscoverFilters({
   }, [open]);
 
   return (
-    <form action="/app/discover" method="get" role="search" className="ux-stack">
+    <form
+      id="discover-filters"
+      action="/app/discover"
+      method="get"
+      role="search"
+      className="ux-stack"
+    >
       {tripId ? <input type="hidden" name="trip" value={tripId} /> : null}
       {catalogFailed ? (
         <p className="ux-meta" role="status">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { SourceBadge } from "@/components/ui/badge";
 import { DisconnectedEmailState, InsufficientDataState } from "@/components/ui/states";
 import {
@@ -111,24 +112,32 @@ export function HomeScreen({
         </div>
         <div className="v12-head-actions">
           <Link href="/app/pipeline" className="v12-btn">
+            <V12Icon name="pipeline" size={15} />
             View all opportunities
           </Link>
         </div>
       </header>
 
-      <MailLine mailbox={mailbox} />
-
-      {dashboard.notices.map((notice) => (
-        <p key={notice} className="v12-notice" role="status">
-          {notice}
-        </p>
-      ))}
+      <div className="v12-home-notices">
+        <MailLine mailbox={mailbox} />
+        {dashboard.notices.map((notice) => (
+          <p key={notice} className="v12-notice" role="status">
+            {notice}
+          </p>
+        ))}
+        {credits ? (
+          <p data-testid="home-credits">
+            <strong>{credits.title}</strong> {credits.detail}
+          </p>
+        ) : null}
+      </div>
 
       <div className="v12-home-grid">
         <section className="v12-panel v12-panel-pad" aria-label="Needs your attention">
           <div className="v12-panel-head">
             <h2>Needs your attention</h2>
             <Link href="/app/pipeline" className="v12-btn v12-btn-ghost v12-btn-small">
+              <V12Icon name="arrow" size={15} />
               Open your Pipeline
             </Link>
           </div>
@@ -150,6 +159,7 @@ export function HomeScreen({
                     </span>
                     <SourceBadge source={task.source} />
                     <span className="v12-pill-inline">{task.pill}</span>
+                    {task.href ? <V12Icon name="chevron" size={15} /> : null}
                   </>
                 );
                 return (
@@ -168,12 +178,6 @@ export function HomeScreen({
           )}
           {dashboard.hiddenCount > 0 ? (
             <p className="v12-notice">{HOME_NEXT_COPY.hidden(dashboard.hiddenCount)}</p>
-          ) : null}
-          {credits ? (
-            <p data-testid="home-credits">
-              <strong>{credits.title}</strong>
-              <span className="v12-task-body">{credits.detail}</span>
-            </p>
           ) : null}
         </section>
 
@@ -199,22 +203,54 @@ export function HomeScreen({
                 <p>{HOME_DASHBOARD_COPY.nightsNone}</p>
               ) : (
                 <div data-testid="home-nights">
-                  <p>
-                    {trip.coverage.coverage.confirmedNights} / {trip.coverage.coverage.tripNights}{" "}
-                    nights confirmed
-                  </p>
-                  <p>{HOME_DASHBOARD_COPY.nightsNote}</p>
-                  {trip.coverage.coverage.tripNights === 0 ? (
+                  <div className="v12-between">
+                    <div>
+                      <b className="v12-night-figure">
+                        {trip.coverage.coverage.confirmedNights} /{" "}
+                        {trip.coverage.coverage.tripNights}
+                      </b>
+                      <div className="v12-stat-note">Nights covered by confirmed stays</div>
+                    </div>
+                    <V12Icon name="trips" size={30} />
+                  </div>
+                  {trip.coverage.coverage.tripNights > 0 ? (
+                    <div
+                      className="v12-progress"
+                      role="img"
+                      aria-label={`${trip.coverage.coverage.confirmedNights} of ${trip.coverage.coverage.tripNights} nights confirmed`}
+                    >
+                      <span
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.round(
+                              (trip.coverage.coverage.confirmedNights /
+                                trip.coverage.coverage.tripNights) *
+                                100,
+                            ),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  ) : (
                     <p>{HOME_DASHBOARD_COPY.sameDay}</p>
-                  ) : null}
-                  <ul className="v12-night-pills">
-                    <li>{trip.coverage.coverage.confirmedNights} confirmed</li>
-                    <li>{trip.coverage.coverage.pendingNights} pending</li>
-                    <li>{trip.coverage.coverage.gapNights} uncovered</li>
-                  </ul>
+                  )}
+                  <p>{HOME_DASHBOARD_COPY.nightsNote}</p>
+                  <div className="v12-legend">
+                    <span className="v12-badge v12-badge-green">
+                      {trip.coverage.coverage.confirmedNights} confirmed
+                    </span>
+                    <span className="v12-badge v12-badge-amber">
+                      {trip.coverage.coverage.pendingNights} pending
+                    </span>
+                    <span className="v12-badge v12-badge-gray">
+                      {trip.coverage.coverage.gapNights} uncovered
+                    </span>
+                  </div>
                 </div>
               )}
               <Link href="/app/trips" className="v12-btn v12-btn-primary v12-btn-block">
+                <V12Icon name="arrow" size={15} />
                 Open My Trips
               </Link>
             </>
@@ -267,6 +303,7 @@ export function HomeScreen({
                   href={`/app/outreach/${dashboard.outreach.cards[0].id}`}
                   className="v12-btn v12-btn-dark"
                 >
+                  <V12Icon name="arrow" size={15} />
                   Continue outreach
                 </Link>
               ) : null}
@@ -278,6 +315,7 @@ export function HomeScreen({
           <h2>{continueExplore.title}</h2>
           <p>{continueExplore.detail}</p>
           <Link href={continueExplore.href} className="v12-btn v12-btn-primary">
+            <V12Icon name="arrow" size={15} />
             {continueExplore.title}
           </Link>
         </section>
