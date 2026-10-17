@@ -45,8 +45,7 @@ function Icon({ name }: { name: ShellIcon }) {
   if (name === "trips") {
     return (
       <svg {...common}>
-        <path d="M3 7h18v12H3z" />
-        <path d="M3 11h18M8 7V5h8v2" />
+        <path d="M22 2 9 15m13-13-7 20-4-9-9-4z"/>
       </svg>
     );
   }
@@ -60,65 +59,66 @@ function Icon({ name }: { name: ShellIcon }) {
   if (name === "pipeline") {
     return (
       <svg {...common}>
-        <path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z" />
+        <rect x="3" y="3" width="7" height="18" rx="1" />
+        <rect x="14" y="3" width="7" height="18" rx="1"/>
       </svg>
     );
   }
   if (name === "pitch") {
     return (
       <svg {...common}>
-        <path d="M5 19h14M7 16V6h10v10" />
-        <path d="M9 9h6M9 12h4" />
+        <path d="M12 20h9M4 16l-1 5 5-1L20 8l-4-4z"/>
       </svg>
     );
   }
   if (name === "inbox") {
     return (
       <svg {...common}>
-        <path d="M4 6h16v12H4z" />
-        <path d="m4 8 8 6 8-6" />
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M3 14h5l2 3h4l2-3h5"/>
       </svg>
     );
   }
   if (name === "collaborations") {
     return (
       <svg {...common}>
-        <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM16 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" />
-        <path d="M3 19c.8-2.4 2.6-3.5 5-3.5s4.2 1.1 5 3.5M14 15.6c1.6-.2 3 .4 4.2 1.9" />
+        <rect x="3" y="7" width="18" height="14" rx="2" />
+        <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18"/>
       </svg>
     );
   }
   if (name === "profile") {
     return (
       <svg {...common}>
-        <circle cx="12" cy="8" r="3.5" />
-        <path d="M5 19c1.2-2.6 3.2-4 7-4s5.8 1.4 7 4" />
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
       </svg>
     );
   }
   if (name === "billing") {
     return (
       <svg {...common}>
-        <rect x="3" y="6" width="18" height="12" rx="2" />
-        <path d="M3 10h18" />
+        <rect x="3" y="6" width="18" height="14" rx="2" />
+        <path d="M15 12h6M3 9V5h15"/>
       </svg>
     );
   }
   if (name === "plans") {
     return (
       <svg {...common}>
-        <rect x="3" y="5" width="18" height="14" rx="2" />
-        <path d="M3 10h18M7 15h4" />
+        <rect x="2" y="4" width="20" height="16" rx="3" />
+        <path d="M2 10h20M6 15h4"/>
       </svg>
     );
   }
   if (name === "start") {
     return (
       <svg {...common}>
-        <path d="M12 3v18M5 8l7-5 7 5" />
+        <path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z"/>
       </svg>
     );
   }
+  
   return (
     <svg {...common}>
       <circle cx="12" cy="12" r="8" />
