@@ -66,6 +66,11 @@ export async function request(
   throw new Error(scrub(last, client.key));
 }
 
+/**
+ * Uploads one WebP. `x-upsert` replaces bytes at this public path.
+ * Callers must not use it for a hidden catalog row. Hiding moves that object
+ * out of this bucket, and an upsert would publish a new public file.
+ */
 export async function uploadWebp(client: RestClient, objectPath: string, body: Buffer): Promise<void> {
   const response = await request(client, `/storage/v1/object/hotel-media/${objectPath}`, {
     method: "POST",
@@ -143,4 +148,41 @@ export async function restGet(client: RestClient, path: string): Promise<unknown
   const response = await request(client, path, { method: "GET" });
   if (!response.ok) throw new Error(`GET failed HTTP ${response.status}`);
   return response.json() as Promise<unknown>;
+}
+
+/**
+ * Hidden catalog rows for these hotels. A failed read throws, so the importer
+ * does not upload. Keys are `hotelId\\nsource_media_key`. Paths are Forbes bases.
+ */
+export async function hiddenHotelMedia(
+  client: RestClient,
+  source: "forbes" | "hotelbeds",
+  hotelIds: readonly string[],
+): Promise<{ keys: Set<string>; paths: Set<string> }> {
+  const keys = new Set<string>();
+  const paths = new Set<string>();
+  const unique = [...new Set(hotelIds)];
+  for (let index = 0; index < unique.length; index += 80) {
+    const batch = unique.slice(index, index + 80);
+    const payload = await restGet(
+      client,
+      `/rest/v1/hotel_media?select=hotel_id,source_media_key,storage_path&source=eq.${source}&status=eq.hidden&hotel_id=${inFilter(batch)}`,
+    );
+    if (!Array.isArray(payload)) throw new Error("hidden hotel_media response was not a list");
+    for (const row of payload) {
+      if (!row || typeof row !== "object") continue;
+      const record = row as {
+        hotel_id?: unknown;
+        source_media_key?: unknown;
+        storage_path?: unknown;
+      };
+      if (typeof record.hotel_id === "string" && typeof record.source_media_key === "string") {
+        keys.add(`${record.hotel_id}\n${record.source_media_key}`);
+      }
+      if (typeof record.storage_path === "string" && record.storage_path.length > 0) {
+        paths.add(record.storage_path);
+      }
+    }
+  }
+  return { keys, paths };
 }

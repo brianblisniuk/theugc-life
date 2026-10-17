@@ -219,6 +219,7 @@ describe("rebill webhook handler", () => {
     expect(rebillWebhookHttpStatus("duplicate")).toBe(200);
     expect(rebillWebhookHttpStatus("ignored")).toBe(200);
     expect(rebillWebhookHttpStatus("revoked")).toBe(200);
+    expect(rebillWebhookHttpStatus("deletion_pending")).toBe(200);
     expect(rebillWebhookHttpStatus("invalid")).toBe(400);
     expect(rebillWebhookHttpStatus("error")).toBe(503);
     expect(rebillWebhookHttpStatus(undefined)).toBe(503);

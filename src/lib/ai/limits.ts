@@ -142,6 +142,7 @@ export function regenWeight(): number {
 /**
  * Basis points. 1500 is 15%. Unset, blank, or not a finite number stays at 15%.
  * A finite number is clamped to 15–20% (D188).
+ * `ai_pool_snapshot` applies this same clamp. That function is the pool stop.
  */
 export function poolPercentBps(
   raw: string | undefined = process.env.AI_GLOBAL_POOL_PERCENT,
@@ -158,6 +159,7 @@ export function poolPercentBps(
  * Unset, blank, or not a positive number means there is no floor.
  * The result is USD micros. There is no $100,000 ceiling (D188).
  * A value that is not a safe positive integer number of micros is not a floor.
+ * `ai_pool_snapshot` keeps a positive floor and does not cap it at $100,000.
  */
 export function readBudgetMicros(
   raw: string | undefined = process.env.ANTHROPIC_MONTHLY_BUDGET_USD,

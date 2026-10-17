@@ -38,6 +38,7 @@ function planLabel(accessType: string): string {
 
 const CHECKOUT_NOTES: Record<string, string> = {
   invalid_product: "That product is not for sale.",
+  deletion_pending: "Account deletion is scheduled. New checkouts are closed. Nothing was charged.",
   not_configured: "Checkout is not configured on this server.",
   live_disabled: "Live charges are off. Sandbox checkout is not available for this key.",
   provider_error: "Rebill did not open a checkout. Nothing was granted.",

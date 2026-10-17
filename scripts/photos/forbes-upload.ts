@@ -20,6 +20,7 @@ import path from "node:path";
 
 import {
   callRpc,
+  hiddenHotelMedia,
   inFilter,
   insertRows,
   requireServiceEnv,
@@ -72,6 +73,7 @@ export interface ForbesRunResult {
   photos: number;
   uploaded: number;
   skippedLedger: number;
+  skippedHidden: number;
   missingFiles: number;
   links: number;
   dryRun: boolean;
@@ -190,6 +192,7 @@ export async function runForbesUpload(options: ForbesRunOptions): Promise<Forbes
     photos: jobs.length,
     uploaded: 0,
     skippedLedger: 0,
+    skippedHidden: 0,
     missingFiles,
     links: chosen.length,
     dryRun: options.dryRun,
@@ -203,8 +206,17 @@ export async function runForbesUpload(options: ForbesRunOptions): Promise<Forbes
   const client: RestClient = { url, key, fetchImpl: options.fetchImpl ?? fetch };
   const encode = options.encode ?? defaultEncode;
   const rows: HotelMediaInsert[] = [];
+  const hidden = await hiddenHotelMedia(
+    client,
+    "forbes",
+    jobs.map((job) => job.hotelId),
+  );
   await mkdir(path.dirname(options.ledgerPath), { recursive: true });
   await pool(jobs, 8, async (job) => {
+    if (hidden.paths.has(job.base)) {
+      result.skippedHidden += 1;
+      return;
+    }
     const objects = forbesObjectPaths(job.base);
     if (ledger.has(objects.w1280) && ledger.has(objects.w480)) {
       result.skippedLedger += 1;
@@ -252,7 +264,9 @@ export async function runForbesUpload(options: ForbesRunOptions): Promise<Forbes
     await callRpc(client, "promote_hotel_covers", { p_hotel_ids: batch });
   }
   await writeForbesLinks(client, chosen);
-  log(`forbes uploaded=${result.uploaded} skipped=${result.skippedLedger} missing=${result.missingFiles}`);
+  log(
+    `forbes uploaded=${result.uploaded} skipped=${result.skippedLedger} hidden=${result.skippedHidden} missing=${result.missingFiles}`,
+  );
   return result;
 }
 

@@ -1086,6 +1086,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "admin_unpause_sends",
       "read_admin_abuse_flags",
       "read_admin_ai_pool_alerts",
+      "read_admin_rebill_refund_queue",
     ],
     rule: { kind: "staff_role" },
     anon: "deny",

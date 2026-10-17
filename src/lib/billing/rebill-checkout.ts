@@ -10,6 +10,7 @@ import {
   type RebillProductCode,
   type RebillServerEnv,
 } from "@/lib/billing/rebill-catalog";
+import { confirmRebillSubscription } from "@/lib/billing/rebill-confirm";
 
 export type CheckoutFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -179,4 +180,77 @@ export async function createHostedPaymentLink(input: {
   }
   if (!payload.url.includes(payload.id)) return { result: "rejected_url" };
   return { result: "ready", url: payload.url, linkId: payload.id };
+}
+
+const SUBSCRIPTION_ID = /^sub_[A-Za-z0-9]+$/;
+
+/**
+ * Cancels one Rebill subscription.
+ * PATCH /v3/subscriptions/:id with `{ "status": "cancelled" }`.
+ * Docs: https://docs.rebill.com/api/reference/subscriptions (retrieved 2026-10-17).
+ * `cancelled` is terminal: no further charges. Active, paused, and retrying may
+ * move there. A 400 on an already-cancelled subscription is success after GET.
+ * This does not refund a captured payment.
+ */
+export async function cancelRebillSubscription(input: {
+  env: RebillServerEnv;
+  subscriptionId: string;
+  fetchImpl: CheckoutFetch;
+}): Promise<"cancelled" | "not_configured" | "provider_error"> {
+  if (!input.env.secretKey) return "not_configured";
+  if (!SUBSCRIPTION_ID.test(input.subscriptionId)) return "provider_error";
+
+  let response: Response;
+  try {
+    response = await input.fetchImpl(`${REBILL_API_BASE}/subscriptions/${input.subscriptionId}`, {
+      method: "PATCH",
+      headers: apiHeaders(input.env.secretKey),
+      body: JSON.stringify({ status: "cancelled" }),
+    });
+  } catch {
+    return "provider_error";
+  }
+
+  if (response.ok) {
+    try {
+      const body = (await response.json()) as { id?: unknown; status?: unknown };
+      if (body.id === input.subscriptionId && body.status === "cancelled") return "cancelled";
+    } catch {
+      return "provider_error";
+    }
+    return "provider_error";
+  }
+
+  if (response.status === 400) {
+    const confirmed = await confirmRebillSubscription(
+      input.env,
+      input.subscriptionId,
+      input.fetchImpl,
+    );
+    if (confirmed?.status === "cancelled") return "cancelled";
+  }
+  return "provider_error";
+}
+
+/** Cancels each id. One failure does not stop the others and does not refund. */
+export async function cancelRebillSubscriptions(input: {
+  env: RebillServerEnv;
+  subscriptionIds: readonly string[];
+  fetchImpl: CheckoutFetch;
+}): Promise<Array<"cancelled" | "not_configured" | "provider_error">> {
+  const results: Array<"cancelled" | "not_configured" | "provider_error"> = [];
+  for (const subscriptionId of input.subscriptionIds) {
+    try {
+      results.push(
+        await cancelRebillSubscription({
+          env: input.env,
+          subscriptionId,
+          fetchImpl: input.fetchImpl,
+        }),
+      );
+    } catch {
+      results.push("provider_error");
+    }
+  }
+  return results;
 }

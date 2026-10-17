@@ -17,6 +17,7 @@ import {
   REBILL_PAYMENT_LINK_BASE,
 } from "@/lib/billing/rebill-catalog";
 import {
+  cancelRebillSubscription,
   createHostedPaymentLink,
   ensureRebillPlan,
   hostedCheckoutAllowed,
@@ -147,6 +148,74 @@ describe("hosted payment link", () => {
     });
     expect(id).toBe("pln_maxyear");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("cancel subscription", () => {
+  it("patches status cancelled and does not send an account id", async () => {
+    const calls: Array<{ url: string; method?: string; body: string }> = [];
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method, body: String(init?.body ?? "") });
+      return Response.json({ id: "sub_abc", status: "cancelled" });
+    });
+    const result = await cancelRebillSubscription({
+      env,
+      subscriptionId: "sub_abc",
+      fetchImpl,
+    });
+    expect(result).toBe("cancelled");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: `${REBILL_API_BASE}/subscriptions/sub_abc`,
+      method: "PATCH",
+    });
+    expect(JSON.parse(calls[0]!.body)).toEqual({ status: "cancelled" });
+    expect(calls[0]!.body).not.toMatch(/user_id|userId/);
+  });
+
+  it("treats a 400 as cancelled when a follow-up read is already cancelled", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") return new Response("{}", { status: 400 });
+      return Response.json({ id: "sub_abc", status: "cancelled" });
+    });
+    const result = await cancelRebillSubscription({
+      env,
+      subscriptionId: "sub_abc",
+      fetchImpl,
+    });
+    expect(result).toBe("cancelled");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1]?.[1]).toMatchObject({ method: "GET" });
+  });
+
+  it("does not call the network without a secret or for a bad id", async () => {
+    const fetchImpl = vi.fn();
+    expect(
+      await cancelRebillSubscription({
+        env: { ...env, secretKey: undefined },
+        subscriptionId: "sub_abc",
+        fetchImpl,
+      }),
+    ).toBe("not_configured");
+    expect(
+      await cancelRebillSubscription({
+        env,
+        subscriptionId: "not-a-subscription",
+        fetchImpl,
+      }),
+    ).toBe("provider_error");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("returns provider_error when the cancel call fails", async () => {
+    const fetchImpl = vi.fn(async () => new Response("no", { status: 500 }));
+    expect(
+      await cancelRebillSubscription({
+        env,
+        subscriptionId: "sub_abc",
+        fetchImpl,
+      }),
+    ).toBe("provider_error");
   });
 });
 

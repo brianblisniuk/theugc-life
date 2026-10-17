@@ -7,6 +7,8 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveSession } from "@/lib/auth/guards";
+import { readRebillEnv } from "@/lib/billing/rebill-catalog";
+import { cancelRebillSubscriptions } from "@/lib/billing/rebill-checkout";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 import { createClient } from "@/lib/supabase/server";
 
@@ -22,6 +24,24 @@ export type AccountDeletionActionResult =
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+const SUBSCRIPTION_ID = /^sub_[A-Za-z0-9]+$/;
+
+function subscriptionIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((id): id is string => typeof id === "string" && SUBSCRIPTION_ID.test(id));
+}
+
+/** Stops future Rebill charges. A failed cancel does not undo the deletion clock. */
+async function cancelAtRebill(ids: unknown): Promise<void> {
+  const list = subscriptionIds(ids);
+  if (list.length === 0) return;
+  await cancelRebillSubscriptions({
+    env: readRebillEnv(),
+    subscriptionIds: list,
+    fetchImpl: fetch,
+  });
 }
 
 export async function requestAccountDeletion(
@@ -51,6 +71,7 @@ export async function requestAccountDeletion(
     if (typeof deletionRequestedAt !== "string" || typeof deleteAfter !== "string") {
       return { result: "error" };
     }
+    await cancelAtRebill(row?.subscription_ids);
     revalidatePath("/app/account");
     return { result, deletionRequestedAt, deleteAfter };
   }

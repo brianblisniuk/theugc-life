@@ -16,6 +16,7 @@ import path from "node:path";
 
 import {
   callRpc,
+  hiddenHotelMedia,
   inFilter,
   requireServiceEnv,
   restGet,
@@ -38,6 +39,7 @@ export interface HotelbedsRunResult {
   codes: number;
   matchedHotels: number;
   photos: number;
+  skippedHidden: number;
   unmatched: number;
   dryRun: boolean;
 }
@@ -66,6 +68,7 @@ export async function runHotelbedsLoad(options: HotelbedsRunOptions): Promise<Ho
     codes: document.size,
     matchedHotels: 0,
     photos,
+    skippedHidden: 0,
     unmatched: document.size,
     dryRun: options.dryRun,
   };
@@ -90,13 +93,22 @@ export async function runHotelbedsLoad(options: HotelbedsRunOptions): Promise<Ho
     if (!hotelId) continue;
     inserts.push(...hotelbedsMediaRows(hotelId, images));
   }
-  result.matchedHotels = new Set(inserts.map((row) => row.hotel_id)).size;
+  const hidden = await hiddenHotelMedia(
+    client,
+    "hotelbeds",
+    [...new Set(inserts.map((row) => row.hotel_id))],
+  );
+  const visible = inserts.filter(
+    (row) => !hidden.keys.has(`${row.hotel_id}\n${row.source_media_key}`),
+  );
+  result.matchedHotels = new Set(visible.map((row) => row.hotel_id)).size;
   result.unmatched = document.size - codeToHotel.size;
-  result.photos = inserts.length;
-  for (const batch of chunk(inserts, 500)) {
+  result.skippedHidden = inserts.length - visible.length;
+  result.photos = visible.length;
+  for (const batch of chunk(visible, 500)) {
     await upsertRows(client, "hotel_media", "hotel_id,source,source_media_key", batch, "ignore-duplicates");
   }
-  const hotelIds = [...new Set(inserts.map((row) => row.hotel_id))];
+  const hotelIds = [...new Set(visible.map((row) => row.hotel_id))];
   for (const batch of chunk(hotelIds, 500)) {
     await callRpc(client, "promote_hotel_covers", { p_hotel_ids: batch });
   }

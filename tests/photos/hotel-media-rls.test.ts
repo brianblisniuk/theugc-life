@@ -144,7 +144,7 @@ d("hotel_media RLS (D189)", () => {
       `select name from storage.objects where bucket_id = 'hotel-media'`,
     );
     expect(readable.error).toBeNull();
-    expect(readable.rows.map((row) => row.name)).toEqual(["forbes/a/w480.webp"]);
+    expect(readable.rows).toEqual([]);
     const inserted = await queryAs(
       { role: "anon" },
       `insert into storage.objects (bucket_id, name) values ('hotel-media', 'forbes/a/secret.webp')`,
@@ -160,5 +160,76 @@ d("hotel_media RLS (D189)", () => {
     } finally {
       await adminQuery("revoke insert on table storage.objects from anon");
     }
+  });
+
+  it("moves a hidden Forbes object into the private bucket and restores it on unhide", async () => {
+    const privateBucket = await adminQuery<{ public: boolean }>(
+      "select public from storage.buckets where id = 'hotel-media-private'",
+    );
+    expect(privateBucket).toEqual([{ public: false }]);
+    await adminQuery(
+      `insert into storage.objects (bucket_id, name)
+       values ('hotel-media', 'forbes/city/a/00-facade/w480.webp'),
+              ('hotel-media', 'forbes/city/a/00-facade/w1280.webp')
+       on conflict (bucket_id, name) do nothing`,
+    );
+    const creator = await queryAs<{ ok: boolean }>(
+      { role: "authenticated", sub: USERS.free },
+      "select public.unhide_hotel_media($1::uuid) as ok",
+      [FORBES],
+    );
+    expect(creator.rows[0]?.ok).toBe(false);
+
+    const hidden = await commitAs<{ ok: boolean }>(
+      { role: "authenticated", sub: USERS.editor },
+      "select public.hide_hotel_media($1::uuid) as ok",
+      [FORBES],
+    );
+    expect(hidden.error).toBeNull();
+    expect(hidden.rows[0]?.ok).toBe(true);
+    const moved = await adminQuery<{ bucket_id: string; name: string }>(
+      `select bucket_id, name from storage.objects
+        where name like 'forbes/city/a/00-facade/%'
+        order by name`,
+    );
+    expect(moved).toEqual([
+      { bucket_id: "hotel-media-private", name: "forbes/city/a/00-facade/w1280.webp" },
+      { bucket_id: "hotel-media-private", name: "forbes/city/a/00-facade/w480.webp" },
+    ]);
+    const listed = await queryAs<{ name: string }>(
+      { role: "anon" },
+      "select name from storage.objects where name like 'forbes/city/a/00-facade/%'",
+    );
+    expect(listed.rows).toEqual([]);
+    const row = await adminQuery<{ status: string; storage_bucket: string }>(
+      "select status, storage_bucket from public.hotel_media where id = $1",
+      [FORBES],
+    );
+    expect(row[0]).toEqual({ status: "hidden", storage_bucket: "hotel-media-private" });
+
+    const denied = await queryAs<{ ok: boolean }>(
+      { role: "authenticated", sub: USERS.free },
+      "select public.unhide_hotel_media($1::uuid) as ok",
+      [FORBES],
+    );
+    expect(denied.rows[0]?.ok).toBe(false);
+    const restored = await commitAs<{ ok: boolean }>(
+      { role: "authenticated", sub: USERS.editor },
+      "select public.unhide_hotel_media($1::uuid) as ok",
+      [FORBES],
+    );
+    expect(restored.error).toBeNull();
+    expect(restored.rows[0]?.ok).toBe(true);
+    const back = await adminQuery<{ bucket_id: string }>(
+      `select bucket_id from storage.objects
+        where name like 'forbes/city/a/00-facade/%'
+        order by name`,
+    );
+    expect(back.map((item) => item.bucket_id)).toEqual(["hotel-media", "hotel-media"]);
+    const visible = await adminQuery<{ status: string; storage_bucket: string }>(
+      "select status, storage_bucket from public.hotel_media where id = $1",
+      [FORBES],
+    );
+    expect(visible[0]).toEqual({ status: "active", storage_bucket: "hotel-media" });
   });
 });
