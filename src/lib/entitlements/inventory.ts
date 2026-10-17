@@ -1073,8 +1073,14 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/components/admin/credit-admin.tsx",
       "src/components/admin/ai-admin.tsx",
       "src/lib/ai/admin-actions.ts",
+      "src/lib/hotels/media-actions.ts",
     ],
-    serverActions: ["adminGrantCreditsAction", "reviewContactReportAction", "adminUnpauseAction"],
+    serverActions: [
+      "adminGrantCreditsAction",
+      "reviewContactReportAction",
+      "adminUnpauseAction",
+      "hideHotelPhotoAction",
+    ],
     rpcs: [
       "admin_unpause_account",
       "admin_unpause_sends",

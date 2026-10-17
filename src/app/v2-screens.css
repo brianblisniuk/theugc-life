@@ -347,9 +347,59 @@
 }
 
 .s1-photo img {
+  display: block;
   width: 100%;
   height: 180px;
   object-fit: cover;
+  aspect-ratio: 3 / 2;
+}
+
+.s1-hotelmark.is-photo {
+  padding: 0;
+  overflow: hidden;
+}
+
+.s1-hotelmark.is-photo img {
+  width: 46px;
+  height: 46px;
+  object-fit: cover;
+  border-radius: 11px;
+}
+
+.s1-photo-open {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid #3b5440;
+  border-radius: 99px;
+  background: #213125;
+  color: #beebbf;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.s1-photo-dialog {
+  width: min(880px, calc(100vw - 32px));
+}
+
+.s1-photo-all {
+  display: grid;
+  gap: 8px;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.s1-photo-all .s1-photo img {
+  height: auto;
+  max-height: 70vh;
+}
+
+.s1-photo-hides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .s1-opp {

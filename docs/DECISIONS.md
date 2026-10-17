@@ -1575,9 +1575,13 @@ asking the data layer for "best eligible cover" is the only version of the
 question that survives that swap.
 
 Consequence:
-Discover continues to render the approved no-photo state, and no `image_url`
-column, media table or hotlinked third-party image is added as an interim
-measure. Full contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §14.
+Discover continues to render the approved no-photo state when a hotel has no
+eligible photograph, and no `image_url` column is added to `hotels`. Full
+contract in `PROPERTY_CONTENT_COVERAGE_CONTRACT.md` §14.
+
+Amended by D189 (owner Brian, 16 Oct 2026): a `hotel_media` child table and
+two approved hosts are allowed. The child-resource model in this decision
+stays. The "no rows and no hotlink" consequence does not.
 
 ## D065 — Provider source data is isolated, bounded and never canonical by default
 Status: Accepted — implemented by migration `0027`
@@ -6024,3 +6028,55 @@ blank, or not a finite number stays at 15.
 not a positive number still refuses paid generation before the provider
 is called. A positive finite amount is the floor. A value that is not a
 safe positive integer number of micros is not a floor.
+
+## D189 — Launch photography: Forbes and Hotelbeds
+
+Status: **Accepted — PRODUCT DECISION (owner Brian, 16 Oct 2026).** Amends
+the "no media table and no hotlink" consequence of D064. The child-resource
+model in D064 stays.
+
+Forbes Travel Guide and Hotelbeds photographs are shown in the app from
+launch. Brian accepts the copyright risk and will take content down on
+request.
+
+### What changed from D064
+
+`hotel_media` is allowed. It is a child of `hotels`, not a column on the
+hotel. There is still no `image_url` on `hotels`. The screen asks for the
+best eligible cover. It does not ask for "the Expedia image" or "the Forbes
+image" by provider.
+
+Approved hosts are the Supabase storage host in `NEXT_PUBLIC_SUPABASE_URL`
+and `photos.hotelbeds.com`. The Forbes CDN is not an approved host. Forbes
+files are copied into the public `hotel-media` bucket as WebP. A missing
+photograph stays a valid no-photo state. Map coverage is still mandatory.
+Photo coverage is not.
+
+### Credits and takedown
+
+The visible credit lines are `Photo: Forbes Travel Guide` and `Hotelbeds`.
+The stored credit is `Forbes Travel Guide` or `Hotelbeds`. `rights_basis`
+starts as `owner_decision_D189`.
+
+`status = hidden` is the takedown. An admin or an editor can hide a
+photograph. Hidden rows are not readable by anon or by a creator. A later
+import uses conflict-do-nothing so a hidden row is not made active again.
+
+### Rights, stated plainly
+
+Forbes images were scraped from forbestravelguide.com. They belong to the
+hotels and/or Forbes Travel Guide. There is no licence. Attribution and the
+hide path above are required.
+
+Hotelbeds images come from the evaluation environment
+(`api.test.hotelbeds.com`). The Content API terms normally tie image use to
+selling Hotelbeds inventory. A live contract or a live key may impose other
+terms. Showing them is an accepted risk, not a claim that a production
+licence has been reviewed.
+
+### Links
+
+A Forbes match may be stored on `hotel_source_identities`. That table still
+rejects every `source_environment` other than `production` (D065). The
+scrape vintage `scrape-2026-10` is match evidence. It is not a new
+environment value. `link_status` uses the existing word `active`.

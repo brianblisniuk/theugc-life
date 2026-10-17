@@ -3,7 +3,7 @@
  *
  * These checks stay off the network. A locked contact must not render a name
  * or an email. A missing metric is Insufficient data, never 0%. Provider
- * photo URLs are not covers. Two opportunities stay two records.
+ * photo URLs from other hosts are not covers. Two opportunities stay two records.
  */
 import { readFileSync } from "node:fs";
 import { createElement, type ReactNode } from "react";
@@ -38,7 +38,11 @@ import {
   type HotelOpportunity,
 } from "@/lib/screens/hotel-opportunities";
 import { AddToTrip } from "@/components/hotels/add-to-trip";
-import { eligibleHotelPhotos, presentHotelPhotos } from "@/lib/screens/hotel-photos";
+import {
+  eligibleHotelPhotos,
+  presentHotelPhotos,
+  renderedHotelPhotos,
+} from "@/lib/screens/hotel-photos";
 
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) =>
@@ -184,31 +188,65 @@ describe("metric figures", () => {
 });
 
 describe("hotel photographs", () => {
-  it("drops Hotelbeds and Forbes URLs and renders no image", async () => {
+  const storage = "https://example.supabase.co";
+
+  it("renders an allowlisted Hotelbeds or storage URL and drops the rest", async () => {
     expect(eligibleHotelPhotos()).toEqual([]);
-    const photos = presentHotelPhotos([
-      { url: "https://photos.hotelbeds.com/giata/1.jpg", alt: "Hotelbeds cover" },
-      { url: "https://www.forbestravelguide.com/hotels/photo.jpg", alt: "Forbes cover" },
-      { url: "http://cdn.example/photo.jpg", alt: "Insecure" },
-      { url: "https://cdn.example/photo.jpg", alt: "Unapproved host" },
-      { url: "not a url", alt: "Broken" },
-    ]);
-    expect(photos).toEqual([]);
+    const photos = presentHotelPhotos(
+      [
+        { url: "https://photos.hotelbeds.com/giata/bigger/00/1.jpg", alt: "Hotelbeds cover" },
+        {
+          url: "https://example.supabase.co/storage/v1/object/public/hotel-media/forbes/a/w1280.webp",
+          alt: "Storage cover",
+        },
+        { url: "https://www.forbestravelguide.com/hotels/photo.jpg", alt: "Forbes CDN" },
+        { url: "http://photos.hotelbeds.com/giata/1.jpg", alt: "Insecure" },
+        { url: "https://cdn.example/photo.jpg", alt: "Unapproved host" },
+        { url: "not a url", alt: "Broken" },
+        { url: "https://photos.hotelbeds.com/giata/1.jpg", alt: "  " },
+      ],
+      storage,
+    );
+    expect(photos.map((photo) => photo.alt)).toEqual(["Hotelbeds cover", "Storage cover"]);
     const { HotelPhotos } = await import("@/components/hotels/hotel-photos");
+    const empty = renderToStaticMarkup(
+      createElement(HotelPhotos, {
+        name: "Harbor House",
+        initials: "HH",
+        photos: [],
+      }),
+    );
+    expect(empty).toContain("HH");
+    expect(empty).not.toContain("<img");
+    const rendered = renderedHotelPhotos(
+      [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          source: "hotelbeds",
+          storagePath: null,
+          remotePath: "00/1.jpg",
+          role: "cover",
+          position: 0,
+          width: 800,
+          height: 533,
+          altText: "Facade",
+          credit: "Hotelbeds",
+        },
+      ],
+      storage,
+    );
     const html = renderToStaticMarkup(
       createElement(HotelPhotos, {
         name: "Harbor House",
         initials: "HH",
-        photos: [
-          { url: "https://photos.hotelbeds.com/giata/1.jpg", alt: "Hotelbeds cover" },
-          { url: "https://www.forbestravelguide.com/hotels/photo.jpg", alt: "Forbes cover" },
-        ],
+        photos: rendered,
       }),
     );
-    expect(html).toContain("HH");
-    expect(html).not.toContain("<img");
-    expect(html).not.toContain("hotelbeds");
-    expect(html).not.toContain("forbes");
+    expect(html).toContain("<img");
+    expect(html).toContain("photos.hotelbeds.com");
+    expect(html).toContain("Hotelbeds");
+    expect(html).toContain('loading="lazy"');
+    expect(html).not.toContain("forbestravelguide");
   });
 });
 
@@ -676,12 +714,13 @@ describe("screen source", () => {
     expect(discover).toContain("loadPageMetricSignals");
     expect(discover).toContain("discoverFigures");
     expect(discover).toContain("result.pins");
-    expect(discover).not.toMatch(/hotelbeds|forbestravelguide|unsplash|<img/i);
+    expect(discover).toContain("fetchHotelCovers");
+    expect(discover).not.toMatch(/forbestravelguide|unsplash|<img/i);
     expect(hotel).not.toContain("HotelSectionNav");
     expect(hotel).toContain("NextStepPanel");
     expect(hotel).toContain("ContactFeature");
     expect(hotel).toContain("OpportunityHistory");
-    expect(hotel).toContain("eligibleHotelPhotos");
+    expect(hotel).toContain("fetchHotelMedia");
     expect(hotel).toContain("nextStepPitchHref(hotel.id, origin, openRow)");
     expect(hotel).toContain("selectHotelOpportunity");
     expect(hotel).toContain("findHotelOpportunity");

@@ -70,7 +70,9 @@
     "eval:b07:report": "tsx scripts/b07-benchmark/cli.ts report",
     "autopilot:validate": "tsx scripts/validate-autopilot-state.ts",
     "test:e2e": "playwright test",
-    "security:client-bundle": "tsx scripts/check-client-secrets.ts"
+    "security:client-bundle": "tsx scripts/check-client-secrets.ts",
+    "photos:forbes": "tsx scripts/photos/forbes-upload.ts",
+    "photos:hotelbeds": "tsx scripts/photos/hotelbeds-load.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

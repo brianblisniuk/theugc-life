@@ -54,3 +54,37 @@ stable
 as $$
   select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'role', '')::text;
 $$;
+
+-- Storage shim so 0105 can create the public hotel-media bucket.
+-- Hosted Supabase already has this schema. This file is never applied there.
+create schema if not exists storage;
+grant usage on schema storage to anon, authenticated, service_role;
+
+create table if not exists storage.buckets (
+  id text primary key,
+  name text not null unique,
+  public boolean not null default false,
+  file_size_limit bigint,
+  allowed_mime_types text[],
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text not null references storage.buckets (id),
+  name text not null,
+  owner uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  metadata jsonb,
+  unique (bucket_id, name)
+);
+
+alter table storage.buckets enable row level security;
+alter table storage.objects enable row level security;
+
+revoke all on table storage.buckets, storage.objects from public, anon, authenticated;
+grant select on table storage.buckets to anon, authenticated, service_role;
+grant select on table storage.objects to anon, authenticated;
+grant all privileges on table storage.buckets, storage.objects to service_role;

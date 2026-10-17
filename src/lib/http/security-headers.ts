@@ -26,6 +26,9 @@ export const MAPS_SCRIPT_ORIGINS = [
   "https://maps.gstatic.com",
 ] as const;
 
+/** Hotelbeds CDN. Forbes photographs are served from the Supabase storage origin. */
+export const HOTEL_PHOTO_IMG_ORIGIN = "https://photos.hotelbeds.com";
+
 export const REFERRER_POLICY = "no-referrer";
 
 function connectSources(supabaseOrigin: string | null): string[] {
@@ -55,12 +58,15 @@ export function contentSecurityPolicy(
 ): string {
   const connect = connectSources(supabaseOrigin(supabaseUrl)).join(" ");
   const maps = MAPS_SCRIPT_ORIGINS.join(" ");
+  const storage = supabaseOrigin(supabaseUrl);
+  const images = ["'self'", "data:", "blob:", maps, HOTEL_PHOTO_IMG_ORIGIN];
+  if (storage) images.push(storage);
   const nonceSource = CSP_NONCE.test(nonce) ? `'nonce-${nonce}' ` : "";
   return [
     "default-src 'self'",
     `script-src 'self' ${nonceSource}'strict-dynamic' ${maps}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: ${maps}`,
+    `img-src ${images.join(" ")}`,
     "font-src 'self' data:",
     `connect-src ${connect}`,
     `frame-src ${maps}`,

@@ -93,7 +93,7 @@
 - PR #108 is merged (`b0e0a732ec1b2069bbdde91c6ded51b1466da80e`, V2-S2 Trips and Outreach, no new migration).
 - PR #106 is merged (`0f7074625abcab32ef02d56cc94bf34a9c6ee0b1`, V2-S4 Inbox and Home, no new migration). Sending stays gated. A failed read is not zero.
 - PR #105 is merged (`9e02100cef8b1be127ba05689771630f9f0d8893`, V2-S3, migration `0098`). A pitch draft belongs to one opportunity.
-- V2-S1 is draft PR #107. Discover and Hotel Detail stay on the Midnight shell. Do not merge #107. Photography stays the D064 no-photo state.
+- V2-S1 is draft PR #107. Discover and Hotel Detail stay on the Midnight shell. Do not merge #107. D189 allows Forbes and Hotelbeds photographs. The no-photo state remains the fallback.
 - D178 is Accepted (owner Brian, 16 Oct 2026). The code in PR #92 matches it.
 - Open drafts #88 (`design/ux01-mockups`) and #90 (`cursor/ux01-phase1-mockups-12bd`) are UX01 mockups awaiting the owner. Do not merge them.
 - EXTERNAL ACTION APPROVAL REQUIRED — Add `gmail.send` (sensitive) to the Google Cloud OAuth consent screen. Set `GMAIL_SEND_ENV=production` only on the production site. Leave it unset on staging and previews. Do not do either from this repository.

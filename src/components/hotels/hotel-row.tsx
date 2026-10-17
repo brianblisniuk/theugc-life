@@ -12,6 +12,7 @@ import {
 import { hotelTypeLabel } from "@/lib/hotels/filters";
 import type { HotelSummary } from "@/lib/hotels/queries";
 import { initialsFromName } from "@/lib/screens/initials";
+import type { RenderedHotelPhoto } from "@/lib/screens/hotel-photos";
 import { ON_TRIP } from "@/lib/screens/copy";
 import { activityTag, type DiscoverFigures } from "@/lib/screens/discover-figures";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
@@ -34,6 +35,8 @@ export function HotelRow({
   href,
   figures = EMPTY_FIGURES,
   contactAvailable = null,
+  cover = null,
+  coverState = "none",
 }: {
   hotel: HotelSummary;
   signal: PublicCardSignal | null;
@@ -53,6 +56,10 @@ export function HotelRow({
    * null: the check did not run for this row.
    */
   contactAvailable?: boolean | "available" | "absent" | "unknown" | null;
+  /** Eligible cover. Null keeps the initials mark. */
+  cover?: RenderedHotelPhoto | null;
+  /** unavailable means the cover read failed. That is not "no photograph". */
+  coverState?: "none" | "unavailable";
 }) {
   const location = [hotel.destination?.name, hotel.countryCode].filter(Boolean).join(" · ");
   const type = hotelTypeLabel(hotel.hotelType);
@@ -70,10 +77,28 @@ export function HotelRow({
   return (
     <>
       <Link className="s1-identity" href={href}>
-        <span className="s1-hotelmark">
-          <span className="sr-only">No photograph. Initials </span>
-          {initials}
-        </span>
+        {cover ? (
+          <span className="s1-hotelmark is-photo">
+            {/* eslint-disable-next-line @next/next/no-img-element -- allowlisted cover; the mark box is fixed at 46px */}
+            <img
+              src={cover.url}
+              srcSet={cover.srcSet}
+              sizes="46px"
+              width={46}
+              height={46}
+              alt={cover.alt || hotel.name}
+              loading="lazy"
+              decoding="async"
+            />
+          </span>
+        ) : (
+          <span className="s1-hotelmark">
+            <span className="sr-only">
+              {coverState === "unavailable" ? "Photograph unavailable. Initials " : "No photograph. Initials "}
+            </span>
+            {initials}
+          </span>
+        )}
         <span>
           <span className="s1-name">{hotel.name}</span>
           {place ? <span className="s1-place">{place}</span> : null}

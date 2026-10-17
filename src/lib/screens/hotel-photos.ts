@@ -1,10 +1,22 @@
 /**
- * Hotel photography (D064).
+ * Hotel photography (D189, amending D064).
  *
- * There is no `hotel_media` table and no rights decision for Hotelbeds or
- * Forbes image URLs. Those URLs are not eligible covers. The no-photo state
- * is the product state, not a missing asset to replace with a stock image.
+ * Eligible covers come from `hotel_media`. Forbes is served from this
+ * project's Supabase storage. Hotelbeds is served from photos.hotelbeds.com.
+ * Any other host, including the Forbes CDN, is dropped. A hotel with no
+ * eligible row keeps the no-photo state.
  */
+
+export const HOTELBEDS_PHOTO_HOST = "photos.hotelbeds.com";
+export const HOTEL_MEDIA_BUCKET = "hotel-media";
+export const FORBES_CREDIT = "Forbes Travel Guide";
+export const HOTELBEDS_CREDIT = "Hotelbeds";
+export const PHOTO_RIGHTS_BASIS = "owner_decision_D189";
+
+export type PhotoSource = "forbes" | "hotelbeds";
+export type PhotoRole = "cover" | "gallery";
+export type MediaVariant = "thumb" | "gallery" | "large";
+
 export interface HotelPhotoInput {
   url: string;
   alt: string;
@@ -15,13 +27,103 @@ export interface EligibleHotelPhoto {
   alt: string;
 }
 
-/**
- * Hosts allowed to render as a hotel photograph.
- * Empty until a provenance-backed media record exists. Provider CDNs stay out.
- */
-export const ELIGIBLE_PHOTO_HOSTS: readonly string[] = [];
+/** A hotel_media row the screen is allowed to turn into a URL. */
+export interface HotelMediaRecord {
+  id: string;
+  source: PhotoSource;
+  storagePath: string | null;
+  remotePath: string | null;
+  role: PhotoRole;
+  position: number;
+  width: number | null;
+  height: number | null;
+  altText: string | null;
+  credit: string;
+}
 
-export function presentHotelPhotos(photos: readonly HotelPhotoInput[]): EligibleHotelPhoto[] {
+export interface RenderedHotelPhoto {
+  id: string;
+  url: string;
+  srcSet: string;
+  largeUrl: string;
+  alt: string;
+  credit: string;
+  creditLine: string;
+  width: number;
+  height: number;
+}
+
+const UNSAFE_PATH = /(\.\.|\\|^\s|\s$|\/\/|[\u0000-\u001f])/;
+
+function supabaseHost(supabaseUrl: string | null | undefined): string | null {
+  if (!supabaseUrl) return null;
+  try {
+    const url = new URL(supabaseUrl);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.host;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hosts allowed to render. The storage host is the host of
+ * NEXT_PUBLIC_SUPABASE_URL. photos.hotelbeds.com is the other one.
+ */
+export function eligiblePhotoHosts(supabaseUrl?: string | null): readonly string[] {
+  const configured = supabaseUrl === undefined ? process.env.NEXT_PUBLIC_SUPABASE_URL : supabaseUrl;
+  const storage = supabaseHost(configured);
+  const hosts = [HOTELBEDS_PHOTO_HOST];
+  if (storage) hosts.unshift(storage);
+  return hosts;
+}
+
+export function photoCreditLine(credit: string): string {
+  if (credit === FORBES_CREDIT) return "Photo: Forbes Travel Guide";
+  if (credit === HOTELBEDS_CREDIT) return "Hotelbeds";
+  const trimmed = credit.trim();
+  if (!trimmed) return "";
+  return trimmed.toLowerCase().startsWith("photo:") ? trimmed : `Photo: ${trimmed}`;
+}
+
+function safeRelativePath(path: string | null | undefined): string | null {
+  if (!path) return null;
+  const trimmed = path.trim().replace(/^\/+/, "");
+  if (!trimmed || UNSAFE_PATH.test(trimmed) || trimmed.includes("://")) return null;
+  return trimmed;
+}
+
+export function mediaUrl(
+  row: Pick<HotelMediaRecord, "source" | "storagePath" | "remotePath">,
+  variant: MediaVariant,
+  supabaseUrl?: string | null,
+): string | null {
+  if (row.source === "forbes") {
+    const basePath = safeRelativePath(row.storagePath);
+    const configured = supabaseUrl === undefined ? process.env.NEXT_PUBLIC_SUPABASE_URL : supabaseUrl;
+    if (!basePath || !configured) return null;
+    let origin: string;
+    try {
+      const url = new URL(configured);
+      if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+      origin = url.origin;
+    } catch {
+      return null;
+    }
+    const file = variant === "thumb" ? "w480.webp" : "w1280.webp";
+    return `${origin}/storage/v1/object/public/${HOTEL_MEDIA_BUCKET}/${basePath}/${file}`;
+  }
+  const remote = safeRelativePath(row.remotePath);
+  if (!remote) return null;
+  const prefix = variant === "thumb" ? "" : variant === "large" ? "xl/" : "bigger/";
+  return `https://${HOTELBEDS_PHOTO_HOST}/giata/${prefix}${remote}`;
+}
+
+export function presentHotelPhotos(
+  photos: readonly HotelPhotoInput[],
+  supabaseUrl?: string | null,
+): EligibleHotelPhoto[] {
+  const hosts = eligiblePhotoHosts(supabaseUrl);
   const eligible: EligibleHotelPhoto[] = [];
   for (const photo of photos) {
     const alt = photo.alt.trim();
@@ -33,13 +135,100 @@ export function presentHotelPhotos(photos: readonly HotelPhotoInput[]): Eligible
       continue;
     }
     if (parsed.protocol !== "https:") continue;
-    if (!ELIGIBLE_PHOTO_HOSTS.includes(parsed.host)) continue;
+    if (!hosts.includes(parsed.host)) continue;
     eligible.push({ url: parsed.toString(), alt });
   }
   return eligible;
 }
 
-/** The page asks for eligible covers. Today that list is empty. */
-export function eligibleHotelPhotos(): readonly EligibleHotelPhoto[] {
-  return presentHotelPhotos([]);
+function srcSetFor(
+  row: Pick<HotelMediaRecord, "source" | "storagePath" | "remotePath">,
+  supabaseUrl: string | null | undefined,
+): { src: string; srcSet: string; largeUrl: string } | null {
+  const thumb = mediaUrl(row, "thumb", supabaseUrl);
+  const gallery = mediaUrl(row, "gallery", supabaseUrl);
+  const large = mediaUrl(row, "large", supabaseUrl);
+  if (!thumb || !gallery || !large) return null;
+  if (row.source === "forbes") {
+    return { src: gallery, srcSet: `${thumb} 480w, ${gallery} 1280w`, largeUrl: large };
+  }
+  return { src: gallery, srcSet: `${thumb} 320w, ${gallery} 800w`, largeUrl: large };
+}
+
+/** Forbes before Hotelbeds, then the cover, then position. */
+export function compareHotelMedia(a: HotelMediaRecord, b: HotelMediaRecord): number {
+  if (a.source !== b.source) return a.source === "forbes" ? -1 : 1;
+  if (a.role !== b.role) return a.role === "cover" ? -1 : 1;
+  if (a.position !== b.position) return a.position - b.position;
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
+/**
+ * Rows the screen may paint. Unknown hosts and insecure URLs are omitted.
+ * Pass no rows for the empty catalog state.
+ */
+/** No rows is the empty catalog state. Pass media rows to render eligible covers. */
+export function eligibleHotelPhotos(
+  rows: readonly HotelMediaRecord[] = [],
+  supabaseUrl?: string | null,
+): RenderedHotelPhoto[] {
+  return renderedHotelPhotos(rows, supabaseUrl);
+}
+
+export function renderedHotelPhotos(
+  rows: readonly HotelMediaRecord[],
+  supabaseUrl?: string | null,
+): RenderedHotelPhoto[] {
+  const ordered = [...rows].sort(compareHotelMedia);
+  const rendered: RenderedHotelPhoto[] = [];
+  for (const row of ordered) {
+    const built = srcSetFor(row, supabaseUrl);
+    if (!built) continue;
+    const alt = (row.altText ?? "").trim() || "Hotel photograph";
+    const presented = presentHotelPhotos([{ url: built.src, alt }], supabaseUrl);
+    const large = presentHotelPhotos([{ url: built.largeUrl, alt }], supabaseUrl);
+    if (presented.length === 0 || large.length === 0) continue;
+    const width = row.width && row.width > 0 ? row.width : row.source === "forbes" ? 1280 : 800;
+    const height = row.height && row.height > 0 ? row.height : row.source === "forbes" ? 720 : 533;
+    rendered.push({
+      id: row.id,
+      url: presented[0]!.url,
+      srcSet: built.srcSet,
+      largeUrl: large[0]!.url,
+      alt,
+      credit: row.credit,
+      creditLine: photoCreditLine(row.credit),
+      width,
+      height,
+    });
+  }
+  return rendered;
+}
+
+export function coverFromMedia(
+  row: HotelMediaRecord | null | undefined,
+  supabaseUrl?: string | null,
+): RenderedHotelPhoto | null {
+  if (!row) return null;
+  return renderedHotelPhotos([row], supabaseUrl)[0] ?? null;
+}
+
+/** Visible credit lines, Forbes first, each source once. */
+export function creditLines(photos: readonly Pick<RenderedHotelPhoto, "credit" | "creditLine">[]): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  const ordered = [...photos].sort((a, b) => {
+    if (a.credit === b.credit) return 0;
+    if (a.credit === FORBES_CREDIT) return -1;
+    if (b.credit === FORBES_CREDIT) return 1;
+    return a.credit < b.credit ? -1 : 1;
+  });
+  for (const photo of ordered) {
+    if (!photo.creditLine || seen.has(photo.creditLine)) continue;
+    seen.add(photo.creditLine);
+    lines.push(photo.creditLine);
+  }
+  return lines;
 }
