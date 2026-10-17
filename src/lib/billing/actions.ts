@@ -49,6 +49,9 @@ export async function startRebillCheckoutAction(formData: FormData): Promise<voi
     checkout_id?: string;
     amount_usd?: number;
   } | null;
+  if (row?.result === "deletion_pending") {
+    redirect("/app/billing?checkout=deletion_pending");
+  }
   if (created.error || !row || row.result !== "created" || !row.checkout_id || !row.amount_usd) {
     redirect("/app/billing?checkout=provider_error");
   }

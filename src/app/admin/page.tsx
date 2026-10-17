@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AdminAiControls } from "@/components/admin/ai-admin";
 import { AdminGrantForm, AdminReportQueue } from "@/components/admin/credit-admin";
 import { listAdminAbuseFlags, listAdminPoolAlerts } from "@/lib/ai/admin-queries";
+import { listAdminRefundQueue } from "@/lib/billing/refund-queue";
 import { requireRole } from "@/lib/auth/guards";
 import { listPendingContactReports } from "@/lib/credits/queries";
 import { factTypeLabel, responseTimeBandLabel } from "@/lib/network-intelligence/display";
@@ -23,6 +24,7 @@ export default async function AdminHomePage({
   const reports = isAdmin ? await listPendingContactReports() : { status: "hidden" as const };
   const abuseFlags = isAdmin ? await listAdminAbuseFlags() : [];
   const poolAlerts = isAdmin ? await listAdminPoolAlerts() : [];
+  const refunds = isAdmin ? await listAdminRefundQueue() : { status: "hidden" as const };
   const grantKey = crypto.randomUUID();
   const provenance =
     isAdmin && factId ? await getAdminProvenance(factId) : { status: "hidden" as const };
@@ -160,6 +162,32 @@ export default async function AdminHomePage({
       ) : null}
 
       {isAdmin ? <AdminAiControls flags={abuseFlags} alerts={poolAlerts} /> : null}
+
+      {isAdmin ? (
+        <section className="space-y-3" data-testid="admin-refund-queue">
+          <h2 className="text-lg font-semibold text-text">Refund required</h2>
+          <p className="max-w-prose text-sm text-muted">
+            These payments arrived after account deletion. Each row is an alert. This product does
+            not refund them. An owner approves a refund outside this page.
+          </p>
+          {refunds.status === "error" ? (
+            <p className="text-sm text-muted">
+              The refund queue could not be loaded. That is not an empty queue.
+            </p>
+          ) : refunds.status === "ok" && refunds.rows.length > 0 ? (
+            <ul className="space-y-1 text-sm text-text">
+              {refunds.rows.map((row) => (
+                <li key={row.paymentId}>
+                  Refund required. {row.amount} {row.currency}. Payment {row.paymentId}.
+                  {row.subscriptionId ? ` Subscription ${row.subscriptionId}.` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : refunds.status === "ok" ? (
+            <p className="text-sm text-muted">No refund is waiting.</p>
+          ) : null}
+        </section>
+      ) : null}
 
       {isAdmin ? (
         <section className="space-y-3">

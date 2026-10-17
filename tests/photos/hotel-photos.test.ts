@@ -388,9 +388,276 @@ describe("import plan", () => {
     });
     expect(result.matchedHotels).toBe(1);
     expect(result.photos).toBe(2);
+    expect(result.skippedHidden).toBe(0);
     expect(seen.every((call) => call.auth === `Bearer ${secret}`)).toBe(true);
     expect(seen.every((call) => !call.url.includes(secret))).toBe(true);
     const insert = seen.find((call) => call.url.includes("/hotel_media"));
     expect(insert).toBeDefined();
+  });
+
+  it("does not upsert a hidden Forbes object", async () => {
+    const hotelId = "40000000-0000-4000-8000-000000000001";
+    const match = [
+      "class,hotel_id,forbes_property_id,forbes_slug,forbes_name,staging_name,dist_km,name_sim",
+      `auto,${hotelId},property/a,city/hotel,A,Staging,0.2,0.99`,
+    ].join("\n");
+    const gallery = `${JSON.stringify({
+      slug: "city/hotel",
+      gallery_images: [{ local_xl: "city/hotel/facade.jpg" }, { local_xl: "city/hotel/pool.jpg" }],
+    })}\n`;
+    const files = new Map<string, string>([
+      ["/match.csv", match],
+      ["/gallery.jsonl", gallery],
+    ]);
+    const storageCalls: string[] = [];
+    const upserts: unknown[] = [];
+    const encode = vi.fn(async () => ({
+      w1280: Buffer.from("wide"),
+      w480: Buffer.from("thumb"),
+      width: 1280,
+      height: 720,
+    }));
+    const result = await runForbesUpload({
+      matchCsv: "/match.csv",
+      galleryJsonl: "/gallery.jsonl",
+      imagesRoot: "/images",
+      ledgerPath: `/tmp/theugc-forbes-hidden-${process.pid}.jsonl`,
+      dryRun: false,
+      env: { SUPABASE_URL: "https://staging.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "secret" },
+      encode,
+      readFileImpl: async (file) => Buffer.from(files.get(file) ?? "bytes"),
+      log: () => undefined,
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        const target = String(url);
+        const headers = new Headers(init?.headers);
+        if (target.includes("/storage/v1/object/")) {
+          storageCalls.push(`${headers.get("x-upsert") ?? ""} ${target}`);
+        }
+        if (target.includes("status=eq.hidden")) {
+          return new Response(
+            JSON.stringify([
+              {
+                hotel_id: hotelId,
+                source_media_key: "city/hotel/facade",
+                storage_path: "forbes/city/hotel/00-facade",
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (init?.method === "POST" && target.includes("/hotel_media")) {
+          upserts.push(JSON.parse(String(init.body)));
+        }
+        return new Response("[]", { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(result.skippedHidden).toBe(1);
+    expect(result.uploaded).toBe(1);
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(storageCalls).toEqual([
+      "true https://staging.supabase.co/storage/v1/object/hotel-media/forbes/city/hotel/01-pool/w1280.webp",
+      "true https://staging.supabase.co/storage/v1/object/hotel-media/forbes/city/hotel/01-pool/w480.webp",
+    ]);
+    expect(storageCalls.some((call) => call.includes("00-facade"))).toBe(false);
+    const posted = JSON.stringify(upserts);
+    expect(posted).not.toContain("00-facade");
+    expect(posted).toContain("01-pool");
+  });
+
+  it("pages past 1000 hidden rows and does not publish a hidden Forbes path", async () => {
+    const hotelId = "40000000-0000-4000-8000-000000000001";
+    const hiddenPath = "forbes/city/hotel/00-facade";
+    const match = [
+      "class,hotel_id,forbes_property_id,forbes_slug,forbes_name,staging_name,dist_km,name_sim",
+      `auto,${hotelId},property/a,city/hotel,A,Staging,0.2,0.99`,
+    ].join("\n");
+    const gallery = `${JSON.stringify({
+      slug: "city/hotel",
+      gallery_images: [{ local_xl: "city/hotel/facade.jpg" }, { local_xl: "city/hotel/pool.jpg" }],
+    })}\n`;
+    const files = new Map<string, string>([
+      ["/match.csv", match],
+      ["/gallery.jsonl", gallery],
+    ]);
+    const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+      hotel_id: hotelId,
+      source_media_key: `city/hotel/extra-${index}`,
+      storage_path: `forbes/city/hotel/x${String(index).padStart(4, "0")}`,
+    }));
+    const ranges: string[] = [];
+    const storageCalls: string[] = [];
+    const result = await runForbesUpload({
+      matchCsv: "/match.csv",
+      galleryJsonl: "/gallery.jsonl",
+      imagesRoot: "/images",
+      ledgerPath: `/tmp/theugc-forbes-page-${process.pid}.jsonl`,
+      dryRun: false,
+      env: { SUPABASE_URL: "https://staging.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "secret" },
+      encode: async () => ({
+        w1280: Buffer.from("wide"),
+        w480: Buffer.from("thumb"),
+        width: 1280,
+        height: 720,
+      }),
+      readFileImpl: async (file) => Buffer.from(files.get(file) ?? "bytes"),
+      log: () => undefined,
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        const target = String(url);
+        const headers = new Headers(init?.headers);
+        if (target.includes("/storage/v1/object/")) {
+          storageCalls.push(`${headers.get("x-upsert") ?? ""} ${target}`);
+          return new Response("[]", { status: 200 });
+        }
+        if (target.includes("status=eq.hidden") && target.includes("storage_path=")) {
+          return new Response("[]", { status: 200 });
+        }
+        if (target.includes("status=eq.hidden")) {
+          const range = headers.get("range") ?? "";
+          ranges.push(range);
+          if (range === "0-999") {
+            return new Response(JSON.stringify(firstPage), {
+              status: 200,
+              headers: { "content-range": "0-999/1001" },
+            });
+          }
+          if (range === "1000-1999") {
+            return new Response(
+              JSON.stringify([
+                {
+                  hotel_id: hotelId,
+                  source_media_key: "city/hotel/facade",
+                  storage_path: hiddenPath,
+                },
+              ]),
+              { status: 200, headers: { "content-range": "1000-1000/1001" } },
+            );
+          }
+          return new Response(JSON.stringify({ error: "unexpected page" }), { status: 200 });
+        }
+        return new Response("[]", { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(ranges).toEqual(["0-999", "1000-1999"]);
+    expect(result.skippedHidden).toBe(1);
+    expect(result.uploaded).toBe(1);
+    expect(storageCalls.some((call) => call.includes("00-facade"))).toBe(false);
+    expect(storageCalls).toEqual([
+      "true https://staging.supabase.co/storage/v1/object/hotel-media/forbes/city/hotel/01-pool/w1280.webp",
+      "true https://staging.supabase.co/storage/v1/object/hotel-media/forbes/city/hotel/01-pool/w480.webp",
+    ]);
+
+    const guardedCalls: string[] = [];
+    const blocked = await runForbesUpload({
+      matchCsv: "/match.csv",
+      galleryJsonl: "/gallery.jsonl",
+      imagesRoot: "/images",
+      ledgerPath: `/tmp/theugc-forbes-guard-${process.pid}.jsonl`,
+      dryRun: false,
+      env: { SUPABASE_URL: "https://staging.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "secret" },
+      encode: async () => ({
+        w1280: Buffer.from("wide"),
+        w480: Buffer.from("thumb"),
+        width: 1280,
+        height: 720,
+      }),
+      readFileImpl: async (file) => Buffer.from(files.get(file) ?? "bytes"),
+      log: () => undefined,
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        const target = String(url);
+        const headers = new Headers(init?.headers);
+        if (target.includes("/storage/v1/object/")) {
+          if (target.includes("00-facade")) {
+            throw new Error(`public upload of a hidden path: ${target}`);
+          }
+          guardedCalls.push(headers.get("x-upsert") ?? "");
+          return new Response("[]", { status: 200 });
+        }
+        if (target.includes("status=eq.hidden") && target.includes("storage_path=")) {
+          const asked = decodeURIComponent(target);
+          if (asked.includes(hiddenPath)) {
+            return new Response(
+              JSON.stringify([
+                {
+                  hotel_id: hotelId,
+                  source_media_key: "city/hotel/facade",
+                  storage_path: hiddenPath,
+                },
+              ]),
+              { status: 200 },
+            );
+          }
+          return new Response("[]", { status: 200 });
+        }
+        if (target.includes("status=eq.hidden")) {
+          return new Response("[]", { status: 200 });
+        }
+        return new Response("[]", { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(blocked.skippedHidden).toBe(1);
+    expect(blocked.uploaded).toBe(1);
+    expect(guardedCalls).toEqual(["true", "true"]);
+  });
+
+  it("omits a hidden Hotelbeds row and refuses to upsert when the hidden read is not a list", async () => {
+    const hotelId = "40000000-0000-4000-8000-000000000009";
+    const body = JSON.stringify({
+      "184": [
+        { imageTypeCode: "GEN", path: "00/184/a.jpg", order: 1, visualOrder: 1 },
+        { imageTypeCode: "HAB", path: "00/184/b.jpg", order: 2, visualOrder: 2 },
+      ],
+    });
+    const posted: unknown[] = [];
+    const result = await runHotelbedsLoad({
+      imagesJson: "/hb.json",
+      dryRun: false,
+      env: { SUPABASE_URL: "https://staging.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "secret" },
+      readFileImpl: async () => Buffer.from(body),
+      log: () => undefined,
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        const target = String(url);
+        if (target.includes("/hotels?")) {
+          return new Response(JSON.stringify([{ id: hotelId, hotelbeds_code: "184" }]), { status: 200 });
+        }
+        if (target.includes("status=eq.hidden")) {
+          return new Response(
+            JSON.stringify([
+              { hotel_id: hotelId, source_media_key: "00/184/a.jpg", storage_path: null },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (init?.method === "POST" && target.includes("/hotel_media")) {
+          posted.push(JSON.parse(String(init.body)));
+        }
+        expect(new Headers(init?.headers).get("x-upsert")).toBeNull();
+        return new Response("[]", { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(result.skippedHidden).toBe(1);
+    expect(result.photos).toBe(1);
+    expect(JSON.stringify(posted)).not.toContain("00/184/a.jpg");
+    expect(JSON.stringify(posted)).toContain("00/184/b.jpg");
+
+    await expect(
+      runHotelbedsLoad({
+        imagesJson: "/hb.json",
+        dryRun: false,
+        env: { SUPABASE_URL: "https://staging.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "secret" },
+        readFileImpl: async () => Buffer.from(body),
+        log: () => undefined,
+        fetchImpl: (async (url: string, init?: RequestInit) => {
+          const target = String(url);
+          if (target.includes("/hotels?")) {
+            return new Response(JSON.stringify([{ id: hotelId, hotelbeds_code: "184" }]), { status: 200 });
+          }
+          if (target.includes("status=eq.hidden")) {
+            return new Response(JSON.stringify({ error: "no" }), { status: 200 });
+          }
+          if (init?.method === "POST") throw new Error(`upsert after a bad hidden read: ${target}`);
+          return new Response("[]", { status: 200 });
+        }) as typeof fetch,
+      }),
+    ).rejects.toThrow("hidden hotel_media response was not a list");
   });
 });

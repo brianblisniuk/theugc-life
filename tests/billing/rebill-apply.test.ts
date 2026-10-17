@@ -48,6 +48,8 @@ const MID = "d141ab00-0000-4000-8000-000000000008";
 const LEGACY = "d141ac00-0000-4000-8000-000000000009";
 const STAY = "d141ad00-0000-4000-8000-00000000000a";
 const PASTDUE = "d188b000-0000-4000-8000-000000000002";
+const CLOSED = "d106a000-0000-4000-8000-000000000001";
+const REFUND_ADMIN = "d106b000-0000-4000-8000-000000000002";
 
 async function makeUser(id: string) {
   await adminQuery("insert into auth.users (id, email) values ($1, $2)", [id, `${id}@rebill.test`]);
@@ -174,6 +176,8 @@ d("rebill apply", () => {
       LEGACY,
       STAY,
       PASTDUE,
+      CLOSED,
+      REFUND_ADMIN,
     ]) {
       await makeUser(id);
     }
@@ -1533,5 +1537,215 @@ d("rebill apply", () => {
       "select status from public.subscriptions where provider_subscription_id = 'sub_pastdue'",
     );
     expect(sub[0]?.status).toBe("past_due");
+  });
+
+  it("queues a renewal after the deletion clock and refuses a new pack checkout", async () => {
+    const first = await checkout(CLOSED, "pro_monthly", "pl_closed1");
+    expect(
+      await apply(
+        payment({
+          logId: "log_closed_1",
+          paymentId: "pay_closed1",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_closed1",
+          subscriptionId: "sub_closed",
+        }),
+      ),
+    ).toBe("applied");
+    const grants = await planGrants(CLOSED);
+    const active = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_closed'",
+    );
+    expect(active[0]?.status).toBe("active");
+
+    const scheduled = await commitAs<{
+      result: string;
+      subscription_ids: string[];
+    }>(
+      { role: "authenticated", sub: CLOSED },
+      `select r->>'result' as result, r->'subscription_ids' as subscription_ids
+         from (select public.request_own_account_deletion('DELETE') as r) s`,
+    );
+    expect(scheduled.error).toBeNull();
+    expect(scheduled.rows[0]?.result).toBe("scheduled");
+    expect(scheduled.rows[0]?.subscription_ids).toEqual(["sub_closed"]);
+    const canceled = await adminQuery<{ status: string }>(
+      "select status from public.subscriptions where provider_subscription_id = 'sub_closed'",
+    );
+    expect(canceled[0]?.status).toBe("canceled");
+
+    expect(
+      await apply(
+        payment({
+          logId: "log_closed1_again",
+          paymentId: "pay_closed1",
+          status: "approved",
+          amount: first.amount,
+          checkoutId: first.id,
+          linkId: "pl_closed1",
+          subscriptionId: "sub_closed",
+        }),
+      ),
+    ).toBe("already_applied");
+    const queuedOriginal = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from private.rebill_refund_queue where payment_id = 'pay_closed1'",
+    );
+    expect(queuedOriginal[0]?.n).toBe(0);
+
+    expect(
+      await apply(
+        payment({
+          logId: "log_closed_renew",
+          paymentId: "pay_closedrenew",
+          status: "approved",
+          amount: first.amount,
+          subscriptionId: "sub_closed",
+        }),
+      ),
+    ).toBe("deletion_pending");
+    expect(
+      await apply(
+        payment({
+          logId: "log_closed_renew",
+          paymentId: "pay_closedrenew",
+          status: "approved",
+          amount: first.amount,
+          subscriptionId: "sub_closed",
+        }),
+      ),
+    ).toBe("duplicate");
+
+    const purchase = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from public.purchases where provider_transaction_id = 'pay_closedrenew'",
+    );
+    expect(purchase[0]?.n).toBe(0);
+    const effect = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from public.rebill_payment_effects where payment_id = 'pay_closedrenew'",
+    );
+    expect(effect[0]?.n).toBe(0);
+    expect(await planGrants(CLOSED)).toBe(grants);
+    const queued = await adminQuery<{
+      payment_id: string;
+      subscription_id: string;
+      amount: string;
+      currency: string;
+      status: string;
+      n: number;
+    }>(
+      `select payment_id, subscription_id, amount::text as amount, currency, status,
+              (select count(*)::int from private.rebill_refund_queue where payment_id = 'pay_closedrenew') as n
+         from private.rebill_refund_queue
+        where payment_id = 'pay_closedrenew'`,
+    );
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      payment_id: "pay_closedrenew",
+      subscription_id: "sub_closed",
+      currency: "USD",
+      status: "refund_required",
+      n: 1,
+    });
+    expect(Number(queued[0]?.amount)).toBe(first.amount);
+    const columns = await adminQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'private' and table_name = 'rebill_refund_queue'`,
+    );
+    expect(columns.map((row) => row.column_name)).not.toContain("user_id");
+    const leaked = await adminQuery<{ blob: string }>(
+      `select row_to_json(q)::text as blob from private.rebill_refund_queue q
+        where payment_id = 'pay_closedrenew'`,
+    );
+    expect(leaked[0]?.blob).not.toContain(CLOSED);
+
+    const pack = await commitAs<{ result: string }>(
+      { role: "authenticated", sub: CLOSED },
+      `select r->>'result' as result
+         from (select public.create_own_rebill_checkout('pack_50') as r) s`,
+    );
+    expect(pack.error).toBeNull();
+    expect(pack.rows[0]?.result).toBe("deletion_pending");
+    const packRows = await adminQuery<{ n: number }>(
+      `select count(*)::int as n from public.rebill_checkouts
+        where user_id = $1 and product_code = 'pack_50'`,
+      [CLOSED],
+    );
+    expect(packRows[0]?.n).toBe(0);
+    const other = await commitAs<{ result: string }>(
+      { role: "authenticated", sub: B },
+      `select r->>'result' as result
+         from (select public.create_own_rebill_checkout('pack_50') as r) s`,
+    );
+    expect(other.error).toBeNull();
+    expect(other.rows[0]?.result).toBe("created");
+
+    await adminQuery("update public.users set role = 'admin' where id = $1", [REFUND_ADMIN]);
+    const adminSeen = await queryAs<{ payment_id: string; status: string }>(
+      { role: "authenticated", sub: REFUND_ADMIN },
+      `select payment_id, status from public.read_admin_rebill_refund_queue(20)
+        where payment_id = 'pay_closedrenew'`,
+    );
+    expect(adminSeen.error).toBeNull();
+    expect(adminSeen.rows).toEqual([{ payment_id: "pay_closedrenew", status: "refund_required" }]);
+    const creatorSeen = await queryAs(
+      { role: "authenticated", sub: B },
+      "select payment_id from public.read_admin_rebill_refund_queue(20)",
+    );
+    expect(creatorSeen.error).toBeNull();
+    expect(creatorSeen.rows).toEqual([]);
+    const anonSeen = await queryAs(
+      { role: "anon" },
+      "select payment_id from public.read_admin_rebill_refund_queue(20)",
+    );
+    expect(anonSeen.error).not.toBeNull();
+
+    await adminQuery(
+      `update public.users
+          set deletion_requested_at = now() - interval '30 days',
+              delete_after = now() - interval '1 second'
+        where id = $1`,
+      [CLOSED],
+    );
+    await adminQuery("grant usage on schema public to service_role");
+    try {
+      const erased = await commitAs<{ result: string }>(
+        { role: "service_role" },
+        "select public.erase_creator_account($1::uuid)->>'result' as result",
+        [CLOSED],
+      );
+      expect(erased.error).toBeNull();
+      expect(erased.rows[0]?.result).toBe("erased");
+    } finally {
+      await adminQuery("revoke usage on schema public from service_role");
+    }
+
+    expect(
+      await apply(
+        payment({
+          logId: "log_closed_after_erase",
+          paymentId: "pay_closedafter",
+          status: "approved",
+          amount: first.amount,
+          subscriptionId: "sub_closed",
+        }),
+      ),
+    ).toBe("deletion_pending");
+    const after = await adminQuery<{ subscription_id: string; amount: string; status: string }>(
+      `select subscription_id, amount::text as amount, status
+         from private.rebill_refund_queue
+        where payment_id = 'pay_closedafter'`,
+    );
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({
+      subscription_id: "sub_closed",
+      status: "refund_required",
+    });
+    expect(Number(after[0]?.amount)).toBe(first.amount);
+    const gone = await adminQuery<{ n: number }>(
+      "select count(*)::int as n from public.users where id = $1",
+      [CLOSED],
+    );
+    expect(gone[0]?.n).toBe(0);
   });
 });

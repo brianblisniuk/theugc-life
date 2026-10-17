@@ -1621,6 +1621,16 @@
   },
   {
     "schema": "public",
+    "name": "unhide_hotel_media",
+    "args": "p_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "promote_hotel_covers",
     "args": "p_hotel_ids uuid[]",
     "searchPath": "\"\"",
@@ -2071,6 +2081,46 @@
   },
   {
     "schema": "public",
+    "name": "rebill_remember_closed_account",
+    "args": "p_user uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "rebill_close_local_subscriptions",
+    "args": "p_user uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "rebill_account_closed_for_payment",
+    "args": "p_user uuid, p_subscription text, p_checkout uuid, p_link text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "rebill_queue_refund_required",
+    "args": "p_payment text, p_subscription text, p_link text, p_amount numeric, p_currency text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": false,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "rebill_unused_credits",
     "args": "p_user_id uuid, p_key text, p_scope text",
     "searchPath": "\"\"",
@@ -2222,6 +2272,16 @@
   {
     "schema": "public",
     "name": "read_admin_ai_pool_alerts",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_rebill_refund_queue",
     "args": "p_limit integer",
     "searchPath": "\"\"",
     "anon": false,
