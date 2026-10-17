@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inbox — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <nav class="border-b border-border bg-white">
+    <div class="max-w-5xl mx-auto px-4 h-14 flex items-center gap-4">
+      <a href="pipeline.html" class="text-sm text-muted">← Pipeline</a>
+      <span class="font-semibold">Inbox</span>
+    </div>
+  </nav>
+  <div class="max-w-5xl mx-auto px-4 py-4">
+    <div class="border border-border rounded divide-y divide-border bg-white">
+      <a href="#" class="block p-4 hover:bg-sun/5">
+        <div class="flex justify-between">
+          <div class="font-medium">Four Seasons Bali</div>
+          <div class="text-xs text-muted">1h ago</div>
+        </div>
+        <div class="text-sm text-muted mt-1">Re: Collaboration proposal — we’d love to host you in May...</div>
+        <div class="text-xs mt-2 text-success">Replied</div>
+      </a>
+      <a href="#" class="block p-4 hover:bg-sun/5">
+        <div class="flex justify-between">
+          <div class="font-medium">The Mulia Resort</div>
+          <div class="text-xs text-muted">4d ago</div>
+        </div>
+        <div class="text-sm text-muted mt-1">No reply yet</div>
+      </a>
+    </div>
+    <p class="text-xs text-muted mt-4">Read-only links to your pipeline. Full messages stay in Gmail.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheUGC.life — UX01 Design System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sun: '#FFE01B',
+            ink: '#111111',
+            paper: '#FAFAF8',
+            muted: '#555555',
+            border: '#E6E6E6',
+            success: '#0B6B4B',
+            warning: '#B4400B',
+            danger: '#DC2626',
+          },
+          fontFamily: {
+            sans: ['Archivo', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
+          borderRadius: {
+            app: '6px',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Archivo', sans-serif; }
+    .dark-note { background: #111; color: #fff; }
+  </style>
+</head>
+<body class="bg-paper text-ink">
+  <div class="max-w-6xl mx-auto px-4 py-12">
+    <header class="mb-16">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-8 h-8 bg-sun rounded-app flex items-center justify-center font-bold text-ink text-sm">UGC</div>
+        <span class="font-semibold tracking-tight">theugc.life</span>
+      </div>
+      <h1 class="text-4xl md:text-5xl font-bold tracking-tight mb-4">UX01 — Design System</h1>
+      <p class="text-lg text-muted max-w-2xl">High-fidelity static prototypes for owner approval. Block UX01, phase 1. Mockups only — no app code changes. Visual Direction V1: A2 Sunlit Creator OS.</p>
+    </header>
+
+    <section class="mb-16">
+      <h2 class="text-2xl font-bold mb-6">Colors</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-sun rounded-app mb-2"></div>
+          <div class="font-medium">Sun #FFE01B</div>
+          <div class="text-sm text-muted">Accent / Action / Selection</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-ink rounded-app mb-2"></div>
+          <div class="font-medium">Ink #111111</div>
+          <div class="text-sm text-muted">Text / Focus</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-paper border border-border rounded-app mb-2"></div>
+          <div class="font-medium">Paper #FAFAF8</div>
+          <div class="text-sm text-muted">Background</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-muted rounded-app mb-2"></div>
+          <div class="font-medium">Muted #555555</div>
+          <div class="text-sm text-muted">Secondary text</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-success rounded-app mb-2"></div>
+          <div class="font-medium">Success</div>
+          <div class="text-sm text-muted">#0B6B4B</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-warning rounded-app mb-2"></div>
+          <div class="font-medium">Warning</div>
+          <div class="text-sm text-muted">#B4400B</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-danger rounded-app mb-2"></div>
+          <div class="font-medium">Danger</div>
+          <div class="text-sm text-muted">#DC2626</div>
+        </div>
+        <div class="border border-border rounded-app p-4">
+          <div class="h-16 bg-border rounded-app mb-2"></div>
+          <div class="font-medium">Border</div>
+          <div class="text-sm text-muted">#E6E6E6</div>
+        </div>
+      </div>
+      <div class="mt-6 p-4 dark-note rounded-app">
+        <strong>Dark mode note:</strong> Primary is light theme. Dark would invert paper/ink, keep Sun as accent (with adjusted contrast), and use semantic colors unchanged. Not implemented in these prototypes.
+      </div>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-2xl font-bold mb-6">Typography — Archivo</h2>
+      <div class="space-y-4">
+        <div class="text-5xl font-bold">Display / Hero</div>
+        <div class="text-3xl font-semibold">Page title</div>
+        <div class="text-xl font-medium">Section heading</div>
+        <div class="text-base">Body text — high legibility for dense product UI.</div>
+        <div class="text-sm text-muted">Muted / secondary — 14px</div>
+        <div class="text-xs text-muted">Caption / badge</div>
+      </div>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-2xl font-bold mb-6">Spacing & Radius</h2>
+      <p class="mb-4 text-muted">4/8/12/16/24/32 scale. Moderate radius (6px). Thin borders over heavy shadows. Containers only when grouping related content or as interactive units.</p>
+      <div class="flex gap-4 items-end">
+        <div class="bg-sun h-4 w-4 rounded-app"></div>
+        <div class="bg-sun h-8 w-8 rounded-app"></div>
+        <div class="bg-sun h-12 w-12 rounded-app"></div>
+        <div class="bg-sun h-16 w-16 rounded-app"></div>
+      </div>
+    </section>
+
+    <section class="mb-16">
+      <h2 class="text-2xl font-bold mb-6">Components</h2>
+      <div class="grid md:grid-cols-2 gap-8">
+        <div>
+          <h3 class="font-semibold mb-3">Buttons</h3>
+          <div class="flex flex-wrap gap-3">
+            <button class="bg-sun text-ink font-medium px-4 py-2 rounded-app">Primary</button>
+            <button class="bg-ink text-paper font-medium px-4 py-2 rounded-app">Secondary</button>
+            <button class="border border-border px-4 py-2 rounded-app">Ghost</button>
+          </div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-3">Badges</h3>
+          <div class="flex flex-wrap gap-2">
+            <span class="bg-sun text-ink text-xs font-medium px-2 py-0.5 rounded-app">Premium</span>
+            <span class="bg-success text-white text-xs font-medium px-2 py-0.5 rounded-app">Strong</span>
+            <span class="bg-border text-ink text-xs font-medium px-2 py-0.5 rounded-app">Emerging</span>
+            <span class="border border-border text-xs font-medium px-2 py-0.5 rounded-app">Locked</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-2xl font-bold mb-6">Screens</h2>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <a href="landing.html" class="border border-border rounded-app p-4 hover:border-ink transition">Landing / Marketing</a>
+        <a href="signup.html" class="border border-border rounded-app p-4 hover:border-ink transition">Signup</a>
+        <a href="onboarding.html" class="border border-border rounded-app p-4 hover:border-ink transition">Onboarding</a>
+        <a href="discover.html" class="border border-border rounded-app p-4 hover:border-ink transition">Discover</a>
+        <a href="hotel-detail.html" class="border border-border rounded-app p-4 hover:border-ink transition">Hotel Detail</a>
+        <a href="pitch.html" class="border border-border rounded-app p-4 hover:border-ink transition">Pitch Composer</a>
+        <a href="pipeline.html" class="border border-border rounded-app p-4 hover:border-ink transition">Pipeline / CRM</a>
+        <a href="inbox.html" class="border border-border rounded-app p-4 hover:border-ink transition">Inbox / Replies</a>
+        <a href="trips.html" class="border border-border rounded-app p-4 hover:border-ink transition">Trips</a>
+        <a href="portfolio.html" class="border border-border rounded-app p-4 hover:border-ink transition">Portfolio</a>
+        <a href="pricing.html" class="border border-border rounded-app p-4 hover:border-ink transition">Plans & Pricing</a>
+        <a href="billing.html" class="border border-border rounded-app p-4 hover:border-ink transition">Billing & Credits</a>
+        <a href="settings.html" class="border border-border rounded-app p-4 hover:border-ink transition">Account Settings</a>
+      </div>
+    </section>
+
+    <footer class="mt-16 pt-8 border-t border-border text-sm text-muted">
+      UX01 prototypes · TheUGC.life · For owner approval · Not production code
+    </footer>
+  </div>
+</body>
+</html>

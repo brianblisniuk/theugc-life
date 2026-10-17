@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio — TheUGC.life</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { theme: { extend: { colors: { sun: '#FFE01B', ink: '#111111', paper: '#FAFAF8', muted: '#555555', border: '#E6E6E6' }, fontFamily: { sans: ['Archivo', 'sans-serif'] } } } }</script>
+  <style>body { font-family: 'Archivo', sans-serif; }</style>
+</head>
+<body class="bg-paper text-ink">
+  <nav class="border-b border-border bg-white">
+    <div class="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+      <span class="font-semibold">Portfolio</span>
+      <button class="text-sm border border-border px-3 py-1.5 rounded">Edit public profile</button>
+    </div>
+  </nav>
+  <div class="max-w-5xl mx-auto px-4 py-6">
+    <div class="flex items-center gap-4 mb-6">
+      <div class="w-16 h-16 bg-sun rounded-full flex items-center justify-center font-bold text-xl">SR</div>
+      <div>
+        <div class="font-bold text-lg">Sofía Reyes</div>
+        <div class="text-sm text-muted">@sofiareyes · Travel & lifestyle</div>
+      </div>
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="border border-border rounded p-4 text-center">
+        <div class="text-2xl font-bold">12</div>
+        <div class="text-xs text-muted">Collaborations</div>
+      </div>
+      <div class="border border-border rounded p-4 text-center">
+        <div class="text-2xl font-bold">8</div>
+        <div class="text-xs text-muted">Countries</div>
+      </div>
+      <div class="border border-border rounded p-4 text-center">
+        <div class="text-2xl font-bold">48k</div>
+        <div class="text-xs text-muted">Instagram</div>
+      </div>
+    </div>
+    <div class="mt-6 text-sm text-muted">Public portfolio coming. Shareable milestones based on real work only.</div>
+  </div>
+</body>
+</html>
