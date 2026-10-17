@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { SignupForm } from "@/components/auth-forms";
+import { SignupScreen } from "@/components/signup-screen";
 
 export const metadata: Metadata = { title: "Create account" };
 
@@ -11,21 +10,5 @@ export default async function SignupPage({
   searchParams: Promise<{ redirect?: string }>;
 }) {
   const { redirect } = await searchParams;
-  return (
-    <div className="space-y-5">
-      <header className="v12-pagehead">
-        <div>
-          <h1>Create your account</h1>
-          <p>Start free in under a minute.</p>
-        </div>
-      </header>
-      <SignupForm redirectTo={redirect} />
-      <p className="text-sm text-muted">
-        Already have an account?{" "}
-        <Link href="/login" className="text-accent">
-          Sign in
-        </Link>
-      </p>
-    </div>
-  );
+  return <SignupScreen redirectTo={redirect} />;
 }

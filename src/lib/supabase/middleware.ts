@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getClientEnv } from "@/env";
+import { pkceLanding } from "@/lib/auth/pkce-landing";
 import { isProtectedPath } from "@/lib/auth/routes";
 import { contentSecurityPolicy, securityHeaders } from "@/lib/http/security-headers";
 import { normalizeRequestId, writeRequestLog } from "@/lib/log/request";
@@ -62,6 +63,27 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
             "X-Robots-Tag": "noindex, nofollow",
           },
         }),
+        requestId,
+        env.NEXT_PUBLIC_SUPABASE_URL,
+        https,
+        nonce,
+      );
+    }
+  }
+
+  // A confirmation code that missed /auth/callback is forwarded there.
+  // The callback exchanges it and redirects to a same-origin path with no code.
+  // API routes keep their own `code` (Gmail OAuth). POST is not redirected.
+  if (request.method === "GET" || request.method === "HEAD") {
+    const landing = pkceLanding({
+      pathname,
+      searchParams: request.nextUrl.searchParams,
+      siteOrigin: env.NEXT_PUBLIC_SITE_URL,
+      method: request.method,
+    });
+    if (landing.kind === "forward") {
+      return decorate(
+        NextResponse.redirect(new URL(landing.location, env.NEXT_PUBLIC_SITE_URL)),
         requestId,
         env.NEXT_PUBLIC_SUPABASE_URL,
         https,

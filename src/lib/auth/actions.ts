@@ -5,6 +5,13 @@ import { z } from "zod";
 
 import { getClientEnv } from "@/env";
 import { safeRedirect } from "@/lib/auth/safe-redirect";
+import {
+  CONFIRM_SENTENCE,
+  RESEND_COOLDOWN_MS,
+  RESEND_ERROR,
+  signupEmailRedirectTo,
+  signupResendRequest,
+} from "@/lib/auth/signup-confirm";
 import { bindServerActions } from "@/lib/entitlements/inventory";
 import { logger } from "@/lib/logger";
 import { POST_ONBOARDING_PATH } from "@/lib/onboarding/activation";
@@ -19,6 +26,11 @@ export interface AuthActionState {
   message?: string;
   /** Same-origin path. The client navigates; `redirect()` is not used here. */
   redirectTo?: string;
+  /**
+   * Set when signup created the account and confirmation is still required.
+   * The address is the one the action accepted. It is not a lookup result.
+   */
+  confirmEmail?: string;
 }
 
 const SIGNUP_ERROR = "Could not create the account.";
@@ -75,7 +87,7 @@ export async function signUp(_prev: AuthActionState, formData: FormData): Promis
     const { data, error } = await supabase.auth.signUp({
       ...parsed.data,
       options: {
-        emailRedirectTo: `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/onboarding`,
+        emailRedirectTo: signupEmailRedirectTo(env.NEXT_PUBLIC_SITE_URL),
       },
     });
 
@@ -95,13 +107,59 @@ export async function signUp(_prev: AuthActionState, formData: FormData): Promis
     if (data.session) {
       return { redirectTo: "/onboarding" };
     }
-    return { message: "Check your email to confirm your account." };
+    return { message: CONFIRM_SENTENCE, confirmEmail: parsed.data.email };
   } catch (error) {
     unstable_rethrow(error);
     logger.error("signup failed", {
       code: error instanceof Error ? error.name : "signup_failed",
     });
     return { error: SIGNUP_ERROR };
+  }
+}
+
+const signupResendUntil = new Map<string, number>();
+
+/**
+ * Resends the signup confirmation through the server Supabase client.
+ * The browser client is not used. A second request for the same address
+ * inside 60 seconds does not call the provider again.
+ */
+export async function resendSignupConfirmation(
+  email: string,
+): Promise<{ ok: true } | { error: string }> {
+  const request = signupResendRequest(email, getClientEnv().NEXT_PUBLIC_SITE_URL);
+  if (!request) return { error: RESEND_ERROR };
+  const key = request.email.toLowerCase();
+  const now = Date.now();
+  if ((signupResendUntil.get(key) ?? 0) > now) return { error: RESEND_ERROR };
+  signupResendUntil.set(key, now + RESEND_COOLDOWN_MS);
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: request.email,
+      options: { emailRedirectTo: request.options.emailRedirectTo },
+    });
+    if (signupResendUntil.size > 500) {
+      for (const [stored, until] of signupResendUntil) {
+        if (until <= now) signupResendUntil.delete(stored);
+      }
+    }
+    if (error) {
+      logger.warn("signup resend failed", {
+        code: String(error.code || error.status || "resend_failed"),
+      });
+      return { error: RESEND_ERROR };
+    }
+    return { ok: true };
+  } catch (error) {
+    unstable_rethrow(error);
+    signupResendUntil.set(key, Date.now() + RESEND_COOLDOWN_MS);
+    logger.error("signup resend failed", {
+      code: error instanceof Error ? error.name : "resend_failed",
+    });
+    return { error: RESEND_ERROR };
   }
 }
 

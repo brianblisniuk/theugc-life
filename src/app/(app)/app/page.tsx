@@ -79,12 +79,33 @@ export default async function AppHomePage() {
           <ol className="mt-4">
             {view.steps.map((step, index) => (
               <li key={step.id} className="flex items-center gap-3.5 border-b border-border py-3.5">
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-text text-[13px] font-bold">
-                  {step.done ? "✓" : index + 1}
-                </span>
+                {step.done ? (
+                  <span
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent text-accent-contrast"
+                    aria-hidden="true"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m5 12 5 5L20 7" />
+                    </svg>
+                  </span>
+                ) : (
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-text text-[13px] font-bold">
+                    {index + 1}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
-                  <b className={step.done ? "text-muted line-through" : ""}>
+                  <b>
                     {step.optional ? `(Optional) ${step.title}` : step.title}
+                    {step.done ? <span className="sr-only"> Done.</span> : null}
                   </b>
                   <small className="block text-[13px] text-muted">{step.detail}</small>
                 </div>

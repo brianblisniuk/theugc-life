@@ -1,21 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getClientEnv } from "@/env";
-import { safeSameOriginPath } from "@/lib/auth/safe-redirect";
+import { pkceLanding } from "@/lib/auth/pkce-landing";
 import { createClient } from "@/lib/supabase/server";
 
 /**
  * Auth callback: exchanges the one-time `code` (email confirmation / password
  * recovery) for a session cookie, then redirects to the `next` path. Only
- * same-origin relative `next` targets are honored (no open redirect).
+ * same-origin relative `next` targets are honored (no open redirect). The
+ * landing URL does not keep `code`.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
+  const url = new URL(request.url);
   const site = getClientEnv().NEXT_PUBLIC_SITE_URL;
-  const code = searchParams.get("code");
-  const next = safeSameOriginPath(searchParams.get("next") ?? "/app", site) ?? "/app";
+  const landing = pkceLanding({
+    pathname: url.pathname,
+    searchParams: url.searchParams,
+    siteOrigin: site,
+  });
+  const code = url.searchParams.get("code");
 
-  if (code) {
+  if (landing.kind === "exchange" && code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
@@ -30,7 +35,7 @@ export async function GET(request: NextRequest) {
           // A mailbox sync must not block session establishment.
         }
       }
-      return NextResponse.redirect(new URL(next, site));
+      return NextResponse.redirect(new URL(landing.next, site));
     }
   }
 
