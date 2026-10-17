@@ -13,6 +13,14 @@ import {
 import { HOME_NEXT_COPY } from "@/lib/home/next-actions";
 import type { InboxMailbox } from "@/lib/inbox/model";
 
+/** Small V12.2 action marks; presentational only, original 15px / 1.7 stroke. */
+function ActionArrow() {
+  return <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6" /></svg>;
+}
+function ActionColumns() {
+  return <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1" /><rect x="14" y="3" width="7" height="18" rx="1" /></svg>;
+}
+
 function CampaignProgress({ card, openTasks }: { card: OutreachCard; openTasks: number | null }) {
   const progress = outreachProgress(card);
   return (
@@ -111,7 +119,7 @@ export function HomeScreen({
         </div>
         <div className="v12-head-actions">
           <Link href="/app/pipeline" className="v12-btn">
-            View all opportunities
+            <ActionColumns /> View all opportunities
           </Link>
         </div>
       </header>
@@ -129,7 +137,7 @@ export function HomeScreen({
           <div className="v12-panel-head">
             <h2>Needs your attention</h2>
             <Link href="/app/pipeline" className="v12-btn v12-btn-ghost v12-btn-small">
-              Open your Pipeline
+              Open your Pipeline <ActionArrow />
             </Link>
           </div>
           {dashboard.tasks.length === 0 ? (
@@ -215,7 +223,7 @@ export function HomeScreen({
                 </div>
               )}
               <Link href="/app/trips" className="v12-btn v12-btn-primary v12-btn-block">
-                Open My Trips
+                <ActionArrow /> Open My Trips
               </Link>
             </>
           )}
@@ -267,7 +275,7 @@ export function HomeScreen({
                   href={`/app/outreach/${dashboard.outreach.cards[0].id}`}
                   className="v12-btn v12-btn-dark"
                 >
-                  Continue outreach
+                  Continue outreach <ActionArrow />
                 </Link>
               ) : null}
             </>
@@ -278,7 +286,7 @@ export function HomeScreen({
           <h2>{continueExplore.title}</h2>
           <p>{continueExplore.detail}</p>
           <Link href={continueExplore.href} className="v12-btn v12-btn-primary">
-            {continueExplore.title}
+            {continueExplore.title} <ActionArrow />
           </Link>
         </section>
       </div>
