@@ -56,11 +56,14 @@ export const FIRST_RUN_COPY = {
   blockedTitle: "We could not review your home",
   blockedBody:
     "Something failed while reading your account. Reload the page. This is not an empty destination and not an empty pipeline.",
-  destinationTitle: "You chose your destination",
+  destinationTitle: "Choose your destination",
+  destinationDoneTitle: "You chose your destination",
   destinationDetail: "We use it to show hotels from our catalog. You can change it.",
-  hotelTitle: "You saved your first hotel",
+  hotelTitle: "Save your first hotel",
+  hotelDoneTitle: "You saved your first hotel",
   hotelDetail: "The hotel stays on your pipeline, with the contact you are allowed to see.",
-  pitchTitle: "You prepared the first pitch",
+  pitchTitle: "Prepare your first pitch",
+  pitchDoneTitle: "You prepared the first pitch",
   pitchDetail: "Optional. A note on the hotel counts as a prepared pitch.",
   savedToast: "Saved. Your first hotel is on the pipeline.",
   databaseNote: "These hotels come from our catalog, not from your Gmail.",
@@ -114,22 +117,25 @@ export function resolveOwnProfile(
 
 const STEP_COPY: Record<
   FirstRunStepId,
-  { title: string; detail: string; href: string; optional: boolean }
+  { title: string; doneTitle: string; detail: string; href: string; optional: boolean }
 > = {
   destination: {
     title: FIRST_RUN_COPY.destinationTitle,
+    doneTitle: FIRST_RUN_COPY.destinationDoneTitle,
     detail: FIRST_RUN_COPY.destinationDetail,
     href: FIRST_RUN_HREFS.destination,
     optional: false,
   },
   hotel: {
     title: FIRST_RUN_COPY.hotelTitle,
+    doneTitle: FIRST_RUN_COPY.hotelDoneTitle,
     detail: FIRST_RUN_COPY.hotelDetail,
     href: FIRST_RUN_HREFS.hotels,
     optional: false,
   },
   pitch: {
     title: FIRST_RUN_COPY.pitchTitle,
+    doneTitle: FIRST_RUN_COPY.pitchDoneTitle,
     detail: FIRST_RUN_COPY.pitchDetail,
     href: FIRST_RUN_HREFS.pipeline,
     optional: true,
@@ -138,7 +144,14 @@ const STEP_COPY: Record<
 
 function step(id: FirstRunStepId, done: boolean): FirstRunStep {
   const meta = STEP_COPY[id];
-  return { id, ...meta, done };
+  return {
+    id,
+    title: done ? meta.doneTitle : meta.title,
+    detail: meta.detail,
+    href: meta.href,
+    optional: meta.optional,
+    done,
+  };
 }
 
 /** Remaining required steps. The optional pitch is not one of them. */

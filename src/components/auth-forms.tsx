@@ -88,9 +88,19 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   );
 }
 
-export function SignupForm({ redirectTo }: { redirectTo?: string }) {
+export function SignupForm({
+  redirectTo,
+  onConfirmed,
+}: {
+  redirectTo?: string;
+  onConfirmed?: (email: string) => void;
+}) {
   const [state, action, pending] = useActionState(signUp, initial);
   useAuthRedirect(state.redirectTo);
+  useEffect(() => {
+    if (state.confirmEmail) onConfirmed?.(state.confirmEmail);
+  }, [onConfirmed, state.confirmEmail]);
+  if (state.confirmEmail) return null;
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="redirect" value={redirectTo ?? "/onboarding"} />

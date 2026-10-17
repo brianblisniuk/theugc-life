@@ -721,6 +721,7 @@ export const INVENTORY: readonly InventoryEntry[] = [
     serverActions: [
       "chooseOnboardingDestination",
       "dismissOnboardingChecklist",
+      "rememberOnboardingDestination",
       "saveOnboardingHotelAction",
     ],
     rpcs: [],
@@ -783,7 +784,14 @@ export const INVENTORY: readonly InventoryEntry[] = [
       "src/app/auth/callback/route.ts",
       "src/lib/auth/actions.ts",
     ],
-    serverActions: ["signIn", "signUp", "signOut", "requestPasswordReset", "updatePassword"],
+    serverActions: [
+      "signIn",
+      "signUp",
+      "signOut",
+      "requestPasswordReset",
+      "updatePassword",
+      "resendSignupConfirmation",
+    ],
     rpcs: [],
     rule: { kind: "all_tiers" },
     anon: "allow",

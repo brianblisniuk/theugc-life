@@ -114,6 +114,42 @@ describe("home checklist", () => {
     expect(packed).not.toContain(FIRST_RUN_COPY.savedToast);
   });
 
+  it("uses an imperative label until the step is done, then the past tense", () => {
+    const open = homeView(OPEN);
+    expect(open.kind).toBe("checklist");
+    if (open.kind !== "checklist") return;
+    expect(open.steps.map((step) => step.title)).toEqual([
+      "Choose your destination",
+      "Save your first hotel",
+      "Prepare your first pitch",
+    ]);
+    expect(open.steps.every((step) => step.done)).toBe(false);
+    expect(open.remaining).toBe(2);
+    expect(greeting("Sofi", open.remaining)).toBe("Hello, Sofi. 2 steps left.");
+
+    const destinationDone = homeView({ ...OPEN, destination: "yes" });
+    expect(destinationDone.kind).toBe("checklist");
+    if (destinationDone.kind !== "checklist") return;
+    expect(destinationDone.steps.find((step) => step.id === "destination")).toMatchObject({
+      done: true,
+      title: "You chose your destination",
+    });
+    expect(destinationDone.steps.find((step) => step.id === "hotel")).toMatchObject({
+      done: false,
+      title: "Save your first hotel",
+    });
+    expect(destinationDone.remaining).toBe(1);
+    expect(greeting("Sofi", destinationDone.remaining)).toBe("Hello, Sofi. 1 step left.");
+
+    const pitchOnly = homeView({ ...OPEN, pitch: "yes" });
+    expect(pitchOnly.kind).toBe("checklist");
+    if (pitchOnly.kind !== "checklist") return;
+    expect(pitchOnly.steps.find((step) => step.id === "pitch")?.title).toBe(
+      "You prepared the first pitch",
+    );
+    expect(pitchOnly.remaining).toBe(2);
+  });
+
   it("does not count the optional pitch toward the remaining steps", () => {
     expect(remainingRequired({ destination: "yes", saved: "no" })).toBe(1);
     expect(remainingRequired({ destination: "yes", saved: "yes" })).toBe(0);

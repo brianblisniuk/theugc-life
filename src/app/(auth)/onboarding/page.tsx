@@ -18,8 +18,7 @@ export default async function OnboardingPage() {
         <div>
           <h1>Welcome</h1>
           <p>
-            Add the name you will use in the product. Next you can connect Gmail, create a trip, and
-            save a hotel.
+            Add the name you will use in the product. Next, pick your goal and first destination.
           </p>
         </div>
       </header>
