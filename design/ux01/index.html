@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sistema de diseño · UX01 · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="shell-top">
+    <div class="shell-bar public-bar">
+      <a class="wordmark" href="index.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Prototipo">
+        <a href="landing.html">Producto</a>
+        <a href="discover.html">App</a>
+        <a href="pricing.html">Planes</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="btn btn-sun btn-small" href="landing.html">Ver la marca</a>
+      </div>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap stack-xl">
+      <header class="stack">
+        <p class="eyebrow">UX01 · fase 1 · solo mockups</p>
+        <h1 class="display">Sunlit Creator OS</h1>
+        <p class="lede">Papel, tinta y sol. Una publicación de viaje que también es el sistema para encontrar hoteles, desbloquear un contacto, escribir el pitch y seguir lo que responde.</p>
+        <p class="meta">Tema claro. Archivo. El amarillo es acción, nunca un aviso. Los datos de muestra no son una base real.</p>
+      </header>
+
+      <section class="stack" aria-labelledby="preview-title">
+        <div class="spread">
+          <h2 id="preview-title" class="h2">Vista previa</h2>
+          <div class="cluster">
+            <div class="cluster" role="group" aria-label="Versión">
+              <button class="btn btn-line btn-small is-on" type="button" data-version="v1" aria-pressed="true">v1</button>
+              <button class="btn btn-line btn-small" type="button" data-version="v2" aria-pressed="false">v2</button>
+              <button class="btn btn-line btn-small" type="button" data-version="v3" aria-pressed="false">v3</button>
+            </div>
+            <div class="cluster" role="group" aria-label="Ancho de la vista previa">
+              <button class="btn btn-line btn-small is-on" type="button" data-viewport="desktop" aria-pressed="true">Escritorio</button>
+              <button class="btn btn-line btn-small" type="button" data-viewport="mobile" aria-pressed="false">Celular</button>
+            </div>
+          </div>
+        </div>
+        <p class="meta" id="version-note">v1 · filas sobre papel. v2 deja el hotel, la respuesta y el contacto adelante. v3 es el escritorio oscuro, en inglés.</p>
+        <p class="meta" id="preview-caption">v1 · Escritorio · 1280 px. Barra a la izquierda, columnas, mapa junto a la lista y panel en la ficha.</p>
+        <div class="preview-stage" id="preview-stage" data-viewport="desktop">
+          <iframe id="screen-frame" title="Vista previa de Inicio" src="inicio.html"></iframe>
+        </div>
+      </section>
+
+      <section class="stack" aria-labelledby="screens">
+        <h2 id="screens" class="h2">Pantallas</h2>
+        <p class="meta">Un clic carga el marco. Abrir deja la pantalla en esta ventana. Control-clic abre otra pestaña.</p>
+        <nav class="screen-index" aria-label="Pantallas del prototipo">
+          <div class="screen-row"><a class="screen-preview" href="landing.html" data-screen="landing.html"><strong>Landing</strong><span class="meta">Promesa, cómo se usa, y el camino a los planes.</span></a><a class="screen-open" href="landing.html" data-screen="landing.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="signup.html" data-screen="signup.html"><strong>Registro</strong><span class="meta">Nombre, correo y contraseña. Después, el onboarding.</span></a><a class="screen-open" href="signup.html" data-screen="signup.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="onboarding.html" data-screen="onboarding.html"><strong>Onboarding</strong><span class="meta">Un destino y el primer hotel del catálogo. El mail no se muestra.</span></a><a class="screen-open" href="onboarding.html" data-screen="onboarding.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview is-selected" href="inicio.html" data-screen="inicio.html"><strong>Inicio</strong><span class="meta">Próximo viaje, acciones de hoy y hoteles recomendados.</span></a><a class="screen-open" href="inicio.html" data-screen="inicio.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="discover.html" data-screen="discover.html"><strong>Descubrir</strong><span class="meta">Lista y mapa, filtros y señales de inteligencia.</span></a><a class="screen-open" href="discover.html" data-screen="discover.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="hotel.html" data-screen="hotel.html"><strong>Hotel</strong><span class="meta">Inteligencia, confianza, encaje, contacto y pitch.</span></a><a class="screen-open" href="hotel.html" data-screen="hotel.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="pitch.html" data-screen="pitch.html"><strong>Pitch</strong><span class="meta">Tono, puntos, idioma, presupuesto de IA, envío y cola.</span></a><a class="screen-open" href="pitch.html" data-screen="pitch.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="pipeline.html" data-screen="pipeline.html"><strong>Pipeline</strong><span class="meta">Tablero y lista. Ocho estados, en tus palabras.</span></a><a class="screen-open" href="pipeline.html" data-screen="pipeline.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="inbox.html" data-screen="inbox.html"><strong>Inbox</strong><span class="meta">Lecturas de Gmail al lado de cada ciclo. No es un cliente de mail.</span></a><a class="screen-open" href="inbox.html" data-screen="inbox.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="trips.html" data-screen="trips.html"><strong>Viajes</strong><span class="meta">Destino, fechas y hoteles de esa salida.</span></a><a class="screen-open" href="trips.html" data-screen="trips.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="perfil.html" data-screen="perfil.html"><strong>Perfil</strong><span class="meta">Cuenta pública, conteos propios y colaboraciones privadas.</span></a><a class="screen-open" href="perfil.html" data-screen="perfil.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="portfolio.html" data-screen="portfolio.html"><strong>Portfolio</strong><span class="meta">Tres layouts. Cada colaboración se aprueba sola.</span></a><a class="screen-open" href="portfolio.html" data-screen="portfolio.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="pricing.html" data-screen="pricing.html"><strong>Planes</strong><span class="meta">Free, Pro, Max y packs, con el Pase de destino aparte.</span></a><a class="screen-open" href="pricing.html" data-screen="pricing.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="billing.html" data-screen="billing.html"><strong>Facturación y créditos</strong><span class="meta">Saldo, período y checkout. Un pago no es acceso.</span></a><a class="screen-open" href="billing.html" data-screen="billing.html">Abrir</a></div>
+          <div class="screen-row"><a class="screen-preview" href="account.html" data-screen="account.html"><strong>Cuenta</strong><span class="meta">Gmail, contraseña y baja. La confirmación es DELETE.</span></a><a class="screen-open" href="account.html" data-screen="account.html">Abrir</a></div>
+        </nav>
+      </section>
+
+      <section class="stack" aria-labelledby="color">
+        <h2 id="color" class="h2">Color</h2>
+        <p class="meta">Sol <code>#FFE01B</code> pinta el botón primario, la selección y la marca. No pinta éxito, advertencia ni error.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#ffffff">Papel<small>#FFFFFF</small></div>
+          <div class="swatch" style="background:#111111;color:#fff">Tinta<small style="color:#ccc">#111111</small></div>
+          <div class="swatch" style="background:#ffe01b">Sol<small>#FFE01B · acción</small></div>
+          <div class="swatch" style="background:#555555;color:#fff">Texto secundario<small style="color:#ddd">#555555</small></div>
+          <div class="swatch" style="background:#0b6b4b;color:#fff">Éxito<small style="color:#d7efe6">#0B6B4B</small></div>
+          <div class="swatch" style="background:#b4400b;color:#fff">Advertencia<small style="color:#ffd8c8">#B4400B</small></div>
+          <div class="swatch" style="background:#e8590c;color:#fff">Seguimiento<small style="color:#ffe4d4">#E8590C</small></div>
+          <div class="swatch" style="background:#dc2626;color:#fff">Peligro<small style="color:#ffd0d0">#DC2626</small></div>
+        </div>
+      </section>
+
+      <section class="stack" aria-labelledby="type">
+        <h2 id="type" class="h2">Tipografía</h2>
+        <p class="meta">Archivo es la única familia. 800 en los títulos, 700 en las acciones, 400 en el cuerpo. Sin serif de display.</p>
+        <div class="type-row"><span class="meta">Display · 800</span><p class="display" style="font-size:56px">Bali, en 29 días</p></div>
+        <div class="type-row"><span class="meta">Título · 800</span><p class="h1">Alila Villas Uluwatu</p></div>
+        <div class="type-row"><span class="meta">Sección · 800</span><p class="h2">Para hacer ahora</p></div>
+        <div class="type-row"><span class="meta">Cuerpo · 400 / 15</span><p>Descubrí hoteles, desbloqueá el contacto con un crédito y mandá el pitch desde tu Gmail.</p></div>
+        <div class="type-row"><span class="meta">Ceja · 700 / 11</span><p class="eyebrow">Próximo viaje</p></div>
+      </section>
+
+      <section class="stack" aria-labelledby="space">
+        <h2 id="space" class="h2">Espacio</h2>
+        <p class="meta">Escala de 4. Las filas densas viven en 12–16. Las secciones, en 32–48. El radio es 6, no una píldora.</p>
+        <div class="space-row" aria-hidden="true">
+          <i style="height:4px" title="4"></i>
+          <i style="height:8px"></i>
+          <i style="height:12px"></i>
+          <i style="height:16px"></i>
+          <i style="height:24px"></i>
+          <i style="height:32px"></i>
+          <i style="height:48px"></i>
+          <i style="height:64px"></i>
+        </div>
+        <p class="meta">4 · 8 · 12 · 16 · 24 · 32 · 48 · 64</p>
+      </section>
+
+      <section class="stack" aria-labelledby="components">
+        <h2 id="components" class="h2">Componentes</h2>
+        <div class="cluster">
+          <button class="btn btn-sun" type="button">Desbloquear contacto</button>
+          <button class="btn btn-ink" type="button">Enviar con Gmail</button>
+          <button class="btn btn-line" type="button">Guardar borrador</button>
+          <button class="btn btn-danger" type="button">Eliminar cuenta</button>
+        </div>
+        <div class="cluster">
+          <span class="badge badge-live">Alta actividad de creadoras</span>
+          <span class="badge">Confianza moderada</span>
+          <span class="badge badge-follow">Seguimiento</span>
+          <span class="badge badge-warn">Presupuesto de IA al 80%</span>
+        </div>
+        <article class="hotel-row">
+          <div class="hotel-photo" style="background-image:url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=600&q=70')"></div>
+          <div class="hotel-main">
+            <h3>Alila Villas Uluwatu</h3>
+            <p class="meta">Bali · ID · 5 estrellas · Resort</p>
+            <p class="signal">Alta actividad · último mes · colaboración observada</p>
+          </div>
+          <div class="row-actions"><span class="btn btn-sun btn-small">Abrir</span></div>
+        </article>
+        <div class="no-photo" style="max-width:112px">U</div>
+        <p class="meta">Sin foto no se inventa una imagen. Queda la inicial, sobre papel.</p>
+        <div class="meter" style="max-width:360px">
+          <div class="spread"><span class="small">Presupuesto de IA</span><span class="small">USD 4 de 5</span></div>
+          <div class="meter-track" aria-hidden="true"><div class="meter-fill"></div><i class="meter-tick"></i></div>
+          <p class="meta">La barra es tinta. La marca del 80% es advertencia, en naranja, y va con palabras.</p>
+        </div>
+        <p class="toast" style="max-width:280px">Agregado al pipeline</p>
+        <label class="field" style="max-width:360px">
+          <span>Buscar</span>
+          <input class="control" type="search" placeholder="Hotel o destino" value="Uluwatu">
+        </label>
+      </section>
+
+      <section class="stack" aria-labelledby="dark">
+        <h2 id="dark" class="h2">Modo oscuro</h2>
+        <div class="dark-note stack">
+          <p class="eyebrow" style="color:#ffe01b">Nota · no está aplicado</p>
+          <p>El producto se lee en papel. La foto y el sol necesitan ese fondo. Un modo noche puede existir más adelante para leer el pipeline de noche, sin cambiar la marca.</p>
+          <div class="swatches">
+            <div class="swatch" style="background:#141414">Papel noche<small>#141414</small></div>
+            <div class="swatch" style="background:#f4f4f1;color:#111">Tinta noche<small>#F4F4F1</small></div>
+            <div class="swatch" style="background:#ffe01b;color:#111">Sol, igual<small>#FFE01B sobre tinta</small></div>
+            <div class="swatch" style="background:#2c2c2c">Filete<small>#2C2C2C</small></div>
+          </div>
+          <p class="meta">El botón sol sigue llevando texto tinta. El amarillo no se usa como texto sobre negro ni como color de estado.</p>
+        </div>
+      </section>
+
+      <section class="stack">
+        <h2 class="h2">Cómo se lee</h2>
+        <p>En el celular, Descubrir abre en lista y el mapa es una pantalla. El pipeline abre en lista. La navegación principal queda abajo: Inicio, Descubrir, Pipeline, Viajes, Perfil.</p>
+        <p>Desde 1024 px la navegación principal pasa a la izquierda. Descubrir muestra el mapa y la lista juntos. La ficha del hotel deja el contacto y el pitch en un panel al costado. El pipeline abre el tablero en columnas.</p>
+        <p class="meta">Inbox, Cuenta y Facturación no son ítems primarios. El foco visible es tinta, porque el sol sobre papel no alcanza contraste.</p>
+      </section>
+      <p class="footer-note"><a href="landing.html">Entrar al prototipo</a> · UX01 fase 1 · sin código de la app</p>
+    </div>
+  </main>
+  <script src="proto.js"></script>
+</body>
+</html>

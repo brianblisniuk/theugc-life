@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Descubrir · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a href="inicio.html">Inicio</a>
+      <a class="is-active" href="discover.html" aria-current="page">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a href="trips.html">Viajes</a>
+      <a href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a href="account.html">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a href="inicio.html">Inicio</a>
+        <a class="is-active" href="discover.html" aria-current="page">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html" data-balance>142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link" href="billing.html">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page" data-discover>
+    <div class="wrap-l stack">
+      <div class="spread">
+        <div>
+          <p class="eyebrow">Inicio / Descubrir</p>
+          <h1 class="h1">Hoteles</h1>
+        </div>
+        <button class="btn btn-line only-mobile" id="map-toggle" type="button" aria-pressed="false">Ver mapa</button>
+      </div>
+      <form id="discover-filters" class="stack" role="search" aria-label="Buscar hoteles">
+        <div class="cluster" style="align-items:end">
+          <label class="field" style="flex:1 1 220px" for="q">
+            <span>Hotel o destino</span>
+            <input class="control" id="q" type="search" name="q" placeholder="Uluwatu, Alfama, Polanco" value="">
+          </label>
+          <label class="field" style="flex:1 1 160px" for="destination">
+            <span>Destino</span>
+            <select class="control" id="destination" name="destination">
+              <option value="">Cualquier destino</option>
+              <option value="bali" selected>Bali</option>
+              <option value="cartagena">Cartagena</option>
+              <option value="lisboa">Lisboa</option>
+              <option value="cdmx">Ciudad de México</option>
+              <option value="ibiza">Ibiza</option>
+              <option value="cabos">Los Cabos</option>
+              <option value="maya">Riviera Maya</option>
+              <option value="samana">Río San Juan</option>
+            </select>
+          </label>
+          <label class="field" style="flex:1 1 140px" for="stars">
+            <span>Clasificación</span>
+            <select class="control" id="stars" name="stars">
+              <option value="">4 y 5 estrellas</option>
+              <option value="5">5 estrellas</option>
+              <option value="4">4 estrellas o más</option>
+            </select>
+          </label>
+          <label class="field" style="flex:1 1 180px" for="activity">
+            <span>Actividad de creadoras</span>
+            <select class="control" id="activity" name="activity">
+              <option value="">Cualquier señal pública</option>
+              <option value="high">Alta</option>
+              <option value="medium">Media</option>
+              <option value="emerging">Emergente</option>
+              <option value="none">Sin señal todavía</option>
+            </select>
+          </label>
+          <label class="field" style="flex:1 1 160px" for="collab">
+            <span>Colaboración</span>
+            <select class="control" id="collab" name="collab">
+              <option value="">Cualquiera</option>
+              <option value="yes">Observada</option>
+            </select>
+          </label>
+        </div>
+        <div class="cluster">
+          <button class="btn btn-sun" type="submit">Aplicar filtros</button>
+          <button class="btn btn-line" id="clear-filters" type="button">Limpiar</button>
+          <p class="meta" id="result-count" role="status">5 hoteles</p>
+        </div>
+      </form>
+
+      <div class="discover">
+        <div class="list-pane stack">
+          <p class="meta">Orden: más activas con creadoras. La tasa de respuesta no entra en esta lista.</p>
+
+          <article class="hotel-row" data-id="alila" data-name="alila villas uluwatu bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
+            <a class="hotel-photo" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de Alila Villas Uluwatu"></a>
+            <div class="hotel-main">
+              <p class="meta">1 · Más activas con creadoras</p>
+              <h3><a href="hotel.html">Alila Villas Uluwatu</a></h3>
+              <p class="meta">Uluwatu · Bali · ID · 5 estrellas · Resort · Verificado</p>
+              <p class="signal">Alta actividad de creadoras · último mes · colaboración observada</p>
+              <p class="meta">Confianza moderada · Negociando · En un viaje · Contacto desbloqueado</p>
+            </div>
+            <div class="row-actions"><a class="btn btn-sun btn-small" href="hotel.html">Abrir</a></div>
+          </article>
+
+          <article class="hotel-row" data-id="uma" data-name="como uma canggu bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
+            <a class="hotel-photo" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de COMO Uma Canggu"></a>
+            <div class="hotel-main">
+              <p class="meta">2 · Más activas con creadoras</p>
+              <h3><a href="hotel.html">COMO Uma Canggu</a></h3>
+              <p class="meta">Canggu · Bali · ID · 5 estrellas · Boutique</p>
+              <p class="signal">Alta actividad de creadoras · último mes · colaboración observada</p>
+              <p class="meta">Confianza moderada · Contacto bloqueado</p>
+            </div>
+            <div class="row-actions"><a class="btn btn-line btn-small" href="hotel.html">Guardar</a></div>
+          </article>
+
+          <article class="hotel-row" data-id="capella" data-name="capella ubud bali" data-destination="bali" data-activity="medium" data-collab="" data-stars="5">
+            <a class="hotel-photo" href="discover.html" style="background-image:url('https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de Capella Ubud"></a>
+            <div class="hotel-main">
+              <p class="meta">3 · Más activas con creadoras</p>
+              <h3>Capella Ubud</h3>
+              <p class="meta">Ubud · Bali · ID · 5 estrellas · Resort</p>
+              <p class="signal">Actividad media de creadoras · último trimestre</p>
+              <p class="meta">Confianza emergente · Guardado</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardado</span></div>
+          </article>
+
+          <article class="hotel-row" data-id="fourseasons" data-name="four seasons jimbaran bali" data-destination="bali" data-activity="high" data-collab="yes" data-stars="5">
+            <a class="hotel-photo" href="discover.html" style="background-image:url('https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de Four Seasons Jimbaran"></a>
+            <div class="hotel-main">
+              <p class="meta">4 · Más activas con creadoras</p>
+              <h3>Four Seasons Jimbaran Bay</h3>
+              <p class="meta">Jimbaran · Bali · ID · 5 estrellas · Resort · Verificado</p>
+              <p class="signal">Alta actividad de creadoras · últimos 7 días · colaboración observada</p>
+              <p class="meta">Confianza fuerte · Contacto bloqueado</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardar</span></div>
+          </article>
+
+          <article class="hotel-row" data-id="ungasan" data-name="the ungasan bali" data-destination="bali" data-activity="none" data-collab="" data-stars="5">
+            <div class="no-photo" aria-label="Sin fotografía de The Ungasan">U</div>
+            <div class="hotel-main">
+              <h3>The Ungasan</h3>
+              <p class="meta">Ungasan · Bali · ID · 5 estrellas · Resort</p>
+              <p class="meta">Todavía no hay datos de creadoras. Eso no es actividad baja.</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardar</span></div>
+          </article>
+
+          <article class="hotel-row" data-id="santa" data-name="hotel santa clara cartagena" data-destination="cartagena" data-activity="medium" data-collab="yes" data-stars="5" hidden>
+            <a class="hotel-photo" href="inbox.html" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de Hotel Santa Clara"></a>
+            <div class="hotel-main">
+              <h3>Hotel Santa Clara</h3>
+              <p class="meta">Cartagena · CO · 5 estrellas · Hotel · Verificado</p>
+              <p class="signal">Actividad media · último mes · colaboración observada</p>
+              <p class="meta">Respondió · Contacto desbloqueado</p>
+            </div>
+            <div class="row-actions"><a class="btn btn-line btn-small" href="inbox.html">Inbox</a></div>
+          </article>
+
+          <article class="hotel-row" data-id="memmo" data-name="memmo alfama lisboa" data-destination="lisboa" data-activity="emerging" data-collab="" data-stars="4" hidden>
+            <div class="no-photo" aria-label="Sin fotografía de Memmo Alfama">M</div>
+            <div class="hotel-main">
+              <h3>Memmo Alfama</h3>
+              <p class="meta">Lisboa · PT · 4 estrellas · Boutique</p>
+              <p class="signal">Actividad emergente de creadoras</p>
+              <p class="meta">Enviado · En un viaje</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardado</span></div>
+          </article>
+
+          <article class="hotel-row" data-id="fscdmx" data-name="four seasons ciudad de mexico" data-destination="cdmx" data-activity="none" data-collab="" data-stars="5" hidden>
+            <div class="no-photo" aria-label="Sin fotografía">F</div>
+            <div class="hotel-main">
+              <h3>Four Seasons Ciudad de México</h3>
+              <p class="meta">Ciudad de México · MX · 5 estrellas · Hotel</p>
+              <p class="meta">Todavía no hay datos de creadoras.</p>
+              <p class="meta">Guardado</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardado</span></div>
+          </article>
+
+          <article class="hotel-row" data-id="ibiza" data-name="six senses ibiza" data-destination="ibiza" data-activity="high" data-collab="yes" data-stars="5" hidden>
+            <a class="hotel-photo" href="trips.html" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de Six Senses Ibiza"></a>
+            <div class="hotel-main">
+              <h3>Six Senses Ibiza</h3>
+              <p class="meta">Ibiza · ES · 5 estrellas · Resort</p>
+              <p class="signal">Alta actividad · último mes · colaboración observada</p>
+              <p class="meta">Planeado · Contacto bloqueado</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardado</span></div>
+          </article>
+
+          <article class="hotel-row" data-id="nobu" data-name="nobu los cabos" data-destination="cabos" data-activity="medium" data-collab="" data-stars="5" hidden>
+            <div class="no-photo" aria-label="Sin fotografía de Nobu">N</div>
+            <div class="hotel-main">
+              <h3>Nobu Hotel Los Cabos</h3>
+              <p class="meta">Los Cabos · MX · 5 estrellas · Resort</p>
+              <p class="signal">Actividad media · último trimestre</p>
+              <p class="meta">Seguimiento 16 oct</p>
+            </div>
+            <div class="row-actions"><a class="btn btn-line btn-small" href="pipeline.html">Pipeline</a></div>
+          </article>
+
+          <article class="hotel-row" data-id="esencia" data-name="hotel esencia riviera maya" data-destination="maya" data-activity="medium" data-collab="yes" data-stars="5" hidden>
+            <a class="hotel-photo" href="portfolio.html" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=600&q=70')" aria-label="Foto de Hotel Esencia"></a>
+            <div class="hotel-main">
+              <h3>Hotel Esencia</h3>
+              <p class="meta">Riviera Maya · MX · 5 estrellas · Resort</p>
+              <p class="signal">Actividad media · colaboración observada</p>
+              <p class="meta">Ganado · entrega 28 oct</p>
+            </div>
+            <div class="row-actions"><a class="btn btn-line btn-small" href="portfolio.html">Portfolio</a></div>
+          </article>
+
+          <article class="hotel-row" data-id="amanera" data-name="amanera rio san juan" data-destination="samana" data-activity="emerging" data-collab="" data-stars="5" hidden>
+            <div class="no-photo" aria-label="Sin fotografía de Amanera">A</div>
+            <div class="hotel-main">
+              <h3>Amanera</h3>
+              <p class="meta">Río San Juan · DO · 5 estrellas · Resort</p>
+              <p class="signal">Actividad emergente de creadoras</p>
+              <p class="meta">Cerrado</p>
+            </div>
+            <div class="row-actions"><span class="btn btn-line btn-small">Guardado</span></div>
+          </article>
+        </div>
+
+        <div class="map-pane">
+          <div class="map" data-scope="bali">
+            <svg class="map-art map-art-bali" viewBox="0 0 640 800" role="img" aria-label="Mapa esquemático del sur de Bali">
+              <rect width="640" height="800" fill="#e6eef2"/>
+              <path d="M210 70 C320 40 470 90 520 180 C575 270 560 340 500 390 C560 430 590 520 520 610 C450 700 340 760 250 730 C170 690 150 600 210 520 C140 470 120 360 190 280 C150 200 140 110 210 70 Z" fill="#f7f4ec" stroke="#111" stroke-width="2"/>
+              <path d="M250 620 C310 600 360 640 340 690" fill="none" stroke="#111" stroke-width="1"/>
+            </svg>
+            <svg class="map-art map-art-world" viewBox="0 0 640 800" role="img" aria-label="Mapa esquemático mundial">
+              <rect width="640" height="800" fill="#f3f1ea"/>
+              <ellipse cx="230" cy="360" rx="120" ry="180" fill="none" stroke="#111" stroke-width="1.5"/>
+              <ellipse cx="430" cy="360" rx="130" ry="180" fill="none" stroke="#111" stroke-width="1.5"/>
+            </svg>
+            <button class="pin" type="button" data-id="alila" data-destination="bali" style="--x:79%;--y:66%;--bx:34%;--by:74%" aria-pressed="false"><span class="pin-label">Alila</span></button>
+            <button class="pin" type="button" data-id="uma" data-destination="bali" style="--x:77%;--y:62%;--bx:46%;--by:42%" aria-pressed="false"><span class="pin-label">Uma</span></button>
+            <button class="pin" type="button" data-id="capella" data-destination="bali" style="--x:78%;--y:58%;--bx:58%;--by:30%" aria-pressed="false"><span class="pin-label">Capella</span></button>
+            <button class="pin" type="button" data-id="fourseasons" data-destination="bali" style="--x:80%;--y:64%;--bx:40%;--by:60%" aria-pressed="false"><span class="pin-label">Jimbaran</span></button>
+            <button class="pin" type="button" data-id="ungasan" data-destination="bali" style="--x:76%;--y:68%;--bx:32%;--by:66%" aria-pressed="false"><span class="pin-label">Ungasan</span></button>
+            <button class="pin" type="button" data-id="santa" data-destination="cartagena" style="--x:30%;--y:50%" aria-pressed="false"><span class="pin-label">Santa Clara</span></button>
+            <button class="pin" type="button" data-id="memmo" data-destination="lisboa" style="--x:47%;--y:34%" aria-pressed="false"><span class="pin-label">Memmo</span></button>
+            <button class="pin" type="button" data-id="fscdmx" data-destination="cdmx" style="--x:22%;--y:46%" aria-pressed="false"><span class="pin-label">CDMX</span></button>
+            <button class="pin" type="button" data-id="ibiza" data-destination="ibiza" style="--x:49%;--y:36%" aria-pressed="false"><span class="pin-label">Ibiza</span></button>
+            <button class="pin" type="button" data-id="nobu" data-destination="cabos" style="--x:16%;--y:42%" aria-pressed="false"><span class="pin-label">Nobu</span></button>
+            <button class="pin" type="button" data-id="esencia" data-destination="maya" style="--x:24%;--y:48%" aria-pressed="false"><span class="pin-label">Esencia</span></button>
+            <button class="pin" type="button" data-id="amanera" data-destination="samana" style="--x:33%;--y:46%" aria-pressed="false"><span class="pin-label">Amanera</span></button>
+            <p class="map-caption" id="map-caption">Mapa de muestra · Sur de Bali</p>
+          </div>
+        </div>
+      </div>
+      <p class="footer-note">El mapa de producto es Google Maps. Acá es un esquema para mirar la lista y los pines juntos. <a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a class="is-active" href="discover.html" aria-current="page">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

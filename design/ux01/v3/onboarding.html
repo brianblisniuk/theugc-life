@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>First hotel · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="focus" data-page="onboarding" data-title="First hotel">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido">
+    <div class="focus-card stack" id="step-dest">
+      <p class="kicker">Step 1 of 2</p>
+      <h1>Where are you pitching?</h1>
+      <div class="choice-row">
+        <button class="chip choice is-on" type="button" aria-pressed="true">Bali</button>
+        <button class="chip choice" type="button" aria-pressed="false">Cartagena</button>
+        <button class="chip choice" type="button" aria-pressed="false">Lisbon</button>
+        <button class="chip choice" type="button" aria-pressed="false">Los Cabos</button>
+      </div>
+      <button class="btn btn-ball" type="button" data-step-next>Show hotels</button>
+      <p class="small">A destination, then one hotel from the catalog. The contact stays locked. <span class="anno live">live</span></p>
+    </div>
+    <div class="focus-card stack" id="step-hotel" hidden>
+      <p class="kicker">Step 2 of 2 · Bali</p>
+      <h1>Save the first hotel.</h1>
+      <a class="panel" href="hotel.html">
+        <div class="photo" style="height:160px;border-radius:10px;background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=900&q=70')"></div>
+        <h2 style="margin-top:10px">Casa Marea</h2>
+        <p class="small">High activity · collaboration observed. Reply time waits for Pro.</p>
+        <p class="small">Unlock contact (1 credit) — not on this card. <span class="anno live">live</span></p>
+      </a>
+      <a class="btn btn-ball" href="inicio.html">Save and open home</a>
+    </div>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>

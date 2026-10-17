@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pitch studio · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="app" data-page="pitch" data-title="Pitch studio">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido" data-studio data-hotel="Casa Marea">
+    <div class="spread" style="margin-bottom:18px">
+      <div>
+        <p class="kicker">Casa Marea · unlocked</p>
+        <h1>Write the pitch</h1>
+      </div>
+      <ul class="signals">
+        <li class="for-paid">Under 24h <span class="anno live">live</span></li>
+        <li class="for-paid">Stay+Paid <span class="anno live">live</span></li>
+        <li>High activity <span class="anno live">live</span></li>
+        <li class="for-free">Reply band and deal type unlock on Pro</li>
+      </ul>
+    </div>
+    <div class="pitch-grid">
+      <aside class="panel stack">
+        <p class="kicker">Brief</p>
+        <div class="photo" style="height:120px;border-radius:10px;background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=600&q=70')"></div>
+        <div class="field">
+          <span>Tone</span>
+          <div class="choice-row">
+            <button class="chip choice is-on" type="button" data-tone aria-pressed="true">Direct</button>
+            <button class="chip choice" type="button" data-tone aria-pressed="false">Warm</button>
+            <button class="chip choice" type="button" data-tone aria-pressed="false">Short</button>
+          </div>
+        </div>
+        <div class="field">
+          <span>Up to five points</span>
+          <div class="choice-row">
+            <button class="chip choice is-on" type="button" data-point aria-pressed="true">3 reels</button>
+            <button class="chip choice is-on" type="button" data-point aria-pressed="true">Photo set</button>
+            <button class="chip choice" type="button" data-point aria-pressed="false">Cliff pool</button>
+            <button class="chip choice" type="button" data-point aria-pressed="false">Spring</button>
+            <button class="chip choice" type="button" data-point aria-pressed="false">Usage</button>
+          </div>
+        </div>
+        <div class="field">
+          <span>Language</span>
+          <div class="choice-row">
+            <button class="chip choice is-on" type="button" data-lang aria-pressed="true">English</button>
+            <button class="chip choice" type="button" data-lang aria-pressed="false">Spanish</button>
+          </div>
+        </div>
+        <p class="small">No free-form instruction box. The system prompt stays on the server. The pitch goes out by Gmail. <span class="anno live">live</span></p>
+      </aside>
+
+      <section class="stack">
+        <label class="field for-paid">
+          <span>Subject</span>
+          <input id="subject" value="A film for Casa Marea">
+        </label>
+        <label class="field for-paid">
+          <span>Draft</span>
+          <textarea class="composer" id="draft">Hi,
+
+I'm Maya Chen. I shoot short films for hotels, the kind a guest watches before they book.
+
+I would like to propose three reels and a photo set for Casa Marea.
+
+I am not asking to stay as a guest in this note. If we agree on the work, we can set dates.
+
+A recent film: https://example.com/maya/reef
+
+Maya</textarea>
+        </label>
+        <article class="panel for-free stack">
+          <p class="kicker">Example · not generated</p>
+          <h2>This is a template, filled with facts you already have.</h2>
+          <p>Hi. I’m Maya Chen. I shoot short films for hotels. I would like to collaborate with Casa Marea. I am not asking to stay as a guest in this note. A recent film: https://example.com/maya/reef</p>
+          <p class="small">Free never calls the model. Connect Gmail from here and you land on plans. <span class="anno live">live</span></p>
+          <a class="btn btn-ball" href="pricing.html">See plans</a>
+        </article>
+        <div class="cluster for-paid">
+          <button class="btn btn-ball" type="button" data-generate>Generate pitch</button>
+          <button class="btn btn-white" type="button" data-send>Send with Gmail</button>
+          <button class="btn btn-line" type="button">Copy</button>
+        </div>
+        <p class="small for-paid" id="gen-note">Generate stays inside the monthly AI budget. Button has no price on it. <span class="anno live">live</span></p>
+        <p class="small for-max">Max may add one concrete reason to collaborate, and a longer draft. Same model: Claude Sonnet. <span class="anno live">live</span></p>
+        <p class="small" id="send-note" hidden></p>
+      </section>
+
+      <aside class="stack">
+        <article class="panel stack">
+          <p class="kicker">AI budget</p>
+          <div class="meter">
+            <div class="spread"><span class="small for-pro">$4.10 of $5</span><span class="small for-max">$6 of $15</span><span class="small for-free">No AI on Free</span></div>
+            <div class="meter-track" role="img" aria-label="AI budget">
+              <div class="meter-fill"></div>
+              <i class="meter-tick"></i>
+            </div>
+            <p class="small">Soft warning at 80%. At 100% you stop. The shared pool can stop everyone even if you still have room. <span class="anno live">live</span></p>
+          </div>
+        </article>
+        <article class="panel stack for-paid">
+          <p class="kicker">Follow-ups</p>
+          <h2>Two notes, if they don’t reply</h2>
+          <label class="delay">Follow-up 1
+            <input id="delay-1" data-delay="1" type="number" min="1" max="30" value="3" aria-label="Days until follow-up 1">
+            days after the pitch
+          </label>
+          <label class="delay">Follow-up 2
+            <input id="delay-2" data-delay="2" type="number" min="1" max="30" value="5" aria-label="Days until follow-up 2">
+            days after follow-up 1
+          </label>
+          <p class="small">Defaults are 3 and 5. Any whole number from 1 to 30. Weekends count. It then joins the same daytime queue. <span class="anno live">live</span></p>
+          <button class="btn btn-white" type="button" data-schedule>Schedule follow-ups</button>
+          <p class="small" id="follow-note" hidden></p>
+          <p class="small">Scheduling and sending cost no credits. A reply, a bounce, a won or closed deal, or cancel stops them. <span class="anno live">live</span></p>
+        </article>
+        <article class="panel for-free stack">
+          <p class="kicker">Follow-ups</p>
+          <h2>Pro and Max only</h2>
+          <p class="small">Free can’t schedule a follow-up. The defaults, when you can, are 3 days and then 5, or any whole number from 1 to 30.</p>
+          <a class="btn btn-ball" href="pricing.html">Connect Gmail on Pro</a>
+        </article>
+        <article class="panel stack">
+          <p class="kicker">Queue</p>
+          <p class="small">A send click queues. Gmail is called later, 09:00–18:00 in your timezone, one at a time, a few minutes apart. Pro soft cap 120 a day, Max 300. <span class="anno live">live</span></p>
+          <p class="small">The pitch does not claim you are staying. It does not mark the hotel as pitched by itself. <span class="anno live">live</span></p>
+        </article>
+      </aside>
+    </div>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>

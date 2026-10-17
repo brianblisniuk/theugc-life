@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plans · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="app" data-page="pricing" data-title="Plans">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido" class="stack-lg">
+    <header class="stack">
+      <p class="kicker">Plans and credits</p>
+      <h1>Pay for reach. The send stays free.</h1>
+      <p class="lede">One credit unlocks one hotel contact. Generating a pitch spends the AI budget, and sometimes one credit. Sending and follow-ups do not.</p>
+      <div class="choice-row">
+        <button class="chip choice is-on" type="button" data-bill="annual" aria-pressed="true">Billed annually</button>
+        <button class="chip choice" type="button" data-bill="month" aria-pressed="false">Monthly</button>
+      </div>
+    </header>
+    <section class="plan-grid">
+      <article class="plan">
+        <p class="kicker">Free</p>
+        <p class="price">$0</p>
+        <ul>
+          <li>5 credits a week. They don’t stack past 5.</li>
+          <li>Every published hotel, and public activity.</li>
+          <li>Templates you copy. No AI draft.</li>
+          <li>10 saved hotels, 5 active deals, 1 trip.</li>
+          <li>Gmail sync pauses. Send stays off.</li>
+        </ul>
+        <a class="btn btn-line" href="signup.html">Stay on Free</a>
+      </article>
+      <article class="plan is-current">
+        <p class="kicker">Pro</p>
+        <p class="price" data-price-annual>$20<span class="small">/mo</span></p>
+        <p class="price" data-price-month hidden>$30<span class="small">/mo</span></p>
+        <ul>
+          <li>150 credits every 30 days.</li>
+          <li>Reply time, reply rate, collaboration types, fit.</li>
+          <li>Claude Sonnet drafts. $5 AI budget.</li>
+          <li>Gmail sync, send, and two follow-ups.</li>
+          <li>No cap on saved hotels or open deals.</li>
+        </ul>
+        <a class="btn btn-ball" href="billing.html">Continue with Pro</a>
+      </article>
+      <article class="plan">
+        <p class="kicker">Max</p>
+        <p class="price" data-price-annual>$50<span class="small">/mo</span></p>
+        <p class="price" data-price-month hidden>$60<span class="small">/mo</span></p>
+        <ul>
+          <li>500 credits every 30 days.</li>
+          <li>Same Sonnet, longer draft, one concrete reason.</li>
+          <li>$15 AI budget. Fit shows rank and freshness.</li>
+          <li>Send soft cap 300 a day.</li>
+          <li>Priority support is a flag. It does not change the inbox.</li>
+        </ul>
+        <a class="btn btn-white" href="billing.html">Upgrade to Max</a>
+      </article>
+    </section>
+    <section class="panel stack">
+      <p class="kicker">Credit packs</p>
+      <div class="plan-grid">
+        <article><h3>50 credits · $10</h3><p class="small">One grant per payment. Not a plan.</p></article>
+        <article><h3>150 credits · $20</h3><p class="small">Unused credits reverse on a refund. Spent unlocks stay.</p></article>
+        <article><h3>500 credits · $40</h3><p class="small">A chargeback can take the balance below zero.</p></article>
+      </div>
+      <p class="small">Annual prices are the monthly number times 12 at checkout. A payment is not access until the verified webhook. Live charges are off. <span class="anno live">live</span></p>
+    </section>
+    <section class="panel stack">
+      <p class="kicker">Destination Pass · separate</p>
+      <h2>$39 for 30 days, one destination.</h2>
+      <p class="small">Premium intelligence inside that place. It does not include full AI email, and it cannot send. It does resume Gmail sync. It stacks with the weekly Free credits. <span class="anno live">live</span></p>
+    </section>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Viajes · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a href="inicio.html">Inicio</a>
+      <a href="discover.html">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a class="is-active" href="trips.html" aria-current="page">Viajes</a>
+      <a href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a href="account.html">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a class="is-active" href="trips.html" aria-current="page">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html">142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link" href="billing.html">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap-l stack-lg">
+      <div>
+        <p class="eyebrow">Inicio / Viajes</p>
+        <h1 class="h1">Viajes</h1>
+        <p class="meta">Un destino, las fechas y los hoteles de esa salida. El viaje es privado. No hace falta un viaje para guardar un hotel.</p>
+      </div>
+
+      <div class="cols-2">
+      <article class="stack">
+        <figure class="hero">
+          <img src="https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=75" alt="Sur de Bali.">
+          <figcaption class="meta">En 29 días · Próximo</figcaption>
+        </figure>
+        <div class="spread">
+          <h2 class="h2">Costa sur</h2>
+          <span class="badge">Próximo</span>
+        </div>
+        <p>Bali · 12–19 nov 2026 · privado</p>
+        <h3 class="eyebrow">Hoteles de este viaje</h3>
+        <article class="hotel-row">
+          <div class="hotel-photo" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=400&q=70')"></div>
+          <div class="hotel-main">
+            <h3><a href="hotel.html">Alila Villas Uluwatu</a></h3>
+            <p class="meta">Negociando · contacto desbloqueado</p>
+          </div>
+          <a class="btn btn-line btn-small" href="pitch.html">Pitch</a>
+        </article>
+        <article class="hotel-row">
+          <div class="hotel-photo" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=400&q=70')"></div>
+          <div class="hotel-main">
+            <h3>COMO Uma Canggu</h3>
+            <p class="meta">En la lista del viaje · todavía sin pitch</p>
+          </div>
+          <a class="btn btn-line btn-small" href="discover.html">Ver</a>
+        </article>
+      </article>
+
+      <div class="stack">
+      <article class="spread" style="border-top:1px solid var(--line);padding-top:16px">
+        <div>
+          <h2 class="h3">Alfama en marzo</h2>
+          <p class="meta">Lisboa · 4–8 mar 2027 · Planeando · Memmo Alfama en el pipeline</p>
+        </div>
+        <span class="badge">Planeando</span>
+      </article>
+
+      <section class="stack">
+        <h2 class="h3">Nuevo viaje</h2>
+        <form class="stack" data-trip-form>
+          <label class="field" for="trip-name"><span>Nombre</span><input class="control" id="trip-name" value="Ciudad amurallada"></label>
+          <label class="field" for="trip-dest"><span>Destino</span>
+            <select class="control" id="trip-dest"><option>Cartagena</option><option>Bali</option><option>Lisboa</option></select>
+          </label>
+          <div class="cluster">
+            <label class="field" for="start"><span>Desde</span><input class="control" id="start" type="date" value="2027-01-10"></label>
+            <label class="field" for="end"><span>Hasta</span><input class="control" id="end" type="date" value="2027-01-16"></label>
+          </div>
+          <button class="btn btn-sun" type="submit">Crear viaje</button>
+          <p class="note" data-trip-note hidden>En el producto esto crea un viaje privado. Este prototipo no lo guarda.</p>
+        </form>
+        <p class="meta">En Free hay un viaje activo. Pro y Max no tienen ese tope. Un Pase no cuenta los viajes de su destino.</p>
+      </section>
+      </div>
+      </div>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a class="is-active" href="trips.html" aria-current="page">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inicio · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a class="is-active" href="inicio.html" aria-current="page">Inicio</a>
+      <a href="discover.html">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a href="trips.html">Viajes</a>
+      <a href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a href="account.html">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a class="is-active" href="inicio.html" aria-current="page">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html" data-balance>142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link" href="billing.html">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap-l stack-lg">
+      <section class="hero" style="position:relative;color:#fff">
+        <img src="https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1800&q=75" alt="Costa y terrazas en el sur de Bali.">
+        <div style="position:absolute;left:0;right:0;bottom:0;padding:24px;background:linear-gradient(transparent,rgba(0,0,0,.55))">
+          <p class="eyebrow" style="color:var(--sun)">Próximo viaje · en 29 días</p>
+          <h1 class="display" style="color:#fff">Bali</h1>
+          <p>12–19 nov 2026 · Costa sur</p>
+        </div>
+      </section>
+
+      <div class="split-home">
+        <section class="stack" aria-labelledby="ahora">
+          <p class="eyebrow">Para hacer ahora</p>
+          <h2 id="ahora" class="h2">Hola, Lucía.</h2>
+          <div data-checklist>
+            <div class="check">
+              <span class="num done" aria-hidden="true">✓</span>
+              <div><b>Elegiste tu destino</b><span class="meta" style="display:block">Bali. Podés cambiarlo.</span></div>
+            </div>
+            <div class="check">
+              <span class="num done" aria-hidden="true">✓</span>
+              <div><b>Guardaste tu primer hotel</b><span class="meta" style="display:block">Alila está en tu pipeline.</span></div>
+            </div>
+            <div class="check">
+              <span class="num" aria-hidden="true">3</span>
+              <div style="flex:1">
+                <b>(Opcional) Preparaste el primer pitch</b>
+                <span class="meta" style="display:block">Una nota en el hotel cuenta como pitch preparado.</span>
+              </div>
+              <a class="btn btn-line btn-small" href="pitch.html">Empezar</a>
+            </div>
+          </div>
+          <button class="btn btn-line btn-small" type="button" data-dismiss-check>Ocultar lista</button>
+
+          <div class="stack" style="margin-top:28px">
+            <h3 class="eyebrow">Próximas acciones</h3>
+            <p><b>1 seguimiento en 2 días.</b> Nobu Los Cabos, 16 oct.</p>
+            <p class="meta">Santa Clara respondió hace 2 días. La lectura de Gmail está en el inbox. El estado lo marcaste vos: Respondió.</p>
+            <div class="cluster">
+              <a class="btn btn-sun" href="pipeline.html">Abrir pipeline</a>
+              <a class="btn btn-line" href="inbox.html">Ver inbox</a>
+            </div>
+          </div>
+        </section>
+
+        <aside class="stack">
+          <h2 class="eyebrow">Para Bali</h2>
+          <article class="stack" style="padding-bottom:12px;border-bottom:1px solid var(--line)">
+            <h3 class="h3"><a href="hotel.html">Alila Villas Uluwatu</a></h3>
+            <p class="signal">Alta actividad · último mes</p>
+            <p class="meta">Negociando · en este viaje</p>
+          </article>
+          <article class="stack" style="padding-bottom:12px;border-bottom:1px solid var(--line)">
+            <h3 class="h3"><a href="discover.html">COMO Uma Canggu</a></h3>
+            <p class="signal">Alta actividad · último mes</p>
+            <p class="meta">Todavía no está en tu pipeline</p>
+          </article>
+          <a class="btn btn-line" href="discover.html">Descubrir Bali</a>
+          <div class="stack" style="margin-top:12px">
+            <h2 class="eyebrow">Lo que registraste</h2>
+            <p>18 pitches · 7 respuestas · 3 colaboraciones · 4 países</p>
+            <p class="meta">Son conteos tuyos, no un ranking de la red.</p>
+          </div>
+        </aside>
+      </div>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a class="is-active" href="inicio.html" aria-current="page">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <nav class="sidebar" aria-label="Principal">
+    <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+    <div class="sidebar-links">
+      <a href="inicio.html">Inicio</a>
+      <a href="discover.html">Descubrir</a>
+      <a href="pipeline.html">Pipeline</a>
+      <a href="trips.html">Viajes</a>
+      <a class="is-active" href="perfil.html">Perfil</a>
+    </div>
+    <div class="sidebar-links sidebar-sub">
+      <a href="inbox.html">Inbox</a>
+      <a href="account.html">Cuenta</a>
+      <a href="billing.html">Facturación</a>
+      <a href="index.html">Sistema</a>
+    </div>
+  </nav>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <nav class="nav-desktop" aria-label="Principal">
+        <a href="inicio.html">Inicio</a>
+        <a href="discover.html">Descubrir</a>
+        <a href="pipeline.html">Pipeline</a>
+        <a href="trips.html">Viajes</a>
+        <a class="is-active" href="perfil.html">Perfil</a>
+      </nav>
+      <div class="shell-tools">
+        <a class="credits" href="billing.html">142 créditos</a>
+        <a class="tool-link" href="account.html">Cuenta</a>
+        <a class="tool-link" href="billing.html">Facturación</a>
+        <span class="avatar" aria-hidden="true">LF</span>
+      </div>
+      <details class="shell-more">
+        <summary class="avatar" aria-label="Cuenta y más">LF</summary>
+        <div class="more-menu">
+          <a href="account.html">Cuenta</a>
+          <a href="billing.html">Facturación</a>
+          <a href="inbox.html">Inbox</a>
+          <a href="index.html">Sistema de diseño</a>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap-l stack-lg">
+      <div>
+        <p class="meta"><a href="perfil.html">Perfil</a> / Portfolio</p>
+        <h1 class="h1">Portfolio</h1>
+        <p class="meta">Elegí un layout de viaje y aprobá cada colaboración confirmada antes de que pueda verse en el enlace para un hotel. Publicar una ficha no enciende el perfil público. No hay compensación, mail ni notas.</p>
+      </div>
+      <div class="cluster" role="group" aria-label="Layout">
+        <button class="btn btn-line is-on" type="button" data-template="journey" aria-pressed="true">Recorrido</button>
+        <button class="btn btn-line" type="button" data-template="destinations" aria-pressed="false">Destinos</button>
+        <button class="btn btn-line" type="button" data-template="highlights" aria-pressed="false">Destacados</button>
+      </div>
+
+      <div class="split-pitch">
+        <section class="stack">
+          <h2 class="eyebrow">Para decidir</h2>
+          <article class="stack" style="border-bottom:1px solid var(--line);padding-bottom:12px">
+            <h3 class="h3">Six Senses Ibiza</h3>
+            <p class="meta">Ibiza · estancia + pago · acordada · jun 2026</p>
+            <div class="cluster">
+              <button class="btn btn-sun btn-small" type="button">Aprobar</button>
+              <button class="btn btn-line btn-small" type="button">Dejar afuera</button>
+            </div>
+          </article>
+          <h2 class="eyebrow">Publicadas</h2>
+          <p><b>Hotel Esencia</b> · Riviera Maya · estancia · completada · mar 2026</p>
+          <p><b>Capella Ubud</b> · Bali · estancia · completada · ago 2025</p>
+          <p class="meta">Amanera quedó afuera. Sigue en tu lista privada del perfil.</p>
+        </section>
+        <section class="stack">
+          <h2 class="eyebrow">Vista previa</h2>
+          <div class="folio stack" id="folio" data-template="journey" style="border:1px solid var(--line);padding:16px">
+            <p class="meta">Lucía Ferrer · viaje</p>
+            <div class="folio-journey stack">
+              <p class="eyebrow">2025</p>
+              <p><b>Capella Ubud</b><br><span class="meta">Bali · agosto</span></p>
+              <p class="eyebrow">2026</p>
+              <p><b>Hotel Esencia</b><br><span class="meta">Riviera Maya · marzo</span></p>
+            </div>
+            <div class="folio-dest stack">
+              <p><b>Bali</b><br><span class="meta">Capella Ubud</span></p>
+              <p><b>México</b><br><span class="meta">Hotel Esencia</span></p>
+            </div>
+            <div class="folio-high stack">
+              <div class="highlight-hero" style="background-image:url('https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=70')">
+                <div>
+                  <p class="eyebrow" style="color:var(--sun)">Destacado</p>
+                  <p class="h3" style="color:#fff">Hotel Esencia</p>
+                </div>
+              </div>
+              <p class="meta">Capella Ubud · Bali</p>
+            </div>
+          </div>
+          <p class="meta">El enlace para un hotel muestra solo lo que aprobaste. No muestra lo que estás negociando.</p>
+        </section>
+      </div>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <nav class="tabbar" aria-label="Principal">
+    <a href="inicio.html">Inicio</a>
+    <a href="discover.html">Descubrir</a>
+    <a href="pipeline.html">Pipeline</a>
+    <a href="trips.html">Viajes</a>
+    <a class="is-active" href="perfil.html">Perfil</a>
+  </nav>
+  <script src="proto.js"></script>
+</body>
+</html>

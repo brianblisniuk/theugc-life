@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profile · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="app" data-page="profile" data-title="Profile">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido" class="stack-lg">
+    <div class="cover" style="background-image:url('https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1600&q=70')" data-private></div>
+    <div class="spread" style="align-items:flex-end">
+      <div>
+        <div class="avatar-lg" style="background-image:url('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=70')" role="img" aria-label="Sample portrait of Maya Chen"></div>
+        <h1 style="margin-top:12px" data-private>Maya Chen</h1>
+        <p class="shared-only kicker">Hotel link · fields you opted in</p>
+        <p class="muted" data-private>@maya.chen · Uluwatu · films, food, the hour before dinner</p>
+        <p class="lede" data-opt-panel="bio" style="margin-top:8px">I shoot short films for hotels. Guests watch them before they book. I don’t pitch a stay I haven’t agreed.</p>
+      </div>
+      <div class="cluster">
+        <button class="btn btn-line" type="button" data-hotel-view aria-pressed="false">As a hotel sees you</button>
+        <a class="btn btn-white" href="account.html" data-private>Edit profile</a>
+      </div>
+    </div>
+
+    <p class="shared-only small">A hotel does not see your name, photo, or home city on this link. They see the fields you turn on. Invalid, revoked, and expired links all look the same: not found. <span class="anno live">live</span></p>
+
+    <div class="chip-row shared-only" aria-label="Fields a hotel may see">
+      <span class="chip-label">On the link</span>
+      <button class="chip is-on" type="button" data-opt="bio" aria-pressed="true">Bio</button>
+      <button class="chip is-on" type="button" data-opt="niche" aria-pressed="true">Niche</button>
+      <button class="chip is-on" type="button" data-opt="social" aria-pressed="true">Social</button>
+      <button class="chip" type="button" data-opt="audience" aria-pressed="false">Audience</button>
+      <button class="chip is-on" type="button" data-opt="past" aria-pressed="true">Past work</button>
+      <button class="chip is-on" type="button" data-opt="examples" aria-pressed="true">Examples</button>
+      <button class="chip" type="button" data-opt="compensation" aria-pressed="false">Compensation</button>
+    </div>
+
+    <section class="profile-metrics" data-private aria-label="Your numbers">
+      <article>
+        <span class="kicker">Pitches sent</span>
+        <b class="num">18</b>
+        <span class="small">Cycles you logged. <span class="anno live">live</span></span>
+      </article>
+      <article>
+        <span class="kicker">Response rate</span>
+        <b class="num">39%</b>
+        <span class="small">Not a stored rate. 7 replies is the count. <span class="anno build">to build</span></span>
+      </article>
+      <article>
+        <span class="kicker">Deals closed</span>
+        <b class="num">4</b>
+        <span class="small">Completed collaborations. <span class="anno live">live</span></span>
+      </article>
+      <article>
+        <span class="kicker">Countries</span>
+        <b class="num">4</b>
+        <span class="small">Indonesia, Mexico, Portugal, Spain. <span class="anno build">to build</span></span>
+      </article>
+      <article>
+        <span class="kicker">Revenue generated</span>
+        <b class="num">$4.6k</b>
+        <span class="small">Recorded cash only. Unknown is not in this, and it is not zero. <span class="anno build">to build</span></span>
+      </article>
+    </section>
+
+    <section class="panel" data-private>
+      <p class="kicker">Also counted</p>
+      <p class="small">Replies 7 · Agreements 6 · Deliverables approved 11. A missing profile is null, not a row of zeros. No ghosted count. <span class="anno live">live</span></p>
+    </section>
+
+    <section data-opt-panel="niche">
+      <p class="kicker">Niche</p>
+      <p>Hotel films · slow travel · food at the table, not the buffet.</p>
+    </section>
+    <section data-opt-panel="social">
+      <p class="kicker">Social</p>
+      <p class="small">Instagram, TikTok, YouTube, site. Self-reported. Not a follower leaderboard. <span class="anno live">live</span></p>
+    </section>
+    <section data-opt-panel="audience" class="opt-off">
+      <p class="kicker">Audience</p>
+      <p class="small">Not shared. A blank audience is unknown, never zero. <span class="anno live">live</span></p>
+    </section>
+
+    <section class="stack" data-opt-panel="past">
+      <div class="spread">
+        <h2>Work</h2>
+        <p class="small" data-private>Your public page does not list hotels. This grid stays on your desk, and on the hotel link only if you opt in. <span class="anno live">live</span></p>
+      </div>
+      <div class="grid-ig">
+        <a class="cell" href="hotel.html" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=600&q=70')"><span>Casa Marea</span></a>
+        <a class="cell tall" href="portfolio.html" style="background-image:url('https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=600&q=70')"><span>Reel</span></a>
+        <a class="cell" href="pipeline.html" style="background-image:url('https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=600&q=70')"><span>Hotel del Puerto</span></a>
+        <a class="cell" href="portfolio.html" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=600&q=70')"><span>Garden</span></a>
+        <a class="cell" href="pipeline.html" style="background-image:url('https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=600&q=70')"><span>Posada del Faro</span></a>
+        <a class="cell" href="portfolio.html" style="background-image:url('https://images.unsplash.com/photo-1618773928121-c32242e63f39?auto=format&fit=crop&w=600&q=70')"><span>Room study</span></a>
+      </div>
+    </section>
+
+    <section data-opt-panel="examples">
+      <p class="kicker">Examples with a proof link</p>
+      <p class="small">Reel · Instagram · https://example.com/maya/reef. Notes and quantity stay off the link. <span class="anno live">live</span></p>
+    </section>
+    <section data-opt-panel="compensation" class="opt-off">
+      <p class="kicker">Compensation</p>
+      <p class="small">Off. If you turn it on, a hotel sees the structure you recorded. Unknown stays unknown. Payment status stays off. <span class="anno live">live</span></p>
+    </section>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>

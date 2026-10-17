@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="app" data-page="account" data-title="Settings">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido" class="stack-lg">
+    <header>
+      <p class="kicker">Settings</p>
+      <h1>Maya Chen</h1>
+      <p class="lede">English. Direct. Your mailbox, your hours, your delete clock.</p>
+    </header>
+    <div class="settings-grid">
+      <article class="panel stack">
+        <p class="kicker">Gmail</p>
+        <h2 class="for-paid">Connected · maya@example.com</h2>
+        <h2 class="for-free">Sync is paused</h2>
+        <p class="small for-paid">Last sync pulled history forward. Send scope is separate, and only after you choose Send. <span class="anno live">live</span></p>
+        <p class="small for-free">Free keeps the mailbox. Login sync and the due list do not run. Connect again from plans. <span class="anno live">live</span></p>
+        <a class="btn btn-line for-paid" href="inbox.html">Open inbox</a>
+        <a class="btn btn-ball for-free" href="pricing.html">Connect Gmail on Pro</a>
+        <p class="small">Three bounces in the last 20 sends pauses sending. AI stays on. <span class="anno live">live</span></p>
+      </article>
+      <article class="panel stack">
+        <p class="kicker">Working hours</p>
+        <label class="field">Timezone
+          <select>
+            <option>Asia/Makassar</option>
+            <option>America/Mexico_City</option>
+            <option>Europe/Lisbon</option>
+            <option>UTC</option>
+          </select>
+        </label>
+        <p class="small">Sends leave between 09:00 and 18:00 here. A blank timezone is UTC. The follow-up wait itself is just the number of days. <span class="anno live">live</span></p>
+      </article>
+      <article class="panel stack">
+        <p class="kicker">Profile</p>
+        <label class="field">Display name<input value="Maya Chen"></label>
+        <label class="field">Username<input value="maya.chen"></label>
+        <label class="field">Primary language
+          <select><option>English</option><option>Spanish</option></select>
+        </label>
+        <label class="field">Bio<textarea>I shoot short films for hotels.</textarea></label>
+        <p class="small">Niches and formats are your words. We don’t invent a taxonomy. <span class="anno live">live</span></p>
+        <button class="btn btn-white" type="button">Save</button>
+      </article>
+      <article class="panel stack">
+        <p class="kicker">Public page</p>
+        <p class="small">Off until you turn it on. It shows your profile and the simple counts. It does not list hotels. <span class="anno live">live</span></p>
+        <button class="chip is-on" type="button" aria-pressed="true">Public page on</button>
+        <p class="kicker" style="margin-top:12px">Password</p>
+        <label class="field">New password<input type="password" value="········"></label>
+      </article>
+    </div>
+    <article class="panel stack">
+      <p class="kicker">Delete account</p>
+      <h2>Personal data goes within 30 days.</h2>
+      <p class="small">The clock starts when you type DELETE. Gmail stops then. Assistant drafts go. Credits reverse. Aggregated stats that can’t be joined back to you can stay. A second request does not move the deadline. <span class="anno live">live</span></p>
+      <label class="field">Type DELETE to confirm<input aria-label="Deletion confirmation" placeholder="DELETE"></label>
+      <button class="btn btn-line" type="button">Delete account</button>
+    </article>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>

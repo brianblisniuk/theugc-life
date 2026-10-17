@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Primeros pasos · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-app">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="shell-top">
+    <div class="shell-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <p class="meta" style="margin-left:auto">5 créditos</p>
+    </div>
+  </header>
+  <main id="contenido" class="page">
+    <div class="wrap-l">
+      <div class="cols-2 onboard-grid">
+      <div>
+      <section id="step-dest" class="stack-lg">
+        <div class="stack">
+          <p class="eyebrow">Paso 2 de 2</p>
+          <h1 class="h1">¿A dónde querés viajar?</h1>
+          <p class="meta">Una pregunta. Sirve para mostrarte hoteles de nuestra base. Podés cambiarlo.</p>
+        </div>
+        <div class="choice-grid">
+          <button class="choice is-on" type="button" data-dest="bali"><span><b>Bali</b><br><span class="meta">Costa sur y Ubud · tu próximo hueco</span></span></button>
+          <button class="choice" type="button"><span><b>Lisboa</b><br><span class="meta">Alfama y la luz de marzo</span></span></button>
+          <button class="choice" type="button"><span><b>Cartagena</b><br><span class="meta">Ciudad amurallada</span></span></button>
+          <button class="choice" type="button"><span><b>Ciudad de México</b><br><span class="meta">Polanco y Condesa</span></span></button>
+        </div>
+        <button class="btn btn-sun" type="button" data-to-hotels>Ver hoteles de Bali</button>
+      </section>
+
+      <section id="step-hotels" class="stack-lg" hidden>
+        <div class="stack">
+          <p class="eyebrow">Bali · catálogo</p>
+          <h1 class="h1">Guardá tu primer hotel</h1>
+          <p class="note">Estos hoteles salen de nuestra base, no de tu Gmail.</p>
+        </div>
+        <article class="hotel-row">
+          <div class="hotel-photo" style="background-image:url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=600&q=70')"></div>
+          <div class="hotel-main">
+            <h3>Alila Villas Uluwatu</h3>
+            <p class="meta">Uluwatu · 5 estrellas · Resort</p>
+            <p class="signal">Alta actividad de creadoras</p>
+            <p class="meta">Contacto genérico</p>
+          </div>
+          <div class="row-actions">
+            <button class="btn btn-sun btn-small" type="button" data-save-hotel>Guardar</button>
+          </div>
+        </article>
+        <article class="hotel-row">
+          <div class="no-photo" aria-label="Sin fotografía">C</div>
+          <div class="hotel-main">
+            <h3>COMO Uma Canggu</h3>
+            <p class="meta">Canggu · 5 estrellas · Boutique</p>
+            <p class="signal">Alta actividad de creadoras</p>
+            <p class="meta">Contacto genérico</p>
+          </div>
+          <div class="row-actions">
+            <button class="btn btn-line btn-small" type="button" data-onboard-unlock>Desbloquear contacto (1 crédito)</button>
+          </div>
+        </article>
+        <p class="note" data-saved-note hidden>Listo. Ya tenés tu primer hotel en el pipeline. El contacto que podés ver sigue siendo genérico hasta que lo desbloquees en la ficha.</p>
+        <p class="note note-warn" data-onboard-note hidden>En este paso no se gasta el crédito y no se muestra el mail. El desbloqueo es una acción en la ficha del hotel.</p>
+        <div class="cluster">
+          <a class="btn btn-ink" href="inicio.html">Ir al inicio</a>
+          <a class="btn btn-line" href="discover.html">Seguir en Descubrir</a>
+        </div>
+      </section>
+      </div>
+      <figure class="hero only-desk">
+        <img src="https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1400&q=75" alt="Costa y terrazas en el sur de Bali.">
+        <figcaption class="meta">Bali · la foto es el lugar. El mail no se muestra en este paso.</figcaption>
+      </figure>
+      </div>
+      <p class="footer-note"><a href="index.html">Sistema de diseño</a></p>
+    </div>
+  </main>
+  <script src="proto.js"></script>
+</body>
+</html>

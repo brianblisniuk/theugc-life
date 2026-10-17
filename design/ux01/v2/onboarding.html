@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Primeros pasos · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="public-body">
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="public-top">
+    <div class="public-bar">
+      <a class="wordmark" href="inicio.html">theugc<span>.life</span></a>
+      <p class="micro" style="margin-left:auto">5 créditos · Free</p>
+    </div>
+  </header>
+  <main id="contenido" class="stage">
+
+        <div class="cols-2">
+          <div>
+            <section id="step-dest" class="stack-lg">
+              <div>
+                <p class="eyebrow">Paso 2 de 2</p>
+                <h1 class="h1">¿A dónde querés viajar?</h1>
+                <p class="meta">Una pregunta. Muestra hoteles de la base. Podés cambiarlo.</p>
+              </div>
+              <div class="choice-grid">
+                <button class="choice is-on" type="button"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=75')"></span><span><b>Bali</b><br><span class="meta">Costa sur y Ubud</span></span></button>
+                <button class="choice" type="button"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1555881400-74d7acaacd8b?auto=format&fit=crop&w=1200&q=75')"></span><span><b>Lisboa</b><br><span class="meta">Alfama y la luz de marzo</span></span></button>
+                <button class="choice" type="button"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1568632234157-ce7aecd03d0d?auto=format&fit=crop&w=1200&q=75')"></span><span><b>Cartagena</b><br><span class="meta">Ciudad amurallada</span></span></button>
+                <button class="choice" type="button"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1518659526054-190340b32735?auto=format&fit=crop&w=1200&q=75')"></span><span><b>Ciudad de México</b><br><span class="meta">Polanco y Condesa</span></span></button>
+              </div>
+              <button class="btn btn-sun" type="button" data-to-hotels>Ver hoteles</button>
+            </section>
+            <section id="step-hotels" class="stack-lg" hidden>
+              <div>
+                <p class="eyebrow">Bali · catálogo</p>
+                <h1 class="h1">Guardá el primero</h1>
+                <p class="note">Salen de la base, no de tu Gmail. El mail no se muestra en este paso.</p>
+              </div>
+              <div class="hgrid hgrid-2">
+                <article class="hcard">
+                  <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=1600&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span><span class="badge badge-sun">Canje + pago</span></span></div>
+                  <div class="hcard-body">
+                    <h3>Alila Villas Uluwatu</h3>
+                    <p class="place">Uluwatu · 5★ · estancia + pago</p>
+                    <dl class="facts"><div><dt>Respuesta</dt><dd>1–3 días</dd></div><div><dt>Contacto</dt><dd>Genérico</dd></div></dl>
+                    <button class="btn btn-sun btn-small" type="button" data-save-hotel>Guardar</button>
+                  </div>
+                </article>
+                <article class="hcard">
+                  <div class="hcard-shot"><span class="photo" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=1200&q=75')"></span><span class="hcard-badges"><span class="badge badge-sun">Responde rápido</span><span class="badge badge-sun">Canje</span></span></div>
+                  <div class="hcard-body">
+                    <h3>COMO Uma Canggu</h3>
+                    <p class="place">Canggu · 5★ · estancia</p>
+                    <dl class="facts"><div><dt>Respuesta</dt><dd>1–3 días</dd></div><div><dt>Contacto</dt><dd>Genérico</dd></div></dl>
+                    <button class="btn btn-line btn-small" type="button" data-onboard-unlock>Desbloquear · 1 crédito</button>
+                  </div>
+                </article>
+              </div>
+              <p class="note" data-saved-note hidden>Listo. Ya está en el pipeline. El contacto sigue genérico hasta la ficha.</p>
+              <p class="note note-warn" data-onboard-note hidden>Acá no se gasta el crédito y no se muestra el mail. Desbloquear es una acción de la ficha.</p>
+              <div class="cluster">
+                <a class="btn btn-ink" href="inicio.html">Ir al inicio</a>
+                <a class="btn btn-line" href="discover.html">Seguir en Descubrir</a>
+              </div>
+            </section>
+          </div>
+          <figure class="trip-hero only-d" style="height:100%;min-height:520px;background-image:url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=75')">
+            <div class="scrim"></div>
+            <div class="copy">
+              <p class="eyebrow" style="color:#fff">La foto es el lugar</p>
+              <p class="h2" style="color:#fff">Bali</p>
+            </div>
+          </figure>
+        </div>
+
+    <p class="footer-note"><a href="../index.html">Comparar con v1</a></p>
+  </main>
+  <script src="proto.js"></script>
+</body>
+</html>

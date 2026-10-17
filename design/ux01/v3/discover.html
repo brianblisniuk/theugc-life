@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discover · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="app" data-page="discover" data-title="Discover">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido" class="discover-page" data-discover>
+    <form class="filters" id="search-form">
+      <div class="spread">
+        <p class="kicker">Find a hotel</p>
+        <div class="cluster">
+          <button class="btn btn-line btn-small map-toggle" id="map-toggle" type="button" aria-pressed="false">Show map</button>
+          <label class="small" for="order">Order
+            <select id="order">
+              <option value="name">Name</option>
+              <option value="activity">Most active with creators</option>
+              <option value="time">Fastest replying</option>
+              <option value="rate">Most responsive</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="search">
+        <input id="q" type="search" placeholder="Try “fast bali resort” — words become filters" aria-label="Search hotels" autocomplete="off">
+        <button class="btn btn-white btn-small" type="submit">Add</button>
+      </div>
+      <div class="chip-row" id="keyword-chips" aria-label="Search chips"></div>
+      <div class="chip-row">
+        <span class="chip-label">Signal</span>
+        <button class="chip" type="button" data-facet="fast" data-label="Fast response" aria-pressed="false">Fast response</button>
+        <button class="chip" type="button" data-facet="collab" data-value="stay" data-label="Stay" aria-pressed="false">Stay</button>
+        <button class="chip" type="button" data-facet="collab" data-value="paid" data-label="Paid" aria-pressed="false">Paid</button>
+        <button class="chip" type="button" data-facet="collab" data-value="stay_plus_paid" data-label="Stay+Paid" aria-pressed="false">Stay+Paid</button>
+        <button class="chip" type="button" data-facet="stars" data-value="4-5" data-label="4–5★" aria-pressed="false">4–5★</button>
+        <button class="chip" type="button" data-facet="activity" data-value="high" data-label="High activity" aria-pressed="false">High activity</button>
+      </div>
+      <div class="chip-row">
+        <span class="chip-label">Place</span>
+        <button class="chip" type="button" data-facet="dest" data-value="bali" data-label="Bali" aria-pressed="false">Bali</button>
+        <button class="chip" type="button" data-facet="dest" data-value="cartagena" data-label="Cartagena" aria-pressed="false">Cartagena</button>
+        <button class="chip" type="button" data-facet="dest" data-value="lisbon" data-label="Lisbon" aria-pressed="false">Lisbon</button>
+        <button class="chip" type="button" data-facet="dest" data-value="cabos" data-label="Los Cabos" aria-pressed="false">Los Cabos</button>
+        <button class="chip" type="button" data-facet="dest" data-value="tulum" data-label="Tulum" aria-pressed="false">Tulum</button>
+        <button class="chip" type="button" data-facet="dest" data-value="ibiza" data-label="Ibiza" aria-pressed="false">Ibiza</button>
+        <button class="chip" type="button" data-facet="dest" data-value="mexico" data-label="Mexico City" aria-pressed="false">Mexico City</button>
+      </div>
+      <div class="chip-row">
+        <span class="chip-label">Type</span>
+        <button class="chip" type="button" data-facet="type" data-value="resort" data-label="Resort" aria-pressed="false">Resort</button>
+        <button class="chip" type="button" data-facet="type" data-value="boutique" data-label="Boutique" aria-pressed="false">Boutique</button>
+        <button class="chip" type="button" data-facet="type" data-value="beach" data-label="Beach" aria-pressed="false">Beach</button>
+        <button class="chip" type="button" data-facet="type" data-value="city" data-label="City" aria-pressed="false">City</button>
+        <button class="chip" type="button" data-facet="type" data-value="villa" data-label="Villa" aria-pressed="false">Villa</button>
+        <button class="btn btn-line btn-small" id="clear-filters" type="button" hidden>Clear all</button>
+      </div>
+      <p class="filter-state small" id="filter-state"></p>
+      <p class="small"><span id="result-count">12 hotels</span> · Public signals on the card. Reply bands stay on the hotel. <span class="anno live">live</span></p>
+      <p class="small" id="order-note" hidden>Fastest replying and most responsive need Pro, or a Destination Pass for that place. Activity order is public. <span class="anno live">live</span></p>
+    </form>
+    <div class="discover-layout">
+      <div class="list-pane" id="hotel-list">
+        <a class="hcard" href="hotel.html" data-id="casa-marea" data-name="casa marea uluwatu bali resort" data-destination="bali" data-type="resort" data-stars="5" data-activity="high" data-collab="stay stay_plus_paid" data-fast="1" data-band="1" data-rate="46">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Casa Marea</h2>
+            <p class="small">Uluwatu · Bali · 5★ resort</p>
+            <p class="signal">High activity · past month · collaboration observed <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=bahia-house" data-id="bahia-house" data-name="bahia house cabo resort" data-destination="cabos" data-type="resort" data-stars="5" data-activity="high" data-collab="stay_plus_paid" data-fast="1" data-band="1" data-rate="51">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Bahía House</h2>
+            <p class="small">San José del Cabo · 5★ resort</p>
+            <p class="signal">High activity · past month · collaboration observed <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=villa-nube" data-id="villa-nube" data-name="villa nube canggu bali villa" data-destination="bali" data-type="villa" data-stars="5" data-activity="high" data-collab="paid" data-fast="1" data-band="1" data-rate="44">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Villa Nube</h2>
+            <p class="small">Canggu · Bali · 5★ villa</p>
+            <p class="signal">High activity · past month · collaboration observed <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=salt-court" data-id="salt-court" data-name="salt court ibiza resort" data-destination="ibiza" data-type="resort" data-stars="5" data-activity="high" data-collab="stay" data-fast="1" data-band="2" data-rate="41">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Salt Court</h2>
+            <p class="small">Ibiza · 5★ resort</p>
+            <p class="signal">High activity · past quarter · collaboration observed <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=black-sand" data-id="black-sand" data-name="black sand house amed bali boutique beach" data-destination="bali" data-type="boutique" data-stars="5" data-activity="medium" data-collab="stay" data-fast="1" data-band="2" data-rate="38">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Black Sand House</h2>
+            <p class="small">Amed · Bali · 5★ boutique</p>
+            <p class="signal">Medium activity · past month <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=garden-wing" data-id="garden-wing" data-name="garden wing ubud bali resort" data-destination="bali" data-type="resort" data-stars="4" data-activity="high" data-collab="paid" data-fast="0" data-band="3" data-rate="31">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>The Garden Wing</h2>
+            <p class="small">Ubud · Bali · 4★ resort</p>
+            <p class="signal">High activity · past month · collaboration observed <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=casa-litoral" data-id="casa-litoral" data-name="casa litoral cartagena beach" data-destination="cartagena" data-type="beach" data-stars="4" data-activity="high" data-collab="stay" data-fast="0" data-band="4" data-rate="22">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Casa Litoral</h2>
+            <p class="small">Cartagena · 4★ beach</p>
+            <p class="signal">High activity · older · collaboration observed <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=harbor-stone" data-id="harbor-stone" data-name="harbor stone lisbon city" data-destination="lisbon" data-type="city" data-stars="5" data-activity="medium" data-collab="paid" data-fast="0" data-band="4" data-rate="28">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1445019980597-93fa8acb246c?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Harbor &amp; Stone</h2>
+            <p class="small">Lisbon · 5★ city</p>
+            <p class="signal">Medium activity · past quarter <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=reef-rooms" data-id="reef-rooms" data-name="reef rooms tulum boutique beach" data-destination="tulum" data-type="boutique" data-stars="4" data-activity="medium" data-collab="product" data-fast="0" data-band="3" data-rate="19">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Reef Rooms</h2>
+            <p class="small">Tulum · 4★ boutique</p>
+            <p class="signal">Medium activity · past quarter <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=norte-house" data-id="norte-house" data-name="norte house mexico city roma" data-destination="mexico" data-type="city" data-stars="5" data-activity="emerging" data-collab="" data-fast="0" data-band="" data-rate="0">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1455587734955-081b22074882?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Norte House</h2>
+            <p class="small">Roma Norte · Mexico City · 5★ city</p>
+            <p class="signal">Emerging activity. Reply time is still building. <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=hotel-del-puerto" data-id="hotel-del-puerto" data-name="hotel del puerto cartagena city" data-destination="cartagena" data-type="city" data-stars="5" data-activity="emerging" data-collab="stay" data-fast="0" data-band="" data-rate="0">
+          <div class="thumb" style="background-image:url('https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=400&q=70')"></div>
+          <div>
+            <h2>Hotel del Puerto</h2>
+            <p class="small">Cartagena · 5★ city</p>
+            <p class="signal">Emerging activity. Not enough for a reply band. <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <a class="hcard" href="hotel.html?id=posada" data-id="posada" data-name="posada del faro lisbon boutique" data-destination="lisbon" data-type="boutique" data-stars="4" data-activity="" data-collab="" data-fast="0" data-band="" data-rate="0">
+          <div class="thumb initial">P</div>
+          <div>
+            <h2>Posada del Faro</h2>
+            <p class="small">Lisbon · 4★ boutique · no photo</p>
+            <p class="signal">Not enough creators yet. That is not a low score. <span class="anno live">live</span></p>
+          </div>
+        </a>
+        <div class="empty" id="discover-empty" hidden>
+          <p class="kicker">Nothing matched</p>
+          <h2>No hotel in this cut.</h2>
+          <p class="lede">The catalog is 4- and 5-star hospitality. A guest-review average is not a star rating. Clear the filters, or search a place you see above.</p>
+          <p class="small">Unknown is not a zero. A hotel with no public row is absent, not last. <span class="anno live">live</span></p>
+        </div>
+      </div>
+      <div class="map-pane" aria-label="Map">
+        <div class="map-canvas">
+          <button class="pin" type="button" data-id="casa-marea" style="left:78%;top:62%" aria-pressed="false"><span>Casa Marea</span></button>
+          <button class="pin" type="button" data-id="villa-nube" style="left:74%;top:58%" aria-pressed="false"><span>Villa Nube</span></button>
+          <button class="pin" type="button" data-id="black-sand" style="left:80%;top:66%" aria-pressed="false"><span>Black Sand House</span></button>
+          <button class="pin" type="button" data-id="garden-wing" style="left:76%;top:54%" aria-pressed="false"><span>The Garden Wing</span></button>
+          <button class="pin" type="button" data-id="bahia-house" style="left:18%;top:48%" aria-pressed="false"><span>Bahía House</span></button>
+          <button class="pin" type="button" data-id="salt-court" style="left:46%;top:38%" aria-pressed="false"><span>Salt Court</span></button>
+          <button class="pin" type="button" data-id="casa-litoral" style="left:28%;top:52%" aria-pressed="false"><span>Casa Litoral</span></button>
+          <button class="pin" type="button" data-id="hotel-del-puerto" style="left:30%;top:56%" aria-pressed="false"><span>Hotel del Puerto</span></button>
+          <button class="pin" type="button" data-id="harbor-stone" style="left:44%;top:34%" aria-pressed="false"><span>Harbor &amp; Stone</span></button>
+          <button class="pin" type="button" data-id="posada" style="left:47%;top:36%" aria-pressed="false"><span>Posada del Faro</span></button>
+          <button class="pin" type="button" data-id="reef-rooms" style="left:22%;top:50%" aria-pressed="false"><span>Reef Rooms</span></button>
+          <button class="pin" type="button" data-id="norte-house" style="left:16%;top:44%" aria-pressed="false"><span>Norte House</span></button>
+        </div>
+        <p class="map-caption">Map stand-in. The product map is Google Maps. Hover a card, the pin lights. <span class="anno live">live</span></p>
+      </div>
+    </div>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>

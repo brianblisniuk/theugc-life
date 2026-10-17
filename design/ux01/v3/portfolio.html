@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio · theugc.life</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-chrome="app" data-page="portfolio" data-title="Portfolio">
+  <a class="skip" href="#contenido">Skip to content</a>
+  <main id="contenido" class="stack-lg">
+    <header class="stack">
+      <p class="kicker">Portfolio</p>
+      <h1>Show the work you approve.</h1>
+      <p class="lede">Three layouts. Each collaboration is published on its own. A Gmail guess is never a suggestion.</p>
+      <div class="choice-row">
+        <button class="chip choice is-on" type="button" data-template="journey" aria-pressed="true">Journey</button>
+        <button class="chip choice" type="button" data-template="destinations" aria-pressed="false">Destinations</button>
+        <button class="chip choice" type="button" data-template="highlights" aria-pressed="false">Highlights</button>
+      </div>
+    </header>
+    <div id="folio" data-template="journey" class="stack">
+      <article class="panel spread" data-collab data-state="published">
+        <div>
+          <p class="kicker">Completed · Nov 2025</p>
+          <h2>Hotel del Puerto</h2>
+          <p class="small">Cartagena · Stay · dates you logged. No fee on this card. <span class="anno live">live</span></p>
+        </div>
+        <button class="btn btn-line" type="button" data-approve>Published</button>
+      </article>
+      <article class="panel spread" data-collab data-state="suggested">
+        <div>
+          <p class="kicker">Active · suggestion</p>
+          <h2>Casa Marea</h2>
+          <p class="small">Still running, so it is not “past.” You can publish this entry anyway. <span class="anno live">live</span></p>
+        </div>
+        <button class="btn btn-white" type="button" data-approve>Publish</button>
+      </article>
+      <article class="panel">
+        <p class="kicker">Dropped</p>
+        <h2>A cancelled job left the link.</h2>
+        <p class="small">Cancelled is not a lost deal, and it does not stay on the public portfolio. <span class="anno live">live</span></p>
+      </article>
+    </div>
+    <div class="reels" aria-label="Clips">
+      <figure class="reel"><img alt="" src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=400&q=70"><span class="play">▶</span><figcaption>Looping still</figcaption></figure>
+      <figure class="reel"><img alt="" src="https://images.unsplash.com/photo-1618773928121-c32242e63f39?auto=format&fit=crop&w=400&q=70"><span class="play">▶</span><figcaption>Template</figcaption></figure>
+      <figure class="reel"><img alt="" src="https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=400&q=70"><span class="play">▶</span><figcaption>Room</figcaption></figure>
+    </div>
+    <p class="small">Clips are stills in motion. Video files are <span class="anno build">to build</span>. The layouts are <span class="anno live">live</span>.</p>
+  </main>
+  <script src="chrome.js"></script>
+  <script src="proto.js"></script>
+</body>
+</html>
