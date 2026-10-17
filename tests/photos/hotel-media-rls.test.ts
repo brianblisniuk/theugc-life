@@ -232,4 +232,72 @@ d("hotel_media RLS (D189)", () => {
     );
     expect(visible[0]).toEqual({ status: "active", storage_bucket: "hotel-media" });
   });
+
+  it("fails the hide and leaves the row unchanged when a public object remains", async () => {
+    const leftover = "91000000-0000-4000-8000-000000000004";
+    const onlyExtra = "91000000-0000-4000-8000-000000000005";
+    await adminQuery(
+      `insert into public.hotel_media
+         (id, hotel_id, source, source_media_key, storage_bucket, storage_path, remote_path, role, position, alt_text, credit, rights_basis, status)
+       values
+         ($1, $3, 'forbes', 'city/a/leftover', 'hotel-media', 'forbes/city/a/01-leftover', null, 'gallery', 9, 'Leftover', 'Forbes Travel Guide', 'owner_decision_D189', 'active'),
+         ($2, $3, 'forbes', 'city/a/extra-only', 'hotel-media', 'forbes/city/a/02-extra', null, 'gallery', 10, 'Extra', 'Forbes Travel Guide', 'owner_decision_D189', 'active')`,
+      [leftover, onlyExtra, HOTEL.bali],
+    );
+    await adminQuery(
+      `insert into storage.objects (bucket_id, name)
+       values ('hotel-media', 'forbes/city/a/01-leftover/w480.webp'),
+              ('hotel-media', 'forbes/city/a/01-leftover/w1280.webp'),
+              ('hotel-media', 'forbes/city/a/01-leftover/extra.webp'),
+              ('hotel-media', 'forbes/city/a/02-extra/extra.webp')`,
+    );
+    try {
+      const hidden = await commitAs<{ ok: boolean }>(
+        { role: "authenticated", sub: USERS.editor },
+        "select public.hide_hotel_media($1::uuid) as ok",
+        [leftover],
+      );
+      expect(hidden.error).toBeNull();
+      expect(hidden.rows[0]?.ok).toBe(false);
+      const row = await adminQuery<{ status: string; storage_bucket: string }>(
+        "select status, storage_bucket from public.hotel_media where id = $1",
+        [leftover],
+      );
+      expect(row[0]).toEqual({ status: "active", storage_bucket: "hotel-media" });
+      const objects = await adminQuery<{ bucket_id: string; name: string }>(
+        `select bucket_id, name from storage.objects
+          where name like 'forbes/city/a/01-leftover/%'
+          order by name`,
+      );
+      expect(objects).toEqual([
+        { bucket_id: "hotel-media", name: "forbes/city/a/01-leftover/extra.webp" },
+        { bucket_id: "hotel-media", name: "forbes/city/a/01-leftover/w1280.webp" },
+        { bucket_id: "hotel-media", name: "forbes/city/a/01-leftover/w480.webp" },
+      ]);
+
+      const zeroMoved = await commitAs<{ ok: boolean }>(
+        { role: "authenticated", sub: USERS.editor },
+        "select public.hide_hotel_media($1::uuid) as ok",
+        [onlyExtra],
+      );
+      expect(zeroMoved.error).toBeNull();
+      expect(zeroMoved.rows[0]?.ok).toBe(false);
+      const extraRow = await adminQuery<{ status: string; storage_bucket: string }>(
+        "select status, storage_bucket from public.hotel_media where id = $1",
+        [onlyExtra],
+      );
+      expect(extraRow[0]).toEqual({ status: "active", storage_bucket: "hotel-media" });
+      const extraObject = await adminQuery<{ bucket_id: string }>(
+        "select bucket_id from storage.objects where name = 'forbes/city/a/02-extra/extra.webp'",
+      );
+      expect(extraObject).toEqual([{ bucket_id: "hotel-media" }]);
+    } finally {
+      await adminQuery(
+        "delete from storage.objects where name like 'forbes/city/a/01-leftover/%' or name like 'forbes/city/a/02-extra/%'",
+      );
+      await adminQuery("delete from public.hotel_media where id = any($1::uuid[])", [
+        [leftover, onlyExtra],
+      ]);
+    }
+  });
 });

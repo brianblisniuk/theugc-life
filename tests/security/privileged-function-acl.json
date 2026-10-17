@@ -2111,6 +2111,46 @@
   },
   {
     "schema": "public",
+    "name": "rebill_queue_provider_cancel",
+    "args": "p_subscription_id text, p_reason text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "rebill_finish_provider_cancel",
+    "args": "p_subscription_id text",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_rebill_pending_cancels",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "read_admin_rebill_cancel_queue",
+    "args": "p_limit integer",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "rebill_queue_refund_required",
     "args": "p_payment text, p_subscription text, p_link text, p_amount numeric, p_currency text",
     "searchPath": "\"\"",

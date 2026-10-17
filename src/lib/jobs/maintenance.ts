@@ -2,6 +2,8 @@
  * Database jobs the schedules call. No Gmail client and no Claude client.
  * A database error is reported as a result code. The message is not returned.
  */
+import { readRebillEnv } from "@/lib/billing/rebill-catalog";
+import { cancelRebillSubscription } from "@/lib/billing/rebill-checkout";
 
 export interface JobDb {
   rpc: (
@@ -22,7 +24,42 @@ function count(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function cancelReason(result: "cancelled" | "not_configured" | "provider_error"): string {
+  return result === "not_configured" ? "not_configured" : "provider_error";
+}
+
+/** Retries provider ids that are not cancelled. Does not refund. */
+async function retryPendingRebillCancels(db: JobDb): Promise<void> {
+  const pending = await db.rpc("read_rebill_pending_cancels", { p_limit: 50 });
+  if (pending.error || !Array.isArray(pending.data)) return;
+  const env = readRebillEnv();
+  for (const row of pending.data) {
+    if (!row || typeof row !== "object") continue;
+    const subscriptionId = (row as { subscription_id?: unknown }).subscription_id;
+    if (typeof subscriptionId !== "string") continue;
+    let result: "cancelled" | "not_configured" | "provider_error";
+    try {
+      result = await cancelRebillSubscription({
+        env,
+        subscriptionId,
+        fetchImpl: fetch,
+      });
+    } catch {
+      result = "provider_error";
+    }
+    if (result === "cancelled") {
+      await db.rpc("rebill_finish_provider_cancel", { p_subscription_id: subscriptionId });
+      continue;
+    }
+    await db.rpc("rebill_queue_provider_cancel", {
+      p_subscription_id: subscriptionId,
+      p_reason: cancelReason(result),
+    });
+  }
+}
+
 export async function runAccountErasure(db: JobDb): Promise<{ result: string; erased: number }> {
+  await retryPendingRebillCancels(db);
   const { data, error } = await db.rpc("erase_due_creator_accounts");
   if (error) return { result: "error", erased: 0 };
   const body = record(data);

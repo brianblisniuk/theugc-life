@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const rpc = vi.hoisted(() => vi.fn());
+const adminRpc = vi.hoisted(() => vi.fn());
 const revalidatePath = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
@@ -26,6 +27,10 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ rpc }),
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({ rpc: adminRpc }),
+}));
+
 import { requestAccountDeletion } from "@/lib/account/actions";
 
 const REQUESTED = "2026-10-17T00:00:00.000Z";
@@ -37,9 +42,23 @@ function form(phrase: string) {
   return data;
 }
 
+function scheduled(ids: string[]) {
+  rpc.mockResolvedValue({
+    data: {
+      result: "scheduled",
+      deletion_requested_at: REQUESTED,
+      delete_after: AFTER,
+      subscription_ids: ids,
+    },
+    error: null,
+  });
+}
+
 describe("deletion cancels the Rebill subscription", () => {
   beforeEach(() => {
     rpc.mockReset();
+    adminRpc.mockReset();
+    adminRpc.mockResolvedValue({ data: null, error: null });
     revalidatePath.mockReset();
     vi.unstubAllEnvs();
     vi.stubEnv("REBILL_SECRET_KEY", "sk_test_secret");
@@ -56,15 +75,7 @@ describe("deletion cancels the Rebill subscription", () => {
         return Response.json({ id, status: "cancelled" });
       }),
     );
-    rpc.mockResolvedValue({
-      data: {
-        result: "scheduled",
-        deletion_requested_at: REQUESTED,
-        delete_after: AFTER,
-        subscription_ids: ["nope", "sub_closed1", "sub_closed2"],
-      },
-      error: null,
-    });
+    scheduled(["nope", "sub_closed1", "sub_closed2"]);
 
     const result = await requestAccountDeletion(form("DELETE"));
     expect(result).toEqual({
@@ -80,7 +91,97 @@ describe("deletion cancels the Rebill subscription", () => {
     expect(calls.every((call) => call.method === "PATCH")).toBe(true);
     expect(calls.every((call) => JSON.parse(call.body).status === "cancelled")).toBe(true);
     expect(calls.every((call) => !/user_id|userId/.test(call.body))).toBe(true);
+    expect(adminRpc.mock.calls).toEqual([
+      ["rebill_finish_provider_cancel", { p_subscription_id: "sub_closed1" }],
+      ["rebill_finish_provider_cancel", { p_subscription_id: "sub_closed2" }],
+    ]);
     expect(revalidatePath).toHaveBeenCalledWith("/app/account");
+  });
+
+  it("keeps the clock and queues provider_error when Rebill returns HTTP 500", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })));
+    scheduled(["sub_fail1"]);
+    const result = await requestAccountDeletion(form("DELETE"));
+    expect(result).toEqual({
+      result: "scheduled",
+      deletionRequestedAt: REQUESTED,
+      deleteAfter: AFTER,
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(adminRpc.mock.calls).toEqual([
+      [
+        "rebill_queue_provider_cancel",
+        { p_subscription_id: "sub_fail1", p_reason: "provider_error" },
+      ],
+    ]);
+    expect(JSON.stringify(adminRpc.mock.calls)).not.toMatch(/user_id|userId/);
+  });
+
+  it("queues provider_error when a 200 body is not a cancelled subscription", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ id: "sub_fail1", status: "active" })),
+    );
+    scheduled(["sub_fail1"]);
+    const result = await requestAccountDeletion(form("DELETE"));
+    expect(result).toEqual({
+      result: "scheduled",
+      deletionRequestedAt: REQUESTED,
+      deleteAfter: AFTER,
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(adminRpc.mock.calls).toEqual([
+      [
+        "rebill_queue_provider_cancel",
+        { p_subscription_id: "sub_fail1", p_reason: "provider_error" },
+      ],
+    ]);
+  });
+
+  it("queues provider_error when a 400 is not followed by a cancelled read", async () => {
+    const methods: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        methods.push(init?.method ?? "");
+        if (init?.method === "GET") {
+          return Response.json({ id: "sub_fail1", status: "active" });
+        }
+        return new Response("bad", { status: 400 });
+      }),
+    );
+    scheduled(["sub_fail1"]);
+    const result = await requestAccountDeletion(form("DELETE"));
+    expect(result).toEqual({
+      result: "scheduled",
+      deletionRequestedAt: REQUESTED,
+      deleteAfter: AFTER,
+    });
+    expect(methods).toEqual(["PATCH", "GET"]);
+    expect(adminRpc.mock.calls).toEqual([
+      [
+        "rebill_queue_provider_cancel",
+        { p_subscription_id: "sub_fail1", p_reason: "provider_error" },
+      ],
+    ]);
+  });
+
+  it("queues not_configured and does not call Rebill when the secret is missing", async () => {
+    vi.stubEnv("REBILL_SECRET_KEY", "");
+    scheduled(["sub_fail1"]);
+    const result = await requestAccountDeletion(form("DELETE"));
+    expect(result).toEqual({
+      result: "scheduled",
+      deletionRequestedAt: REQUESTED,
+      deleteAfter: AFTER,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(adminRpc.mock.calls).toEqual([
+      [
+        "rebill_queue_provider_cancel",
+        { p_subscription_id: "sub_fail1", p_reason: "not_configured" },
+      ],
+    ]);
   });
 
   it("does not call Rebill when confirmation is missing", async () => {
@@ -88,6 +189,7 @@ describe("deletion cancels the Rebill subscription", () => {
     const result = await requestAccountDeletion(form("no"));
     expect(result).toEqual({ result: "confirmation_required" });
     expect(fetch).not.toHaveBeenCalled();
+    expect(adminRpc).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
