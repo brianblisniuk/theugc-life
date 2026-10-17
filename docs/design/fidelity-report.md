@@ -91,8 +91,8 @@ Opening `styles.css` in a browser applies later rules that paint the top bar `#1
 | FV-059 | not applicable | Profile data stays the user’s. Sample portfolio photos were not inserted. |
 | FV-060 | fixed | Selected work previews have a 148px minimum height so a recorded piece has a visible area. |
 | FV-061 | fixed | Edit profile, Open Pitch Studio, and Add project use the pencil, arrow, and plus icons. Routes are unchanged. |
-| FV-062 | fixed | Choose a destination stays, inside a closed disclosure, so the four steps and two paths lead the page. |
-| FV-063 | fixed | A new visit shows the stepper and the two paths before the destination catalog. |
+| FV-062 | fixed | Choose a destination stays below the four steps and two paths, and it can be skipped (Skip to Discover, Back to home). It stays visible: a closed disclosure hid Back to home and broke the signup journey. |
+| FV-063 | fixed | The first content is the stepper and the two paths. The destination catalog follows and is optional. |
 | FV-064 | not applicable | Free, Pro, Max, and credit packs stay the real catalog. Prices were not removed. |
 | FV-065 | fixed | Plan cards share eyebrow and title min-heights, and the action sits at the bottom of the card. The current plan keeps its highlight. |
 | FV-066 | not applicable | Payment records, refunds, and checkout stay. They are real transaction states. |
