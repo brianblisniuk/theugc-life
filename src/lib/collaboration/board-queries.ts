@@ -12,6 +12,7 @@ import {
   BOARD_READ_LIMIT,
   assembleCollaborationBoard,
   mapOutreachActivity,
+  readTimelinePage,
   type ActivityTimeline,
   type CollaborationBoard,
 } from "./board";
@@ -158,11 +159,12 @@ export async function loadOpportunityTimeline(
       .eq("creator_id", profile.profileId)
       .eq("pipeline_item_id", pipelineItemId)
       .order("event_at", { ascending: false })
-      .limit(BOARD_READ_LIMIT);
+      .limit(BOARD_READ_LIMIT + 1);
     if (events.error !== null || !Array.isArray(events.data)) return { kind: "error" };
-    const timeline = mapOutreachActivity(events.data, profile.profileId);
+    const page = readTimelinePage(events.data, BOARD_READ_LIMIT);
+    const timeline = mapOutreachActivity(page.rows, profile.profileId);
     if (timeline.kind === "error") return timeline;
-    return { ...timeline, capped: events.data.length >= BOARD_READ_LIMIT };
+    return { ...timeline, capped: page.capped };
   } catch {
     return { kind: "error" };
   }

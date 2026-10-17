@@ -20,6 +20,7 @@ import {
   outreachFromCounts,
   parseNightCoverage,
   type NightCoverageLoad,
+  type OutreachCard,
   type OutreachCount,
   type OutreachInitiativeRow,
   type OutreachLoad,
@@ -50,6 +51,7 @@ const MAIL_COLUMNS = "user_id, connection_state, email_address";
 const INITIATIVE_COLUMNS = "id, creator_id, name";
 const HOTEL_COUNT_COLUMNS = "id";
 const HOTEL_CONTACTED_COLUMNS = "id, pipeline_item:pipeline_items!inner(status)";
+const CAMPAIGN_HOTEL_COLUMNS = "hotel_id";
 
 export type HomeGmailSignal =
   | { status: "ok"; count: number; truncated: boolean }
@@ -62,6 +64,8 @@ export interface HomeSignals {
   coverage: NightCoverageLoad;
   outreach: OutreachLoad;
   gmail: HomeGmailSignal;
+  /** Hotels on the first campaign. Null when that list could not be read. */
+  campaignHotelIds: readonly string[] | null;
 }
 
 function asRecords(data: unknown): Record<string, unknown>[] | null {
@@ -145,6 +149,7 @@ export async function loadHomeSignals(
     coverage: { status: "error" },
     outreach: { status: "error" },
     gmail: { status: "error" },
+    campaignHotelIds: null,
   };
   if (!isUuid(authUserId)) return failed;
   const gmailConfigured = injected?.gmailConfigured ?? isGmailOAuthConfigured();
@@ -166,6 +171,7 @@ export async function loadHomeSignals(
         coverage: { status: "error" },
         outreach: { status: "error" },
         gmail: { status: "error" },
+        campaignHotelIds: null,
       };
     }
 
@@ -206,11 +212,11 @@ export async function loadHomeSignals(
     }
 
     if (initiativeTotal === "error" || initiativeResult.error) {
-      return { mailbox, coverage, outreach: { status: "error" }, gmail };
+      return { mailbox, coverage, outreach: { status: "error" }, gmail, campaignHotelIds: null };
     }
     const initiativeRows = asRecords(initiativeResult.data);
     if (!initiativeRows || initiativeRows.length > initiativeTotal) {
-      return { mailbox, coverage, outreach: { status: "error" }, gmail };
+      return { mailbox, coverage, outreach: { status: "error" }, gmail, campaignHotelIds: null };
     }
     const initiatives: OutreachInitiativeRow[] = [];
     for (const row of initiativeRows) {
@@ -219,7 +225,7 @@ export async function loadHomeSignals(
         typeof row.creator_id !== "string" ||
         typeof row.name !== "string"
       ) {
-        return { mailbox, coverage, outreach: { status: "error" }, gmail };
+        return { mailbox, coverage, outreach: { status: "error" }, gmail, campaignHotelIds: null };
       }
       initiatives.push({ id: row.id, creatorId: row.creator_id, name: row.name });
     }
@@ -243,7 +249,7 @@ export async function loadHomeSignals(
         ),
       ]);
       if (hotelCount === "error" || contactedCount === "error" || replyCount === "error") {
-        return { mailbox, coverage, outreach: { status: "error" }, gmail };
+        return { mailbox, coverage, outreach: { status: "error" }, gmail, campaignHotelIds: null };
       }
       totals.push({ initiativeId: initiative.id, hotelCount, contactedCount, replyCount });
     }
@@ -254,12 +260,43 @@ export async function loadHomeSignals(
         coverage: { status: "error" },
         outreach: { status: "error" },
         gmail: { status: "error" },
+        campaignHotelIds: null,
       };
     }
-    return { mailbox, coverage, outreach, gmail };
+    const campaignHotelIds = await readCampaignHotelIds(
+      supabase,
+      profile.profileId,
+      outreach.status === "ok" ? outreach.cards[0] : undefined,
+    );
+    return { mailbox, coverage, outreach, gmail, campaignHotelIds };
   } catch {
     return failed;
   }
+}
+
+async function readCampaignHotelIds(
+  supabase: HomeSignalClient,
+  profileId: string,
+  card: OutreachCard | undefined,
+): Promise<readonly string[] | null> {
+  if (!card) return [];
+  if (!Number.isInteger(card.hotelCount) || card.hotelCount < 0) return null;
+  if (card.hotelCount === 0) return [];
+  const result = await supabase
+    .from("outreach_initiative_hotels")
+    .select(CAMPAIGN_HOTEL_COLUMNS)
+    .eq("creator_id", profileId)
+    .eq("initiative_id", card.id)
+    .limit(card.hotelCount);
+  if (result.error) return null;
+  const rows = asRecords(result.data);
+  if (!rows || rows.length !== card.hotelCount) return null;
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (typeof row.hotel_id !== "string" || !isUuid(row.hotel_id)) return null;
+    ids.push(row.hotel_id);
+  }
+  return ids;
 }
 
 export const HOME_SIGNAL_COLUMNS = {
@@ -267,4 +304,5 @@ export const HOME_SIGNAL_COLUMNS = {
   initiatives: INITIATIVE_COLUMNS,
   hotels: HOTEL_COUNT_COLUMNS,
   contacted: HOTEL_CONTACTED_COLUMNS,
+  campaignHotels: CAMPAIGN_HOTEL_COLUMNS,
 } as const;

@@ -31,6 +31,18 @@ import { collaborationStatusLabel, collaborationTypeLabel } from "@/lib/pipeline
 
 export const BOARD_READ_LIMIT = 80;
 
+/**
+ * A timeline read asks for one row past the window. Exactly `limit` rows are
+ * the whole history. One more means older events were left off.
+ */
+export function readTimelinePage<T>(
+  rows: readonly T[],
+  limit: number,
+): { rows: T[]; capped: boolean } {
+  if (!Number.isInteger(limit) || limit < 1) return { rows: [...rows], capped: false };
+  return { rows: rows.slice(0, limit), capped: rows.length > limit };
+}
+
 export const AGREED_IS_NOT_APPROVED =
   "Agreed does not mean approved. The deal stage and each deliverable stay separate.";
 

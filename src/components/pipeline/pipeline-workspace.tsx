@@ -22,7 +22,7 @@ import {
 } from "@/lib/pipeline/density";
 import { pipelinePageHref, type PipelineSurface, type PipelineView } from "@/lib/pipeline/view";
 import type { MetricId } from "@/lib/metrics/contract";
-import { hotelHref, opportunityPitchHref } from "@/lib/shell/navigation";
+import { opportunityPitchHref, pipelineHotelHref } from "@/lib/shell/navigation";
 
 export function toDensityRow(item: PipelineListItem): DensityRow {
   return {
@@ -188,7 +188,7 @@ export function PipelineViewSwitch({
 function OpportunityCard({ row }: { row: DensityRow }) {
   const ref = shownDisplayRef(row.displayRef);
   const context = contextLine(row);
-  const href = row.hotelId ? hotelHref(row.hotelId, { kind: "pipeline" }) : null;
+  const href = pipelineHotelHref(row.hotelId, row.id, row.tripId);
   const body = (
     <>
       <h3>{row.hotelName}</h3>

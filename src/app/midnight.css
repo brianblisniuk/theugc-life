@@ -765,9 +765,22 @@
 
 .v12-pagehead {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: 18px;
+}
+
+.v12-pagehead-copy {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: min(100%, 16rem);
+}
+
+.v12-pagehead-lede {
+  margin-top: 8px;
 }
 
 .v12-pagehead h1 {
@@ -1102,9 +1115,22 @@
 
 .v12-pagehead {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: 18px;
+}
+
+.v12-pagehead-copy {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: min(100%, 16rem);
+}
+
+.v12-pagehead-lede {
+  margin-top: 8px;
 }
 
 .v12-pagehead h1,

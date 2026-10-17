@@ -300,9 +300,11 @@ function ShellBody({
           </div>
         ) : null}
         <div className="v12-sidebar-foot">
-          <Link href="/app/design" className="v12-nav-link">
-            <span>UI Guide</span>
-          </Link>
+          {isStaff ? (
+            <Link href="/app/design" className="v12-nav-link">
+              <span>UI Guide</span>
+            </Link>
+          ) : null}
           <div className="v12-profile">
             <span className="v12-avatar">{initials}</span>
             <span>

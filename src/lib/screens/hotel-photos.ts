@@ -47,10 +47,39 @@ export interface RenderedHotelPhoto {
   srcSet: string;
   largeUrl: string;
   alt: string;
+  /** Catalog alt. Null when the row had none. Absent only on hand-built fixtures. */
+  sourceAlt?: string | null;
   credit: string;
   creditLine: string;
   width: number;
   height: number;
+}
+
+/** A missing catalog alt is the hotel name plus the photograph's place in the gallery. */
+export function announcedPhotoAlt(
+  photo: { alt: string; sourceAlt?: string | null },
+  hotelName: string,
+  index: number,
+): string {
+  const stored = (photo.sourceAlt === undefined ? photo.alt : (photo.sourceAlt ?? "")).trim();
+  if (stored && (photo.sourceAlt !== undefined || stored !== "Hotel photograph")) return stored;
+  const name = hotelName.trim() || "Hotel";
+  const place = Number.isInteger(index) && index > 0 ? index : 1;
+  return `${name} photograph ${place}`;
+}
+
+/** Each Hide control names its place and credit so identical labels are not repeated. */
+export function hidePhotographName(index: number, credit: string): string {
+  const place = Number.isInteger(index) && index > 0 ? index : 1;
+  const who = credit.trim();
+  return who ? `Hide photograph ${place}, ${who}` : `Hide photograph ${place}`;
+}
+
+/** Shown when the gallery page is shorter than the hotel's active photographs. */
+export function hotelPhotoCountNote(shown: number, more: boolean): string | null {
+  if (!more || !Number.isInteger(shown) || shown < 1) return null;
+  const noun = shown === 1 ? "photograph" : "photographs";
+  return `Showing ${shown} ${noun}. More photographs are on file.`;
 }
 
 const UNSAFE_PATH = /(\.\.|\\|^\s|\s$|\/\/|[\u0000-\u001f])/;
@@ -100,7 +129,8 @@ export function mediaUrl(
 ): string | null {
   if (row.source === "forbes") {
     const basePath = safeRelativePath(row.storagePath);
-    const configured = supabaseUrl === undefined ? process.env.NEXT_PUBLIC_SUPABASE_URL : supabaseUrl;
+    const configured =
+      supabaseUrl === undefined ? process.env.NEXT_PUBLIC_SUPABASE_URL : supabaseUrl;
     if (!basePath || !configured) return null;
     let origin: string;
     try {
@@ -186,7 +216,8 @@ export function renderedHotelPhotos(
   for (const row of ordered) {
     const built = srcSetFor(row, supabaseUrl);
     if (!built) continue;
-    const alt = (row.altText ?? "").trim() || "Hotel photograph";
+    const sourceAlt = (row.altText ?? "").trim() || null;
+    const alt = sourceAlt || "Hotel photograph";
     const presented = presentHotelPhotos([{ url: built.src, alt }], supabaseUrl);
     const large = presentHotelPhotos([{ url: built.largeUrl, alt }], supabaseUrl);
     if (presented.length === 0 || large.length === 0) continue;
@@ -198,6 +229,7 @@ export function renderedHotelPhotos(
       srcSet: built.srcSet,
       largeUrl: large[0]!.url,
       alt,
+      sourceAlt,
       credit: row.credit,
       creditLine: photoCreditLine(row.credit),
       width,
@@ -216,7 +248,9 @@ export function coverFromMedia(
 }
 
 /** Visible credit lines, Forbes first, each source once. */
-export function creditLines(photos: readonly Pick<RenderedHotelPhoto, "credit" | "creditLine">[]): string[] {
+export function creditLines(
+  photos: readonly Pick<RenderedHotelPhoto, "credit" | "creditLine">[],
+): string[] {
   const seen = new Set<string>();
   const lines: string[] = [];
   const ordered = [...photos].sort((a, b) => {
