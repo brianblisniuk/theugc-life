@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
+
 import { CollaborationSuggestions } from "@/components/pipeline/collaboration-suggestions";
 import { SourceBadge } from "@/components/ui/badge";
 import { DisconnectedEmailState, ErrorState, InsufficientDataState } from "@/components/ui/states";
@@ -68,9 +70,11 @@ export function InboxScreen({ model }: { model: InboxReady }) {
         </div>
         <div className="v12-head-actions">
           <Link href="/app/pitch" className="v12-btn v12-btn-primary">
+            <V12Icon name="plus" size={15} />
             New pitch
           </Link>
           <Link href="/app/pipeline" className="v12-btn">
+            <V12Icon name="arrow" size={15} />
             Open Pipeline
           </Link>
         </div>
@@ -129,9 +133,12 @@ export function InboxScreen({ model }: { model: InboxReady }) {
       ))}
 
       <div className="v12-inbox-grid">
-        <section className="v12-panel" aria-label="Your conversations">
+        <section className="v12-panel" aria-label="Attention first">
           <div className="v12-panel-head">
-            <h2>Your conversations</h2>
+            <div>
+              <p className="v12-eyebrow">ATTENTION FIRST</p>
+              <h2>Your conversations</h2>
+            </div>
             <div className="v12-choice">
               <Link
                 href={inboxHref("needs_reply", selected?.id)}
@@ -210,11 +217,13 @@ export function InboxScreen({ model }: { model: InboxReady }) {
               <div className="v12-head-actions">
                 {selected.pitchHref ? (
                   <Link href={selected.pitchHref} className="v12-btn v12-btn-primary">
+                    <V12Icon name="pitch" size={15} />
                     Prepare reply in Pitch Studio
                   </Link>
                 ) : null}
                 {selected.pipelineHref ? (
                   <Link href={selected.pipelineHref} className="v12-btn v12-btn-dark">
+                    <V12Icon name="arrow" size={15} />
                     Open Pipeline
                   </Link>
                 ) : null}

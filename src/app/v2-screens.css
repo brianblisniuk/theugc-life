@@ -206,8 +206,8 @@
   display: grid;
   flex-shrink: 0;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background: #2a3931;
 }
@@ -215,12 +215,13 @@
 .s1-ring b {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: #121918;
   color: #f5f8f6;
-  font-size: 12px;
+  font-size: 15px;
+  letter-spacing: -0.5px;
 }
 
 .s1-metric-name {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { ButtonLink } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { requireUser } from "@/lib/auth/guards";
@@ -52,8 +53,12 @@ export default async function ProfilePage() {
           </p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/profile/edit">Edit profile</ButtonLink>
+          <ButtonLink href="/app/profile/edit">
+            <V12Icon name="pitch" size={15} />
+            Edit profile
+          </ButtonLink>
           <ButtonLink href="/app/pitch" variant="primary">
+            <V12Icon name="arrow" size={15} />
             Open Pitch Studio
           </ButtonLink>
         </div>
@@ -109,6 +114,7 @@ export default async function ProfilePage() {
                 <p>Lead with recorded projects. Nothing here is a sample.</p>
               </div>
               <Link href="/app/profile/portfolio" className="v12-btn v12-btn-small">
+                <V12Icon name="plus" size={15} />
                 Add project
               </Link>
             </div>

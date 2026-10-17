@@ -8,6 +8,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { DeliverableReminders } from "@/components/collaboration/deliverable-reminders";
 import { EmptyState } from "@/components/empty-state";
 import { PipelinePagination } from "@/components/pipeline/pipeline-pagination";
@@ -146,15 +147,19 @@ export default async function PipelinePage({
         </div>
         <div className="v12-head-actions">
           <Link href="/app/outreach" className="v12-btn">
+            <V12Icon name="arrow" size={15} />
             View Outreach
           </Link>
           <Link href="/app/discover" className="v12-btn v12-btn-primary">
+            <V12Icon name="plus" size={15} />
             Find hotels
           </Link>
         </div>
       </header>
 
-      <DeliverableReminders board={deadlines} />
+      <div className="v12-compact-strip">
+        <DeliverableReminders board={deadlines} />
+      </div>
       <PipelineCommand counts={counts} />
       <PipelineAttentionList board={attention} />
 
@@ -195,8 +200,7 @@ export default async function PipelinePage({
           <p className="text-sm text-muted" role="status" aria-live="polite">
             {state.summary}
             {state.range ? <span className="ml-2">· {state.range}</span> : null}
-          </p>
-          <p className="text-sm text-muted">
+            {" · "}
             The board shows this page. A Gmail reading is a suggestion. You confirm the status.
           </p>
           <PipelineViewSwitch view={view} status={status} surface={surface} rank={rank} />

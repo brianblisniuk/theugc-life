@@ -130,8 +130,10 @@ export default async function OnboardingDestinationPage() {
 
       {view.kind === "blocked" ? <ErrorState title={view.title} description={view.body} /> : null}
 
-      <section id="destination" className="v12-card v12-card-pad">
-        <h2>Choose a destination</h2>
+      <details id="destination" className="v12-card v12-card-pad">
+        <summary>
+          <strong>Choose a destination</strong>
+        </summary>
         {catalog.status !== "ok" ? (
           <ErrorState
             title="Destinations"
@@ -147,7 +149,7 @@ export default async function OnboardingDestinationPage() {
             }))}
           />
         )}
-      </section>
+      </details>
     </div>
   );
 }

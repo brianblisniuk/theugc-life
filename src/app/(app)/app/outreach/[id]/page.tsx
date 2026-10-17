@@ -8,6 +8,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { V12Icon } from "@/components/icons/v12-icons";
+
 import {
   AddHotelButton,
   DeleteOutreachForm,
@@ -180,7 +182,8 @@ export default async function OutreachDetailPage({
 
   const moveTrip =
     move && opportunities.status === "ok"
-      ? (opportunities.opportunities.find((item) => item.id === move.pipelineItemId)?.tripId ?? null)
+      ? (opportunities.opportunities.find((item) => item.id === move.pipelineItemId)?.tripId ??
+        null)
       : null;
   const nextHref = move ? openHref(move.status, move.hotelId, move.pipelineItemId, moveTrip) : null;
 
@@ -193,8 +196,12 @@ export default async function OutreachDetailPage({
           <p>Reach the hotels on this initiative. Review each one. Nothing is sent in bulk.</p>
         </div>
         <div className="v12-head-actions">
-          <ButtonLink href="/app/pipeline">Open Pipeline</ButtonLink>
+          <ButtonLink href="/app/pipeline">
+            <V12Icon name="arrow" size={15} />
+            Open Pipeline
+          </ButtonLink>
           <ButtonLink href="/app/outreach#new-outreach" variant="primary">
+            <V12Icon name="plus" size={15} />
             New outreach
           </ButtonLink>
         </div>
@@ -286,7 +293,7 @@ export default async function OutreachDetailPage({
       ) : null}
 
       <div className="v12-split">
-        <section className="v12-card">
+        <section className="v12-card" id="hotel-opportunities">
           <div className="v12-view-head">
             <div>
               <h2>Hotel opportunities</h2>
@@ -366,6 +373,7 @@ export default async function OutreachDetailPage({
                         <td>
                           {href ? (
                             <ButtonLink href={href} size="small">
+                              <V12Icon name="arrow" size={15} />
                               {row.status === "saved" || row.status === "planned"
                                 ? "Prepare"
                                 : "Open"}
@@ -390,6 +398,7 @@ export default async function OutreachDetailPage({
                         <td>
                           {href ? (
                             <ButtonLink href={href} size="small">
+                              <V12Icon name="arrow" size={15} />
                               Prepare
                             </ButtonLink>
                           ) : null}
@@ -404,7 +413,7 @@ export default async function OutreachDetailPage({
         </section>
 
         <aside className="v12-stack">
-          <section className="v12-card v12-card-pad">
+          <section className="v12-card v12-card-pad" id="next-move">
             <div className="v12-eyebrow">Your next move</div>
             {move ? (
               <>
@@ -415,6 +424,7 @@ export default async function OutreachDetailPage({
                 </p>
                 {nextHref ? (
                   <ButtonLink href={nextHref} variant="primary" block>
+                    <V12Icon name="arrow" size={15} />
                     {move.status === "replied" ? "Open conversation" : "Open"}
                   </ButtonLink>
                 ) : null}
@@ -423,7 +433,7 @@ export default async function OutreachDetailPage({
               <p>No open next step on this outreach.</p>
             )}
           </section>
-          <section className="v12-card v12-card-pad">
+          <section className="v12-card v12-card-pad" id="volume">
             <div className="v12-eyebrow">Reputation first</div>
             <h2>Volume without losing trust.</h2>
             <p>

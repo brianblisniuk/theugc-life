@@ -174,7 +174,7 @@
   height: var(--topbar-h);
   min-width: 0;
   padding: 0 34px;
-  background: #101715;
+  background: #151d1b;
   border-bottom: 1px solid var(--stroke);
   color: #eaf2ed;
 }
@@ -297,13 +297,13 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 39px;
   padding: 9px 13px;
   border: 1px solid #334239;
   border-radius: 8px;
-  background: #1b2522;
+  background: #151d1b;
   color: #f3faf4;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 750;
   text-decoration: none;
   white-space: nowrap;
@@ -393,6 +393,7 @@
 .v12-chip {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 36px;
   padding: 8px 11px;
   border: 1px solid #35463d;
@@ -705,7 +706,7 @@
     display: flex;
     justify-content: space-around;
     padding: 8px 4px max(8px, env(safe-area-inset-bottom));
-    background: #0c1110;
+    background: #151d1b;
     border-top: 1px solid #2c3b32;
     box-shadow: 0 -8px 30px #0007;
   }
@@ -905,7 +906,7 @@
 }
 
 .v12-inbox-grid {
-  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.3fr) minmax(220px, 0.8fr);
+  grid-template-columns: minmax(180px, 0.9fr) minmax(0, 1.3fr) minmax(180px, 0.8fr);
 }
 
 .v12-home-grid {
@@ -1838,6 +1839,7 @@
   margin: 0;
   color: #f5f8f6;
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .v12-deal-foot {
@@ -1890,7 +1892,7 @@
 }
 
 .v12-work-preview {
-  min-height: 72px;
+  min-height: 148px;
   padding: 12px;
   background: linear-gradient(140deg, #2b403a, #172822);
   color: #f5f8f6;
@@ -2052,4 +2054,89 @@
   .v12-stats-3 {
     grid-template-columns: 1fr;
   }
+}
+
+/* Intermediate inbox: three columns only while the content column can hold them. */
+@media (max-width: 1320px) and (min-width: 761px) {
+  .v12-inbox-grid {
+    grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1fr);
+  }
+
+  .v12-inbox-grid > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+.v12-thread strong,
+.v12-thread-summary {
+  overflow-wrap: anywhere;
+}
+
+.v12-home-notices {
+  display: grid;
+  gap: 6px;
+}
+
+.v12-home-notices > p,
+.v12-home-notices .v12-notice,
+.v12-home-notices .v12-mail-ok {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v12-night-figure {
+  display: block;
+  color: #f5f8f6;
+  font-size: 29px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.v12-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.v12-compact-strip {
+  display: grid;
+  gap: 8px;
+}
+
+.v12-compact-strip h2 {
+  font-size: 14px;
+}
+
+.s6-plans > .v12-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.s6-plans > .v12-card > .v12-eyebrow {
+  min-height: 2.4em;
+}
+
+.s6-plans > .v12-card > h2 {
+  min-height: 1.25em;
+}
+
+.s6-plans > .v12-card > .v12-btn {
+  margin-top: auto;
+}
+
+.v12-billing {
+  gap: 14px;
+}
+
+a.v12-stat {
+  color: inherit;
+  text-decoration: none;
+}
+
+.v12-pitch-disabled {
+  opacity: 0.72;
 }

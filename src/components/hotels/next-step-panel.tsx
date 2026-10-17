@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { V12Icon, type V12IconName } from "@/components/icons/v12-icons";
 import { AddToTripTrigger } from "@/components/hotels/add-to-trip-dialog";
 import { RetryButton } from "@/components/ui/retry-button";
 
@@ -22,8 +23,11 @@ function Primary({ model }: { model: NextStepModel }) {
       </button>
     );
   }
+  const icon: V12IconName =
+    model.kind === "unlock" ? "lock" : model.kind === "generate_pitch" ? "pitch" : "arrow";
   return (
     <Link className="v12-btn v12-btn-primary v12-btn-block" href={model.primaryHref}>
+      <V12Icon name={icon} size={15} />
       {model.primaryLabel}
     </Link>
   );
@@ -41,7 +45,7 @@ export function NextStepPanel({
   return (
     <>
       <aside className="s1-panel s1-side" aria-label="Your next step">
-        <p className="ux-eyebrow">Your next step</p>
+        <p className="ux-eyebrow">Turn research into outreach</p>
         <h2 className="ux-name">{model.title}</h2>
         <Primary model={model} />
         {model.offerSave ? (

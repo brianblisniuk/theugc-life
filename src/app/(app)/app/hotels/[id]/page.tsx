@@ -16,6 +16,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
 import { AnalyticsPageView } from "@/components/analytics-page-view";
+import { V12Icon } from "@/components/icons/v12-icons";
 import { ActivityPanel } from "@/components/hotels/activity-panel";
 import { AddToTrip } from "@/components/hotels/add-to-trip";
 import { AddToTripDialog, AddToTripTrigger } from "@/components/hotels/add-to-trip-dialog";
@@ -388,8 +389,14 @@ export default async function HotelDetailPage({
           ) : null}
         </div>
         <div className="s1-actions">
-          <ButtonLink href={back.href}>{back.label}</ButtonLink>
-          <AddToTripTrigger className="v12-btn v12-btn-primary">Add to My Trip</AddToTripTrigger>
+          <ButtonLink href={back.href}>
+            <V12Icon name="arrow" size={15} />
+            {back.label}
+          </ButtonLink>
+          <AddToTripTrigger className="v12-btn v12-btn-primary">
+            <V12Icon name="bookmark" size={15} />
+            Add to My Trip
+          </AddToTripTrigger>
         </div>
       </header>
 

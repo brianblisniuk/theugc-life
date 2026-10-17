@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { V12Icon } from "@/components/icons/v12-icons";
 import { ButtonLink } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { ErrorState } from "@/components/ui/states";
@@ -71,7 +72,10 @@ export default async function PlansPage() {
             manage opportunities confidently.
           </p>
         </div>
-        <ButtonLink href="/app/billing">Billing & Activity</ButtonLink>
+        <ButtonLink href="/app/billing">
+          <V12Icon name="billing" size={15} />
+          Billing & Activity
+        </ButtonLink>
       </header>
 
       <p className="v12-callout">
