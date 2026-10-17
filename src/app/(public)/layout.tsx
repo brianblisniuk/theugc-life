@@ -27,8 +27,16 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">{children}</main>
       <footer className="border-t border-border">
-        <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-muted">
-          © theugc.life — the operating system for travel UGC creators.
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted">
+          <span>© theugc.life — the operating system for travel UGC creators.</span>
+          <nav aria-label="Legal" className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-text">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-text">
+              Terms
+            </Link>
+          </nav>
         </div>
       </footer>
     </div>

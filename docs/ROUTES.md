@@ -24,6 +24,14 @@ Liveness. The body is `{ "status": "ok" }`. No session and no private data.
 Free, Creator Destination Pass explanation, Creator Pro.
 Destination-specific checkout is initiated from destination context.
 
+### `/privacy` and `/terms`
+Public Privacy Policy and Terms of Service. English. No login and no redirect.
+Indexed. Copy is the 13 October 2026 static-site text.
+
+### `/es/privacy` and `/es/terms`
+The same documents in Spanish. A translation. The English page prevails when
+the two differ. No login, no redirect, indexed.
+
 ### `/hotels`
 Public browse/search surface with safe information only.
 

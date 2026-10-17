@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 
 import { AnalyticsProvider } from "@/components/analytics-provider";
 import { assertContactProvider } from "@/lib/contacts/provider";
+import { htmlLangFromPath } from "@/lib/http/html-lang";
 
 import "./globals.css";
 import "./midnight.css";
@@ -30,9 +31,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // Dynamic on purpose. Middleware puts the per-request CSP on the forwarded
   // request; Next stamps that nonce onto its scripts only when this layout
   // renders per request. A static shell would ship scripts the policy blocks.
-  await headers();
+  const headerList = await headers();
+  const lang = htmlLangFromPath(headerList.get("x-pathname"));
   return (
-    <html lang="en">
+    <html lang={lang}>
       <body
         className={`${archivo.className} ${archivo.variable} min-h-dvh bg-background text-text antialiased`}
       >

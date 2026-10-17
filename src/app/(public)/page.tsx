@@ -30,6 +30,21 @@ export default function LandingPage() {
           See pricing
         </Link>
       </div>
+      <p className="mt-10 text-sm text-muted">
+        <Link
+          href="/privacy"
+          className="underline decoration-border underline-offset-2 hover:text-text"
+        >
+          Privacy
+        </Link>
+        <span aria-hidden="true"> · </span>
+        <Link
+          href="/terms"
+          className="underline decoration-border underline-offset-2 hover:text-text"
+        >
+          Terms
+        </Link>
+      </p>
     </div>
   );
 }

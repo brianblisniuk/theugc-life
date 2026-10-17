@@ -6080,3 +6080,49 @@ A Forbes match may be stored on `hotel_source_identities`. That table still
 rejects every `source_environment` other than `production` (D065). The
 scrape vintage `scrape-2026-10` is match evidence. It is not a new
 environment value. `link_status` uses the existing word `active`.
+
+## D190 — Five intelligence views stay security definer
+
+Status: Accepted
+
+Supabase advisors flag these views as `SECURITY DEFINER` (`security_invoker = false`):
+
+- `hotel_public_intelligence` (latest query: migration `0026`)
+- `hotel_premium_intelligence` (latest query: migration `0026`)
+- `network_hotel_public` (latest query: migration `0056`)
+- `hotel_metric_signal_public` (latest query: migration `0071`)
+- `hotel_metric_signal_premium` (latest query: migration `0071`)
+
+No later migration rewrites those queries. Definer rights stay. `security_invoker = true` is not an equivalent read.
+
+### Why the view owner has to read the base
+
+`hotel_public_intelligence` and `hotel_premium_intelligence` read `public.hotel_intelligence`. Migration `0022` revoked client `SELECT` on that table. Its RLS policy is `has_premium_hotel_access(hotel_id)`. The public view publishes a row to anonymous and Free callers. A security-invoker view would apply that policy to the caller, so anonymous and Free callers would see no public row. Giving them `SELECT` on the columns the `CASE` expressions read (`reply_rate_365d`, distinct-creator counts, `last_creator_activity_at`, and the cycle denominators) would let those callers select the raw values and skip the NULL floors.
+
+`network_hotel_public` reads `private.intelligence_facts`. That table stores `owner_user_id` and evidence ids. `SELECT` is revoked from `anon`, `authenticated`, and `service_role`. `anon` has no `USAGE` on schema `private`. A security-invoker view returns no anonymous rows unless both the schema and the fact table are granted. That grant exposes creator identity.
+
+`hotel_metric_signal_public` and `hotel_metric_signal_premium` read `private.hotel_metric_basis`, which reads the same facts. `SELECT` on the basis is revoked from `anon`, `authenticated`, and `service_role`. The two public views are the read path. Granting the basis exposes sample sizes, hour math, and owner ids before the public or premium filter.
+
+### Premium stays gated
+
+`hotel_premium_intelligence` and `hotel_metric_signal_premium` keep `has_premium_hotel_access(hotel_id)` in the view `WHERE`. That function reads `auth.uid()` from the session. Definer rights do not replace the caller with the view owner.
+
+`anon` has no `SELECT` on either premium view. An authenticated caller without the entitlement receives zero rows. The publication floors in `0026` and `0071` do not move when someone pays.
+
+### Columns these views expose
+
+`hotel_public_intelligence`: `hotel_id`, `hotel_slug`, `activity_level`, `confidence_level`, `has_observed_collaboration`, `recency_band`. No reply rate, no count, no timestamp, no creator id.
+
+`hotel_premium_intelligence`: `hotel_id`, `hotel_slug`, `confidence_level`, `reply_rate`, `reply_time_band`, `recent_activity_band`, `collaboration_types`, `contributor_count`. `contributor_count` is published only at 5 or more distinct creators. No raw cycle denominator and no raw timestamp.
+
+`network_hotel_public`: `hotel_id`, `confidence_level`, `activity_level`, `has_observed_collaboration`, `recency_band`, `freshness_band`. A row exists only at 3 or more distinct creators. Counts are not columns. A missing collaboration is NULL, not false.
+
+`hotel_metric_signal_public`: `hotel_id`, `destination_id`, `metric`, `title`, `layer`, `value_label`, `rank_key`, `sample_basis`, `threshold_rule`. `metric` is `creator_activity` only, and only for a published hotel that cleared the floor.
+
+`hotel_metric_signal_premium`: the same columns, for the premium layer (`response_rate` and `response_time`), and only when `has_premium_hotel_access` is true.
+
+### Barrier, not invoker
+
+`0056` and `0071` already set `security_barrier = true` on `network_hotel_public`, `hotel_metric_signal_public`, and `hotel_metric_signal_premium`. `0026` did not set it on the two intelligence views. Migration `0108` sets `security_barrier = true` on those two and restates `security_invoker = false` on all five. It does not replace the queries and it does not grant a privilege.
+
+The barrier keeps a caller predicate from running under the entitlement filter or under the public `CASE` projection. The advisor error on these five views remains an accepted property of the projections.

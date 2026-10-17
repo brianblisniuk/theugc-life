@@ -2919,6 +2919,10 @@ Two browser-safe projections read from this table; nothing else may:
 - `hotel_premium_intelligence` — entitlement-gated inside the view by
   `has_premium_hotel_access()`. `anon` holds no privilege on it.
 
+Both stay `security_invoker = false` (D190). They read `hotel_intelligence`,
+which browser roles cannot select. Migration `0108` sets `security_barrier`
+on them. It does not change the column list or the entitlement predicate.
+
 Neither projects an identifier, a raw outreach count (pitches, replies, events,
 cycle denominators) or a raw timestamp. The single count either projection
 publishes is the premium `contributor_count`, and only at >= 5 distinct
@@ -2957,7 +2961,10 @@ are not columns of the public views.
 cleared the floor. `anon` may select it. `hotel_metric_signal_premium` is
 reply rate and the reply-time band, and only when
 `has_premium_hotel_access(hotel_id)` is true. `anon` has no privilege on it.
-Hotels below a floor are absent from both views.
+Hotels below a floor are absent from both views. Both views, and
+`network_hotel_public`, stay `security_invoker = false` with
+`security_barrier = true` (D190, migration `0108`). The basis and the fact
+table stay revoked.
 
 `read_hotel_metric_signals(p_hotel_id)` and
 `read_destination_metric_ranking(p_destination_id, p_metric)` are
