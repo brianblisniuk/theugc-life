@@ -158,11 +158,28 @@ export function parseMatchCsv(text: string): { rows: MatchRow[]; rejected: numbe
   return { rows, rejected };
 }
 
-/** auto, and review only when approved. One Forbes property, and one hotel, win. */
-export function selectMatches(rows: readonly MatchRow[]): { chosen: MatchRow[]; skipped: number } {
-  const eligible = rows.filter(
-    (row) => row.className === "auto" || (row.className === "review" && row.approved),
-  );
+/**
+ * Only class=auto is imported. review and reject are always skipped.
+ * One Forbes property, then one hotel, wins among the auto rows.
+ */
+export function selectMatches(rows: readonly MatchRow[]): {
+  chosen: MatchRow[];
+  skipped: number;
+  skippedReview: number;
+  skippedReject: number;
+} {
+  let skippedReview = 0;
+  let skippedReject = 0;
+  const eligible: MatchRow[] = [];
+  for (const row of rows) {
+    if (row.className === "auto") {
+      eligible.push(row);
+      continue;
+    }
+    if (row.className === "review") skippedReview += 1;
+    else if (row.className === "reject") skippedReject += 1;
+  }
+  console.log(`forbes match skip review=${skippedReview} reject=${skippedReject}`);
   const skippedBase = rows.length - eligible.length;
   const byProperty = new Map<string, MatchRow>();
   let skipped = skippedBase;
@@ -181,7 +198,7 @@ export function selectMatches(rows: readonly MatchRow[]): { chosen: MatchRow[]; 
       skipped += 1;
     }
   }
-  return { chosen: [...byHotel.values()], skipped };
+  return { chosen: [...byHotel.values()], skipped, skippedReview, skippedReject };
 }
 
 function betterMatch(next: MatchRow, prior: MatchRow): boolean {

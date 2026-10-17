@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { HotelPhotos } from "@/components/hotels/hotel-photos";
 import { HotelRow } from "@/components/hotels/hotel-row";
@@ -185,7 +185,7 @@ describe("photo grid", () => {
 });
 
 describe("import plan", () => {
-  it("keeps the closest auto match and skips an unapproved review", () => {
+  it("imports only class=auto and skips review and reject", () => {
     const csv = [
       "class,hotel_id,forbes_property_id,forbes_slug,forbes_name,staging_name,dist_km,name_sim,approved",
       "auto,40000000-0000-4000-8000-000000000001,property/a,city/a,A,Staging A,0.4,0.95,",
@@ -194,13 +194,25 @@ describe("import plan", () => {
       "review,40000000-0000-4000-8000-000000000003,property/d,city/d,D,Staging D,0.2,0.8,yes",
       "reject,40000000-0000-4000-8000-000000000004,property/e,city/e,E,E,2,0.2,",
     ].join("\n");
-    const chosen = selectMatches(parseMatchCsv(csv).rows).chosen;
-    expect(chosen.map((row) => row.forbesPropertyId).sort()).toEqual(["property/b", "property/d"]);
-    const link = forbesLinkPlan(chosen.find((row) => row.forbesPropertyId === "property/d")!);
-    expect(link.source_environment).toBe("production");
-    expect(link.link_status).toBe("active");
-    expect(link.match_method).toBe("manual_review");
-    expect(link.match_evidence.scrape_vintage).toBe("scrape-2026-10");
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line?: unknown) => {
+      logs.push(String(line));
+    });
+    try {
+      const result = selectMatches(parseMatchCsv(csv).rows);
+      expect(result.chosen.map((row) => row.forbesPropertyId)).toEqual(["property/b"]);
+      expect(result.chosen.every((row) => row.className === "auto")).toBe(true);
+      expect(result.skippedReview).toBe(2);
+      expect(result.skippedReject).toBe(1);
+      expect(logs.some((line) => line.includes("review=2") && line.includes("reject=1"))).toBe(true);
+      const link = forbesLinkPlan(result.chosen[0]!);
+      expect(link.source_environment).toBe("production");
+      expect(link.link_status).toBe("active");
+      expect(link.match_method).toBe("name_geo_auto");
+      expect(link.match_evidence.scrape_vintage).toBe("scrape-2026-10");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("picks a GEN cover, caps the gallery at 12, and caps rooms at 4", () => {
