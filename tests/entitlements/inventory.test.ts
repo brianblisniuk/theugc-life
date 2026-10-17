@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import * as accountActions from "@/lib/account/actions";
 import * as assistantActions from "@/lib/ai/actions";
 import * as aiAdminActions from "@/lib/ai/admin-actions";
+import * as mediaActions from "@/lib/hotels/media-actions";
 import * as billingActions from "@/lib/billing/actions";
 import * as creditActions from "@/lib/credits/actions";
 import * as pitchActions from "@/lib/pitch/actions";
@@ -126,6 +127,7 @@ describe("entitlement inventory", () => {
       ...exportedFunctions(accountActions),
       ...exportedFunctions(assistantActions),
       ...exportedFunctions(aiAdminActions),
+      ...exportedFunctions(mediaActions),
     ].sort();
     const listed = [...serverActionIndex().keys()].sort();
     expect(listed).toEqual(exported);

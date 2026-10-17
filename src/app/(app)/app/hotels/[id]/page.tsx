@@ -83,7 +83,8 @@ import {
 import { isOpenCycle } from "@/lib/pipeline/types";
 import { discoverFigures } from "@/lib/screens/discover-figures";
 import { discoverReturnHref, parseDiscoverTrip } from "@/lib/screens/discover-return";
-import { eligibleHotelPhotos } from "@/lib/screens/hotel-photos";
+import { isAdminOrEditor } from "@/lib/auth/roles";
+import { fetchHotelMedia } from "@/lib/hotels/media";
 import {
   nextStepPitchHref,
   opportunityCards,
@@ -248,10 +249,11 @@ export default async function HotelDetailPage({
     await recordNetworkView(hotel.id);
   }
 
-  const [session, trips, pastCollaborations] = await Promise.all([
+  const [session, trips, pastCollaborations, media] = await Promise.all([
     resolveSession(),
     listTrips(),
     getPastCollaborations(hotel.id),
+    fetchHotelMedia(hotel.id),
   ]);
   const badges =
     session.status === "authenticated"
@@ -291,7 +293,9 @@ export default async function HotelDetailPage({
   const cards = opportunityCards(opportunities, hotel.id, discoverBack, origin);
   const openCount = opportunities.filter((row) => isOpenCycle(row.status)).length;
   const figures = discoverFigures(metricSignals);
-  const photos = eligibleHotelPhotos();
+  const photos = media.status === "ok" ? media.photos : [];
+  const canHide =
+    session.status === "authenticated" && isAdminOrEditor(session.session.role);
   const contactFact: ContactFact =
     contactState === "locked"
       ? "locked"
@@ -443,8 +447,16 @@ export default async function HotelDetailPage({
             <div className="s1-panel-head">
               <h2>Get to know the property</h2>
             </div>
-            <HotelPhotos name={hotel.name} initials={initials} photos={photos} />
-            {photos.length === 0 ? (
+            <HotelPhotos
+              name={hotel.name}
+              initials={initials}
+              photos={photos}
+              hotelId={hotel.id}
+              canHide={canHide}
+            />
+            {media.status === "error" ? (
+              <p className="s1-caption">Photographs could not be loaded.</p>
+            ) : photos.length === 0 ? (
               <p className="s1-caption">No verified photograph on file.</p>
             ) : null}
             <div id="map" className="scroll-mt-24">

@@ -1611,6 +1611,26 @@
   },
   {
     "schema": "public",
+    "name": "hide_hotel_media",
+    "args": "p_id uuid",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": true,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
+    "name": "promote_hotel_covers",
+    "args": "p_hotel_ids uuid[]",
+    "searchPath": "\"\"",
+    "anon": false,
+    "authenticated": false,
+    "serviceRole": true,
+    "public": false
+  },
+  {
+    "schema": "public",
     "name": "own_plan_features",
     "args": "",
     "searchPath": "\"\"",

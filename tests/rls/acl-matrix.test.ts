@@ -78,6 +78,10 @@ const CONTRACT: Record<string, Expected> = {
   brands: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
   destinations: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
   hotels: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
+  // D189. Active photographs are public. Writes are staff via RLS. Hidden rows
+  // are not selectable. hotel_cover is the one-row read model.
+  hotel_media: { anon: "S", authenticated: "SIUD", serviceRole: "all" },
+  hotel_cover: { anon: "S", authenticated: "S", serviceRole: "S" },
   hotel_contacts: { anon: "", authenticated: "SIUD", serviceRole: "all" },
   // F05 (0057, D100). The balance is the sum of the ledger. No client role
   // can update or delete it. The cache is not a client table.

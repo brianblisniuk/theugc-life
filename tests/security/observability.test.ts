@@ -129,6 +129,12 @@ describe("security headers", () => {
     expect(script).toContain("https://maps.googleapis.com");
     expect(script).not.toContain("'unsafe-inline'");
     expect(style).toBe("style-src 'self' 'unsafe-inline'");
+    const images = cspDirective(csp, "img-src");
+    expect(images).toContain("https://photos.hotelbeds.com");
+    expect(images).toContain("https://example.supabase.co");
+    expect(images).not.toContain("forbestravelguide");
+    expect(script).toContain(`'nonce-${CSP_NONCE}'`);
+    expect(script).toContain("'strict-dynamic'");
     const poisoned = contentSecurityPolicy(
       "https://example.supabase.co",
       "bad nonce; script-src *",

@@ -25,6 +25,7 @@ import {
   type RawSearchParams,
 } from "@/lib/hotels/filters";
 import { contactAvailability } from "@/lib/hotels/contact-exists";
+import { fetchHotelCovers } from "@/lib/hotels/media";
 import { listCatalogContactFlags } from "@/lib/hotels/contact-exists-query";
 import { isPublishedStarRating } from "@/lib/hotels/publication";
 import {
@@ -156,6 +157,7 @@ export default async function DiscoverPage({
     session?.status === "authenticated" && hotelIds.length > 0
       ? await listCatalogContactFlags(hotelIds)
       : { status: "ok" as const, flags: new Map<string, boolean>() };
+  const covers = hotelIds.length > 0 ? await fetchHotelCovers(hotelIds) : null;
 
   const destinationName =
     catalog.status === "ok"
@@ -394,6 +396,8 @@ export default async function DiscoverPage({
                         ? contactAvailability(contacts.flags, hotel.id)
                         : null
                     }
+                    cover={covers?.status === "ok" ? (covers.byHotel.get(hotel.id) ?? null) : null}
+                    coverState={covers?.status === "error" ? "unavailable" : "none"}
                   />
                 </SyncRow>
               ))}
