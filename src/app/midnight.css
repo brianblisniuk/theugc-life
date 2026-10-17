@@ -174,7 +174,7 @@
   height: var(--topbar-h);
   min-width: 0;
   padding: 0 34px;
-  background: #101715;
+  background: #151d1b;
   border-bottom: 1px solid var(--stroke);
   color: #eaf2ed;
 }
