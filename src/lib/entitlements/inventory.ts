@@ -1026,6 +1026,25 @@ export const INVENTORY: readonly InventoryEntry[] = [
     sources: ["docs/ROUTES.md §2", "PRD §4.1"],
   },
   {
+    id: "legal.public",
+    module: "Legal",
+    summary:
+      "Privacy and Terms are public in English and Spanish. No session, no plan, and no noindex. The English text prevails.",
+    routes: ["/privacy", "/terms", "/es/privacy", "/es/terms"],
+    sourceFiles: [
+      "src/app/(public)/privacy/page.tsx",
+      "src/app/(public)/terms/page.tsx",
+      "src/app/(public)/es/privacy/page.tsx",
+      "src/app/(public)/es/terms/page.tsx",
+    ],
+    serverActions: [],
+    rpcs: [],
+    rule: { kind: "public_page" },
+    anon: "allow",
+    enforcement: { kind: "kept_current" },
+    sources: ["docs/ROUTES.md §2"],
+  },
+  {
     id: "ops.health",
     module: "Operations",
     summary:

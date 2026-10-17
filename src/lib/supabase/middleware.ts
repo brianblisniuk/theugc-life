@@ -2,8 +2,8 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getClientEnv } from "@/env";
-import { contentSecurityPolicy, securityHeaders } from "@/lib/http/security-headers";
 import { isProtectedPath } from "@/lib/auth/routes";
+import { contentSecurityPolicy, securityHeaders } from "@/lib/http/security-headers";
 import { normalizeRequestId, writeRequestLog } from "@/lib/log/request";
 import { consumeShareLinkRequest, shareLinkClientKey } from "@/lib/profile/share-rate-limit";
 import { AUTH_COOKIE_OPTIONS } from "@/lib/supabase/cookie-options";
@@ -72,6 +72,8 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
+  // Overwrite any client-supplied value. The layout uses this only for lang.
+  requestHeaders.set("x-pathname", pathname);
   // Next.js reads the nonce from this request header and applies it to its scripts.
   requestHeaders.set(
     "Content-Security-Policy",

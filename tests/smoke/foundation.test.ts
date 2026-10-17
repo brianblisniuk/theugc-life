@@ -19,7 +19,18 @@ describe("route protection (auth gate)", () => {
   });
 
   it("does not protect public/auth routes", () => {
-    for (const p of ["/", "/login", "/pricing", "/hotels/foo", "/creators/jane", "/p/abc"]) {
+    for (const p of [
+      "/",
+      "/login",
+      "/pricing",
+      "/privacy",
+      "/terms",
+      "/es/privacy",
+      "/es/terms",
+      "/hotels/foo",
+      "/creators/jane",
+      "/p/abc",
+    ]) {
       expect(isProtectedPath(p)).toBe(false);
     }
   });
